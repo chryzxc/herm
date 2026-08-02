@@ -281,6 +281,11 @@ final class DockModel: ObservableObject {
         isShowingSessions = false
         isSending = false
         status = .working
+        activeToolCalls = []
+        reasoningState = nil
+        recentEvents = []
+        streamingMessageID = nil
+        streamingMessageIsVisionNotice = false
         Task {
             do {
                 try await gateway.connect()
@@ -308,6 +313,12 @@ final class DockModel: ObservableObject {
         currentSessionTitle = nil
         currentModelName = nil
         messages = []
+        activeToolCalls = []
+        reasoningState = nil
+        recentEvents = []
+        streamingMessageID = nil
+        streamingMessageIsVisionNotice = false
+        isSending = false
         status = .idle
         isShowingSessions = false
     }
@@ -337,6 +348,10 @@ final class DockModel: ObservableObject {
     }
 
     private func handleEvent(_ type: String, params: [String: Any]) {
+        if let eventSessionID = params["session_id"] as? String, sessionID != eventSessionID {
+            DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)")
+            return
+        }
         DebugLog.write("model: handling event \(type)")
         let payload = params["payload"] as? [String: Any] ?? [:]
         if type == "message.start" {

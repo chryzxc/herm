@@ -394,13 +394,13 @@ struct DockPopover: View {
                     ProgressView()
                         .controlSize(.small)
                         .scaleEffect(0.7)
-                    Text("Working…")
+                    Text("Thinking…")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 0)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -411,9 +411,7 @@ struct DockPopover: View {
             return type.contains("approval") ||
                 type.contains("error") ||
                 type.contains("permission") ||
-                type.contains("warning") ||
-                type == "message.start" ||
-                type == "message.complete"
+                type.contains("warning")
         }
     }
 
