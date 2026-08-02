@@ -23,15 +23,38 @@ enum HermesStatus: Equatable {
     }
 }
 
+struct ActiveToolCall: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let input: String
+    var result: String?
+    var isComplete: Bool
+}
+
+struct ReasoningState: Equatable {
+    var text: String
+    var isComplete: Bool
+}
+
+struct AgentEvent: Identifiable, Equatable {
+    let id: UUID
+    let type: String
+    let detail: String
+}
+
 struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
     let text: String
+    let timestamp: Date
+    let modelName: String?
 
-    init(id: UUID = UUID(), role: Role, text: String) {
+    init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date(), modelName: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
+        self.timestamp = timestamp
+        self.modelName = modelName
     }
 
     enum Role { case user, hermes }
@@ -62,11 +85,18 @@ final class DockModel: ObservableObject {
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
     @Published var currentSessionTitle: String?
+    @Published var reasoningState: ReasoningState?
+    @Published var isShowingReasoning = false
+    @Published var activeToolCalls: [ActiveToolCall] = []
+    @Published var hasUnreadResponse = false
+    @Published var recentEvents: [AgentEvent] = []
 
     private let gateway = HermesGateway()
     private var sessionID: String?
     private var streamingMessageID: UUID?
     private var didRestoreLatestSession = false
+    private var currentModelName: String?
+    private var isPopoverVisible = false
 
     init() {
         DebugLog.onLine = { [weak self] line in
@@ -92,6 +122,10 @@ final class DockModel: ObservableObject {
                 if sessionID == nil {
                     let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock"])
                     sessionID = result["session_id"] as? String
+                    let model = (result["model"] as? String) ?? (result["model_name"] as? String)
+                    if let model {
+                        currentModelName = model
+                    }
                     DebugLog.write("model: session created (id present: \(sessionID != nil))")
                 }
                 guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
@@ -99,7 +133,7 @@ final class DockModel: ObservableObject {
                 DebugLog.write("model: prompt submitted")
             } catch {
                 DebugLog.write("model: send failed: \(error.localizedDescription)")
-                messages.append(ChatMessage(role: .hermes, text: "I couldn’t connect to Hermes: \(error.localizedDescription)"))
+                messages.append(ChatMessage(role: .hermes, text: "I couldn’t connect to Hermes: \(error.localizedDescription)", modelName: currentModelName))
                 status = .offline
                 isSending = false
             }
@@ -160,13 +194,15 @@ final class DockModel: ObservableObject {
                     "source": "hermes-agent-dock"
                 ])
                 sessionID = result["session_id"] as? String
+                let model = (result["model"] as? String) ?? (result["model_name"] as? String)
+                if let model { currentModelName = model }
                 messages = Self.parseMessages(result["messages"])
                 currentSessionTitle = session.displayTitle
                 status = .idle
                 DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages)")
             } catch {
                 status = .offline
-                messages = [ChatMessage(role: .hermes, text: "I couldn’t load that conversation: (error.localizedDescription)")]
+                messages = [ChatMessage(role: .hermes, text: "I couldn’t load that conversation: \(error.localizedDescription)", modelName: currentModelName)]
                 DebugLog.write("model: session resume failed: \(error.localizedDescription)")
             }
         }
@@ -175,9 +211,19 @@ final class DockModel: ObservableObject {
     func newChat() {
         sessionID = nil
         currentSessionTitle = nil
+        currentModelName = nil
         messages = []
         status = .idle
         isShowingSessions = false
+    }
+
+    func markPopoverVisible() {
+        isPopoverVisible = true
+        hasUnreadResponse = false
+    }
+
+    func markPopoverHidden() {
+        isPopoverVisible = false
     }
 
     func stop() {
@@ -198,27 +244,96 @@ final class DockModel: ObservableObject {
     private func handleEvent(_ type: String, params: [String: Any]) {
         DebugLog.write("model: handling event \(type)")
         let payload = params["payload"] as? [String: Any] ?? [:]
+        if type == "message.start" {
+            recentEvents.removeAll()
+        }
+        recordEvent(type, params: params)
         switch type {
         case "message.start":
-            messages.append(ChatMessage(role: .hermes, text: ""))
+            let model = (payload["model"] as? String) ?? (payload["model_name"] as? String)
+            if let model {
+                currentModelName = model
+            }
+            messages.append(ChatMessage(role: .hermes, text: "", modelName: currentModelName))
             streamingMessageID = messages.last?.id
+            reasoningState = nil
+            isShowingReasoning = false
+            activeToolCalls = []
         case "message.delta":
             guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String),
                   let id = streamingMessageID,
                   let index = messages.firstIndex(where: { $0.id == id }) else { return }
-            messages[index] = ChatMessage(id: id, role: .hermes, text: messages[index].text + delta)
+            messages[index] = ChatMessage(id: id, role: .hermes, text: messages[index].text + delta, timestamp: messages[index].timestamp, modelName: messages[index].modelName)
         case "message.complete":
             status = .idle
             isSending = false
             streamingMessageID = nil
+            hasUnreadResponse = !isPopoverVisible
         case "approval.request":
             approvalText = (payload["command"] as? String) ?? (payload["description"] as? String) ?? "Hermes wants to perform an action."
             status = .needsApproval
         case "error":
-            messages.append(ChatMessage(role: .hermes, text: (payload["message"] as? String) ?? "Hermes reported an error."))
+            messages.append(ChatMessage(role: .hermes, text: (payload["message"] as? String) ?? "Hermes reported an error.", modelName: currentModelName))
             status = .idle
             isSending = false
-        default: break
+            hasUnreadResponse = !isPopoverVisible
+
+        case "reasoning.start", "thinking":
+            reasoningState = ReasoningState(text: "", isComplete: false)
+            isShowingReasoning = false
+        case "reasoning.delta", "thinking.delta":
+            guard var state = reasoningState else { return }
+            let delta = (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
+            state.text += delta
+            reasoningState = state
+        case "reasoning.complete", "thinking.stop", "thinking.complete":
+            guard var state = reasoningState else { return }
+            state.isComplete = true
+            reasoningState = state
+
+        case "tool.call", "tool.start", "tool.use", "tool_use":
+            let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "unknown"
+            let input: String
+            if let args = payload["arguments"] as? [String: Any] {
+                input = args.compactMap { "\($0.key): \($0.value)" }.joined(separator: ", ")
+            } else if let args = payload["arguments"] as? String {
+                input = args
+            } else if let inputStr = payload["input"] as? [String: Any] {
+                input = inputStr.compactMap { "\($0.key): \($0.value)" }.joined(separator: ", ")
+            } else {
+                input = ""
+            }
+            let id = (payload["id"] as? String) ?? UUID().uuidString
+            activeToolCalls.append(ActiveToolCall(id: id, name: name, input: input, result: nil, isComplete: false))
+        case "tool.result", "tool_result", "tool.complete", "tool_complete":
+            let id = (payload["id"] as? String) ?? (payload["tool_id"] as? String) ?? ""
+            let result = (payload["result"] as? String) ?? (payload["output"] as? String) ?? ""
+            if let index = activeToolCalls.firstIndex(where: { $0.id == id }) {
+                activeToolCalls[index].result = result.isEmpty ? nil : result
+                activeToolCalls[index].isComplete = true
+            } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
+                activeToolCalls[last].result = result.isEmpty ? nil : result
+                activeToolCalls[last].isComplete = true
+            }
+
+        default:
+            DebugLog.write("model: unknown event type: \(type) params: \(params.keys.sorted().joined(separator: ", "))")
+            break
+        }
+    }
+
+    private func recordEvent(_ type: String, params: [String: Any]) {
+        let detail: String
+        if let data = try? JSONSerialization.data(withJSONObject: params, options: [.sortedKeys]),
+           let json = String(data: data, encoding: .utf8) {
+            detail = json
+        } else {
+            detail = String(describing: params)
+        }
+        DebugLog.write("event \(type): \(detail)")
+        recentEvents.append(AgentEvent(id: UUID(), type: type, detail: detail))
+        if recentEvents.count > 40 {
+            recentEvents.removeFirst(recentEvents.count - 40)
         }
     }
 
@@ -241,7 +356,15 @@ final class DockModel: ObservableObject {
             guard let role = row["role"] as? String else { return nil }
             let text = messageText(row["text"] ?? row["content"])
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-            return ChatMessage(role: role == "user" ? .user : .hermes, text: text)
+            let timestamp: Date
+            if let ts = row["timestamp"] as? Double {
+                timestamp = Date(timeIntervalSince1970: ts)
+            } else if let ts = row["timestamp"] as? NSNumber {
+                timestamp = Date(timeIntervalSince1970: ts.doubleValue)
+            } else {
+                timestamp = Date()
+            }
+            return ChatMessage(role: role == "user" ? .user : .hermes, text: text, timestamp: timestamp)
         }
     }
 

@@ -74,6 +74,18 @@ final class HermesGateway: NSObject {
         timeoutTasks.removeAll()
     }
 
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        try await connect()
+        guard let port else { throw GatewayError.backendUnavailable }
+        guard let url = URL(string: "http://127.0.0.1:\(port)\(path)") else {
+            throw GatewayError.malformedResponse
+        }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, _) = try await URLSession.shared.data(for: req)
+        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    }
+
     private func send(method: String, params: [String: Any]) async throws -> Data {
         guard let socket else { throw GatewayError.disconnected }
         nextID += 1
