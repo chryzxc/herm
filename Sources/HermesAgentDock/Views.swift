@@ -167,7 +167,7 @@ struct DockPopover: View {
             composer
         }
         .frame(width: 420, height: 540)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.7))
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.4))
         .task {
             model.restoreLatestSessionIfNeeded()
         }
