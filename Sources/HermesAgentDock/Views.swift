@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Foundation
 
@@ -150,10 +151,11 @@ private struct ConversationBottomPreferenceKey: PreferenceKey {
 // MARK: - Main Popover
 
 struct DockPopover: View {
-    @ObservedObject var model: DockModel
-    @State private var isConversationAtBottom = true
-    @State private var isComposerPulsing = false
-    @StateObject private var speechInput = SpeechInput()
+@ObservedObject var model: DockModel
+@State private var isConversationAtBottom = true
+@State private var isComposerPulsing = false
+@State private var pasteMonitor: Any?
+@StateObject private var speechInput = SpeechInput()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -614,111 +616,179 @@ struct DockPopover: View {
     // MARK: Composer
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 5) {
-            if speechInput.isRecording {
-                MicWaveform(isActive: true)
-                    .frame(maxWidth: .infinity, minHeight: 38)
-            } else {
-                Button(action: { speechInput.toggle() }) {
-                    Group {
-                        if speechInput.isStarting {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(width: 28, height: 28)
-                        } else {
-                            Image(systemName: speechInput.isUnavailable ? "mic.slash.fill" : "mic.fill")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(speechInput.isUnavailable ? Color.orange : Color.secondary)
-                                .frame(width: 28, height: 28)
+        let draftIsEmpty = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(spacing: 0) {
+            if let image = model.pendingImage {
+                HStack(spacing: 8) {
+                    Image(nsImage: image.image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 36, height: 36)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(image.fileName)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Text("Image")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    Button(action: { model.clearPendingImage() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 18, height: 18)
+                            .background(Circle().fill(Color.primary.opacity(0.1)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove image")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                )
+                .padding(.horizontal, 10)
+                .padding(.top, 6)
+            }
+
+            HStack(alignment: .bottom, spacing: 5) {
+                if speechInput.isRecording {
+                    MicWaveform(isActive: true)
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                } else {
+                    Button(action: { model.pickImageFile() }) {
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Attach image")
+
+                    Button(action: { speechInput.toggle() }) {
+                        Group {
+                            if speechInput.isStarting {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .frame(width: 28, height: 28)
+                            } else {
+                                Image(systemName: speechInput.isUnavailable ? "mic.slash.fill" : "mic.fill")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(speechInput.isUnavailable ? Color.orange : Color.secondary)
+                                    .frame(width: 28, height: 28)
+                            }
                         }
+                    }
+                    .buttonStyle(.plain)
+                    .help(
+                        speechInput.isUnavailable
+                        ? "Dictation requires the bundled app"
+                        : "Dictate message"
+                    )
+
+                    TextField("Ask Hermes…", text: $model.draft, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...4)
+                        .font(.system(size: 13))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(minHeight: 38)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.primary.opacity(0.05))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        )
+                        .onSubmit { model.send() }
+                }
+
+                Button(action: {
+                    if speechInput.isRecording {
+                        speechInput.stop()
+                    } else {
+                        model.send()
+                    }
+                }) {
+                    if speechInput.isRecording {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 38, height: 38)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.red)
+                            )
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(
+                                (draftIsEmpty && model.pendingImage == nil) || model.isSending
+                                ? Color.secondary
+                                : Color.white
+                            )
+                            .frame(width: 38, height: 38)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(
+                                        (draftIsEmpty && model.pendingImage == nil) || model.isSending
+                                        ? Color.primary.opacity(0.06)
+                                        : Color.accentColor
+                                    )
+                            )
                     }
                 }
                 .buttonStyle(.plain)
-                .help(
-                    speechInput.isUnavailable
-                    ? "Dictation requires the bundled app"
-                    : "Dictate message"
-                )
-
-                TextField("Ask Hermes…", text: $model.draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .lineLimit(1...4)
-                    .font(.system(size: 13))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .frame(minHeight: 38)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.primary.opacity(0.05))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-                    )
-                    .onSubmit { model.send() }
+                .disabled(!speechInput.isRecording && ((draftIsEmpty && model.pendingImage == nil) || model.isSending))
+                .keyboardShortcut(.return, modifiers: [.command])
             }
-
-            Button(action: {
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .fill(Color.red.opacity(speechInput.isRecording ? (isComposerPulsing ? 0.12 : 0.05) : 0))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(
+                        speechInput.isRecording
+                        ? Color.red.opacity(isComposerPulsing ? 0.65 : 0.28)
+                        : Color.clear,
+                        lineWidth: 1
+                    )
+            )
+            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isComposerPulsing)
+            .onChange(of: speechInput.isRecording) { _, isRecording in
+                isComposerPulsing = isRecording
+            }
+            .onChange(of: speechInput.transcript) { _, transcript in
                 if speechInput.isRecording {
-                    speechInput.stop()
-                } else {
-                    model.send()
-                }
-            }) {
-                if speechInput.isRecording {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 38, height: 38)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.red)
-                        )
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(
-                            model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isSending
-                            ? Color.secondary
-                            : Color.white
-                        )
-                        .frame(width: 38, height: 38)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(
-                                    model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isSending
-                                    ? Color.primary.opacity(0.06)
-                                    : Color.accentColor
-                                )
-                        )
+                    model.draft = transcript
                 }
             }
-            .buttonStyle(.plain)
-            .disabled(!speechInput.isRecording && (model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isSending))
-            .keyboardShortcut(.return, modifiers: [.command])
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(Color.red.opacity(speechInput.isRecording ? (isComposerPulsing ? 0.12 : 0.05) : 0))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(
-                    speechInput.isRecording
-                    ? Color.red.opacity(isComposerPulsing ? 0.65 : 0.28)
-                    : Color.clear,
-                    lineWidth: 1
-                )
-        )
-        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isComposerPulsing)
-        .onChange(of: speechInput.isRecording) { _, isRecording in
-            isComposerPulsing = isRecording
+        .onAppear {
+            if pasteMonitor == nil {
+                let dockModel = model
+                pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    guard event.modifierFlags.contains(.command),
+                          event.charactersIgnoringModifiers?.lowercased() == "v" else {
+                        return event
+                    }
+                    let consumed = MainActor.assumeIsolated { dockModel.pasteImageFromPasteboard() }
+                    return consumed ? nil : event
+                }
+            }
         }
-        .onChange(of: speechInput.transcript) { _, transcript in
-            if speechInput.isRecording {
-                model.draft = transcript
+        .onDisappear {
+            if let pasteMonitor {
+                NSEvent.removeMonitor(pasteMonitor)
+                self.pasteMonitor = nil
             }
         }
     }

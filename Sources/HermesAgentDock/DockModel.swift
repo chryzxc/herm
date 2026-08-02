@@ -1,5 +1,7 @@
+import AppKit
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum HermesStatus: Equatable {
     case idle, working, needsApproval, offline
@@ -73,11 +75,20 @@ struct HermesSession: Identifiable, Equatable {
     }
 }
 
+struct ImageAttachment: Identifiable {
+    let id = UUID()
+    let image: NSImage
+    let fileURL: URL
+
+    var fileName: String { fileURL.lastPathComponent }
+}
+
 @MainActor
 final class DockModel: ObservableObject {
     @Published var status: HermesStatus = .idle
     @Published var messages: [ChatMessage] = []
     @Published var draft = ""
+    @Published var pendingImage: ImageAttachment?
     @Published var isSending = false
     @Published var approvalText: String?
     @Published var debugLines: [String] = []
@@ -109,12 +120,16 @@ final class DockModel: ObservableObject {
 
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty, !isSending else { return }
+        let attachedImage = pendingImage
+        guard (!prompt.isEmpty || attachedImage != nil), !isSending else { return }
+
+        let text = (prompt.isEmpty && attachedImage != nil) ? "What do you see in this image?" : prompt
         draft = ""
-        messages.append(ChatMessage(role: .user, text: prompt))
+        pendingImage = nil
+        messages.append(ChatMessage(role: .user, text: text))
         status = .working
         isSending = true
-        DebugLog.write("model: send started (\(prompt.count) characters)")
+        DebugLog.write("model: send started (\(prompt.count) characters, image: \(attachedImage != nil))")
 
         Task {
             do {
@@ -129,14 +144,85 @@ final class DockModel: ObservableObject {
                     DebugLog.write("model: session created (id present: \(sessionID != nil))")
                 }
                 guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
-                _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": prompt])
+
+                if let attachedImage {
+                    let attachResult = try await gateway.request(
+                        "image.attach",
+                        params: ["session_id": sessionID, "path": attachedImage.fileURL.path]
+                    )
+                    DebugLog.write("model: image attached to session (\(attachResult))")
+                    cleanupImageAttachment(attachedImage)
+                }
+
+                _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
                 DebugLog.write("model: prompt submitted")
             } catch {
                 DebugLog.write("model: send failed: \(error.localizedDescription)")
+                cleanupImageAttachment(attachedImage)
                 messages.append(ChatMessage(role: .hermes, text: "I couldn’t connect to Hermes: \(error.localizedDescription)", modelName: currentModelName))
                 status = .offline
                 isSending = false
             }
+        }
+    }
+
+    @discardableResult
+    func pasteImageFromPasteboard() -> Bool {
+        let pasteboard = NSPasteboard.general
+        let imageType = pasteboard.types?.first { $0 == .png || $0 == .tiff }
+        guard let imageType,
+              let data = pasteboard.data(forType: imageType),
+              let nsImage = NSImage(data: data) else {
+            return false
+        }
+        return stageImage(nsImage)
+    }
+
+    func pickImageFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.png, .jpeg, .image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canCreateDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let nsImage = NSImage(contentsOf: url) else {
+            DebugLog.write("model: could not load image at \(url.path)")
+            return
+        }
+        pendingImage = ImageAttachment(image: nsImage, fileURL: url)
+        DebugLog.write("model: picked image \(url.lastPathComponent)")
+    }
+
+    func clearPendingImage() {
+        cleanupImageAttachment(pendingImage)
+        pendingImage = nil
+    }
+
+    @discardableResult
+    private func stageImage(_ nsImage: NSImage) -> Bool {
+        guard let tiff = nsImage.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            DebugLog.write("model: failed to encode pasted image as PNG")
+            return false
+        }
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hermes-paste-\(Int(Date().timeIntervalSince1970)).png")
+        do {
+            try png.write(to: tempURL)
+        } catch {
+            DebugLog.write("model: failed to write image temp file: \(error.localizedDescription)")
+            return false
+        }
+        pendingImage = ImageAttachment(image: nsImage, fileURL: tempURL)
+        DebugLog.write("model: staged pasted image at \(tempURL.lastPathComponent)")
+        return true
+    }
+
+    private func cleanupImageAttachment(_ attachment: ImageAttachment?) {
+        guard let attachment else { return }
+        if attachment.fileURL.path.hasPrefix(FileManager.default.temporaryDirectory.path) {
+            try? FileManager.default.removeItem(at: attachment.fileURL)
         }
     }
 
