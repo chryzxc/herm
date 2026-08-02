@@ -48,13 +48,15 @@ struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
     let text: String
+    let image: NSImage?
     let timestamp: Date
     let modelName: String?
 
-    init(id: UUID = UUID(), role: Role, text: String, timestamp: Date = Date(), modelName: String? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, timestamp: Date = Date(), modelName: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
+        self.image = image
         self.timestamp = timestamp
         self.modelName = modelName
     }
@@ -126,7 +128,7 @@ final class DockModel: ObservableObject {
         let text = (prompt.isEmpty && attachedImage != nil) ? "What do you see in this image?" : prompt
         draft = ""
         pendingImage = nil
-        messages.append(ChatMessage(role: .user, text: text))
+        messages.append(ChatMessage(role: .user, text: text, image: attachedImage?.image))
         status = .working
         isSending = true
         DebugLog.write("model: send started (\(prompt.count) characters, image: \(attachedImage != nil))")
@@ -150,6 +152,12 @@ final class DockModel: ObservableObject {
                         "image.attach",
                         params: ["session_id": sessionID, "path": attachedImage.fileURL.path]
                     )
+                    let attached = (attachResult["attached"] as? Bool) ?? false
+                    guard attached else {
+                        throw HermesGateway.GatewayError.imageAttachFailed(
+                            (attachResult["message"] as? String) ?? "Hermes could not attach the image."
+                        )
+                    }
                     DebugLog.write("model: image attached to session (\(attachResult))")
                     cleanupImageAttachment(attachedImage)
                 }

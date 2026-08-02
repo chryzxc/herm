@@ -4,11 +4,13 @@ import Foundation
 final class HermesGateway: NSObject {
     enum GatewayError: LocalizedError {
         case backendUnavailable, malformedResponse, disconnected
+        case imageAttachFailed(String)
         var errorDescription: String? {
             switch self {
             case .backendUnavailable: "Hermes could not start its local backend."
             case .malformedResponse: "Hermes returned an unreadable response."
             case .disconnected: "The connection to Hermes was lost."
+            case .imageAttachFailed(let message): message
             }
         }
     }

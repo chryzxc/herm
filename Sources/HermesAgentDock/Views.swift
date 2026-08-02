@@ -459,18 +459,27 @@ struct DockPopover: View {
                 if message.role == .user {
                     Spacer(minLength: 40)
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text(message.text.isEmpty ? "…" : message.text)
-                            .font(.system(size: 13))
-                            .textSelection(.enabled)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                Color.accentColor.opacity(0.15),
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            )
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: 280, alignment: .trailing)
+                        VStack(alignment: .trailing, spacing: 6) {
+                            if let image = message.image {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxWidth: 220, maxHeight: 220)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            Text(message.text.isEmpty ? "…" : message.text)
+                                .font(.system(size: 13))
+                                .textSelection(.enabled)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            Color.accentColor.opacity(0.15),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        )
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 280, alignment: .trailing)
 
                         Text(Self.timeFormatter.string(from: message.timestamp))
                             .font(.system(size: 9))
