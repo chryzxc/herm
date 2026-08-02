@@ -107,6 +107,7 @@ final class DockModel: ObservableObject {
     private let gateway = HermesGateway()
     private var sessionID: String?
     private var streamingMessageID: UUID?
+    private var streamingMessageIsVisionNotice = false
     private var didRestoreLatestSession = false
     private var currentModelName: String?
     private var isPopoverVisible = false
@@ -350,6 +351,7 @@ final class DockModel: ObservableObject {
             }
             messages.append(ChatMessage(role: .hermes, text: "", modelName: currentModelName))
             streamingMessageID = messages.last?.id
+            streamingMessageIsVisionNotice = false
             reasoningState = nil
             isShowingReasoning = false
             activeToolCalls = []
@@ -357,8 +359,21 @@ final class DockModel: ObservableObject {
             guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String),
                   let id = streamingMessageID,
                   let index = messages.firstIndex(where: { $0.id == id }) else { return }
-            messages[index] = ChatMessage(id: id, role: .hermes, text: messages[index].text + delta, timestamp: messages[index].timestamp, modelName: messages[index].modelName)
+            if streamingMessageIsVisionNotice { return }
+            var newText = messages[index].text + delta
+            if Self.isVisionUnsupportedError(newText) {
+                streamingMessageIsVisionNotice = true
+                newText = Self.visionUnsupportedNotice
+                activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
+            }
+            messages[index] = ChatMessage(id: id, role: .hermes, text: newText, image: messages[index].image, timestamp: messages[index].timestamp, modelName: messages[index].modelName)
         case "message.complete":
+            if let id = streamingMessageID,
+               let index = messages.firstIndex(where: { $0.id == id }),
+               Self.isVisionUnsupportedError(messages[index].text) {
+                messages[index] = ChatMessage(id: id, role: .hermes, text: Self.visionUnsupportedNotice, timestamp: messages[index].timestamp, modelName: messages[index].modelName)
+                activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
+            }
             status = .idle
             isSending = false
             streamingMessageID = nil
@@ -367,7 +382,9 @@ final class DockModel: ObservableObject {
             approvalText = (payload["command"] as? String) ?? (payload["description"] as? String) ?? "Hermes wants to perform an action."
             status = .needsApproval
         case "error":
-            messages.append(ChatMessage(role: .hermes, text: (payload["message"] as? String) ?? "Hermes reported an error.", modelName: currentModelName))
+            let raw = (payload["message"] as? String) ?? "Hermes reported an error."
+            let text = Self.isVisionUnsupportedError(raw) ? Self.visionUnsupportedNotice : raw
+            messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
             status = .idle
             isSending = false
             hasUnreadResponse = !isPopoverVisible
@@ -402,7 +419,9 @@ final class DockModel: ObservableObject {
         case "tool.result", "tool_result", "tool.complete", "tool_complete":
             let id = (payload["id"] as? String) ?? (payload["tool_id"] as? String) ?? ""
             let result = (payload["result"] as? String) ?? (payload["output"] as? String) ?? ""
-            if let index = activeToolCalls.firstIndex(where: { $0.id == id }) {
+            if Self.isVisionUnsupportedError(result) {
+                activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
+            } else if let index = activeToolCalls.firstIndex(where: { $0.id == id }) {
                 activeToolCalls[index].result = result.isEmpty ? nil : result
                 activeToolCalls[index].isComplete = true
             } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
@@ -429,6 +448,13 @@ final class DockModel: ObservableObject {
         if recentEvents.count > 40 {
             recentEvents.removeFirst(recentEvents.count - 40)
         }
+    }
+
+    private static let visionUnsupportedNotice = "This model can't read images. Use a vision-capable model in Hermes to analyze images."
+
+    private static func isVisionUnsupportedError(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        return lower.contains("does not support image")
     }
 
     private static func parseSession(_ row: [String: Any]) -> HermesSession? {
