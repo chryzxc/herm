@@ -2,7 +2,79 @@ import AppKit
 import SwiftUI
 import Foundation
 
-// MARK: - Markdown Renderer
+extension Color {
+    static let scifiBg = Color.black
+    static let scifiSurface = Color.white.opacity(0.03)
+    static let scifiSurface2 = Color.white.opacity(0.02)
+    static let scifiSurface4 = Color.white.opacity(0.04)
+    static let scifiSurface6 = Color.white.opacity(0.06)
+    static let scifiSurface8 = Color.white.opacity(0.08)
+    static let scifiBorderStrong = Color.white.opacity(0.12)
+    static let scifiBorder = Color.white.opacity(0.08)
+    static let scifiBorderLight = Color.white.opacity(0.06)
+    static let scifiAccent = Color(red: 0, green: 0.65, blue: 0.95)
+    static let scifiAccentMuted = Color(red: 0, green: 0.67, blue: 1).opacity(0.08)
+    static let scifiAccentGlow = Color(red: 0, green: 0.67, blue: 1).opacity(0.25)
+    static let scifiFg = Color(white: 0.94)
+    static let scifiMuted = Color(white: 0.58)
+    static let scifiTertiary = Color(white: 0.35)
+    static let scifiSuccess = Color(red: 0.16, green: 0.78, blue: 0.25)
+    static let scifiWarning = Color(red: 1, green: 0.74, blue: 0.18)
+    static let scifiDestructive = Color(red: 1, green: 0.37, blue: 0.34)
+}
+
+extension Animation {
+    static func scifiEase(duration: TimeInterval = 0.3) -> Animation {
+        .timingCurve(0.2, 0.8, 0.2, 1, duration: duration)
+    }
+}
+
+private struct ThinkingDots: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 4) {
+                ForEach(0..<3) { i in
+                    let p = (t + Double(i) * 0.2).truncatingRemainder(dividingBy: 1.4) / 1.4
+                    let s = 0.6 + 0.4 * max(0, sin(p * .pi * 2))
+                    Circle()
+                        .fill(Color.scifiAccent)
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(s)
+                        .opacity(s)
+                }
+            }
+        }
+    }
+}
+
+private struct MessageBubbleShape: Shape {
+    let isUser: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let r = rect
+        let big: CGFloat = 18
+        let small: CGFloat = 6
+        let tl: CGFloat = isUser ? big : small
+        let br: CGFloat = isUser ? small : big
+        return Path { p in
+            p.move(to: CGPoint(x: r.minX + tl, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX - big, y: r.minY))
+            p.addArc(center: CGPoint(x: r.maxX - big, y: r.minY + big), radius: big,
+                     startAngle: Angle(degrees: -90), endAngle: Angle(degrees: 0), clockwise: false)
+            p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - br))
+            p.addArc(center: CGPoint(x: r.maxX - br, y: r.maxY - br), radius: br,
+                     startAngle: Angle(degrees: 0), endAngle: Angle(degrees: 90), clockwise: false)
+            p.addLine(to: CGPoint(x: r.minX + big, y: r.maxY))
+            p.addArc(center: CGPoint(x: r.minX + big, y: r.maxY - big), radius: big,
+                     startAngle: Angle(degrees: 90), endAngle: Angle(degrees: 180), clockwise: false)
+            p.addLine(to: CGPoint(x: r.minX, y: r.minY + tl))
+            p.addArc(center: CGPoint(x: r.minX + tl, y: r.minY + tl), radius: tl,
+                     startAngle: Angle(degrees: 180), endAngle: Angle(degrees: 270), clockwise: false)
+            p.closeSubpath()
+        }
+    }
+}
 
 private struct MarkdownMessageView: View {
     let markdown: String
@@ -21,7 +93,7 @@ private struct MarkdownMessageView: View {
                         ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
                             if let rendered = renderedMarkdown(paragraph) {
                                 Text(rendered)
-                                    .font(.system(size: 13))
+                                    .font(.system(size: 13, design: .monospaced))
                                     .textSelection(.enabled)
                                     .lineSpacing(3)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -33,7 +105,7 @@ private struct MarkdownMessageView: View {
                         if let lang = language {
                             Text(lang)
                                 .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.scifiMuted)
                                 .textCase(.uppercase)
                                 .padding(.horizontal, 8)
                                 .padding(.top, 6)
@@ -49,8 +121,8 @@ private struct MarkdownMessageView: View {
                     }
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.primary.opacity(0.06))
-                            .stroke(Color.primary.opacity(0.10), lineWidth: 0.5)
+                            .fill(Color.scifiSurface4)
+                            .stroke(Color.scifiBorder, lineWidth: 0.5)
                     )
                 }
             }
@@ -104,8 +176,8 @@ private struct MarkdownMessageView: View {
                 markdown: groupedNumbers(in: value),
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
             )
-            str.font = .system(size: 13)
-            str.foregroundColor = .primary
+            str.font = .system(size: 13, design: .monospaced)
+            str.foregroundColor = .scifiFg
             return str
         } catch {
             return AttributedString(value)
@@ -142,46 +214,36 @@ private struct MarkdownMessageView: View {
 
 private struct ConversationBottomPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
-
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
 }
 
-// MARK: - Main Popover
-
 struct DockPopover: View {
-@ObservedObject var model: DockModel
-@State private var isConversationAtBottom = true
-@State private var isComposerPulsing = false
-@State private var pasteMonitor: Any?
-@StateObject private var speechInput = SpeechInput()
+    @ObservedObject var model: DockModel
+    @State private var isConversationAtBottom = true
+    @State private var isComposerPulsing = false
+    @State private var pasteMonitor: Any?
+    @StateObject private var speechInput = SpeechInput()
 
     var body: some View {
         VStack(spacing: 0) {
             header
             if model.isShowingSessions {
                 sessionPicker
+                Divider().overlay(Color.scifiBorderLight)
             }
-            Divider()
             conversation
-            Divider()
+            Divider().overlay(Color.scifiBorderLight)
             composer
         }
-        .frame(width: 420, height: 540)
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.4))
-        .task {
-            model.restoreLatestSessionIfNeeded()
-        }
-        .onAppear {
-            model.markPopoverVisible()
-        }
-        .onDisappear {
-            model.markPopoverHidden()
-        }
+        .frame(width: 420, height: 560)
+        .background(Color.scifiBg)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .task { model.restoreLatestSessionIfNeeded() }
+        .onAppear { model.markPopoverVisible() }
+        .onDisappear { model.markPopoverHidden() }
     }
-
-    // MARK: Header
 
     private var header: some View {
         HStack(spacing: 0) {
@@ -189,10 +251,11 @@ struct DockPopover: View {
                 HStack(spacing: 3) {
                     Text(model.currentSessionTitle ?? "Hermes")
                         .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.scifiFg)
                         .lineLimit(1)
                     Image(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.scifiMuted)
                 }
             }
             .buttonStyle(.plain)
@@ -204,33 +267,48 @@ struct DockPopover: View {
                     Button(action: { model.stop() }) {
                         Image(systemName: "square.fill")
                             .font(.system(size: 8))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.scifiMuted)
                     }
                     .buttonStyle(.plain)
                     .help("Stop")
                 }
 
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 6, height: 6)
+
                 Button(action: { model.newChat() }) {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.scifiMuted)
                 }
                 .buttonStyle(.plain)
                 .help("New chat")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .frame(height: 40)
+        .background(Color.scifiSurface2)
+        .overlay(alignment: .bottom) {
+            Color.scifiBorderLight.frame(height: 0.5)
+        }
     }
 
-    // MARK: Session Picker
+    private var statusColor: Color {
+        switch model.status {
+        case .idle: .scifiSuccess
+        case .working: .scifiAccent
+        case .needsApproval: .scifiWarning
+        case .offline: .scifiDestructive
+        }
+    }
 
     private var sessionPicker: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Conversations")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.scifiMuted)
                 Spacer()
                 if model.isLoadingSessions {
                     ProgressView()
@@ -240,7 +318,7 @@ struct DockPopover: View {
                     Button(action: { model.loadSessions() }) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.scifiMuted)
                     }
                     .buttonStyle(.plain)
                     .help("Refresh")
@@ -252,7 +330,7 @@ struct DockPopover: View {
             if model.sessions.isEmpty && !model.isLoadingSessions {
                 Text("No saved conversations")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.scifiMuted)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
             } else {
@@ -264,25 +342,26 @@ struct DockPopover: View {
                                     Text(session.displayTitle)
                                         .font(.system(size: 12))
                                         .lineLimit(1)
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(Color.scifiFg)
                                     if !session.preview.isEmpty {
                                         Text(session.preview)
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(.secondary)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundStyle(Color.scifiMuted)
                                             .lineLimit(1)
                                     }
                                 }
                                 Spacer()
                                 if let date = session.startedAt {
                                     Text(date, style: .relative)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.tertiary)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
                                 }
                             }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
                     }
                 }
@@ -293,22 +372,18 @@ struct DockPopover: View {
         }
     }
 
-    // MARK: Conversation
-
     private var conversation: some View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(model.messages) { message in
-                            if model.status == .working,
-                               message.role == .hermes,
-                               message.id == model.messages.last?.id {
-                                activityView
-                                    .id("activity")
+                        let msgList = model.messages
+                        ForEach(msgList) { message in
+                            let isLast = message.id == msgList.last?.id
+                            if model.status == .working && message.role == .hermes && isLast {
+                                activityView.id("activity")
                             }
-                            messageRow(message)
-                                .id(message.id)
+                            messageRow(message).id(message.id)
                         }
                         if model.status == .working && model.messages.last?.role != .hermes {
                             activityView
@@ -335,23 +410,24 @@ struct DockPopover: View {
                 .onPreferenceChange(ConversationBottomPreferenceKey.self) { bottomY in
                     isConversationAtBottom = bottomY <= viewport.size.height + 32
                 }
+                .animation(Animation.scifiEase(duration: 0.4), value: model.messages.count)
                 .onChange(of: model.messages.count) { _, _ in
                     if isConversationAtBottom, let last = model.messages.last {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.scifiEase(duration: 0.2)) {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
                 }
                 .onChange(of: model.activeToolCalls) { _, _ in
                     if model.status == .working && isConversationAtBottom {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.scifiEase(duration: 0.2)) {
                             proxy.scrollTo("conversationBottom", anchor: .bottom)
                         }
                     }
                 }
                 .onChange(of: model.reasoningState) { _, _ in
                     if model.status == .working && isConversationAtBottom {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.scifiEase(duration: 0.2)) {
                             proxy.scrollTo("conversationBottom", anchor: .bottom)
                         }
                     }
@@ -361,7 +437,7 @@ struct DockPopover: View {
                        let event = model.recentEvents.last,
                        isAutoScrollEvent(event.type),
                        isConversationAtBottom {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(.scifiEase(duration: 0.2)) {
                             proxy.scrollTo("conversationBottom", anchor: .bottom)
                         }
                     }
@@ -391,16 +467,14 @@ struct DockPopover: View {
             }
             if model.reasoningState == nil && model.activeToolCalls.isEmpty && importantEvents.isEmpty {
                 HStack(spacing: 5) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .scaleEffect(0.7)
-                    Text("Thinking…")
+                    ThinkingDots()
+                    Text("Thinking")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.scifiMuted)
                 }
             }
         }
-        .padding(.horizontal, 0)
+        .padding(.horizontal, 20)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -426,16 +500,16 @@ struct DockPopover: View {
     private func eventRow(_ event: AgentEvent) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Circle()
-                .fill(Color.secondary.opacity(0.5))
+                .fill(Color.scifiBorder)
                 .frame(width: 5, height: 5)
                 .padding(.top, 5)
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.type)
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.scifiMuted)
                 Text(event.detail)
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.scifiTertiary)
                     .lineLimit(1)
             }
         }
@@ -444,13 +518,13 @@ struct DockPopover: View {
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "h:mm a"
+        f.dateFormat = "HH:mm"
         return f
     }()
 
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
-        if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && message.image == nil {
             EmptyView()
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -465,23 +539,27 @@ struct DockPopover: View {
                                     .frame(maxWidth: 220, maxHeight: 220)
                                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
-                            Text(message.text.isEmpty ? "…" : message.text)
-                                .font(.system(size: 13))
-                                .textSelection(.enabled)
+                            if !message.text.isEmpty {
+                                Text(message.text)
+                                    .font(.system(size: 13))
+                                    .textSelection(.enabled)
+                            }
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            Color.accentColor.opacity(0.15),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
-                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .foregroundStyle(Color.scifiFg)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 280, alignment: .trailing)
+                        .frame(maxWidth: 310, alignment: .trailing)
+                        .background(Color.scifiAccentMuted)
+                        .clipShape(MessageBubbleShape(isUser: true))
+                        .overlay(
+                            MessageBubbleShape(isUser: true)
+                                .stroke(Color.scifiAccent.opacity(0.15), lineWidth: 0.5)
+                        )
 
                         Text(Self.timeFormatter.string(from: message.timestamp))
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Color.scifiTertiary)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
@@ -500,18 +578,20 @@ struct DockPopover: View {
                                     Text(modelName)
                                 }
                             }
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Color.scifiTertiary)
                         }
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Color.primary.opacity(0.04))
-                            .stroke(Color.primary.opacity(0.07), lineWidth: 0.5)
-                    )
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .foregroundStyle(Color.scifiFg)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.scifiSurface)
+                    .clipShape(MessageBubbleShape(isUser: false))
+                    .overlay(
+                        MessageBubbleShape(isUser: false)
+                            .stroke(Color.scifiBorder, lineWidth: 0.5)
+                    )
                 }
             }
             .padding(.horizontal, 12)
@@ -519,14 +599,12 @@ struct DockPopover: View {
         }
     }
 
-    // MARK: Activity helpers
-
     private func reasoningBlock(_ reasoning: ReasoningState) -> some View {
         DisclosureGroup(isExpanded: $model.isShowingReasoning) {
             Text(reasoning.text.isEmpty ? "…" : reasoning.text)
                 .font(.system(size: 11, design: .monospaced))
                 .textSelection(.enabled)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.scifiMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
         } label: {
@@ -541,40 +619,41 @@ struct DockPopover: View {
                         .scaleEffect(0.6)
                 }
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.scifiMuted)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                .fill(Color.scifiSurface)
+                .stroke(Color.scifiBorderLight, lineWidth: 0.5)
         )
     }
 
     private func toolCallRow(_ call: ActiveToolCall) -> some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(call.isComplete ? Color.green : Color.orange)
+                .fill(call.isComplete ? Color.scifiSuccess : Color.scifiAccent)
                 .frame(width: 6, height: 6)
             Text(call.name)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.scifiFg)
             if !call.input.isEmpty {
                 Text(call.input)
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.scifiMuted)
                     .lineLimit(1)
             }
             if call.isComplete {
                 if let result = call.result {
                     Text(result)
                         .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.scifiTertiary)
                         .lineLimit(2)
                 } else {
                     Text("done")
                         .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.scifiTertiary)
                 }
             } else {
                 ProgressView()
@@ -587,22 +666,23 @@ struct DockPopover: View {
     }
 
     private func approvalRow(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.scifiWarning)
                     .font(.system(size: 11))
                 Text("Approval required")
                     .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
             }
 
             Text(text)
                 .font(.system(size: 13))
                 .textSelection(.enabled)
-                .foregroundStyle(.primary)
+                .foregroundStyle(Color.scifiFg)
 
             HStack(spacing: 6) {
-                Button("Deny", role: .cancel) { model.respondToApproval("deny") }
+                Button("Deny") { model.respondToApproval("deny") }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                 Button("Allow") { model.respondToApproval("once") }
@@ -613,17 +693,15 @@ struct DockPopover: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.primary.opacity(0.03))
-                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+                .fill(Color.scifiSurface)
+                .stroke(Color.scifiBorderLight, lineWidth: 0.5)
         )
-        .padding(.horizontal, 12)
         .padding(.vertical, 4)
     }
 
-    // MARK: Composer
-
     private var composer: some View {
         let draftIsEmpty = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let canSend = !draftIsEmpty || model.pendingImage != nil
         return VStack(spacing: 0) {
             if let image = model.pendingImage {
                 HStack(spacing: 8) {
@@ -634,20 +712,21 @@ struct DockPopover: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     VStack(alignment: .leading, spacing: 1) {
                         Text(image.fileName)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.scifiFg)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Text("Image")
                             .font(.system(size: 9))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.scifiMuted)
                     }
                     Spacer(minLength: 4)
                     Button(action: { model.clearPendingImage() }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.scifiMuted)
                             .frame(width: 18, height: 18)
-                            .background(Circle().fill(Color.primary.opacity(0.1)))
+                            .background(Circle().fill(Color.scifiSurface6))
                     }
                     .buttonStyle(.plain)
                     .help("Remove image")
@@ -656,7 +735,7 @@ struct DockPopover: View {
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.primary.opacity(0.04))
+                        .fill(Color.scifiSurface)
                 )
                 .padding(.horizontal, 10)
                 .padding(.top, 6)
@@ -665,15 +744,19 @@ struct DockPopover: View {
             HStack(alignment: .bottom, spacing: 5) {
                 if speechInput.isRecording {
                     MicWaveform(isActive: true)
-                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .frame(maxWidth: .infinity, minHeight: 36)
                 } else {
                     Button(action: { model.pickImageFile() }) {
                         Image(systemName: "paperclip")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 28, height: 28)
+                            .foregroundStyle(Color.scifiMuted)
+                            .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.scifiSurface4)
+                    )
                     .help("Attach image")
 
                     Button(action: { speechInput.toggle() }) {
@@ -681,16 +764,20 @@ struct DockPopover: View {
                             if speechInput.isStarting {
                                 ProgressView()
                                     .controlSize(.small)
-                                    .frame(width: 28, height: 28)
+                                    .frame(width: 36, height: 36)
                             } else {
                                 Image(systemName: speechInput.isUnavailable ? "mic.slash.fill" : "mic.fill")
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(speechInput.isUnavailable ? Color.orange : Color.secondary)
-                                    .frame(width: 28, height: 28)
+                                    .foregroundStyle(speechInput.isUnavailable ? Color.scifiWarning : Color.scifiMuted)
+                                    .frame(width: 36, height: 36)
                             }
                         }
                     }
                     .buttonStyle(.plain)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.scifiSurface4)
+                    )
                     .help(
                         speechInput.isUnavailable
                         ? "Dictation requires the bundled app"
@@ -703,15 +790,14 @@ struct DockPopover: View {
                         .font(.system(size: 13))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
-                        .frame(minHeight: 38)
+                        .frame(minHeight: 36)
                         .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.primary.opacity(0.05))
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.scifiSurface)
+                                .stroke(Color.scifiBorder, lineWidth: 0.5)
                         )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-                        )
+                        .foregroundStyle(Color.scifiFg)
+                        .environment(\.colorScheme, .dark)
                         .onSubmit { model.send() }
                 }
 
@@ -726,47 +812,47 @@ struct DockPopover: View {
                         Image(systemName: "stop.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: 38, height: 38)
+                            .frame(width: 36, height: 36)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.red)
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.scifiDestructive)
                             )
                     } else {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(
-                                (draftIsEmpty && model.pendingImage == nil) || model.isSending
-                                ? Color.secondary
-                                : Color.white
+                                canSend && !model.isSending
+                                ? Color.black
+                                : Color.scifiMuted
                             )
-                            .frame(width: 38, height: 38)
+                            .frame(width: 36, height: 36)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
                                     .fill(
-                                        (draftIsEmpty && model.pendingImage == nil) || model.isSending
-                                        ? Color.primary.opacity(0.06)
-                                        : Color.accentColor
+                                        canSend && !model.isSending
+                                        ? Color.scifiAccent
+                                        : Color.scifiSurface6
                                     )
                             )
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(!speechInput.isRecording && ((draftIsEmpty && model.pendingImage == nil) || model.isSending))
+                .disabled(!speechInput.isRecording && (!canSend || model.isSending))
                 .keyboardShortcut(.return, modifiers: [.command])
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .fill(Color.red.opacity(speechInput.isRecording ? (isComposerPulsing ? 0.12 : 0.05) : 0))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.scifiDestructive.opacity(speechInput.isRecording ? (isComposerPulsing ? 0.12 : 0.05) : 0))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(
                         speechInput.isRecording
-                        ? Color.red.opacity(isComposerPulsing ? 0.65 : 0.28)
+                        ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
                         : Color.clear,
-                        lineWidth: 1
+                        lineWidth: 0.5
                     )
             )
             .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isComposerPulsing)
@@ -813,7 +899,7 @@ private struct MicWaveform: View {
                         .frame(width: 2, height: isActive ? 5 + CGFloat(abs(sin(phase)) * 13) : 3)
                 }
             }
-            .foregroundStyle(Color.red)
+            .foregroundStyle(Color.scifiAccent)
             .frame(width: 28, height: 28)
         }
     }
