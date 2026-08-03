@@ -240,8 +240,8 @@ struct DockPopover: View {
             composer
         }
         .frame(width: 420, height: 560)
-        .background(Color.scifiBg)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.ultraThinMaterial)
+        .environment(\.colorScheme, .dark)
         .task { model.restoreLatestSessionIfNeeded() }
         .onAppear { model.markPopoverVisible() }
         .onDisappear { model.markPopoverHidden() }
@@ -419,7 +419,7 @@ struct DockPopover: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.scifiBg.opacity(0.6))
+        .background(Color.clear)
     }
 
     private var chatScroll: some View {
