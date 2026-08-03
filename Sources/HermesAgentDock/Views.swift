@@ -53,20 +53,22 @@ private struct MessageBubbleShape: Shape {
 
     func path(in rect: CGRect) -> Path {
         let r = rect
-        let big: CGFloat = 18
-        let small: CGFloat = 6
-        let tl: CGFloat = isUser ? big : small
-        let br: CGFloat = isUser ? small : big
+        let b: CGFloat = 18
+        let s: CGFloat = 6
+        let tl = b
+        let tr = b
+        let br = isUser ? s : b
+        let bl = isUser ? b : s
         return Path { p in
             p.move(to: CGPoint(x: r.minX + tl, y: r.minY))
-            p.addLine(to: CGPoint(x: r.maxX - big, y: r.minY))
-            p.addArc(center: CGPoint(x: r.maxX - big, y: r.minY + big), radius: big,
+            p.addLine(to: CGPoint(x: r.maxX - tr, y: r.minY))
+            p.addArc(center: CGPoint(x: r.maxX - tr, y: r.minY + tr), radius: tr,
                      startAngle: Angle(degrees: -90), endAngle: Angle(degrees: 0), clockwise: false)
             p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - br))
             p.addArc(center: CGPoint(x: r.maxX - br, y: r.maxY - br), radius: br,
                      startAngle: Angle(degrees: 0), endAngle: Angle(degrees: 90), clockwise: false)
-            p.addLine(to: CGPoint(x: r.minX + big, y: r.maxY))
-            p.addArc(center: CGPoint(x: r.minX + big, y: r.maxY - big), radius: big,
+            p.addLine(to: CGPoint(x: r.minX + bl, y: r.maxY))
+            p.addArc(center: CGPoint(x: r.minX + bl, y: r.maxY - bl), radius: bl,
                      startAngle: Angle(degrees: 90), endAngle: Angle(degrees: 180), clockwise: false)
             p.addLine(to: CGPoint(x: r.minX, y: r.minY + tl))
             p.addArc(center: CGPoint(x: r.minX + tl, y: r.minY + tl), radius: tl,
@@ -372,18 +374,84 @@ struct DockPopover: View {
         }
     }
 
+    @ViewBuilder
     private var conversation: some View {
+        if speechInput.isRecording {
+            voiceMode
+        } else {
+            chatScroll
+        }
+    }
+
+    private var voiceMode: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            VStack(spacing: 6) {
+                if !speechInput.transcript.isEmpty {
+                    Text(speechInput.transcript)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.scifiFg)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 280)
+                } else {
+                    Text("Listening")
+                        .font(.system(size: 13, weight: .semibold))
+                        .tracking(1.0)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.scifiAccent)
+                }
+            }
+            .padding(.top, 16)
+            Spacer()
+            VoiceOrbView()
+                .frame(width: 320, height: 320)
+            Spacer()
+            VStack(spacing: 4) {
+                Text("Speak now")
+                    .font(.system(size: 13, weight: .medium))
+                    .tracking(0.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.scifiAccent)
+                Text("tap stop when done")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted.opacity(0.6))
+            }
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.scifiBg.opacity(0.6))
+    }
+
+    private var chatScroll: some View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 0) {
+                        if model.messages.isEmpty && model.status != .working {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Good to see you.")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color.scifiFg)
+                                Text("All systems nominal. How may I assist you?")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.scifiMuted)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         let msgList = model.messages
                         ForEach(msgList) { message in
                             let isLast = message.id == msgList.last?.id
                             if model.status == .working && message.role == .hermes && isLast {
                                 activityView.id("activity")
                             }
-                            messageRow(message).id(message.id)
+                            messageRow(message)
+                                .id(message.id)
+                                .transition(.asymmetric(
+                                    insertion: .opacity.combined(with: .move(edge: .bottom)).combined(with: .scale(scale: 0.97)),
+                                    removal: .opacity
+                                ))
                         }
                         if model.status == .working && model.messages.last?.role != .hermes {
                             activityView
@@ -531,6 +599,18 @@ struct DockPopover: View {
                 if message.role == .user {
                     Spacer(minLength: 40)
                     VStack(alignment: .trailing, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(Self.timeFormatter.string(from: message.timestamp))
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .foregroundStyle(Color.scifiTertiary)
+                            Text("You")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .tracking(1.0)
+                                .textCase(.uppercase)
+                                .foregroundStyle(Color.scifiMuted)
+                        }
+                        .padding(.horizontal, 4)
+
                         VStack(alignment: .trailing, spacing: 6) {
                             if let image = message.image {
                                 Image(nsImage: image)
@@ -541,12 +621,12 @@ struct DockPopover: View {
                             }
                             if !message.text.isEmpty {
                                 Text(message.text)
-                                    .font(.system(size: 13))
+                                    .font(.system(size: 14))
                                     .textSelection(.enabled)
                             }
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                         .foregroundStyle(Color.scifiFg)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 310, alignment: .trailing)
@@ -556,34 +636,36 @@ struct DockPopover: View {
                             MessageBubbleShape(isUser: true)
                                 .stroke(Color.scifiAccent.opacity(0.15), lineWidth: 0.5)
                         )
-
-                        Text(Self.timeFormatter.string(from: message.timestamp))
-                            .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundStyle(Color.scifiTertiary)
+                        .shadow(color: Color.scifiAccent.opacity(0.05), radius: 4)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text("Hermes")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .tracking(1.0)
+                                .textCase(.uppercase)
+                                .foregroundStyle(Color.scifiMuted)
+                            Text(Self.timeFormatter.string(from: message.timestamp))
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .foregroundStyle(Color.scifiTertiary)
+                            if let modelName = message.modelName {
+                                Text("· \(modelName)")
+                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .foregroundStyle(Color.scifiTertiary)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+
                         if message.text.isEmpty {
                             EmptyView()
                         } else {
                             MarkdownMessageView(markdown: message.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
-
-                        if !(model.status == .working && message.id == model.messages.last?.id) {
-                            HStack(spacing: 4) {
-                                Text(Self.timeFormatter.string(from: message.timestamp))
-                                if let modelName = message.modelName {
-                                    Text("·")
-                                    Text(modelName)
-                                }
-                            }
-                            .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundStyle(Color.scifiTertiary)
-                        }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                     .foregroundStyle(Color.scifiFg)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.scifiSurface)
@@ -743,8 +825,16 @@ struct DockPopover: View {
 
             HStack(alignment: .bottom, spacing: 5) {
                 if speechInput.isRecording {
-                    MicWaveform(isActive: true)
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.scifiDestructive)
+                            .frame(width: 6, height: 6)
+                        Text("Listening")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.scifiMuted)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                    .padding(.horizontal, 10)
                 } else {
                     Button(action: { model.pickImageFile() }) {
                         Image(systemName: "paperclip")
@@ -882,6 +972,86 @@ struct DockPopover: View {
             if let pasteMonitor {
                 NSEvent.removeMonitor(pasteMonitor)
                 self.pasteMonitor = nil
+            }
+        }
+    }
+}
+
+private struct VoiceWavePath: Shape {
+    let t: Double
+    var amplitude: Double = 12
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let cx = rect.midX
+        let cy = rect.midY
+        let base = min(rect.width, rect.height) / 2 - 14
+        let points = 80
+        for i in 0...points {
+            let angle = Double(i) / Double(points) * .pi * 2
+            let noise = sin(angle * 3 + t * 0.5) * 6
+                       + sin(angle * 5 - t * 0.3) * 4
+                       + sin(angle * 7 + t * 0.7) * 3
+            let r = base + noise + sin(t + Double(i) * 0.2) * amplitude
+            let x = cx + cos(angle) * r
+            let y = cy + sin(angle) * r
+            if i == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct VoiceOrbView: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            ZStack {
+                ForEach(0..<4) { i in
+                    let size = 140.0 + Double(i) * 60
+                    Circle()
+                        .stroke(
+                            Color.scifiAccent.opacity(i % 2 == 0 ? 0.08 : 0.05),
+                            style: StrokeStyle(lineWidth: i % 2 == 0 ? 1 : 0.5, dash: i % 2 == 0 ? [] : [3, 4])
+                        )
+                        .frame(width: size, height: size)
+                        .scaleEffect(1 + 0.1 * sin(t * 0.8 + Double(i) * 0.5))
+                        .opacity(0.25 + 0.15 * sin(t * 0.8 + Double(i) * 0.5))
+                }
+
+                ForEach(0..<48) { i in
+                    let barH = 4 + 16 * (1 + sin(t * 4 + Double(i) * 0.4)) / 2
+                    Capsule()
+                        .fill(Color.scifiAccent)
+                        .frame(width: 2, height: barH)
+                        .offset(y: -92)
+                        .rotationEffect(.degrees(Double(i) / 48 * 360))
+                        .opacity(0.4)
+                }
+
+                VoiceWavePath(t: t)
+                    .stroke(Color.scifiAccent.opacity(0.5), lineWidth: 1.5)
+                    .frame(width: 200, height: 200)
+
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Color.scifiAccent.opacity(0.3), Color.scifiAccent.opacity(0.12), Color.scifiAccent.opacity(0.04)],
+                            center: UnitPoint(x: 0.35, y: 0.35),
+                            startRadius: 0,
+                            endRadius: 55
+                        )
+                    )
+                    .frame(width: 90, height: 90)
+                    .overlay(Circle().stroke(Color.scifiAccent.opacity(0.2), lineWidth: 0.5))
+                    .shadow(color: Color.scifiAccent.opacity(0.25), radius: 30)
+                    .scaleEffect(1 + 0.08 * sin(t * .pi))
+                    .overlay {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 32))
+                            .foregroundStyle(Color.scifiAccent)
+                            .scaleEffect(1 - 0.12 * (1 + sin(t * .pi * 1.6)) / 2)
+                    }
             }
         }
     }
