@@ -226,6 +226,7 @@ struct DockPopover: View {
     @State private var isConversationAtBottom = true
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
+    @State private var showingImagePicker = false
     @StateObject private var speechInput = SpeechInput()
 
     var body: some View {
@@ -242,6 +243,11 @@ struct DockPopover: View {
         .frame(width: 420, height: 560)
         .background(.ultraThinMaterial)
         .environment(\.colorScheme, .dark)
+        .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image]) { result in
+            if case .success(let url) = result {
+                model.stageImageFile(at: url)
+            }
+        }
         .task { model.restoreLatestSessionIfNeeded() }
         .onAppear { model.markPopoverVisible() }
         .onDisappear { model.markPopoverHidden() }
@@ -836,7 +842,7 @@ struct DockPopover: View {
                     .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
                     .padding(.horizontal, 10)
                 } else {
-                    Button(action: { model.pickImageFile() }) {
+                    Button(action: { showingImagePicker = true }) {
                         Image(systemName: "paperclip")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.scifiMuted)

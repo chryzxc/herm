@@ -187,13 +187,9 @@ final class DockModel: ObservableObject {
         return stageImage(nsImage)
     }
 
-    func pickImageFile() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .image]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canCreateDirectories = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    func stageImageFile(at url: URL) {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard let nsImage = NSImage(contentsOf: url) else {
             DebugLog.write("model: could not load image at \(url.path)")
             return
