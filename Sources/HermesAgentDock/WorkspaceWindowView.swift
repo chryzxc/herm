@@ -129,6 +129,9 @@ struct WorkspaceWindowView: View {
                 stateRow(icon: "bubble.left.and.bubble.right", title: "Conversation", detail: "\(model.messages.count) messages", color: Color.scifiMuted)
             }
 
+            sectionLabel("TEAM")
+            teamContent
+
             if let approval = model.approvalText {
                 sectionLabel("DECISION REQUIRED")
                 Text(approval).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiWarning)
@@ -153,6 +156,31 @@ struct WorkspaceWindowView: View {
                     activityRow(title: call.name, detail: call.isComplete ? "Completed" : "Running", icon: "wrench.and.screwdriver")
                 }
             }
+        }
+    }
+
+    private var teamContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(WorkspaceAgentRole.allCases) { role in
+                let run = store.agentRuns.first(where: { $0.role == role && $0.taskID == activeTask?.id })
+                HStack(spacing: 9) {
+                    Circle().fill(agentColor(run?.status)).frame(width: 7, height: 7)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(role.rawValue).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.scifiFg)
+                        Text(run?.status.rawValue.uppercased() ?? "NOT STARTED")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.6)
+                            .foregroundStyle(agentColor(run?.status))
+                    }
+                    Spacer()
+                    if run == nil {
+                        Button("Queue") { _ = store.queueAgent(role, for: activeTask?.id) }
+                            .font(.system(size: 10, weight: .medium)).buttonStyle(.borderless).tint(Color.scifiAccent)
+                    }
+                }
+            }
+            Text("Runs are queued explicitly until multi-session event routing is enabled.")
+                .font(.system(size: 10)).foregroundStyle(Color.scifiTertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -320,6 +348,16 @@ struct WorkspaceWindowView: View {
         case .awaitingApproval: .scifiWarning
         case .readyForReview: .scifiSuccess
         case .done: .scifiTertiary
+        }
+    }
+
+    private func agentColor(_ status: WorkspaceAgentStatus?) -> Color {
+        switch status {
+        case .queued: .scifiMuted
+        case .running: .scifiAccent
+        case .blocked: .scifiWarning
+        case .complete: .scifiSuccess
+        case nil: .scifiTertiary
         }
     }
 
