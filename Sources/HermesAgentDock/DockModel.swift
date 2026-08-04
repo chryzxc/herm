@@ -454,7 +454,7 @@ final class DockModel: ObservableObject {
             DebugLog.write("model: unknown event type: \(type) params: \(params.keys.sorted().joined(separator: ", "))")
             break
         }
-        if type.hasPrefix("tool.") || type == "message.complete" {
+        if type.hasPrefix("tool.") || type.hasPrefix("subagent.") || type == "message.complete" {
             refreshDelegationStatus()
         }
     }

@@ -221,28 +221,140 @@ private struct ConversationBottomPreferenceKey: PreferenceKey {
     }
 }
 
+private struct WorkspaceActivitySidebar: View {
+    @ObservedObject var model: DockModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("WORKSPACE")
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.scifiAccent)
+                Spacer()
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 6, height: 6)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 40)
+            .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    sectionLabel("BACKGROUND AGENTS")
+                    if model.activeSubagents.isEmpty {
+                        emptyState(icon: "person.2", title: "No active agents", detail: "Hermes delegates substantial work in the background. Live agents will appear here.")
+                    } else {
+                        ForEach(model.activeSubagents) { agent in
+                            HStack(alignment: .top, spacing: 9) {
+                                Circle().fill(nativeAgentColor(agent.status)).frame(width: 7, height: 7).padding(.top, 4)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(agent.goal).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(3)
+                                    Text("\(agent.status.uppercased()) · \(agent.toolCount) TOOLS\(agent.model.map { " · \($0)" } ?? "")")
+                                        .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.5)
+                                        .foregroundStyle(nativeAgentColor(agent.status))
+                                }
+                            }
+                            .padding(10)
+                            .background(Color.scifiSurface4)
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.scifiBorder, lineWidth: 0.5))
+                        }
+                    }
+
+                    sectionLabel("LIVE ACTIVITY")
+                    if model.activeToolCalls.isEmpty {
+                        Text("No active tools")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.scifiMuted)
+                    } else {
+                        ForEach(model.activeToolCalls) { call in
+                            HStack(spacing: 8) {
+                                Image(systemName: "wrench.and.screwdriver").font(.system(size: 11)).foregroundStyle(Color.scifiAccent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(call.name).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(Color.scifiFg)
+                                    Text(call.isComplete ? "COMPLETE" : "RUNNING").font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiMuted)
+                                }
+                            }
+                        }
+                    }
+
+                    if let approval = model.approvalText {
+                        sectionLabel("APPROVAL NEEDED")
+                        Text(approval).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiWarning).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(16)
+            }
+        }
+        .background(Color.scifiSurface)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func sectionLabel(_ title: String) -> some View {
+        Text(title).font(.system(size: 10, weight: .semibold)).tracking(1.1).foregroundStyle(Color.scifiMuted)
+    }
+
+    private func emptyState(icon: String, title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon).foregroundStyle(Color.scifiTertiary)
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
+            Text(detail).font(.system(size: 11)).foregroundStyle(Color.scifiMuted).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func nativeAgentColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "running", "finalizing": .scifiAccent
+        case "complete", "completed": .scifiSuccess
+        case "blocked", "stalled", "error": .scifiWarning
+        default: .scifiMuted
+        }
+    }
+
+    private var statusColor: Color {
+        switch model.status {
+        case .idle: .scifiSuccess
+        case .working: .scifiAccent
+        case .needsApproval: .scifiWarning
+        case .offline: .scifiDestructive
+        }
+    }
+}
+
 struct DockPopover: View {
     @ObservedObject var model: DockModel
-    @Environment(\.openWindow) private var openWindow
     @State private var isConversationAtBottom = true
+    @State private var isWorkspaceManuallyExpanded = false
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
     @StateObject private var speechInput = SpeechInput()
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            if model.isShowingSessions {
-                sessionPicker
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                header
+                if model.isShowingSessions {
+                    sessionPicker
+                    Divider().overlay(Color.scifiBorderLight)
+                }
+                conversation
                 Divider().overlay(Color.scifiBorderLight)
+                composer
             }
-            conversation
-            Divider().overlay(Color.scifiBorderLight)
-            composer
+            .frame(width: 420, height: 560)
+
+            if isWorkspaceVisible {
+                Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5)
+                WorkspaceActivitySidebar(model: model)
+                    .frame(width: 310, height: 560)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
-        .frame(width: 420, height: 560)
+        .frame(width: isWorkspaceVisible ? 730.5 : 420, height: 560)
         .background(.ultraThinMaterial)
+        .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisible)
         .environment(\.colorScheme, .dark)
         .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image]) { result in
             if case .success(let url) = result {
@@ -252,6 +364,10 @@ struct DockPopover: View {
         .task { model.restoreLatestSessionIfNeeded() }
         .onAppear { model.markPopoverVisible() }
         .onDisappear { model.markPopoverHidden() }
+    }
+
+    private var isWorkspaceVisible: Bool {
+        isWorkspaceManuallyExpanded || !model.activeSubagents.isEmpty
     }
 
     private var header: some View {
@@ -272,13 +388,13 @@ struct DockPopover: View {
             Spacer()
 
             HStack(spacing: 10) {
-                Button(action: { openWindow(id: "workspace") }) {
-                    Image(systemName: "rectangle.split.2x1")
+                Button(action: { isWorkspaceManuallyExpanded.toggle() }) {
+                    Image(systemName: isWorkspaceVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.scifiMuted)
                 }
                 .buttonStyle(.plain)
-                .help("Open Workspace")
+                .help(isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
 
                 if model.status == .working || model.isSending {
                     Button(action: { model.stop() }) {
