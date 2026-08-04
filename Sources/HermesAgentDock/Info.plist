@@ -5,9 +5,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.christian.HermesAgentDock</string>
     <key>CFBundleName</key>
-    <string>HermesAgentDock</string>
+    <string>HermesWorkspace</string>
     <key>CFBundleDisplayName</key>
-    <string>Hermes Agent Dock</string>
+    <string>Hermes Workspace</string>
     <key>CFBundleExecutable</key>
     <string>HermesAgentDock</string>
     <key>LSUIElement</key>

@@ -223,6 +223,7 @@ private struct ConversationBottomPreferenceKey: PreferenceKey {
 
 struct DockPopover: View {
     @ObservedObject var model: DockModel
+    @Environment(\.openWindow) private var openWindow
     @State private var isConversationAtBottom = true
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
@@ -271,6 +272,14 @@ struct DockPopover: View {
             Spacer()
 
             HStack(spacing: 10) {
+                Button(action: { openWindow(id: "workspace") }) {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.scifiMuted)
+                }
+                .buttonStyle(.plain)
+                .help("Open Workspace")
+
                 if model.status == .working || model.isSending {
                     Button(action: { model.stop() }) {
                         Image(systemName: "square.fill")

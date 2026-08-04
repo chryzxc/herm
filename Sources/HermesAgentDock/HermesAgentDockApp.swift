@@ -24,5 +24,12 @@ struct HermesAgentDockApp: App {
                 }
         }
         .menuBarExtraStyle(.window)
+
+        Window("Hermes Workspace", id: "workspace") {
+            WorkspaceWindowView(model: model)
+                .frame(minWidth: 920, minHeight: 620)
+        }
+        .defaultSize(width: 1180, height: 760)
+        .windowResizability(.contentSize)
     }
 }
