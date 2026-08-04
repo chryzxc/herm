@@ -44,6 +44,14 @@ struct AgentEvent: Identifiable, Equatable {
     let detail: String
 }
 
+struct HermesSubagent: Identifiable, Equatable {
+    let id: String
+    let goal: String
+    let status: String
+    let model: String?
+    let toolCount: Int
+}
+
 struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
@@ -103,6 +111,7 @@ final class DockModel: ObservableObject {
     @Published var activeToolCalls: [ActiveToolCall] = []
     @Published var hasUnreadResponse = false
     @Published var recentEvents: [AgentEvent] = []
+    @Published var activeSubagents: [HermesSubagent] = []
 
     private let gateway = HermesGateway()
     private var sessionID: String?
@@ -111,6 +120,7 @@ final class DockModel: ObservableObject {
     private var didRestoreLatestSession = false
     private var currentModelName: String?
     private var isPopoverVisible = false
+    private var isRefreshingDelegationStatus = false
 
     init() {
         DebugLog.onLine = { [weak self] line in
@@ -163,7 +173,7 @@ final class DockModel: ObservableObject {
                     cleanupImageAttachment(attachedImage)
                 }
 
-                _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
+                _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text + Self.workspaceDelegationInstruction])
                 DebugLog.write("model: prompt submitted")
             } catch {
                 DebugLog.write("model: send failed: \(error.localizedDescription)")
@@ -444,6 +454,33 @@ final class DockModel: ObservableObject {
             DebugLog.write("model: unknown event type: \(type) params: \(params.keys.sorted().joined(separator: ", "))")
             break
         }
+        if type.hasPrefix("tool.") || type == "message.complete" {
+            refreshDelegationStatus()
+        }
+    }
+
+    func refreshDelegationStatus() {
+        guard !isRefreshingDelegationStatus else { return }
+        isRefreshingDelegationStatus = true
+        Task {
+            defer { isRefreshingDelegationStatus = false }
+            do {
+                let result = try await gateway.request("delegation.status", params: [:])
+                let rows = result["active"] as? [[String: Any]] ?? []
+                activeSubagents = rows.compactMap { row in
+                    guard let id = row["subagent_id"] as? String else { return nil }
+                    return HermesSubagent(
+                        id: id,
+                        goal: row["goal"] as? String ?? "Hermes subagent",
+                        status: row["status"] as? String ?? "running",
+                        model: row["model"] as? String,
+                        toolCount: (row["tool_count"] as? NSNumber)?.intValue ?? 0
+                    )
+                }
+            } catch {
+                DebugLog.write("workspace: delegation status failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     private func recordEvent(_ type: String, params: [String: Any]) {
@@ -462,6 +499,11 @@ final class DockModel: ObservableObject {
     }
 
     private static let visionUnsupportedNotice = "This model can't read images. Use a vision-capable model in Hermes to analyze images."
+    private static let workspaceDelegationInstruction = """
+
+
+[Hermes Workspace policy: You are the primary agent. For substantial development work that benefits from parallel investigation, implementation, review, or verification, use your native delegate_task tool with complete goal and repository context. Use background delegation when appropriate, then give the user a concise normal-chat update. Do not delegate small conversational requests.]
+"""
 
     private static func isVisionUnsupportedError(_ text: String) -> Bool {
         let lower = text.lowercased()

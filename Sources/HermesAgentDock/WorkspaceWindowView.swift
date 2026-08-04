@@ -161,37 +161,22 @@ struct WorkspaceWindowView: View {
 
     private var teamContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(WorkspaceAgentRole.allCases) { role in
-                let run = store.agentRuns.first(where: { $0.role == role && $0.taskID == activeTask?.id })
+            if model.activeSubagents.isEmpty {
+                emptyState(icon: "person.2", title: "No background agents", detail: "When Hermes delegates substantial work, its live subagents appear here automatically.")
+            }
+            ForEach(model.activeSubagents) { agent in
                 HStack(spacing: 9) {
-                    Circle().fill(agentColor(run?.status)).frame(width: 7, height: 7)
+                    Circle().fill(nativeAgentColor(agent.status)).frame(width: 7, height: 7)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(role.rawValue).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.scifiFg)
-                        Text(run?.status.rawValue.uppercased() ?? "NOT STARTED")
+                        Text(agent.goal).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(2)
+                        Text("\(agent.status.uppercased()) · \(agent.toolCount) TOOLS\(agent.model.map { " · \($0)" } ?? "")")
                             .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.6)
-                            .foregroundStyle(agentColor(run?.status))
+                            .foregroundStyle(nativeAgentColor(agent.status))
                     }
                     Spacer()
-                    if run?.status != .running {
-                        Button(run == nil ? "Start" : "Restart") { startAgent(role) }
-                            .font(.system(size: 10, weight: .medium)).buttonStyle(.borderless).tint(Color.scifiAccent)
-                    }
-                }
-                if let run, let error = run.errorMessage, !error.isEmpty {
-                    Text(error)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.scifiWarning)
-                        .lineLimit(2)
-                        .padding(.leading, 16)
-                } else if let run, !run.summary.isEmpty {
-                    Text(run.summary)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
-                        .lineLimit(3)
-                        .padding(.leading, 16)
                 }
             }
-            Text("Each role runs in a separate Hermes session. Background roles are analysis-only until isolated worktrees are available.")
+            Text("These are native Hermes delegate_task children, not app-created sessions.")
                 .font(.system(size: 10)).foregroundStyle(Color.scifiTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -241,12 +226,9 @@ struct WorkspaceWindowView: View {
             ForEach(store.tasks) { task in
                 taskRow(task: task)
             }
-            Button { createTaskFromConversation() } label: {
-                Label("Create task from conversation", systemImage: "plus")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.scifiAccent)
+            if store.tasks.isEmpty {
+                emptyState(icon: "bubble.left.and.bubble.right", title: "Waiting for a development task", detail: "Ask Hermes to build, fix, review, debug, or investigate something. Background agents will appear automatically when needed.")
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -338,11 +320,6 @@ struct WorkspaceWindowView: View {
         return task
     }
 
-    private func startAgent(_ role: WorkspaceAgentRole) {
-        let task = activeTask ?? createTaskFromConversation()
-        selectedTaskID = task.id
-        store.startAgent(role, for: task.id)
-    }
 
     private func syncTaskStatus(_ status: HermesStatus) {
         guard let task = activeTask else { return }
@@ -379,6 +356,15 @@ struct WorkspaceWindowView: View {
         case .blocked: .scifiWarning
         case .complete: .scifiSuccess
         case nil: .scifiTertiary
+        }
+    }
+
+    private func nativeAgentColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "running", "finalizing": .scifiAccent
+        case "complete", "completed": .scifiSuccess
+        case "blocked", "stalled", "error": .scifiWarning
+        default: .scifiMuted
         }
     }
 
