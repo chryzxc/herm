@@ -157,7 +157,8 @@ final class WorkspaceStore: ObservableObject {
         guard !agentRuns.contains(where: { $0.role == role && $0.taskID == taskID && $0.status == .running }) else { return }
 
         let run = queueAgent(role, for: taskID)
-        let gateway = HermesGateway(workingDirectory: task.projectPath.map { URL(fileURLWithPath: $0, isDirectory: true) })
+        let repositoryPath = task.projectPath ?? projectPath
+        let gateway = HermesGateway(workingDirectory: repositoryPath.map { URL(fileURLWithPath: $0, isDirectory: true) })
         agentGateways[run.id] = gateway
         gateway.onEvent = { [weak self] type, params in
             self?.handleAgentEvent(type, params: params, runID: run.id)
@@ -174,7 +175,7 @@ final class WorkspaceStore: ObservableObject {
                 self.updateAgent(run.id, status: .running, sessionID: sessionID)
                 _ = try await gateway.request("prompt.submit", params: [
                     "session_id": sessionID,
-                    "text": self.agentPrompt(role: role, task: task)
+                    "text": self.agentPrompt(role: role, task: task, repositoryPath: repositoryPath)
                 ])
             } catch {
                 self.updateAgent(run.id, status: .blocked, errorMessage: error.localizedDescription)
@@ -206,8 +207,8 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    private func agentPrompt(role: WorkspaceAgentRole, task: WorkspaceTask) -> String {
-        let repository = task.projectPath.map { "Repository: \($0)" } ?? "No repository is attached."
+    private func agentPrompt(role: WorkspaceAgentRole, task: WorkspaceTask, repositoryPath: String?) -> String {
+        let repository = repositoryPath.map { "Repository: \($0)" } ?? "No repository is attached."
         let roleInstruction: String
         switch role {
         case .planner:

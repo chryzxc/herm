@@ -172,8 +172,8 @@ struct WorkspaceWindowView: View {
                             .foregroundStyle(agentColor(run?.status))
                     }
                     Spacer()
-                    if run == nil {
-                        Button("Start") { store.startAgent(role, for: activeTask?.id) }
+                    if run?.status != .running {
+                        Button(run == nil ? "Start" : "Restart") { startAgent(role) }
                             .font(.system(size: 10, weight: .medium)).buttonStyle(.borderless).tint(Color.scifiAccent)
                     }
                 }
@@ -330,10 +330,18 @@ struct WorkspaceWindowView: View {
         selectedTaskID = task.id
     }
 
-    private func createTaskFromConversation() {
+    @discardableResult
+    private func createTaskFromConversation() -> WorkspaceTask {
         let title = model.currentSessionTitle ?? model.messages.last(where: { $0.role == .user })?.text ?? "Current Hermes task"
         let task = store.createTask(title: String(title.prefix(100)), sessionID: nil)
         selectedTaskID = task.id
+        return task
+    }
+
+    private func startAgent(_ role: WorkspaceAgentRole) {
+        let task = activeTask ?? createTaskFromConversation()
+        selectedTaskID = task.id
+        store.startAgent(role, for: task.id)
     }
 
     private func syncTaskStatus(_ status: HermesStatus) {
