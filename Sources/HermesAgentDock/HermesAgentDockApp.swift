@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct HermesAgentDockApp: App {
     @StateObject private var model = DockModel()
+    @StateObject private var workspaceStore = WorkspaceStore()
 
     var body: some Scene {
         MenuBarExtra {
@@ -26,7 +27,7 @@ struct HermesAgentDockApp: App {
         .menuBarExtraStyle(.window)
 
         Window("Hermes Workspace", id: "workspace") {
-            WorkspaceWindowView(model: model)
+            WorkspaceWindowView(model: model, store: workspaceStore)
                 .frame(minWidth: 920, minHeight: 620)
         }
         .defaultSize(width: 1180, height: 760)

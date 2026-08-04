@@ -4,9 +4,9 @@ import SwiftUI
 /// while this inspector makes Hermes' current work legible at a glance.
 struct WorkspaceWindowView: View {
     @ObservedObject var model: DockModel
+    @ObservedObject var store: WorkspaceStore
     @State private var selectedTab: WorkspaceTab = .now
-    @State private var taskTitle = "Current Hermes task"
-    @State private var isTaskActive = true
+    @State private var selectedTaskID: UUID?
 
     enum WorkspaceTab: String, CaseIterable, Identifiable {
         case now = "Now"
@@ -35,6 +35,9 @@ struct WorkspaceWindowView: View {
         }
         .background(Color.scifiBg)
         .environment(\.colorScheme, .dark)
+        .onAppear { ensureActiveTask() }
+        .onChange(of: model.status) { _, status in syncTaskStatus(status) }
+        .onChange(of: model.currentSessionTitle) { _, _ in ensureActiveTask() }
     }
 
     private var workspaceHeader: some View {
@@ -43,7 +46,7 @@ struct WorkspaceWindowView: View {
                 Text("HERMES WORKSPACE")
                     .font(.system(size: 10, weight: .semibold)).tracking(1.6)
                     .foregroundStyle(Color.scifiAccent)
-                Text(taskTitle)
+                Text(activeTaskTitle)
                     .font(.system(size: 16, weight: .semibold)).foregroundStyle(Color.scifiFg)
                     .lineLimit(1)
             }
@@ -97,18 +100,18 @@ struct WorkspaceWindowView: View {
             sectionLabel("CURRENT TASK")
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
-                    Image(systemName: isTaskActive ? "circle.dotted" : "checkmark.circle.fill")
-                        .foregroundStyle(isTaskActive ? Color.scifiAccent : Color.scifiSuccess)
+                    Image(systemName: isTaskInProgress ? "circle.dotted" : "checkmark.circle.fill")
+                        .foregroundStyle(isTaskInProgress ? Color.scifiAccent : Color.scifiSuccess)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(taskTitle).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.scifiFg)
+                        Text(activeTaskTitle).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.scifiFg)
                         Text("Linked to the active Hermes conversation").font(.system(size: 11)).foregroundStyle(Color.scifiMuted)
                     }
                     Spacer()
                 }
                 HStack {
-                    Text(isTaskActive ? "IN PROGRESS" : "READY")
+                    Text(isTaskInProgress ? "IN PROGRESS" : "READY")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(0.8)
-                        .foregroundStyle(isTaskActive ? Color.scifiAccent : Color.scifiSuccess)
+                        .foregroundStyle(isTaskInProgress ? Color.scifiAccent : Color.scifiSuccess)
                     Spacer(); Text("Live").font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
                 }
             }
@@ -150,12 +153,19 @@ struct WorkspaceWindowView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 sectionLabel("TASKS"); Spacer()
-                Button { isTaskActive.toggle() } label: {
-                    Image(systemName: isTaskActive ? "checkmark.circle" : "arrow.uturn.backward.circle").foregroundStyle(Color.scifiMuted)
-                }.buttonStyle(.plain).help(isTaskActive ? "Mark task ready" : "Reopen task")
+                Button { toggleActiveTask() } label: {
+                    Image(systemName: isTaskInProgress ? "checkmark.circle" : "arrow.uturn.backward.circle").foregroundStyle(Color.scifiMuted)
+                }.buttonStyle(.plain).help(isTaskInProgress ? "Mark task ready" : "Reopen task")
             }
-            taskRow(title: taskTitle, state: isTaskActive ? "In progress" : "Ready for review", color: isTaskActive ? Color.scifiAccent : Color.scifiSuccess)
-            emptyState(icon: "plus", title: "Create from conversation", detail: "Formal task persistence arrives in the next workspace phase.")
+            ForEach(store.tasks) { task in
+                taskRow(task: task)
+            }
+            Button { createTaskFromConversation() } label: {
+                Label("Create task from conversation", systemImage: "plus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.scifiAccent)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -164,7 +174,7 @@ struct WorkspaceWindowView: View {
     }
 
     private func stateRow(icon: String, title: String, detail: String, color: Color) -> some View {
-        HStack(spacing: 10) {
+        return HStack(spacing: 10) {
             Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 20)
             Text(title).font(.system(size: 12)).foregroundStyle(Color.scifiFg)
             Spacer(); Text(detail).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(1)
@@ -181,12 +191,13 @@ struct WorkspaceWindowView: View {
         }.padding(.vertical, 3)
     }
 
-    private func taskRow(title: String, state: String, color: Color) -> some View {
-        HStack(spacing: 10) {
+    private func taskRow(task: WorkspaceTask) -> some View {
+        let color = taskColor(task.status)
+        return HStack(spacing: 10) {
             Circle().fill(color).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
-                Text(state.uppercased()).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.7).foregroundStyle(color)
+                Text(task.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(2)
+                Text(task.status.rawValue.uppercased()).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.7).foregroundStyle(color)
             }; Spacer()
         }.padding(12).background(Color.scifiSurface4)
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
@@ -216,5 +227,59 @@ struct WorkspaceWindowView: View {
         if value.contains("tool") { return "wrench.and.screwdriver" }
         if value.contains("message") { return "bubble.left" }
         return "circle.dotted"
+    }
+
+    private var activeTask: WorkspaceTask? {
+        if let selectedTaskID, let task = store.tasks.first(where: { $0.id == selectedTaskID }) { return task }
+        return store.activeTask
+    }
+
+    private var activeTaskTitle: String {
+        activeTask?.title ?? model.currentSessionTitle ?? "Current Hermes task"
+    }
+
+    private var isTaskInProgress: Bool {
+        activeTask?.status == .inProgress
+    }
+
+    private func ensureActiveTask() {
+        guard activeTask == nil, model.currentSessionTitle != nil || !model.messages.isEmpty else { return }
+        let title = model.currentSessionTitle ?? model.messages.first(where: { $0.role == .user })?.text ?? "Current Hermes task"
+        let task = store.createTask(title: String(title.prefix(100)), sessionID: nil)
+        selectedTaskID = task.id
+    }
+
+    private func createTaskFromConversation() {
+        let title = model.currentSessionTitle ?? model.messages.last(where: { $0.role == .user })?.text ?? "Current Hermes task"
+        let task = store.createTask(title: String(title.prefix(100)), sessionID: nil)
+        selectedTaskID = task.id
+    }
+
+    private func syncTaskStatus(_ status: HermesStatus) {
+        guard let task = activeTask else { return }
+        switch status {
+        case .working: store.updateStatus(.inProgress, for: task.id)
+        case .needsApproval: store.updateStatus(.awaitingApproval, for: task.id)
+        case .idle where task.status == .inProgress: store.updateStatus(.readyForReview, for: task.id)
+        default: break
+        }
+    }
+
+    private func toggleActiveTask() {
+        guard let task = activeTask else {
+            createTaskFromConversation()
+            return
+        }
+        store.updateStatus(task.status == .done || task.status == .readyForReview ? .inProgress : .readyForReview, for: task.id)
+    }
+
+    private func taskColor(_ status: WorkspaceTaskStatus) -> Color {
+        switch status {
+        case .todo: .scifiMuted
+        case .inProgress: .scifiAccent
+        case .awaitingApproval: .scifiWarning
+        case .readyForReview: .scifiSuccess
+        case .done: .scifiTertiary
+        }
     }
 }
