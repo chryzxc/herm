@@ -173,12 +173,25 @@ struct WorkspaceWindowView: View {
                     }
                     Spacer()
                     if run == nil {
-                        Button("Queue") { _ = store.queueAgent(role, for: activeTask?.id) }
+                        Button("Start") { store.startAgent(role, for: activeTask?.id) }
                             .font(.system(size: 10, weight: .medium)).buttonStyle(.borderless).tint(Color.scifiAccent)
                     }
                 }
+                if let run, let error = run.errorMessage, !error.isEmpty {
+                    Text(error)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.scifiWarning)
+                        .lineLimit(2)
+                        .padding(.leading, 16)
+                } else if let run, !run.summary.isEmpty {
+                    Text(run.summary)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                        .lineLimit(3)
+                        .padding(.leading, 16)
+                }
             }
-            Text("Runs are queued explicitly until multi-session event routing is enabled.")
+            Text("Each role runs in a separate Hermes session. Background roles are analysis-only until isolated worktrees are available.")
                 .font(.system(size: 10)).foregroundStyle(Color.scifiTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

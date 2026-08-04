@@ -16,6 +16,7 @@ final class HermesGateway: NSObject {
     }
 
     var onEvent: ((String, [String: Any]) -> Void)?
+    private let workingDirectory: URL?
     private var backend: Process?
     private var urlSession: URLSession?
     private var socket: URLSessionWebSocketTask?
@@ -26,6 +27,11 @@ final class HermesGateway: NSObject {
     private var timeoutTasks: [Int: Task<Void, Never>] = [:]
     private var backendOutput = ""
     private var backendStartWaiters: [CheckedContinuation<Void, Error>] = []
+
+    init(workingDirectory: URL? = nil) {
+        self.workingDirectory = workingDirectory
+        super.init()
+    }
 
     deinit {
         socket?.cancel(with: .goingAway, reason: nil)
@@ -179,6 +185,7 @@ final class HermesGateway: NSObject {
             let stdout = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = ["hermes", "serve", "--host", "127.0.0.1", "--port", "0"]
+            process.currentDirectoryURL = workingDirectory
             var environment = ProcessInfo.processInfo.environment
             let currentPath = environment["PATH"] ?? "/usr/local/bin:/usr/bin:/bin"
             if !currentPath.split(separator: ":").contains("/Users/christian/.local/bin") {
