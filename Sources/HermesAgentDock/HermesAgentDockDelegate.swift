@@ -1,0 +1,156 @@
+import AppKit
+import Combine
+import SwiftUI
+
+@MainActor
+final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate {
+    private let model = DockModel()
+    private var dockPanel: DockPanelController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        dockPanel = DockPanelController(model: model)
+    }
+}
+
+@MainActor
+private final class DockPanelController: NSObject, NSWindowDelegate {
+    private enum Metrics {
+        static let compactWidth: CGFloat = 420
+        static let workspaceWidth: CGFloat = 730.5
+        static let height: CGFloat = 560
+        static let screenInset: CGFloat = 12
+        static let menuGap: CGFloat = 8
+    }
+
+    private let model: DockModel
+    private let statusItem: NSStatusItem
+    private let panel: DockPanel
+    private var cancellables = Set<AnyCancellable>()
+    private var outsideClickMonitor: Any?
+    private var desiredWidth = Metrics.compactWidth
+
+    init(model: DockModel) {
+        self.model = model
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        panel = DockPanel(
+            contentRect: NSRect(x: 0, y: 0, width: Metrics.compactWidth, height: Metrics.height),
+            styleMask: [.borderless, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        super.init()
+
+        configureStatusItem()
+        configurePanel()
+        observeModel()
+        observeOutsideClicks()
+    }
+
+    private func configureStatusItem() {
+        guard let button = statusItem.button else { return }
+        button.image = NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: "Hermes")
+        button.imagePosition = .imageOnly
+        button.target = self
+        button.action = #selector(togglePanel)
+        button.sendAction(on: [.leftMouseUp])
+    }
+
+    private func configurePanel() {
+        panel.delegate = self
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.onCancel = { [weak self] in self?.hide() }
+        panel.contentView = NSHostingView(
+            rootView: DockPopover(model: model, onWorkspaceWidthChange: { [weak self] width in
+                self?.resizePanel(to: width)
+            })
+        )
+    }
+
+    private func observeModel() {
+        model.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.updateStatusIcon() }
+            .store(in: &cancellables)
+    }
+
+    private func observeOutsideClicks() {
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.hide()
+            }
+        }
+    }
+
+    private func updateStatusIcon() {
+        let symbol = model.hasUnreadResponse
+            ? "bubble.left.and.bubble.right.fill"
+            : "bubble.left.and.bubble.right"
+        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Hermes")
+    }
+
+    @objc private func togglePanel() {
+        panel.isVisible ? hide() : show()
+    }
+
+    private func show() {
+        resizePanel(to: desiredWidth, animated: false)
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        model.markPopoverVisible()
+    }
+
+    private func hide() {
+        guard panel.isVisible else { return }
+        panel.orderOut(nil)
+        model.markPopoverHidden()
+    }
+
+    private func resizePanel(to width: CGFloat, animated: Bool = true) {
+        desiredWidth = width
+        guard let button = statusItem.button else { return }
+
+        let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil))
+        let screen = buttonRect.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } }
+            ?? button.window?.screen
+            ?? NSScreen.main
+        guard let screen else { return }
+
+        let visibleFrame = screen.visibleFrame
+        let maxX = visibleFrame.maxX - Metrics.screenInset
+        let minX = visibleFrame.minX + Metrics.screenInset
+        let preferredX = (buttonRect?.midX ?? visibleFrame.midX) - width / 2
+        let x = min(max(preferredX, minX), maxX - width)
+        let preferredY = (buttonRect?.minY ?? visibleFrame.maxY) - Metrics.height - Metrics.menuGap
+        let y = max(visibleFrame.minY + Metrics.screenInset, preferredY)
+        let frame = NSRect(x: x, y: y, width: width, height: Metrics.height)
+
+        if animated, panel.isVisible {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.35
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(frame, display: true)
+            }
+        } else {
+            panel.setFrame(frame, display: true)
+        }
+    }
+}
+
+private final class DockPanel: NSPanel {
+    var onCancel: (() -> Void)?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {
+        onCancel?()
+    }
+}

@@ -324,6 +324,7 @@ private struct WorkspaceActivitySidebar: View {
 
 struct DockPopover: View {
     @ObservedObject var model: DockModel
+    var onWorkspaceWidthChange: (CGFloat) -> Void = { _ in }
     @State private var isConversationAtBottom = true
     @State private var isWorkspaceManuallyExpanded = false
     @State private var isComposerPulsing = false
@@ -354,6 +355,11 @@ struct DockPopover: View {
         }
         .frame(width: isWorkspaceVisible ? 730.5 : 420, height: 560)
         .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+        }
         .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisible)
         .environment(\.colorScheme, .dark)
         .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image]) { result in
@@ -362,8 +368,10 @@ struct DockPopover: View {
             }
         }
         .task { model.restoreLatestSessionIfNeeded() }
-        .onAppear { model.markPopoverVisible() }
-        .onDisappear { model.markPopoverHidden() }
+        .onAppear { onWorkspaceWidthChange(isWorkspaceVisible ? 730.5 : 420) }
+        .onChange(of: isWorkspaceVisible) { _, visible in
+            onWorkspaceWidthChange(visible ? 730.5 : 420)
+        }
     }
 
     private var isWorkspaceVisible: Bool {
