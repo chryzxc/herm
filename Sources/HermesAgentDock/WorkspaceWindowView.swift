@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// First workspace slice: the existing conversation remains the command surface,
@@ -7,6 +8,8 @@ struct WorkspaceWindowView: View {
     @ObservedObject var store: WorkspaceStore
     @State private var selectedTab: WorkspaceTab = .now
     @State private var selectedTaskID: UUID?
+    @State private var repository = RepositorySnapshot.empty
+    @State private var isRefreshingRepository = false
 
     enum WorkspaceTab: String, CaseIterable, Identifiable {
         case now = "Now"
@@ -36,6 +39,7 @@ struct WorkspaceWindowView: View {
         .background(Color.scifiBg)
         .environment(\.colorScheme, .dark)
         .onAppear { ensureActiveTask() }
+        .task { await refreshRepository() }
         .onChange(of: model.status) { _, status in syncTaskStatus(status) }
         .onChange(of: model.currentSessionTitle) { _, _ in ensureActiveTask() }
     }
@@ -130,6 +134,9 @@ struct WorkspaceWindowView: View {
                 Text(approval).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiWarning)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            sectionLabel("REPOSITORY")
+            repositoryContent
         }
     }
 
@@ -147,6 +154,39 @@ struct WorkspaceWindowView: View {
                 }
             }
         }
+    }
+
+    private var repositoryContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: repository.isGitRepository ? "arrow.triangle.branch" : "folder")
+                    .foregroundStyle(repository.isGitRepository ? Color.scifiSuccess : Color.scifiMuted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(repository.isGitRepository ? repository.branch : (store.projectPath == nil ? "No repository selected" : repository.branch))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(Color.scifiFg)
+                    if repository.isGitRepository {
+                        Text(repository.changedFiles == 0 ? "Clean working tree" : "\(repository.changedFiles) changed file\(repository.changedFiles == 1 ? "" : "s")")
+                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(repository.changedFiles == 0 ? Color.scifiSuccess : Color.scifiWarning)
+                    } else if let path = store.projectPath {
+                        Text(path).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(1)
+                    }
+                }
+                Spacer()
+                if isRefreshingRepository { ProgressView().controlSize(.small) }
+            }
+            HStack(spacing: 12) {
+                Button("Choose Repo") { chooseRepository() }
+                if repository.isGitRepository {
+                    Button { Task { await refreshRepository() } } label: { Image(systemName: "arrow.clockwise") }.help("Refresh repository")
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .buttonStyle(.bordered)
+            .tint(Color.scifiAccent)
+        }
+        .padding(12)
+        .background(Color.scifiSurface4)
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
     }
 
     private var tasksContent: some View {
@@ -281,5 +321,28 @@ struct WorkspaceWindowView: View {
         case .readyForReview: .scifiSuccess
         case .done: .scifiTertiary
         }
+    }
+
+    private func chooseRepository() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use Repository"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        store.attachProject(at: url.path)
+        Task { await refreshRepository() }
+    }
+
+    private func refreshRepository() async {
+        guard let path = store.projectPath else {
+            repository = .empty
+            return
+        }
+        isRefreshingRepository = true
+        let snapshot = await RepositoryService.inspect(path: path)
+        guard !Task.isCancelled else { return }
+        repository = snapshot
+        isRefreshingRepository = false
     }
 }
