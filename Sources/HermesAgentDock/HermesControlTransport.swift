@@ -68,6 +68,17 @@ final class HermesControlRPC {
         if let jobID { params["name"] = jobID }
         return try await client.request("cron.manage", params: params)
     }
+    func createCron(name: String, schedule: String, prompt: String) async throws -> [String: Any] {
+        try await client.request("cron.manage", params: [
+            "action": "add", "name": name, "schedule": schedule, "prompt": prompt
+        ])
+    }
+    func setCron(jobID: String, enabled: Bool) async throws -> [String: Any] {
+        try await cron(action: enabled ? "resume" : "pause", jobID: jobID)
+    }
+    func removeCron(jobID: String) async throws -> [String: Any] {
+        try await cron(action: "remove", jobID: jobID)
+    }
     func processes() async throws -> [String: Any] { try await client.request("process.list", params: [:]) }
     func tools() async throws -> [String: Any] { try await client.request("tools.list", params: [:]) }
     func plugins() async throws -> [String: Any] { try await client.request("plugins.list", params: [:]) }

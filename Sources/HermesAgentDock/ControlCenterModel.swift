@@ -81,13 +81,13 @@ final class ControlCenterModel: ObservableObject {
                     }
                 }
 
-                let cronResult = try await dockModel?.requestControl("cron.manage", params: ["action": "list"])
+                let cronResult = try await rpc?.cron(action: "list")
                 if let cronResult { cronJobs = Self.parseCronJobs(cronResult) }
 
-                let sessionResult = try await dockModel?.requestControl("session.active_list", params: [:])
+                let sessionResult = try await rpc?.activeSessions()
                 if let sessionResult { activeSessions = Self.parseSessions(sessionResult) }
 
-                let processResult = try await dockModel?.requestControl("process.list", params: [:])
+                let processResult = try await rpc?.processes()
                 if let processResult { processes = Self.parseProcesses(processResult) }
 
                 let projectResult = try await rpc?.projectsTree()
@@ -119,13 +119,11 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func setCron(_ job: CronSummary, enabled: Bool) {
-        guard let dockModel else { return }
+        guard rpc != nil else { return }
         Task {
             do {
-                _ = try await dockModel.requestControl("cron.manage", params: [
-                    "action": enabled ? "resume" : "pause",
-                    "name": job.id
-                ])
+                guard let rpc else { return }
+                _ = try await rpc.setCron(jobID: job.id, enabled: enabled)
                 refresh()
             } catch {
                 lastError = error.localizedDescription
@@ -134,15 +132,11 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func createCron(name: String, schedule: String, prompt: String) {
-        guard let dockModel else { return }
+        guard rpc != nil else { return }
         Task {
             do {
-                _ = try await dockModel.requestControl("cron.manage", params: [
-                    "action": "add",
-                    "name": name,
-                    "schedule": schedule,
-                    "prompt": prompt
-                ])
+                guard let rpc else { return }
+                _ = try await rpc.createCron(name: name, schedule: schedule, prompt: prompt)
                 refresh()
             } catch {
                 lastError = error.localizedDescription
@@ -151,10 +145,11 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func removeCron(_ job: CronSummary) {
-        guard let dockModel else { return }
+        guard rpc != nil else { return }
         Task {
             do {
-                _ = try await dockModel.requestControl("cron.manage", params: ["action": "remove", "name": job.id])
+                guard let rpc else { return }
+                _ = try await rpc.removeCron(jobID: job.id)
                 refresh()
             } catch {
                 lastError = error.localizedDescription
@@ -166,7 +161,8 @@ final class ControlCenterModel: ObservableObject {
         guard let sessionID = job.sessionID, let dockModel else { return }
         Task {
             do {
-                _ = try await dockModel.requestControl("session.activate", params: ["session_id": sessionID])
+                guard let rpc else { return }
+                _ = try await rpc.activate(sessionID: sessionID)
                 dockModel.requestComposerFocus()
             } catch {
                 lastError = error.localizedDescription
@@ -198,7 +194,8 @@ final class ControlCenterModel: ObservableObject {
         guard let dockModel else { return }
         Task {
             do {
-                _ = try await dockModel.requestControl("session.activate", params: ["session_id": session.id])
+                guard let rpc else { return }
+                _ = try await rpc.activate(sessionID: session.id)
                 dockModel.requestComposerFocus()
             } catch {
                 lastError = error.localizedDescription
@@ -213,19 +210,25 @@ final class ControlCenterModel: ObservableObject {
             do {
                 switch action {
                 case .approve:
-                    _ = try await dockModel.requestControl("approval.respond", params: ["session_id": reference.sessionID ?? "", "choice": "once"])
+                    guard let rpc else { return }
+                    _ = try await rpc.respondToApproval(sessionID: reference.sessionID ?? "", choice: "once")
                 case .deny:
-                    _ = try await dockModel.requestControl("approval.respond", params: ["session_id": reference.sessionID ?? "", "choice": "deny"])
+                    guard let rpc else { return }
+                    _ = try await rpc.respondToApproval(sessionID: reference.sessionID ?? "", choice: "deny")
                 case .respond:
                     let response = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     guard !response.isEmpty else { return }
-                    _ = try await dockModel.requestControl("clarify.respond", params: ["session_id": reference.sessionID ?? reference.sourceID, "response": response])
+                    guard let rpc else { return }
+                    _ = try await rpc.respondToClarification(sessionID: reference.sessionID ?? reference.sourceID, response: response)
                 case .stop:
-                    _ = try await dockModel.requestControl("session.interrupt", params: ["session_id": reference.sessionID ?? reference.sourceID])
+                    guard let rpc else { return }
+                    _ = try await rpc.interrupt(sessionID: reference.sessionID ?? reference.sourceID)
                 case .resume:
-                    _ = try await dockModel.requestControl("session.activate", params: ["session_id": reference.sessionID ?? reference.sourceID])
+                    guard let rpc else { return }
+                    _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
                 case .open:
-                    _ = try await dockModel.requestControl("session.activate", params: ["session_id": reference.sessionID ?? reference.sourceID])
+                    guard let rpc else { return }
+                    _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
                     dockModel.requestComposerFocus()
                 default:
                     break
@@ -342,6 +345,9 @@ final class ControlCenterModel: ObservableObject {
             ))
         default:
             break
+        }
+        if ["message.complete", "sessions.changed", "cron.changed", "process.changed"].contains(type) {
+            refresh()
         }
         rebuildAttention()
     }
