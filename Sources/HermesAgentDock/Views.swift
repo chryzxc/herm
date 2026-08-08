@@ -909,9 +909,22 @@ private struct WorkspaceActivitySidebar: View {
                 )
             }
 
-            if !control.activeSessions.isEmpty || !control.processes.isEmpty {
+            if !control.activeSessions.isEmpty || !control.activeAgents.isEmpty || !control.processes.isEmpty {
                 sectionLabel("RUNNING WORK")
                 VStack(alignment: .leading, spacing: 8) {
+                    ForEach(control.activeAgents) { agent in
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.2.fill").font(.system(size: 10)).foregroundStyle(Color.scifiAccent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(agent.name).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                                Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(Color.scifiTertiary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
                     ForEach(control.activeSessions) { session in
                         HStack(spacing: 8) {
                             Circle().fill(Color.scifiAccent).frame(width: 5, height: 5)

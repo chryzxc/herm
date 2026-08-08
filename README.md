@@ -18,8 +18,8 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   Activity and Core expose live runtime information, capabilities, integrations,
   health, and setup guidance.
 - **Active-work projection.** Today can show active Hermes sessions and managed
-  processes, with controls to open related sessions when Hermes provides their
-  identifiers.
+  delegated agents, and managed processes, with controls to open related
+  sessions when Hermes provides their identifiers.
 - **Scheduled-work controls.** Today lists cron jobs and supports confirmed
   pause/resume actions plus related-session opening.
 - **Automations.** The Automations tab can review, create, pause, resume, and

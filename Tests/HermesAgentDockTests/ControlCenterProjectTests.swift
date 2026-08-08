@@ -25,4 +25,16 @@ struct ControlCenterProjectTests {
         #expect(sessions.first?.title == "First")
         #expect(sessions.last?.state == "idle")
     }
+
+    @Test func parsesDelegatedAgents() {
+        let agents = ControlCenterModel.parseAgents([
+            "active": [
+                ["subagent_id": "agent-1", "role": "researcher", "status": "running", "session_id": "session-1"]
+            ]
+        ])
+
+        #expect(agents.first?.id == "agent-1")
+        #expect(agents.first?.name == "researcher")
+        #expect(agents.first?.sessionID == "session-1")
+    }
 }

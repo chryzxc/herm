@@ -6,6 +6,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var reminders: [ReminderSummary] = []
     @Published private(set) var cronJobs: [CronSummary] = []
     @Published private(set) var activeSessions: [SessionSummary] = []
+    @Published private(set) var activeAgents: [AgentSummary] = []
     @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var projects: [ProjectSummary] = []
     @Published private(set) var projectSessions: [SessionSummary] = []
@@ -86,6 +87,9 @@ final class ControlCenterModel: ObservableObject {
 
                 let sessionResult = try await rpc?.activeSessions()
                 if let sessionResult { activeSessions = Self.parseSessions(sessionResult) }
+
+                let delegationResult = try await rpc?.delegationStatus()
+                if let delegationResult { activeAgents = Self.parseAgents(delegationResult) }
 
                 let processResult = try await rpc?.processes()
                 if let processResult { processes = Self.parseProcesses(processResult) }
@@ -458,6 +462,20 @@ final class ControlCenterModel: ObservableObject {
                 name: (row["name"] as? String) ?? (row["command"] as? String) ?? "Hermes process",
                 state: (row["state"] as? String) ?? (row["status"] as? String) ?? "running",
                 detail: row["detail"] as? String ?? row["command"] as? String
+            )
+        }
+    }
+
+    static func parseAgents(_ result: [String: Any]) -> [AgentSummary] {
+        let rows = (result["active"] as? [[String: Any]]) ?? (result["agents"] as? [[String: Any]]) ?? []
+        return rows.compactMap { row in
+            let id = (row["subagent_id"] as? String) ?? (row["id"] as? String)
+            guard let id else { return nil }
+            return AgentSummary(
+                id: id,
+                name: (row["name"] as? String) ?? (row["role"] as? String) ?? id,
+                state: (row["status"] as? String) ?? (row["state"] as? String) ?? "running",
+                sessionID: row["session_id"] as? String ?? row["sessionID"] as? String
             )
         }
     }
