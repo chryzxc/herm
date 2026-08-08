@@ -621,7 +621,7 @@ private struct WorkspaceActivitySidebar: View {
     }
 
     private var modePicker: some View {
-        HStack(spacing: 3) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 3)], spacing: 3) {
             ForEach(ControlTab.allCases) { mode in
                 Button {
                     withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
