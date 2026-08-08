@@ -3,6 +3,10 @@ import Foundation
 @MainActor
 final class HermesCapabilityService {
     func probe(client: HermesRPCClientProtocol, remindersAvailable: Bool) async -> [CapabilityState] {
+        let sessionRPC = await request(client, method: "session.active_list")
+        let schedulingRPC = await request(client, method: "cron.manage", params: ["action": "list"])
+        let activityRPC = await request(client, method: "process.list")
+        let projectsRPC = await request(client, method: "projects.tree")
         let toolResult = await request(client, method: "tools.list")
         let pluginResult = await request(client, method: "plugins.list")
         let configResult = await request(client, method: "config.show")
@@ -42,6 +46,34 @@ final class HermesCapabilityService {
                 isAvailable: version != nil,
                 recovery: version == nil ? "Update Hermes manually if a newer version is required." : nil,
                 recoveryCommand: version == nil ? "hermes update" : nil
+            ),
+            CapabilityState(
+                id: "rpc-sessions",
+                title: "Session control",
+                detail: sessionRPC == nil ? "session.active_list is unsupported or unavailable" : "Session listing and activation RPCs are available",
+                isAvailable: sessionRPC != nil,
+                recovery: sessionRPC == nil ? "Upgrade Hermes or use Ask to manage sessions through the agent." : nil
+            ),
+            CapabilityState(
+                id: "rpc-scheduling",
+                title: "Cron control",
+                detail: schedulingRPC == nil ? "cron.manage is unsupported or unavailable" : "Cron listing and controls are available",
+                isAvailable: schedulingRPC != nil,
+                recovery: schedulingRPC == nil ? "Upgrade Hermes or manage scheduled work through the Hermes CLI." : nil
+            ),
+            CapabilityState(
+                id: "rpc-activity",
+                title: "Activity inspection",
+                detail: activityRPC == nil ? "process.list is unsupported or unavailable" : "Process and activity inspection is available",
+                isAvailable: activityRPC != nil,
+                recovery: activityRPC == nil ? "Upgrade Hermes to expose process activity to the Dock." : nil
+            ),
+            CapabilityState(
+                id: "rpc-projects",
+                title: "Project control",
+                detail: projectsRPC == nil ? "projects.tree is unsupported or unavailable" : "Project and repository context is available",
+                isAvailable: projectsRPC != nil,
+                recovery: projectsRPC == nil ? "Upgrade Hermes or open project context through Ask." : nil
             ),
             CapabilityState(
                 id: "reminders",

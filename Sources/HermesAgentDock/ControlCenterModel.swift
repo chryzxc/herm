@@ -80,44 +80,49 @@ final class ControlCenterModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             defer { isRefreshing = false }
-            do {
-                var remindersAvailable = false
-                if let remindersAdapter {
-                    do {
-                        reminders = try await remindersAdapter.today()
-                        remindersAvailable = true
-                        reconcileReminderAttention()
-                    } catch {
-                        lastError = error.localizedDescription
-                    }
+            var remindersAvailable = false
+            if let remindersAdapter {
+                do {
+                    reminders = try await remindersAdapter.today()
+                    remindersAvailable = true
+                    reconcileReminderAttention()
+                } catch {
+                    lastError = error.localizedDescription
                 }
+            }
 
-                let cronResult = try await rpc?.cron(action: "list")
-                if let cronResult { cronJobs = Self.parseCronJobs(cronResult) }
-                refreshCronRuns()
+            if let rpc {
+                do {
+                    let result = try await rpc.cron(action: "list")
+                    cronJobs = Self.parseCronJobs(result)
+                } catch { lastError = error.localizedDescription }
 
-                let sessionResult = try await rpc?.activeSessions()
-                if let sessionResult { activeSessions = Self.parseSessions(sessionResult) }
+                do {
+                    let result = try await rpc.activeSessions()
+                    activeSessions = Self.parseSessions(result)
+                } catch { lastError = error.localizedDescription }
 
-                let delegationResult = try await rpc?.delegationStatus()
-                if let delegationResult { activeAgents = Self.parseAgents(delegationResult) }
+                do {
+                    let result = try await rpc.delegationStatus()
+                    activeAgents = Self.parseAgents(result)
+                } catch { lastError = error.localizedDescription }
 
-                let processResult = try await rpc?.processes()
-                if let processResult { processes = Self.parseProcesses(processResult) }
+                do {
+                    let result = try await rpc.processes()
+                    processes = Self.parseProcesses(result)
+                } catch { lastError = error.localizedDescription }
 
                 refreshMCPInventory()
 
-                let projectResult = try await rpc?.projectsTree()
-                if let projectResult { projects = Self.parseProjects(projectResult) }
+                do {
+                    let result = try await rpc.projectsTree()
+                    projects = Self.parseProjects(result)
+                } catch { lastError = error.localizedDescription }
+            }
+            refreshCronRuns()
 
-                if let dockModel {
-                    capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: remindersAvailable)
-                }
-            } catch {
-                lastError = error.localizedDescription
-                if let dockModel {
-                    capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: false)
-                }
+            if let dockModel {
+                capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: remindersAvailable)
             }
         }
     }
