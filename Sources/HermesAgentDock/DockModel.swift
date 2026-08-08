@@ -492,6 +492,16 @@ final class DockModel: ObservableObject {
         try await gateway.request(method, params: params)
     }
 
+    func submitControlPrompt(_ text: String) async throws {
+        try await gateway.connect()
+        if sessionID == nil {
+            let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock-control"])
+            sessionID = result["session_id"] as? String
+        }
+        guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
+        _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
+    }
+
     /// Starts Hermes' native VAD/TTS voice loop. Hermes owns the microphone,
     /// transcription, streaming speech, and spoken barge-in for this mode.
     /// If the locally installed CLI is missing those optional dependencies, the

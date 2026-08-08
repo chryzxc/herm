@@ -422,6 +422,8 @@ private struct WorkspaceActivitySidebar: View {
     @State private var repository = RepositorySnapshot.empty
     @State private var isRefreshingRepository = false
     @State private var showingRepositoryPicker = false
+    @State private var reminderForConfirmation: ReminderSummary?
+    @State private var isShowingReminderConfirmation = false
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -479,6 +481,16 @@ private struct WorkspaceActivitySidebar: View {
         }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
+        .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
+            if let reminder = reminderForConfirmation {
+                Button("Complete Reminder") { control.completeReminder(reminder) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let reminder = reminderForConfirmation {
+                Text("Hermes will submit a request to complete ‘\(reminder.title)’ through the Apple Reminders skill. No other reminder will be changed.")
+            }
+        }
     }
 
     private var modePicker: some View {
@@ -524,14 +536,20 @@ private struct WorkspaceActivitySidebar: View {
             if !control.reminders.isEmpty {
                 sectionLabel("DUE REMINDERS  ·  \(control.reminders.count)")
                 ForEach(control.reminders) { reminder in
-                    HStack(spacing: 8) {
-                        Circle().fill(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent).frame(width: 6, height: 6)
-                        Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(2)
-                        Spacer(minLength: 4)
-                        Text(reminder.isOverdue ? "OVERDUE" : (reminder.list ?? "REMINDER"))
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiMuted)
+                    Button {
+                        reminderForConfirmation = reminder
+                        isShowingReminderConfirmation = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Circle().fill(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent).frame(width: 6, height: 6)
+                            Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(2)
+                            Spacer(minLength: 4)
+                            Text(reminder.isOverdue ? "OVERDUE" : (reminder.list ?? "REMINDER"))
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiMuted)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
             if let error = control.lastError {
@@ -634,12 +652,18 @@ private struct WorkspaceActivitySidebar: View {
             if !control.reminders.isEmpty {
                 sectionLabel("REMINDERS  ·  \(control.reminders.count)")
                 ForEach(control.reminders.prefix(3)) { reminder in
-                    HStack(spacing: 8) {
-                        Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
-                            .font(.system(size: 10)).foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
-                        Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(1)
-                        Spacer(minLength: 0)
+                    Button {
+                        reminderForConfirmation = reminder
+                        isShowingReminderConfirmation = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
+                                .font(.system(size: 10)).foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
+                            Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
 

@@ -25,6 +25,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
   authoritative for reminder content. The Dock stores references, display state,
   UI preferences, and cached metadata rather than duplicating those systems.
+- **Safe reminder completion.** Clicking a due reminder opens a confirmation
+  before the Dock submits a transparent completion request through Hermes and
+  the Apple Reminders skill.
 - **Conditional development context.** Repository status appears only when the
   active Hermes work references a repository; development is a contextual module,
   not the product's organizing model.

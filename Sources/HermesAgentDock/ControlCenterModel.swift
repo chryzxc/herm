@@ -13,6 +13,7 @@ final class ControlCenterModel: ObservableObject {
     private var knownAttention: [String: AttentionItem] = [:]
     private var eventSubscription: UUID?
     private let capabilityService = HermesCapabilityService()
+    private var remindersAdapter: AppleRemindersAdapter?
     private let presentationDefaults = UserDefaults.standard
     private let presentationKey = "hermes.control.attention.presentation.v1"
 
@@ -40,6 +41,7 @@ final class ControlCenterModel: ObservableObject {
             self.eventSubscription = nil
         }
         dockModel = model
+        remindersAdapter = AppleRemindersAdapter(client: model.controlRPCClient)
         if eventSubscription == nil {
             eventSubscription = model.eventRouter.subscribe { [weak self] type, params in
                 self?.ingestEvent(type, params: params)
@@ -58,24 +60,40 @@ final class ControlCenterModel: ObservableObject {
             guard let self else { return }
             defer { isRefreshing = false }
             do {
-                let reminderResult = try await dockModel?.requestControl("shell.exec", params: [
-                    "command": "remindctl today --json"
-                ])
-                if let output = reminderResult?["stdout"] as? String {
-                    reminders = Self.parseReminders(output)
+                var remindersAvailable = false
+                if let remindersAdapter {
+                    do {
+                        reminders = try await remindersAdapter.today()
+                        remindersAvailable = true
+                    } catch {
+                        lastError = error.localizedDescription
+                    }
                 }
 
                 let cronResult = try await dockModel?.requestControl("cron.manage", params: ["action": "list"])
                 if let cronResult { cronJobs = Self.parseCronJobs(cronResult) }
 
                 if let dockModel {
-                    capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: reminderResult != nil)
+                    capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: remindersAvailable)
                 }
             } catch {
                 lastError = error.localizedDescription
                 if let dockModel {
                     capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: false)
                 }
+            }
+        }
+    }
+
+    func completeReminder(_ reminder: ReminderSummary) {
+        guard let dockModel else { return }
+        Task {
+            do {
+                try await dockModel.submitControlPrompt("Using the apple-reminders skill, complete exactly this Apple Reminder and no other reminder. Reminder id: \(reminder.id). Title: \(reminder.title). Report the result after the source confirms completion.")
+                try? await Task.sleep(for: .milliseconds(600))
+                refresh()
+            } catch {
+                lastError = error.localizedDescription
             }
         }
     }
@@ -259,26 +277,6 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    private static func parseReminders(_ output: String) -> [ReminderSummary] {
-        guard let data = output.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
-        let rows: [[String: Any]]
-        if let array = object as? [[String: Any]] {
-            rows = array
-        } else if let dictionary = object as? [String: Any], let nested = dictionary["reminders"] as? [[String: Any]] {
-            rows = nested
-        } else {
-            return []
-        }
-        return rows.compactMap { row in
-            let id = (row["id"] as? String) ?? (row["identifier"] as? String)
-            let title = (row["title"] as? String) ?? (row["name"] as? String)
-            guard let id, let title, !title.isEmpty else { return nil }
-            let due = (row["dueDate"] as? String).flatMap(Self.parseDate)
-            return ReminderSummary(id: id, title: title, list: row["list"] as? String, dueDate: due, isOverdue: (row["isOverdue"] as? Bool) ?? false)
-        }
-    }
-
     private static func parseCronJobs(_ result: [String: Any]) -> [CronSummary] {
         let rows = (result["jobs"] as? [[String: Any]]) ?? (result["cron"] as? [[String: Any]]) ?? []
         return rows.compactMap { row in
@@ -294,7 +292,4 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    private static func parseDate(_ value: String) -> Date? {
-        ISO8601DateFormatter().date(from: value)
-    }
 }
