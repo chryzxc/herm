@@ -1379,7 +1379,7 @@ struct DockPopover: View {
     }
 
     private enum QuickPrompt: CaseIterable, Identifiable {
-        case reminder, notes, research, summarize, automation, review, email, message
+        case reminder, notes, research, summarize, automation, review, email, message, search, kanban
 
         var id: Self { self }
         var label: String {
@@ -1392,6 +1392,8 @@ struct DockPopover: View {
             case .review: "Review work"
             case .email: "Email"
             case .message: "Message"
+            case .search: "Search sources"
+            case .kanban: "Kanban task"
             }
         }
         var prompt: String {
@@ -1404,6 +1406,8 @@ struct DockPopover: View {
             case .review: "Review my completed work and identify anything that needs follow-up."
             case .email: "Using the Himalaya skill, help me draft or send this email: "
             case .message: "Using the configured messaging skill, help me draft or send this message: "
+            case .search: "Search all connected Hermes sources for: "
+            case .kanban: "Create or update a Hermes Kanban task for: "
             }
         }
     }
