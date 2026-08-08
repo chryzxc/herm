@@ -486,6 +486,8 @@ final class DockModel: ObservableObject {
 
     /// Control-center actions share the user-facing Hermes gateway so they do
     /// not create a second backend or bypass the normal approval/event stream.
+    var controlRPCClient: HermesRPCClientProtocol { gateway }
+
     func requestControl(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         try await gateway.request(method, params: params)
     }

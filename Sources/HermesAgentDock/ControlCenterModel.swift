@@ -12,6 +12,7 @@ final class ControlCenterModel: ObservableObject {
     private weak var dockModel: DockModel?
     private var knownAttention: [String: AttentionItem] = [:]
     private var eventSubscription: UUID?
+    private let capabilityService = HermesCapabilityService()
 
     func bind(to model: DockModel) {
         if dockModel !== model, let eventSubscription {
@@ -47,12 +48,14 @@ final class ControlCenterModel: ObservableObject {
                 let cronResult = try await dockModel?.requestControl("cron.manage", params: ["action": "list"])
                 if let cronResult { cronJobs = Self.parseCronJobs(cronResult) }
 
-                let tools = try await dockModel?.requestControl("tools.list", params: [:])
-                let plugins = try await dockModel?.requestControl("plugins.list", params: [:])
-                capabilities = Self.capabilities(remindersAvailable: reminderResult != nil, tools: tools, plugins: plugins)
+                if let dockModel {
+                    capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: reminderResult != nil)
+                }
             } catch {
                 lastError = error.localizedDescription
-                capabilities = Self.capabilities(remindersAvailable: false, tools: nil, plugins: nil)
+                if let dockModel {
+                    capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: false)
+                }
             }
         }
     }
@@ -253,18 +256,6 @@ final class ControlCenterModel: ObservableObject {
                 nextRun: row["next_run"] as? String ?? row["nextRun"] as? String
             )
         }
-    }
-
-    private static func capabilities(remindersAvailable: Bool, tools: [String: Any]?, plugins: [String: Any]?) -> [CapabilityState] {
-        let toolsAvailable = tools != nil
-        let pluginsAvailable = plugins != nil
-        return [
-            CapabilityState(id: "reminders", title: "Apple Reminders", detail: remindersAvailable ? "Connected through remindctl" : "remindctl is unavailable or unauthorized", isAvailable: remindersAvailable, recovery: remindersAvailable ? nil : "Install remindctl and authorize Reminders access."),
-            CapabilityState(id: "notes", title: "Apple Notes", detail: "Available through the Hermes apple-notes skill", isAvailable: true, recovery: nil),
-            CapabilityState(id: "tools", title: "Hermes tools", detail: toolsAvailable ? "Tool catalogue available" : "Tool catalogue unavailable", isAvailable: toolsAvailable, recovery: toolsAvailable ? nil : "Reconnect Hermes and refresh."),
-            CapabilityState(id: "plugins", title: "Hermes plugins", detail: pluginsAvailable ? "Plugin catalogue available" : "Plugin catalogue unavailable", isAvailable: pluginsAvailable, recovery: pluginsAvailable ? nil : "Reconnect Hermes and refresh."),
-            CapabilityState(id: "calendar", title: "Calendar", detail: "No Hermes Calendar provider is configured", isAvailable: false, recovery: "Calendar integration is planned for a future provider.")
-        ]
     }
 
     private static func parseDate(_ value: String) -> Date? {
