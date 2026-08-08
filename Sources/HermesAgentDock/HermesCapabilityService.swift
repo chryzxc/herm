@@ -10,6 +10,12 @@ final class HermesCapabilityService {
         let emailResult = await request(client, method: "shell.exec", params: ["command": "himalaya --version"])
         let imessageResult = await request(client, method: "shell.exec", params: ["command": "imsg --version"])
         let mcpResult = await request(client, method: "shell.exec", params: ["command": "hermes mcp list"])
+        let notesAvailable = Self.shellResultSucceeded(notesResult)
+        let emailAvailable = Self.shellResultSucceeded(emailResult)
+        let messagingAvailable = Self.shellResultSucceeded(imessageResult)
+        let mcpAvailable = Self.shellResultSucceeded(mcpResult)
+        let mcpOutput = (mcpResult?["stdout"] as? String) ?? ""
+        let hasMCPServers = mcpAvailable && !mcpOutput.localizedCaseInsensitiveContains("No MCP servers configured")
         let version = (configResult?["version"] as? String)
             ?? (configResult?["hermes_version"] as? String)
 
@@ -38,9 +44,9 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: "notes",
                 title: "Apple Notes",
-                detail: notesResult == nil ? "memo is unavailable or unauthorized" : "Available through memo and the Hermes apple-notes skill",
-                isAvailable: notesResult != nil,
-                recovery: notesResult == nil ? "Install memo and authorize Notes access." : nil
+                detail: notesAvailable ? "Available through memo and the Hermes apple-notes skill" : "memo is unavailable or unauthorized",
+                isAvailable: notesAvailable,
+                recovery: notesAvailable ? nil : "Install memo and authorize Notes access."
             ),
             CapabilityState(
                 id: "tools",
@@ -66,16 +72,16 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: "messaging",
                 title: "Messaging",
-                detail: imessageResult == nil ? "imsg is unavailable or unauthorized" : "iMessage CLI is available through Hermes",
-                isAvailable: imessageResult != nil,
-                recovery: imessageResult == nil ? "Install imsg and grant Messages access." : nil
+                detail: messagingAvailable ? "iMessage CLI is available through Hermes" : "imsg is unavailable or unauthorized",
+                isAvailable: messagingAvailable,
+                recovery: messagingAvailable ? nil : "Install imsg and grant Messages access."
             ),
             CapabilityState(
                 id: "email",
                 title: "Email",
-                detail: emailResult == nil ? "himalaya is unavailable or unconfigured" : "Email CLI is available through Hermes",
-                isAvailable: emailResult != nil,
-                recovery: emailResult == nil ? "Install and configure himalaya before enabling email actions." : nil
+                detail: emailAvailable ? "Email CLI is available through Hermes" : "himalaya is unavailable or unconfigured",
+                isAvailable: emailAvailable,
+                recovery: emailAvailable ? nil : "Install and configure himalaya before enabling email actions."
             ),
             CapabilityState(
                 id: "kanban",
@@ -87,14 +93,19 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: "mcp",
                 title: "Third-party MCP",
-                detail: mcpResult == nil ? "MCP configuration is unavailable" : "Use Hermes MCP configuration for third-party services",
-                isAvailable: mcpResult != nil,
-                recovery: mcpResult == nil ? "Reconnect Hermes and configure MCP servers there." : nil
+                detail: !mcpAvailable ? "MCP configuration is unavailable" : (hasMCPServers ? "Configured MCP servers are available through Hermes" : "No MCP servers are configured"),
+                isAvailable: hasMCPServers,
+                recovery: !mcpAvailable ? "Reconnect Hermes and configure MCP servers there." : (hasMCPServers ? nil : "Configure an MCP server in Hermes before using third-party actions.")
             )
         ]
     }
 
     private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async -> [String: Any]? {
         try? await client.request(method, params: params)
+    }
+
+    static func shellResultSucceeded(_ result: [String: Any]?) -> Bool {
+        guard let result else { return false }
+        return AppleRemindersAdapter.shellResultSucceeded(result)
     }
 }

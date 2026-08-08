@@ -24,7 +24,7 @@ final class AppleRemindersAdapter {
         let result = try await client.request("shell.exec", params: [
             "command": "remindctl today --json"
         ])
-        guard (result["success"] as? Bool) != false else {
+        guard Self.shellResultSucceeded(result) else {
             throw AdapterError.unavailable((result["stderr"] as? String) ?? "remindctl could not access Apple Reminders.")
         }
         guard let output = result["stdout"] as? String else {
@@ -57,5 +57,11 @@ final class AppleRemindersAdapter {
             if lhs.isOverdue != rhs.isOverdue { return lhs.isOverdue }
             return (lhs.dueDate ?? .distantFuture) < (rhs.dueDate ?? .distantFuture)
         }
+    }
+
+    static func shellResultSucceeded(_ result: [String: Any]) -> Bool {
+        if (result["success"] as? Bool) == false { return false }
+        if let code = (result["code"] as? NSNumber)?.intValue { return code == 0 }
+        return result["stdout"] != nil
     }
 }

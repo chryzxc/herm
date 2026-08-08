@@ -25,4 +25,9 @@ struct AppleRemindersAdapterTests {
         #expect(reminders.count == 1)
         #expect(reminders.first?.id == "valid")
     }
+
+    @Test func rejectsFailedShellResults() {
+        #expect(AppleRemindersAdapter.shellResultSucceeded(["code": 1, "stderr": "Not authorized"]) == false)
+        #expect(AppleRemindersAdapter.shellResultSucceeded(["code": 0, "stdout": "[]"]) == true)
+    }
 }
