@@ -434,6 +434,8 @@ private struct WorkspaceActivitySidebar: View {
     @State private var automationSchedule = ""
     @State private var automationPrompt = ""
     @State private var isShowingAutomationConfirmation = false
+    @State private var clarificationItem: AttentionItem?
+    @State private var clarificationResponse = ""
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -545,6 +547,34 @@ private struct WorkspaceActivitySidebar: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Hermes will create ‘\(automationName)’ on schedule ‘\(automationSchedule)’." )
+        }
+        .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
+            VStack(alignment: .leading, spacing: 14) {
+                Text("CLARIFICATION REQUIRED")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                Text(item.detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiFg)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField("Your response", text: $clarificationResponse, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(3...6)
+                HStack {
+                    Spacer()
+                    Button("Cancel") { clarificationItem = nil }
+                    Button("SEND RESPONSE") {
+                        control.respond(to: item, action: .respond, response: clarificationResponse)
+                        clarificationItem = nil
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(clarificationResponse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(20)
+            .frame(width: 390)
+            .background(Color.scifiBg)
+            .environment(\.colorScheme, .dark)
         }
     }
 
@@ -797,7 +827,13 @@ private struct WorkspaceActivitySidebar: View {
             }
             HStack(spacing: 12) {
                 ForEach(item.actions.filter { $0 != .dismiss }, id: \.self) { action in
-                    Button(action.rawValue.uppercased()) { control.respond(to: item, action: action) }
+                    Button(action.rawValue.uppercased()) {
+                        if action == .respond {
+                            clarificationItem = item
+                        } else {
+                            control.respond(to: item, action: action)
+                        }
+                    }
                         .buttonStyle(.plain)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent)

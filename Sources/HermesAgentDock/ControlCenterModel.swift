@@ -203,7 +203,7 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    func respond(to item: AttentionItem, action: AttentionAction) {
+    func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
         guard let dockModel else { return }
         let reference = item.reference
         Task {
@@ -213,6 +213,10 @@ final class ControlCenterModel: ObservableObject {
                     _ = try await dockModel.requestControl("approval.respond", params: ["session_id": reference.sessionID ?? "", "choice": "once"])
                 case .deny:
                     _ = try await dockModel.requestControl("approval.respond", params: ["session_id": reference.sessionID ?? "", "choice": "deny"])
+                case .respond:
+                    let response = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    guard !response.isEmpty else { return }
+                    _ = try await dockModel.requestControl("clarify.respond", params: ["session_id": reference.sessionID ?? reference.sourceID, "response": response])
                 case .stop:
                     _ = try await dockModel.requestControl("session.interrupt", params: ["session_id": reference.sessionID ?? reference.sourceID])
                 case .resume:
@@ -282,7 +286,7 @@ final class ControlCenterModel: ObservableObject {
             ?? (payload["description"] as? String)
             ?? (payload["question"] as? String)
             ?? (payload["text"] as? String)
-            ?? "Hermes reported (type)."
+            ?? "Hermes reported \(type)."
         switch type {
         case "approval.request":
             upsertAttention(AttentionItem(
@@ -304,7 +308,7 @@ final class ControlCenterModel: ObservableObject {
                 detail: detail,
                 createdAt: Date(),
                 state: .open,
-                actions: [.open, .stop]
+                actions: [.respond, .open, .stop]
             ))
         case "error":
             upsertAttention(AttentionItem(
@@ -362,39 +366,40 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func rebuildAttention() {
-        guard let dockModel else { return }
         var next: [AttentionItem] = []
-        if dockModel.status != .offline {
-            knownAttention.removeValue(forKey: "failure:hermes")
-        }
-        if let sessionID = dockModel.sessionID, dockModel.approvalText == nil {
-            knownAttention.removeValue(forKey: "approval:\(sessionID)")
-        }
-        if let approval = dockModel.approvalText, let sessionID = dockModel.sessionID,
-           knownAttention["approval:\(sessionID)"]?.state != .resolved,
-           knownAttention["approval:\(sessionID)"]?.state != .dismissed {
-            upsertAttention(AttentionItem(
-                id: "approval:\(sessionID)",
-                reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
-                kind: .approval,
-                title: "Hermes needs approval",
-                detail: approval,
-                createdAt: Date(),
-                state: .open,
-                actions: [.approve, .deny, .stop]
-            ))
-        }
-        if dockModel.status == .offline {
-            upsertAttention(AttentionItem(
-                id: "failure:hermes",
-                reference: ControlReference(source: .hermesSession, sourceID: dockModel.sessionID ?? "hermes"),
-                kind: .failure,
-                title: "Hermes is offline",
-                detail: "Reconnect Hermes to continue the active conversation.",
-                createdAt: Date(),
-                state: .open,
-                actions: [.open]
-            ))
+        if let dockModel {
+            if dockModel.status != .offline {
+                knownAttention.removeValue(forKey: "failure:hermes")
+            }
+            if let sessionID = dockModel.sessionID, dockModel.approvalText == nil {
+                knownAttention.removeValue(forKey: "approval:\(sessionID)")
+            }
+            if let approval = dockModel.approvalText, let sessionID = dockModel.sessionID,
+               knownAttention["approval:\(sessionID)"]?.state != .resolved,
+               knownAttention["approval:\(sessionID)"]?.state != .dismissed {
+                upsertAttention(AttentionItem(
+                    id: "approval:\(sessionID)",
+                    reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
+                    kind: .approval,
+                    title: "Hermes needs approval",
+                    detail: approval,
+                    createdAt: Date(),
+                    state: .open,
+                    actions: [.approve, .deny, .stop]
+                ))
+            }
+            if dockModel.status == .offline {
+                upsertAttention(AttentionItem(
+                    id: "failure:hermes",
+                    reference: ControlReference(source: .hermesSession, sourceID: dockModel.sessionID ?? "hermes"),
+                    kind: .failure,
+                    title: "Hermes is offline",
+                    detail: "Reconnect Hermes to continue the active conversation.",
+                    createdAt: Date(),
+                    state: .open,
+                    actions: [.open]
+                ))
+            }
         }
         next = knownAttention.values.filter { saved in
             saved.state != .resolved && saved.state != .dismissed && saved.state != .snoozed && !next.contains(where: { $0.id == saved.id })
