@@ -9,9 +9,15 @@ let package = Package(
     name: "HermesAgentDock",
     platforms: [.macOS(.v14)],
     products: [.executable(name: "HermesAgentDock", targets: ["HermesAgentDock"])],
+    dependencies: [
+        .package(url: "https://github.com/sindresorhus/KeyboardShortcuts.git", from: "3.0.1")
+    ],
     targets: [
         .executableTarget(
             name: "HermesAgentDock",
+            dependencies: [
+                .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts")
+            ],
             exclude: ["Info.plist"],
             linkerSettings: [
                 .unsafeFlags([

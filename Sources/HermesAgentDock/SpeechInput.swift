@@ -10,6 +10,8 @@ final class SpeechInput: ObservableObject {
     @Published var transcript = ""
     @Published var errorMessage: String?
     @Published var completedTranscript: String?
+    /// Smoothed microphone loudness in the 0...1 range for the voice orb.
+    @Published private(set) var audioLevel: CGFloat = 0
 
     private let recognizer = SFSpeechRecognizer(locale: Locale.current)
     private let audioEngine = AVAudioEngine()
@@ -21,10 +23,17 @@ final class SpeechInput: ObservableObject {
         if isRecording {
             stop()
         } else {
-            isUnavailable = false
-            errorMessage = nil
-            requestPermissionsAndStart()
+            startListening()
         }
+    }
+
+    /// Begins one recognition turn. Call this again after Hermes has replied to
+    /// continue a hands-free conversation.
+    func startListening() {
+        guard !isRecording, !isStarting else { return }
+        isUnavailable = false
+        errorMessage = nil
+        requestPermissionsAndStart()
     }
 
     func stop() {
@@ -39,6 +48,7 @@ final class SpeechInput: ObservableObject {
         recognitionTask = nil
         isRecording = false
         isStarting = false
+        audioLevel = 0
     }
 
     func consumeCompletedTranscript() {
@@ -95,11 +105,30 @@ final class SpeechInput: ObservableObject {
 
     private nonisolated static func installAudioTap(
         on inputNode: AVAudioInputNode,
-        request: SFSpeechAudioBufferRecognitionRequest
+        request: SFSpeechAudioBufferRecognitionRequest,
+        onAudioLevel: @escaping (CGFloat) -> Void
     ) {
         inputNode.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
             request.append(buffer)
+            onAudioLevel(normalizedAudioLevel(buffer))
         }
+    }
+
+    private nonisolated static func normalizedAudioLevel(_ buffer: AVAudioPCMBuffer) -> CGFloat {
+        guard let channels = buffer.floatChannelData else { return 0 }
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return 0 }
+
+        let samples = channels[0]
+        var sum: Float = 0
+        for index in 0..<frameCount {
+            let sample = samples[index]
+            sum += sample * sample
+        }
+        let rms = sqrt(sum / Float(frameCount))
+        let decibels = 20 * log10(max(rms, 0.000_001))
+        // Speech normally lives between roughly -55 dB (silence) and -10 dB.
+        return CGFloat(min(1, max(0, (decibels + 55) / 45)))
     }
 
     private func start() {
@@ -127,7 +156,11 @@ final class SpeechInput: ObservableObject {
             return
         }
         inputNode.removeTap(onBus: 0)
-        Self.installAudioTap(on: inputNode, request: request)
+        Self.installAudioTap(on: inputNode, request: request) { [weak self] level in
+            Task { @MainActor [weak self] in
+                self?.updateAudioLevel(level)
+            }
+        }
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             Task { @MainActor [weak self] in
@@ -177,5 +210,11 @@ final class SpeechInput: ObservableObject {
             completedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             stop()
         }
+    }
+
+    private func updateAudioLevel(_ level: CGFloat) {
+        // Fast attack keeps speech responsive; a slower release avoids a jittery orb.
+        let smoothing: CGFloat = level > audioLevel ? 0.52 : 0.14
+        audioLevel += (level - audioLevel) * smoothing
     }
 }

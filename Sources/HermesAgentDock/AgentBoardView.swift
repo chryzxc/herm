@@ -31,7 +31,7 @@ struct AgentBoardView: View {
 
     var body: some View {
         ZStack {
-            // Embedded mode belongs to the Operations pane and must inherit its
+            // Embedded mode belongs to the Control pane and must inherit its
             // dark glass surface instead of introducing a separate black block.
             embedded ? Color.scifiSurface : Color.black
             ambientLight
@@ -173,7 +173,7 @@ struct AgentBoardView: View {
     }
 
     private var agentsGrid: some View {
-        // The Operations pane is intentionally a two-column roster so the
+            // The Activity pane is intentionally a two-column roster so the
         // operator can scan all agents in one view.
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
             ForEach(agents) { agent in

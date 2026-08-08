@@ -1,6 +1,15 @@
 import AppKit
 import Combine
+import KeyboardShortcuts
 import SwiftUI
+import UserNotifications
+
+extension KeyboardShortcuts.Name {
+    static let toggleHermesControl = Self(
+        "toggleHermesControl",
+        initial: .init(.space, modifiers: [.command, .option])
+    )
+}
 
 @MainActor
 final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate {
@@ -9,6 +18,10 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         dockPanel = DockPanelController(model: model)
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        KeyboardShortcuts.onKeyUp(for: .toggleHermesControl) { [weak self] in
+            self?.dockPanel?.toggleFromShortcut()
+        }
     }
 }
 
@@ -16,10 +29,10 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate {
 private final class DockPanelController: NSObject, NSWindowDelegate {
     private enum Metrics {
         static let compactWidth: CGFloat = 420
-        // Keep the chat compact while giving the right Operations workspace
+        // Keep the chat compact while giving the right Control workspace
         // enough room to reach the screen edge on wide displays.
-        static let workspaceWidth: CGFloat = 880
-        static let height: CGFloat = 560
+        static let workspaceWidth: CGFloat = 960
+        static let height: CGFloat = 640
         static let screenInset: CGFloat = 12
         static let menuGap: CGFloat = 8
     }
@@ -102,6 +115,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panel.isVisible ? hide() : show()
     }
 
+    func toggleFromShortcut() {
+        togglePanel()
+    }
+
     private func show() {
         resizePanel(to: desiredWidth, animated: false)
         // `swift run` leaves Terminal as the active app. A status-bar panel can
@@ -134,13 +151,14 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         guard let screen else { return }
 
         let visibleFrame = screen.visibleFrame
+        let fittedWidth = min(width, max(Metrics.compactWidth, visibleFrame.width - Metrics.screenInset * 2))
         let maxX = visibleFrame.maxX - Metrics.screenInset
         let minX = visibleFrame.minX + Metrics.screenInset
-        let preferredX = (buttonRect?.midX ?? visibleFrame.midX) - width / 2
-        let x = min(max(preferredX, minX), maxX - width)
+        let preferredX = (buttonRect?.midX ?? visibleFrame.midX) - fittedWidth / 2
+        let x = min(max(preferredX, minX), maxX - fittedWidth)
         let preferredY = (buttonRect?.minY ?? visibleFrame.maxY) - Metrics.height - Metrics.menuGap
         let y = max(visibleFrame.minY + Metrics.screenInset, preferredY)
-        let frame = NSRect(x: x, y: y, width: width, height: Metrics.height)
+        let frame = NSRect(x: x, y: y, width: fittedWidth, height: Metrics.height)
 
         if animated, panel.isVisible {
             NSAnimationContext.runAnimationGroup { context in

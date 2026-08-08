@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
+import UserNotifications
 
 enum HermesStatus: Equatable {
     case idle, working, needsApproval, offline
@@ -22,6 +23,36 @@ enum HermesStatus: Equatable {
         case .needsApproval: "exclamationmark.circle"
         case .offline: "wifi.slash"
         }
+    }
+}
+
+enum HermesVoiceState: Equatable {
+    case inactive
+    case preparing
+    case listening
+    case thinking
+    case localFallback(String)
+
+    var isNativeConversationActive: Bool {
+        switch self {
+        case .preparing, .listening, .thinking: true
+        case .inactive, .localFallback: false
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .inactive: "VOICE OFF"
+        case .preparing: "CONNECTING VOICE"
+        case .listening: "HERMES IS LISTENING"
+        case .thinking: "HERMES IS THINKING"
+        case .localFallback: "LOCAL VOICE FALLBACK"
+        }
+    }
+
+    var fallbackDetail: String? {
+        if case .localFallback(let detail) = self { return detail }
+        return nil
     }
 }
 
@@ -183,10 +214,12 @@ final class DockModel: ObservableObject {
     @Published var isLoadingRuntimeConfiguration = false
     @Published var runtimeConfigurationError: String?
     @Published var runtimeModelOptions: [HermesModelOption] = []
+    @Published private(set) var voiceState: HermesVoiceState = .inactive
+    @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
     @Published private(set) var composerFocusRequest = 0
 
     private let gateway = HermesGateway()
-    private var sessionID: String?
+    @Published private(set) var sessionID: String?
     private var streamingMessageID: UUID?
     private var streamingMessageIsVisionNotice = false
     private var didRestoreLatestSession = false
@@ -447,6 +480,73 @@ final class DockModel: ObservableObject {
         isSending = false
     }
 
+    /// Control-center actions share the user-facing Hermes gateway so they do
+    /// not create a second backend or bypass the normal approval/event stream.
+    func requestControl(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        try await gateway.request(method, params: params)
+    }
+
+    /// Starts Hermes' native VAD/TTS voice loop. Hermes owns the microphone,
+    /// transcription, streaming speech, and spoken barge-in for this mode.
+    /// If the locally installed CLI is missing those optional dependencies, the
+    /// Dock keeps its existing Apple speech-recognition flow as a clear fallback.
+    func startVoiceConversation() {
+        guard voiceState == .inactive || {
+            if case .localFallback = voiceState { return true }
+            return false
+        }() else { return }
+        guard !voiceState.isNativeConversationActive else { return }
+        voiceState = .preparing
+
+        Task {
+            do {
+                try await gateway.connect()
+                if sessionID == nil {
+                    let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock"])
+                    sessionID = result["session_id"] as? String
+                    currentModelName = (result["model"] as? String) ?? (result["model_name"] as? String)
+                }
+                guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
+
+                let requirements = try await gateway.request("voice.toggle", params: ["action": "status"])
+                guard (requirements["available"] as? Bool) != false,
+                      (requirements["stt_available"] as? Bool) != false else {
+                    let detail = (requirements["details"] as? String) ?? "Hermes voice dependencies are unavailable."
+                    voiceState = .localFallback(detail)
+                    return
+                }
+
+                let enabled = try await gateway.request("voice.toggle", params: ["action": "on"])
+                if (enabled["tts"] as? Bool) != true {
+                    _ = try await gateway.request("voice.toggle", params: ["action": "tts"])
+                }
+                let recording = try await gateway.request("voice.record", params: ["action": "start", "session_id": sessionID])
+                let recordingStatus = recording["status"] as? String
+                if recordingStatus == "busy" {
+                    voiceState = .localFallback("Hermes voice is already in use by another session.")
+                } else {
+                    voiceTelemetry.beginListening()
+                    voiceState = .listening
+                }
+            } catch {
+                DebugLog.write("voice: Hermes native voice unavailable: \(error.localizedDescription)")
+                voiceState = .localFallback(error.localizedDescription)
+            }
+        }
+    }
+
+    func stopVoiceConversation() {
+        let wasNative = voiceState.isNativeConversationActive
+        voiceState = .inactive
+        guard wasNative else { return }
+        Task {
+            if let sessionID {
+                _ = try? await gateway.request("voice.record", params: ["action": "stop", "session_id": sessionID])
+            }
+            _ = try? await gateway.request("voice.toggle", params: ["action": "off"])
+        }
+    }
+
     func respondToApproval(_ choice: String) {
         guard let sessionID else { return }
         Task {
@@ -474,6 +574,29 @@ final class DockModel: ObservableObject {
         }
         recordEvent(type, params: params)
         switch type {
+        case "voice.transcript":
+            guard voiceState.isNativeConversationActive else { return }
+            if (payload["stop_phrase"] as? Bool) == true {
+                voiceState = .inactive
+                return
+            }
+            guard let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !transcript.isEmpty else {
+                voiceState = .listening
+                return
+            }
+            voiceTelemetry.receivedTranscript()
+            submitNativeVoiceTranscript(transcript)
+        case "voice.status":
+            guard voiceState.isNativeConversationActive else { return }
+            let state = payload["state"] as? String
+            voiceState = state == "recording" ? .listening : .thinking
+        case "voice.interrupted":
+            guard voiceState.isNativeConversationActive else { return }
+            status = .idle
+            isSending = false
+            voiceTelemetry.markInterrupted()
+            voiceState = .listening
         case "message.start":
             let model = (payload["model"] as? String) ?? (payload["model_name"] as? String)
             if let model {
@@ -490,6 +613,9 @@ final class DockModel: ObservableObject {
                   let id = streamingMessageID,
                   let index = messages.firstIndex(where: { $0.id == id }) else { return }
             if streamingMessageIsVisionNotice { return }
+            if voiceState.isNativeConversationActive {
+                voiceTelemetry.receivedResponse()
+            }
             var newText = messages[index].text + delta
             if Self.isVisionUnsupportedError(newText) {
                 streamingMessageIsVisionNotice = true
@@ -508,15 +634,23 @@ final class DockModel: ObservableObject {
             isSending = false
             streamingMessageID = nil
             hasUnreadResponse = !isPopoverVisible
+            if voiceState.isNativeConversationActive {
+                voiceTelemetry.completedResponse()
+                // Hermes keeps a full-duplex listener armed through response
+                // generation and playback, so it is ready for the next turn.
+                voiceState = .listening
+            }
         case "approval.request":
             approvalText = (payload["command"] as? String) ?? (payload["description"] as? String) ?? "Hermes wants to perform an action."
             status = .needsApproval
+            notify(title: "Hermes needs approval", body: approvalText ?? "Hermes wants to perform an action.", identifier: "hermes-approval")
         case "error":
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
             let text = Self.isVisionUnsupportedError(raw) ? Self.visionUnsupportedNotice : raw
             messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
             status = .idle
             isSending = false
+            notify(title: "Hermes encountered an error", body: text, identifier: "hermes-error")
             hasUnreadResponse = !isPopoverVisible
 
         case "reasoning.start", "thinking":
@@ -577,6 +711,38 @@ final class DockModel: ObservableObject {
         if type == "sessions.changed" || type.hasPrefix("tool.") || type.hasPrefix("subagent.") || type == "message.complete" {
             refreshDelegationStatus()
         }
+    }
+
+    private func submitNativeVoiceTranscript(_ text: String) {
+        guard let sessionID, !isSending else { return }
+        messages.append(ChatMessage(role: .user, text: text))
+        status = .working
+        isSending = true
+        voiceState = .thinking
+        voiceTelemetry.submittedRequest()
+        Task {
+            do {
+                _ = try await gateway.request(
+                    "prompt.submit",
+                    params: ["session_id": sessionID, "text": text + Self.workspaceDelegationInstruction]
+                )
+            } catch {
+                messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(error.localizedDescription)", modelName: currentModelName))
+                status = .offline
+                isSending = false
+                voiceState = .listening
+            }
+        }
+    }
+
+    private func notify(title: String, body: String, identifier: String) {
+        guard !isPopoverVisible else { return }
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = String(body.prefix(240))
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "\(identifier)-\(UUID().uuidString)", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     func refreshDelegationStatus() {

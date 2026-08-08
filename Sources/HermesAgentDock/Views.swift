@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Foundation
+import UniformTypeIdentifiers
 
 extension Color {
     static let scifiBg = Color.black
@@ -50,6 +51,10 @@ private struct ThinkingDots: View {
 
 private struct VoiceModeToolbar: View {
     var onReturnToChat: () -> Void
+    var onToggleWorkspace: () -> Void
+    var isWorkspaceVisible: Bool
+    var canStopRequest: Bool
+    var onStopRequest: () -> Void
 
     var body: some View {
         HStack {
@@ -64,6 +69,30 @@ private struct VoiceModeToolbar: View {
             .help("Return to chat")
 
             Spacer()
+
+            HStack(spacing: 8) {
+                Button(action: onToggleWorkspace) {
+                    Image(systemName: isWorkspaceVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isWorkspaceVisible ? Color.scifiAccent : Color.scifiMuted)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(isWorkspaceVisible ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
+                }
+                .buttonStyle(.plain)
+                .help(isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
+
+                if canStopRequest {
+                    Button(action: onStopRequest) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiDestructive)
+                            .frame(width: 36, height: 36)
+                            .background(Circle().fill(Color.scifiDestructive.opacity(0.1)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Stop Hermes request")
+                }
+            }
         }
     }
 }
@@ -385,9 +414,14 @@ private struct ConversationBottomPreferenceKey: PreferenceKey {
 
 private struct WorkspaceActivitySidebar: View {
     @ObservedObject var model: DockModel
-    @State private var selectedMode: OperationsMode = .activity
+    @ObservedObject var store: WorkspaceStore
+    @ObservedObject var control: ControlCenterModel
+    @State private var selectedMode: ControlTab = .today
     @State private var selectedModelID = ""
     @State private var selectedAgentID: String?
+    @State private var repository = RepositorySnapshot.empty
+    @State private var isRefreshingRepository = false
+    @State private var showingRepositoryPicker = false
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -395,21 +429,15 @@ private struct WorkspaceActivitySidebar: View {
         return formatter
     }()
 
-    private enum OperationsMode: String, CaseIterable, Identifiable {
-        case activity = "Activity"
-        case core = "Core"
-        var id: String { rawValue }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("OPERATIONS")
+                    Text("HERMES CONTROL")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(1.4)
                         .foregroundStyle(Color.scifiAccent)
-                    Text("LIVE WORKSPACE")
+                    Text("PERSONAL OPERATING SURFACE")
                         .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
                         .tracking(1.0)
                         .foregroundStyle(Color.scifiTertiary)
@@ -429,6 +457,8 @@ private struct WorkspaceActivitySidebar: View {
             ScrollView {
                 Group {
                      switch selectedMode {
+                     case .today: nowContent
+                     case .inbox: inboxContent
                      case .activity: activityContent
                      case .core: coreContent
                      }
@@ -438,14 +468,25 @@ private struct WorkspaceActivitySidebar: View {
         }
         .background(Color.scifiSurface)
         .environment(\.colorScheme, .dark)
+        .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder]) { result in
+            guard case .success(let url) = result else { return }
+            store.attachProject(at: url.path, toSessionID: model.sessionID)
+        }
+        .task(id: store.projectPath) { await refreshRepository() }
+        .task {
+            control.bind(to: model)
+            control.refresh()
+        }
+        .onChange(of: model.status) { _, _ in control.rebuildAttention() }
+        .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
     }
 
     private var modePicker: some View {
         HStack(spacing: 3) {
-            ForEach(OperationsMode.allCases) { mode in
+            ForEach(ControlTab.allCases) { mode in
                 Button {
                     withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
-                    if mode == .core { model.refreshRuntimeConfiguration() }
+                    if mode == .core { model.refreshRuntimeConfiguration(); control.refresh() }
                 } label: {
                     Text(mode.rawValue.uppercased())
                         .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
@@ -468,6 +509,252 @@ private struct WorkspaceActivitySidebar: View {
 
     private var activityContent: some View {
         AgentBoardView(model: model, embedded: true)
+    }
+
+    private var inboxContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("ATTENTION  ·  \(control.attention.filter { $0.state == .open }.count)")
+            if control.attention.filter({ $0.state == .open }).isEmpty {
+                emptyState(icon: "checkmark.circle", title: "Nothing needs your attention", detail: "Approvals, failures, clarifications, and due reminders will appear here.")
+            } else {
+                ForEach(control.attention.filter { $0.state == .open }) { item in
+                    attentionItemRow(item)
+                }
+            }
+            if !control.reminders.isEmpty {
+                sectionLabel("DUE REMINDERS  ·  \(control.reminders.count)")
+                ForEach(control.reminders) { reminder in
+                    HStack(spacing: 8) {
+                        Circle().fill(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent).frame(width: 6, height: 6)
+                        Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(2)
+                        Spacer(minLength: 4)
+                        Text(reminder.isOverdue ? "OVERDUE" : (reminder.list ?? "REMINDER"))
+                            .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiMuted)
+                    }
+                }
+            }
+            if let error = control.lastError {
+                Text(error).font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiWarning)
+            }
+        }
+    }
+
+    private func attentionItemRow(_ item: AttentionItem) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: item.kind == .approval ? "exclamationmark.triangle" : "circle.dotted")
+                    .font(.system(size: 11)).foregroundStyle(item.kind == .approval ? Color.scifiWarning : Color.scifiAccent)
+                    .frame(width: 15)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Color.scifiFg)
+                    Text(item.detail).font(.system(size: 9.5, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(4)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 12) {
+                ForEach(item.actions.filter { $0 != .open && $0 != .dismiss }, id: \.self) { action in
+                    Button(action.rawValue.uppercased()) { control.respond(to: item, action: action) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent)
+                }
+                Button("DISMISS") { control.markResolved(item.id) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+            }
+        }
+        .padding(11)
+        .background(Color.scifiSurface4)
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+    }
+
+    private var nowContent: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            sectionLabel("CURRENT TASK")
+            if let task = currentTask {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(alignment: .top, spacing: 9) {
+                        Circle().fill(taskColor(task.status)).frame(width: 7, height: 7).padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(task.title)
+                                .font(.system(size: 12.5, weight: .semibold))
+                                .foregroundStyle(Color.scifiFg)
+                                .lineLimit(3)
+                            Text(task.status.rawValue.uppercased())
+                                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                                .tracking(0.6)
+                                .foregroundStyle(taskColor(task.status))
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    HStack {
+                        Text("SESSION LINKED")
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .tracking(0.55)
+                            .foregroundStyle(Color.scifiTertiary)
+                        Spacer()
+                        Button(task.status == .done ? "REOPEN" : "MARK DONE") {
+                            store.updateStatus(task.status == .done ? .inProgress : .done, for: task.id)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                    }
+                }
+                .padding(12)
+                .background(Color.scifiSurface4)
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+            } else {
+                emptyState(icon: "scope", title: "No active task", detail: "Send a request and the Hermes session will become a durable workspace task.")
+            }
+
+            sectionLabel("ATTENTION")
+            VStack(alignment: .leading, spacing: 9) {
+                attentionRow(
+                    icon: model.approvalText == nil ? "checkmark.circle" : "exclamationmark.triangle",
+                    title: model.approvalText == nil ? "No decisions waiting" : "Hermes needs approval",
+                    detail: model.approvalText ?? "You are clear to continue.",
+                    color: model.approvalText == nil ? .scifiSuccess : .scifiWarning
+                )
+                attentionRow(
+                    icon: model.activeSubagents.isEmpty ? "person.2" : "person.2.fill",
+                    title: model.activeSubagents.isEmpty ? "No agents running" : "\(model.activeSubagents.count) active agent\(model.activeSubagents.count == 1 ? "" : "s")",
+                    detail: model.activeToolCalls.isEmpty ? "No active tools" : "\(model.activeToolCalls.count) tool call\(model.activeToolCalls.count == 1 ? "" : "s") in progress",
+                    color: model.activeSubagents.isEmpty ? .scifiMuted : .scifiAccent
+                )
+            }
+
+            if store.projectPath != nil {
+                sectionLabel("DEVELOPMENT CONTEXT")
+                repositoryContent
+            }
+
+            if !control.reminders.isEmpty {
+                sectionLabel("REMINDERS  ·  \(control.reminders.count)")
+                ForEach(control.reminders.prefix(3)) { reminder in
+                    HStack(spacing: 8) {
+                        Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
+                            .font(.system(size: 10)).foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
+                        Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+
+            if !control.cronJobs.isEmpty {
+                sectionLabel("SCHEDULED WORK  ·  \(control.cronJobs.count)")
+                ForEach(control.cronJobs.prefix(3)) { job in
+                    HStack(spacing: 8) {
+                        Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary).frame(width: 5, height: 5)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(job.name).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
+                            Text(job.schedule).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+
+            if !store.tasks.isEmpty {
+                sectionLabel("RECENT TASKS  ·  \(store.tasks.count)")
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(store.tasks.prefix(4)) { task in
+                        HStack(spacing: 8) {
+                            Circle().fill(taskColor(task.status)).frame(width: 5, height: 5)
+                            Text(task.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(task.status.rawValue.uppercased())
+                                .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(taskColor(task.status))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var repositoryContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 9) {
+                Image(systemName: repository.isGitRepository ? "arrow.triangle.branch" : "folder")
+                    .foregroundStyle(repository.isGitRepository ? Color.scifiSuccess : Color.scifiMuted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(repository.isGitRepository ? repository.branch : "No repository selected")
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.scifiFg)
+                        .lineLimit(1)
+                    if repository.isGitRepository {
+                        Text(repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(repository.changedFiles) CHANGED FILE\(repository.changedFiles == 1 ? "" : "S")")
+                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(repository.changedFiles == 0 ? Color.scifiSuccess : Color.scifiWarning)
+                    } else if let path = store.projectPath {
+                        Text(path).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if isRefreshingRepository { ProgressView().controlSize(.small) }
+            }
+            if repository.isGitRepository, !repository.latestCommit.isEmpty {
+                Text(repository.latestCommit)
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .lineLimit(2)
+            }
+            HStack(spacing: 14) {
+                Button(store.projectPath == nil ? "CHOOSE REPOSITORY" : "CHANGE REPOSITORY") {
+                    showingRepositoryPicker = true
+                }
+                if store.projectPath != nil {
+                    Button("REFRESH") { Task { await refreshRepository() } }
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Color.scifiAccent)
+        }
+        .padding(12)
+        .background(Color.scifiSurface4)
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+    }
+
+    private func attentionRow(icon: String, title: String, detail: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: icon).font(.system(size: 10)).foregroundStyle(color).frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
+                Text(detail).font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var currentTask: WorkspaceTask? {
+        if let sessionID = model.sessionID {
+            return store.task(forSessionID: sessionID)
+        }
+        return store.activeTask
+    }
+
+    private func taskColor(_ status: WorkspaceTaskStatus) -> Color {
+        switch status {
+        case .todo: .scifiMuted
+        case .inProgress: .scifiAccent
+        case .awaitingApproval: .scifiWarning
+        case .readyForReview: .scifiSuccess
+        case .done: .scifiTertiary
+        }
+    }
+
+    private func refreshRepository() async {
+        guard let path = store.projectPath else {
+            repository = .empty
+            return
+        }
+        isRefreshingRepository = true
+        repository = await RepositoryService.inspect(path: path)
+        isRefreshingRepository = false
     }
 
     private var agentRoster: some View {
@@ -542,6 +829,21 @@ private struct WorkspaceActivitySidebar: View {
 
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
+            sectionLabel("CAPABILITIES")
+            ForEach(control.capabilities) { capability in
+                HStack(alignment: .top, spacing: 8) {
+                    Circle().fill(capability.isAvailable ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6).padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(capability.title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
+                        Text(capability.detail).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                        if let recovery = capability.recovery {
+                            Text(recovery).font(.system(size: 8.5)).foregroundStyle(Color.scifiWarning).lineLimit(2)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            Divider().overlay(Color.scifiBorderLight)
             HStack {
                 sectionLabel("HERMES CONFIGURATION")
                 Spacer()
@@ -706,20 +1008,6 @@ private struct WorkspaceActivitySidebar: View {
         .overlay(alignment: .bottom) { Color.scifiBorderLight.opacity(0.7).frame(height: 0.5) }
     }
 
-    private func toolRow(_ call: ActiveToolCall) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: call.isComplete ? "checkmark.circle" : "circle.dotted")
-                .font(.system(size: 11))
-                .foregroundStyle(call.isComplete ? Color.scifiSuccess : Color.scifiAccent)
-                .frame(width: 13)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(call.name).font(.system(size: 10.5, weight: .medium, design: .monospaced)).foregroundStyle(Color.scifiFg)
-                Text(call.isComplete ? "COMPLETE" : (call.input.isEmpty ? "RUNNING" : call.input))
-                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
-            }
-        }
-    }
-
     private func eventRow(_ event: AgentEvent) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("•")
@@ -841,7 +1129,10 @@ struct DockPopover: View {
     @State private var showingImagePicker = false
     @StateObject private var speechInput = SpeechInput()
     @StateObject private var voiceOutput = VoiceOutput()
+    @StateObject private var workspaceStore = WorkspaceStore()
+    @StateObject private var controlCenter = ControlCenterModel()
     @State private var inputMode: InputMode = .chat
+    @State private var suppressNextVoiceResponse = false
 
     private enum InputMode {
         case chat, talk
@@ -863,18 +1154,18 @@ struct DockPopover: View {
                     composer
                 }
             }
-            .frame(width: 420, height: 560)
+            .frame(width: 420, height: 640)
 
-            // The Operations workspace belongs to the popup, not to chat mode.
+            // The Control workspace belongs to the popup, not to chat mode.
             // Voice swaps only the left-hand surface and keeps this pane live.
             if isWorkspaceVisible {
                 Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5)
-                WorkspaceActivitySidebar(model: model)
-                    .frame(width: 460, height: 560)
+                WorkspaceActivitySidebar(model: model, store: workspaceStore, control: controlCenter)
+                    .frame(width: 540, height: 640)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: isWorkspaceVisible ? 880 : 420, height: 560)
+        .frame(width: isWorkspaceVisible ? 960 : 420, height: 640)
         .background {
             ZStack {
                 Color(red: 0.055, green: 0.065, blue: 0.115)
@@ -900,9 +1191,14 @@ struct DockPopover: View {
             }
         }
         .task { model.restoreLatestSessionIfNeeded() }
-        .onAppear { onWorkspaceWidthChange(isWorkspaceVisible ? 880 : 420) }
+        .onAppear {
+            onWorkspaceWidthChange(isWorkspaceVisible ? 960 : 420)
+            synchronizeWorkspace()
+            controlCenter.bind(to: model)
+            controlCenter.refresh()
+        }
         .onChange(of: isWorkspaceVisible) { _, visible in
-            onWorkspaceWidthChange(visible ? 880 : 420)
+            onWorkspaceWidthChange(visible ? 960 : 420)
         }
         .onChange(of: speechInput.completedTranscript) { _, transcript in
             guard let transcript, !transcript.isEmpty, !model.isSending else { return }
@@ -916,16 +1212,56 @@ struct DockPopover: View {
             }
         }
         .onChange(of: model.status) { _, status in
-            guard inputMode == .talk,
-                  status == .idle,
-                  let response = model.messages.last(where: { $0.role == .hermes }),
-                  !response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            voiceOutput.speak(messageID: response.id, text: response.text)
+            synchronizeWorkspace(status: status)
+            guard inputMode == .talk, status == .idle, !model.voiceState.isNativeConversationActive else { return }
+            if suppressNextVoiceResponse {
+                suppressNextVoiceResponse = false
+                resumeVoiceConversationIfReady()
+                return
+            }
+            if let response = model.messages.last(where: { $0.role == .hermes }),
+               !response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                voiceOutput.speak(messageID: response.id, text: response.text)
+            } else {
+                resumeVoiceConversationIfReady()
+            }
         }
+        .onChange(of: voiceOutput.isSpeaking) { _, isSpeaking in
+            if !isSpeaking, !model.voiceState.isNativeConversationActive {
+                resumeVoiceConversationIfReady()
+            }
+        }
+        .onChange(of: model.voiceState) { _, state in
+            if case .localFallback = state {
+                resumeVoiceConversationIfReady()
+            }
+        }
+        .onChange(of: model.sessionID) { _, _ in synchronizeWorkspace() }
+        .onChange(of: model.currentSessionTitle) { _, _ in synchronizeWorkspace() }
+        .onChange(of: model.messages) { _, _ in synchronizeWorkspace() }
     }
 
     private var isWorkspaceVisible: Bool {
         isWorkspaceManuallyExpanded || !model.activeSubagents.isEmpty
+    }
+
+    private func synchronizeWorkspace(status: HermesStatus? = nil) {
+        guard let sessionID = model.sessionID else { return }
+        let title = model.currentSessionTitle
+            ?? model.messages.first(where: { $0.role == .user })?.text
+            ?? "Current Hermes task"
+        let task = workspaceStore.ensureTask(title: title, sessionID: sessionID)
+
+        switch status ?? model.status {
+        case .working:
+            workspaceStore.updateStatus(.inProgress, for: task.id)
+        case .needsApproval:
+            workspaceStore.updateStatus(.awaitingApproval, for: task.id)
+        case .idle where task.status == .inProgress || task.status == .awaitingApproval:
+            workspaceStore.updateStatus(.readyForReview, for: task.id)
+        case .idle, .offline:
+            break
+        }
     }
 
     private var header: some View {
@@ -958,7 +1294,10 @@ struct DockPopover: View {
             Spacer()
 
             HStack(spacing: 7) {
-                Button(action: { inputMode = .talk }) {
+                Button(action: {
+                    inputMode = .talk
+                    beginVoiceConversation()
+                }) {
                     Image(systemName: "waveform")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color.scifiMuted)
@@ -979,7 +1318,7 @@ struct DockPopover: View {
                 .help(isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
 
                 if model.status == .working || model.isSending {
-                    Button(action: { model.stop() }) {
+                    Button(action: stopCurrentRequest) {
                         Image(systemName: "square.fill")
                             .font(.system(size: 8))
                             .foregroundStyle(Color.scifiMuted)
@@ -1101,32 +1440,57 @@ struct DockPopover: View {
 
     private var voiceMode: some View {
         VStack(spacing: 0) {
-            VoiceModeToolbar {
-                speechInput.stop()
-                voiceOutput.stop()
-                inputMode = .chat
-            }
+            VoiceModeToolbar(
+                onReturnToChat: exitVoiceMode,
+                onToggleWorkspace: { isWorkspaceManuallyExpanded.toggle() },
+                isWorkspaceVisible: isWorkspaceVisible,
+                canStopRequest: model.status == .working || model.isSending,
+                onStopRequest: stopCurrentRequest
+            )
             .padding(14)
             Spacer()
             Button {
-                if speechInput.isRecording {
-                    speechInput.stop()
-                    inputMode = .chat
-                } else if !model.isSending {
+                if model.voiceState.isNativeConversationActive || speechInput.isRecording {
+                    exitVoiceMode()
+                } else if !model.isSending && !voiceOutput.isSpeaking {
                     voiceOutput.stop()
-                    speechInput.toggle()
+                    beginVoiceConversation()
                 }
             } label: {
                 VoiceOrbView(
-                    isListening: speechInput.isRecording,
-                    isResponding: (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking
+                    isListening: model.voiceState == .listening || speechInput.isRecording,
+                    isResponding: model.voiceState == .preparing || model.voiceState == .thinking || (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking,
+                    audioLevel: speechInput.audioLevel
                 )
                     .frame(width: 320, height: 320)
             }
             .buttonStyle(.plain)
-            .help(speechInput.isRecording ? "Cancel voice prompt" : "Start voice prompt")
+            .help(model.voiceState.isNativeConversationActive || speechInput.isRecording ? "End voice conversation" : "Resume listening")
             .overlay(alignment: .bottom) {
-                if model.status == .working && !speechInput.isRecording {
+                if let detail = model.voiceState.fallbackDetail {
+                    Text("LOCAL FALLBACK · \(detail)")
+                        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                        .tracking(0.35)
+                        .foregroundStyle(Color.scifiWarning)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 270)
+                        .offset(y: 42)
+                } else if model.voiceState.isNativeConversationActive {
+                    VStack(spacing: 5) {
+                        Text(model.voiceState.label)
+                            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                            .tracking(0.75)
+                            .foregroundStyle(model.voiceState == .listening ? Color.scifiSuccess : Color.scifiAccent)
+                        if let timing = model.voiceTelemetry.summary {
+                            Text(timing)
+                                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                .tracking(0.45)
+                                .foregroundStyle(Color.scifiTertiary)
+                        }
+                    }
+                    .offset(y: 42)
+                } else if model.status == .working && !speechInput.isRecording {
                     voiceActivityIndicator
                         .offset(y: 34)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -1137,6 +1501,43 @@ struct DockPopover: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
         .animation(.scifiEase(duration: 0.25), value: model.status)
+        .onAppear { beginVoiceConversation() }
+    }
+
+    private func beginVoiceConversation() {
+        if case .localFallback = model.voiceState {
+            resumeVoiceConversationIfReady()
+        } else {
+            model.startVoiceConversation()
+        }
+    }
+
+    private func resumeVoiceConversationIfReady() {
+        guard inputMode == .talk,
+              !model.voiceState.isNativeConversationActive,
+              model.status == .idle,
+              !model.isSending,
+              !speechInput.isRecording,
+              !speechInput.isStarting,
+              !speechInput.isUnavailable,
+              speechInput.errorMessage == nil,
+              !voiceOutput.isSpeaking else { return }
+        speechInput.startListening()
+    }
+
+    private func exitVoiceMode() {
+        speechInput.stop()
+        voiceOutput.stop()
+        model.stopVoiceConversation()
+        inputMode = .chat
+    }
+
+    private func stopCurrentRequest() {
+        if inputMode == .talk {
+            suppressNextVoiceResponse = true
+            voiceOutput.stop()
+        }
+        model.stop()
     }
 
     private var voiceActivityIndicator: some View {
@@ -1253,13 +1654,6 @@ struct DockPopover: View {
             if let reasoning = model.reasoningState {
                 reasoningBlock(reasoning)
             }
-            if !model.activeToolCalls.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.activeToolCalls) { call in
-                        toolCallRow(call)
-                    }
-                }
-            }
             if !importantEvents.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(importantEvents.suffix(6))) { event in
@@ -1267,7 +1661,7 @@ struct DockPopover: View {
                     }
                 }
             }
-            if model.reasoningState == nil && model.activeToolCalls.isEmpty && importantEvents.isEmpty {
+            if model.reasoningState == nil && importantEvents.isEmpty {
                 HStack(spacing: 5) {
                     ThinkingDots()
                     Text("Thinking")
@@ -1443,41 +1837,6 @@ struct DockPopover: View {
                 .fill(Color.scifiSurface)
                 .stroke(Color.scifiBorderLight, lineWidth: 0.5)
         )
-    }
-
-    private func toolCallRow(_ call: ActiveToolCall) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(call.isComplete ? Color.scifiSuccess : Color.scifiAccent)
-                .frame(width: 6, height: 6)
-            Text(call.name)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.scifiFg)
-            if !call.input.isEmpty {
-                Text(call.input)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
-                    .lineLimit(1)
-            }
-            if call.isComplete {
-                if let result = call.result {
-                    Text(result)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.scifiTertiary)
-                        .lineLimit(2)
-                } else {
-                    Text("done")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.scifiTertiary)
-                }
-            } else {
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.6)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
     }
 
     private func approvalRow(_ text: String) -> some View {
@@ -1890,14 +2249,16 @@ private struct StartupAssistantView: View {
 private struct VoiceOrbView: View {
     let isListening: Bool
     let isResponding: Bool
+    let audioLevel: CGFloat
 
     var body: some View {
         TimelineView(.animation) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             let isActive = isListening || isResponding
             let animationTime = isActive ? t : 0
+            let voiceLevel = Double(audioLevel)
             let waveSpeed = isResponding ? 6.0 : (isListening ? 4.0 : 0)
-            let waveAmplitude = isResponding ? 22.0 : (isListening ? 16.0 : 0)
+            let waveAmplitude = isResponding ? 22.0 : (isListening ? 4.0 + voiceLevel * 26.0 : 0)
             ZStack {
                 ForEach(0..<4) { i in
                     let size = 140.0 + Double(i) * 60
@@ -1912,7 +2273,10 @@ private struct VoiceOrbView: View {
                 }
 
                 ForEach(0..<48) { i in
-                    let barH = isActive ? 4 + waveAmplitude * (1 + sin(animationTime * waveSpeed + Double(i) * 0.4)) / 2 : 2
+                    let phase = (1 + sin(animationTime * waveSpeed + Double(i) * 0.4)) / 2
+                    let barH = isResponding
+                        ? 4 + waveAmplitude * phase
+                        : (isListening ? 3 + waveAmplitude * (0.2 + 0.8 * phase) : 2)
                     Capsule()
                         .fill(Color.scifiAccent)
                         .frame(width: 2, height: barH)
@@ -1937,7 +2301,11 @@ private struct VoiceOrbView: View {
                     .frame(width: 90, height: 90)
                     .overlay(Circle().stroke(Color.scifiAccent.opacity(0.2), lineWidth: 0.5))
                     .shadow(color: Color.scifiAccent.opacity(0.25), radius: 30)
-                    .scaleEffect(1 + (isResponding ? 0.12 : 0.08) * sin(animationTime * .pi))
+                    .scaleEffect(
+                        1 + (isResponding
+                             ? 0.12 * sin(animationTime * .pi)
+                             : (isListening ? 0.025 + voiceLevel * 0.1 : 0))
+                    )
                     .overlay {
                         Image(systemName: isResponding ? "waveform" : "mic.fill")
                             .font(.system(size: 32))

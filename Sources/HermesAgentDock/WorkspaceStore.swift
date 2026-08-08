@@ -88,6 +88,7 @@ struct WorkspaceTask: Identifiable, Codable, Equatable {
 final class WorkspaceStore: ObservableObject {
     @Published private(set) var tasks: [WorkspaceTask] = []
     @Published private(set) var agentRuns: [WorkspaceAgentRun] = []
+    @Published private(set) var controlReferences: [ControlReference] = []
     @Published var projectPath: String? {
         didSet { save() }
     }
@@ -97,21 +98,44 @@ final class WorkspaceStore: ObservableObject {
     /// required for its event stream; the user-facing conversation keeps its own gateway.
     private var agentGateways: [UUID: HermesGateway] = [:]
 
-    init() {
+    init(fileURL: URL? = nil) {
         let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
         let support = supportRoot
             .appendingPathComponent("HermesWorkspace", isDirectory: true)
-        fileURL = support.appendingPathComponent("workspace.json")
+        self.fileURL = fileURL ?? support.appendingPathComponent("workspace.json")
         load()
     }
 
     var activeTask: WorkspaceTask? { tasks.first(where: { $0.status != .done }) }
 
+    func task(forSessionID sessionID: String) -> WorkspaceTask? {
+        tasks.first(where: { $0.sessionID == sessionID })
+    }
+
+    /// A Hermes session is the canonical identity for a conversation-backed task.
+    /// Repeated UI updates may enrich the title, but must never create duplicates.
+    @discardableResult
+    func ensureTask(title: String, sessionID: String) -> WorkspaceTask {
+        let normalizedTitle = normalizedTaskTitle(title)
+        if let index = tasks.firstIndex(where: { $0.sessionID == sessionID }) {
+            addControlReference(for: tasks[index])
+            if tasks[index].title != normalizedTitle {
+                tasks[index].title = normalizedTitle
+                tasks[index].updatedAt = Date()
+                save()
+            }
+            return tasks[index]
+        }
+
+        return createTask(title: normalizedTitle, sessionID: sessionID)
+    }
+
     @discardableResult
     func createTask(title: String, sessionID: String? = nil) -> WorkspaceTask {
         let task = WorkspaceTask(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled task" : title, status: .inProgress, projectPath: projectPath, sessionID: sessionID)
         tasks.insert(task, at: 0)
+        addControlReference(for: task)
         save()
         return task
     }
@@ -123,6 +147,11 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
+    func updateStatus(_ status: WorkspaceTaskStatus, forSessionID sessionID: String) {
+        guard let taskID = task(forSessionID: sessionID)?.id else { return }
+        updateStatus(status, for: taskID)
+    }
+
     func updateTaskFromHermes(taskID: UUID, status: WorkspaceTaskStatus, summary: String? = nil) {
         guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
         tasks[index].status = status
@@ -132,6 +161,9 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func deleteTask(_ taskID: UUID) {
+        if let task = tasks.first(where: { $0.id == taskID }), let sessionID = task.sessionID {
+            controlReferences.removeAll { $0.source == .hermesSession && $0.sourceID == sessionID }
+        }
         tasks.removeAll { $0.id == taskID }
         save()
     }
@@ -238,16 +270,67 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
+    func attachProject(at path: String, toSessionID sessionID: String?) {
+        projectPath = path
+        if let sessionID, let index = tasks.firstIndex(where: { $0.sessionID == sessionID }) {
+            tasks[index].projectPath = path
+            tasks[index].updatedAt = Date()
+        }
+        save()
+    }
+
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
               let state = try? JSONDecoder.workspace.decode(WorkspaceState.self, from: data) else { return }
         tasks = state.tasks
         agentRuns = state.agentRuns
         projectPath = state.projectPath
+
+        let migratedReferences = state.controlReferences.isEmpty
+            ? tasks.compactMap { task -> ControlReference? in
+                guard let sessionID = task.sessionID else { return nil }
+                return ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID)
+            }
+            : state.controlReferences
+        controlReferences = deduplicatedReferences(migratedReferences)
+
+        if state.schemaVersion < WorkspaceState.currentSchemaVersion {
+            backupLegacyWorkspaceIfNeeded()
+            save()
+        }
+    }
+
+    private func addControlReference(for task: WorkspaceTask) {
+        guard let sessionID = task.sessionID else { return }
+        let reference = ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID, projectID: task.projectPath)
+        if !controlReferences.contains(where: { $0.id == reference.id }) {
+            controlReferences.append(reference)
+        }
+    }
+
+    private func deduplicatedReferences(_ references: [ControlReference]) -> [ControlReference] {
+        var seen = Set<String>()
+        return references.filter { seen.insert($0.id).inserted }
+    }
+
+    private func backupLegacyWorkspaceIfNeeded() {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        let backupURL = fileURL.deletingPathExtension().appendingPathExtension("v1.backup.json")
+        guard !FileManager.default.fileExists(atPath: backupURL.path) else { return }
+        do {
+            try FileManager.default.copyItem(at: fileURL, to: backupURL)
+        } catch {
+            DebugLog.write("workspace: migration backup failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func normalizedTaskTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Untitled task" : String(trimmed.prefix(100))
     }
 
     private func save() {
-        let state = WorkspaceState(tasks: tasks, agentRuns: agentRuns, projectPath: projectPath)
+        let state = WorkspaceState(tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences)
         guard let data = try? JSONEncoder.workspace.encode(state) else { return }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -259,21 +342,32 @@ final class WorkspaceStore: ObservableObject {
 }
 
 private struct WorkspaceState: Codable {
+    static let currentSchemaVersion = 2
+    var schemaVersion: Int
     var tasks: [WorkspaceTask]
     var agentRuns: [WorkspaceAgentRun]
     var projectPath: String?
+    var controlReferences: [ControlReference]
 
-    init(tasks: [WorkspaceTask], agentRuns: [WorkspaceAgentRun] = [], projectPath: String?) {
+    init(tasks: [WorkspaceTask], agentRuns: [WorkspaceAgentRun] = [], projectPath: String?, controlReferences: [ControlReference] = []) {
+        self.schemaVersion = Self.currentSchemaVersion
         self.tasks = tasks
         self.agentRuns = agentRuns
         self.projectPath = projectPath
+        self.controlReferences = controlReferences
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         tasks = try container.decodeIfPresent([WorkspaceTask].self, forKey: .tasks) ?? []
         agentRuns = try container.decodeIfPresent([WorkspaceAgentRun].self, forKey: .agentRuns) ?? []
         projectPath = try container.decodeIfPresent(String.self, forKey: .projectPath)
+        controlReferences = try container.decodeIfPresent([ControlReference].self, forKey: .controlReferences) ?? []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, tasks, agentRuns, projectPath, controlReferences
     }
 }
 
