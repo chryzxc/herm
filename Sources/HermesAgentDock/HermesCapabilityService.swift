@@ -8,7 +8,7 @@ final class HermesCapabilityService {
         let configResult = await request(client, method: "config.show")
         let versionResult = await request(client, method: "shell.exec", params: ["command": "hermes --version"])
         let skillsResult = await request(client, method: "shell.exec", params: ["command": "hermes skills list --enabled-only"])
-        let kanbanResult = await request(client, method: "shell.exec", params: ["command": "hermes kanban list --json"])
+        let kanbanResult = await request(client, method: "shell.exec", params: ["command": "hermes kanban list --help"])
         let notesResult = await request(client, method: "shell.exec", params: ["command": "memo --version"])
         let emailResult = await request(client, method: "shell.exec", params: ["command": "himalaya --version"])
         let imessageResult = await request(client, method: "shell.exec", params: ["command": "imsg --version"])
