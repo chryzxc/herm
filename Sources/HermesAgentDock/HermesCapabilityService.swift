@@ -6,6 +6,7 @@ final class HermesCapabilityService {
         let toolResult = await request(client, method: "tools.list")
         let pluginResult = await request(client, method: "plugins.list")
         let configResult = await request(client, method: "config.show")
+        let versionResult = await request(client, method: "shell.exec", params: ["command": "hermes --version"])
         let skillsResult = await request(client, method: "shell.exec", params: ["command": "hermes skills list --enabled-only"])
         let notesResult = await request(client, method: "shell.exec", params: ["command": "memo --version"])
         let emailResult = await request(client, method: "shell.exec", params: ["command": "himalaya --version"])
@@ -13,6 +14,7 @@ final class HermesCapabilityService {
         let mcpResult = await request(client, method: "shell.exec", params: ["command": "hermes mcp list"])
         let notesAvailable = Self.shellResultSucceeded(notesResult)
         let skillsAvailable = Self.shellResultSucceeded(skillsResult)
+        let versionOutput = (versionResult?["stdout"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let emailAvailable = Self.shellResultSucceeded(emailResult)
         let messagingAvailable = Self.shellResultSucceeded(imessageResult)
         let mcpAvailable = Self.shellResultSucceeded(mcpResult)
@@ -20,6 +22,7 @@ final class HermesCapabilityService {
         let hasMCPServers = mcpAvailable && !mcpOutput.localizedCaseInsensitiveContains("No MCP servers configured")
         let version = (configResult?["version"] as? String)
             ?? (configResult?["hermes_version"] as? String)
+            ?? (Self.shellResultSucceeded(versionResult) ? versionOutput : nil)
 
         return [
             CapabilityState(
