@@ -120,11 +120,12 @@ struct AgentBoardView: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.scifiMuted)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 36, height: 36)
                     .background(Color.scifiSurface4)
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
             .help("Return to chat")
             .frame(width: 62, alignment: .trailing)
         }

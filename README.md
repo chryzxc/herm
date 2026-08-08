@@ -44,6 +44,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   switches between Ask and Control as a single pane without horizontal clipping.
 - **Readable controls.** UI text uses a 12pt minimum for labels, metadata, and
   status text so the compact menu-bar surface remains legible.
+- **Design-system interactions.** Primary icon controls retain their compact
+  36pt glass appearance while using 44pt hit targets, matching the interaction
+  guidance in `DESIGN.md`.
 - **Quick capture.** The composer offers transparent prompt shortcuts for
   reminders, Notes, research, summaries, recurring automation, review, email,
   messaging, connected-source search, and Kanban tasks. Provider availability is

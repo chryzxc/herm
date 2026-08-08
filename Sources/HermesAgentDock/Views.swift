@@ -31,6 +31,14 @@ extension Animation {
     }
 }
 
+private extension View {
+    /// Keeps compact glass controls visually light while preserving the 44pt
+    /// hit area specified by the Dock design system.
+    func dockHitTarget() -> some View {
+        frame(minWidth: 44, minHeight: 44)
+    }
+}
+
 private struct ThinkingDots: View {
     var body: some View {
         TimelineView(.animation) { context in
@@ -67,6 +75,7 @@ private struct VoiceModeToolbar: View {
                     .background(Circle().fill(Color.scifiSurface4))
             }
             .buttonStyle(.plain)
+            .dockHitTarget()
             .help("Return to chat")
 
             Spacer()
@@ -80,6 +89,7 @@ private struct VoiceModeToolbar: View {
                         .background(Circle().fill(isWorkspaceVisible ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
                 }
                 .buttonStyle(.plain)
+                .dockHitTarget()
                 .help(isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
 
                 if canStopRequest {
@@ -91,6 +101,7 @@ private struct VoiceModeToolbar: View {
                             .background(Circle().fill(Color.scifiDestructive.opacity(0.1)))
                     }
                     .buttonStyle(.plain)
+                    .dockHitTarget()
                     .help("Stop Hermes request")
                 }
             }
@@ -469,9 +480,11 @@ private struct WorkspaceActivitySidebar: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.scifiMuted)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(Color.scifiSurface4))
                 }
                 .buttonStyle(.plain)
+                .dockHitTarget()
                 .help("Return to chat")
                 Circle()
                     .fill(statusColor)
@@ -2061,10 +2074,11 @@ struct DockPopover: View {
                     Image(systemName: "waveform")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.scifiMuted)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.scifiSurface4))
                 }
                 .buttonStyle(.plain)
+                .dockHitTarget()
                 .help("Talk mode")
 
                 Button(action: {
@@ -2077,10 +2091,11 @@ struct DockPopover: View {
                     Image(systemName: isWorkspaceVisibleForLayout ? "rectangle.compress.vertical" : "rectangle.split.2x1")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(isWorkspaceVisibleForLayout ? Color.scifiAccent : Color.scifiMuted)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 36, height: 36)
                         .background(Circle().fill(isWorkspaceVisibleForLayout ? Color.scifiAccent.opacity(0.1) : Color.clear))
                 }
                 .buttonStyle(.plain)
+                .dockHitTarget()
                 .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
 
                 if model.status == .working || model.isSending {
@@ -2088,8 +2103,11 @@ struct DockPopover: View {
                         Image(systemName: "square.fill")
                             .font(.system(size: 12))
                             .foregroundStyle(Color.scifiMuted)
+                            .frame(width: 36, height: 36)
+                            .background(Circle().fill(Color.scifiSurface4))
                     }
                     .buttonStyle(.plain)
+                    .dockHitTarget()
                     .help("Stop")
                 }
 
@@ -2097,10 +2115,11 @@ struct DockPopover: View {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.scifiMuted)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.scifiSurface4))
                 }
                 .buttonStyle(.plain)
+                .dockHitTarget()
                 .help("New chat")
             }
         }
@@ -2756,6 +2775,7 @@ struct DockPopover: View {
                             .frame(width: 38, height: 38)
                     }
                     .buttonStyle(.plain)
+                    .dockHitTarget()
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color.scifiSurface4)
@@ -2821,6 +2841,7 @@ struct DockPopover: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .dockHitTarget()
                 .disabled(!speechInput.isRecording && (!canSend || model.isSending))
                 .keyboardShortcut(.return, modifiers: [.command])
                 .help(speechInput.isRecording ? "Send voice prompt" : "Send message")
