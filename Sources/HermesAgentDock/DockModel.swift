@@ -218,6 +218,7 @@ final class DockModel: ObservableObject {
     @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
     @Published private(set) var composerFocusRequest = 0
     @Published private(set) var controlInboxRequest = 0
+    @Published private(set) var requestedAttentionID: String?
 
     private let gateway = HermesGateway()
     let eventRouter = HermesEventRouter()
@@ -476,6 +477,12 @@ final class DockModel: ObservableObject {
     }
 
     func requestControlInbox() {
+        requestedAttentionID = nil
+        controlInboxRequest &+= 1
+    }
+
+    func requestControlAttention(_ id: String) {
+        requestedAttentionID = id
         controlInboxRequest &+= 1
     }
 

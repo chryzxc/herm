@@ -418,6 +418,7 @@ private struct WorkspaceActivitySidebar: View {
     @ObservedObject var control: ControlCenterModel
     var onClose: () -> Void = {}
     @State private var selectedMode: ControlTab = .today
+    @State private var selectedAttentionID: String?
     @State private var selectedModelID = ""
     @State private var selectedAgentID: String?
     @State private var repository = RepositorySnapshot.empty
@@ -492,7 +493,10 @@ private struct WorkspaceActivitySidebar: View {
         }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
-        .onChange(of: model.controlInboxRequest) { _, _ in selectedMode = .inbox }
+        .onChange(of: model.controlInboxRequest) { _, _ in
+            selectedMode = .inbox
+            selectedAttentionID = model.requestedAttentionID
+        }
         .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
             if let reminder = reminderForConfirmation {
                 Button("Complete Reminder") { control.completeReminder(reminder) }
@@ -552,7 +556,7 @@ private struct WorkspaceActivitySidebar: View {
                 emptyState(icon: "checkmark.circle", title: "Nothing needs your attention", detail: "Approvals, failures, clarifications, and due reminders will appear here.")
             } else {
                 ForEach(control.attention.filter { $0.state == .open }) { item in
-                    attentionItemRow(item)
+                    attentionItemRow(item, isSelected: selectedAttentionID == item.id)
                 }
             }
             if !control.reminders.isEmpty {
@@ -580,7 +584,7 @@ private struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private func attentionItemRow(_ item: AttentionItem) -> some View {
+    private func attentionItemRow(_ item: AttentionItem, isSelected: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top, spacing: 9) {
                 Image(systemName: item.kind == .approval ? "exclamationmark.triangle" : "circle.dotted")
@@ -611,7 +615,7 @@ private struct WorkspaceActivitySidebar: View {
         }
         .padding(11)
         .background(Color.scifiSurface4)
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(isSelected ? Color.scifiAccent : Color.scifiBorder, lineWidth: isSelected ? 1 : 0.5))
     }
 
     private var nowContent: some View {

@@ -26,8 +26,13 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNoti
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let attentionID = response.notification.request.content.userInfo["attention_id"] as? String
         await MainActor.run { [weak self] in
-            self?.model.requestControlInbox()
+            if let attentionID {
+                self?.model.requestControlAttention(attentionID)
+            } else {
+                self?.model.requestControlInbox()
+            }
             self?.dockPanel?.showFromNotification()
         }
     }
