@@ -28,4 +28,15 @@ struct HermesControlTransportTests {
 
         #expect(callCount == 0)
     }
+
+    @Test func sessionScopedSubscriptionIgnoresOtherSessions() {
+        let router = HermesEventRouter()
+        var received = 0
+        _ = router.subscribe(sessionID: "session-1") { _, _ in received += 1 }
+
+        router.route(type: "message.delta", params: ["session_id": "session-2"])
+        router.route(type: "message.delta", params: ["session_id": "session-1"])
+
+        #expect(received == 1)
+    }
 }
