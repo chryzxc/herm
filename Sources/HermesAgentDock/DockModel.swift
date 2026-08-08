@@ -672,6 +672,12 @@ final class DockModel: ObservableObject {
             approvalText = (payload["command"] as? String) ?? (payload["description"] as? String) ?? "Hermes wants to perform an action."
             status = .needsApproval
             notify(title: "Hermes needs approval", body: approvalText ?? "Hermes wants to perform an action.", identifier: "approval:\(sessionID ?? "hermes")")
+        case "clarification.request", "clarify.request":
+            let question = (payload["question"] as? String)
+                ?? (payload["message"] as? String)
+                ?? (payload["description"] as? String)
+                ?? "Hermes needs more information."
+            notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")")
         case "error":
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
             let text = Self.isVisionUnsupportedError(raw) ? Self.visionUnsupportedNotice : raw

@@ -72,6 +72,10 @@ final class HermesControlRPC {
     func tools() async throws -> [String: Any] { try await client.request("tools.list", params: [:]) }
     func plugins() async throws -> [String: Any] { try await client.request("plugins.list", params: [:]) }
     func configuration() async throws -> [String: Any] { try await client.request("config.show", params: [:]) }
+    func projectsTree() async throws -> [String: Any] { try await client.request("projects.tree", params: [:]) }
+    func projectSessions(projectID: String) async throws -> [String: Any] {
+        try await client.request("projects.project_sessions", params: ["project_id": projectID])
+    }
     func shell(_ command: String) async throws -> [String: Any] { try await client.request("shell.exec", params: ["command": command]) }
     func raw(_ method: String, params: [String: Any] = [:]) async throws -> [String: Any] { try await client.request(method, params: params) }
 }

@@ -3,6 +3,26 @@ import Testing
 @testable import HermesAgentDock
 
 @MainActor
+private final class RecordingRPCClient: HermesRPCClientProtocol {
+    struct Call {
+        let method: String
+        let params: [String: Any]
+    }
+
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var calls: [Call] = []
+
+    func connect() async throws {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        calls.append(Call(method: method, params: params))
+        return [:]
+    }
+
+    func close() {}
+}
+
+@MainActor
 struct HermesControlTransportTests {
     @Test func routesEventsToSubscribers() {
         let router = HermesEventRouter()
@@ -38,5 +58,16 @@ struct HermesControlTransportTests {
         router.route(type: "message.delta", params: ["session_id": "session-1"])
 
         #expect(received == 1)
+    }
+
+    @Test func namedProjectRPCsUseHermesMethodNames() async throws {
+        let client = RecordingRPCClient()
+        let rpc = HermesControlRPC(client: client)
+
+        _ = try await rpc.projectsTree()
+        _ = try await rpc.projectSessions(projectID: "project-1")
+
+        #expect(client.calls.map(\.method) == ["projects.tree", "projects.project_sessions"])
+        #expect(client.calls.last?.params["project_id"] as? String == "project-1")
     }
 }

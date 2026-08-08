@@ -15,6 +15,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var lastError: String?
 
     private weak var dockModel: DockModel?
+    private var rpc: HermesControlRPC?
     private var knownAttention: [String: AttentionItem] = [:]
     private var eventSubscription: UUID?
     private let capabilityService = HermesCapabilityService()
@@ -50,6 +51,7 @@ final class ControlCenterModel: ObservableObject {
             self.eventSubscription = nil
         }
         dockModel = model
+        rpc = HermesControlRPC(client: model.controlRPCClient)
         remindersAdapter = AppleRemindersAdapter(client: model.controlRPCClient)
         if eventSubscription == nil {
             eventSubscription = model.eventRouter.subscribe { [weak self] type, params in
@@ -88,7 +90,7 @@ final class ControlCenterModel: ObservableObject {
                 let processResult = try await dockModel?.requestControl("process.list", params: [:])
                 if let processResult { processes = Self.parseProcesses(processResult) }
 
-                let projectResult = try await dockModel?.requestControl("projects.tree", params: [:])
+                let projectResult = try await rpc?.projectsTree()
                 if let projectResult { projects = Self.parseProjects(projectResult) }
 
                 if let dockModel {
@@ -173,12 +175,13 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func openProject(_ project: ProjectSummary) {
-        guard let dockModel else { return }
+        guard rpc != nil else { return }
         selectedProjectID = project.id
         projectSessions = []
         Task {
             do {
-                let result = try await dockModel.requestControl("projects.project_sessions", params: ["project_id": project.id])
+                let result = try await rpc?.projectSessions(projectID: project.id)
+                guard let result else { throw HermesGateway.GatewayError.malformedResponse }
                 projectSessions = Self.parseProjectSessions(result)
             } catch {
                 lastError = error.localizedDescription
