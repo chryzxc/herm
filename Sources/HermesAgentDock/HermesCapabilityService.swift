@@ -87,7 +87,8 @@ final class HermesCapabilityService {
                 title: "Apple Notes",
                 detail: notesAvailable ? "Available through memo and the Hermes apple-notes skill" : "memo is unavailable or unauthorized",
                 isAvailable: notesAvailable,
-                recovery: notesAvailable ? nil : "Install memo and authorize Notes access."
+                recovery: notesAvailable ? nil : "Install memo and authorize Notes access.",
+                recoveryCommand: notesAvailable ? nil : "brew tap antoniorodr/memo && brew install antoniorodr/memo/memo"
             ),
             CapabilityState(
                 id: "tools",
@@ -122,14 +123,16 @@ final class HermesCapabilityService {
                 title: "Messaging",
                 detail: messagingAvailable ? "iMessage CLI is available through Hermes" : "imsg is unavailable or unauthorized",
                 isAvailable: messagingAvailable,
-                recovery: messagingAvailable ? nil : "Install imsg and grant Messages access."
+                recovery: messagingAvailable ? nil : "Install imsg and grant Messages access.",
+                recoveryCommand: messagingAvailable ? nil : "brew install steipete/tap/imsg"
             ),
             CapabilityState(
                 id: "email",
                 title: "Email",
                 detail: emailAvailable ? "Email CLI is available through Hermes" : "himalaya is unavailable or unconfigured",
                 isAvailable: emailAvailable,
-                recovery: emailAvailable ? nil : "Install and configure himalaya before enabling email actions."
+                recovery: emailAvailable ? nil : "Install and configure himalaya before enabling email actions.",
+                recoveryCommand: emailAvailable ? nil : "brew install himalaya"
             ),
             CapabilityState(
                 id: "kanban",

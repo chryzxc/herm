@@ -1242,7 +1242,7 @@ private struct WorkspaceActivitySidebar: View {
             }
 
             let setupCapabilities = control.capabilities.filter {
-                ["reminders", "notes", "calendar", "messaging"].contains($0.id) && !$0.isAvailable
+                ["reminders", "notes", "calendar", "messaging", "email"].contains($0.id) && !$0.isAvailable
             }
             if !setupCapabilities.isEmpty {
                 sectionLabel("SETUP NEEDED")

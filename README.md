@@ -20,8 +20,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   or most recently selected control reference; any local task completion label
   is presentation metadata, not a second source of truth.
 - **Provider setup guidance.** Today renders setup cards for unavailable
-  Reminders, Notes, Calendar, and Messaging providers instead of showing empty
-  or invented content.
+  Reminders, Notes, Calendar, Messaging, and Email providers instead of showing
+  empty or invented content. When Hermes' installed skill documents a setup
+  command, the card offers it as a copy-only recovery action.
 - **Active-work projection.** Today can show active Hermes sessions and managed
   delegated agents, and managed processes, with controls to open related
   sessions when Hermes provides their identifiers.
