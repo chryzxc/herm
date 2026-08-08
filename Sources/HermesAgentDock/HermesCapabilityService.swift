@@ -6,6 +6,7 @@ final class HermesCapabilityService {
         let toolResult = await request(client, method: "tools.list")
         let pluginResult = await request(client, method: "plugins.list")
         let configResult = await request(client, method: "config.show")
+        let notesResult = await request(client, method: "shell.exec", params: ["command": "memo --version"])
         let version = (configResult?["version"] as? String)
             ?? (configResult?["hermes_version"] as? String)
 
@@ -34,9 +35,9 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: "notes",
                 title: "Apple Notes",
-                detail: "Available through the Hermes apple-notes skill",
-                isAvailable: true,
-                recovery: nil
+                detail: notesResult == nil ? "memo is unavailable or unauthorized" : "Available through memo and the Hermes apple-notes skill",
+                isAvailable: notesResult != nil,
+                recovery: notesResult == nil ? "Install memo and authorize Notes access." : nil
             ),
             CapabilityState(
                 id: "tools",
@@ -58,11 +59,18 @@ final class HermesCapabilityService {
                 detail: "No Hermes Calendar provider is configured",
                 isAvailable: false,
                 recovery: "Calendar integration is planned for a future provider."
+            ),
+            CapabilityState(
+                id: "messaging",
+                title: "Messaging",
+                detail: "No messaging provider is configured",
+                isAvailable: false,
+                recovery: "iMessage and other messaging integrations are planned for a future provider."
             )
         ]
     }
 
-    private func request(_ client: HermesRPCClientProtocol, method: String) async -> [String: Any]? {
-        try? await client.request(method, params: [:])
+    private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async -> [String: Any]? {
+        try? await client.request(method, params: params)
     }
 }
