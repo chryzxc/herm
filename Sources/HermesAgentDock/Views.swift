@@ -1179,6 +1179,17 @@ private struct WorkspaceActivitySidebar: View {
                         if let recovery = capability.recovery {
                             Text(recovery).font(.system(size: 10)).foregroundStyle(Color.scifiWarning).lineLimit(2)
                         }
+                        if let command = capability.recoveryCommand {
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(command, forType: .string)
+                            } label: {
+                                Label("COPY \(command)", systemImage: "doc.on.doc")
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiAccent)
+                        }
                     }
                     Spacer(minLength: 0)
                 }

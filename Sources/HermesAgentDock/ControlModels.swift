@@ -141,6 +141,16 @@ struct CapabilityState: Identifiable, Equatable {
     let detail: String
     let isAvailable: Bool
     let recovery: String?
+    let recoveryCommand: String?
+
+    init(id: String, title: String, detail: String, isAvailable: Bool, recovery: String?, recoveryCommand: String? = nil) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+        self.isAvailable = isAvailable
+        self.recovery = recovery
+        self.recoveryCommand = recoveryCommand
+    }
 }
 
 enum ControlTab: String, CaseIterable, Identifiable {

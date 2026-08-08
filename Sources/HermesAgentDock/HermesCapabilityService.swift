@@ -25,14 +25,16 @@ final class HermesCapabilityService {
                 title: "Hermes gateway",
                 detail: configResult == nil ? "Gateway health is unavailable" : "Gateway is responding",
                 isAvailable: configResult != nil,
-                recovery: configResult == nil ? "Reconnect Hermes and refresh Core." : nil
+                recovery: configResult == nil ? "Reconnect Hermes and refresh Core." : nil,
+                recoveryCommand: configResult == nil ? "hermes gateway start" : nil
             ),
             CapabilityState(
                 id: "hermes-version",
                 title: "Hermes version",
                 detail: version ?? "Version information is unavailable",
                 isAvailable: version != nil,
-                recovery: version == nil ? "Update Hermes manually if a newer version is required." : nil
+                recovery: version == nil ? "Update Hermes manually if a newer version is required." : nil,
+                recoveryCommand: version == nil ? "hermes update" : nil
             ),
             CapabilityState(
                 id: "reminders",
