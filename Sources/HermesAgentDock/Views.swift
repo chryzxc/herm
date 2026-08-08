@@ -647,12 +647,65 @@ private struct WorkspaceActivitySidebar: View {
 
     private var projectsContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("HERMES PROJECTS  ·  \(control.projects.count)")
-            if control.projects.isEmpty {
+            if let selectedProjectID = control.selectedProjectID,
+               let project = control.projects.first(where: { $0.id == selectedProjectID }) {
+                HStack {
+                    Button {
+                        control.closeProject()
+                    } label: {
+                        Label("PROJECTS", systemImage: "chevron.left")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                    Spacer()
+                }
+                sectionLabel("PROJECT  ·  \(project.name)")
+                if control.projectSessions.isEmpty {
+                    emptyState(icon: "bubble.left.and.bubble.right", title: "No sessions in this project", detail: "Hermes returned no grouped sessions for this project.")
+                } else {
+                    sectionLabel("SESSIONS  ·  \(control.projectSessions.count)")
+                    ForEach(control.projectSessions) { session in
+                        Button {
+                            control.openProjectSession(session)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack {
+                                    Circle().fill(Color.scifiAccent).frame(width: 6, height: 6)
+                                    Text(session.title)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .lineLimit(2)
+                                    Spacer()
+                                    Text(session.state.uppercased())
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.scifiMuted)
+                                }
+                                if let preview = session.preview {
+                                    Text(preview)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(11)
+                            .background(Color.scifiSurface4)
+                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else if control.projects.isEmpty {
+                sectionLabel("HERMES PROJECTS  ·  0")
                 emptyState(icon: "folder", title: "No Hermes projects", detail: "Projects will appear here when Hermes has project contexts configured.")
             } else {
+                sectionLabel("HERMES PROJECTS  ·  \(control.projects.count)")
                 ForEach(control.projects) { project in
-                    VStack(alignment: .leading, spacing: 7) {
+                    Button {
+                        control.openProject(project)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 7) {
                         HStack(spacing: 8) {
                             Image(systemName: project.isActive ? "folder.fill" : "folder")
                                 .font(.system(size: 12))
@@ -677,10 +730,19 @@ private struct WorkspaceActivitySidebar: View {
                                 .foregroundStyle(Color.scifiTertiary)
                                 .lineLimit(2)
                         }
+                        HStack {
+                            Spacer()
+                            Text("OPEN SESSIONS  ›")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Color.scifiAccent)
+                        }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(11)
+                        .background(Color.scifiSurface4)
+                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
                     }
-                    .padding(11)
-                    .background(Color.scifiSurface4)
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                    .buttonStyle(.plain)
                 }
             }
         }

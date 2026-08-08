@@ -8,6 +8,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var activeSessions: [SessionSummary] = []
     @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var projects: [ProjectSummary] = []
+    @Published private(set) var projectSessions: [SessionSummary] = []
+    @Published private(set) var selectedProjectID: String?
     @Published private(set) var capabilities: [CapabilityState] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastError: String?
@@ -163,6 +165,37 @@ final class ControlCenterModel: ObservableObject {
         Task {
             do {
                 _ = try await dockModel.requestControl("session.activate", params: ["session_id": sessionID])
+                dockModel.requestComposerFocus()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func openProject(_ project: ProjectSummary) {
+        guard let dockModel else { return }
+        selectedProjectID = project.id
+        projectSessions = []
+        Task {
+            do {
+                let result = try await dockModel.requestControl("projects.project_sessions", params: ["project_id": project.id])
+                projectSessions = Self.parseProjectSessions(result)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func closeProject() {
+        selectedProjectID = nil
+        projectSessions = []
+    }
+
+    func openProjectSession(_ session: SessionSummary) {
+        guard let dockModel else { return }
+        Task {
+            do {
+                _ = try await dockModel.requestControl("session.activate", params: ["session_id": session.id])
                 dockModel.requestComposerFocus()
             } catch {
                 lastError = error.localizedDescription
@@ -429,6 +462,34 @@ final class ControlCenterModel: ObservableObject {
                 sessionCount: (row["session_count"] as? NSNumber)?.intValue ?? sessions.count,
                 preview: (sessions.first?["preview"] as? String) ?? (sessions.first?["title"] as? String),
                 isActive: (row["active"] as? Bool) ?? (id == activeID)
+            )
+        }
+    }
+
+    static func parseProjectSessions(_ result: [String: Any]) -> [SessionSummary] {
+        var rows: [[String: Any]] = []
+
+        func walk(_ value: Any) {
+            if let row = value as? [String: Any] {
+                let looksLikeSession = row["state"] != nil || row["status"] != nil || row["preview"] != nil || row["last_message"] != nil
+                if row["id"] is String && looksLikeSession {
+                    rows.append(row)
+                }
+                row.values.forEach(walk)
+            } else if let values = value as? [Any] {
+                values.forEach(walk)
+            }
+        }
+
+        walk(result)
+        var seen = Set<String>()
+        return rows.compactMap { row in
+            guard let id = row["id"] as? String, seen.insert(id).inserted else { return nil }
+            return SessionSummary(
+                id: id,
+                title: (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session",
+                state: (row["state"] as? String) ?? (row["status"] as? String) ?? "active",
+                preview: row["preview"] as? String ?? row["last_message"] as? String
             )
         }
     }
