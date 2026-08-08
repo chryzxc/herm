@@ -51,4 +51,15 @@ struct ControlCenterProjectTests {
         #expect(results.map(\.reference.source).contains(.hermesSession))
         #expect(results.map(\.reference.source).contains(.appleReminder))
     }
+
+    @Test func parsesKanbanJSONWithoutOwningTheRecords() {
+        let tasks = ControlCenterModel.parseKanbanTasks("""
+        [{"id":"k1","title":"Prepare launch","status":"ready","body":"Write the checklist","priority":"1","assignee":"operator"}]
+        """)
+
+        #expect(tasks.count == 1)
+        #expect(tasks.first?.title == "Prepare launch")
+        #expect(tasks.first?.status == "ready")
+        #expect(tasks.first?.assignee == "operator")
+    }
 }

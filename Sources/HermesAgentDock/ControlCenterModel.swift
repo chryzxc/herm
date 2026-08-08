@@ -11,6 +11,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var projects: [ProjectSummary] = []
     @Published private(set) var searchResults: [ControlSearchResult] = []
     @Published private(set) var isSearching = false
+    @Published private(set) var kanbanTasks: [KanbanTaskSummary] = []
     @Published private(set) var projectSessions: [SessionSummary] = []
     @Published private(set) var selectedProjectID: String?
     @Published private(set) var capabilities: [CapabilityState] = []
@@ -262,6 +263,43 @@ final class ControlCenterModel: ObservableObject {
             do {
                 _ = try await rpc.reloadMCP(sessionID: sessionID)
                 dockModel?.refreshRuntimeConfiguration()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func refreshKanban() {
+        guard let rpc else { return }
+        Task {
+            do {
+                let result = try await rpc.shell("hermes kanban list --json")
+                guard AppleRemindersAdapter.shellResultSucceeded(result), let output = result["stdout"] as? String else {
+                    kanbanTasks = []
+                    return
+                }
+                kanbanTasks = Self.parseKanbanTasks(output)
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func createKanbanTask(title: String, body: String) {
+        guard let rpc else { return }
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { return }
+        var command = "hermes kanban create --json \(Self.shellQuote(cleanTitle))"
+        let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanBody.isEmpty { command = "hermes kanban create --json --body \(Self.shellQuote(cleanBody)) \(Self.shellQuote(cleanTitle))" }
+        Task {
+            do {
+                let result = try await rpc.shell(command)
+                guard AppleRemindersAdapter.shellResultSucceeded(result) else {
+                    lastError = (result["stderr"] as? String) ?? "Hermes Kanban could not create the task."
+                    return
+                }
+                refreshKanban()
             } catch {
                 lastError = error.localizedDescription
             }
@@ -606,6 +644,27 @@ final class ControlCenterModel: ObservableObject {
             if lhs.sourceLabel != rhs.sourceLabel { return lhs.sourceLabel < rhs.sourceLabel }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
+    }
+
+    static func parseKanbanTasks(_ output: String) -> [KanbanTaskSummary] {
+        guard let data = output.data(using: .utf8),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            guard let id = (row["id"] as? String) ?? (row["task_id"] as? String),
+                  let title = row["title"] as? String else { return nil }
+            return KanbanTaskSummary(
+                id: id,
+                title: title,
+                status: (row["status"] as? String) ?? "unknown",
+                detail: (row["body"] as? String) ?? (row["description"] as? String),
+                priority: row["priority"] as? String,
+                assignee: (row["assignee"] as? String) ?? (row["assigned_to"] as? String)
+            )
+        }
+    }
+
+    private static func shellQuote(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 
     private static func parseProjects(_ result: [String: Any]) -> [ProjectSummary] {

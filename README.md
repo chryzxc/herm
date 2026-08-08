@@ -43,8 +43,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   messaging, connected-source search, and Kanban tasks. Provider availability is
   shown in Core before use. Core also provides a recorder for the configurable
   global shortcut that opens the Dock and focuses Ask.
-- **Kanban boundary.** When Hermes exposes its Kanban CLI, the Dock routes Kanban
-  work through Hermes prompts and does not create a competing local board.
+- **Kanban boundary.** When Hermes exposes its Kanban CLI, the Kanban tab reads
+  the authoritative board and supports confirmed task creation through Hermes
+  `shell.exec`. The Dock does not create a competing local board; desktop Kanban
+  RPC actions remain unavailable.
 - **Canonical-source projections.** Hermes remains authoritative for sessions,
   agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
   authoritative for reminder content. The Dock stores references, display state,

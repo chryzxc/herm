@@ -437,6 +437,9 @@ private struct WorkspaceActivitySidebar: View {
     @State private var automationPrompt = ""
     @State private var isShowingAutomationConfirmation = false
     @State private var isShowingMCPReloadConfirmation = false
+    @State private var kanbanTitle = ""
+    @State private var kanbanBody = ""
+    @State private var isShowingKanbanConfirmation = false
     @State private var clarificationItem: AttentionItem?
     @State private var clarificationResponse = ""
 
@@ -488,6 +491,7 @@ private struct WorkspaceActivitySidebar: View {
                      case .automations: automationsContent
                      case .projects: projectsContent
                      case .search: searchContent
+                     case .kanban: kanbanContent
                      case .core: coreContent
                      }
                 }
@@ -562,6 +566,16 @@ private struct WorkspaceActivitySidebar: View {
         } message: {
             Text("Hermes will invalidate the active session's cached MCP tool snapshot and reload configured servers.")
         }
+        .confirmationDialog("Create Kanban Task?", isPresented: $isShowingKanbanConfirmation) {
+            Button("Create Kanban Task") {
+                control.createKanbanTask(title: kanbanTitle, body: kanbanBody)
+                kanbanTitle = ""
+                kanbanBody = ""
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Hermes will create this task in the authoritative Kanban board through its CLI.")
+        }
         .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
             VStack(alignment: .leading, spacing: 14) {
                 Text("CLARIFICATION REQUIRED")
@@ -601,6 +615,7 @@ private struct WorkspaceActivitySidebar: View {
                     if mode == .automations { control.refresh() }
                     if mode == .projects { control.refresh() }
                     if mode == .search { control.search(searchQuery) }
+                    if mode == .kanban { control.refreshKanban() }
                 } label: {
                     Text(mode.rawValue.uppercased())
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -790,6 +805,72 @@ private struct WorkspaceActivitySidebar: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private var kanbanContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                sectionLabel("HERMES KANBAN  ·  \(control.kanbanTasks.count)")
+                Spacer()
+                Button { control.refreshKanban() } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.scifiAccent)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Task title", text: $kanbanTitle)
+                TextField("Task details (optional)", text: $kanbanBody, axis: .vertical)
+                    .lineLimit(2...4)
+                Button("REVIEW AND CREATE") { isShowingKanbanConfirmation = true }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                    .disabled(kanbanTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .textFieldStyle(.roundedBorder)
+            .padding(12)
+            .background(Color.scifiSurface4)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            if control.kanbanTasks.isEmpty {
+                emptyState(icon: "rectangle.3.group", title: "No Kanban tasks", detail: "Hermes returned no tasks for the current board, or Kanban is not initialized.")
+            } else {
+                ForEach(control.kanbanTasks) { task in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Circle().fill(task.status.lowercased() == "done" ? Color.scifiSuccess : Color.scifiAccent).frame(width: 6, height: 6)
+                            Text(task.title)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.scifiFg)
+                                .lineLimit(2)
+                            Spacer()
+                            Text(task.status.uppercased())
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Color.scifiMuted)
+                        }
+                        HStack(spacing: 8) {
+                            if let priority = task.priority { Text("P\(priority)") }
+                            if let assignee = task.assignee { Text(assignee) }
+                            Text(task.id)
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                        if let detail = task.detail, !detail.isEmpty {
+                            Text(detail).font(.system(size: 10)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                        }
+                    }
+                    .padding(11)
+                    .background(Color.scifiSurface4)
+                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                }
+            }
+            Text("Hermes owns this board. The Dock only reads and submits confirmed CLI actions.")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.scifiTertiary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -109,6 +109,15 @@ struct ControlSearchResult: Identifiable, Equatable {
     let sourceLabel: String
 }
 
+struct KanbanTaskSummary: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let status: String
+    let detail: String?
+    let priority: String?
+    let assignee: String?
+}
+
 struct TodaySnapshot: Equatable {
     var currentFocus: ControlReference?
     var attention: [AttentionItem]
@@ -168,6 +177,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case automations = "Automations"
     case projects = "Projects"
     case search = "Search"
+    case kanban = "Kanban"
     case core = "Core"
 
     var id: String { rawValue }
@@ -179,6 +189,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .automations: "clock.arrow.circlepath"
         case .projects: "folder.badge.gearshape"
         case .search: "magnifyingglass"
+        case .kanban: "rectangle.3.group"
         case .core: "cpu"
         }
     }
