@@ -525,6 +525,15 @@ final class ControlCenterModel: ObservableObject {
         } else if let existing = knownAttention[item.id] {
             var enriched = item
             enriched.createdAt = existing.createdAt
+            if item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                enriched.title = existing.title
+            }
+            if Self.isPlaceholderAttentionDetail(item.detail) {
+                enriched.detail = existing.detail
+            }
+            if item.actions.isEmpty {
+                enriched.actions = existing.actions
+            }
             knownAttention[item.id] = enriched
         } else {
             knownAttention[item.id] = item
@@ -537,6 +546,13 @@ final class ControlCenterModel: ObservableObject {
             result[entry.key] = entry.value.state.rawValue
         }
         presentationDefaults.set(values, forKey: presentationKey)
+    }
+
+    private static func isPlaceholderAttentionDetail(_ detail: String) -> Bool {
+        let normalized = detail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty
+            || normalized == "hermes wants to perform an action."
+            || normalized.hasPrefix("hermes reported ")
     }
 
     func rebuildAttention() {

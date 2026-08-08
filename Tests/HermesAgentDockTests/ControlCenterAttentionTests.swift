@@ -17,4 +17,19 @@ struct ControlCenterAttentionTests {
         #expect(item?.detail == "Which account should I use?")
         #expect(item?.actions.contains(.respond) == true)
     }
+
+    @Test func partialAttentionEventsPreserveExistingDetail() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("approval.request", params: [
+            "session_id": "session-approval",
+            "payload": ["command": "delete the temporary export"]
+        ])
+        model.ingestEvent("approval.request", params: [
+            "session_id": "session-approval",
+            "payload": [:]
+        ])
+
+        #expect(model.attention.first?.detail == "delete the temporary export")
+    }
 }
