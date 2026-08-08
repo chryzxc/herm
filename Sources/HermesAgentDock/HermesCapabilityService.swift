@@ -7,6 +7,8 @@ final class HermesCapabilityService {
         let pluginResult = await request(client, method: "plugins.list")
         let configResult = await request(client, method: "config.show")
         let notesResult = await request(client, method: "shell.exec", params: ["command": "memo --version"])
+        let emailResult = await request(client, method: "shell.exec", params: ["command": "himalaya --version"])
+        let imessageResult = await request(client, method: "shell.exec", params: ["command": "imsg --version"])
         let version = (configResult?["version"] as? String)
             ?? (configResult?["hermes_version"] as? String)
 
@@ -63,9 +65,30 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: "messaging",
                 title: "Messaging",
-                detail: "No messaging provider is configured",
+                detail: imessageResult == nil ? "imsg is unavailable or unauthorized" : "iMessage CLI is available through Hermes",
+                isAvailable: imessageResult != nil,
+                recovery: imessageResult == nil ? "Install imsg and grant Messages access." : nil
+            ),
+            CapabilityState(
+                id: "email",
+                title: "Email",
+                detail: emailResult == nil ? "himalaya is unavailable or unconfigured" : "Email CLI is available through Hermes",
+                isAvailable: emailResult != nil,
+                recovery: emailResult == nil ? "Install and configure himalaya before enabling email actions." : nil
+            ),
+            CapabilityState(
+                id: "kanban",
+                title: "Hermes Kanban",
+                detail: "The installed gateway does not expose Kanban RPC methods",
                 isAvailable: false,
-                recovery: "iMessage and other messaging integrations are planned for a future provider."
+                recovery: "Kanban integration will activate when Hermes exposes a desktop RPC surface."
+            ),
+            CapabilityState(
+                id: "mcp",
+                title: "Third-party MCP",
+                detail: pluginResult == nil ? "MCP/plugin state is unavailable" : "Use Hermes MCP configuration for third-party services",
+                isAvailable: pluginResult != nil,
+                recovery: pluginResult == nil ? "Reconnect Hermes and configure MCP servers there." : nil
             )
         ]
     }
