@@ -151,7 +151,7 @@ struct AgentBoardView: View {
                 .foregroundStyle(Color.scifiMuted)
             Spacer()
             Text(detail)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.scifiTertiary)
         }
     }
@@ -232,7 +232,7 @@ struct AgentBoardView: View {
 
     private func statusBadge(_ status: String, color: Color) -> some View {
         Text(status.uppercased())
-            .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .tracking(0.55)
             .foregroundStyle(color)
             .padding(.horizontal, 7)
@@ -276,7 +276,7 @@ struct AgentBoardView: View {
     @ViewBuilder
     private func pipelineHeader(_ title: String, width: CGFloat?) -> some View {
         let label = Text(title)
-            .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .tracking(1.1)
             .foregroundStyle(Color.scifiMuted)
 

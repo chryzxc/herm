@@ -11,9 +11,19 @@ final class ControlCenterModel: ObservableObject {
 
     private weak var dockModel: DockModel?
     private var knownAttention: [String: AttentionItem] = [:]
+    private var eventSubscription: UUID?
 
     func bind(to model: DockModel) {
+        if dockModel !== model, let eventSubscription {
+            dockModel?.eventRouter.unsubscribe(eventSubscription)
+            self.eventSubscription = nil
+        }
         dockModel = model
+        if eventSubscription == nil {
+            eventSubscription = model.eventRouter.subscribe { [weak self] type, params in
+                self?.ingestEvent(type, params: params)
+            }
+        }
         rebuildAttention()
     }
 
@@ -59,6 +69,11 @@ final class ControlCenterModel: ObservableObject {
                     _ = try await dockModel.requestControl("approval.respond", params: ["session_id": reference.sessionID ?? "", "choice": "deny"])
                 case .stop:
                     _ = try await dockModel.requestControl("session.interrupt", params: ["session_id": reference.sessionID ?? reference.sourceID])
+                case .resume:
+                    _ = try await dockModel.requestControl("session.activate", params: ["session_id": reference.sessionID ?? reference.sourceID])
+                case .open:
+                    _ = try await dockModel.requestControl("session.activate", params: ["session_id": reference.sessionID ?? reference.sourceID])
+                    dockModel.requestComposerFocus()
                 default:
                     break
                 }
@@ -75,11 +90,104 @@ final class ControlCenterModel: ObservableObject {
         knownAttention[id] = attention[index]
     }
 
+    /// Converts the shared Hermes event stream into stable attention records.
+    /// The event's session/source identifier is the identity; display text may
+    /// be enriched by later partial events without creating another row.
+    func ingestEvent(_ type: String, params: [String: Any]) {
+        let payload = params["payload"] as? [String: Any] ?? [:]
+        let sessionID = (params["session_id"] as? String)
+            ?? (payload["session_id"] as? String)
+            ?? dockModel?.sessionID
+        guard let sessionID, !sessionID.isEmpty else { return }
+
+        let detail = (payload["message"] as? String)
+            ?? (payload["description"] as? String)
+            ?? (payload["question"] as? String)
+            ?? (payload["text"] as? String)
+            ?? "Hermes reported (type)."
+        switch type {
+        case "approval.request":
+            upsertAttention(AttentionItem(
+                id: "approval:\(sessionID)",
+                reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
+                kind: .approval,
+                title: "Hermes needs approval",
+                detail: (payload["command"] as? String) ?? (payload["description"] as? String) ?? detail,
+                createdAt: Date(),
+                state: .open,
+                actions: [.approve, .deny, .stop]
+            ))
+        case "clarification.request", "clarify.request":
+            upsertAttention(AttentionItem(
+                id: "clarification:\(sessionID)",
+                reference: ControlReference(source: .hermesClarification, sourceID: sessionID, sessionID: sessionID),
+                kind: .clarification,
+                title: "Hermes needs clarification",
+                detail: detail,
+                createdAt: Date(),
+                state: .open,
+                actions: [.open, .stop]
+            ))
+        case "error":
+            upsertAttention(AttentionItem(
+                id: "failure:\(sessionID)",
+                reference: ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID),
+                kind: .failure,
+                title: "Hermes work failed",
+                detail: detail,
+                createdAt: Date(),
+                state: .open,
+                actions: [.resume, .stop]
+            ))
+        case "message.complete":
+            if let existing = knownAttention["failure:\(sessionID)"] {
+                var resolved = existing
+                resolved.state = .resolved
+                knownAttention[resolved.id] = resolved
+            }
+            upsertAttention(AttentionItem(
+                id: "completed:\(sessionID)",
+                reference: ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID),
+                kind: .completed,
+                title: "Hermes completed work",
+                detail: "Review the latest response and decide what to do next.",
+                createdAt: Date(),
+                state: .open,
+                actions: [.open, .dismiss]
+            ))
+        default:
+            break
+        }
+        rebuildAttention()
+    }
+
+    private func upsertAttention(_ item: AttentionItem) {
+        if let existing = knownAttention[item.id], existing.state == .dismissed || existing.state == .resolved {
+            var preserved = item
+            preserved.state = existing.state
+            knownAttention[item.id] = preserved
+        } else if let existing = knownAttention[item.id] {
+            var enriched = item
+            enriched.createdAt = existing.createdAt
+            knownAttention[item.id] = enriched
+        } else {
+            knownAttention[item.id] = item
+        }
+    }
+
     func rebuildAttention() {
         guard let dockModel else { return }
         var next: [AttentionItem] = []
-        if let approval = dockModel.approvalText, let sessionID = dockModel.sessionID {
-            next.append(AttentionItem(
+        if dockModel.status != .offline {
+            knownAttention.removeValue(forKey: "failure:hermes")
+        }
+        if let sessionID = dockModel.sessionID, dockModel.approvalText == nil {
+            knownAttention.removeValue(forKey: "approval:\(sessionID)")
+        }
+        if let approval = dockModel.approvalText, let sessionID = dockModel.sessionID,
+           knownAttention["approval:\(sessionID)"]?.state != .resolved,
+           knownAttention["approval:\(sessionID)"]?.state != .dismissed {
+            upsertAttention(AttentionItem(
                 id: "approval:\(sessionID)",
                 reference: ControlReference(source: .hermesApproval, sourceID: sessionID, sessionID: sessionID),
                 kind: .approval,
@@ -91,7 +199,7 @@ final class ControlCenterModel: ObservableObject {
             ))
         }
         if dockModel.status == .offline {
-            next.append(AttentionItem(
+            upsertAttention(AttentionItem(
                 id: "failure:hermes",
                 reference: ControlReference(source: .hermesSession, sourceID: dockModel.sessionID ?? "hermes"),
                 kind: .failure,
@@ -102,8 +210,13 @@ final class ControlCenterModel: ObservableObject {
                 actions: [.open]
             ))
         }
-        attention = next + knownAttention.values.filter { saved in
-            saved.state != .resolved && !next.contains(where: { $0.id == saved.id })
+        next = knownAttention.values.filter { saved in
+            saved.state != .resolved && saved.state != .dismissed && !next.contains(where: { $0.id == saved.id })
+        }
+        attention = next.sorted { lhs, rhs in
+            if lhs.kind == .approval && rhs.kind != .approval { return true }
+            if lhs.kind != .approval && rhs.kind == .approval { return false }
+            return lhs.createdAt > rhs.createdAt
         }
     }
 

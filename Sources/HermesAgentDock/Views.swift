@@ -224,7 +224,7 @@ private struct MarkdownMessageView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         if let lang = language {
                             Text(lang)
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .foregroundStyle(Color.scifiMuted)
                                 .textCase(.uppercase)
                                 .padding(.horizontal, 8)
@@ -438,7 +438,7 @@ private struct WorkspaceActivitySidebar: View {
                         .tracking(1.4)
                         .foregroundStyle(Color.scifiAccent)
                     Text("PERSONAL OPERATING SURFACE")
-                        .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(1.0)
                         .foregroundStyle(Color.scifiTertiary)
                 }
@@ -489,7 +489,7 @@ private struct WorkspaceActivitySidebar: View {
                     if mode == .core { model.refreshRuntimeConfiguration(); control.refresh() }
                 } label: {
                     Text(mode.rawValue.uppercased())
-                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(0.75)
                         .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
                         .frame(maxWidth: .infinity, minHeight: 30)
@@ -529,13 +529,13 @@ private struct WorkspaceActivitySidebar: View {
                         Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(2)
                         Spacer(minLength: 4)
                         Text(reminder.isOverdue ? "OVERDUE" : (reminder.list ?? "REMINDER"))
-                            .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiMuted)
                     }
                 }
             }
             if let error = control.lastError {
-                Text(error).font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiWarning)
+                Text(error).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiWarning)
             }
         }
     }
@@ -548,20 +548,20 @@ private struct WorkspaceActivitySidebar: View {
                     .frame(width: 15)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(item.title).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Color.scifiFg)
-                    Text(item.detail).font(.system(size: 9.5, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(4)
+                    Text(item.detail).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(4)
                 }
                 Spacer(minLength: 0)
             }
             HStack(spacing: 12) {
-                ForEach(item.actions.filter { $0 != .open && $0 != .dismiss }, id: \.self) { action in
+                ForEach(item.actions.filter { $0 != .dismiss }, id: \.self) { action in
                     Button(action.rawValue.uppercased()) { control.respond(to: item, action: action) }
                         .buttonStyle(.plain)
-                        .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent)
                 }
                 Button("DISMISS") { control.markResolved(item.id) }
                     .buttonStyle(.plain)
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
             }
         }
@@ -583,7 +583,7 @@ private struct WorkspaceActivitySidebar: View {
                                 .foregroundStyle(Color.scifiFg)
                                 .lineLimit(3)
                             Text(task.status.rawValue.uppercased())
-                                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .tracking(0.6)
                                 .foregroundStyle(taskColor(task.status))
                         }
@@ -591,7 +591,7 @@ private struct WorkspaceActivitySidebar: View {
                     }
                     HStack {
                         Text("SESSION LINKED")
-                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .tracking(0.55)
                             .foregroundStyle(Color.scifiTertiary)
                         Spacer()
@@ -599,7 +599,7 @@ private struct WorkspaceActivitySidebar: View {
                             store.updateStatus(task.status == .done ? .inProgress : .done, for: task.id)
                         }
                         .buttonStyle(.plain)
-                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.scifiAccent)
                     }
                 }
@@ -650,7 +650,7 @@ private struct WorkspaceActivitySidebar: View {
                         Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary).frame(width: 5, height: 5)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(job.name).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
-                            Text(job.schedule).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                            Text(job.schedule).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
                         }
                         Spacer(minLength: 0)
                     }
@@ -666,7 +666,7 @@ private struct WorkspaceActivitySidebar: View {
                             Text(task.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(1)
                             Spacer(minLength: 4)
                             Text(task.status.rawValue.uppercased())
-                                .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(taskColor(task.status))
                         }
                     }
@@ -687,10 +687,10 @@ private struct WorkspaceActivitySidebar: View {
                         .lineLimit(1)
                     if repository.isGitRepository {
                         Text(repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(repository.changedFiles) CHANGED FILE\(repository.changedFiles == 1 ? "" : "S")")
-                            .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(repository.changedFiles == 0 ? Color.scifiSuccess : Color.scifiWarning)
                     } else if let path = store.projectPath {
-                        Text(path).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                        Text(path).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -698,7 +698,7 @@ private struct WorkspaceActivitySidebar: View {
             }
             if repository.isGitRepository, !repository.latestCommit.isEmpty {
                 Text(repository.latestCommit)
-                    .font(.system(size: 8.5, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
                     .lineLimit(2)
             }
@@ -711,7 +711,7 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
             .buttonStyle(.plain)
-            .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .foregroundStyle(Color.scifiAccent)
         }
         .padding(12)
@@ -724,7 +724,7 @@ private struct WorkspaceActivitySidebar: View {
             Image(systemName: icon).font(.system(size: 10)).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
-                Text(detail).font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                Text(detail).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
             }
             Spacer(minLength: 0)
         }
@@ -779,12 +779,12 @@ private struct WorkspaceActivitySidebar: View {
                     Circle().fill(color).frame(width: 5, height: 5)
                 }
                 Text(title.uppercased())
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(0.5)
                     .foregroundStyle(Color.scifiFg)
                     .lineLimit(1)
                 Text(subtitle)
-                    .font(.system(size: 8))
+                    .font(.system(size: 10))
                     .foregroundStyle(Color.scifiMuted)
                     .lineLimit(1)
             }
@@ -801,12 +801,12 @@ private struct WorkspaceActivitySidebar: View {
     private func activityRow(_ activity: AgentActivity) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(Self.timeFormatter.string(from: activity.timestamp))
-                .font(.system(size: 8.5, design: .monospaced))
+                .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(Color.scifiTertiary)
                 .frame(width: 34, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased())
-                    .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(0.5)
                     .foregroundStyle(Color.scifiAccent)
                 Text(activity.text)
@@ -835,9 +835,9 @@ private struct WorkspaceActivitySidebar: View {
                     Circle().fill(capability.isAvailable ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6).padding(.top, 4)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(capability.title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
-                        Text(capability.detail).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                        Text(capability.detail).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
                         if let recovery = capability.recovery {
-                            Text(recovery).font(.system(size: 8.5)).foregroundStyle(Color.scifiWarning).lineLimit(2)
+                            Text(recovery).font(.system(size: 10)).foregroundStyle(Color.scifiWarning).lineLimit(2)
                         }
                     }
                     Spacer(minLength: 0)
@@ -859,7 +859,7 @@ private struct WorkspaceActivitySidebar: View {
             if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
-                    Text("READING HERMES RUNTIME…").font(.system(size: 9, design: .monospaced)).tracking(0.6).foregroundStyle(Color.scifiMuted)
+                    Text("READING HERMES RUNTIME…").font(.system(size: 10, design: .monospaced)).tracking(0.6).foregroundStyle(Color.scifiMuted)
                 }
             } else if let configuration = model.runtimeConfiguration {
                 diagnosticRow(label: "MODEL", value: configuration.model ?? "NOT CONFIGURED", color: configuration.model == nil ? Color.scifiWarning : Color.scifiSuccess)
@@ -867,7 +867,7 @@ private struct WorkspaceActivitySidebar: View {
                 if model.runtimeModelOptions.isEmpty {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
-                        Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 8.5, design: .monospaced)).tracking(0.5).foregroundStyle(Color.scifiMuted)
+                        Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 10, design: .monospaced)).tracking(0.5).foregroundStyle(Color.scifiMuted)
                     }
                 } else {
                     Menu {
@@ -912,16 +912,16 @@ private struct WorkspaceActivitySidebar: View {
                     }
                 }
                 Text("Catalog is supplied live by Hermes. Selection updates provider and model for new sessions.")
-                    .font(.system(size: 8.5, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
                 if let error = model.runtimeConfigurationError {
                     Text(error)
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Color.scifiWarning)
                 }
                 if let path = configuration.configPath {
                     Text(path)
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Color.scifiTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -970,7 +970,7 @@ private struct WorkspaceActivitySidebar: View {
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1.1).foregroundStyle(Color.scifiMuted)
+        Text(title).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(1.1).foregroundStyle(Color.scifiMuted)
     }
 
     private func agentRow(_ agent: HermesSubagent, expanded: Bool = false) -> some View {
@@ -987,17 +987,17 @@ private struct WorkspaceActivitySidebar: View {
                     .lineLimit(expanded ? 4 : 2)
                 if let role = agent.role {
                     Text("ROLE  \(role.uppercased())\(agent.sourceSkill.map { "  ·  \($0)" } ?? "")")
-                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(0.35)
                         .foregroundStyle(Color.scifiAccent)
                 }
                 Text("\(agent.status.uppercased())  ·  \(agent.toolCount) TOOLS\(agent.model.map { "  ·  \($0.uppercased())" } ?? "")")
-                    .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(nativeAgentColor(agent.status))
                 if expanded, let latest = agent.latestActivity {
                     Text(latest)
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Color.scifiTertiary)
                         .lineLimit(2)
                 }
@@ -1015,7 +1015,7 @@ private struct WorkspaceActivitySidebar: View {
                 .foregroundStyle(Color.scifiAccent.opacity(0.75))
                 .frame(width: 13)
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.type.uppercased()).font(.system(size: 8.5, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiMuted)
+                Text(event.type.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiMuted)
                 Text(event.detail).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
             }
         }
@@ -1023,11 +1023,11 @@ private struct WorkspaceActivitySidebar: View {
 
     private func diagnosticRow(label: String, value: String, color: Color) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(label).font(.system(size: 8.5, weight: .semibold, design: .monospaced)).tracking(0.8).foregroundStyle(Color.scifiTertiary)
+            Text(label).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(0.8).foregroundStyle(Color.scifiTertiary)
             Spacer()
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 5, height: 5)
-                Text(value).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiFg).lineLimit(1)
+                Text(value).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiFg).lineLimit(1)
             }
         }
     }
@@ -1068,7 +1068,7 @@ private struct WorkspaceActivitySidebar: View {
                 }
                 if values.count > 8 {
                     Text("+ \(values.count - 8) MORE")
-                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(0.65)
                         .foregroundStyle(Color.scifiTertiary)
                 }
@@ -1081,10 +1081,10 @@ private struct WorkspaceActivitySidebar: View {
             Image(systemName: icon).font(.system(size: 11)).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
-                Text(detail).font(.system(size: 9)).foregroundStyle(Color.scifiTertiary)
+                Text(detail).font(.system(size: 10)).foregroundStyle(Color.scifiTertiary)
             }
             Spacer(minLength: 3)
-            Text(state).font(.system(size: 8, weight: .semibold, design: .monospaced)).tracking(0.45).foregroundStyle(color)
+            Text(state).font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(0.45).foregroundStyle(color)
         }
     }
 
@@ -1127,6 +1127,7 @@ struct DockPopover: View {
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
+    @FocusState private var isComposerFocused: Bool
     @StateObject private var speechInput = SpeechInput()
     @StateObject private var voiceOutput = VoiceOutput()
     @StateObject private var workspaceStore = WorkspaceStore()
@@ -1136,6 +1137,32 @@ struct DockPopover: View {
 
     private enum InputMode {
         case chat, talk
+    }
+
+    private enum QuickPrompt: CaseIterable, Identifiable {
+        case reminder, notes, research, summarize, automation, review
+
+        var id: Self { self }
+        var label: String {
+            switch self {
+            case .reminder: "Reminder"
+            case .notes: "Save to Notes"
+            case .research: "Research"
+            case .summarize: "Summarize work"
+            case .automation: "Recurring automation"
+            case .review: "Review work"
+            }
+        }
+        var prompt: String {
+            switch self {
+            case .reminder: "Create an Apple Reminder for: "
+            case .notes: "Save the following to Apple Notes: "
+            case .research: "Start research on: "
+            case .summarize: "Summarize my active work and list the next actions."
+            case .automation: "Help me create a recurring automation for: "
+            case .review: "Review my completed work and identify anything that needs follow-up."
+            }
+        }
     }
 
     var body: some View {
@@ -1199,6 +1226,9 @@ struct DockPopover: View {
         }
         .onChange(of: isWorkspaceVisible) { _, visible in
             onWorkspaceWidthChange(visible ? 960 : 420)
+        }
+        .onChange(of: model.composerFocusRequest) { _, _ in
+            isComposerFocused = true
         }
         .onChange(of: speechInput.completedTranscript) { _, transcript in
             guard let transcript, !transcript.isEmpty, !model.isSending else { return }
@@ -1280,12 +1310,12 @@ struct DockPopover: View {
                             .foregroundStyle(Color.scifiFg)
                             .lineLimit(1)
                         Text("HERMES CONSOLE")
-                            .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .tracking(1.05)
                             .foregroundStyle(Color.scifiTertiary)
                     }
                     Image(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Color.scifiMuted)
                 }
             }
@@ -1320,7 +1350,7 @@ struct DockPopover: View {
                 if model.status == .working || model.isSending {
                     Button(action: stopCurrentRequest) {
                         Image(systemName: "square.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 10))
                             .foregroundStyle(Color.scifiMuted)
                     }
                     .buttonStyle(.plain)
@@ -1363,7 +1393,7 @@ struct DockPopover: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("CONVERSATIONS")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(1.1)
                     .foregroundStyle(Color.scifiAccent.opacity(0.8))
                 Spacer()
@@ -1469,7 +1499,7 @@ struct DockPopover: View {
             .overlay(alignment: .bottom) {
                 if let detail = model.voiceState.fallbackDetail {
                     Text("LOCAL FALLBACK · \(detail)")
-                        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(0.35)
                         .foregroundStyle(Color.scifiWarning)
                         .lineLimit(2)
@@ -1479,12 +1509,12 @@ struct DockPopover: View {
                 } else if model.voiceState.isNativeConversationActive {
                     VStack(spacing: 5) {
                         Text(model.voiceState.label)
-                            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .tracking(0.75)
                             .foregroundStyle(model.voiceState == .listening ? Color.scifiSuccess : Color.scifiAccent)
                         if let timing = model.voiceTelemetry.summary {
                             Text(timing)
-                                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .tracking(0.45)
                                 .foregroundStyle(Color.scifiTertiary)
                         }
@@ -1544,7 +1574,7 @@ struct DockPopover: View {
         HStack(spacing: 8) {
             ThinkingDots()
             Text(voiceActivityText)
-                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(0.6)
                 .lineLimit(1)
         }
@@ -1704,7 +1734,7 @@ struct DockPopover: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color.scifiMuted)
                 Text(event.detail)
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
                     .lineLimit(1)
             }
@@ -1729,10 +1759,10 @@ struct DockPopover: View {
                     VStack(alignment: .trailing, spacing: 4) {
                         HStack(spacing: 8) {
                             Text(Self.timeFormatter.string(from: message.timestamp))
-                                .font(.system(size: 9.5, design: .monospaced))
+                                .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(Color.scifiTertiary)
                             Text("You")
-                                .font(.system(size: 9.5, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                                 .tracking(1.0)
                                 .textCase(.uppercase)
                                 .foregroundStyle(Color.scifiMuted)
@@ -1769,16 +1799,16 @@ struct DockPopover: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
                             Text("Hermes")
-                                .font(.system(size: 9.5, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                                 .tracking(1.0)
                                 .textCase(.uppercase)
                                 .foregroundStyle(Color.scifiMuted)
                             Text(Self.timeFormatter.string(from: message.timestamp))
-                                .font(.system(size: 9.5, design: .monospaced))
+                                .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(Color.scifiTertiary)
                             if let modelName = message.modelName {
                                 Text("· \(modelName)")
-                                    .font(.system(size: 9.5, design: .monospaced))
+                                    .font(.system(size: 10, design: .monospaced))
                                     .foregroundStyle(Color.scifiTertiary)
                             }
                         }
@@ -1855,7 +1885,7 @@ struct DockPopover: View {
                     .foregroundStyle(Color.scifiFg)
                 Spacer()
                 Text("ACTION NEEDED")
-                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .tracking(0.8)
                     .foregroundStyle(Color.scifiWarning)
             }
@@ -1919,13 +1949,13 @@ struct DockPopover: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Text("Image")
-                            .font(.system(size: 9))
+                            .font(.system(size: 10))
                             .foregroundStyle(Color.scifiMuted)
                     }
                     Spacer(minLength: 4)
                     Button(action: { model.clearPendingImage() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.scifiMuted)
                             .frame(width: 18, height: 18)
                             .background(Circle().fill(Color.scifiSurface6))
@@ -1940,6 +1970,27 @@ struct DockPopover: View {
                         .fill(Color.scifiSurface)
                 )
                 .padding(.horizontal, 10)
+                .padding(.top, 6)
+            }
+
+            if !speechInput.isRecording {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(QuickPrompt.allCases) { quickPrompt in
+                            Button(quickPrompt.label) {
+                                model.draft = quickPrompt.prompt
+                                model.requestComposerFocus()
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color.scifiMuted)
+                            .padding(.horizontal, 9)
+                            .frame(minHeight: 26)
+                            .background(Capsule().fill(Color.scifiSurface4).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                }
                 .padding(.top, 6)
             }
 
@@ -1972,6 +2023,7 @@ struct DockPopover: View {
 
                     TextField("Ask Hermes…", text: $model.draft, axis: .vertical)
                         .textFieldStyle(.plain)
+                        .focused($isComposerFocused)
                         .lineLimit(1...4)
                         .font(.system(size: 13))
                         .onSubmit { model.send() }
@@ -2058,7 +2110,7 @@ struct DockPopover: View {
 
             if let error = speechInput.errorMessage {
                 Text(error)
-                    .font(.system(size: 9.5, design: .monospaced))
+                    .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Color.scifiWarning)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 12)
@@ -2127,7 +2179,7 @@ private struct StartupAssistantView: View {
                         .frame(width: 5, height: 5)
                         .shadow(color: Color.scifiSuccess.opacity(0.8), radius: 5)
                     Text("HERMES // ONLINE")
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .tracking(1.5)
                         .foregroundStyle(Color.scifiAccent.opacity(0.85))
                 }
@@ -2153,7 +2205,7 @@ private struct StartupAssistantView: View {
                 HStack(spacing: 6) {
                     Capsule().fill(Color.scifiAccent.opacity(0.35)).frame(width: 18, height: 1)
                     Text("AWAITING COMMAND")
-                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(1.25)
                         .foregroundStyle(Color.scifiTertiary)
                     Capsule().fill(Color.scifiAccent.opacity(0.35)).frame(width: 18, height: 1)

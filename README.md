@@ -17,6 +17,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   groups actionable approvals, clarifications, failures, and completed work.
   Activity and Core expose live runtime information, capabilities, integrations,
   health, and setup guidance.
+- **Readable controls.** UI text uses a 10pt minimum for labels, metadata, and
+  status text so the compact menu-bar surface remains legible.
+- **Quick capture.** The composer offers transparent prompt shortcuts for
+  reminders, Notes, research, summaries, recurring automation, and review.
 - **Canonical-source projections.** Hermes remains authoritative for sessions,
   agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
   authoritative for reminder content. The Dock stores references, display state,

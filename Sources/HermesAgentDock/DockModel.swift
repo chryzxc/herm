@@ -219,6 +219,7 @@ final class DockModel: ObservableObject {
     @Published private(set) var composerFocusRequest = 0
 
     private let gateway = HermesGateway()
+    let eventRouter = HermesEventRouter()
     @Published private(set) var sessionID: String?
     private var streamingMessageID: UUID?
     private var streamingMessageIsVisionNotice = false
@@ -235,7 +236,10 @@ final class DockModel: ObservableObject {
             debugLines = Array((debugLines + [line]).suffix(80))
         }
         DebugLog.write("model: initialized")
-        gateway.onEvent = { [weak self] type, params in self?.handleEvent(type, params: params) }
+        gateway.onEvent = { [weak self] type, params in
+            self?.eventRouter.route(type: type, params: params)
+            self?.handleEvent(type, params: params)
+        }
         gateway.onConnectionChange = { [weak self] connected in
             self?.isHermesConnected = connected
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
