@@ -416,6 +416,7 @@ private struct WorkspaceActivitySidebar: View {
     @ObservedObject var model: DockModel
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var control: ControlCenterModel
+    var onClose: () -> Void = {}
     @State private var selectedMode: ControlTab = .today
     @State private var selectedModelID = ""
     @State private var selectedAgentID: String?
@@ -447,6 +448,14 @@ private struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.scifiTertiary)
                 }
                 Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.scifiMuted)
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .help("Return to chat")
                 Circle()
                     .fill(statusColor)
                     .frame(width: 6, height: 6)
@@ -1173,6 +1182,8 @@ struct DockPopover: View {
     var onWorkspaceWidthChange: (CGFloat) -> Void = { _ in }
     @State private var isConversationAtBottom = true
     @State private var isWorkspaceManuallyExpanded = false
+    @State private var isNarrowLayout = false
+    @State private var isNarrowControlVisible = false
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
@@ -1234,14 +1245,20 @@ struct DockPopover: View {
 
             // The Control workspace belongs to the popup, not to chat mode.
             // Voice swaps only the left-hand surface and keeps this pane live.
-            if isWorkspaceVisible {
+            if isWorkspaceVisibleForLayout {
                 Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5)
-                WorkspaceActivitySidebar(model: model, store: workspaceStore, control: controlCenter)
-                    .frame(width: 540, height: 640)
+                WorkspaceActivitySidebar(model: model, store: workspaceStore, control: controlCenter, onClose: {
+                    if isNarrowLayout {
+                        isNarrowControlVisible = false
+                    } else {
+                        isWorkspaceManuallyExpanded = false
+                    }
+                })
+                    .frame(width: isNarrowLayout ? 420 : 540, height: 640)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: isWorkspaceVisible ? 960 : 420, height: 640)
+        .frame(width: isWorkspaceVisibleForLayout ? (isNarrowLayout ? 420 : 960) : 420, height: 640)
         .background {
             ZStack {
                 Color(red: 0.055, green: 0.065, blue: 0.115)
@@ -1259,7 +1276,7 @@ struct DockPopover: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.scifiBorderLight, lineWidth: 0.5)
         }
-        .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisible)
+        .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
         .environment(\.colorScheme, .dark)
         .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image]) { result in
             if case .success(let url) = result {
@@ -1268,13 +1285,15 @@ struct DockPopover: View {
         }
         .task { model.restoreLatestSessionIfNeeded() }
         .onAppear {
-            onWorkspaceWidthChange(isWorkspaceVisible ? 960 : 420)
+            isNarrowLayout = (NSScreen.main?.visibleFrame.width ?? 1200) < 1000
+            onWorkspaceWidthChange(isWorkspaceVisibleForLayout ? (isNarrowLayout ? 420 : 960) : 420)
             synchronizeWorkspace()
             controlCenter.bind(to: model)
             controlCenter.refresh()
         }
         .onChange(of: isWorkspaceVisible) { _, visible in
-            onWorkspaceWidthChange(visible ? 960 : 420)
+            if isNarrowLayout { isNarrowControlVisible = visible }
+            onWorkspaceWidthChange(isWorkspaceVisibleForLayout ? (isNarrowLayout ? 420 : 960) : 420)
         }
         .onChange(of: model.composerFocusRequest) { _, _ in
             isComposerFocused = true
@@ -1322,6 +1341,10 @@ struct DockPopover: View {
 
     private var isWorkspaceVisible: Bool {
         isWorkspaceManuallyExpanded || !model.activeSubagents.isEmpty
+    }
+
+    private var isWorkspaceVisibleForLayout: Bool {
+        isNarrowLayout ? isNarrowControlVisible : isWorkspaceVisible
     }
 
     private func synchronizeWorkspace(status: HermesStatus? = nil) {
@@ -1386,15 +1409,21 @@ struct DockPopover: View {
                 .buttonStyle(.plain)
                 .help("Talk mode")
 
-                Button(action: { isWorkspaceManuallyExpanded.toggle() }) {
-                    Image(systemName: isWorkspaceVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1")
+                Button(action: {
+                    if isNarrowLayout {
+                        isNarrowControlVisible.toggle()
+                    } else {
+                        isWorkspaceManuallyExpanded.toggle()
+                    }
+                }) {
+                    Image(systemName: isWorkspaceVisibleForLayout ? "rectangle.compress.vertical" : "rectangle.split.2x1")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isWorkspaceVisible ? Color.scifiAccent : Color.scifiMuted)
+                        .foregroundStyle(isWorkspaceVisibleForLayout ? Color.scifiAccent : Color.scifiMuted)
                         .frame(width: 26, height: 26)
-                        .background(Circle().fill(isWorkspaceVisible ? Color.scifiAccent.opacity(0.1) : Color.clear))
+                        .background(Circle().fill(isWorkspaceVisibleForLayout ? Color.scifiAccent.opacity(0.1) : Color.clear))
                 }
                 .buttonStyle(.plain)
-                .help(isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
+                .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
 
                 if model.status == .working || model.isSending {
                     Button(action: stopCurrentRequest) {
@@ -1521,8 +1550,14 @@ struct DockPopover: View {
         VStack(spacing: 0) {
             VoiceModeToolbar(
                 onReturnToChat: exitVoiceMode,
-                onToggleWorkspace: { isWorkspaceManuallyExpanded.toggle() },
-                isWorkspaceVisible: isWorkspaceVisible,
+                onToggleWorkspace: {
+                    if isNarrowLayout {
+                        isNarrowControlVisible.toggle()
+                    } else {
+                        isWorkspaceManuallyExpanded.toggle()
+                    }
+                },
+                isWorkspaceVisible: isWorkspaceVisibleForLayout,
                 canStopRequest: model.status == .working || model.isSending,
                 onStopRequest: stopCurrentRequest
             )
