@@ -496,7 +496,7 @@ private struct WorkspaceActivitySidebar: View {
             guard case .success(let url) = result else { return }
             store.attachProject(at: url.path, toSessionID: model.sessionID)
         }
-        .task(id: store.projectPath) { await refreshRepository() }
+        .task(id: activeRepositoryPath) { await refreshRepository() }
         .task {
             control.bind(to: model)
             control.refresh()
@@ -942,7 +942,7 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
 
-            if store.projectPath != nil {
+            if activeRepositoryPath != nil {
                 sectionLabel("DEVELOPMENT CONTEXT")
                 repositoryContent
             }
@@ -1024,7 +1024,7 @@ private struct WorkspaceActivitySidebar: View {
                         Text(repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(repository.changedFiles) CHANGED FILE\(repository.changedFiles == 1 ? "" : "S")")
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(repository.changedFiles == 0 ? Color.scifiSuccess : Color.scifiWarning)
-                    } else if let path = store.projectPath {
+                    } else if let path = activeRepositoryPath {
                         Text(path).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
                     }
                 }
@@ -1038,12 +1038,10 @@ private struct WorkspaceActivitySidebar: View {
                     .lineLimit(2)
             }
             HStack(spacing: 14) {
-                Button(store.projectPath == nil ? "CHOOSE REPOSITORY" : "CHANGE REPOSITORY") {
+                Button("CHANGE REPOSITORY") {
                     showingRepositoryPicker = true
                 }
-                if store.projectPath != nil {
-                    Button("REFRESH") { Task { await refreshRepository() } }
-                }
+                Button("REFRESH") { Task { await refreshRepository() } }
             }
             .buttonStyle(.plain)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -1072,6 +1070,13 @@ private struct WorkspaceActivitySidebar: View {
         return store.activeTask
     }
 
+    private var activeRepositoryPath: String? {
+        guard let task = currentTask,
+              let sessionID = model.sessionID,
+              task.sessionID == sessionID else { return nil }
+        return task.projectPath
+    }
+
     private func taskColor(_ status: WorkspaceTaskStatus) -> Color {
         switch status {
         case .todo: .scifiMuted
@@ -1083,7 +1088,7 @@ private struct WorkspaceActivitySidebar: View {
     }
 
     private func refreshRepository() async {
-        guard let path = store.projectPath else {
+        guard let path = activeRepositoryPath else {
             repository = .empty
             return
         }
