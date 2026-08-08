@@ -1595,6 +1595,37 @@ private struct WorkspaceActivitySidebar: View {
                 Divider().overlay(Color.scifiBorderLight)
                 sectionLabel("MCP SERVERS  ·  \(configuration.mcpServers.count)")
                 configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
+                if control.mcpInventoryAvailable {
+                    if control.mcpServers.isEmpty {
+                        Text("Hermes reports no configured MCP connections.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.scifiTertiary)
+                    } else {
+                        VStack(alignment: .leading, spacing: 7) {
+                            ForEach(control.mcpServers) { server in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle()
+                                        .fill(server.isEnabled ? Color.scifiSuccess : Color.scifiMuted)
+                                        .frame(width: 6, height: 6)
+                                        .padding(.top, 5)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(server.name)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Color.scifiFg)
+                                        Text("\(server.transport)  ·  \(server.tools)")
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(Color.scifiTertiary)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Text(server.isEnabled ? "ENABLED" : "DISABLED")
+                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(server.isEnabled ? Color.scifiSuccess : Color.scifiMuted)
+                                }
+                            }
+                        }
+                    }
+                }
                 if model.sessionID != nil {
                     Button("RELOAD MCP TOOLS") { isShowingMCPReloadConfirmation = true }
                         .buttonStyle(.plain)

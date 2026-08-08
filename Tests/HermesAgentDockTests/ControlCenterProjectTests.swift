@@ -80,4 +80,21 @@ struct ControlCenterProjectTests {
         #expect(runs.first?.jobID == "morning")
         #expect(runs.first?.error == "timed out after 30s")
     }
+
+    @Test func parsesMCPInventoryWithoutLeakingStatusFormatting() {
+        let servers = ControlCenterModel.parseMCPServers("""
+          MCP Servers:
+          Name             Transport                      Tools        Status
+          ───────────────────────────────────────────────────────────────────
+          github           https://api.example.test/mcp   all          ✓ enabled
+          local            npx @example/server            2 selected   ✗ disabled
+        """)
+
+        #expect(servers.count == 2)
+        #expect(servers.first?.name == "github")
+        #expect(servers.first?.transport == "https://api.example.test/mcp")
+        #expect(servers.first?.isEnabled == true)
+        #expect(servers.last?.tools == "2 selected")
+        #expect(servers.last?.isEnabled == false)
+    }
 }

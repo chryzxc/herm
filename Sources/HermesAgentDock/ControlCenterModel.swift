@@ -7,6 +7,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var cronJobs: [CronSummary] = []
     @Published private(set) var cronRuns: [CronRunSummary] = []
     @Published private(set) var cronHistoryAvailable = false
+    @Published private(set) var mcpServers: [MCPServerSummary] = []
+    @Published private(set) var mcpInventoryAvailable = false
     @Published private(set) var activeSessions: [SessionSummary] = []
     @Published private(set) var activeAgents: [AgentSummary] = []
     @Published private(set) var processes: [ProcessSummary] = []
@@ -103,6 +105,8 @@ final class ControlCenterModel: ObservableObject {
                 let processResult = try await rpc?.processes()
                 if let processResult { processes = Self.parseProcesses(processResult) }
 
+                refreshMCPInventory()
+
                 let projectResult = try await rpc?.projectsTree()
                 if let projectResult { projects = Self.parseProjects(projectResult) }
 
@@ -176,6 +180,24 @@ final class ControlCenterModel: ObservableObject {
             } catch {
                 cronHistoryAvailable = false
                 cronRuns = []
+            }
+        }
+    }
+
+    func refreshMCPInventory() {
+        guard let rpc else { return }
+        Task {
+            do {
+                let result = try await rpc.shell("hermes mcp list")
+                mcpInventoryAvailable = AppleRemindersAdapter.shellResultSucceeded(result)
+                guard mcpInventoryAvailable, let output = result["stdout"] as? String else {
+                    mcpServers = []
+                    return
+                }
+                mcpServers = Self.parseMCPServers(output)
+            } catch {
+                mcpInventoryAvailable = false
+                mcpServers = []
             }
         }
     }
@@ -781,6 +803,37 @@ final class ControlCenterModel: ObservableObject {
             runs.append(CronRunSummary(id: String(columns[0]), status: String(columns[1]), jobID: jobID, source: source, claimedAt: claimedAt, error: nil))
         }
         return runs
+    }
+
+    static func parseMCPServers(_ output: String) -> [MCPServerSummary] {
+        let clean = output.replacingOccurrences(of: "\u{001B}\\[[0-9;]*m", with: "", options: .regularExpression)
+        return clean.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
+            let text = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty,
+                  !text.localizedCaseInsensitiveContains("MCP Servers:"),
+                  !text.localizedCaseInsensitiveContains("No MCP servers configured"),
+                  !text.hasPrefix("─") else { return nil }
+
+            let columns = text.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            guard columns.count >= 4,
+                  columns[0].lowercased() != "name",
+                  let toolMarkerIndex = columns.firstIndex(where: { $0 == "all" || $0 == "selected" || $0 == "excluded" }) else { return nil }
+
+            let toolIndex = columns[toolMarkerIndex] == "all" ? toolMarkerIndex : toolMarkerIndex - 1
+            guard toolIndex > 1, toolMarkerIndex + 1 < columns.count else { return nil }
+
+            let name = columns[0]
+            let transport = columns[1..<toolIndex].joined(separator: " ")
+            let tools = columns[toolIndex...toolMarkerIndex].joined(separator: " ")
+            let status = columns[(toolMarkerIndex + 1)...].joined(separator: " ").lowercased()
+            return MCPServerSummary(
+                id: name,
+                name: name,
+                transport: transport,
+                tools: tools,
+                isEnabled: !status.contains("disabled")
+            )
+        }
     }
 
     static func reminderAttention(for reminder: ReminderSummary) -> AttentionItem {

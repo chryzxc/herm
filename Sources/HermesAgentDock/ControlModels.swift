@@ -168,6 +168,14 @@ struct CronRunSummary: Identifiable, Equatable {
     let error: String?
 }
 
+struct MCPServerSummary: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let transport: String
+    let tools: String
+    let isEnabled: Bool
+}
+
 struct CronChangeRequest: Identifiable {
     let job: CronSummary
     let enable: Bool
