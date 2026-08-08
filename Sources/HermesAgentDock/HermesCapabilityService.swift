@@ -8,6 +8,7 @@ final class HermesCapabilityService {
         let configResult = await request(client, method: "config.show")
         let versionResult = await request(client, method: "shell.exec", params: ["command": "hermes --version"])
         let skillsResult = await request(client, method: "shell.exec", params: ["command": "hermes skills list --enabled-only"])
+        let kanbanResult = await request(client, method: "shell.exec", params: ["command": "hermes kanban list --json"])
         let notesResult = await request(client, method: "shell.exec", params: ["command": "memo --version"])
         let emailResult = await request(client, method: "shell.exec", params: ["command": "himalaya --version"])
         let imessageResult = await request(client, method: "shell.exec", params: ["command": "imsg --version"])
@@ -18,6 +19,7 @@ final class HermesCapabilityService {
         let emailAvailable = Self.shellResultSucceeded(emailResult)
         let messagingAvailable = Self.shellResultSucceeded(imessageResult)
         let mcpAvailable = Self.shellResultSucceeded(mcpResult)
+        let kanbanAvailable = Self.shellResultSucceeded(kanbanResult)
         let mcpOutput = (mcpResult?["stdout"] as? String) ?? ""
         let hasMCPServers = mcpAvailable && !mcpOutput.localizedCaseInsensitiveContains("No MCP servers configured")
         let version = (configResult?["version"] as? String)
@@ -100,9 +102,9 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: "kanban",
                 title: "Hermes Kanban",
-                detail: "The installed gateway does not expose Kanban RPC methods",
-                isAvailable: false,
-                recovery: "Kanban integration will activate when Hermes exposes a desktop RPC surface."
+                detail: kanbanAvailable ? "Kanban CLI is available through Hermes shell; desktop RPC is unavailable" : "Kanban CLI is unavailable",
+                isAvailable: kanbanAvailable,
+                recovery: kanbanAvailable ? "Use Hermes Kanban prompts for actions; the Dock does not duplicate the board." : "Install or enable Hermes Kanban before using Kanban actions."
             ),
             CapabilityState(
                 id: "mcp",
