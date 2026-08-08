@@ -206,6 +206,7 @@ final class DockModel: ObservableObject {
     @Published var isShowingReasoning = false
     @Published var activeToolCalls: [ActiveToolCall] = []
     @Published var hasUnreadResponse = false
+    @Published private(set) var completionNotificationsEnabled: Bool
     @Published var recentEvents: [AgentEvent] = []
     @Published var activeSubagents: [HermesSubagent] = []
     @Published var sessionAgents: [HermesSubagent] = []
@@ -231,8 +232,10 @@ final class DockModel: ObservableObject {
     private var isRefreshingDelegationStatus = false
     private var synthesizedSubagentIDs: Set<String> = []
     private var lastAgentDiscovery = Date.distantPast
+    private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
 
     init() {
+        completionNotificationsEnabled = UserDefaults.standard.bool(forKey: completionNotificationsKey)
         DebugLog.onLine = { [weak self] line in
             guard let self else { return }
             debugLines = Array((debugLines + [line]).suffix(80))
@@ -476,6 +479,11 @@ final class DockModel: ObservableObject {
         composerFocusRequest &+= 1
     }
 
+    func setCompletionNotificationsEnabled(_ enabled: Bool) {
+        completionNotificationsEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: completionNotificationsKey)
+    }
+
     func requestControlInbox() {
         requestedAttentionID = nil
         controlInboxRequest &+= 1
@@ -662,6 +670,10 @@ final class DockModel: ObservableObject {
             isSending = false
             streamingMessageID = nil
             hasUnreadResponse = !isPopoverVisible
+            if completionNotificationsEnabled {
+                let response = messages.last(where: { $0.role == .hermes })?.text ?? "Hermes completed the active request."
+                notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
+            }
             if voiceState.isNativeConversationActive {
                 voiceTelemetry.completedResponse()
                 // Hermes keeps a full-duplex listener armed through response

@@ -1179,6 +1179,23 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
             Divider().overlay(Color.scifiBorderLight)
+            sectionLabel("NOTIFICATIONS")
+            Toggle(isOn: Binding(
+                get: { model.completionNotificationsEnabled },
+                set: { model.setCompletionNotificationsEnabled($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Completion alerts")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Color.scifiFg)
+                    Text("Notify when Hermes finishes a request while the Dock is hidden.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.scifiTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(.switch)
+            Divider().overlay(Color.scifiBorderLight)
             HStack {
                 sectionLabel("HERMES CONFIGURATION")
                 Spacer()
