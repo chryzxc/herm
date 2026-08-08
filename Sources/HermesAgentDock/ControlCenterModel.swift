@@ -614,9 +614,20 @@ final class ControlCenterModel: ObservableObject {
             saved.state != .resolved && saved.state != .dismissed && saved.state != .snoozed && !next.contains(where: { $0.id == saved.id })
         }
         attention = next.sorted { lhs, rhs in
-            if lhs.kind == .approval && rhs.kind != .approval { return true }
-            if lhs.kind != .approval && rhs.kind == .approval { return false }
+            let lhsRank = Self.attentionRank(lhs)
+            let rhsRank = Self.attentionRank(rhs)
+            if lhsRank != rhsRank { return lhsRank < rhsRank }
             return lhs.createdAt > rhs.createdAt
+        }
+    }
+
+    static func attentionRank(_ item: AttentionItem) -> Int {
+        switch item.kind {
+        case .approval: 0
+        case .failure: 1
+        case .clarification: 2
+        case .reminder: item.detail.localizedCaseInsensitiveContains("OVERDUE") ? 3 : 4
+        case .completed: 5
         }
     }
 

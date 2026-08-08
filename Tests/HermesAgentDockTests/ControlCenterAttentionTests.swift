@@ -42,4 +42,11 @@ struct ControlCenterAttentionTests {
         #expect(item.kind == .reminder)
         #expect(item.actions.contains(.complete))
     }
+
+    @Test func overdueRemindersRankBeforeOrdinaryReminders() {
+        let overdue = ControlCenterModel.reminderAttention(for: ReminderSummary(id: "overdue", title: "Urgent", list: nil, dueDate: Date(), isOverdue: true))
+        let ordinary = ControlCenterModel.reminderAttention(for: ReminderSummary(id: "ordinary", title: "Later", list: nil, dueDate: Date(), isOverdue: false))
+
+        #expect(ControlCenterModel.attentionRank(overdue) < ControlCenterModel.attentionRank(ordinary))
+    }
 }
