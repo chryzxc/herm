@@ -129,7 +129,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     func toggleFromShortcut() {
-        togglePanel()
+        if panel.isVisible {
+            hide()
+        } else {
+            show()
+            model.requestComposerFocus()
+        }
     }
 
     func showFromNotification() {

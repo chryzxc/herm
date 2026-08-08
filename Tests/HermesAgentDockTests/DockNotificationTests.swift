@@ -11,4 +11,13 @@ struct DockNotificationTests {
         model.setCompletionNotificationsEnabled(false)
         #expect(model.completionNotificationsEnabled == false)
     }
+
+    @Test func composerFocusRequestIsObservableByThePopover() {
+        let model = DockModel()
+        let initial = model.composerFocusRequest
+
+        model.requestComposerFocus()
+
+        #expect(model.composerFocusRequest == initial &+ 1)
+    }
 }
