@@ -81,8 +81,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   installed skills, configured MCP servers, and enabled plugins supplied by
   Hermes. Unavailable gateway/version states include copyable recovery commands;
   the Dock never runs update or recovery commands automatically. When a session
-  is active, configured MCP tools can be explicitly reloaded after confirmation;
-  third-party MCP browsing/actions remain dependent on future Hermes RPCs.
+  is active, configured MCP tools can be explicitly reloaded after confirmation.
+  Core also shows a live, read-only MCP inventory with each server's transport,
+  tool scope, and enabled state; third-party MCP browsing/actions remain
+  dependent on future Hermes RPCs.
 - **Voice conversation.** Prefers Hermes' native voice gateway: server VAD,
   Hermes transcription, streaming TTS, and spoken barge-in. The Dock retains
   macOS speech recognition and system speech as an explicitly labelled fallback
@@ -160,7 +162,9 @@ Every user-facing feature or behavior change must update the relevant section of
 this README in the same change set. Mark incomplete work as planned, and do not
 describe mock data or provider capabilities as live functionality. Calendar,
 email, iMessage, full automation editing, and third-party MCP browsing remain
-planned follow-on integrations.
+planned follow-on integrations. Read-only MCP connection inventory is available
+today; the Dock does not add, remove, authenticate, or invoke MCP servers
+directly.
 
 ## Quality checks
 
