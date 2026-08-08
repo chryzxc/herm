@@ -224,3 +224,41 @@ enum ControlTab: String, CaseIterable, Identifiable {
         }
     }
 }
+
+struct ControlTabBadgeState: Equatable {
+    let urgentAttentionCount: Int
+    let inboxCount: Int
+    let activityCount: Int
+
+    static func make(attention: [AttentionItem], activeAgentCount: Int, activeToolCount: Int) -> ControlTabBadgeState {
+        let openAttention = attention.filter { $0.state == .open }
+        let urgent = openAttention.filter { item in
+            switch item.kind {
+            case .approval, .clarification, .failure: true
+            case .completed, .reminder: false
+            }
+        }
+        return ControlTabBadgeState(
+            urgentAttentionCount: urgent.count,
+            inboxCount: openAttention.count,
+            activityCount: max(0, activeAgentCount) + max(0, activeToolCount)
+        )
+    }
+
+    func count(for tab: ControlTab) -> Int {
+        switch tab {
+        case .today: urgentAttentionCount
+        case .inbox: inboxCount
+        case .activity: activityCount
+        case .automations, .projects, .search, .kanban, .core: 0
+        }
+    }
+
+    func isUrgent(for tab: ControlTab) -> Bool {
+        switch tab {
+        case .today: urgentAttentionCount > 0
+        case .inbox: urgentAttentionCount > 0
+        case .activity, .automations, .projects, .search, .kanban, .core: false
+        }
+    }
+}

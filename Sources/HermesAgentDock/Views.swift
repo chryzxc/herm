@@ -651,11 +651,22 @@ private struct WorkspaceActivitySidebar: View {
                     if mode == .search { control.search(searchQuery) }
                     if mode == .kanban { control.refreshKanban() }
                 } label: {
-                    Text(mode.rawValue.uppercased())
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .tracking(0.75)
-                        .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
-                        .frame(maxWidth: .infinity, minHeight: 30)
+                    HStack(spacing: 5) {
+                        Text(mode.rawValue.uppercased())
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .tracking(0.75)
+                        if badgeCount(for: mode) > 0 {
+                            Text(badgeLabel(for: mode))
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundStyle(badgeIsUrgent(for: mode) ? Color.scifiBg : Color.scifiFg)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .padding(.horizontal, 4)
+                                .background(Capsule().fill(badgeIsUrgent(for: mode) ? Color.scifiWarning : Color.scifiAccent.opacity(0.85)))
+                        }
+                    }
+                    .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
+                    .frame(maxWidth: .infinity, minHeight: 36)
                         .background(selectedMode == mode ? Color.scifiAccent.opacity(0.11) : .clear)
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         .contentShape(Rectangle())
@@ -763,6 +774,27 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
         }
+    }
+
+    private var tabBadges: ControlTabBadgeState {
+        ControlTabBadgeState.make(
+            attention: control.attention,
+            activeAgentCount: model.activeSubagents.filter { $0.status.lowercased() != "complete" }.count,
+            activeToolCount: model.activeToolCalls.filter { !$0.isComplete }.count
+        )
+    }
+
+    private func badgeCount(for tab: ControlTab) -> Int {
+        tabBadges.count(for: tab)
+    }
+
+    private func badgeLabel(for tab: ControlTab) -> String {
+        let count = badgeCount(for: tab)
+        return count > 99 ? "99+" : "\(count)"
+    }
+
+    private func badgeIsUrgent(for tab: ControlTab) -> Bool {
+        tabBadges.isUrgent(for: tab)
     }
 
     private var projectsContent: some View {

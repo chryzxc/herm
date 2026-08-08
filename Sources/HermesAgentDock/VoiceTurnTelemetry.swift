@@ -58,3 +58,50 @@ struct VoiceTurnTelemetry: Equatable {
         String(format: "%.1fs", max(0, value))
     }
 }
+
+/// The gateway records one VAD-bounded native capture at a time. This small
+/// state machine owns the re-arm decision so a completed response cannot leave
+/// the UI claiming to listen while no `voice.record` capture is active.
+struct NativeVoiceCaptureLifecycle: Equatable {
+    private(set) var captureArmed = false
+    private(set) var hasPendingTranscript = false
+    private(set) var startFailures = 0
+
+    mutating func beginCapture() -> Bool {
+        guard !captureArmed, !hasPendingTranscript else { return false }
+        captureArmed = true
+        return true
+    }
+
+    mutating func captureStarted() {
+        startFailures = 0
+    }
+
+    mutating func captureStartFailed() -> Bool {
+        captureArmed = false
+        startFailures += 1
+        return startFailures <= 3
+    }
+
+    mutating func receivedTranscript(hasText: Bool) {
+        captureArmed = false
+        hasPendingTranscript = hasText
+    }
+
+    mutating func receivedIdle() -> Bool {
+        captureArmed = false
+        return !hasPendingTranscript
+    }
+
+    mutating func completedResponse() -> Bool {
+        hasPendingTranscript = false
+        startFailures = 0
+        return !captureArmed
+    }
+
+    mutating func reset() {
+        captureArmed = false
+        hasPendingTranscript = false
+        startFailures = 0
+    }
+}

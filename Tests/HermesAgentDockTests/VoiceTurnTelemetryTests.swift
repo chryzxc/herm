@@ -24,4 +24,27 @@ struct VoiceTurnTelemetryTests {
 
         #expect(telemetry.summary == "INTERRUPTED")
     }
+
+    @Test func nativeCaptureRearmsOnlyAfterTheResponseCompletes() {
+        var lifecycle = NativeVoiceCaptureLifecycle()
+
+        #expect(lifecycle.beginCapture() == true)
+        lifecycle.captureStarted()
+        lifecycle.receivedTranscript(hasText: true)
+        #expect(lifecycle.receivedIdle() == false)
+        #expect(lifecycle.beginCapture() == false)
+
+        #expect(lifecycle.completedResponse() == true)
+        #expect(lifecycle.beginCapture() == true)
+    }
+
+    @Test func emptyNativeCaptureCanRearmAfterIdle() {
+        var lifecycle = NativeVoiceCaptureLifecycle()
+
+        #expect(lifecycle.beginCapture() == true)
+        lifecycle.receivedTranscript(hasText: false)
+
+        #expect(lifecycle.receivedIdle() == true)
+        #expect(lifecycle.beginCapture() == true)
+    }
 }

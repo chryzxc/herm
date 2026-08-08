@@ -232,6 +232,7 @@ final class DockModel: ObservableObject {
     private var isRefreshingDelegationStatus = false
     private var synthesizedSubagentIDs: Set<String> = []
     private var lastAgentDiscovery = Date.distantPast
+    private var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
 
     init() {
@@ -532,6 +533,7 @@ final class DockModel: ObservableObject {
             return false
         }() else { return }
         guard !voiceState.isNativeConversationActive else { return }
+        nativeVoiceCapture.reset()
         voiceState = .preparing
 
         Task {
@@ -542,7 +544,7 @@ final class DockModel: ObservableObject {
                     sessionID = result["session_id"] as? String
                     currentModelName = (result["model"] as? String) ?? (result["model_name"] as? String)
                 }
-                guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
+                guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
 
                 let requirements = try await gateway.request("voice.toggle", params: ["action": "status"])
                 guard (requirements["available"] as? Bool) != false,
@@ -556,14 +558,9 @@ final class DockModel: ObservableObject {
                 if (enabled["tts"] as? Bool) != true {
                     _ = try await gateway.request("voice.toggle", params: ["action": "tts"])
                 }
-                let recording = try await gateway.request("voice.record", params: ["action": "start", "session_id": sessionID])
-                let recordingStatus = recording["status"] as? String
-                if recordingStatus == "busy" {
-                    voiceState = .localFallback("Hermes voice is already in use by another session.")
-                } else {
-                    voiceTelemetry.beginListening()
-                    voiceState = .listening
-                }
+                voiceTelemetry.beginListening()
+                voiceState = .listening
+                armNativeVoiceCapture()
             } catch {
                 DebugLog.write("voice: Hermes native voice unavailable: \(error.localizedDescription)")
                 voiceState = .localFallback(error.localizedDescription)
@@ -573,6 +570,7 @@ final class DockModel: ObservableObject {
 
     func stopVoiceConversation() {
         let wasNative = voiceState.isNativeConversationActive
+        nativeVoiceCapture.reset()
         voiceState = .inactive
         guard wasNative else { return }
         Task {
@@ -612,12 +610,14 @@ final class DockModel: ObservableObject {
         switch type {
         case "voice.transcript":
             guard voiceState.isNativeConversationActive else { return }
+            let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            nativeVoiceCapture.receivedTranscript(hasText: !transcript.isEmpty)
             if (payload["stop_phrase"] as? Bool) == true {
+                nativeVoiceCapture.reset()
                 voiceState = .inactive
                 return
             }
-            guard let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !transcript.isEmpty else {
+            guard !transcript.isEmpty else {
                 voiceState = .listening
                 return
             }
@@ -626,13 +626,25 @@ final class DockModel: ObservableObject {
         case "voice.status":
             guard voiceState.isNativeConversationActive else { return }
             let state = payload["state"] as? String
-            voiceState = state == "recording" ? .listening : .thinking
+            switch state {
+            case "recording", "listening":
+                voiceState = .listening
+            case "idle":
+                voiceState = .listening
+                if nativeVoiceCapture.receivedIdle() {
+                    armNativeVoiceCapture()
+                }
+            default:
+                voiceState = .thinking
+            }
         case "voice.interrupted":
             guard voiceState.isNativeConversationActive else { return }
             status = .idle
             isSending = false
             voiceTelemetry.markInterrupted()
+            nativeVoiceCapture.reset()
             voiceState = .listening
+            armNativeVoiceCapture()
         case "message.start":
             let model = (payload["model"] as? String) ?? (payload["model_name"] as? String)
             if let model {
@@ -676,9 +688,10 @@ final class DockModel: ObservableObject {
             }
             if voiceState.isNativeConversationActive {
                 voiceTelemetry.completedResponse()
-                // Hermes keeps a full-duplex listener armed through response
-                // generation and playback, so it is ready for the next turn.
                 voiceState = .listening
+                if nativeVoiceCapture.completedResponse() {
+                    armNativeVoiceCapture()
+                }
             }
         case "approval.request":
             approvalText = (payload["command"] as? String) ?? (payload["description"] as? String) ?? "Hermes wants to perform an action."
@@ -696,6 +709,11 @@ final class DockModel: ObservableObject {
             messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
             status = .idle
             isSending = false
+            if voiceState.isNativeConversationActive {
+                nativeVoiceCapture.reset()
+                voiceState = .listening
+                armNativeVoiceCapture()
+            }
             notify(title: "Hermes encountered an error", body: text, identifier: "failure:\(sessionID ?? "hermes")")
             hasUnreadResponse = !isPopoverVisible
 
@@ -759,6 +777,39 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private func armNativeVoiceCapture() {
+        guard voiceState.isNativeConversationActive,
+              !isSending,
+              let sessionID,
+              nativeVoiceCapture.beginCapture() else { return }
+
+        Task {
+            do {
+                let recording = try await gateway.request("voice.record", params: ["action": "start", "session_id": sessionID])
+                if (recording["status"] as? String) == "busy" {
+                    let shouldRetry = nativeVoiceCapture.captureStartFailed()
+                    if shouldRetry {
+                        try? await Task.sleep(for: .milliseconds(300))
+                        armNativeVoiceCapture()
+                    } else {
+                        voiceState = .localFallback("Hermes microphone stayed busy. Tap the orb to retry voice.")
+                    }
+                    return
+                }
+                nativeVoiceCapture.captureStarted()
+                voiceState = .listening
+            } catch {
+                let shouldRetry = nativeVoiceCapture.captureStartFailed()
+                if shouldRetry {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    armNativeVoiceCapture()
+                } else {
+                    voiceState = .localFallback("Hermes could not start the next voice capture: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
     private func submitNativeVoiceTranscript(_ text: String) {
         guard let sessionID, !isSending else { return }
         messages.append(ChatMessage(role: .user, text: text))
@@ -776,7 +827,9 @@ final class DockModel: ObservableObject {
                 messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(error.localizedDescription)", modelName: currentModelName))
                 status = .offline
                 isSending = false
+                nativeVoiceCapture.reset()
                 voiceState = .listening
+                armNativeVoiceCapture()
             }
         }
     }
