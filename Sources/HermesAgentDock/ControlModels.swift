@@ -77,6 +77,22 @@ struct CronSummary: Identifiable, Codable, Equatable {
     let schedule: String
     let enabled: Bool
     let nextRun: String?
+    let sessionID: String?
+
+    init(id: String, name: String, schedule: String, enabled: Bool, nextRun: String?, sessionID: String? = nil) {
+        self.id = id
+        self.name = name
+        self.schedule = schedule
+        self.enabled = enabled
+        self.nextRun = nextRun
+        self.sessionID = sessionID
+    }
+}
+
+struct CronChangeRequest: Identifiable {
+    let job: CronSummary
+    let enable: Bool
+    var id: String { "\(job.id):\(enable)" }
 }
 
 struct CapabilityState: Identifiable, Equatable {

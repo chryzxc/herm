@@ -424,6 +424,8 @@ private struct WorkspaceActivitySidebar: View {
     @State private var showingRepositoryPicker = false
     @State private var reminderForConfirmation: ReminderSummary?
     @State private var isShowingReminderConfirmation = false
+    @State private var cronChangeRequest: CronChangeRequest?
+    @State private var isShowingCronConfirmation = false
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -489,6 +491,16 @@ private struct WorkspaceActivitySidebar: View {
         } message: {
             if let reminder = reminderForConfirmation {
                 Text("Hermes will submit a request to complete ‘\(reminder.title)’ through the Apple Reminders skill. No other reminder will be changed.")
+            }
+        }
+        .confirmationDialog("Change Scheduled Job?", isPresented: $isShowingCronConfirmation) {
+            if let request = cronChangeRequest {
+                Button(request.enable ? "Resume Job" : "Pause Job") { control.setCron(request.job, enabled: request.enable) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let request = cronChangeRequest {
+                Text("Hermes will \(request.enable ? "resume" : "pause") ‘\(request.job.name)’.")
             }
         }
     }
@@ -677,6 +689,19 @@ private struct WorkspaceActivitySidebar: View {
                             Text(job.schedule).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
                         }
                         Spacer(minLength: 0)
+                        if job.sessionID != nil {
+                            Button("OPEN") { control.openCronSession(job) }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(Color.scifiAccent)
+                        }
+                        Button(job.enabled ? "PAUSE" : "RESUME") {
+                            cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
+                            isShowingCronConfirmation = true
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(job.enabled ? Color.scifiWarning : Color.scifiAccent)
                     }
                 }
             }

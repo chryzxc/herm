@@ -98,6 +98,33 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    func setCron(_ job: CronSummary, enabled: Bool) {
+        guard let dockModel else { return }
+        Task {
+            do {
+                _ = try await dockModel.requestControl("cron.manage", params: [
+                    "action": enabled ? "resume" : "pause",
+                    "job_id": job.id
+                ])
+                refresh()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func openCronSession(_ job: CronSummary) {
+        guard let sessionID = job.sessionID, let dockModel else { return }
+        Task {
+            do {
+                _ = try await dockModel.requestControl("session.activate", params: ["session_id": sessionID])
+                dockModel.requestComposerFocus()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
     func respond(to item: AttentionItem, action: AttentionAction) {
         guard let dockModel else { return }
         let reference = item.reference
@@ -287,7 +314,8 @@ final class ControlCenterModel: ObservableObject {
                 name: (row["name"] as? String) ?? id,
                 schedule: (row["schedule"] as? String) ?? "Scheduled",
                 enabled: (row["enabled"] as? Bool) ?? !(row["paused"] as? Bool ?? false),
-                nextRun: row["next_run"] as? String ?? row["nextRun"] as? String
+                nextRun: row["next_run"] as? String ?? row["nextRun"] as? String,
+                sessionID: row["session_id"] as? String ?? row["sessionID"] as? String
             )
         }
     }
