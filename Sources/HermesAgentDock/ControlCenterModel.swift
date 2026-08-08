@@ -18,11 +18,15 @@ final class ControlCenterModel: ObservableObject {
     private var remindersAdapter: AppleRemindersAdapter?
     private let presentationDefaults = UserDefaults.standard
     private let presentationKey = "hermes.control.attention.presentation.v1"
+    private let snoozeKey = "hermes.control.attention.snooze.v1"
 
     init() {
         let stored = presentationDefaults.dictionary(forKey: presentationKey) as? [String: String] ?? [:]
+        let storedSnoozes = presentationDefaults.dictionary(forKey: snoozeKey) as? [String: Double] ?? [:]
         for (id, rawState) in stored {
             if let state = AttentionState(rawValue: rawState) {
+                let snoozedUntil = storedSnoozes[id].map(Date.init(timeIntervalSince1970:))
+                let effectiveState: AttentionState = state == .snoozed && (snoozedUntil ?? .distantPast) <= .now ? .open : state
                 knownAttention[id] = AttentionItem(
                     id: id,
                     reference: ControlReference(source: .hermesSession, sourceID: id),
@@ -30,7 +34,7 @@ final class ControlCenterModel: ObservableObject {
                     title: "Previously reviewed item",
                     detail: "This item will return if Hermes reports it again.",
                     createdAt: Date.distantPast,
-                    state: state,
+                    state: effectiveState,
                     actions: [.open]
                 )
             }
@@ -174,6 +178,30 @@ final class ControlCenterModel: ObservableObject {
         persistPresentationState()
     }
 
+    func snooze(_ id: String, for duration: TimeInterval = 60 * 60) {
+        guard let index = attention.firstIndex(where: { $0.id == id }) else { return }
+        attention[index].state = .snoozed
+        knownAttention[id] = attention[index]
+        let until = Date().addingTimeInterval(duration)
+        var snoozes = presentationDefaults.dictionary(forKey: snoozeKey) as? [String: Double] ?? [:]
+        snoozes[id] = until.timeIntervalSince1970
+        presentationDefaults.set(snoozes, forKey: snoozeKey)
+        persistPresentationState()
+        rebuildAttention()
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard let self, let item = self.knownAttention[id], item.state == .snoozed else { return }
+            var reopened = item
+            reopened.state = .open
+            self.knownAttention[id] = reopened
+            var current = self.presentationDefaults.dictionary(forKey: self.snoozeKey) as? [String: Double] ?? [:]
+            current.removeValue(forKey: id)
+            self.presentationDefaults.set(current, forKey: self.snoozeKey)
+            self.persistPresentationState()
+            self.rebuildAttention()
+        }
+    }
+
     /// Converts the shared Hermes event stream into stable attention records.
     /// The event's session/source identifier is the identity; display text may
     /// be enriched by later partial events without creating another row.
@@ -261,7 +289,7 @@ final class ControlCenterModel: ObservableObject {
 
     private func persistPresentationState() {
         let values = knownAttention.reduce(into: [String: String]()) { result, entry in
-            guard entry.value.state == .dismissed || entry.value.state == .resolved else { return }
+            guard entry.value.state == .dismissed || entry.value.state == .resolved || entry.value.state == .snoozed else { return }
             result[entry.key] = entry.value.state.rawValue
         }
         presentationDefaults.set(values, forKey: presentationKey)
@@ -303,7 +331,7 @@ final class ControlCenterModel: ObservableObject {
             ))
         }
         next = knownAttention.values.filter { saved in
-            saved.state != .resolved && saved.state != .dismissed && !next.contains(where: { $0.id == saved.id })
+            saved.state != .resolved && saved.state != .dismissed && saved.state != .snoozed && !next.contains(where: { $0.id == saved.id })
         }
         attention = next.sorted { lhs, rhs in
             if lhs.kind == .approval && rhs.kind != .approval { return true }

@@ -602,6 +602,10 @@ private struct WorkspaceActivitySidebar: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
+                Button("SNOOZE") { control.snooze(item.id) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
             }
         }
         .padding(11)
