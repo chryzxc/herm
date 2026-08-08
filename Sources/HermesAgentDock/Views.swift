@@ -1379,7 +1379,7 @@ struct DockPopover: View {
     }
 
     private enum QuickPrompt: CaseIterable, Identifiable {
-        case reminder, notes, research, summarize, automation, review
+        case reminder, notes, research, summarize, automation, review, email, message
 
         var id: Self { self }
         var label: String {
@@ -1390,6 +1390,8 @@ struct DockPopover: View {
             case .summarize: "Summarize work"
             case .automation: "Recurring automation"
             case .review: "Review work"
+            case .email: "Email"
+            case .message: "Message"
             }
         }
         var prompt: String {
@@ -1400,6 +1402,8 @@ struct DockPopover: View {
             case .summarize: "Summarize my active work and list the next actions."
             case .automation: "Help me create a recurring automation for: "
             case .review: "Review my completed work and identify anything that needs follow-up."
+            case .email: "Using the Himalaya skill, help me draft or send this email: "
+            case .message: "Using the configured messaging skill, help me draft or send this message: "
             }
         }
     }
