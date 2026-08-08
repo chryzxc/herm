@@ -138,6 +138,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case today = "Today"
     case inbox = "Inbox"
     case activity = "Activity"
+    case automations = "Automations"
     case core = "Core"
 
     var id: String { rawValue }
@@ -146,6 +147,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .today: "sun.max"
         case .inbox: "tray"
         case .activity: "waveform.path.ecg"
+        case .automations: "clock.arrow.circlepath"
         case .core: "cpu"
         }
     }

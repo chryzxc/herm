@@ -116,8 +116,37 @@ final class ControlCenterModel: ObservableObject {
             do {
                 _ = try await dockModel.requestControl("cron.manage", params: [
                     "action": enabled ? "resume" : "pause",
-                    "job_id": job.id
+                    "name": job.id
                 ])
+                refresh()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func createCron(name: String, schedule: String, prompt: String) {
+        guard let dockModel else { return }
+        Task {
+            do {
+                _ = try await dockModel.requestControl("cron.manage", params: [
+                    "action": "add",
+                    "name": name,
+                    "schedule": schedule,
+                    "prompt": prompt
+                ])
+                refresh()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func removeCron(_ job: CronSummary) {
+        guard let dockModel else { return }
+        Task {
+            do {
+                _ = try await dockModel.requestControl("cron.manage", params: ["action": "remove", "name": job.id])
                 refresh()
             } catch {
                 lastError = error.localizedDescription

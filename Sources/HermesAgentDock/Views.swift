@@ -428,6 +428,12 @@ private struct WorkspaceActivitySidebar: View {
     @State private var isShowingReminderConfirmation = false
     @State private var cronChangeRequest: CronChangeRequest?
     @State private var isShowingCronConfirmation = false
+    @State private var cronRemovalRequest: CronSummary?
+    @State private var isShowingCronRemovalConfirmation = false
+    @State private var automationName = ""
+    @State private var automationSchedule = ""
+    @State private var automationPrompt = ""
+    @State private var isShowingAutomationConfirmation = false
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -474,6 +480,7 @@ private struct WorkspaceActivitySidebar: View {
                      case .today: nowContent
                      case .inbox: inboxContent
                      case .activity: activityContent
+                     case .automations: automationsContent
                      case .core: coreContent
                      }
                 }
@@ -517,6 +524,27 @@ private struct WorkspaceActivitySidebar: View {
                 Text("Hermes will \(request.enable ? "resume" : "pause") ‘\(request.job.name)’.")
             }
         }
+        .confirmationDialog("Remove Scheduled Job?", isPresented: $isShowingCronRemovalConfirmation) {
+            if let job = cronRemovalRequest {
+                Button("Remove Job", role: .destructive) { control.removeCron(job) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let job = cronRemovalRequest {
+                Text("Hermes will remove ‘\(job.name)’ from the scheduler.")
+            }
+        }
+        .confirmationDialog("Create Scheduled Job?", isPresented: $isShowingAutomationConfirmation) {
+            Button("Create Job") {
+                control.createCron(name: automationName, schedule: automationSchedule, prompt: automationPrompt)
+                automationName = ""
+                automationSchedule = ""
+                automationPrompt = ""
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Hermes will create ‘\(automationName)’ on schedule ‘\(automationSchedule)’." )
+        }
     }
 
     private var modePicker: some View {
@@ -525,6 +553,7 @@ private struct WorkspaceActivitySidebar: View {
                 Button {
                     withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
                     if mode == .core { model.refreshRuntimeConfiguration(); control.refresh() }
+                    if mode == .automations { control.refresh() }
                 } label: {
                     Text(mode.rawValue.uppercased())
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -547,6 +576,71 @@ private struct WorkspaceActivitySidebar: View {
 
     private var activityContent: some View {
         AgentBoardView(model: model, embedded: true)
+    }
+
+    private var automationsContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("CREATE AUTOMATION")
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Name", text: $automationName)
+                TextField("Schedule · e.g. every 2h or 0 9 * * *", text: $automationSchedule)
+                TextField("Prompt", text: $automationPrompt, axis: .vertical)
+                    .lineLimit(2...4)
+                Button("REVIEW AND CREATE") {
+                    isShowingAutomationConfirmation = true
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+                .disabled(automationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || automationSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || automationPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .textFieldStyle(.roundedBorder)
+            .padding(12)
+            .background(Color.scifiSurface4)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            sectionLabel("JOBS  ·  \(control.cronJobs.count)")
+            if control.cronJobs.isEmpty {
+                emptyState(icon: "clock.badge.questionmark", title: "No automations", detail: "Create a Hermes cron job above.")
+            } else {
+                ForEach(control.cronJobs) { job in
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack {
+                            Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary).frame(width: 6, height: 6)
+                            Text(job.name).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.scifiFg)
+                            Spacer()
+                            Text(job.enabled ? "ENABLED" : "PAUSED")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
+                        }
+                        Text(job.schedule).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiMuted)
+                        HStack(spacing: 12) {
+                            Button(job.enabled ? "PAUSE" : "RESUME") {
+                                cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
+                                isShowingCronConfirmation = true
+                            }
+                            Button("REMOVE") {
+                                cronRemovalRequest = job
+                                isShowingCronRemovalConfirmation = true
+                            }
+                            .foregroundStyle(Color.scifiWarning)
+                            Spacer()
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                    }
+                    .padding(11)
+                    .background(Color.scifiSurface4)
+                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                }
+            }
+            sectionLabel("RUN HISTORY")
+            Text("Durable cron run history will appear here when the Hermes gateway exposes cron history through cron.manage.")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.scifiTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var inboxContent: some View {

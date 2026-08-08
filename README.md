@@ -22,6 +22,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   identifiers.
 - **Scheduled-work controls.** Today lists cron jobs and supports confirmed
   pause/resume actions plus related-session opening.
+- **Automations.** The Automations tab can review, create, pause, resume, and
+  remove Hermes cron jobs through `cron.manage`. Run history remains unavailable
+  until the installed Hermes gateway exposes that RPC data.
 - **Narrow-screen mode.** On displays too narrow for the split view, the Dock
   switches between Ask and Control as a single pane without horizontal clipping.
 - **Readable controls.** UI text uses a 10pt minimum for labels, metadata, and

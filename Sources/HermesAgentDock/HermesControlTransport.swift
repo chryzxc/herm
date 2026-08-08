@@ -65,7 +65,7 @@ final class HermesControlRPC {
     func delegationStatus() async throws -> [String: Any] { try await client.request("delegation.status", params: [:]) }
     func cron(action: String, jobID: String? = nil) async throws -> [String: Any] {
         var params: [String: Any] = ["action": action]
-        if let jobID { params["job_id"] = jobID }
+        if let jobID { params["name"] = jobID }
         return try await client.request("cron.manage", params: params)
     }
     func processes() async throws -> [String: Any] { try await client.request("process.list", params: [:]) }
