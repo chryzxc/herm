@@ -1230,6 +1230,16 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
 
+            let setupCapabilities = control.capabilities.filter {
+                ["reminders", "notes", "calendar", "messaging"].contains($0.id) && !$0.isAvailable
+            }
+            if !setupCapabilities.isEmpty {
+                sectionLabel("SETUP NEEDED")
+                ForEach(setupCapabilities) { capability in
+                    providerSetupCard(capability)
+                }
+            }
+
             if !store.tasks.isEmpty {
                 sectionLabel("RECENT TASKS  ·  \(store.tasks.count)")
                 VStack(alignment: .leading, spacing: 8) {
@@ -1288,6 +1298,43 @@ private struct WorkspaceActivitySidebar: View {
         .padding(12)
         .background(Color.scifiSurface4)
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+    }
+
+    private func providerSetupCard(_ capability: CapabilityState) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.scifiWarning)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(capability.title)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                Text(capability.detail)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .lineLimit(2)
+                if let recovery = capability.recovery {
+                    Text(recovery)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.scifiWarning)
+                        .lineLimit(2)
+                }
+                if let command = capability.recoveryCommand {
+                    Button("COPY \(command)") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(11)
+        .background(Color.scifiSurface4)
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiWarning.opacity(0.35), lineWidth: 0.5))
     }
 
     private func attentionRow(icon: String, title: String, detail: String, color: Color) -> some View {

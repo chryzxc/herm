@@ -17,6 +17,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   groups actionable approvals, clarifications, failures, and completed work.
   Activity and Core expose live runtime information, capabilities, integrations,
   health, and setup guidance.
+- **Provider setup guidance.** Today renders setup cards for unavailable
+  Reminders, Notes, Calendar, and Messaging providers instead of showing empty
+  or invented content.
 - **Active-work projection.** Today can show active Hermes sessions and managed
   delegated agents, and managed processes, with controls to open related
   sessions when Hermes provides their identifiers.
