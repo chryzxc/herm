@@ -40,7 +40,7 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   introduced until cross-source indexing requires one.
 - **Narrow-screen mode.** On displays too narrow for the split view, the Dock
   switches between Ask and Control as a single pane without horizontal clipping.
-- **Readable controls.** UI text uses a 10pt minimum for labels, metadata, and
+- **Readable controls.** UI text uses a 12pt minimum for labels, metadata, and
   status text so the compact menu-bar surface remains legible.
 - **Quick capture.** The composer offers transparent prompt shortcuts for
   reminders, Notes, research, summaries, recurring automation, review, email,

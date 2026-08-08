@@ -111,14 +111,14 @@ struct AgentBoardView: View {
 
             Spacer()
             Text("HERMES AGENT BOARD")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .tracking(1.15)
                 .foregroundStyle(Color.scifiMuted)
             Spacer()
 
             Button(action: onClose) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.scifiMuted)
                     .frame(width: 26, height: 26)
                     .background(Color.scifiSurface4)
@@ -146,12 +146,12 @@ struct AgentBoardView: View {
     private func sectionHeading(_ title: String, detail: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
                 .foregroundStyle(Color.scifiMuted)
             Spacer()
             Text(detail)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.scifiTertiary)
         }
     }
@@ -162,10 +162,10 @@ struct AgentBoardView: View {
                 .font(.system(size: 13))
                 .foregroundStyle(Color.scifiTertiary)
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.scifiFg)
             Text(detail)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Color.scifiMuted)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -193,7 +193,7 @@ struct AgentBoardView: View {
                         .foregroundStyle(Color.scifiFg)
                         .lineLimit(1)
                     Text(agent.specialty)
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(Color.scifiMuted)
                         .lineLimit(1)
                 }
@@ -204,7 +204,7 @@ struct AgentBoardView: View {
             Rectangle().fill(Color.scifiBorderLight).frame(height: 0.5)
 
             Text(agent.activity)
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Color.scifiMuted)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -232,7 +232,7 @@ struct AgentBoardView: View {
 
     private func statusBadge(_ status: String, color: Color) -> some View {
         Text(status.uppercased())
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
             .tracking(0.55)
             .foregroundStyle(color)
             .padding(.horizontal, 7)
@@ -264,7 +264,7 @@ struct AgentBoardView: View {
                     Text(item.agent).foregroundStyle(Color.scifiAccent).frame(width: 88, alignment: .leading).lineLimit(1)
                     Text(item.time).foregroundStyle(Color.scifiMuted).frame(width: 38, alignment: .trailing)
                 }
-                .font(.system(size: 10.5, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Color.scifiFg)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 10)
@@ -276,7 +276,7 @@ struct AgentBoardView: View {
     @ViewBuilder
     private func pipelineHeader(_ title: String, width: CGFloat?) -> some View {
         let label = Text(title)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
             .tracking(1.1)
             .foregroundStyle(Color.scifiMuted)
 
