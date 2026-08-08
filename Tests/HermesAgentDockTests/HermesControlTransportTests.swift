@@ -70,4 +70,14 @@ struct HermesControlTransportTests {
         #expect(client.calls.map(\.method) == ["projects.tree", "projects.project_sessions"])
         #expect(client.calls.last?.params["project_id"] as? String == "project-1")
     }
+
+    @Test func reloadMCPRequiresExplicitConfirmationParameter() async throws {
+        let client = RecordingRPCClient()
+        let rpc = HermesControlRPC(client: client)
+
+        _ = try await rpc.reloadMCP(sessionID: "session-1")
+
+        #expect(client.calls.last?.method == "reload.mcp")
+        #expect(client.calls.last?.params["confirm"] as? Bool == true)
+    }
 }

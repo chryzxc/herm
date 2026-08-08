@@ -436,6 +436,7 @@ private struct WorkspaceActivitySidebar: View {
     @State private var automationSchedule = ""
     @State private var automationPrompt = ""
     @State private var isShowingAutomationConfirmation = false
+    @State private var isShowingMCPReloadConfirmation = false
     @State private var clarificationItem: AttentionItem?
     @State private var clarificationResponse = ""
 
@@ -554,6 +555,12 @@ private struct WorkspaceActivitySidebar: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Hermes will create ‘\(automationName)’ on schedule ‘\(automationSchedule)’." )
+        }
+        .confirmationDialog("Reload MCP Tools?", isPresented: $isShowingMCPReloadConfirmation) {
+            Button("Reload MCP Tools") { control.reloadMCP() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Hermes will invalidate the active session's cached MCP tool snapshot and reload configured servers.")
         }
         .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
             VStack(alignment: .leading, spacing: 14) {
@@ -1415,6 +1422,12 @@ private struct WorkspaceActivitySidebar: View {
                 Divider().overlay(Color.scifiBorderLight)
                 sectionLabel("MCP SERVERS  ·  \(configuration.mcpServers.count)")
                 configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
+                if model.sessionID != nil {
+                    Button("RELOAD MCP TOOLS") { isShowingMCPReloadConfirmation = true }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                }
 
                 if !configuration.plugins.isEmpty {
                     Divider().overlay(Color.scifiBorderLight)

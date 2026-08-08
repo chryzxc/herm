@@ -79,6 +79,9 @@ final class HermesControlRPC {
     func removeCron(jobID: String) async throws -> [String: Any] {
         try await cron(action: "remove", jobID: jobID)
     }
+    func reloadMCP(sessionID: String) async throws -> [String: Any] {
+        try await client.request("reload.mcp", params: ["session_id": sessionID, "confirm": true])
+    }
     func processes() async throws -> [String: Any] { try await client.request("process.list", params: [:]) }
     func tools() async throws -> [String: Any] { try await client.request("tools.list", params: [:]) }
     func plugins() async throws -> [String: Any] { try await client.request("plugins.list", params: [:]) }

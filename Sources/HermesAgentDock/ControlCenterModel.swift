@@ -253,6 +253,21 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    func reloadMCP() {
+        guard let rpc, let sessionID = dockModel?.sessionID else {
+            lastError = "Open a Hermes session before reloading MCP tools."
+            return
+        }
+        Task {
+            do {
+                _ = try await rpc.reloadMCP(sessionID: sessionID)
+                dockModel?.refreshRuntimeConfiguration()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
     func openProjectSession(_ session: SessionSummary) {
         guard let dockModel else { return }
         Task {

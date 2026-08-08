@@ -70,7 +70,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Runtime core.** Exposes the active provider/model, execution limits,
   installed skills, configured MCP servers, and enabled plugins supplied by
   Hermes. Unavailable gateway/version states include copyable recovery commands;
-  the Dock never runs update or recovery commands automatically.
+  the Dock never runs update or recovery commands automatically. When a session
+  is active, configured MCP tools can be explicitly reloaded after confirmation;
+  third-party MCP browsing/actions remain dependent on future Hermes RPCs.
 - **Voice conversation.** Prefers Hermes' native voice gateway: server VAD,
   Hermes transcription, streaming TTS, and spoken barge-in. The Dock retains
   macOS speech recognition and system speech as an explicitly labelled fallback
