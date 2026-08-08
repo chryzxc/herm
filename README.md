@@ -17,6 +17,13 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   groups actionable approvals, clarifications, failures, and completed work.
   Activity and Core expose live runtime information, capabilities, integrations,
   health, and setup guidance.
+- **Active-work projection.** Today can show active Hermes sessions and managed
+  processes, with controls to open related sessions when Hermes provides their
+  identifiers.
+- **Scheduled-work controls.** Today lists cron jobs and supports confirmed
+  pause/resume actions plus related-session opening.
+- **Narrow-screen mode.** On displays too narrow for the split view, the Dock
+  switches between Ask and Control as a single pane without horizontal clipping.
 - **Readable controls.** UI text uses a 10pt minimum for labels, metadata, and
   status text so the compact menu-bar surface remains legible.
 - **Quick capture.** The composer offers transparent prompt shortcuts for
@@ -25,6 +32,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
   authoritative for reminder content. The Dock stores references, display state,
   UI preferences, and cached metadata rather than duplicating those systems.
+- **Inbox presentation state.** Dismissed items remain dismissed locally, while
+  snoozed items reappear automatically after one hour. Neither action mutates
+  the Hermes or Apple source.
 - **Safe reminder completion.** Clicking a due reminder opens a confirmation
   before the Dock submits a transparent completion request through Hermes and
   the Apple Reminders skill.
