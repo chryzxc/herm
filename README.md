@@ -25,6 +25,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Automations.** The Automations tab can review, create, pause, resume, and
   remove Hermes cron jobs through `cron.manage`. Run history remains unavailable
   until the installed Hermes gateway exposes that RPC data.
+- **Hermes Projects.** Projects reads the authoritative `projects.tree`
+  projection from Hermes, showing active project context, repository counts,
+  and grouped session previews without maintaining a second project database.
 - **Narrow-screen mode.** On displays too narrow for the split view, the Dock
   switches between Ask and Control as a single pane without horizontal clipping.
 - **Readable controls.** UI text uses a 10pt minimum for labels, metadata, and

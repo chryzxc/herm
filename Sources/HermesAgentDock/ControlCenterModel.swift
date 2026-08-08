@@ -7,6 +7,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var cronJobs: [CronSummary] = []
     @Published private(set) var activeSessions: [SessionSummary] = []
     @Published private(set) var processes: [ProcessSummary] = []
+    @Published private(set) var projects: [ProjectSummary] = []
     @Published private(set) var capabilities: [CapabilityState] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastError: String?
@@ -84,6 +85,9 @@ final class ControlCenterModel: ObservableObject {
 
                 let processResult = try await dockModel?.requestControl("process.list", params: [:])
                 if let processResult { processes = Self.parseProcesses(processResult) }
+
+                let projectResult = try await dockModel?.requestControl("projects.tree", params: [:])
+                if let projectResult { projects = Self.parseProjects(projectResult) }
 
                 if let dockModel {
                     capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: remindersAvailable)
@@ -407,6 +411,24 @@ final class ControlCenterModel: ObservableObject {
                 name: (row["name"] as? String) ?? (row["command"] as? String) ?? "Hermes process",
                 state: (row["state"] as? String) ?? (row["status"] as? String) ?? "running",
                 detail: row["detail"] as? String ?? row["command"] as? String
+            )
+        }
+    }
+
+    private static func parseProjects(_ result: [String: Any]) -> [ProjectSummary] {
+        let activeID = result["active_id"] as? String
+        let rows = (result["projects"] as? [[String: Any]]) ?? []
+        return rows.compactMap { row in
+            guard let id = row["id"] as? String else { return nil }
+            let repos = (row["repos"] as? [[String: Any]]) ?? (row["repositories"] as? [[String: Any]]) ?? []
+            let sessions = (row["sessions"] as? [[String: Any]]) ?? (row["preview_sessions"] as? [[String: Any]]) ?? []
+            return ProjectSummary(
+                id: id,
+                name: (row["name"] as? String) ?? id,
+                repoCount: (row["repo_count"] as? NSNumber)?.intValue ?? repos.count,
+                sessionCount: (row["session_count"] as? NSNumber)?.intValue ?? sessions.count,
+                preview: (sessions.first?["preview"] as? String) ?? (sessions.first?["title"] as? String),
+                isActive: (row["active"] as? Bool) ?? (id == activeID)
             )
         }
     }

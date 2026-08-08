@@ -92,6 +92,15 @@ struct ProcessSummary: Identifiable, Codable, Equatable {
     let detail: String?
 }
 
+struct ProjectSummary: Identifiable, Codable, Equatable {
+    let id: String
+    let name: String
+    let repoCount: Int
+    let sessionCount: Int
+    let preview: String?
+    let isActive: Bool
+}
+
 struct TodaySnapshot: Equatable {
     var currentFocus: ControlReference?
     var attention: [AttentionItem]
@@ -139,6 +148,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case inbox = "Inbox"
     case activity = "Activity"
     case automations = "Automations"
+    case projects = "Projects"
     case core = "Core"
 
     var id: String { rawValue }
@@ -148,6 +158,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .inbox: "tray"
         case .activity: "waveform.path.ecg"
         case .automations: "clock.arrow.circlepath"
+        case .projects: "folder.badge.gearshape"
         case .core: "cpu"
         }
     }

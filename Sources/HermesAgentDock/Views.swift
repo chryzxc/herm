@@ -481,6 +481,7 @@ private struct WorkspaceActivitySidebar: View {
                      case .inbox: inboxContent
                      case .activity: activityContent
                      case .automations: automationsContent
+                     case .projects: projectsContent
                      case .core: coreContent
                      }
                 }
@@ -554,6 +555,7 @@ private struct WorkspaceActivitySidebar: View {
                     withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
                     if mode == .core { model.refreshRuntimeConfiguration(); control.refresh() }
                     if mode == .automations { control.refresh() }
+                    if mode == .projects { control.refresh() }
                 } label: {
                     Text(mode.rawValue.uppercased())
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -640,6 +642,47 @@ private struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 10))
                 .foregroundStyle(Color.scifiTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var projectsContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("HERMES PROJECTS  ·  \(control.projects.count)")
+            if control.projects.isEmpty {
+                emptyState(icon: "folder", title: "No Hermes projects", detail: "Projects will appear here when Hermes has project contexts configured.")
+            } else {
+                ForEach(control.projects) { project in
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack(spacing: 8) {
+                            Image(systemName: project.isActive ? "folder.fill" : "folder")
+                                .font(.system(size: 12))
+                                .foregroundStyle(project.isActive ? Color.scifiAccent : Color.scifiMuted)
+                            Text(project.name)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.scifiFg)
+                                .lineLimit(1)
+                            Spacer()
+                            if project.isActive {
+                                Text("ACTIVE")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.scifiSuccess)
+                            }
+                        }
+                        Text("\(project.repoCount) repos  ·  \(project.sessionCount) sessions")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Color.scifiMuted)
+                        if let preview = project.preview {
+                            Text(preview)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.scifiTertiary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(11)
+                    .background(Color.scifiSurface4)
+                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                }
+            }
         }
     }
 
