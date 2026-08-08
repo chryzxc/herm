@@ -23,8 +23,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Scheduled-work controls.** Today lists cron jobs and supports confirmed
   pause/resume actions plus related-session opening.
 - **Automations.** The Automations tab can review, create, pause, resume, and
-  remove Hermes cron jobs through `cron.manage`. Run history remains unavailable
-  until the installed Hermes gateway exposes that RPC data.
+  remove Hermes cron jobs through `cron.manage`, and reads recent run history
+  through Hermes `cron runs`. History remains a live CLI projection rather than
+  a second local execution database.
 - **Hermes Projects.** Projects reads the authoritative `projects.tree`
   projection from Hermes, showing active project context, repository counts,
   and grouped session previews without maintaining a second project database.

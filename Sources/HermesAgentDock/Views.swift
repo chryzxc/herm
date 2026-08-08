@@ -626,7 +626,7 @@ private struct WorkspaceActivitySidebar: View {
                 Button {
                     withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
                     if mode == .core { model.refreshRuntimeConfiguration(); control.refresh() }
-                    if mode == .automations { control.refresh() }
+                    if mode == .automations { control.refresh(); control.refreshCronRuns() }
                     if mode == .projects { control.refresh() }
                     if mode == .search { control.search(searchQuery) }
                     if mode == .kanban { control.refreshKanban() }
@@ -711,11 +711,37 @@ private struct WorkspaceActivitySidebar: View {
                     .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
                 }
             }
-            sectionLabel("RUN HISTORY")
-            Text("Durable cron run history will appear here when the Hermes gateway exposes cron history through cron.manage.")
-                .font(.system(size: 10))
-                .foregroundStyle(Color.scifiTertiary)
-                .fixedSize(horizontal: false, vertical: true)
+            sectionLabel("RUN HISTORY  ·  \(control.cronRuns.count)")
+            if !control.cronHistoryAvailable {
+                Text("Hermes cron history is unavailable through the installed CLI.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if control.cronRuns.isEmpty {
+                Text("No cron execution attempts recorded.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.scifiTertiary)
+            } else {
+                ForEach(control.cronRuns) { run in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Circle().fill(run.status.lowercased().contains("success") ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6)
+                            Text(run.status.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiFg)
+                            Spacer()
+                            Text(run.jobID ?? run.id).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(1)
+                        }
+                        if let claimedAt = run.claimedAt {
+                            Text(claimedAt).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                        }
+                        if let error = run.error {
+                            Text(error).font(.system(size: 10)).foregroundStyle(Color.scifiWarning).lineLimit(3)
+                        }
+                    }
+                    .padding(10)
+                    .background(Color.scifiSurface4)
+                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                }
+            }
         }
     }
 

@@ -69,4 +69,15 @@ struct ControlCenterProjectTests {
         #expect(KanbanChangeRequest(task: task, action: .complete).id == "complete:k1")
         #expect(KanbanChangeRequest(task: task, action: .block).id == "block:k1")
     }
+
+    @Test func parsesCronRunHistoryAndAttachedErrors() {
+        let runs = ControlCenterModel.parseCronRuns("""
+        run-1  success   job=morning  source=cron  2026-08-08T08:00:00Z
+            timed out after 30s
+        """)
+
+        #expect(runs.count == 1)
+        #expect(runs.first?.jobID == "morning")
+        #expect(runs.first?.error == "timed out after 30s")
+    }
 }

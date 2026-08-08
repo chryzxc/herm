@@ -159,6 +159,15 @@ struct CronSummary: Identifiable, Codable, Equatable {
     }
 }
 
+struct CronRunSummary: Identifiable, Equatable {
+    let id: String
+    let status: String
+    let jobID: String?
+    let source: String?
+    let claimedAt: String?
+    let error: String?
+}
+
 struct CronChangeRequest: Identifiable {
     let job: CronSummary
     let enable: Bool

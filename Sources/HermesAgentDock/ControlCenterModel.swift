@@ -5,6 +5,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var attention: [AttentionItem] = []
     @Published private(set) var reminders: [ReminderSummary] = []
     @Published private(set) var cronJobs: [CronSummary] = []
+    @Published private(set) var cronRuns: [CronRunSummary] = []
+    @Published private(set) var cronHistoryAvailable = false
     @Published private(set) var activeSessions: [SessionSummary] = []
     @Published private(set) var activeAgents: [AgentSummary] = []
     @Published private(set) var processes: [ProcessSummary] = []
@@ -89,6 +91,7 @@ final class ControlCenterModel: ObservableObject {
 
                 let cronResult = try await rpc?.cron(action: "list")
                 if let cronResult { cronJobs = Self.parseCronJobs(cronResult) }
+                refreshCronRuns()
 
                 let sessionResult = try await rpc?.activeSessions()
                 if let sessionResult { activeSessions = Self.parseSessions(sessionResult) }
@@ -136,6 +139,24 @@ final class ControlCenterModel: ObservableObject {
                 refresh()
             } catch {
                 lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func refreshCronRuns() {
+        guard let rpc else { return }
+        Task {
+            do {
+                let result = try await rpc.shell("hermes cron runs --limit 20")
+                cronHistoryAvailable = AppleRemindersAdapter.shellResultSucceeded(result)
+                guard cronHistoryAvailable, let output = result["stdout"] as? String else {
+                    cronRuns = []
+                    return
+                }
+                cronRuns = Self.parseCronRuns(output)
+            } catch {
+                cronHistoryAvailable = false
+                cronRuns = []
             }
         }
     }
@@ -689,6 +710,31 @@ final class ControlCenterModel: ObservableObject {
                 assignee: (row["assignee"] as? String) ?? (row["assigned_to"] as? String)
             )
         }
+    }
+
+    static func parseCronRuns(_ output: String) -> [CronRunSummary] {
+        var runs: [CronRunSummary] = []
+        for line in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            let raw = String(line)
+            if raw.hasPrefix(" ") || raw.hasPrefix("\t") {
+                guard !runs.isEmpty else { continue }
+                let message = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !message.isEmpty else { continue }
+                let current = runs.removeLast()
+                let error = [current.error, message].compactMap { $0 }.joined(separator: "\n")
+                runs.append(CronRunSummary(id: current.id, status: current.status, jobID: current.jobID, source: current.source, claimedAt: current.claimedAt, error: error))
+                continue
+            }
+            let columns = raw.split(whereSeparator: { $0 == " " || $0 == "\t" })
+            guard columns.count >= 2,
+                  !raw.localizedCaseInsensitiveContains("No cron execution attempts") else { continue }
+            let metadata = columns.dropFirst(2)
+            let jobID = metadata.first(where: { $0.hasPrefix("job=") }).map { String($0.dropFirst(4)) }
+            let source = metadata.first(where: { $0.hasPrefix("source=") }).map { String($0.dropFirst(7)) }
+            let claimedAt = metadata.first(where: { !$0.contains("=") }).map(String.init)
+            runs.append(CronRunSummary(id: String(columns[0]), status: String(columns[1]), jobID: jobID, source: source, claimedAt: claimedAt, error: nil))
+        }
+        return runs
     }
 
     private static func shellQuote(_ value: String) -> String {
