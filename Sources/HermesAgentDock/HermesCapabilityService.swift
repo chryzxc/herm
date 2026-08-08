@@ -9,6 +9,7 @@ final class HermesCapabilityService {
         let notesResult = await request(client, method: "shell.exec", params: ["command": "memo --version"])
         let emailResult = await request(client, method: "shell.exec", params: ["command": "himalaya --version"])
         let imessageResult = await request(client, method: "shell.exec", params: ["command": "imsg --version"])
+        let mcpResult = await request(client, method: "shell.exec", params: ["command": "hermes mcp list"])
         let version = (configResult?["version"] as? String)
             ?? (configResult?["hermes_version"] as? String)
 
@@ -86,9 +87,9 @@ final class HermesCapabilityService {
             CapabilityState(
                 id: "mcp",
                 title: "Third-party MCP",
-                detail: pluginResult == nil ? "MCP/plugin state is unavailable" : "Use Hermes MCP configuration for third-party services",
-                isAvailable: pluginResult != nil,
-                recovery: pluginResult == nil ? "Reconnect Hermes and configure MCP servers there." : nil
+                detail: mcpResult == nil ? "MCP configuration is unavailable" : "Use Hermes MCP configuration for third-party services",
+                isAvailable: mcpResult != nil,
+                recovery: mcpResult == nil ? "Reconnect Hermes and configure MCP servers there." : nil
             )
         ]
     }
