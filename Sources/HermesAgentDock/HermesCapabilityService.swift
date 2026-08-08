@@ -6,11 +6,13 @@ final class HermesCapabilityService {
         let toolResult = await request(client, method: "tools.list")
         let pluginResult = await request(client, method: "plugins.list")
         let configResult = await request(client, method: "config.show")
+        let skillsResult = await request(client, method: "shell.exec", params: ["command": "hermes skills list --enabled-only"])
         let notesResult = await request(client, method: "shell.exec", params: ["command": "memo --version"])
         let emailResult = await request(client, method: "shell.exec", params: ["command": "himalaya --version"])
         let imessageResult = await request(client, method: "shell.exec", params: ["command": "imsg --version"])
         let mcpResult = await request(client, method: "shell.exec", params: ["command": "hermes mcp list"])
         let notesAvailable = Self.shellResultSucceeded(notesResult)
+        let skillsAvailable = Self.shellResultSucceeded(skillsResult)
         let emailAvailable = Self.shellResultSucceeded(emailResult)
         let messagingAvailable = Self.shellResultSucceeded(imessageResult)
         let mcpAvailable = Self.shellResultSucceeded(mcpResult)
@@ -63,6 +65,13 @@ final class HermesCapabilityService {
                 detail: pluginResult == nil ? "Plugin catalogue is unavailable" : "Plugin catalogue available",
                 isAvailable: pluginResult != nil,
                 recovery: pluginResult == nil ? "This Hermes version may not support plugins.list." : nil
+            ),
+            CapabilityState(
+                id: "skills",
+                title: "Hermes skills",
+                detail: skillsAvailable ? "Enabled skills catalogue available" : "Skills catalogue is unavailable",
+                isAvailable: skillsAvailable,
+                recovery: skillsAvailable ? nil : "This Hermes installation may not support skills listing."
             ),
             CapabilityState(
                 id: "calendar",
