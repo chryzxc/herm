@@ -420,6 +420,7 @@ private struct WorkspaceActivitySidebar: View {
     var onClose: () -> Void = {}
     @State private var selectedMode: ControlTab = .today
     @State private var selectedAttentionID: String?
+    @State private var searchQuery = ""
     @State private var selectedModelID = ""
     @State private var selectedAgentID: String?
     @State private var repository = RepositorySnapshot.empty
@@ -485,6 +486,7 @@ private struct WorkspaceActivitySidebar: View {
                      case .activity: activityContent
                      case .automations: automationsContent
                      case .projects: projectsContent
+                     case .search: searchContent
                      case .core: coreContent
                      }
                 }
@@ -507,6 +509,10 @@ private struct WorkspaceActivitySidebar: View {
         .onChange(of: model.controlInboxRequest) { _, _ in
             selectedMode = .inbox
             selectedAttentionID = model.requestedAttentionID
+        }
+        .onChange(of: searchQuery) { _, query in
+            guard selectedMode == .search else { return }
+            control.search(query)
         }
         .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
             if let reminder = reminderForConfirmation {
@@ -587,6 +593,7 @@ private struct WorkspaceActivitySidebar: View {
                     if mode == .core { model.refreshRuntimeConfiguration(); control.refresh() }
                     if mode == .automations { control.refresh() }
                     if mode == .projects { control.refresh() }
+                    if mode == .search { control.search(searchQuery) }
                 } label: {
                     Text(mode.rawValue.uppercased())
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -777,6 +784,74 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
         }
+    }
+
+    private var searchContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("CONNECTED SOURCES")
+            TextField("Search sessions, projects, Inbox, reminders", text: $searchQuery)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+            if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                emptyState(icon: "magnifyingglass", title: "Search your control surface", detail: "Results come from hydrated Hermes sessions, projects, Inbox items, and Apple Reminders. Provider data is not fabricated locally.")
+            } else if control.isSearching {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("SEARCHING HERMES SOURCES…")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                }
+            } else if control.searchResults.isEmpty {
+                emptyState(icon: "questionmark.circle", title: "No matches", detail: "Try a session title, project name, reminder, or Inbox detail.")
+            } else {
+                sectionLabel("RESULTS  ·  \(control.searchResults.count)")
+                ForEach(control.searchResults) { result in
+                    let canOpen = result.reference.source != .appleReminder && result.reference.source != .hermesCronJob
+                    if canOpen {
+                        Button { control.openSearchResult(result) } label: {
+                            searchResultRow(result)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        searchResultRow(result)
+                    }
+                }
+            }
+        }
+    }
+
+    private func searchResultRow(_ result: ControlSearchResult) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: result.reference.source == .appleReminder ? "checklist" : "circle.dotted")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.scifiAccent)
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(result.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.scifiFg)
+                        .lineLimit(2)
+                    Spacer(minLength: 4)
+                    Text(result.sourceLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                }
+                Text(result.detail)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .lineLimit(2)
+            }
+            if result.reference.source != .appleReminder && result.reference.source != .hermesCronJob {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.scifiTertiary)
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.scifiSurface4)
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
     }
 
     private var inboxContent: some View {

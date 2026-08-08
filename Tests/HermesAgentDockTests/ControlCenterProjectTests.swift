@@ -37,4 +37,18 @@ struct ControlCenterProjectTests {
         #expect(agents.first?.name == "researcher")
         #expect(agents.first?.sessionID == "session-1")
     }
+
+    @Test func searchesAcrossHydratedControlSources() {
+        let results = ControlCenterModel.makeSearchResults(
+            query: "launch",
+            sessions: [SessionSummary(id: "s1", title: "Launch plan", state: "active", preview: "Prepare release")],
+            attention: [],
+            reminders: [ReminderSummary(id: "r1", title: "Launch checklist", list: "Work", dueDate: nil, isOverdue: false)],
+            projects: []
+        )
+
+        #expect(results.count == 2)
+        #expect(results.map(\.reference.source).contains(.hermesSession))
+        #expect(results.map(\.reference.source).contains(.appleReminder))
+    }
 }

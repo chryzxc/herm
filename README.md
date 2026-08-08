@@ -30,6 +30,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   and grouped session previews without maintaining a second project database.
   Selecting a project loads its grouped sessions through
   `projects.project_sessions`; selecting a session activates it in Ask.
+- **Connected-source search.** Search keeps a lightweight in-memory projection
+  of Hermes sessions, projects, Inbox items, and Apple Reminders. Hermes remains
+  authoritative for session results, and no durable local search database is
+  introduced until cross-source indexing requires one.
 - **Narrow-screen mode.** On displays too narrow for the split view, the Dock
   switches between Ask and Control as a single pane without horizontal clipping.
 - **Readable controls.** UI text uses a 10pt minimum for labels, metadata, and

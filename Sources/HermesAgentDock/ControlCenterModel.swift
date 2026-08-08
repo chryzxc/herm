@@ -9,6 +9,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var activeAgents: [AgentSummary] = []
     @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var projects: [ProjectSummary] = []
+    @Published private(set) var searchResults: [ControlSearchResult] = []
+    @Published private(set) var isSearching = false
     @Published private(set) var projectSessions: [SessionSummary] = []
     @Published private(set) var selectedProjectID: String?
     @Published private(set) var capabilities: [CapabilityState] = []
@@ -17,6 +19,8 @@ final class ControlCenterModel: ObservableObject {
 
     private weak var dockModel: DockModel?
     private var rpc: HermesControlRPC?
+    private var searchTask: Task<Void, Never>?
+    private var searchGeneration = UUID()
     private var knownAttention: [String: AttentionItem] = [:]
     private var eventSubscription: UUID?
     private let capabilityService = HermesCapabilityService()
@@ -192,6 +196,61 @@ final class ControlCenterModel: ObservableObject {
     func closeProject() {
         selectedProjectID = nil
         projectSessions = []
+    }
+
+    func search(_ query: String) {
+        searchGeneration = UUID()
+        let generation = searchGeneration
+        searchTask?.cancel()
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            isSearching = false
+            searchResults = []
+            return
+        }
+
+        let localSessions = activeSessions
+        let localAttention = attention
+        let localReminders = reminders
+        let localProjects = projects
+        isSearching = true
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+            var sessions = localSessions
+            if let rpc = self.rpc, let result = try? await rpc.sessions(limit: 100) {
+                sessions = Self.parseSessions(result)
+            }
+            guard !Task.isCancelled, self.searchGeneration == generation else { return }
+            self.searchResults = Self.makeSearchResults(
+                query: normalized,
+                sessions: sessions,
+                attention: localAttention,
+                reminders: localReminders,
+                projects: localProjects
+            )
+            self.isSearching = false
+        }
+    }
+
+    func openSearchResult(_ result: ControlSearchResult) {
+        switch result.reference.source {
+        case .hermesSession, .hermesApproval, .hermesClarification, .hermesAgentRun:
+            guard let rpc else { return }
+            Task {
+                do {
+                    _ = try await rpc.activate(sessionID: result.reference.sessionID ?? result.reference.sourceID)
+                    dockModel?.requestComposerFocus()
+                } catch {
+                    lastError = error.localizedDescription
+                }
+            }
+        case .hermesProject:
+            if let project = projects.first(where: { $0.id == result.reference.sourceID }) {
+                openProject(project)
+            }
+        case .hermesCronJob, .appleReminder:
+            break
+        }
     }
 
     func openProjectSession(_ session: SessionSummary) {
@@ -477,6 +536,60 @@ final class ControlCenterModel: ObservableObject {
                 state: (row["status"] as? String) ?? (row["state"] as? String) ?? "running",
                 sessionID: row["session_id"] as? String ?? row["sessionID"] as? String
             )
+        }
+    }
+
+    static func makeSearchResults(
+        query: String,
+        sessions: [SessionSummary],
+        attention: [AttentionItem],
+        reminders: [ReminderSummary],
+        projects: [ProjectSummary]
+    ) -> [ControlSearchResult] {
+        let normalized = query.localizedLowercase
+        var results: [ControlSearchResult] = []
+        func matches(_ title: String, _ detail: String) -> Bool {
+            title.localizedLowercase.contains(normalized) || detail.localizedLowercase.contains(normalized)
+        }
+
+        results += sessions.compactMap { session in
+            guard matches(session.title, session.preview ?? session.state) else { return nil }
+            return ControlSearchResult(
+                id: "session:\(session.id)",
+                reference: ControlReference(source: .hermesSession, sourceID: session.id, sessionID: session.id),
+                title: session.title,
+                detail: session.preview ?? session.state,
+                sourceLabel: "HERMES SESSION"
+            )
+        }
+        results += attention.compactMap { item in
+            guard matches(item.title, item.detail) else { return nil }
+            return ControlSearchResult(id: "attention:\(item.id)", reference: item.reference, title: item.title, detail: item.detail, sourceLabel: "INBOX")
+        }
+        results += reminders.compactMap { reminder in
+            let detail = reminder.list ?? "Apple Reminder"
+            guard matches(reminder.title, detail) else { return nil }
+            return ControlSearchResult(
+                id: "reminder:\(reminder.id)",
+                reference: ControlReference(source: .appleReminder, sourceID: reminder.id),
+                title: reminder.title,
+                detail: detail,
+                sourceLabel: "APPLE REMINDER"
+            )
+        }
+        results += projects.compactMap { project in
+            guard matches(project.name, project.preview ?? "Hermes project") else { return nil }
+            return ControlSearchResult(
+                id: "project:\(project.id)",
+                reference: ControlReference(source: .hermesProject, sourceID: project.id, projectID: project.id),
+                title: project.name,
+                detail: project.preview ?? "Hermes project",
+                sourceLabel: "HERMES PROJECT"
+            )
+        }
+        return results.sorted { lhs, rhs in
+            if lhs.sourceLabel != rhs.sourceLabel { return lhs.sourceLabel < rhs.sourceLabel }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
     }
 

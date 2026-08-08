@@ -101,6 +101,14 @@ struct ProjectSummary: Identifiable, Codable, Equatable {
     let isActive: Bool
 }
 
+struct ControlSearchResult: Identifiable, Equatable {
+    let id: String
+    let reference: ControlReference
+    let title: String
+    let detail: String
+    let sourceLabel: String
+}
+
 struct TodaySnapshot: Equatable {
     var currentFocus: ControlReference?
     var attention: [AttentionItem]
@@ -159,6 +167,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case activity = "Activity"
     case automations = "Automations"
     case projects = "Projects"
+    case search = "Search"
     case core = "Core"
 
     var id: String { rawValue }
@@ -169,6 +178,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .activity: "waveform.path.ecg"
         case .automations: "clock.arrow.circlepath"
         case .projects: "folder.badge.gearshape"
+        case .search: "magnifyingglass"
         case .core: "cpu"
         }
     }
