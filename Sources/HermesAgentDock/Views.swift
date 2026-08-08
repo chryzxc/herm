@@ -48,6 +48,74 @@ private struct ThinkingDots: View {
     }
 }
 
+private struct VoiceModeToolbar: View {
+    var onReturnToChat: () -> Void
+
+    var body: some View {
+        HStack {
+            Button(action: onReturnToChat) {
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.scifiMuted)
+                    .frame(width: 36, height: 36)
+                    .background(Circle().fill(Color.scifiSurface4))
+            }
+            .buttonStyle(.plain)
+            .help("Return to chat")
+
+            Spacer()
+        }
+    }
+}
+
+private struct AgentAvatar: View {
+    let identity: String
+    let statusColor: Color
+
+    private var seed: Int {
+        identity.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }
+    }
+
+    var body: some View {
+        let rotation = Double(seed % 360)
+        let secondaryRotation = Double((seed / 7) % 360)
+
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.scifiAccent.opacity(0.3), Color.scifiAccent.opacity(0.08)],
+                        center: UnitPoint(x: 0.32, y: 0.24),
+                        startRadius: 1,
+                        endRadius: 20
+                    )
+                )
+            Circle()
+                .stroke(Color.scifiAccent.opacity(0.36), lineWidth: 0.6)
+            Circle()
+                .trim(from: 0.08, to: 0.43)
+                .stroke(Color.scifiAccent.opacity(0.8), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+                .rotationEffect(.degrees(rotation))
+                .padding(4)
+            Circle()
+                .trim(from: 0.58, to: 0.77)
+                .stroke(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 0.6, lineCap: .round))
+                .rotationEffect(.degrees(secondaryRotation))
+                .padding(7)
+            Circle()
+                .fill(statusColor)
+                .frame(width: 4, height: 4)
+                .offset(x: 8, y: -7)
+                .shadow(color: statusColor.opacity(0.8), radius: 3)
+            Circle()
+                .fill(Color.scifiAccent.opacity(0.9))
+                .frame(width: 5, height: 5)
+        }
+        .shadow(color: Color.scifiAccent.opacity(0.18), radius: 6)
+        .accessibilityLabel("Agent avatar")
+    }
+}
+
 private struct MessageBubbleShape: Shape {
     let isUser: Bool
 
@@ -82,24 +150,45 @@ private struct MarkdownMessageView: View {
     let markdown: String
 
     private enum Block {
-        case prose([String])
+        case heading(level: Int, text: String)
+        case paragraph(String)
+        case listItem(text: String, marker: String)
         case code(String, language: String?)
+        case quote(String)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
-                case .prose(let paragraphs):
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
-                            if let rendered = renderedMarkdown(paragraph) {
-                                Text(rendered)
-                                    .font(.system(size: 13, design: .monospaced))
-                                    .textSelection(.enabled)
-                                    .lineSpacing(3)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                case .heading(let level, let text):
+                    if let rendered = inlineMarkdown(text) {
+                        Text(rendered)
+                            .font(.system(size: Self.headingSize(level), weight: .bold))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
+                case .paragraph(let text):
+                    if let rendered = inlineMarkdown(text) {
+                        Text(rendered)
+                            .font(.system(size: 14))
+                            .textSelection(.enabled)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                case .listItem(let text, let marker):
+                    HStack(alignment: .top, spacing: 6) {
+                        Text(marker)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Color.scifiAccent)
+                            .frame(minWidth: 16, alignment: .trailing)
+                        if let rendered = inlineMarkdown(text) {
+                            Text(rendered)
+                                .font(.system(size: 14))
+                                .textSelection(.enabled)
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 case .code(let code, let language):
@@ -114,7 +203,7 @@ private struct MarkdownMessageView: View {
                         }
                         ScrollView(.horizontal, showsIndicators: false) {
                             Text(code)
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(.system(size: 12.5, design: .monospaced))
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 8)
@@ -126,23 +215,45 @@ private struct MarkdownMessageView: View {
                             .fill(Color.scifiSurface4)
                             .stroke(Color.scifiBorder, lineWidth: 0.5)
                     )
+                case .quote(let text):
+                    if let rendered = inlineMarkdown(text) {
+                        Text(rendered)
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.scifiMuted)
+                            .padding(.leading, 10)
+                            .overlay(alignment: .leading) {
+                                Rectangle().fill(Color.scifiBorder).frame(width: 2)
+                            }
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
         }
     }
 
+    private static func headingSize(_ level: Int) -> CGFloat {
+        switch level {
+        case 1: 20
+        case 2: 17
+        case 3: 15
+        default: 14
+        }
+    }
+
     private var blocks: [Block] {
         var result: [Block] = []
-        var prose: [String] = []
         var code: [String] = []
         var language: String?
         var inCode = false
+        var paragraph: [String] = []
+        var orderedIndex = 0
 
-        func flushProse() {
-            let text = prose.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            let paragraphs = text.components(separatedBy: "\n\n").filter { !$0.isEmpty }
-            if !paragraphs.isEmpty { result.append(.prose(paragraphs)) }
-            prose.removeAll()
+        func flushParagraph() {
+            let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            paragraph.removeAll()
+            orderedIndex = 0
+            if !text.isEmpty { result.append(.paragraph(text)) }
         }
 
         func flushCode() {
@@ -152,35 +263,86 @@ private struct MarkdownMessageView: View {
         }
 
         for line in markdown.components(separatedBy: "\n") {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
                 if inCode {
                     flushCode()
                 } else {
-                    flushProse()
-                    let marker = line.trimmingCharacters(in: .whitespaces)
-                    let suffix = String(marker.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                    flushParagraph()
+                    let suffix = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
                     language = suffix.isEmpty ? nil : suffix
                 }
                 inCode.toggle()
-            } else if inCode {
-                code.append(line)
-            } else {
-                prose.append(line)
+                continue
             }
+            if inCode {
+                code.append(line)
+                continue
+            }
+            if let level = Self.headingLevel(trimmed) {
+                flushParagraph()
+                let text = String(trimmed.drop(while: { $0 == "#" }).drop(while: { $0 == " " }))
+                result.append(.heading(level: level, text: text))
+                continue
+            }
+            if let content = Self.orderedListContent(trimmed) {
+                flushParagraph()
+                orderedIndex += 1
+                result.append(.listItem(text: content, marker: "\(orderedIndex)."))
+                continue
+            }
+            if let item = Self.unorderedListItem(trimmed) {
+                flushParagraph()
+                result.append(.listItem(text: item, marker: "•"))
+                continue
+            }
+            if trimmed.hasPrefix(">") {
+                flushParagraph()
+                let content = String(trimmed.dropFirst().trimmingCharacters(in: .whitespaces))
+                if !content.isEmpty { result.append(.quote(content)) }
+                continue
+            }
+            if trimmed.isEmpty {
+                flushParagraph()
+                continue
+            }
+            paragraph.append(line)
         }
-        if inCode { flushCode() } else { flushProse() }
+        if inCode { flushCode() } else { flushParagraph() }
         return result
     }
 
-    private func renderedMarkdown(_ value: String) -> AttributedString? {
+    private static func headingLevel(_ line: String) -> Int? {
+        let hashes = line.prefix(while: { $0 == "#" }).count
+        guard hashes > 0, hashes <= 6, line.count > hashes,
+              line[line.index(line.startIndex, offsetBy: hashes)] == " " else { return nil }
+        return hashes
+    }
+
+    private static func orderedListContent(_ line: String) -> String? {
+        guard let dotIndex = line.firstIndex(of: "."),
+              !line[..<dotIndex].isEmpty,
+              line[..<dotIndex].allSatisfy(\.isNumber),
+              line.index(after: dotIndex) < line.endIndex,
+              line[line.index(after: dotIndex)] == " " else { return nil }
+        return String(line[line.index(dotIndex, offsetBy: 2)...]).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func unorderedListItem(_ line: String) -> String? {
+        for prefix in ["- ", "* ", "+ "] {
+            if line.hasPrefix(prefix) {
+                return String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return nil
+    }
+
+    private func inlineMarkdown(_ value: String) -> AttributedString? {
         do {
-            var str = try AttributedString(
+            return try AttributedString(
                 markdown: groupedNumbers(in: value),
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
             )
-            str.font = .system(size: 13, design: .monospaced)
-            str.foregroundColor = .scifiFg
-            return str
         } catch {
             return AttributedString(value)
         }
@@ -223,66 +385,53 @@ private struct ConversationBottomPreferenceKey: PreferenceKey {
 
 private struct WorkspaceActivitySidebar: View {
     @ObservedObject var model: DockModel
+    @State private var selectedMode: OperationsMode = .activity
+    @State private var selectedModelID = ""
+    @State private var selectedAgentID: String?
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter
+    }()
+
+    private enum OperationsMode: String, CaseIterable, Identifiable {
+        case activity = "Activity"
+        case core = "Core"
+        var id: String { rawValue }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("WORKSPACE")
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(1.4)
-                    .foregroundStyle(Color.scifiAccent)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("OPERATIONS")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.scifiAccent)
+                    Text("LIVE WORKSPACE")
+                        .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                        .tracking(1.0)
+                        .foregroundStyle(Color.scifiTertiary)
+                }
                 Spacer()
                 Circle()
                     .fill(statusColor)
                     .frame(width: 6, height: 6)
+                    .shadow(color: statusColor.opacity(0.8), radius: 4)
             }
             .padding(.horizontal, 16)
-            .frame(height: 40)
+            .frame(height: 50)
             .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
 
+            modePicker
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    sectionLabel("BACKGROUND AGENTS")
-                    if model.activeSubagents.isEmpty {
-                        emptyState(icon: "person.2", title: "No active agents", detail: "Hermes delegates substantial work in the background. Live agents will appear here.")
-                    } else {
-                        ForEach(model.activeSubagents) { agent in
-                            HStack(alignment: .top, spacing: 9) {
-                                Circle().fill(nativeAgentColor(agent.status)).frame(width: 7, height: 7).padding(.top, 4)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(agent.goal).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(3)
-                                    Text("\(agent.status.uppercased()) · \(agent.toolCount) TOOLS\(agent.model.map { " · \($0)" } ?? "")")
-                                        .font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.5)
-                                        .foregroundStyle(nativeAgentColor(agent.status))
-                                }
-                            }
-                            .padding(10)
-                            .background(Color.scifiSurface4)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.scifiBorder, lineWidth: 0.5))
-                        }
-                    }
-
-                    sectionLabel("LIVE ACTIVITY")
-                    if model.activeToolCalls.isEmpty {
-                        Text("No active tools")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.scifiMuted)
-                    } else {
-                        ForEach(model.activeToolCalls) { call in
-                            HStack(spacing: 8) {
-                                Image(systemName: "wrench.and.screwdriver").font(.system(size: 11)).foregroundStyle(Color.scifiAccent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(call.name).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(Color.scifiFg)
-                                    Text(call.isComplete ? "COMPLETE" : "RUNNING").font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiMuted)
-                                }
-                            }
-                        }
-                    }
-
-                    if let approval = model.approvalText {
-                        sectionLabel("APPROVAL NEEDED")
-                        Text(approval).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiWarning).fixedSize(horizontal: false, vertical: true)
-                    }
+                Group {
+                     switch selectedMode {
+                     case .activity: activityContent
+                     case .core: coreContent
+                     }
                 }
                 .padding(16)
             }
@@ -291,8 +440,368 @@ private struct WorkspaceActivitySidebar: View {
         .environment(\.colorScheme, .dark)
     }
 
+    private var modePicker: some View {
+        HStack(spacing: 3) {
+            ForEach(OperationsMode.allCases) { mode in
+                Button {
+                    withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
+                    if mode == .core { model.refreshRuntimeConfiguration() }
+                } label: {
+                    Text(mode.rawValue.uppercased())
+                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .tracking(0.75)
+                        .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                        .background(selectedMode == mode ? Color.scifiAccent.opacity(0.11) : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+    }
+
+    private var activityContent: some View {
+        AgentBoardView(model: model, embedded: true)
+    }
+
+    private var agentRoster: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                rosterTile(title: "ALL", subtitle: "Hermes", status: model.status.title, color: statusColor, id: nil)
+                ForEach(model.activeSubagents) { agent in
+                    rosterTile(title: agent.role ?? initials(for: agent.goal), subtitle: shortGoal(agent.goal), status: agent.status, color: nativeAgentColor(agent.status), id: agent.id)
+                }
+            }
+        }
+    }
+
+    private func rosterTile(title: String, subtitle: String, status: String, color: Color, id: String?) -> some View {
+        Button {
+            selectedAgentID = id
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    AgentAvatar(identity: id ?? "hermes", statusColor: color)
+                        .frame(width: 28, height: 28)
+                    Circle().fill(color).frame(width: 5, height: 5)
+                }
+                Text(title.uppercased())
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .tracking(0.5)
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 8))
+                    .foregroundStyle(Color.scifiMuted)
+                    .lineLimit(1)
+            }
+            .frame(width: 82, alignment: .leading)
+            .padding(8)
+            .background(selectedAgentID == id ? color.opacity(0.12) : Color.scifiSurface4)
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.scifiBorder, lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.plain)
+        .help(status)
+    }
+
+    private func activityRow(_ activity: AgentActivity) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(Self.timeFormatter.string(from: activity.timestamp))
+                .font(.system(size: 8.5, design: .monospaced))
+                .foregroundStyle(Color.scifiTertiary)
+                .frame(width: 34, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased())
+                    .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                    .tracking(0.5)
+                    .foregroundStyle(Color.scifiAccent)
+                Text(activity.text)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    private func initials(for value: String) -> String {
+        let words = value.split(whereSeparator: { $0 == " " || $0 == ":" || $0 == "-" })
+        return words.prefix(2).compactMap { $0.first.map(String.init) }.joined()
+    }
+
+    private func shortGoal(_ value: String) -> String {
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.count > 22 ? String(clean.prefix(22)) + "…" : clean
+    }
+
+    private var coreContent: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            HStack {
+                sectionLabel("HERMES CONFIGURATION")
+                Spacer()
+                Button(action: { model.refreshRuntimeConfiguration() }) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.scifiAccent)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.isLoadingRuntimeConfiguration)
+            }
+
+            if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text("READING HERMES RUNTIME…").font(.system(size: 9, design: .monospaced)).tracking(0.6).foregroundStyle(Color.scifiMuted)
+                }
+            } else if let configuration = model.runtimeConfiguration {
+                diagnosticRow(label: "MODEL", value: configuration.model ?? "NOT CONFIGURED", color: configuration.model == nil ? Color.scifiWarning : Color.scifiSuccess)
+                diagnosticRow(label: "PROVIDER", value: configuration.provider ?? "NOT CONFIGURED", color: configuration.provider == nil ? Color.scifiWarning : Color.scifiSuccess)
+                if model.runtimeModelOptions.isEmpty {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 8.5, design: .monospaced)).tracking(0.5).foregroundStyle(Color.scifiMuted)
+                    }
+                } else {
+                    Menu {
+                        ForEach(model.runtimeModelOptions) { option in
+                            Button {
+                                selectedModelID = option.id
+                            } label: {
+                                HStack {
+                                    Text(option.displayName)
+                                    if option.id == selectedModelID {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(selectedModelDisplayName)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.scifiFg)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color.scifiMuted)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 36)
+                        .background(Color.scifiSurface4)
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onChange(of: selectedModelID) { _, id in
+                        guard let option = model.runtimeModelOptions.first(where: { $0.id == id }),
+                              option.model != configuration.model || option.provider != configuration.provider else { return }
+                        model.updateRuntimeModel(option)
+                    }
+                }
+                Text("Catalog is supplied live by Hermes. Selection updates provider and model for new sessions.")
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                if let error = model.runtimeConfigurationError {
+                    Text(error)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.scifiWarning)
+                }
+                if let path = configuration.configPath {
+                    Text(path)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Divider().overlay(Color.scifiBorderLight)
+                sectionLabel("EXECUTION")
+                if let turns = configuration.maxTurns {
+                    diagnosticRow(label: "MAX TURNS", value: turns, color: Color.scifiMuted)
+                }
+                if let timeout = configuration.terminalTimeout {
+                    diagnosticRow(label: "TERMINAL TIMEOUT", value: "\(timeout)S", color: Color.scifiMuted)
+                }
+
+                Divider().overlay(Color.scifiBorderLight)
+                sectionLabel("INSTALLED SKILLS  ·  \(configuration.skills.count)")
+                configurationList(configuration.skills, empty: "No enabled skills reported by Hermes.")
+
+                Divider().overlay(Color.scifiBorderLight)
+                sectionLabel("MCP SERVERS  ·  \(configuration.mcpServers.count)")
+                configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
+
+                if !configuration.plugins.isEmpty {
+                    Divider().overlay(Color.scifiBorderLight)
+                    sectionLabel("ENABLED PLUGINS  ·  \(configuration.plugins.count)")
+                    configurationList(configuration.plugins, empty: "")
+                }
+            } else {
+                emptyState(icon: "exclamationmark.triangle", title: "Runtime unavailable", detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
+            }
+        }
+        .task {
+            model.refreshRuntimeConfiguration()
+            model.refreshRuntimeModelOptions()
+        }
+        .onChange(of: model.runtimeConfiguration) { _, configuration in
+            guard let configuration,
+                  let matching = model.runtimeModelOptions.first(where: { $0.model == configuration.model && $0.provider == configuration.provider }) else { return }
+            selectedModelID = matching.id
+        }
+        .onChange(of: model.runtimeModelOptions) { _, options in
+            guard let configuration = model.runtimeConfiguration,
+                  let matching = options.first(where: { $0.model == configuration.model && $0.provider == configuration.provider }) else { return }
+            selectedModelID = matching.id
+        }
+    }
+
     private func sectionLabel(_ title: String) -> some View {
-        Text(title).font(.system(size: 10, weight: .semibold)).tracking(1.1).foregroundStyle(Color.scifiMuted)
+        Text(title).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(1.1).foregroundStyle(Color.scifiMuted)
+    }
+
+    private func agentRow(_ agent: HermesSubagent, expanded: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Circle()
+                .fill(nativeAgentColor(agent.status))
+                .frame(width: 7, height: 7)
+                .shadow(color: nativeAgentColor(agent.status).opacity(0.7), radius: 4)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(agent.goal)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(expanded ? 4 : 2)
+                if let role = agent.role {
+                    Text("ROLE  \(role.uppercased())\(agent.sourceSkill.map { "  ·  \($0)" } ?? "")")
+                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .tracking(0.35)
+                        .foregroundStyle(Color.scifiAccent)
+                }
+                Text("\(agent.status.uppercased())  ·  \(agent.toolCount) TOOLS\(agent.model.map { "  ·  \($0.uppercased())" } ?? "")")
+                    .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                    .tracking(0.4)
+                    .foregroundStyle(nativeAgentColor(agent.status))
+                if expanded, let latest = agent.latestActivity {
+                    Text(latest)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .overlay(alignment: .bottom) { Color.scifiBorderLight.opacity(0.7).frame(height: 0.5) }
+    }
+
+    private func toolRow(_ call: ActiveToolCall) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: call.isComplete ? "checkmark.circle" : "circle.dotted")
+                .font(.system(size: 11))
+                .foregroundStyle(call.isComplete ? Color.scifiSuccess : Color.scifiAccent)
+                .frame(width: 13)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(call.name).font(.system(size: 10.5, weight: .medium, design: .monospaced)).foregroundStyle(Color.scifiFg)
+                Text(call.isComplete ? "COMPLETE" : (call.input.isEmpty ? "RUNNING" : call.input))
+                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+            }
+        }
+    }
+
+    private func eventRow(_ event: AgentEvent) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("•")
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent.opacity(0.75))
+                .frame(width: 13)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.type.uppercased()).font(.system(size: 8.5, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiMuted)
+                Text(event.detail).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+            }
+        }
+    }
+
+    private func diagnosticRow(label: String, value: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).font(.system(size: 8.5, weight: .semibold, design: .monospaced)).tracking(0.8).foregroundStyle(Color.scifiTertiary)
+            Spacer()
+            HStack(spacing: 5) {
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(value).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiFg).lineLimit(1)
+            }
+        }
+    }
+
+    private var selectedModelDisplayName: String {
+        model.runtimeModelOptions.first(where: { $0.id == selectedModelID })?.displayName
+            ?? model.runtimeConfiguration.map { "\($0.provider ?? "provider")  /  \($0.model ?? "model")" }
+            ?? "Select Hermes model"
+    }
+
+    private func configurationList(_ values: [String], empty: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if values.isEmpty {
+                Text(empty)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+            } else {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(minimum: 0), alignment: .leading),
+                        GridItem(.flexible(minimum: 0), alignment: .leading)
+                    ],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(Array(values.prefix(8).enumerated()), id: \.offset) { _, value in
+                        HStack(spacing: 7) {
+                            Circle().fill(Color.scifiAccent.opacity(0.65)).frame(width: 4, height: 4)
+                            Text(value)
+                                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.scifiFg)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                if values.count > 8 {
+                    Text("+ \(values.count - 8) MORE")
+                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .tracking(0.65)
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+            }
+        }
+    }
+
+    private func capabilityRow(icon: String, title: String, detail: String, state: String, color: Color) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 11)).foregroundStyle(color).frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg)
+                Text(detail).font(.system(size: 9)).foregroundStyle(Color.scifiTertiary)
+            }
+            Spacer(minLength: 3)
+            Text(state).font(.system(size: 8, weight: .semibold, design: .monospaced)).tracking(0.45).foregroundStyle(color)
+        }
+    }
+
+    private var latestModelName: String? {
+        model.messages.reversed().compactMap(\.modelName).first
     }
 
     private func emptyState(icon: String, title: String, detail: String) -> some View {
@@ -331,30 +840,53 @@ struct DockPopover: View {
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
     @StateObject private var speechInput = SpeechInput()
+    @StateObject private var voiceOutput = VoiceOutput()
+    @State private var inputMode: InputMode = .chat
+
+    private enum InputMode {
+        case chat, talk
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                header
-                if model.isShowingSessions {
-                    sessionPicker
+                if inputMode == .talk {
+                    voiceMode
+                } else {
+                    header
+                    if model.isShowingSessions {
+                        sessionPicker
+                        Divider().overlay(Color.scifiBorderLight)
+                    }
+                    conversation
                     Divider().overlay(Color.scifiBorderLight)
+                    composer
                 }
-                conversation
-                Divider().overlay(Color.scifiBorderLight)
-                composer
             }
             .frame(width: 420, height: 560)
 
+            // The Operations workspace belongs to the popup, not to chat mode.
+            // Voice swaps only the left-hand surface and keeps this pane live.
             if isWorkspaceVisible {
                 Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5)
                 WorkspaceActivitySidebar(model: model)
-                    .frame(width: 310, height: 560)
+                    .frame(width: 460, height: 560)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: isWorkspaceVisible ? 730.5 : 420, height: 560)
-        .background(.ultraThinMaterial)
+        .frame(width: isWorkspaceVisible ? 880 : 420, height: 560)
+        .background {
+            ZStack {
+                Color(red: 0.055, green: 0.065, blue: 0.115)
+                RadialGradient(
+                    colors: [Color.scifiAccent.opacity(0.09), .clear],
+                    center: UnitPoint(x: 0.15, y: 0),
+                    startRadius: 0,
+                    endRadius: 360
+                )
+            }
+            .background(.ultraThinMaterial)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -368,9 +900,27 @@ struct DockPopover: View {
             }
         }
         .task { model.restoreLatestSessionIfNeeded() }
-        .onAppear { onWorkspaceWidthChange(isWorkspaceVisible ? 730.5 : 420) }
+        .onAppear { onWorkspaceWidthChange(isWorkspaceVisible ? 880 : 420) }
         .onChange(of: isWorkspaceVisible) { _, visible in
-            onWorkspaceWidthChange(visible ? 730.5 : 420)
+            onWorkspaceWidthChange(visible ? 880 : 420)
+        }
+        .onChange(of: speechInput.completedTranscript) { _, transcript in
+            guard let transcript, !transcript.isEmpty, !model.isSending else { return }
+            model.draft = transcript
+            speechInput.consumeCompletedTranscript()
+            model.send()
+        }
+        .onChange(of: speechInput.isRecording) { _, isRecording in
+            if !isRecording, speechInput.errorMessage != nil {
+                inputMode = .chat
+            }
+        }
+        .onChange(of: model.status) { _, status in
+            guard inputMode == .talk,
+                  status == .idle,
+                  let response = model.messages.last(where: { $0.role == .hermes }),
+                  !response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            voiceOutput.speak(messageID: response.id, text: response.text)
         }
     }
 
@@ -381,13 +931,25 @@ struct DockPopover: View {
     private var header: some View {
         HStack(spacing: 0) {
             Button(action: { model.toggleSessions() }) {
-                HStack(spacing: 3) {
-                    Text(model.currentSessionTitle ?? "Hermes")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
-                        .lineLimit(1)
+                HStack(spacing: 9) {
+                    ZStack {
+                        Circle().fill(connectionColor.opacity(0.13)).frame(width: 24, height: 24)
+                        Image(systemName: "link.circle.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(connectionColor)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(model.currentSessionTitle ?? "Untitled chat")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.scifiFg)
+                            .lineLimit(1)
+                        Text("HERMES CONSOLE")
+                            .font(.system(size: 7.5, weight: .semibold, design: .monospaced))
+                            .tracking(1.05)
+                            .foregroundStyle(Color.scifiTertiary)
+                    }
                     Image(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(Color.scifiMuted)
                 }
             }
@@ -395,11 +957,23 @@ struct DockPopover: View {
 
             Spacer()
 
-            HStack(spacing: 10) {
+            HStack(spacing: 7) {
+                Button(action: { inputMode = .talk }) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.scifiMuted)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.scifiSurface4))
+                }
+                .buttonStyle(.plain)
+                .help("Talk mode")
+
                 Button(action: { isWorkspaceManuallyExpanded.toggle() }) {
                     Image(systemName: isWorkspaceVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(isWorkspaceVisible ? Color.scifiAccent : Color.scifiMuted)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(isWorkspaceVisible ? Color.scifiAccent.opacity(0.1) : Color.clear))
                 }
                 .buttonStyle(.plain)
                 .help(isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
@@ -414,21 +988,19 @@ struct DockPopover: View {
                     .help("Stop")
                 }
 
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 6, height: 6)
-
                 Button(action: { model.newChat() }) {
                     Image(systemName: "square.and.pencil")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color.scifiMuted)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.scifiSurface4))
                 }
                 .buttonStyle(.plain)
                 .help("New chat")
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 40)
+        .padding(.horizontal, 14)
+        .frame(height: 50)
         .background(Color.scifiSurface2)
         .overlay(alignment: .bottom) {
             Color.scifiBorderLight.frame(height: 0.5)
@@ -444,12 +1016,17 @@ struct DockPopover: View {
         }
     }
 
+    private var connectionColor: Color {
+        model.isHermesConnected ? .scifiSuccess : .scifiDestructive
+    }
+
     private var sessionPicker: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Conversations")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.scifiMuted)
+                Text("CONVERSATIONS")
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.scifiAccent.opacity(0.8))
                 Spacer()
                 if model.isLoadingSessions {
                     ProgressView()
@@ -524,41 +1101,67 @@ struct DockPopover: View {
 
     private var voiceMode: some View {
         VStack(spacing: 0) {
-            Spacer()
-            VStack(spacing: 6) {
-                if !speechInput.transcript.isEmpty {
-                    Text(speechInput.transcript)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.scifiFg)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 280)
-                } else {
-                    Text("Listening")
-                        .font(.system(size: 13, weight: .semibold))
-                        .tracking(1.0)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color.scifiAccent)
-                }
+            VoiceModeToolbar {
+                speechInput.stop()
+                voiceOutput.stop()
+                inputMode = .chat
             }
-            .padding(.top, 16)
+            .padding(14)
             Spacer()
-            VoiceOrbView()
-                .frame(width: 320, height: 320)
-            Spacer()
-            VStack(spacing: 4) {
-                Text("Speak now")
-                    .font(.system(size: 13, weight: .medium))
-                    .tracking(0.8)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Color.scifiAccent)
-                Text("tap stop when done")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted.opacity(0.6))
+            Button {
+                if speechInput.isRecording {
+                    speechInput.stop()
+                    inputMode = .chat
+                } else if !model.isSending {
+                    voiceOutput.stop()
+                    speechInput.toggle()
+                }
+            } label: {
+                VoiceOrbView(
+                    isListening: speechInput.isRecording,
+                    isResponding: (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking
+                )
+                    .frame(width: 320, height: 320)
+            }
+            .buttonStyle(.plain)
+            .help(speechInput.isRecording ? "Cancel voice prompt" : "Start voice prompt")
+            .overlay(alignment: .bottom) {
+                if model.status == .working && !speechInput.isRecording {
+                    voiceActivityIndicator
+                        .offset(y: 34)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
+        .animation(.scifiEase(duration: 0.25), value: model.status)
+    }
+
+    private var voiceActivityIndicator: some View {
+        HStack(spacing: 8) {
+            ThinkingDots()
+            Text(voiceActivityText)
+                .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                .tracking(0.6)
+                .lineLimit(1)
+        }
+        .foregroundStyle(Color.scifiAccent)
+        .padding(.horizontal, 13)
+        .frame(height: 32)
+        .background(Capsule().fill(Color.scifiSurface6).stroke(Color.scifiAccent.opacity(0.25), lineWidth: 0.5))
+        .shadow(color: Color.scifiAccent.opacity(0.12), radius: 10)
+    }
+
+    private var voiceActivityText: String {
+        if let reasoning = model.reasoningState, !reasoning.text.isEmpty {
+            return "HERMES IS REASONING"
+        }
+        if let tool = model.activeToolCalls.first(where: { !$0.isComplete }) {
+            return "RUNNING \(tool.name.uppercased())"
+        }
+        return "HERMES IS THINKING"
     }
 
     private var chatScroll: some View {
@@ -567,17 +1170,9 @@ struct DockPopover: View {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         if model.messages.isEmpty && model.status != .working {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Good to see you.")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Color.scifiFg)
-                                Text("All systems nominal. How may I assist you?")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Color.scifiMuted)
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            StartupAssistantView()
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: max(300, viewport.size.height - 16))
                         }
                         let msgList = model.messages
                         ForEach(msgList) { message in
@@ -764,19 +1359,18 @@ struct DockPopover: View {
                                     .textSelection(.enabled)
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .foregroundStyle(Color.scifiFg)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 310, alignment: .trailing)
-                        .background(Color.scifiAccentMuted)
-                        .clipShape(MessageBubbleShape(isUser: true))
-                        .overlay(
-                            MessageBubbleShape(isUser: true)
-                                .stroke(Color.scifiAccent.opacity(0.15), lineWidth: 0.5)
-                        )
-                        .shadow(color: Color.scifiAccent.opacity(0.05), radius: 4)
+                        .foregroundStyle(Color.scifiFg)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.scifiAccentMuted)
+                    .clipShape(MessageBubbleShape(isUser: true))
+                    .overlay(
+                        MessageBubbleShape(isUser: true)
+                            .stroke(Color.scifiAccent.opacity(0.15), lineWidth: 0.5)
+                    )
+                    .shadow(color: Color.scifiAccent.opacity(0.05), radius: 4)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 8) {
@@ -887,37 +1481,65 @@ struct DockPopover: View {
     }
 
     private func approvalRow(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Color.scifiWarning)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.black)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(Color.scifiWarning)
+                    )
                 Text("Approval required")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.scifiFg)
+                Spacer()
+                Text("ACTION NEEDED")
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(Color.scifiWarning)
             }
 
             Text(text)
-                .font(.system(size: 13))
+                .font(.system(size: 12.5, design: .monospaced))
                 .textSelection(.enabled)
                 .foregroundStyle(Color.scifiFg)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.black.opacity(0.16))
+                        .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+                )
 
             HStack(spacing: 6) {
                 Button("Deny") { model.respondToApproval("deny") }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                Button("Allow") { model.respondToApproval("once") }
+                Button("Allow once") { model.respondToApproval("once") }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
         }
-        .padding(10)
+        .padding(14)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.scifiSurface)
-                .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.scifiWarning.opacity(0.035))
+                }
         )
-        .padding(.vertical, 4)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.scifiWarning.opacity(0.22), lineWidth: 0.6)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var composer: some View {
@@ -979,60 +1601,40 @@ struct DockPopover: View {
                         Image(systemName: "paperclip")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.scifiMuted)
-                            .frame(width: 36, height: 36)
+                            .frame(width: 38, height: 38)
                     }
                     .buttonStyle(.plain)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color.scifiSurface4)
+                            .stroke(Color.scifiBorderLight, lineWidth: 0.5)
                     )
                     .help("Attach image")
-
-                    Button(action: { speechInput.toggle() }) {
-                        Group {
-                            if speechInput.isStarting {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .frame(width: 36, height: 36)
-                            } else {
-                                Image(systemName: speechInput.isUnavailable ? "mic.slash.fill" : "mic.fill")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(speechInput.isUnavailable ? Color.scifiWarning : Color.scifiMuted)
-                                    .frame(width: 36, height: 36)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.scifiSurface4)
-                    )
-                    .help(
-                        speechInput.isUnavailable
-                        ? "Dictation requires the bundled app"
-                        : "Dictate message"
-                    )
 
                     TextField("Ask Hermes…", text: $model.draft, axis: .vertical)
                         .textFieldStyle(.plain)
                         .lineLimit(1...4)
                         .font(.system(size: 13))
+                        .onSubmit { model.send() }
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .frame(minHeight: 36)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, minHeight: 38)
                         .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.scifiSurface)
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.scifiSurface4)
                                 .stroke(Color.scifiBorder, lineWidth: 0.5)
                         )
                         .foregroundStyle(Color.scifiFg)
                         .environment(\.colorScheme, .dark)
-                        .onSubmit { model.send() }
+                        .onChange(of: model.draft) { _, draft in
+                            DebugLog.write("composer: draft changed (length: \(draft.count))")
+                        }
                 }
 
                 Button(action: {
                     if speechInput.isRecording {
                         speechInput.stop()
+                        model.send()
                     } else {
                         model.send()
                     }
@@ -1041,9 +1643,9 @@ struct DockPopover: View {
                         Image(systemName: "stop.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
+                            .frame(width: 38, height: 38)
                             .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(Color.scifiDestructive)
                             )
                     } else {
@@ -1054,9 +1656,9 @@ struct DockPopover: View {
                                 ? Color.black
                                 : Color.scifiMuted
                             )
-                            .frame(width: 36, height: 36)
+                            .frame(width: 38, height: 38)
                             .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(
                                         canSend && !model.isSending
                                         ? Color.scifiAccent
@@ -1068,19 +1670,20 @@ struct DockPopover: View {
                 .buttonStyle(.plain)
                 .disabled(!speechInput.isRecording && (!canSend || model.isSending))
                 .keyboardShortcut(.return, modifiers: [.command])
+                .help(speechInput.isRecording ? "Send voice prompt" : "Send message")
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.scifiDestructive.opacity(speechInput.isRecording ? (isComposerPulsing ? 0.12 : 0.05) : 0))
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(speechInput.isRecording ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.12 : 0.05) : Color.scifiSurface2)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(
                         speechInput.isRecording
                         ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
-                        : Color.clear,
+                        : Color.scifiBorderLight,
                         lineWidth: 0.5
                     )
             )
@@ -1093,8 +1696,18 @@ struct DockPopover: View {
                     model.draft = transcript
                 }
             }
+
+            if let error = speechInput.errorMessage {
+                Text(error)
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+            }
         }
         .onAppear {
+            DebugLog.write("composer: appeared")
             if pasteMonitor == nil {
                 let dockModel = model
                 pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -1141,10 +1754,150 @@ private struct VoiceWavePath: Shape {
     }
 }
 
+private struct StartupAssistantView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 30.0)) { context in
+            let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+
+            VStack(spacing: 0) {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(Color.scifiSuccess)
+                        .frame(width: 5, height: 5)
+                        .shadow(color: Color.scifiSuccess.opacity(0.8), radius: 5)
+                    Text("HERMES // ONLINE")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .tracking(1.5)
+                        .foregroundStyle(Color.scifiAccent.opacity(0.85))
+                }
+                .padding(.top, 24)
+
+                Spacer(minLength: 16)
+
+                startupOrb(time: t)
+                    .frame(width: 250, height: 250)
+
+                Spacer(minLength: 14)
+
+                VStack(spacing: 5) {
+                    Text("Good to see you.")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.scifiFg)
+                    Text("All systems nominal. How may I assist you?")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.scifiMuted)
+                }
+                .multilineTextAlignment(.center)
+
+                HStack(spacing: 6) {
+                    Capsule().fill(Color.scifiAccent.opacity(0.35)).frame(width: 18, height: 1)
+                    Text("AWAITING COMMAND")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .tracking(1.25)
+                        .foregroundStyle(Color.scifiTertiary)
+                    Capsule().fill(Color.scifiAccent.opacity(0.35)).frame(width: 18, height: 1)
+                }
+                .padding(.top, 15)
+                .padding(.bottom, 22)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Hermes online. All systems nominal. Awaiting command.")
+    }
+
+    @ViewBuilder
+    private func startupOrb(time t: TimeInterval) -> some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.scifiAccent.opacity(0.12), Color.scifiAccent.opacity(0.025), .clear],
+                        center: .center,
+                        startRadius: 15,
+                        endRadius: 122
+                    )
+                )
+                .blur(radius: 5)
+
+            ForEach(0..<3) { index in
+                let phase = t * 0.72 + Double(index) * 1.75
+                let scale = 0.94 + 0.045 * sin(phase)
+                Circle()
+                    .stroke(
+                        Color.scifiAccent.opacity(index == 1 ? 0.2 : 0.12),
+                        style: StrokeStyle(lineWidth: index == 1 ? 0.7 : 0.5, dash: index == 1 ? [2, 5] : [])
+                    )
+                    .frame(width: CGFloat(158 + index * 35), height: CGFloat(158 + index * 35))
+                    .scaleEffect(scale)
+                    .opacity(0.5 + 0.25 * sin(phase))
+            }
+
+            Circle()
+                .trim(from: 0.05, to: 0.28)
+                .stroke(Color.scifiAccent.opacity(0.75), style: StrokeStyle(lineWidth: 1.25, lineCap: .round))
+                .frame(width: 212, height: 212)
+                .rotationEffect(.degrees(t * 18))
+            Circle()
+                .trim(from: 0.57, to: 0.78)
+                .stroke(Color.scifiAccent.opacity(0.4), style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
+                .frame(width: 212, height: 212)
+                .rotationEffect(.degrees(-t * 12))
+
+            ForEach(0..<18) { index in
+                let angle = Double(index) / 18 * .pi * 2 + t * 0.18
+                Circle()
+                    .fill(Color.scifiAccent.opacity(index.isMultiple(of: 3) ? 0.75 : 0.28))
+                    .frame(width: index.isMultiple(of: 3) ? 2.5 : 1.5, height: index.isMultiple(of: 3) ? 2.5 : 1.5)
+                    .offset(x: cos(angle) * 98, y: sin(angle) * 98)
+            }
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [Color.white.opacity(0.26), Color.scifiAccent.opacity(0.32), Color.scifiAccent.opacity(0.07)],
+                        center: UnitPoint(x: 0.35, y: 0.28),
+                        startRadius: 1,
+                        endRadius: 62
+                    )
+                )
+                .frame(width: 116, height: 116)
+                .overlay(Circle().stroke(Color.scifiAccent.opacity(0.35), lineWidth: 0.7))
+                .shadow(color: Color.scifiAccent.opacity(0.24), radius: 20)
+                .scaleEffect(1 + 0.025 * sin(t * 1.7))
+
+            Circle()
+                .trim(from: 0.08, to: 0.92)
+                .stroke(Color.white.opacity(0.26), style: StrokeStyle(lineWidth: 0.5, lineCap: .round))
+                .frame(width: 82, height: 82)
+                .rotationEffect(.degrees(-t * 20))
+
+            Image(systemName: "mic.fill")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(Color.scifiAccent.opacity(0.9))
+                .shadow(color: Color.scifiAccent.opacity(0.7), radius: 8)
+
+            Capsule()
+                .fill(Color.scifiAccent.opacity(0.55))
+                .frame(width: 58, height: 0.8)
+                .offset(y: 42)
+                .scaleEffect(x: 0.7 + 0.3 * (sin(t * 2.2) + 1) / 2, y: 1)
+        }
+    }
+}
+
 private struct VoiceOrbView: View {
+    let isListening: Bool
+    let isResponding: Bool
+
     var body: some View {
         TimelineView(.animation) { context in
             let t = context.date.timeIntervalSinceReferenceDate
+            let isActive = isListening || isResponding
+            let animationTime = isActive ? t : 0
+            let waveSpeed = isResponding ? 6.0 : (isListening ? 4.0 : 0)
+            let waveAmplitude = isResponding ? 22.0 : (isListening ? 16.0 : 0)
             ZStack {
                 ForEach(0..<4) { i in
                     let size = 140.0 + Double(i) * 60
@@ -1152,14 +1905,14 @@ private struct VoiceOrbView: View {
                         .stroke(
                             Color.scifiAccent.opacity(i % 2 == 0 ? 0.08 : 0.05),
                             style: StrokeStyle(lineWidth: i % 2 == 0 ? 1 : 0.5, dash: i % 2 == 0 ? [] : [3, 4])
-                        )
-                        .frame(width: size, height: size)
-                        .scaleEffect(1 + 0.1 * sin(t * 0.8 + Double(i) * 0.5))
-                        .opacity(0.25 + 0.15 * sin(t * 0.8 + Double(i) * 0.5))
+                    )
+                    .frame(width: size, height: size)
+                    .scaleEffect(1 + (isResponding ? 0.16 : 0.1) * sin(animationTime * (isResponding ? 1.5 : 0.8) + Double(i) * 0.5))
+                    .opacity(isActive ? 0.25 + 0.15 * sin(animationTime * (isResponding ? 1.5 : 0.8) + Double(i) * 0.5) : 0.08)
                 }
 
                 ForEach(0..<48) { i in
-                    let barH = 4 + 16 * (1 + sin(t * 4 + Double(i) * 0.4)) / 2
+                    let barH = isActive ? 4 + waveAmplitude * (1 + sin(animationTime * waveSpeed + Double(i) * 0.4)) / 2 : 2
                     Capsule()
                         .fill(Color.scifiAccent)
                         .frame(width: 2, height: barH)
@@ -1168,8 +1921,8 @@ private struct VoiceOrbView: View {
                         .opacity(0.4)
                 }
 
-                VoiceWavePath(t: t)
-                    .stroke(Color.scifiAccent.opacity(0.5), lineWidth: 1.5)
+                VoiceWavePath(t: animationTime, amplitude: waveAmplitude)
+                    .stroke(Color.scifiAccent.opacity(isActive ? (isResponding ? 0.8 : 0.5) : 0.16), lineWidth: isResponding ? 2 : 1.5)
                     .frame(width: 200, height: 200)
 
                 Circle()
@@ -1184,12 +1937,12 @@ private struct VoiceOrbView: View {
                     .frame(width: 90, height: 90)
                     .overlay(Circle().stroke(Color.scifiAccent.opacity(0.2), lineWidth: 0.5))
                     .shadow(color: Color.scifiAccent.opacity(0.25), radius: 30)
-                    .scaleEffect(1 + 0.08 * sin(t * .pi))
+                    .scaleEffect(1 + (isResponding ? 0.12 : 0.08) * sin(animationTime * .pi))
                     .overlay {
-                        Image(systemName: "mic.fill")
+                        Image(systemName: isResponding ? "waveform" : "mic.fill")
                             .font(.system(size: 32))
                             .foregroundStyle(Color.scifiAccent)
-                            .scaleEffect(1 - 0.12 * (1 + sin(t * .pi * 1.6)) / 2)
+                            .scaleEffect(1 - 0.12 * (1 + sin(animationTime * .pi * 1.6)) / 2)
                     }
             }
         }

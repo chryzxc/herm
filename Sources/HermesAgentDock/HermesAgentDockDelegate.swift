@@ -16,7 +16,9 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate {
 private final class DockPanelController: NSObject, NSWindowDelegate {
     private enum Metrics {
         static let compactWidth: CGFloat = 420
-        static let workspaceWidth: CGFloat = 730.5
+        // Keep the chat compact while giving the right Operations workspace
+        // enough room to reach the screen edge on wide displays.
+        static let workspaceWidth: CGFloat = 880
         static let height: CGFloat = 560
         static let screenInset: CGFloat = 12
         static let menuGap: CGFloat = 8
@@ -102,9 +104,17 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func show() {
         resizePanel(to: desiredWidth, animated: false)
+        // `swift run` leaves Terminal as the active app. A status-bar panel can
+        // become key visually without receiving keyboard input until its agent
+        // application is explicitly activated.
+        NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
         model.markPopoverVisible()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
+            DebugLog.write("panel: shown (app active: \(NSApp.isActive), frontmost: \(frontmost), key: \(self.panel.isKeyWindow), responder: \(self.panel.responderDescription))")
+        }
     }
 
     private func hide() {
@@ -142,8 +152,17 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             panel.setFrame(frame, display: true)
         }
     }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        DebugLog.write("panel: became key (responder: \(panel.responderDescription))")
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        DebugLog.write("panel: resigned key")
+    }
 }
 
+@MainActor
 private final class DockPanel: NSPanel {
     var onCancel: (() -> Void)?
 
@@ -152,5 +171,16 @@ private final class DockPanel: NSPanel {
 
     override func cancelOperation(_ sender: Any?) {
         onCancel?()
+    }
+
+    var responderDescription: String {
+        firstResponder.map { String(describing: type(of: $0)) } ?? "none"
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown {
+            DebugLog.write("panel: keyDown code=\(event.keyCode) repeat=\(event.isARepeat) responder=\(responderDescription)")
+        }
+        super.sendEvent(event)
     }
 }
