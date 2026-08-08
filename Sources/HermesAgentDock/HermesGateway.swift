@@ -5,17 +5,20 @@ final class HermesGateway: NSObject {
     enum GatewayError: LocalizedError {
         case backendUnavailable, malformedResponse, disconnected
         case imageAttachFailed(String)
+        case httpError(Int)
         var errorDescription: String? {
             switch self {
             case .backendUnavailable: "Hermes could not start its local backend."
             case .malformedResponse: "Hermes returned an unreadable response."
             case .disconnected: "The connection to Hermes was lost."
             case .imageAttachFailed(let message): message
+            case .httpError(let statusCode): "Hermes returned HTTP status \(statusCode)."
             }
         }
     }
 
     var onEvent: ((String, [String: Any]) -> Void)?
+    var onConnectionChange: ((Bool) -> Void)?
     private let workingDirectory: URL?
     private var backend: Process?
     private var urlSession: URLSession?
@@ -27,6 +30,7 @@ final class HermesGateway: NSObject {
     private var timeoutTasks: [Int: Task<Void, Never>] = [:]
     private var backendOutput = ""
     private var backendStartWaiters: [CheckedContinuation<Void, Error>] = []
+    private static let maximumBackendOutputLength = 32_768
 
     init(workingDirectory: URL? = nil) {
         self.workingDirectory = workingDirectory
@@ -45,6 +49,7 @@ final class HermesGateway: NSObject {
     func connect() async throws {
         if socket != nil {
             DebugLog.write("connect: socket already exists")
+            onConnectionChange?(true)
             return
         }
         DebugLog.write("connect: starting")
@@ -57,6 +62,7 @@ final class HermesGateway: NSObject {
         let task = session.webSocketTask(with: url)
         socket = task
         task.resume()
+        onConnectionChange?(true)
         DebugLog.write("connect: WebSocket task resumed")
         receiveNext()
     }
@@ -65,7 +71,10 @@ final class HermesGateway: NSObject {
         DebugLog.write("request: \(method)")
         if socket == nil { try await connect() }
         let data = try await send(method: method, params: params)
-        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw GatewayError.malformedResponse
+        }
+        return result
     }
 
     func close() {
@@ -76,10 +85,14 @@ final class HermesGateway: NSObject {
         backend?.terminate()
         backend = nil
         port = nil
+        backendOutput = ""
+        backendStartWaiters.forEach { $0.resume(throwing: GatewayError.disconnected) }
+        backendStartWaiters.removeAll()
         pending.values.forEach { $0.resume(throwing: GatewayError.disconnected) }
         pending.removeAll()
         timeoutTasks.values.forEach { $0.cancel() }
         timeoutTasks.removeAll()
+        onConnectionChange?(false)
     }
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
@@ -90,8 +103,17 @@ final class HermesGateway: NSObject {
         }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, _) = try await URLSession.shared.data(for: req)
-        return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        let (data, response) = try await URLSession.shared.data(for: req)
+        guard let response = response as? HTTPURLResponse else {
+            throw GatewayError.malformedResponse
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw GatewayError.httpError(response.statusCode)
+        }
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw GatewayError.malformedResponse
+        }
+        return result
     }
 
     private func send(method: String, params: [String: Any]) async throws -> Data {
@@ -131,6 +153,7 @@ final class HermesGateway: NSObject {
                 switch result {
                 case .failure:
                     DebugLog.write("receive: WebSocket failed")
+                    self.onConnectionChange?(false)
                     self.socket = nil
                     self.urlSession?.invalidateAndCancel()
                     self.urlSession = nil
@@ -186,11 +209,7 @@ final class HermesGateway: NSObject {
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = ["hermes", "serve", "--host", "127.0.0.1", "--port", "0"]
             process.currentDirectoryURL = workingDirectory
-            var environment = ProcessInfo.processInfo.environment
-            let currentPath = environment["PATH"] ?? "/usr/local/bin:/usr/bin:/bin"
-            if !currentPath.split(separator: ":").contains("/Users/christian/.local/bin") {
-                environment["PATH"] = "/Users/christian/.local/bin:\(currentPath)"
-            }
+            var environment = HermesEnvironment.processEnvironment()
             environment["HERMES_DASHBOARD_SESSION_TOKEN"] = token
             environment["HERMES_DESKTOP"] = "1"
             process.environment = environment
@@ -203,6 +222,10 @@ final class HermesGateway: NSObject {
                 guard !chunk.isEmpty, let text = String(data: chunk, encoding: .utf8) else { return }
                 Task { @MainActor in
                     self?.backendOutput += text
+                    if let outputLength = self?.backendOutput.count,
+                       outputLength > Self.maximumBackendOutputLength {
+                        self?.backendOutput.removeFirst(outputLength - Self.maximumBackendOutputLength)
+                    }
                     DebugLog.write("backend output: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
                     guard let output = self?.backendOutput else { return }
                     let pattern = #"(?:HERMES_BACKEND_READY port=|listening on 127\.0\.0\.1:)(\d+)"#
@@ -217,13 +240,28 @@ final class HermesGateway: NSObject {
                     waiters.forEach { $0.resume() }
                 }
             }
-            process.terminationHandler = { [weak self] _ in
+            process.terminationHandler = { [weak self, weak process] _ in
                 Task { @MainActor in
-                    guard self?.port == nil else { return }
-                    self?.backend = nil
-                    let waiters = self?.backendStartWaiters ?? []
-                    self?.backendStartWaiters.removeAll()
+                    guard let self, let process, self.backend === process else { return }
+                    let wasReady = self.port != nil
+                    self.backend = nil
+                    self.port = nil
+                    self.backendOutput = ""
+                    self.onConnectionChange?(false)
+                    let waiters = self.backendStartWaiters
+                    self.backendStartWaiters.removeAll()
                     waiters.forEach { $0.resume(throwing: GatewayError.backendUnavailable) }
+                    guard wasReady else { return }
+
+                    DebugLog.write("backend: process terminated unexpectedly")
+                    self.socket?.cancel(with: .goingAway, reason: nil)
+                    self.socket = nil
+                    self.urlSession?.invalidateAndCancel()
+                    self.urlSession = nil
+                    self.pending.values.forEach { $0.resume(throwing: GatewayError.disconnected) }
+                    self.pending.removeAll()
+                    self.timeoutTasks.values.forEach { $0.cancel() }
+                    self.timeoutTasks.removeAll()
                 }
             }
             do { try process.run() } catch {

@@ -21,6 +21,10 @@ let package = Package(
                     "-Xlinker", infoPlistPath
                 ])
             ]
+        ),
+        .testTarget(
+            name: "HermesAgentDockTests",
+            dependencies: ["HermesAgentDock"]
         )
     ]
 )

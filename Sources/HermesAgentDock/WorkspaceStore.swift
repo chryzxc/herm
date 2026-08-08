@@ -98,7 +98,9 @@ final class WorkspaceStore: ObservableObject {
     private var agentGateways: [UUID: HermesGateway] = [:]
 
     init() {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let support = supportRoot
             .appendingPathComponent("HermesWorkspace", isDirectory: true)
         fileURL = support.appendingPathComponent("workspace.json")
         load()
