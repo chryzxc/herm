@@ -665,6 +665,39 @@ private struct WorkspaceActivitySidebar: View {
                 )
             }
 
+            if !control.activeSessions.isEmpty || !control.processes.isEmpty {
+                sectionLabel("RUNNING WORK")
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(control.activeSessions) { session in
+                        HStack(spacing: 8) {
+                            Circle().fill(Color.scifiAccent).frame(width: 5, height: 5)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.title).font(.system(size: 10.5, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                                Text(session.preview ?? session.state.uppercased()).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                            Button("OPEN") {
+                                Task {
+                                    _ = try? await model.requestControl("session.activate", params: ["session_id": session.id])
+                                    model.requestComposerFocus()
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiAccent)
+                        }
+                    }
+                    ForEach(control.processes) { process in
+                        HStack(spacing: 8) {
+                            Image(systemName: "gearshape.2").font(.system(size: 10)).foregroundStyle(Color.scifiMuted)
+                            Text(process.name).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text(process.state.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                        }
+                    }
+                }
+            }
+
             if store.projectPath != nil {
                 sectionLabel("DEVELOPMENT CONTEXT")
                 repositoryContent

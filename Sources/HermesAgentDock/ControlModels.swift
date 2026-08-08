@@ -71,6 +71,37 @@ struct ReminderSummary: Identifiable, Codable, Equatable {
     let isOverdue: Bool
 }
 
+struct SessionSummary: Identifiable, Codable, Equatable {
+    let id: String
+    let title: String
+    let state: String
+    let preview: String?
+}
+
+struct AgentSummary: Identifiable, Codable, Equatable {
+    let id: String
+    let name: String
+    let state: String
+    let sessionID: String?
+}
+
+struct ProcessSummary: Identifiable, Codable, Equatable {
+    let id: String
+    let name: String
+    let state: String
+    let detail: String?
+}
+
+struct TodaySnapshot: Equatable {
+    var currentFocus: ControlReference?
+    var attention: [AttentionItem]
+    var dueReminders: [ReminderSummary]
+    var activeSessions: [SessionSummary]
+    var activeAgents: [AgentSummary]
+    var scheduledJobs: [CronSummary]
+    var developmentContext: RepositorySnapshot?
+}
+
 struct CronSummary: Identifiable, Codable, Equatable {
     let id: String
     let name: String

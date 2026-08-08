@@ -5,6 +5,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var attention: [AttentionItem] = []
     @Published private(set) var reminders: [ReminderSummary] = []
     @Published private(set) var cronJobs: [CronSummary] = []
+    @Published private(set) var activeSessions: [SessionSummary] = []
+    @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var capabilities: [CapabilityState] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var lastError: String?
@@ -72,6 +74,12 @@ final class ControlCenterModel: ObservableObject {
 
                 let cronResult = try await dockModel?.requestControl("cron.manage", params: ["action": "list"])
                 if let cronResult { cronJobs = Self.parseCronJobs(cronResult) }
+
+                let sessionResult = try await dockModel?.requestControl("session.active_list", params: [:])
+                if let sessionResult { activeSessions = Self.parseSessions(sessionResult) }
+
+                let processResult = try await dockModel?.requestControl("process.list", params: [:])
+                if let processResult { processes = Self.parseProcesses(processResult) }
 
                 if let dockModel {
                     capabilities = await capabilityService.probe(client: dockModel.controlRPCClient, remindersAvailable: remindersAvailable)
@@ -316,6 +324,32 @@ final class ControlCenterModel: ObservableObject {
                 enabled: (row["enabled"] as? Bool) ?? !(row["paused"] as? Bool ?? false),
                 nextRun: row["next_run"] as? String ?? row["nextRun"] as? String,
                 sessionID: row["session_id"] as? String ?? row["sessionID"] as? String
+            )
+        }
+    }
+
+    private static func parseSessions(_ result: [String: Any]) -> [SessionSummary] {
+        let rows = (result["sessions"] as? [[String: Any]]) ?? (result["active"] as? [[String: Any]]) ?? []
+        return rows.compactMap { row in
+            guard let id = row["id"] as? String else { return nil }
+            return SessionSummary(
+                id: id,
+                title: (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session",
+                state: (row["state"] as? String) ?? (row["status"] as? String) ?? "active",
+                preview: row["preview"] as? String ?? row["last_message"] as? String
+            )
+        }
+    }
+
+    private static func parseProcesses(_ result: [String: Any]) -> [ProcessSummary] {
+        let rows = (result["processes"] as? [[String: Any]]) ?? (result["items"] as? [[String: Any]]) ?? []
+        return rows.compactMap { row in
+            guard let id = (row["id"] as? String) ?? (row["pid"] as? String) else { return nil }
+            return ProcessSummary(
+                id: id,
+                name: (row["name"] as? String) ?? (row["command"] as? String) ?? "Hermes process",
+                state: (row["state"] as? String) ?? (row["status"] as? String) ?? "running",
+                detail: row["detail"] as? String ?? row["command"] as? String
             )
         }
     }
