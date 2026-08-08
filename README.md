@@ -28,6 +28,8 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Hermes Projects.** Projects reads the authoritative `projects.tree`
   projection from Hermes, showing active project context, repository counts,
   and grouped session previews without maintaining a second project database.
+  Selecting a project loads its grouped sessions through
+  `projects.project_sessions`; selecting a session activates it in Ask.
 - **Narrow-screen mode.** On displays too narrow for the split view, the Dock
   switches between Ask and Control as a single pane without horizontal clipping.
 - **Readable controls.** UI text uses a 10pt minimum for labels, metadata, and
@@ -43,6 +45,11 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Inbox presentation state.** Dismissed items remain dismissed locally, while
   snoozed items reappear automatically after one hour. Neither action mutates
   the Hermes or Apple source.
+- **Clarification responses.** Inbox clarification requests open a response
+  sheet and submit the entered text through Hermes `clarify.respond`. Approval,
+  clarification, and failure notifications open the exact attention item.
+- **Completion alerts.** Core provides an opt-in, locally persisted notification
+  for completed Hermes work while the Dock is hidden; it is disabled by default.
 - **Safe reminder completion.** Clicking a due reminder opens a confirmation
   before the Dock submits a transparent completion request through Hermes and
   the Apple Reminders skill.
