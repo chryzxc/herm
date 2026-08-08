@@ -84,6 +84,7 @@ final class ControlCenterModel: ObservableObject {
                     do {
                         reminders = try await remindersAdapter.today()
                         remindersAvailable = true
+                        reconcileReminderAttention()
                     } catch {
                         lastError = error.localizedDescription
                     }
@@ -128,6 +129,24 @@ final class ControlCenterModel: ObservableObject {
                 lastError = error.localizedDescription
             }
         }
+    }
+
+    func reminder(withID id: String) -> ReminderSummary? {
+        reminders.first(where: { $0.id == id })
+    }
+
+    private func reconcileReminderAttention() {
+        let currentIDs = Set(reminders.map(\.id))
+        for id in knownAttention.keys.filter({ $0.hasPrefix("reminder:") }) {
+            let reminderID = String(id.dropFirst("reminder:".count))
+            if !currentIDs.contains(reminderID) {
+                knownAttention.removeValue(forKey: id)
+            }
+        }
+        for reminder in reminders {
+            upsertAttention(Self.reminderAttention(for: reminder))
+        }
+        rebuildAttention()
     }
 
     func setCron(_ job: CronSummary, enabled: Bool) {
@@ -751,6 +770,20 @@ final class ControlCenterModel: ObservableObject {
             runs.append(CronRunSummary(id: String(columns[0]), status: String(columns[1]), jobID: jobID, source: source, claimedAt: claimedAt, error: nil))
         }
         return runs
+    }
+
+    static func reminderAttention(for reminder: ReminderSummary) -> AttentionItem {
+        let detail = [reminder.isOverdue ? "OVERDUE" : nil, reminder.list].compactMap { $0 }.joined(separator: "  ·  ")
+        return AttentionItem(
+            id: "reminder:\(reminder.id)",
+            reference: ControlReference(source: .appleReminder, sourceID: reminder.id),
+            kind: .reminder,
+            title: reminder.title,
+            detail: detail.isEmpty ? "Apple Reminder" : detail,
+            createdAt: reminder.dueDate ?? Date(),
+            state: .open,
+            actions: [.complete, .dismiss]
+        )
     }
 
     private static func shellQuote(_ value: String) -> String {

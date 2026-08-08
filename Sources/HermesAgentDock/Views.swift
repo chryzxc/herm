@@ -1013,25 +1013,6 @@ private struct WorkspaceActivitySidebar: View {
                     attentionItemRow(item, isSelected: selectedAttentionID == item.id)
                 }
             }
-            if !control.reminders.isEmpty {
-                sectionLabel("DUE REMINDERS  ·  \(control.reminders.count)")
-                ForEach(control.reminders) { reminder in
-                    Button {
-                        reminderForConfirmation = reminder
-                        isShowingReminderConfirmation = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Circle().fill(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent).frame(width: 6, height: 6)
-                            Text(reminder.title).font(.system(size: 10.5)).foregroundStyle(Color.scifiFg).lineLimit(2)
-                            Spacer(minLength: 4)
-                            Text(reminder.isOverdue ? "OVERDUE" : (reminder.list ?? "REMINDER"))
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiMuted)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
             if let error = control.lastError {
                 Text(error).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiWarning)
             }
@@ -1053,7 +1034,10 @@ private struct WorkspaceActivitySidebar: View {
             HStack(spacing: 12) {
                 ForEach(item.actions.filter { $0 != .dismiss }, id: \.self) { action in
                     Button(action.rawValue.uppercased()) {
-                        if action == .respond {
+                        if action == .complete, let reminder = control.reminder(withID: item.reference.sourceID) {
+                            reminderForConfirmation = reminder
+                            isShowingReminderConfirmation = true
+                        } else if action == .respond {
                             clarificationItem = item
                         } else {
                             control.respond(to: item, action: action)

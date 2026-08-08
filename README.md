@@ -58,7 +58,8 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   UI preferences, and cached metadata rather than duplicating those systems.
 - **Inbox presentation state.** Dismissed items remain dismissed locally, while
   snoozed items reappear automatically after one hour. Neither action mutates
-  the Hermes or Apple source.
+  the Hermes or Apple source. Due Apple Reminders are projected into the same
+  stable attention stream with `appleReminder:<id>` references.
 - **Clarification responses.** Inbox clarification requests open a response
   sheet and submit the entered text through Hermes `clarify.respond`. Approval,
   clarification, and failure notifications open the exact attention item.

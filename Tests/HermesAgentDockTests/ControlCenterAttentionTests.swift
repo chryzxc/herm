@@ -32,4 +32,14 @@ struct ControlCenterAttentionTests {
 
         #expect(model.attention.first?.detail == "delete the temporary export")
     }
+
+    @Test func reminderProjectionUsesStableAppleReference() {
+        let reminder = ReminderSummary(id: "rem-1", title: "Call back", list: "Personal", dueDate: Date(), isOverdue: true)
+        let item = ControlCenterModel.reminderAttention(for: reminder)
+
+        #expect(item.id == "reminder:rem-1")
+        #expect(item.reference == ControlReference(source: .appleReminder, sourceID: "rem-1"))
+        #expect(item.kind == .reminder)
+        #expect(item.actions.contains(.complete))
+    }
 }
