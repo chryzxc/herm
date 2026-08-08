@@ -306,6 +306,34 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    func updateKanbanTask(_ task: KanbanTaskSummary, action: KanbanTaskAction) {
+        guard let rpc else { return }
+        let taskID = Self.shellQuote(task.id)
+        let command: String
+        switch action {
+        case .complete:
+            command = "hermes kanban complete \(taskID) --summary 'Completed from Hermes Control'"
+        case .block:
+            command = "hermes kanban block \(taskID) 'Blocked from Hermes Control'"
+        case .unblock:
+            command = "hermes kanban unblock \(taskID) --reason 'Unblocked from Hermes Control'"
+        case .archive:
+            command = "hermes kanban archive \(taskID)"
+        }
+        Task {
+            do {
+                let result = try await rpc.shell(command)
+                guard AppleRemindersAdapter.shellResultSucceeded(result) else {
+                    lastError = (result["stderr"] as? String) ?? "Hermes Kanban could not update the task."
+                    return
+                }
+                refreshKanban()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
     func openProjectSession(_ session: SessionSummary) {
         guard let dockModel else { return }
         Task {

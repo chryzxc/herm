@@ -62,4 +62,11 @@ struct ControlCenterProjectTests {
         #expect(tasks.first?.status == "ready")
         #expect(tasks.first?.assignee == "operator")
     }
+
+    @Test func kanbanChangeRequestsHaveStableActionIdentity() {
+        let task = KanbanTaskSummary(id: "k1", title: "Task", status: "ready", detail: nil, priority: nil, assignee: nil)
+
+        #expect(KanbanChangeRequest(task: task, action: .complete).id == "complete:k1")
+        #expect(KanbanChangeRequest(task: task, action: .block).id == "block:k1")
+    }
 }

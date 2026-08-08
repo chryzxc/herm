@@ -440,6 +440,8 @@ private struct WorkspaceActivitySidebar: View {
     @State private var kanbanTitle = ""
     @State private var kanbanBody = ""
     @State private var isShowingKanbanConfirmation = false
+    @State private var kanbanChangeRequest: KanbanChangeRequest?
+    @State private var isShowingKanbanChangeConfirmation = false
     @State private var clarificationItem: AttentionItem?
     @State private var clarificationResponse = ""
 
@@ -575,6 +577,18 @@ private struct WorkspaceActivitySidebar: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Hermes will create this task in the authoritative Kanban board through its CLI.")
+        }
+        .confirmationDialog("Change Kanban Task?", isPresented: $isShowingKanbanChangeConfirmation) {
+            if let request = kanbanChangeRequest {
+                Button(request.action.rawValue.uppercased()) {
+                    control.updateKanbanTask(request.task, action: request.action)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let request = kanbanChangeRequest {
+                Text("Hermes will \(request.action.rawValue) ‘\(request.task.title)’ on the authoritative Kanban board.")
+            }
         }
         .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
             VStack(alignment: .leading, spacing: 14) {
@@ -861,6 +875,17 @@ private struct WorkspaceActivitySidebar: View {
                         if let detail = task.detail, !detail.isEmpty {
                             Text(detail).font(.system(size: 10)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
                         }
+                        HStack(spacing: 12) {
+                            if task.status.lowercased() == "done" {
+                                kanbanActionButton("ARCHIVE", task: task, action: .archive)
+                            } else if task.status.lowercased() == "blocked" || task.status.lowercased() == "scheduled" {
+                                kanbanActionButton("UNBLOCK", task: task, action: .unblock)
+                            } else {
+                                kanbanActionButton("COMPLETE", task: task, action: .complete)
+                                kanbanActionButton("BLOCK", task: task, action: .block)
+                            }
+                        }
+                        .padding(.top, 2)
                     }
                     .padding(11)
                     .background(Color.scifiSurface4)
@@ -872,6 +897,16 @@ private struct WorkspaceActivitySidebar: View {
                 .foregroundStyle(Color.scifiTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private func kanbanActionButton(_ label: String, task: KanbanTaskSummary, action: KanbanTaskAction) -> some View {
+        Button(label) {
+            kanbanChangeRequest = KanbanChangeRequest(task: task, action: action)
+            isShowingKanbanChangeConfirmation = true
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .foregroundStyle(action == .block || action == .archive ? Color.scifiWarning : Color.scifiAccent)
     }
 
     private var searchContent: some View {

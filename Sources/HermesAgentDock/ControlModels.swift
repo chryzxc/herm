@@ -118,6 +118,19 @@ struct KanbanTaskSummary: Identifiable, Equatable {
     let assignee: String?
 }
 
+enum KanbanTaskAction: String, CaseIterable {
+    case complete
+    case block
+    case unblock
+    case archive
+}
+
+struct KanbanChangeRequest: Identifiable {
+    let task: KanbanTaskSummary
+    let action: KanbanTaskAction
+    var id: String { "\(action.rawValue):\(task.id)" }
+}
+
 struct TodaySnapshot: Equatable {
     var currentFocus: ControlReference?
     var attention: [AttentionItem]
