@@ -451,7 +451,7 @@ private struct WorkspaceActivitySidebar: View {
         return formatter
     }()
 
-    var body: some View {
+    private var sidebarContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 1) {
@@ -500,12 +500,13 @@ private struct WorkspaceActivitySidebar: View {
                 .padding(16)
             }
         }
+    }
+
+    private var observedSidebar: some View {
+        sidebarContent
         .background(Color.scifiSurface)
         .environment(\.colorScheme, .dark)
-        .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder]) { result in
-            guard case .success(let url) = result else { return }
-            store.attachProject(at: url.path, toSessionID: model.sessionID)
-        }
+        .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder], onCompletion: handleRepositoryImport)
         .task(id: activeRepositoryPath) { await refreshRepository() }
         .task {
             control.bind(to: model)
@@ -513,6 +514,7 @@ private struct WorkspaceActivitySidebar: View {
         }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
+        .onChange(of: model.sessionID) { _, sessionID in control.focus(sessionID: sessionID) }
         .onChange(of: model.controlInboxRequest) { _, _ in
             selectedMode = .inbox
             selectedAttentionID = model.requestedAttentionID
@@ -521,6 +523,11 @@ private struct WorkspaceActivitySidebar: View {
             guard selectedMode == .search else { return }
             control.search(query)
         }
+
+    }
+
+    var body: some View {
+        observedSidebar
         .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
             if let reminder = reminderForConfirmation {
                 Button("Complete Reminder") { control.completeReminder(reminder) }
@@ -1064,42 +1071,49 @@ private struct WorkspaceActivitySidebar: View {
 
     private var nowContent: some View {
         VStack(alignment: .leading, spacing: 17) {
-            sectionLabel("CURRENT TASK")
-            if let task = currentTask {
+            sectionLabel("CURRENT FOCUS")
+            if let focus = control.currentFocus {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .top, spacing: 9) {
-                        Circle().fill(taskColor(task.status)).frame(width: 7, height: 7).padding(.top, 4)
+                        Circle().fill(Color.scifiAccent).frame(width: 7, height: 7).padding(.top, 4)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(task.title)
+                            Text(control.focusTitle(focus))
                                 .font(.system(size: 12.5, weight: .semibold))
                                 .foregroundStyle(Color.scifiFg)
                                 .lineLimit(3)
-                            Text(task.status.rawValue.uppercased())
+                            Text(control.focusDetail(focus))
                                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                                 .tracking(0.6)
-                                .foregroundStyle(taskColor(task.status))
+                                .foregroundStyle(Color.scifiAccent)
                         }
                         Spacer(minLength: 0)
                     }
                     HStack {
-                        Text("SESSION LINKED")
+                        Text("\(focus.source.rawValue.uppercased())  ·  AUTHORITATIVE")
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .tracking(0.55)
                             .foregroundStyle(Color.scifiTertiary)
                         Spacer()
-                        Button(task.status == .done ? "REOPEN" : "MARK DONE") {
-                            store.updateStatus(task.status == .done ? .inProgress : .done, for: task.id)
+                        if let task = currentTask {
+                            Button(task.status == .done ? "REOPEN" : "MARK DONE") {
+                                store.updateStatus(task.status == .done ? .inProgress : .done, for: task.id)
+                            }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiAccent)
                         }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                    }
+                    if let task = currentTask {
+                        Text("LOCAL DISPLAY  ·  \(task.status.rawValue.uppercased())")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(taskColor(task.status))
                     }
                 }
                 .padding(12)
                 .background(Color.scifiSurface4)
                 .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
             } else {
-                emptyState(icon: "scope", title: "No active task", detail: "Send a request and the Hermes session will become a durable workspace task.")
+                emptyState(icon: "scope", title: "No current focus", detail: "Open a Hermes session, project, or control item to make it your focus.")
             }
 
             sectionLabel("ATTENTION")
@@ -1364,6 +1378,11 @@ private struct WorkspaceActivitySidebar: View {
         isRefreshingRepository = true
         repository = await RepositoryService.inspect(path: path)
         isRefreshingRepository = false
+    }
+
+    private func handleRepositoryImport(_ result: Result<URL, Error>) {
+        guard case .success(let url) = result else { return }
+        store.attachProject(at: url.path, toSessionID: model.sessionID)
     }
 
     private var agentRoster: some View {

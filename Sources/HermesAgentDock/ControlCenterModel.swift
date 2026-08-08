@@ -10,6 +10,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var mcpServers: [MCPServerSummary] = []
     @Published private(set) var mcpInventoryAvailable = false
     @Published private(set) var activeSessions: [SessionSummary] = []
+    @Published private(set) var currentFocus: ControlReference?
     @Published private(set) var activeAgents: [AgentSummary] = []
     @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var projects: [ProjectSummary] = []
@@ -33,6 +34,18 @@ final class ControlCenterModel: ObservableObject {
     private let presentationDefaults = UserDefaults.standard
     private let presentationKey = "hermes.control.attention.presentation.v1"
     private let snoozeKey = "hermes.control.attention.snooze.v1"
+
+    var todaySnapshot: TodaySnapshot {
+        TodaySnapshot(
+            currentFocus: currentFocus,
+            attention: attention,
+            dueReminders: reminders,
+            activeSessions: activeSessions,
+            activeAgents: activeAgents,
+            scheduledJobs: cronJobs,
+            developmentContext: nil
+        )
+    }
 
     init() {
         let stored = presentationDefaults.dictionary(forKey: presentationKey) as? [String: String] ?? [:]
@@ -63,6 +76,7 @@ final class ControlCenterModel: ObservableObject {
         dockModel = model
         rpc = HermesControlRPC(client: model.controlRPCClient)
         remindersAdapter = AppleRemindersAdapter(client: model.controlRPCClient)
+        focus(sessionID: model.sessionID)
         if eventSubscription == nil {
             eventSubscription = model.eventRouter.subscribe { [weak self] type, params in
                 self?.ingestEvent(type, params: params)
@@ -100,6 +114,7 @@ final class ControlCenterModel: ObservableObject {
                 do {
                     let result = try await rpc.activeSessions()
                     activeSessions = Self.parseSessions(result)
+                    establishFocusIfNeeded()
                 } catch { lastError = error.localizedDescription }
 
                 do {
@@ -239,6 +254,7 @@ final class ControlCenterModel: ObservableObject {
             do {
                 guard let rpc else { return }
                 _ = try await rpc.activate(sessionID: sessionID)
+                focus(sessionID: sessionID)
                 dockModel.requestComposerFocus()
             } catch {
                 lastError = error.localizedDescription
@@ -248,6 +264,7 @@ final class ControlCenterModel: ObservableObject {
 
     func openProject(_ project: ProjectSummary) {
         guard rpc != nil else { return }
+        currentFocus = ControlReference(source: .hermesProject, sourceID: project.id, projectID: project.id)
         selectedProjectID = project.id
         projectSessions = []
         Task {
@@ -307,6 +324,7 @@ final class ControlCenterModel: ObservableObject {
             Task {
                 do {
                     _ = try await rpc.activate(sessionID: result.reference.sessionID ?? result.reference.sourceID)
+                    currentFocus = result.reference
                     dockModel?.requestComposerFocus()
                 } catch {
                     lastError = error.localizedDescription
@@ -407,6 +425,7 @@ final class ControlCenterModel: ObservableObject {
             do {
                 guard let rpc else { return }
                 _ = try await rpc.activate(sessionID: session.id)
+                focus(sessionID: session.id)
                 dockModel.requestComposerFocus()
             } catch {
                 lastError = error.localizedDescription
@@ -440,6 +459,7 @@ final class ControlCenterModel: ObservableObject {
                 case .open:
                     guard let rpc else { return }
                     _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
+                    currentFocus = reference
                     dockModel.requestComposerFocus()
                 default:
                     break
@@ -656,6 +676,44 @@ final class ControlCenterModel: ObservableObject {
         case .reminder: item.detail.localizedCaseInsensitiveContains("OVERDUE") ? 3 : 4
         case .completed: 5
         }
+    }
+
+    func focus(sessionID: String?) {
+        guard let sessionID, !sessionID.isEmpty else { return }
+        currentFocus = ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID)
+    }
+
+    func focusTitle(_ reference: ControlReference) -> String {
+        switch reference.source {
+        case .hermesProject:
+            return projects.first(where: { $0.id == reference.sourceID })?.name ?? "Hermes project"
+        case .appleReminder:
+            return reminders.first(where: { $0.id == reference.sourceID })?.title ?? "Apple Reminder"
+        default:
+            let sessionID = reference.sessionID ?? reference.sourceID
+            return activeSessions.first(where: { $0.id == sessionID })?.title
+                ?? dockModel?.currentSessionTitle
+                ?? "Hermes session"
+        }
+    }
+
+    func focusDetail(_ reference: ControlReference) -> String {
+        switch reference.source {
+        case .hermesProject:
+            return projects.first(where: { $0.id == reference.sourceID })?.preview ?? "Hermes project context"
+        case .appleReminder:
+            return reminders.first(where: { $0.id == reference.sourceID })?.list ?? "Apple Reminder"
+        default:
+            let sessionID = reference.sessionID ?? reference.sourceID
+            return activeSessions.first(where: { $0.id == sessionID })?.preview
+                ?? activeSessions.first(where: { $0.id == sessionID })?.state.uppercased()
+                ?? "HERMES SESSION"
+        }
+    }
+
+    private func establishFocusIfNeeded() {
+        guard currentFocus == nil, let session = activeSessions.first else { return }
+        focus(sessionID: session.id)
     }
 
     private static func parseCronJobs(_ result: [String: Any]) -> [CronSummary] {

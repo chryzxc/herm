@@ -97,4 +97,12 @@ struct ControlCenterProjectTests {
         #expect(servers.last?.tools == "2 selected")
         #expect(servers.last?.isEnabled == false)
     }
+
+    @Test func currentFocusFeedsTodaySnapshot() {
+        let model = ControlCenterModel()
+        model.focus(sessionID: "session-1")
+
+        #expect(model.todaySnapshot.currentFocus?.source == .hermesSession)
+        #expect(model.todaySnapshot.currentFocus?.sessionID == "session-1")
+    }
 }

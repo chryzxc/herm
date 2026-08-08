@@ -16,7 +16,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   failures, due Apple Reminders, active Hermes work, and scheduled jobs. Inbox
   groups actionable approvals, clarifications, failures, and completed work.
   Activity and Core expose live runtime information, capabilities, integrations,
-  health, and setup guidance.
+  health, and setup guidance. Current focus is an authoritative Hermes session
+  or most recently selected control reference; any local task completion label
+  is presentation metadata, not a second source of truth.
 - **Provider setup guidance.** Today renders setup cards for unavailable
   Reminders, Notes, Calendar, and Messaging providers instead of showing empty
   or invented content.
