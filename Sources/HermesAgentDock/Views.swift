@@ -492,6 +492,7 @@ private struct WorkspaceActivitySidebar: View {
         }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
+        .onChange(of: model.controlInboxRequest) { _, _ in selectedMode = .inbox }
         .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
             if let reminder = reminderForConfirmation {
                 Button("Complete Reminder") { control.completeReminder(reminder) }

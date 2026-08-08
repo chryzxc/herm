@@ -217,6 +217,7 @@ final class DockModel: ObservableObject {
     @Published private(set) var voiceState: HermesVoiceState = .inactive
     @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
     @Published private(set) var composerFocusRequest = 0
+    @Published private(set) var controlInboxRequest = 0
 
     private let gateway = HermesGateway()
     let eventRouter = HermesEventRouter()
@@ -474,6 +475,10 @@ final class DockModel: ObservableObject {
         composerFocusRequest &+= 1
     }
 
+    func requestControlInbox() {
+        controlInboxRequest &+= 1
+    }
+
     func markPopoverHidden() {
         isPopoverVisible = false
     }
@@ -659,14 +664,14 @@ final class DockModel: ObservableObject {
         case "approval.request":
             approvalText = (payload["command"] as? String) ?? (payload["description"] as? String) ?? "Hermes wants to perform an action."
             status = .needsApproval
-            notify(title: "Hermes needs approval", body: approvalText ?? "Hermes wants to perform an action.", identifier: "hermes-approval")
+            notify(title: "Hermes needs approval", body: approvalText ?? "Hermes wants to perform an action.", identifier: "approval:\(sessionID ?? "hermes")")
         case "error":
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
             let text = Self.isVisionUnsupportedError(raw) ? Self.visionUnsupportedNotice : raw
             messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
             status = .idle
             isSending = false
-            notify(title: "Hermes encountered an error", body: text, identifier: "hermes-error")
+            notify(title: "Hermes encountered an error", body: text, identifier: "failure:\(sessionID ?? "hermes")")
             hasUnreadResponse = !isPopoverVisible
 
         case "reasoning.start", "thinking":
@@ -757,6 +762,7 @@ final class DockModel: ObservableObject {
         content.title = title
         content.body = String(body.prefix(240))
         content.sound = .default
+        content.userInfo = ["attention_id": identifier]
         let request = UNNotificationRequest(identifier: "\(identifier)-\(UUID().uuidString)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }

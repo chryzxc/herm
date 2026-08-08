@@ -12,15 +12,23 @@ extension KeyboardShortcuts.Name {
 }
 
 @MainActor
-final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate {
+final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let model = DockModel()
     private var dockPanel: DockPanelController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         dockPanel = DockPanelController(model: model)
+        UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         KeyboardShortcuts.onKeyUp(for: .toggleHermesControl) { [weak self] in
             self?.dockPanel?.toggleFromShortcut()
+        }
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        await MainActor.run { [weak self] in
+            self?.model.requestControlInbox()
+            self?.dockPanel?.showFromNotification()
         }
     }
 }
@@ -117,6 +125,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     func toggleFromShortcut() {
         togglePanel()
+    }
+
+    func showFromNotification() {
+        if !panel.isVisible { show() }
     }
 
     private func show() {
