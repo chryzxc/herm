@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
@@ -1224,6 +1225,21 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
             .toggleStyle(.switch)
+            Divider().overlay(Color.scifiBorderLight)
+            sectionLabel("QUICK CAPTURE")
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Open Hermes Control")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(Color.scifiFg)
+                    Text("Global shortcut focuses Ask from any app.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+                Spacer()
+                KeyboardShortcuts.Recorder("", name: .toggleHermesControl)
+                    .frame(width: 120)
+            }
             Divider().overlay(Color.scifiBorderLight)
             HStack {
                 sectionLabel("HERMES CONFIGURATION")
