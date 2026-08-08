@@ -13,6 +13,26 @@ final class ControlCenterModel: ObservableObject {
     private var knownAttention: [String: AttentionItem] = [:]
     private var eventSubscription: UUID?
     private let capabilityService = HermesCapabilityService()
+    private let presentationDefaults = UserDefaults.standard
+    private let presentationKey = "hermes.control.attention.presentation.v1"
+
+    init() {
+        let stored = presentationDefaults.dictionary(forKey: presentationKey) as? [String: String] ?? [:]
+        for (id, rawState) in stored {
+            if let state = AttentionState(rawValue: rawState) {
+                knownAttention[id] = AttentionItem(
+                    id: id,
+                    reference: ControlReference(source: .hermesSession, sourceID: id),
+                    kind: .completed,
+                    title: "Previously reviewed item",
+                    detail: "This item will return if Hermes reports it again.",
+                    createdAt: Date.distantPast,
+                    state: state,
+                    actions: [.open]
+                )
+            }
+        }
+    }
 
     func bind(to model: DockModel) {
         if dockModel !== model, let eventSubscription {
@@ -91,6 +111,14 @@ final class ControlCenterModel: ObservableObject {
         guard let index = attention.firstIndex(where: { $0.id == id }) else { return }
         attention[index].state = .resolved
         knownAttention[id] = attention[index]
+        persistPresentationState()
+    }
+
+    func dismiss(_ id: String) {
+        guard let index = attention.firstIndex(where: { $0.id == id }) else { return }
+        attention[index].state = .dismissed
+        knownAttention[id] = attention[index]
+        persistPresentationState()
     }
 
     /// Converts the shared Hermes event stream into stable attention records.
@@ -176,6 +204,14 @@ final class ControlCenterModel: ObservableObject {
         } else {
             knownAttention[item.id] = item
         }
+    }
+
+    private func persistPresentationState() {
+        let values = knownAttention.reduce(into: [String: String]()) { result, entry in
+            guard entry.value.state == .dismissed || entry.value.state == .resolved else { return }
+            result[entry.key] = entry.value.state.rawValue
+        }
+        presentationDefaults.set(values, forKey: presentationKey)
     }
 
     func rebuildAttention() {

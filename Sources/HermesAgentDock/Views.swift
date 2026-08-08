@@ -559,7 +559,7 @@ private struct WorkspaceActivitySidebar: View {
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent)
                 }
-                Button("DISMISS") { control.markResolved(item.id) }
+                Button("DISMISS") { control.dismiss(item.id) }
                     .buttonStyle(.plain)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
