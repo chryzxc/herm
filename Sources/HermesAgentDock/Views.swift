@@ -428,6 +428,39 @@ private struct ConversationBottomPreferenceKey: PreferenceKey {
     }
 }
 
+private struct ConversationActivityRow: View {
+    @ObservedObject var model: DockModel
+
+    private var latestPipelineActivity: AgentActivityPresentation.PipelineActivity? {
+        AgentActivityPresentation.pipeline(
+            activities: model.agentActivities,
+            toolCalls: model.activeToolCalls,
+            subagents: model.activeSubagents
+        ).first
+    }
+
+    private var title: String {
+        AgentActivityPresentation.conversationTitle(
+            latestPipelineActivity: latestPipelineActivity,
+            recentEvents: model.recentEvents
+        )
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ThinkingDots()
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.scifiMuted)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct WorkspaceActivitySidebar: View {
     @ObservedObject var model: DockModel
     @ObservedObject var store: WorkspaceStore
@@ -4421,7 +4454,7 @@ struct DockPopover: View {
                         let msgList = model.messages
                         ForEach(msgList) { message in
                             let isLast = message.id == msgList.last?.id
-                            if model.status == .working && message.role == .hermes && isLast {
+                            if isConversationActivityVisible && message.role == .hermes && isLast {
                                 activityView.id("activity")
                             }
                             messageRow(message)
@@ -4431,7 +4464,7 @@ struct DockPopover: View {
                                     removal: .opacity
                                 ))
                         }
-                        if model.status == .working && model.messages.last?.role != .hermes {
+                        if isConversationActivityVisible && model.messages.last?.role != .hermes {
                             activityView
                                 .id("activity")
                         }
@@ -4465,21 +4498,21 @@ struct DockPopover: View {
                     }
                 }
                 .onChange(of: model.activeToolCalls) { _, _ in
-                    if model.status == .working && isConversationAtBottom {
+                    if isConversationActivityVisible && isConversationAtBottom {
                         withAnimation(.scifiEase(duration: 0.2)) {
                             proxy.scrollTo("conversationBottom", anchor: .bottom)
                         }
                     }
                 }
                 .onChange(of: model.reasoningState) { _, _ in
-                    if model.status == .working && isConversationAtBottom {
+                    if isConversationActivityVisible && isConversationAtBottom {
                         withAnimation(.scifiEase(duration: 0.2)) {
                             proxy.scrollTo("conversationBottom", anchor: .bottom)
                         }
                     }
                 }
                 .onChange(of: model.recentEvents.last) { _, _ in
-                    if model.status == .working,
+                    if isConversationActivityVisible,
                        let event = model.recentEvents.last,
                        isAutoScrollEvent(event.type),
                        isConversationAtBottom {
@@ -4493,61 +4526,21 @@ struct DockPopover: View {
     }
 
     private var activityView: some View {
-        HStack(spacing: 6) {
-            ThinkingDots()
-            Text(currentActivityStatus)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.scifiMuted)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        ConversationActivityRow(model: model)
     }
 
     /// The activity row deliberately represents one current state. Showing a
     /// history of streaming events here pushes the conversation out of view.
-    private var currentActivityStatus: String {
-        let pipelineActivity = AgentActivityPresentation.pipeline(
+    private var conversationPipelineActivities: [AgentActivityPresentation.PipelineActivity] {
+        AgentActivityPresentation.pipeline(
             activities: model.agentActivities,
             toolCalls: model.activeToolCalls,
             subagents: model.activeSubagents
-        ).first
-        let event = model.recentEvents.last(where: isConversationStatusEvent)
-        let eventTimestamp = event?.timestamp ?? .distantPast
-
-        if let pipelineActivity,
-           pipelineActivity.timestamp >= eventTimestamp {
-            return pipelineActivity.task
-        }
-
-        switch event?.type.lowercased() {
-        case "reasoning.delta", "thinking.delta":
-            return "Thinking"
-        case "message.delta", "message.interim":
-            return "Responding"
-        case "reasoning.start", "thinking":
-            return "Preparing reasoning"
-        case "reasoning.complete", "thinking.stop", "thinking.complete":
-            return pipelineActivity?.task ?? "Preparing next step"
-        case "message.start":
-            return "Starting response"
-        default:
-            return pipelineActivity?.task ?? "Working"
-        }
+        )
     }
 
-    private func isConversationStatusEvent(_ event: AgentEvent) -> Bool {
-        let type = event.type.lowercased()
-        return type.hasPrefix("tool.") ||
-            type == "tool_use" ||
-            type == "tool_result" ||
-            type.contains("reason") ||
-            type.contains("think") ||
-            type.hasPrefix("message.") ||
-            type.hasPrefix("approval.") ||
-            type == "error"
+    private var isConversationActivityVisible: Bool {
+        model.status == .working || conversationPipelineActivities.contains(where: \.isActive)
     }
 
     private func activityLabel(for rawValue: String) -> String {

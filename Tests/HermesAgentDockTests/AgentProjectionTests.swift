@@ -157,6 +157,76 @@ struct AgentProjectionTests {
         #expect(!title.contains("not-for-display"))
     }
 
+    @Test func conversationUsesTheLatestPipelineTaskInsteadOfWorkingFallback() {
+        let pipeline = AgentActivityPresentation.PipelineActivity(
+            id: "tool:1",
+            timestamp: Date(timeIntervalSince1970: 20),
+            status: "Complete",
+            task: "Run gh pr checks 85",
+            agent: "Hermes",
+            detail: nil,
+            diffPreview: nil
+        )
+        let unrelatedEvent = AgentEvent(
+            id: UUID(),
+            type: "sessions.changed",
+            detail: "",
+            timestamp: Date(timeIntervalSince1970: 30)
+        )
+
+        #expect(AgentActivityPresentation.conversationTitle(
+            latestPipelineActivity: pipeline,
+            recentEvents: [unrelatedEvent]
+        ) == "Run gh pr checks 85")
+    }
+
+    @Test func onlyANewerReasoningDeltaOverridesThePipelineTask() {
+        let pipeline = AgentActivityPresentation.PipelineActivity(
+            id: "tool:1",
+            timestamp: Date(timeIntervalSince1970: 20),
+            status: "Complete",
+            task: "Run git status --short",
+            agent: "Hermes",
+            detail: nil,
+            diffPreview: nil
+        )
+        let reasoningDelta = AgentEvent(
+            id: UUID(),
+            type: "reasoning.delta",
+            detail: "",
+            timestamp: Date(timeIntervalSince1970: 30)
+        )
+
+        #expect(AgentActivityPresentation.conversationTitle(
+            latestPipelineActivity: pipeline,
+            recentEvents: [reasoningDelta]
+        ) == "Thinking")
+    }
+
+    @Test func runningPipelineActivityRemainsVisibleWhenConversationStatusIsIdle() {
+        let running = AgentActivityPresentation.PipelineActivity(
+            id: "tool:1",
+            timestamp: Date(),
+            status: "Running",
+            task: "Run npm install --package-lock-only",
+            agent: "Hermes",
+            detail: nil,
+            diffPreview: nil
+        )
+        let complete = AgentActivityPresentation.PipelineActivity(
+            id: "tool:2",
+            timestamp: Date(),
+            status: "Complete",
+            task: "Run npm test",
+            agent: "Hermes",
+            detail: nil,
+            diffPreview: nil
+        )
+
+        #expect(running.isActive)
+        #expect(!complete.isActive)
+    }
+
     @Test func extractsOnlyAvailableDiffDataForMiniPreview() {
         let inline = DockModel.diffPreview(from: [
             "inline_diff": "\u{001B}[32m+added line\u{001B}[0m\n-removed line"

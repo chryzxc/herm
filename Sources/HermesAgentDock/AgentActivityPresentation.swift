@@ -17,6 +17,14 @@ enum AgentActivityPresentation {
         let agent: String
         let detail: String?
         let diffPreview: String?
+
+        var isActive: Bool {
+            let normalized = status
+                .lowercased()
+                .replacingOccurrences(of: "-", with: "_")
+                .replacingOccurrences(of: " ", with: "_")
+            return ["running", "in_progress", "inprogress", "pending", "queued"].contains(normalized)
+        }
     }
 
     static func phase(for eventKind: String, isActive: Bool = true) -> AgentActivityPhase {
@@ -97,6 +105,50 @@ enum AgentActivityPresentation {
             )
         }
         .sorted { $0.timestamp > $1.timestamp }
+    }
+
+    static func conversationTitle(
+        latestPipelineActivity: PipelineActivity?,
+        recentEvents: [AgentEvent]
+    ) -> String {
+        let latestStatusEvent = recentEvents.last(where: isConversationStatusEvent)
+        let pipelineTimestamp = latestPipelineActivity?.timestamp ?? .distantPast
+
+        if let latestStatusEvent,
+           latestStatusEvent.timestamp > pipelineTimestamp,
+           ["reasoning.delta", "thinking.delta"].contains(latestStatusEvent.type.lowercased()) {
+            return "Thinking"
+        }
+
+        if let task = latestPipelineActivity?.task.trimmingCharacters(in: .whitespacesAndNewlines),
+           !task.isEmpty {
+            return task
+        }
+
+        switch latestStatusEvent?.type.lowercased() {
+        case "reasoning.delta", "thinking.delta":
+            return "Thinking"
+        case "message.delta", "message.interim":
+            return "Responding"
+        case "reasoning.start", "thinking":
+            return "Preparing reasoning"
+        case "reasoning.complete", "thinking.stop", "thinking.complete":
+            return "Preparing next step"
+        default:
+            return "Starting response"
+        }
+    }
+
+    private static func isConversationStatusEvent(_ event: AgentEvent) -> Bool {
+        let type = event.type.lowercased()
+        return type.hasPrefix("tool.") ||
+            type == "tool_use" ||
+            type == "tool_result" ||
+            type.contains("reason") ||
+            type.contains("think") ||
+            type.hasPrefix("message.") ||
+            type.hasPrefix("approval.") ||
+            type == "error"
     }
 
     static func toolActivityTitle(name: String, context: String) -> String {
