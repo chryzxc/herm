@@ -4,6 +4,39 @@ import Testing
 
 @MainActor
 struct ControlCenterAttentionTests {
+    @Test func restoredCompletedItemTargetsItsSession() {
+        let reference = ControlCenterModel.restoredAttentionReference(for: "completed:session-42")
+
+        #expect(reference.source == .hermesSession)
+        #expect(reference.sourceID == "session-42")
+        #expect(reference.sessionID == "session-42")
+    }
+
+    @Test func restoredSpecializedItemsKeepTheirSource() {
+        let approval = ControlCenterModel.restoredAttentionReference(for: "approval:session-approval")
+        let reminder = ControlCenterModel.restoredAttentionReference(for: "reminder:reminder-1")
+
+        #expect(approval.source == .hermesApproval)
+        #expect(approval.sessionID == "session-approval")
+        #expect(reminder.source == .appleReminder)
+        #expect(reminder.sourceID == "reminder-1")
+    }
+
+    @Test func approvalEventsExposeActionTitleAndDetails() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("approval.request", params: [
+            "session_id": "session-approval-title",
+            "payload": [
+                "title": "Review repository activity",
+                "command": "gh api repos/example/project/events"
+            ]
+        ])
+
+        #expect(model.attention.first?.title == "Review repository activity")
+        #expect(model.attention.first?.detail == "gh api repos/example/project/events")
+    }
+
     @Test func clarificationEventsExposeAResponseAction() {
         let model = ControlCenterModel()
 

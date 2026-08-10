@@ -80,4 +80,16 @@ struct HermesControlTransportTests {
         #expect(client.calls.last?.method == "reload.mcp")
         #expect(client.calls.last?.params["confirm"] as? Bool == true)
     }
+
+    @Test func sessionScopedCockpitAndProcessRPCsForwardSessionIDs() async throws {
+        let client = RecordingRPCClient()
+        let rpc = HermesControlRPC(client: client)
+
+        _ = try await rpc.sessionUsage(sessionID: "session-1")
+        _ = try await rpc.sessionContextBreakdown(sessionID: "session-1")
+        _ = try await rpc.processes(sessionID: "session-1")
+
+        #expect(client.calls.map(\.method) == ["session.usage", "session.context_breakdown", "process.list"])
+        #expect(client.calls.allSatisfy { $0.params["session_id"] as? String == "session-1" })
+    }
 }

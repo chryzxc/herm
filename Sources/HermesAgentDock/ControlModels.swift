@@ -1,5 +1,151 @@
 import Foundation
 
+@MainActor
+enum HumanDateFormatting {
+    private static let iso8601 = ISO8601DateFormatter()
+    private static let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    static let dateAndTime: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        formatter.locale = .current
+        return formatter
+    }()
+
+    static let timeOnly: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        formatter.locale = .current
+        return formatter
+    }()
+
+    static func dateAndTime(_ date: Date) -> String {
+        dateAndTime.string(from: date)
+    }
+
+    static func timeOnly(_ date: Date) -> String {
+        timeOnly.string(from: date)
+    }
+
+    static func dateAndTime(_ rawValue: String) -> String {
+        guard let date = iso8601WithFractionalSeconds.date(from: rawValue) ?? iso8601.date(from: rawValue) else {
+            return rawValue
+        }
+        return dateAndTime(date)
+    }
+}
+
+@MainActor
+enum CronScheduleFormatting {
+    static func humanReadable(_ expression: String) -> String {
+        let fields = expression.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        guard fields.count == 5 else { return "Custom schedule" }
+
+        let minute = fields[0]
+        let hour = fields[1]
+        let dayOfMonth = fields[2]
+        let month = fields[3]
+        let dayOfWeek = fields[4]
+
+        if minute.hasPrefix("*/"), hour == "*", dayOfMonth == "*", month == "*", dayOfWeek == "*",
+           let interval = Int(minute.dropFirst(2)), interval > 0 {
+            return interval == 1 ? "Every minute" : "Every \(interval) minutes"
+        }
+        if hour.hasPrefix("*/"), dayOfMonth == "*", month == "*", dayOfWeek == "*",
+           let interval = Int(hour.dropFirst(2)), let minuteValue = Int(minute), interval > 0,
+           (0...59).contains(minuteValue) {
+            let time = clockTime(hour: 0, minute: minuteValue)
+            return interval == 1 ? "Every hour at \(time)" : "Every \(interval) hours at \(time)"
+        }
+
+        guard let hourValue = Int(hour), let minuteValue = Int(minute),
+              (0...23).contains(hourValue), (0...59).contains(minuteValue) else {
+            return "Custom schedule"
+        }
+        let time = clockTime(hour: hourValue, minute: minuteValue)
+        if dayOfMonth == "*", month == "*", dayOfWeek == "*" { return "Every day at \(time)" }
+        if dayOfMonth == "*", month == "*", dayOfWeek == "1-5" { return "Weekdays at \(time)" }
+        if dayOfMonth == "*", month == "*", let weekday = weekdayName(dayOfWeek) {
+            return "Every \(weekday) at \(time)"
+        }
+        if dayOfMonth != "*", month == "*", dayOfWeek == "*" {
+            return "Day \(dayOfMonth) of every month at \(time)"
+        }
+        return "Custom schedule at \(time)"
+    }
+
+    private static func clockTime(hour: Int, minute: Int) -> String {
+        let normalizedHour = hour % 24
+        let displayHour = normalizedHour % 12 == 0 ? 12 : normalizedHour % 12
+        let suffix = normalizedHour >= 12 ? "PM" : "AM"
+        return String(format: "%d:%02d %@", displayHour, minute, suffix)
+    }
+
+    private static func weekdayName(_ value: String) -> String? {
+        switch value {
+        case "0", "7": "Sunday"
+        case "1": "Monday"
+        case "2": "Tuesday"
+        case "3": "Wednesday"
+        case "4": "Thursday"
+        case "5": "Friday"
+        case "6": "Saturday"
+        default: nil
+        }
+    }
+}
+
+enum CapabilitySource: String, Codable, Equatable {
+    case gateway
+    case cli
+    case local
+    case external
+}
+
+enum CapabilityAccess: String, Codable, Equatable {
+    case readOnly
+    case confirmedMutation
+    case externalSetup
+}
+
+enum CapabilityAvailability: String, Codable, Equatable {
+    case available
+    case unsupported
+    case unavailable
+}
+
+struct ApprovalPresentation: Equatable {
+    let title: String
+    let detail: String
+
+    static func from(payload: [String: Any]) -> ApprovalPresentation {
+        let command = stringValue(in: payload, keys: ["command", "cmd"])
+        let detail = stringValue(in: payload, keys: ["description", "details", "message", "reason"])
+            ?? command
+            ?? "Hermes wants to perform an action."
+
+        let title = stringValue(in: payload, keys: ["title", "approval_title", "action_title"])
+            ?? (command != nil ? "Run command" : "Review requested action")
+
+        return ApprovalPresentation(title: title, detail: detail)
+    }
+
+    private static func stringValue(in payload: [String: Any], keys: [String]) -> String? {
+        for key in keys {
+            guard let value = payload[key] as? String else { continue }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
+    }
+}
+
 enum ControlSource: String, Codable, Hashable {
     case hermesSession
     case hermesApproval
@@ -111,11 +257,141 @@ struct ControlSearchResult: Identifiable, Equatable {
 
 struct KanbanTaskSummary: Identifiable, Equatable {
     let id: String
+    let boardSlug: String?
     let title: String
     let status: String
     let detail: String?
     let priority: String?
     let assignee: String?
+
+    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?) {
+        self.id = id
+        self.boardSlug = boardSlug
+        self.title = title
+        self.status = status
+        self.detail = detail
+        self.priority = priority
+        self.assignee = assignee
+    }
+}
+
+struct KanbanRunSummary: Identifiable, Equatable {
+    let id: String
+    let boardSlug: String?
+    let status: String
+    let outcome: String?
+    let profile: String?
+    let summary: String?
+    let elapsed: String?
+
+    init(id: String, boardSlug: String? = nil, status: String, outcome: String?, profile: String?, summary: String?, elapsed: String?) {
+        self.id = id
+        self.boardSlug = boardSlug
+        self.status = status
+        self.outcome = outcome
+        self.profile = profile
+        self.summary = summary
+        self.elapsed = elapsed
+    }
+}
+
+struct KanbanTaskDetail: Identifiable, Equatable {
+    let id: String
+    let boardSlug: String?
+    let title: String
+    let body: String?
+    let status: String
+    let priority: String?
+    let assignee: String?
+    let runs: [KanbanRunSummary]
+
+    init(id: String, boardSlug: String? = nil, title: String, body: String?, status: String, priority: String?, assignee: String?, runs: [KanbanRunSummary]) {
+        self.id = id
+        self.boardSlug = boardSlug
+        self.title = title
+        self.body = body
+        self.status = status
+        self.priority = priority
+        self.assignee = assignee
+        self.runs = runs
+    }
+}
+
+struct KanbanStatsSummary: Equatable {
+    let counts: [String: Int]
+}
+
+struct KanbanBoardSummary: Identifiable, Equatable {
+    let slug: String
+    let name: String
+    let description: String?
+    let isCurrent: Bool
+    let archived: Bool
+    let total: Int
+    let counts: [String: Int]
+
+    var id: String { slug }
+}
+
+/// A read-only projection of Hermes' Kanban list flags. Hermes remains the
+/// canonical owner of filtering and ordering; the Dock only forwards options.
+struct KanbanListFilter: Equatable {
+    var status: String?
+    var assignee: String?
+    var mine = false
+    var sessionID: String?
+    var includeArchived = false
+    var sort: String?
+}
+
+struct HermesJourneyNode: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let kind: String
+    let category: String?
+    let state: String?
+    let useCount: Int?
+}
+
+struct HermesReadOnlyStatus: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let detail: String
+    let isAvailable: Bool
+}
+
+struct SessionUsageSummary: Equatable {
+    let calls: Int
+    let inputTokens: Int
+    let outputTokens: Int
+    let totalTokens: Int
+    let contextUsed: Int?
+    let contextMax: Int?
+    let contextPercent: Double?
+    let model: String?
+}
+
+struct SessionContextCategory: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let tokens: Int
+    let percent: Double?
+}
+
+struct SessionContextSummary: Equatable {
+    let categories: [SessionContextCategory]
+    let contextUsed: Int
+    let contextMax: Int
+    let contextPercent: Double
+    let estimatedTotal: Int
+    let model: String?
+}
+
+struct ProjectionRefreshState: Equatable {
+    var lastSuccess: Date?
+    var error: String?
+    var isStale: Bool
+    var isRefreshing: Bool
 }
 
 enum KanbanTaskAction: String, CaseIterable {
@@ -123,6 +399,27 @@ enum KanbanTaskAction: String, CaseIterable {
     case block
     case unblock
     case archive
+}
+
+enum KanbanMutationKind: String, CaseIterable, Identifiable {
+    case comment
+    case schedule
+    case assign
+    case reassign
+    case promote
+    case reclaim
+
+    var id: String { rawValue }
+    var title: String { rawValue.replacingOccurrences(of: "_", with: " ").uppercased() }
+    var capabilityID: String { "kanban.\(rawValue)" }
+}
+
+struct KanbanMutationRequest: Identifiable {
+    let task: KanbanTaskSummary
+    let kind: KanbanMutationKind
+    let value: String
+    let reclaimFirst: Bool
+    var id: String { "\(kind.rawValue):\(task.id)" }
 }
 
 struct KanbanChangeRequest: Identifiable {
@@ -148,14 +445,66 @@ struct CronSummary: Identifiable, Codable, Equatable {
     let enabled: Bool
     let nextRun: String?
     let sessionID: String?
+    let delivery: String?
+    let prompt: String?
+    let report: String?
+    let editableFields: Set<CronEditField>
 
-    init(id: String, name: String, schedule: String, enabled: Bool, nextRun: String?, sessionID: String? = nil) {
+    init(id: String, name: String, schedule: String, enabled: Bool, nextRun: String?, sessionID: String? = nil, delivery: String? = nil, prompt: String? = nil, report: String? = nil, editableFields: Set<CronEditField> = []) {
         self.id = id
         self.name = name
         self.schedule = schedule
         self.enabled = enabled
         self.nextRun = nextRun
         self.sessionID = sessionID
+        self.delivery = delivery
+        self.prompt = prompt
+        self.report = report
+        self.editableFields = editableFields
+    }
+}
+
+enum CronEditField: String, CaseIterable, Hashable, Identifiable, Codable {
+    case name
+    case schedule
+    case prompt
+    case deliver
+    case workdir
+    case model
+    case provider
+
+    var id: String { rawValue }
+    var flag: String {
+        switch self {
+        case .name: "--name"
+        case .schedule: "--schedule"
+        case .prompt: "--prompt"
+        case .deliver: "--deliver"
+        case .workdir: "--workdir"
+        case .model: "--model"
+        case .provider: "--provider"
+        }
+    }
+    var title: String { rawValue.uppercased() }
+}
+
+struct CronEditDraft: Equatable {
+    var name: String
+    var schedule: String
+    var prompt: String
+
+    init(job: CronSummary) {
+        name = job.name
+        schedule = job.schedule
+        prompt = job.prompt ?? ""
+    }
+
+    func changes(comparedTo job: CronSummary) -> [CronEditField: String] {
+        var result: [CronEditField: String] = [:]
+        if name != job.name { result[.name] = name }
+        if schedule != job.schedule { result[.schedule] = schedule }
+        if prompt != (job.prompt ?? "") { result[.prompt] = prompt }
+        return result
     }
 }
 
@@ -189,15 +538,69 @@ struct CapabilityState: Identifiable, Equatable {
     let isAvailable: Bool
     let recovery: String?
     let recoveryCommand: String?
+    let source: CapabilitySource
+    let access: CapabilityAccess
+    let availability: CapabilityAvailability
 
-    init(id: String, title: String, detail: String, isAvailable: Bool, recovery: String?, recoveryCommand: String? = nil) {
+    init(
+        id: String,
+        title: String,
+        detail: String,
+        isAvailable: Bool,
+        recovery: String?,
+        recoveryCommand: String? = nil,
+        source: CapabilitySource = .gateway,
+        access: CapabilityAccess = .readOnly,
+        availability: CapabilityAvailability? = nil
+    ) {
         self.id = id
         self.title = title
         self.detail = detail
         self.isAvailable = isAvailable
         self.recovery = recovery
         self.recoveryCommand = recoveryCommand
+        self.source = source
+        self.access = access
+        self.availability = availability ?? (isAvailable ? .available : .unsupported)
     }
+}
+
+struct CapabilitySnapshot: Equatable {
+    let states: [CapabilityState]
+    let generatedAt: Date
+
+    func state(for id: String) -> CapabilityState? {
+        states.first { $0.id == id }
+    }
+}
+
+struct HermesDiagnostic: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let detail: String
+    let isAvailable: Bool
+}
+
+struct KanbanDiagnosticSummary: Identifiable, Equatable {
+    let id: String
+    let severity: String
+    let title: String
+    let detail: String
+    let taskID: String?
+}
+
+struct KanbanAttachmentSummary: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let kind: String?
+    let sizeBytes: Int?
+}
+
+struct PromptBudgetSummary: Equatable {
+    let totalTokens: Int
+    let tokenLimit: Int?
+    let percent: Double?
+    let model: String?
 }
 
 enum ControlTab: String, CaseIterable, Identifiable {
@@ -211,6 +614,13 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case core = "Core"
 
     var id: String { rawValue }
+    var tabLabel: String {
+        switch self {
+        case .automations: "Automate"
+        default: rawValue
+        }
+    }
+
     var icon: String {
         switch self {
         case .today: "sun.max"
@@ -221,6 +631,30 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .search: "magnifyingglass"
         case .kanban: "rectangle.3.group"
         case .core: "cpu"
+        }
+    }
+}
+
+enum InboxFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case needsResponse = "Needs response"
+    case approvals = "Approvals"
+    case clarifications = "Clarifications"
+    case failures = "Failures"
+    case reminders = "Reminders"
+    case completed = "Completed"
+
+    var id: String { rawValue }
+
+    func includes(_ item: AttentionItem) -> Bool {
+        switch self {
+        case .all: true
+        case .needsResponse: item.kind == .approval || item.kind == .clarification
+        case .approvals: item.kind == .approval
+        case .clarifications: item.kind == .clarification
+        case .failures: item.kind == .failure
+        case .reminders: item.kind == .reminder
+        case .completed: item.kind == .completed
         }
     }
 }
