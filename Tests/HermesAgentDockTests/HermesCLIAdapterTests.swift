@@ -57,6 +57,16 @@ struct HermesCLIAdapterTests {
         _ = try await adapter.kanbanList(boardSlug: "client-board")
         #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'list' '--json'")
     }
+    @Test func kanbanDiagnosticsAndAttachmentsForwardBoardScope() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.kanbanDiagnostics(boardSlug: "client-board", severity: "error", taskID: "task-1")
+        #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'diagnostics' '--json' '--severity' 'error' '--task' 'task-1'")
+
+        _ = try await adapter.kanbanAttachments(boardSlug: "client-board", taskID: "task-1")
+        #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'attachments' '--json' 'task-1'")
+    }
 }
 
 @MainActor

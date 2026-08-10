@@ -3,6 +3,14 @@ import Testing
 @testable import HermesAgentDock
 
 struct ControlTabBadgeStateTests {
+    @Test func keepsDailyWorkInThePrimaryNavigationAndGroupsSupportingViews() {
+        #expect(ControlTab.primaryNavigation == [.today, .inbox, .kanban, .activity])
+        #expect(ControlTab.reviewNavigation == [.changes, .verification])
+        #expect(ControlTab.workspaceNavigation == [.projects, .repositories])
+        #expect(ControlTab.toolsNavigation == [.automations, .search, .core])
+        #expect(Set(ControlTab.primaryNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
+    }
+
     @Test func surfacesUrgentAttentionSeparatelyFromTheFullInbox() {
         let attention = [
             item(id: "approval", kind: .approval),

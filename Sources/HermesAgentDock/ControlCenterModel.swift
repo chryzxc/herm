@@ -13,6 +13,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var activeSessions: [SessionSummary] = []
     @Published private(set) var currentFocus: ControlReference?
     @Published private(set) var activeAgents: [AgentSummary] = []
+    @Published private(set) var delegationPaused = false
     @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var projects: [ProjectSummary] = []
     @Published private(set) var searchResults: [ControlSearchResult] = []
@@ -32,6 +33,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var kanbanDiagnostics: [KanbanDiagnosticSummary] = []
     @Published private(set) var kanbanAttachments: [KanbanAttachmentSummary] = []
     @Published private(set) var promptBudget: PromptBudgetSummary?
+    @Published private(set) var projectFacts: ProjectFactsSummary?
+    @Published private(set) var verification: VerificationSummary?
     @Published private(set) var developmentContext: RepositorySnapshot?
     @Published private(set) var isLoadingKanbanDetail = false
     @Published private(set) var isCreatingKanbanTask = false
@@ -54,10 +57,17 @@ final class ControlCenterModel: ObservableObject {
     private var kanbanStatsGeneration = UUID()
     private var kanbanAssigneesGeneration = UUID()
     private var kanbanDetailGeneration = UUID()
+    private var kanbanDiagnosticsGeneration = UUID()
+    private var kanbanAttachmentsGeneration = UUID()
+    private var promptBudgetGeneration = UUID()
+    private var projectFactsGeneration = UUID()
+    private var verificationGeneration = UUID()
     private var projectSessionsGeneration = UUID()
     private var cronRunsGeneration = UUID()
     private var mcpInventoryGeneration = UUID()
     private var journeyGeneration = UUID()
+    private var sessionCockpitGeneration = UUID()
+    private var sessionCockpitSessionID: String?
     private var knownAttention: [String: AttentionItem] = [:]
     private var eventSubscription: UUID?
     private let capabilityService = HermesCapabilityService()
@@ -87,6 +97,7 @@ final class ControlCenterModel: ObservableObject {
     /// only this rendered snapshot for its Today projection.
     func setDevelopmentContextProjection(_ snapshot: RepositorySnapshot?) {
         developmentContext = snapshot
+        refreshVerification()
     }
 
     func isActionPending(_ id: String) -> Bool {
@@ -242,7 +253,11 @@ final class ControlCenterModel: ObservableObject {
                 let sessionID = dockModel?.sessionID ?? ""
                 do {
                     let result = try await rpc.cron(action: "list")
-                    cronJobs = Self.parseCronJobs(result)
+                    var jobs = Self.parseCronJobs(result)
+                    if let sessions = try? await rpc.sessions(limit: 200) {
+                        jobs = Self.attachLatestCronSessions(to: jobs, from: sessions)
+                    }
+                    cronJobs = jobs
                     recordProjectionSuccess("cron.jobs")
                 } catch {
                     let message = error.localizedDescription
@@ -264,6 +279,7 @@ final class ControlCenterModel: ObservableObject {
                 do {
                     let result = try await rpc.delegationStatus()
                     activeAgents = Self.parseAgents(result)
+                    delegationPaused = result["paused"] as? Bool ?? delegationPaused
                     recordProjectionSuccess("agents")
                 } catch {
                     let message = error.localizedDescription
@@ -311,6 +327,8 @@ final class ControlCenterModel: ObservableObject {
                     refreshReadOnlyHealth()
                 }
                 refreshSessionCockpit()
+                refreshPromptBudget()
+                refreshVerification()
                 recordProjectionSuccess("core")
             }
         }
@@ -523,16 +541,42 @@ final class ControlCenterModel: ObservableObject {
 
     func openCronSession(_ job: CronSummary) {
         guard let sessionID = job.sessionID, let dockModel else { return }
-        Task {
-            do {
-                guard let rpc else { return }
-                _ = try await rpc.activate(sessionID: sessionID)
-                focus(sessionID: sessionID)
-                dockModel.requestComposerFocus()
-            } catch {
-                lastError = error.localizedDescription
-            }
+        dockModel.resumeSession(HermesSession(
+            id: sessionID,
+            title: "Cron · \(job.name)",
+            preview: "",
+            startedAt: nil,
+            messageCount: 0,
+            source: "cron"
+        ))
+        focus(sessionID: sessionID)
+        dockModel.requestComposerFocus()
+    }
+
+    func cronReport(for request: CronReportRequest) async throws -> CronReportDetail {
+        guard let rpc else {
+            throw NSError(
+                domain: "HermesControl",
+                code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "Hermes has not recorded a report session for this job."]
+            )
         }
+        let result = try await rpc.sessionMessages(sessionID: request.sessionID)
+        guard let report = Self.parseCronReport(result, job: request.job, sessionID: request.sessionID) else {
+            throw NSError(
+                domain: "HermesControl",
+                code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "The run completed without a readable report body."]
+            )
+        }
+        return report
+    }
+
+    func cronReportRequest(for run: CronRunSummary) -> CronReportRequest? {
+        guard let jobID = run.jobID,
+              let sessionID = run.sessionID,
+              let job = cronJobs.first(where: { $0.id == jobID }) else { return nil }
+        return CronReportRequest(job: job, sessionID: sessionID)
     }
 
     func openProject(_ project: ProjectSummary) {
@@ -662,6 +706,7 @@ final class ControlCenterModel: ObservableObject {
                 refreshKanbanStats()
                 refreshKanbanAssignees()
                 refreshKanbanBoards()
+                refreshKanbanDiagnostics()
             } catch {
                 guard generation == kanbanRefreshGeneration else { return }
                 let message = error.localizedDescription
@@ -714,12 +759,17 @@ final class ControlCenterModel: ObservableObject {
         kanbanStatsGeneration = UUID()
         kanbanAssigneesGeneration = UUID()
         kanbanDetailGeneration = UUID()
+        kanbanDiagnosticsGeneration = UUID()
+        kanbanAttachmentsGeneration = UUID()
         kanbanTasks = []
         kanbanDetail = nil
         kanbanStats = nil
         kanbanAssignees = []
+        kanbanDiagnostics = []
+        kanbanAttachments = []
         isLoadingKanbanDetail = false
         refreshKanban()
+        refreshKanbanDiagnostics()
     }
 
     private func refreshKanbanAssignees() {
@@ -758,63 +808,296 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func refreshSessionCockpit() {
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else {
+        let generation = UUID()
+        sessionCockpitGeneration = generation
+        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else {
+            sessionCockpitSessionID = nil
             sessionUsage = nil
             sessionContext = nil
             return
         }
-        Task {
-            if let result = try? await rpc.sessionUsage(sessionID: sessionID) {
-                sessionUsage = Self.parseSessionUsage(result)
-            }
-            if let result = try? await rpc.sessionContextBreakdown(sessionID: sessionID) {
-                sessionContext = Self.parseSessionContext(result)
+        sessionCockpitSessionID = sessionID
+        Task { @MainActor in
+            let usage = try? await rpc.sessionUsage(sessionID: sessionID)
+            let context = try? await rpc.sessionContextBreakdown(sessionID: sessionID)
+            guard generation == sessionCockpitGeneration,
+                  sessionCockpitSessionID == sessionID,
+                  dockModel?.sessionID == sessionID else { return }
+            if let usage { sessionUsage = Self.parseSessionUsage(usage) }
+            if let context { sessionContext = Self.parseSessionContext(context) }
+            if usage != nil || context != nil {
+                recordProjectionSuccess("session.cockpit")
             }
         }
     }
 
-    func steerActiveSession(_ text: String) {
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return }
+    func steerActiveSession(_ text: String) async -> SessionTextActionResult? {
+        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return nil }
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanText.isEmpty else { return }
-        Task {
-            do { _ = try await rpc.steer(sessionID: sessionID, text: cleanText) }
-            catch { lastError = error.localizedDescription }
+        guard !cleanText.isEmpty else { return nil }
+        do {
+            let result = try await rpc.steer(sessionID: sessionID, text: cleanText)
+            guard let rawStatus = result["status"] as? String,
+                  let status = SessionTextActionStatus(rawValue: rawStatus.lowercased()) else {
+                lastError = "Hermes returned an invalid steering response."
+                return nil
+            }
+            guard status == .queued || status == .rejected else {
+                lastError = "Hermes returned an invalid steering status."
+                return nil
+            }
+            let action = SessionTextActionResult(status: status, text: cleanText)
+            if !action.wasAccepted { lastError = "Hermes rejected the steering correction." }
+            return action
+        } catch {
+            lastError = error.localizedDescription
+            return nil
         }
     }
 
-    func refreshKanbanDiagnostics() {
+    func refreshKanbanDiagnostics(severity: String? = nil) {
         guard let cli, capabilityAvailable("kanban") else { return }
+        let generation = UUID()
+        let requestedBoardSlug = selectedKanbanBoardSlug
+        kanbanDiagnosticsGeneration = generation
+        beginProjectionRefresh("kanban.diagnostics")
         Task {
-            guard let result = try? await cli.kanbanDiagnostics(), result.succeeded,
-                  let data = result.stdout.data(using: .utf8),
-                  let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
-            kanbanDiagnostics = rows.enumerated().map { index, row in
-                KanbanDiagnosticSummary(id: (row["id"] as? String) ?? "diagnostic-(index)", severity: (row["severity"] as? String) ?? "warning", title: (row["title"] as? String) ?? "Kanban diagnostic", detail: (row["detail"] as? String) ?? (row["message"] as? String) ?? "", taskID: row["task_id"] as? String)
+            do {
+                let result = try await cli.kanbanDiagnostics(boardSlug: requestedBoardSlug, severity: severity)
+                guard generation == kanbanDiagnosticsGeneration,
+                      requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                guard result.succeeded else {
+                    recordProjectionFailure("kanban.diagnostics", error: result.stderr)
+                    return
+                }
+                kanbanDiagnostics = Self.parseKanbanDiagnostics(result.stdout, boardSlug: requestedBoardSlug, severity: severity)
+                recordProjectionSuccess("kanban.diagnostics")
+            } catch {
+                guard generation == kanbanDiagnosticsGeneration else { return }
+                recordProjectionFailure("kanban.diagnostics", error: error.localizedDescription)
             }
         }
     }
 
     func refreshKanbanAttachments(for taskID: String) {
         guard let cli else { return }
+        let generation = UUID()
+        let requestedBoardSlug = selectedKanbanBoardSlug
+        kanbanAttachmentsGeneration = generation
+        beginProjectionRefresh("kanban.attachments")
         Task {
-            guard let result = try? await cli.kanbanAttachments(taskID: taskID), result.succeeded,
-                  let data = result.stdout.data(using: .utf8),
-                  let value = try? JSONSerialization.jsonObject(with: data) else { return }
-            let rows = (value as? [[String: Any]]) ?? ((value as? [String: Any])?["attachments"] as? [[String: Any]]) ?? []
-            kanbanAttachments = rows.enumerated().map { index, row in
-                KanbanAttachmentSummary(id: (row["id"] as? String) ?? "attachment-(index)", name: (row["name"] as? String) ?? (row["filename"] as? String) ?? "Attachment", kind: row["kind"] as? String ?? row["mime_type"] as? String, sizeBytes: Self.optionalIntValue(row["size"] ?? row["size_bytes"]))
+            do {
+                let result = try await cli.kanbanAttachments(boardSlug: requestedBoardSlug, taskID: taskID)
+                guard generation == kanbanAttachmentsGeneration,
+                      requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                guard result.succeeded,
+                      let data = result.stdout.data(using: .utf8),
+                      let value = try? JSONSerialization.jsonObject(with: data) else {
+                    recordProjectionFailure("kanban.attachments", error: result.stderr)
+                    return
+                }
+                kanbanAttachments = Self.parseKanbanAttachments(value, boardSlug: requestedBoardSlug, taskID: taskID)
+                recordProjectionSuccess("kanban.attachments")
+            } catch {
+                guard generation == kanbanAttachmentsGeneration else { return }
+                recordProjectionFailure("kanban.attachments", error: error.localizedDescription)
             }
         }
     }
 
     func refreshPromptBudget() {
         guard let cli else { return }
+        let generation = UUID()
+        promptBudgetGeneration = generation
+        beginProjectionRefresh("prompt.budget")
         Task {
-            guard let result = try? await cli.promptSize(), result.succeeded,
-                  let data = result.stdout.data(using: .utf8),
-                  let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-            promptBudget = PromptBudgetSummary(totalTokens: Self.intValue(row["total_tokens"] ?? row["total"]), tokenLimit: Self.optionalIntValue(row["token_limit"] ?? row["context_max"]), percent: Self.doubleValue(row["percent"] ?? row["context_percent"]), model: row["model"] as? String)
+            do {
+                let result = try await cli.promptSize()
+                guard generation == promptBudgetGeneration else { return }
+                guard result.succeeded,
+                      let data = result.stdout.data(using: .utf8),
+                      let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    recordProjectionFailure("prompt.budget", error: result.stderr)
+                    return
+                }
+                promptBudget = PromptBudgetSummary(totalTokens: Self.intValue(row["total_tokens"] ?? row["total"]), tokenLimit: Self.optionalIntValue(row["token_limit"] ?? row["context_max"]), percent: Self.doubleValue(row["percent"] ?? row["context_percent"]), model: row["model"] as? String)
+                recordProjectionSuccess("prompt.budget")
+            } catch {
+                guard generation == promptBudgetGeneration else { return }
+                recordProjectionFailure("prompt.budget", error: error.localizedDescription)
+            }
+        }
+    }
+
+    func refreshVerification() {
+        guard let rpc, let repository = developmentContext, !repository.path.isEmpty else {
+            projectFacts = nil
+            verification = VerificationSummary(state: .notApplicable, evidence: nil)
+            return
+        }
+        let factsGeneration = UUID()
+        let verificationGeneration = UUID()
+        projectFactsGeneration = factsGeneration
+        self.verificationGeneration = verificationGeneration
+        let sessionID = dockModel?.sessionID
+        Task { @MainActor in
+            do {
+                let factsResult = try await rpc.projectFacts(cwd: repository.path)
+                guard factsGeneration == self.projectFactsGeneration else { return }
+                projectFacts = Self.parseProjectFacts(factsResult)
+            } catch {
+                projectFacts = nil
+            }
+            do {
+                let result = try await rpc.verificationStatus(sessionID: sessionID, cwd: repository.path)
+                guard verificationGeneration == self.verificationGeneration else { return }
+                verification = Self.parseVerification(result)
+            } catch {
+                verification = VerificationSummary(state: .unknown, evidence: nil)
+            }
+        }
+    }
+
+    func startBackgroundTask(_ prompt: String, kind: HermesBackgroundTaskKind = .general) async -> Bool {
+        guard capabilityAvailable("gateway"), let rpc, let dockModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else {
+            lastError = capabilityAvailable("gateway")
+                ? "Open a Hermes session before starting a background task."
+                : "Background tasks are unavailable in this Hermes installation."
+            return false
+        }
+        let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanPrompt.isEmpty else { return false }
+        do {
+            let result = try await rpc.startBackgroundPrompt(sessionID: sessionID, text: cleanPrompt)
+            guard let taskID = result["task_id"] as? String, !taskID.isEmpty else {
+                lastError = "Hermes did not return a background task ID."
+                return false
+            }
+            dockModel.registerBackgroundTask(id: taskID, prompt: cleanPrompt, parentSessionID: sessionID, kind: kind)
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    func renameActiveSession(_ title: String) async -> Bool {
+        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return false }
+        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return false }
+        do {
+            _ = try await rpc.setSessionTitle(sessionID: sessionID, title: clean)
+            refresh()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    func redirectActiveSession(_ text: String) async -> SessionTextActionResult? {
+        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return nil }
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        do {
+            let result = try await rpc.redirect(sessionID: sessionID, text: clean)
+            guard let raw = result["status"] as? String,
+                  let status = SessionTextActionStatus(rawValue: raw.lowercased()),
+                  let acceptedStatus = [SessionTextActionStatus.queued, .redirected, .rejected].first(where: { $0 == status }) else {
+                lastError = "Hermes returned an invalid redirect response."
+                return nil
+            }
+            let response = SessionTextActionResult(status: acceptedStatus, text: clean)
+            if !response.wasAccepted { lastError = "Hermes rejected the redirect." }
+            return response
+        } catch {
+            lastError = error.localizedDescription
+            return nil
+        }
+    }
+
+    func undoActiveSession() async -> Bool {
+        guard let rpc, let dockModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else { return false }
+        do {
+            _ = try await rpc.undo(sessionID: sessionID)
+            dockModel.resumeSession(HermesSession(id: sessionID, title: dockModel.currentSessionTitle ?? "Hermes session", preview: "", startedAt: nil, messageCount: 0, source: "hermes"))
+            refresh()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    func compressActiveSession(focusTopic: String? = nil) async -> Bool {
+        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else {
+            lastError = "Session compression is unavailable in this Hermes installation."
+            return false
+        }
+        do {
+            _ = try await rpc.compress(sessionID: sessionID, focusTopic: focusTopic)
+            refreshSessionCockpit()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    func branchActiveSession(name: String? = nil) async -> Bool {
+        guard capabilityAvailable("rpc-sessions"), let rpc, let dockModel, let sessionID = dockModel.sessionID, !sessionID.isEmpty else {
+            lastError = "Session branching is unavailable in this Hermes installation."
+            return false
+        }
+        do {
+            let result = try await rpc.branch(sessionID: sessionID, name: name)
+            if let branchID = result["session_id"] as? String {
+                dockModel.resumeSession(HermesSession(id: branchID, title: name ?? "Hermes branch", preview: "", startedAt: nil, messageCount: 0, source: "branch"))
+            }
+            refresh()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    func pauseDelegation(_ paused: Bool) async -> Bool {
+        guard let rpc else { return false }
+        do {
+            let result = try await rpc.pauseDelegation(paused)
+            delegationPaused = result["paused"] as? Bool ?? paused
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    func interruptSubagent(_ subagentID: String) async -> Bool {
+        guard let rpc else { return false }
+        do {
+            let result = try await rpc.interruptSubagent(subagentID: subagentID)
+            guard result["found"] as? Bool != false else {
+                lastError = "Hermes could not find that subagent."
+                return false
+            }
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    func killProcess(_ process: ProcessSummary) async -> Bool {
+        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return false }
+        do {
+            _ = try await rpc.killProcess(sessionID: sessionID, processID: process.id)
+            refresh()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
         }
     }
 
@@ -825,6 +1108,9 @@ final class ControlCenterModel: ObservableObject {
         isLoadingKanbanDetail = true
         kanbanDetail = nil
         let requestedBoardSlug = task.boardSlug ?? selectedKanbanBoardSlug
+        kanbanAttachmentsGeneration = UUID()
+        kanbanAttachments = []
+        refreshKanbanAttachments(for: task.id)
         Task {
             defer {
                 if generation == kanbanDetailGeneration {
@@ -1314,10 +1600,10 @@ final class ControlCenterModel: ObservableObject {
         focus(sessionID: session.id)
     }
 
-    private static func parseCronJobs(_ result: [String: Any]) -> [CronSummary] {
+    static func parseCronJobs(_ result: [String: Any]) -> [CronSummary] {
         let rows = (result["jobs"] as? [[String: Any]]) ?? (result["cron"] as? [[String: Any]]) ?? []
         return rows.compactMap { row in
-            let id = (row["id"] as? String) ?? (row["name"] as? String)
+            let id = (row["job_id"] as? String) ?? (row["id"] as? String) ?? (row["name"] as? String)
             guard let id else { return nil }
             var editable: Set<CronEditField> = []
             if row["name"] as? String != nil { editable.insert(.name) }
@@ -1328,7 +1614,7 @@ final class ControlCenterModel: ObservableObject {
                 name: (row["name"] as? String) ?? id,
                 schedule: (row["schedule"] as? String) ?? "Scheduled",
                 enabled: (row["enabled"] as? Bool) ?? !(row["paused"] as? Bool ?? false),
-                nextRun: row["next_run"] as? String ?? row["nextRun"] as? String,
+                nextRun: row["next_run_at"] as? String ?? row["next_run"] as? String ?? row["nextRun"] as? String,
                 sessionID: row["session_id"] as? String ?? row["sessionID"] as? String,
                 delivery: row["deliver"] as? String ?? row["delivery"] as? String,
                 prompt: (row["prompt"] as? String) ?? (row["request"] as? String) ?? (row["task"] as? String),
@@ -1336,6 +1622,54 @@ final class ControlCenterModel: ObservableObject {
                 editableFields: editable
             )
         }
+    }
+
+    static func attachLatestCronSessions(to jobs: [CronSummary], from result: [String: Any]) -> [CronSummary] {
+        let rows = (result["sessions"] as? [[String: Any]]) ?? []
+        return jobs.map { job in
+            let prefix = "cron_\(job.id)_"
+            let sessionID = rows.first { row in
+                let source = (row["source"] as? String)?.lowercased()
+                let id = row["id"] as? String
+                return source == "cron" && id?.hasPrefix(prefix) == true
+            }?["id"] as? String
+            guard let sessionID else { return job }
+            return CronSummary(
+                id: job.id,
+                name: job.name,
+                schedule: job.schedule,
+                enabled: job.enabled,
+                nextRun: job.nextRun,
+                sessionID: sessionID,
+                delivery: job.delivery,
+                prompt: job.prompt,
+                report: job.report,
+                editableFields: job.editableFields
+            )
+        }
+    }
+
+    static func parseCronReport(_ result: [String: Any], job: CronSummary, sessionID: String) -> CronReportDetail? {
+        let rows = result["messages"] as? [[String: Any]] ?? []
+        for row in rows.reversed() {
+            let role = (row["role"] as? String)?.lowercased() ?? ""
+            guard role == "assistant" || role == "hermes" else { continue }
+            let text = cronReportText(row["text"] ?? row["content"])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            return CronReportDetail(id: sessionID, jobID: job.id, title: job.name, markdown: text)
+        }
+        return nil
+    }
+
+    private static func cronReportText(_ value: Any?) -> String {
+        if let text = value as? String { return text }
+        if let parts = value as? [[String: Any]] {
+            return parts.compactMap { part in
+                (part["text"] as? String) ?? (part["content"] as? String)
+            }.joined()
+        }
+        return ""
     }
 
     private static func parseSessions(_ result: [String: Any]) -> [SessionSummary] {
@@ -1448,8 +1782,8 @@ final class ControlCenterModel: ObservableObject {
     static func parseSessionContext(_ result: [String: Any]) -> SessionContextSummary {
         let rows = (result["categories"] as? [[String: Any]] ?? []).enumerated().map { index, row in
             SessionContextCategory(
-                id: (row["id"] as? String) ?? (row["name"] as? String) ?? "category-(index)",
-                label: (row["label"] as? String) ?? (row["name"] as? String) ?? "Category (index + 1)",
+                id: (row["id"] as? String) ?? (row["name"] as? String) ?? "category-\(index)",
+                label: (row["label"] as? String) ?? (row["name"] as? String) ?? "Category \(index + 1)",
                 tokens: intValue(row["tokens"] ?? row["count"]),
                 percent: doubleValue(row["percent"])
             )
@@ -1458,7 +1792,7 @@ final class ControlCenterModel: ObservableObject {
             categories: rows,
             contextUsed: intValue(result["context_used"]),
             contextMax: intValue(result["context_max"]),
-            contextPercent: doubleValue(result["context_percent"]) ?? 0,
+            contextPercent: doubleValue(result["context_percent"]),
             estimatedTotal: intValue(result["estimated_total"]),
             model: result["model"] as? String
         )
@@ -1595,6 +1929,71 @@ final class ControlCenterModel: ObservableObject {
         })).sorted()
     }
 
+    static func parseKanbanDiagnostics(_ output: String, boardSlug: String?, severity: String? = nil) -> [KanbanDiagnosticSummary] {
+        guard let data = output.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) else { return [] }
+        let rows = (value as? [[String: Any]]) ?? ((value as? [String: Any])?["diagnostics"] as? [[String: Any]]) ?? []
+        return rows.enumerated().compactMap { index, row in
+            let rowSeverity = (row["severity"] as? String) ?? "warning"
+            guard severity == nil || severity == rowSeverity else { return nil }
+            let taskID = row["task_id"] as? String ?? row["taskID"] as? String
+            let title = (row["title"] as? String) ?? "Kanban diagnostic"
+            let fallback = [boardSlug ?? "default", taskID ?? "all", rowSeverity, title, String(index)].joined(separator: ":")
+            return KanbanDiagnosticSummary(
+                id: (row["id"] as? String) ?? fallback,
+                severity: rowSeverity,
+                title: title,
+                detail: (row["detail"] as? String) ?? (row["message"] as? String) ?? "",
+                taskID: taskID
+            )
+        }
+    }
+
+    static func parseProjectFacts(_ result: [String: Any]) -> ProjectFactsSummary? {
+        guard let facts = result["facts"] as? [String: Any] else { return nil }
+        return ProjectFactsSummary(
+            root: facts["root"] as? String,
+            manifests: facts["manifests"] as? [String] ?? [],
+            packageManagers: (facts["packageManagers"] as? [String]) ?? (facts["package_managers"] as? [String]) ?? [],
+            verifyCommands: (facts["verifyCommands"] as? [String]) ?? (facts["verify_commands"] as? [String]) ?? [],
+            contextFiles: (facts["contextFiles"] as? [String]) ?? (facts["context_files"] as? [String]) ?? []
+        )
+    }
+
+    static func parseVerification(_ result: [String: Any]) -> VerificationSummary {
+        guard let verification = result["verification"] as? [String: Any] else {
+            return VerificationSummary(state: .unknown, evidence: nil)
+        }
+        let state = VerificationState(rawValue: (verification["status"] as? String ?? "unknown")) ?? .unknown
+        let evidenceRow = verification["evidence"] as? [String: Any]
+        let evidence = evidenceRow.map {
+            VerificationEvidenceSummary(
+                command: $0["command"] as? String,
+                canonicalCommand: $0["canonical_command"] as? String ?? $0["canonicalCommand"] as? String,
+                kind: $0["kind"] as? String,
+                scope: $0["scope"] as? String,
+                status: $0["status"] as? String,
+                exitCode: Self.optionalIntValue($0["exit_code"] ?? $0["exitCode"]),
+                outputSummary: $0["output_summary"] as? String ?? $0["outputSummary"] as? String
+            )
+        }
+        return VerificationSummary(state: state, evidence: evidence)
+    }
+
+    static func parseKanbanAttachments(_ value: Any, boardSlug: String?, taskID: String) -> [KanbanAttachmentSummary] {
+        let rows = (value as? [[String: Any]]) ?? ((value as? [String: Any])?["attachments"] as? [[String: Any]]) ?? []
+        return rows.enumerated().map { index, row in
+            let name = (row["name"] as? String) ?? (row["filename"] as? String) ?? "Attachment"
+            let fallback = [boardSlug ?? "default", taskID, name, String(index)].joined(separator: ":")
+            return KanbanAttachmentSummary(
+                id: (row["id"] as? String) ?? fallback,
+                name: name,
+                kind: row["kind"] as? String ?? row["mime_type"] as? String,
+                sizeBytes: Self.optionalIntValue(row["size"] ?? row["size_bytes"])
+            )
+        }
+    }
+
     static func parseJourneyNodes(_ output: String) -> [HermesJourneyNode] {
         guard let data = output.data(using: .utf8),
               let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1639,7 +2038,15 @@ final class ControlCenterModel: ObservableObject {
                 guard !message.isEmpty else { continue }
                 let current = runs.removeLast()
                 let error = [current.error, message].compactMap { $0 }.joined(separator: "\n")
-                runs.append(CronRunSummary(id: current.id, status: current.status, jobID: current.jobID, source: current.source, claimedAt: current.claimedAt, error: error))
+                runs.append(CronRunSummary(
+                    id: current.id,
+                    status: current.status,
+                    jobID: current.jobID,
+                    source: current.source,
+                    claimedAt: current.claimedAt,
+                    error: error,
+                    sessionID: current.sessionID
+                ))
                 continue
             }
             let columns = raw.split(whereSeparator: { $0 == " " || $0 == "\t" })
@@ -1649,9 +2056,26 @@ final class ControlCenterModel: ObservableObject {
             let jobID = metadata.first(where: { $0.hasPrefix("job=") }).map { String($0.dropFirst(4)) }
             let source = metadata.first(where: { $0.hasPrefix("source=") }).map { String($0.dropFirst(7)) }
             let claimedAt = metadata.first(where: { !$0.contains("=") }).map(String.init)
-            runs.append(CronRunSummary(id: String(columns[0]), status: String(columns[1]), jobID: jobID, source: source, claimedAt: claimedAt, error: nil))
+            runs.append(CronRunSummary(
+                id: String(columns[0]),
+                status: String(columns[1]),
+                jobID: jobID,
+                source: source,
+                claimedAt: claimedAt,
+                error: nil,
+                sessionID: cronSessionID(jobID: jobID, claimedAt: claimedAt)
+            ))
         }
         return runs
+    }
+
+    private static func cronSessionID(jobID: String?, claimedAt: String?) -> String? {
+        guard let jobID, let claimedAt, claimedAt.count >= 19 else { return nil }
+        let localTimestamp = String(claimedAt.prefix(19))
+        let date = localTimestamp.prefix(10).replacingOccurrences(of: "-", with: "")
+        let time = localTimestamp.dropFirst(11).prefix(8).replacingOccurrences(of: ":", with: "")
+        guard date.count == 8, time.count == 6 else { return nil }
+        return "cron_\(jobID)_\(date)_\(time)"
     }
 
     static func parseMCPServers(_ output: String) -> [MCPServerSummary] {

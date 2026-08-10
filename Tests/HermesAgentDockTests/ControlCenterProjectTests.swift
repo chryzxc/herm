@@ -4,6 +4,20 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func malformedSessionContextRemainsUnavailableAndUsesUniqueFallbackCategories() {
+        let context = ControlCenterModel.parseSessionContext([
+            "categories": [
+                ["tokens": 10],
+                ["tokens": 20]
+            ]
+        ])
+
+        #expect(context.contextPercent == nil)
+        #expect(context.categories.map(\.id) == ["category-0", "category-1"])
+        #expect(context.categories.map(\.label) == ["Category 1", "Category 2"])
+        #expect(SessionContextPressure.make(percent: context.contextPercent) == .unavailable)
+    }
+
     @Test func parsesNestedProjectSessionsAndDeduplicatesRows() {
         let result: [String: Any] = [
             "project": [
@@ -99,6 +113,51 @@ struct ControlCenterProjectTests {
         #expect(runs.first?.elapsed == "4s")
     }
 
+    @Test func parsesKanbanDiagnosticsAndUsesStableFallbackIDs() {
+        let diagnostics = ControlCenterModel.parseKanbanDiagnostics("""
+        [{"severity":"error","title":"Missing owner","message":"Assign the task","task_id":"k1"},{"severity":"warning","title":"Old task"}]
+        """, boardSlug: "board-1")
+
+        #expect(diagnostics.count == 2)
+        #expect(diagnostics.first?.taskID == "k1")
+        #expect(diagnostics.first?.id == "board-1:k1:error:Missing owner:0")
+        #expect(diagnostics.last?.id == "board-1:all:warning:Old task:1")
+    }
+
+    @Test func parsesKanbanAttachmentsAndUsesStableFallbackIDs() {
+        let attachments = ControlCenterModel.parseKanbanAttachments([
+            "attachments": [
+                ["filename": "plan.md", "mime_type": "text/markdown", "size_bytes": 128]
+            ]
+        ], boardSlug: "board-1", taskID: "k1")
+
+        #expect(attachments.first?.id == "board-1:k1:plan.md:0")
+        #expect(attachments.first?.sizeBytes == 128)
+    }
+
+    @Test func parsesHermesProjectFactsAndVerificationScope() {
+        let facts = ControlCenterModel.parseProjectFacts([
+            "facts": [
+                "root": "/work/app",
+                "manifests": ["Package.swift"],
+                "packageManagers": ["swift"],
+                "verifyCommands": ["swift test"],
+                "contextFiles": ["DESIGN.md"]
+            ]
+        ])
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": ["canonical_command": "swift test", "scope": "targeted", "exit_code": 0]
+            ]
+        ])
+
+        #expect(facts?.verifyCommands == ["swift test"])
+        #expect(facts?.contextFiles == ["DESIGN.md"])
+        #expect(verification.state == .passed)
+        #expect(verification.evidence?.scope == "targeted")
+    }
+
     @Test func kanbanChangeRequestsHaveStableActionIdentity() {
         let task = KanbanTaskSummary(id: "k1", title: "Task", status: "ready", detail: nil, priority: nil, assignee: nil)
 
@@ -115,6 +174,60 @@ struct ControlCenterProjectTests {
         #expect(runs.count == 1)
         #expect(runs.first?.jobID == "morning")
         #expect(runs.first?.error == "timed out after 30s")
+        #expect(runs.first?.sessionID == "cron_morning_20260808_080000")
+    }
+
+    @Test func parsesCanonicalCronJobIDUsedByHermesRunSessions() {
+        let jobs = ControlCenterModel.parseCronJobs([
+            "jobs": [[
+                "job_id": "f817f2069f9c",
+                "name": "iboard-lokal repo activity",
+                "schedule": "0 10 * * *",
+                "next_run_at": "2026-08-11T10:00:00+08:00",
+                "enabled": true
+            ]]
+        ])
+
+        #expect(jobs.first?.id == "f817f2069f9c")
+        #expect(jobs.first?.name == "iboard-lokal repo activity")
+        #expect(jobs.first?.nextRun == "2026-08-11T10:00:00+08:00")
+    }
+
+    @Test func attachesLatestCronRunSessionWithoutUsingAnotherJobsPrefix() {
+        let jobs = [
+            CronSummary(id: "job-1", name: "Daily report", schedule: "0 9 * * *", enabled: true, nextRun: nil),
+            CronSummary(id: "job-10", name: "Weekly report", schedule: "0 9 * * 1", enabled: true, nextRun: nil)
+        ]
+        let result: [String: Any] = [
+            "sessions": [
+                ["id": "cron_job-10_2026-08-10T09:00:00", "source": "cron"],
+                ["id": "cron_job-1_2026-08-10T09:00:00", "source": "cron"],
+                ["id": "cron_job-1_2026-08-09T09:00:00", "source": "cron"],
+                ["id": "cron_job-1_ignored", "source": "cli"]
+            ]
+        ]
+
+        let attached = ControlCenterModel.attachLatestCronSessions(to: jobs, from: result)
+
+        #expect(attached[0].sessionID == "cron_job-1_2026-08-10T09:00:00")
+        #expect(attached[1].sessionID == "cron_job-10_2026-08-10T09:00:00")
+    }
+
+    @Test func parsesFinalAssistantMessageAsCronReport() {
+        let job = CronSummary(id: "job-1", name: "Daily report", schedule: "0 9 * * *", enabled: true, nextRun: nil)
+        let result: [String: Any] = [
+            "messages": [
+                ["role": "user", "content": "Generate the report"],
+                ["role": "assistant", "content": "Earlier progress"],
+                ["role": "tool", "content": "internal output"],
+                ["role": "assistant", "content": [["type": "text", "text": "# Final report\n\nEverything passed."]]]
+            ]
+        ]
+
+        let report = ControlCenterModel.parseCronReport(result, job: job, sessionID: "cron_job-1_latest")
+
+        #expect(report?.title == "Daily report")
+        #expect(report?.markdown == "# Final report\n\nEverything passed.")
     }
 
     @Test func parsesMCPInventoryWithoutLeakingStatusFormatting() {

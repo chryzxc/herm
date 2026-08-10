@@ -382,9 +382,22 @@ struct SessionContextSummary: Equatable {
     let categories: [SessionContextCategory]
     let contextUsed: Int
     let contextMax: Int
-    let contextPercent: Double
+    let contextPercent: Double?
     let estimatedTotal: Int
     let model: String?
+}
+
+enum SessionTextActionStatus: String, Equatable {
+    case queued
+    case redirected
+    case rejected
+}
+
+struct SessionTextActionResult: Equatable {
+    let status: SessionTextActionStatus
+    let text: String
+
+    var wasAccepted: Bool { status != .rejected }
 }
 
 struct ProjectionRefreshState: Equatable {
@@ -515,6 +528,30 @@ struct CronRunSummary: Identifiable, Equatable {
     let source: String?
     let claimedAt: String?
     let error: String?
+    let sessionID: String?
+
+    init(id: String, status: String, jobID: String?, source: String?, claimedAt: String?, error: String?, sessionID: String? = nil) {
+        self.id = id
+        self.status = status
+        self.jobID = jobID
+        self.source = source
+        self.claimedAt = claimedAt
+        self.error = error
+        self.sessionID = sessionID
+    }
+}
+
+struct CronReportDetail: Identifiable, Equatable {
+    let id: String
+    let jobID: String
+    let title: String
+    let markdown: String
+}
+
+struct CronReportRequest: Identifiable, Equatable {
+    let job: CronSummary
+    let sessionID: String
+    var id: String { sessionID }
 }
 
 struct MCPServerSummary: Identifiable, Equatable {
@@ -603,20 +640,67 @@ struct PromptBudgetSummary: Equatable {
     let model: String?
 }
 
+struct ProjectFactsSummary: Equatable {
+    let root: String?
+    let manifests: [String]
+    let packageManagers: [String]
+    let verifyCommands: [String]
+    let contextFiles: [String]
+}
+
+enum VerificationState: String, Equatable {
+    case passed
+    case failed
+    case unverified
+    case unknown
+    case notApplicable
+}
+
+struct VerificationEvidenceSummary: Equatable {
+    let command: String?
+    let canonicalCommand: String?
+    let kind: String?
+    let scope: String?
+    let status: String?
+    let exitCode: Int?
+    let outputSummary: String?
+}
+
+struct VerificationSummary: Equatable {
+    let state: VerificationState
+    let evidence: VerificationEvidenceSummary?
+}
+
 enum ControlTab: String, CaseIterable, Identifiable {
     case today = "Today"
     case inbox = "Inbox"
     case activity = "Activity"
+    case changes = "Changes"
+    case verification = "Verification"
     case automations = "Automations"
     case projects = "Projects"
+    case repositories = "Repositories"
     case search = "Search"
     case kanban = "Kanban"
     case core = "Core"
+
+    /// The fixed navigation strip is deliberately limited to the destinations
+    /// used to orient, triage, and act on work. Everything else remains one
+    /// click away in a grouped menu instead of competing for horizontal space.
+    static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban, .activity]
+    static let reviewNavigation: [ControlTab] = [.changes, .verification]
+    static let workspaceNavigation: [ControlTab] = [.projects, .repositories]
+    static let toolsNavigation: [ControlTab] = [.automations, .search, .core]
+
+    static var secondaryNavigation: [ControlTab] {
+        reviewNavigation + workspaceNavigation + toolsNavigation
+    }
 
     var id: String { rawValue }
     var tabLabel: String {
         switch self {
         case .automations: "Automate"
+        case .repositories: "Repos"
         default: rawValue
         }
     }
@@ -626,8 +710,11 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .today: "sun.max"
         case .inbox: "tray"
         case .activity: "waveform.path.ecg"
+        case .changes: "doc.text.magnifyingglass"
+        case .verification: "checkmark.seal"
         case .automations: "clock.arrow.circlepath"
         case .projects: "folder.badge.gearshape"
+        case .repositories: "folder.badge.gearshape"
         case .search: "magnifyingglass"
         case .kanban: "rectangle.3.group"
         case .core: "cpu"
@@ -663,8 +750,10 @@ struct ControlTabBadgeState: Equatable {
     let urgentAttentionCount: Int
     let inboxCount: Int
     let activityCount: Int
+    let changeCount: Int
+    let verificationCount: Int
 
-    static func make(attention: [AttentionItem], activeAgentCount: Int, activeToolCount: Int) -> ControlTabBadgeState {
+    static func make(attention: [AttentionItem], activeAgentCount: Int, activeToolCount: Int, changeCount: Int = 0, verificationCount: Int = 0) -> ControlTabBadgeState {
         let openAttention = attention.filter { $0.state == .open }
         let urgent = openAttention.filter { item in
             switch item.kind {
@@ -675,7 +764,9 @@ struct ControlTabBadgeState: Equatable {
         return ControlTabBadgeState(
             urgentAttentionCount: urgent.count,
             inboxCount: openAttention.count,
-            activityCount: max(0, activeAgentCount) + max(0, activeToolCount)
+            activityCount: max(0, activeAgentCount) + max(0, activeToolCount),
+            changeCount: max(0, changeCount),
+            verificationCount: max(0, verificationCount)
         )
     }
 
@@ -684,7 +775,9 @@ struct ControlTabBadgeState: Equatable {
         case .today: urgentAttentionCount
         case .inbox: inboxCount
         case .activity: activityCount
-        case .automations, .projects, .search, .kanban, .core: 0
+        case .changes: changeCount
+        case .verification: verificationCount
+        case .automations, .projects, .repositories, .search, .kanban, .core: 0
         }
     }
 
@@ -692,7 +785,9 @@ struct ControlTabBadgeState: Equatable {
         switch tab {
         case .today: urgentAttentionCount > 0
         case .inbox: urgentAttentionCount > 0
-        case .activity, .automations, .projects, .search, .kanban, .core: false
+        case .changes: changeCount > 0
+        case .verification: verificationCount > 0
+        case .activity, .automations, .projects, .repositories, .search, .kanban, .core: false
         }
     }
 }

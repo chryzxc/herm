@@ -22,8 +22,33 @@ private final class RecordingRPCClient: HermesRPCClientProtocol {
     func close() {}
 }
 
+private actor ConnectionAttemptCounter {
+    private var value = 0
+
+    func increment() { value += 1 }
+    func currentValue() -> Int { value }
+}
+
 @MainActor
 struct HermesControlTransportTests {
+    @Test func concurrentConnectionRequestsShareOneAttempt() async throws {
+        let gate = HermesConnectionGate()
+        let counter = ConnectionAttemptCounter()
+
+        async let first: Void = gate.perform {
+            await counter.increment()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        async let second: Void = gate.perform {
+            await counter.increment()
+        }
+
+        _ = try await (first, second)
+        let attemptCount = await counter.currentValue()
+
+        #expect(attemptCount == 1)
+    }
+
     @Test func routesEventsToSubscribers() {
         let router = HermesEventRouter()
         var received: [(String, String)] = []
@@ -91,5 +116,20 @@ struct HermesControlTransportTests {
 
         #expect(client.calls.map(\.method) == ["session.usage", "session.context_breakdown", "process.list"])
         #expect(client.calls.allSatisfy { $0.params["session_id"] as? String == "session-1" })
+    }
+
+    @Test func workflowRPCsUseHermesContracts() async throws {
+        let client = RecordingRPCClient()
+        let rpc = HermesControlRPC(client: client)
+        _ = try await rpc.projectFacts(cwd: "/work/app")
+        _ = try await rpc.verificationStatus(sessionID: "s1", cwd: "/work/app")
+        _ = try await rpc.startBackgroundPrompt(sessionID: "s1", text: "Run tests")
+        _ = try await rpc.undo(sessionID: "s1")
+        _ = try await rpc.redirect(sessionID: "s1", text: "Focus")
+        _ = try await rpc.pauseDelegation(true)
+        _ = try await rpc.interruptSubagent(subagentID: "a1")
+
+        #expect(client.calls.map(\.method) == ["project.facts", "verification.status", "prompt.background", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt"])
+        #expect(client.calls.last?.params["subagent_id"] as? String == "a1")
     }
 }

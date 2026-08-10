@@ -1,6 +1,35 @@
 import Foundation
 
 @MainActor
+final class HermesConnectionGate {
+    private var inFlight: Task<Void, Error>?
+
+    func perform(_ operation: @escaping @MainActor () async throws -> Void) async throws {
+        if let inFlight {
+            try await inFlight.value
+            return
+        }
+
+        let task = Task { @MainActor in
+            try await operation()
+        }
+        inFlight = task
+        do {
+            try await task.value
+            inFlight = nil
+        } catch {
+            inFlight = nil
+            throw error
+        }
+    }
+
+    func cancel() {
+        inFlight?.cancel()
+        inFlight = nil
+    }
+}
+
+@MainActor
 final class HermesGateway: NSObject {
     enum GatewayError: LocalizedError {
         case backendUnavailable, malformedResponse, disconnected
@@ -30,6 +59,7 @@ final class HermesGateway: NSObject {
     private var timeoutTasks: [Int: Task<Void, Never>] = [:]
     private var backendOutput = ""
     private var backendStartWaiters: [CheckedContinuation<Void, Error>] = []
+    private let connectionGate = HermesConnectionGate()
     private static let maximumBackendOutputLength = 32_768
 
     init(workingDirectory: URL? = nil) {
@@ -52,6 +82,14 @@ final class HermesGateway: NSObject {
             onConnectionChange?(true)
             return
         }
+        try await connectionGate.perform { [weak self] in
+            guard let self else { throw GatewayError.disconnected }
+            guard self.socket == nil else { return }
+            try await self.establishConnection()
+        }
+    }
+
+    private func establishConnection() async throws {
         DebugLog.write("connect: starting")
         try await startBackendIfNeeded()
         guard let port else { throw GatewayError.backendUnavailable }
@@ -78,6 +116,7 @@ final class HermesGateway: NSObject {
     }
 
     func close() {
+        connectionGate.cancel()
         socket?.cancel(with: .goingAway, reason: nil)
         urlSession?.invalidateAndCancel()
         urlSession = nil

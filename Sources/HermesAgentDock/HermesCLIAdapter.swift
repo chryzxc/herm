@@ -74,14 +74,14 @@ final class HermesCLIAdapter {
         if includeArchived { words.append("--all") }
         return try await run(words)
     }
-    func kanbanDiagnostics(severity: String? = nil, taskID: String? = nil) async throws -> HermesCLIResult {
-        var words = ["hermes", "kanban", "diagnostics", "--json"]
+    func kanbanDiagnostics(boardSlug: String? = nil, severity: String? = nil, taskID: String? = nil) async throws -> HermesCLIResult {
+        var words = kanbanWords(boardSlug: boardSlug, action: "diagnostics") + ["--json"]
         if let severity, !severity.isEmpty { words += ["--severity", severity] }
         if let taskID, !taskID.isEmpty { words += ["--task", taskID] }
         return try await run(words)
     }
-    func kanbanAttachments(taskID: String) async throws -> HermesCLIResult {
-        try await run(["hermes", "kanban", "attachments", "--json", taskID])
+    func kanbanAttachments(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult {
+        try await run(kanbanWords(boardSlug: boardSlug, action: "attachments") + ["--json", taskID])
     }
     func promptSize(platform: String? = nil) async throws -> HermesCLIResult {
         var words = ["hermes", "prompt-size", "--json"]

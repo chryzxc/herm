@@ -8,7 +8,18 @@ protocol HermesRPCClientProtocol: AnyObject {
     var onEvent: ((String, [String: Any]) -> Void)? { get set }
     func connect() async throws
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any]
+    func fetchHTTP(_ path: String) async throws -> [String: Any]
     func close()
+}
+
+extension HermesRPCClientProtocol {
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        throw NSError(
+            domain: "HermesControl",
+            code: 501,
+            userInfo: [NSLocalizedDescriptionKey: "This Hermes transport does not support read-only HTTP requests."]
+        )
+    }
 }
 
 extension HermesGateway: HermesRPCClientProtocol {}
@@ -57,11 +68,30 @@ final class HermesControlRPC {
 
     func activeSessions() async throws -> [String: Any] { try await client.request("session.active_list", params: [:]) }
     func sessions(limit: Int = 50) async throws -> [String: Any] { try await client.request("session.list", params: ["limit": limit]) }
+    func sessionMessages(sessionID: String) async throws -> [String: Any] {
+        let disallowed = CharacterSet(charactersIn: "/")
+        let allowed = CharacterSet.urlPathAllowed.subtracting(disallowed)
+        guard let encoded = sessionID.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            throw NSError(domain: "HermesControl", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid session ID."])
+        }
+        return try await client.fetchHTTP("/api/sessions/\(encoded)/messages?limit=500")
+    }
     func activate(sessionID: String) async throws -> [String: Any] { try await client.request("session.activate", params: ["session_id": sessionID]) }
     func resume(sessionID: String) async throws -> [String: Any] { try await client.request("session.resume", params: ["session_id": sessionID, "source": "hermes-agent-dock-control"]) }
     func interrupt(sessionID: String) async throws -> [String: Any] { try await client.request("session.interrupt", params: ["session_id": sessionID]) }
     func sessionUsage(sessionID: String) async throws -> [String: Any] { try await client.request("session.usage", params: ["session_id": sessionID]) }
     func sessionContextBreakdown(sessionID: String) async throws -> [String: Any] { try await client.request("session.context_breakdown", params: ["session_id": sessionID]) }
+    func projectFacts(cwd: String) async throws -> [String: Any] {
+        try await client.request("project.facts", params: ["cwd": cwd])
+    }
+    func verificationStatus(sessionID: String?, cwd: String) async throws -> [String: Any] {
+        var params: [String: Any] = ["cwd": cwd]
+        if let sessionID, !sessionID.isEmpty { params["session_id"] = sessionID }
+        return try await client.request("verification.status", params: params)
+    }
+    func startBackgroundPrompt(sessionID: String, text: String) async throws -> [String: Any] {
+        try await client.request("prompt.background", params: ["session_id": sessionID, "text": text])
+    }
     func sessionTitle(sessionID: String) async throws -> [String: Any] { try await client.request("session.title", params: ["session_id": sessionID]) }
     func setSessionTitle(sessionID: String, title: String) async throws -> [String: Any] {
         try await client.request("session.title", params: ["session_id": sessionID, "title": title])
@@ -80,8 +110,17 @@ final class HermesControlRPC {
         if let focusTopic, !focusTopic.isEmpty { params["focus_topic"] = focusTopic }
         return try await client.request("session.compress", params: params)
     }
-    func interruptSubagent(sessionID: String, childSessionID: String) async throws -> [String: Any] {
-        try await client.request("subagent.interrupt", params: ["session_id": sessionID, "child_session_id": childSessionID])
+    func undo(sessionID: String) async throws -> [String: Any] {
+        try await client.request("session.undo", params: ["session_id": sessionID])
+    }
+    func redirect(sessionID: String, text: String) async throws -> [String: Any] {
+        try await client.request("session.redirect", params: ["session_id": sessionID, "text": text])
+    }
+    func pauseDelegation(_ paused: Bool) async throws -> [String: Any] {
+        try await client.request("delegation.pause", params: ["paused": paused])
+    }
+    func interruptSubagent(subagentID: String) async throws -> [String: Any] {
+        try await client.request("subagent.interrupt", params: ["subagent_id": subagentID])
     }
     func killProcess(sessionID: String, processID: String) async throws -> [String: Any] {
         try await client.request("process.kill", params: ["session_id": sessionID, "process_id": processID])
