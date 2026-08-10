@@ -55,6 +55,15 @@ final class SpeechInput: ObservableObject {
         completedTranscript = nil
     }
 
+    /// Assistant playback must never share a recognition turn. Cancelling the
+    /// request before TTS starts prevents the system recognizer from treating
+    /// Hermes's speaker output as a new user message.
+    func stopForAssistantSpeech() {
+        completedTranscript = nil
+        transcript = ""
+        stop()
+    }
+
     private func requestPermissionsAndStart() {
         isStarting = true
         guard Bundle.main.bundleURL.pathExtension == "app" else {

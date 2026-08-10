@@ -6,11 +6,15 @@ import UniformTypeIdentifiers
 
 extension Color {
     static let scifiBg = Color.black
+    static let scifiCanvas = Color(red: 0.035, green: 0.045, blue: 0.085)
     static let scifiSurface = Color.white.opacity(0.03)
     static let scifiSurface2 = Color.white.opacity(0.02)
     static let scifiSurface4 = Color.white.opacity(0.04)
     static let scifiSurface6 = Color.white.opacity(0.06)
     static let scifiSurface8 = Color.white.opacity(0.08)
+    // An explicit cool control fill prevents translucent fields from inheriting
+    // a warm macOS-material tint from whatever sits behind the popup.
+    static let scifiControlSurface = Color(red: 0.075, green: 0.085, blue: 0.135)
     static let scifiBorderStrong = Color.white.opacity(0.12)
     static let scifiBorder = Color.white.opacity(0.08)
     static let scifiBorderLight = Color.white.opacity(0.06)
@@ -74,7 +78,7 @@ private struct VoiceModeToolbar: View {
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(Color.scifiSurface4))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scifiPress)
             .dockHitTarget()
             .help("Return to chat")
 
@@ -88,7 +92,7 @@ private struct VoiceModeToolbar: View {
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(isWorkspaceVisible ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scifiPress)
                 .dockHitTarget()
                 .help(isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
 
@@ -100,7 +104,7 @@ private struct VoiceModeToolbar: View {
                             .frame(width: 36, height: 36)
                             .background(Circle().fill(Color.scifiDestructive.opacity(0.1)))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .dockHitTarget()
                     .help("Stop Hermes request")
                 }
@@ -431,6 +435,8 @@ private struct WorkspaceActivitySidebar: View {
     var onClose: () -> Void = {}
     @State private var selectedMode: ControlTab = .today
     @State private var selectedAttentionID: String?
+    @State private var inboxFilter: InboxFilter = .all
+    @State private var isShowingCommandPalette = false
     @State private var searchQuery = ""
     @State private var selectedModelID = ""
     @State private var selectedAgentID: String?
@@ -443,6 +449,8 @@ private struct WorkspaceActivitySidebar: View {
     @State private var isShowingCronConfirmation = false
     @State private var cronRemovalRequest: CronSummary?
     @State private var isShowingCronRemovalConfirmation = false
+    @State private var cronRunRequest: CronSummary?
+    @State private var isShowingCronRunConfirmation = false
     @State private var automationName = ""
     @State private var automationSchedule = ""
     @State private var automationPrompt = ""
@@ -453,14 +461,55 @@ private struct WorkspaceActivitySidebar: View {
     @State private var isShowingKanbanConfirmation = false
     @State private var kanbanChangeRequest: KanbanChangeRequest?
     @State private var isShowingKanbanChangeConfirmation = false
+    @State private var selectedKanbanTask: KanbanTaskSummary?
+    @State private var kanbanMutationRequest: KanbanMutationRequest?
+    @State private var cronEditJob: CronSummary?
     @State private var clarificationItem: AttentionItem?
     @State private var clarificationResponse = ""
+    @State private var expandedCronReportIDs: Set<String> = []
+    @State private var kanbanStatusFilter = "All"
+    @State private var kanbanAssigneeFilter = "All"
+    @State private var kanbanMineOnly = false
+    @State private var kanbanCurrentSessionOnly = false
+    @State private var kanbanSort = "updated"
+    @State private var sessionSteerText = ""
 
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
-    }()
+    private enum KanbanLane: String, CaseIterable, Identifiable {
+        case triage = "Triage"
+        case todo = "Todo"
+        case ready = "Ready"
+        case running = "Running"
+        case review = "Review"
+        case scheduled = "Scheduled"
+        case blocked = "Blocked"
+        case done = "Done"
+
+        var id: String { rawValue }
+        var icon: String {
+            switch self {
+            case .triage: "scope"
+            case .todo: "circle.dashed"
+            case .ready: "circle"
+            case .running: "arrow.triangle.2.circlepath"
+            case .review: "eye"
+            case .scheduled: "clock"
+            case .blocked: "exclamationmark.octagon"
+            case .done: "checkmark.circle"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .triage: Color.scifiWarning
+            case .todo: Color.scifiMuted
+            case .ready: Color.scifiAccent
+            case .running: Color(red: 0.55, green: 0.55, blue: 1)
+            case .review: Color(red: 0.72, green: 0.48, blue: 1)
+            case .scheduled: Color(red: 0.32, green: 0.78, blue: 0.82)
+            case .blocked: Color.scifiWarning
+            case .done: Color.scifiSuccess
+            }
+        }
+    }
 
     private var sidebarContent: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -476,6 +525,15 @@ private struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.scifiTertiary)
                 }
                 Spacer()
+                Button { isShowingCommandPalette = true } label: {
+                    Image(systemName: "command")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.scifiAccent)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.scifiPress)
+                .help("Command palette")
+                .keyboardShortcut("k", modifiers: [.command])
                 Button(action: onClose) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12, weight: .semibold))
@@ -483,7 +541,7 @@ private struct WorkspaceActivitySidebar: View {
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.scifiSurface4))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scifiPress)
                 .dockHitTarget()
                 .help("Return to chat")
                 Circle()
@@ -517,10 +575,20 @@ private struct WorkspaceActivitySidebar: View {
 
     private var observedSidebar: some View {
         sidebarContent
-        .background(Color.scifiSurface)
+        .background {
+            ZStack {
+                Color.scifiCanvas
+                RadialGradient(
+                    colors: [Color.scifiAccent.opacity(0.055), .clear],
+                    center: UnitPoint(x: 0.9, y: 0),
+                    startRadius: 0,
+                    endRadius: 300
+                )
+            }
+        }
         .environment(\.colorScheme, .dark)
         .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder], onCompletion: handleRepositoryImport)
-        .task(id: activeRepositoryPath) { await refreshRepository() }
+        .task(id: activeRepositoryIdentity) { await refreshRepository() }
         .task {
             control.bind(to: model)
             control.refresh()
@@ -528,6 +596,10 @@ private struct WorkspaceActivitySidebar: View {
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
         .onChange(of: model.sessionID) { _, sessionID in control.focus(sessionID: sessionID) }
+        .onChange(of: control.capabilities) { _, _ in
+            guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
+            control.refreshKanban()
+        }
         .onChange(of: model.controlInboxRequest) { _, _ in
             selectedMode = .inbox
             selectedAttentionID = model.requestedAttentionID
@@ -541,6 +613,25 @@ private struct WorkspaceActivitySidebar: View {
 
     var body: some View {
         observedSidebar
+        .sheet(item: $selectedKanbanTask) { task in
+            kanbanDetailSheet(task)
+        }
+        .sheet(isPresented: $isShowingCommandPalette) {
+            DockCommandPalette { command in
+                run(command)
+                isShowingCommandPalette = false
+            }
+        }
+        .sheet(item: $kanbanMutationRequest) { request in
+            KanbanMutationEditor(request: request, assignees: control.kanbanAssignees, isPending: control.isActionPending(control.kanbanActionID(request.kind, task: request.task))) { updated in
+                control.mutateKanban(updated)
+            }
+        }
+        .sheet(item: $cronEditJob) { job in
+            CronEditEditor(job: job, isPending: control.isActionPending(control.cronActionID("edit", job: job))) { draft in
+                control.editCron(job, draft: draft)
+            }
+        }
         .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
             if let reminder = reminderForConfirmation {
                 Button("Complete Reminder") { control.completeReminder(reminder) }
@@ -571,13 +662,27 @@ private struct WorkspaceActivitySidebar: View {
                 Text("Hermes will remove ‘\(job.name)’ from the scheduler.")
             }
         }
+        .confirmationDialog("Run Scheduled Job Now?", isPresented: $isShowingCronRunConfirmation) {
+            if let job = cronRunRequest {
+                Button("Run Job Now") { control.runCronNow(job) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let job = cronRunRequest {
+                Text("Hermes will start ‘\(job.name)’ immediately, in addition to its normal schedule.")
+            }
+        }
         .confirmationDialog("Create Scheduled Job?", isPresented: $isShowingAutomationConfirmation) {
             Button("Create Job") {
-                control.createCron(name: automationName, schedule: automationSchedule, prompt: automationPrompt)
-                automationName = ""
-                automationSchedule = ""
-                automationPrompt = ""
+                Task {
+                    if await control.createCron(name: automationName, schedule: automationSchedule, prompt: automationPrompt) {
+                        automationName = ""
+                        automationSchedule = ""
+                        automationPrompt = ""
+                    }
+                }
             }
+            .disabled(control.isActionPending("cron.create"))
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Hermes will create ‘\(automationName)’ on schedule ‘\(automationSchedule)’." )
@@ -590,10 +695,14 @@ private struct WorkspaceActivitySidebar: View {
         }
         .confirmationDialog("Create Kanban Task?", isPresented: $isShowingKanbanConfirmation) {
             Button("Create Kanban Task") {
-                control.createKanbanTask(title: kanbanTitle, body: kanbanBody)
-                kanbanTitle = ""
-                kanbanBody = ""
+                Task {
+                    if await control.createKanbanTask(title: kanbanTitle, body: kanbanBody) {
+                        kanbanTitle = ""
+                        kanbanBody = ""
+                    }
+                }
             }
+            .disabled(control.isCreatingKanbanTask)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Hermes will create this task in the authoritative Kanban board through its CLI.")
@@ -607,7 +716,9 @@ private struct WorkspaceActivitySidebar: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             if let request = kanbanChangeRequest {
-                Text("Hermes will \(request.action.rawValue) ‘\(request.task.title)’ on the authoritative Kanban board.")
+                let action = request.action.rawValue
+                let title = request.task.title
+                Text(verbatim: "Hermes will " + action + " ‘" + title + "’ on the authoritative Kanban board.")
             }
         }
         .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
@@ -620,7 +731,7 @@ private struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.scifiFg)
                     .fixedSize(horizontal: false, vertical: true)
                 TextField("Your response", text: $clarificationResponse, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.scifiGlass)
                     .lineLimit(3...6)
                 HStack {
                     Spacer()
@@ -641,44 +752,88 @@ private struct WorkspaceActivitySidebar: View {
     }
 
     private var modePicker: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 3)], spacing: 3) {
-            ForEach(ControlTab.allCases) { mode in
-                Button {
-                    withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
-                    if mode == .core { model.refreshRuntimeConfiguration(); control.refresh() }
-                    if mode == .automations { control.refresh(); control.refreshCronRuns() }
-                    if mode == .projects { control.refresh() }
-                    if mode == .search { control.search(searchQuery) }
-                    if mode == .kanban { control.refreshKanban() }
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(mode.rawValue.uppercased())
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .tracking(0.75)
-                        if badgeCount(for: mode) > 0 {
-                            Text(badgeLabel(for: mode))
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                .monospacedDigit()
-                                .foregroundStyle(badgeIsUrgent(for: mode) ? Color.scifiBg : Color.scifiFg)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .padding(.horizontal, 4)
-                                .background(Capsule().fill(badgeIsUrgent(for: mode) ? Color.scifiWarning : Color.scifiAccent.opacity(0.85)))
-                        }
+        HStack(spacing: 3) {
+            ForEach(primaryTabs) { mode in
+                modeButton(mode)
+            }
+
+            Menu {
+                ForEach(secondaryTabs) { mode in
+                    Button {
+                        select(mode)
+                    } label: {
+                        Label(mode.tabLabel, systemImage: mode.icon)
                     }
-                    .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
-                    .frame(maxWidth: .infinity, minHeight: 36)
-                        .background(selectedMode == mode ? Color.scifiAccent.opacity(0.11) : .clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
+            } label: {
+                Text(secondaryTabs.contains(selectedMode) ? selectedMode.tabLabel.uppercased() : "MORE")
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .tracking(0.75)
+                .foregroundStyle(secondaryTabs.contains(selectedMode) ? Color.scifiFg : Color.scifiMuted)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .background(secondaryTabs.contains(selectedMode) ? Color.scifiAccent.opacity(0.11) : .clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contentShape(Rectangle())
             }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.scifiPress)
+            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+    }
+
+    private var primaryTabs: [ControlTab] { [.today, .inbox, .activity, .automations] }
+    private var secondaryTabs: [ControlTab] { [.projects, .search, .kanban, .core] }
+
+    private func modeButton(_ mode: ControlTab) -> some View {
+        Button { select(mode) } label: {
+            HStack(spacing: 5) {
+                Text(mode.tabLabel.uppercased())
+                    .lineLimit(1)
+                if badgeCount(for: mode) > 0 {
+                    Text(badgeLabel(for: mode))
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(badgeIsUrgent(for: mode) ? Color.scifiBg : Color.scifiFg)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .padding(.horizontal, 4)
+                        .background(Capsule().fill(badgeIsUrgent(for: mode) ? Color.scifiWarning : Color.scifiAccent.opacity(0.85)))
+                }
+            }
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .tracking(0.75)
+            .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .background(selectedMode == mode ? Color.scifiAccent.opacity(0.11) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.scifiPress)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func select(_ mode: ControlTab) {
+        withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
+        if mode == .core {
+            model.refreshRuntimeConfiguration()
+            control.refresh(forceCapabilities: true)
+        }
+        if mode == .automations { control.refresh(); control.refreshCronRuns() }
+        if mode == .projects { control.refresh() }
+        if mode == .search { control.search(searchQuery) }
+        if mode == .kanban { control.refreshKanban() }
+    }
+
+    private func run(_ command: DockCommand) {
+        switch command {
+        case .tab(let tab): select(tab)
+        case .newChat: model.newChat(); model.requestComposerFocus()
+        case .focusComposer: model.requestComposerFocus()
+        case .stop: model.stop()
+        case .voice: model.startVoiceConversation()
+        }
     }
 
     private var activityContent: some View {
@@ -687,26 +842,59 @@ private struct WorkspaceActivitySidebar: View {
 
     private var automationsContent: some View {
         VStack(alignment: .leading, spacing: 14) {
+            projectionRefreshNotice("cron.jobs")
             sectionLabel("CREATE AUTOMATION")
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Name", text: $automationName)
-                TextField("Schedule · e.g. every 2h or 0 9 * * *", text: $automationSchedule)
-                TextField("Prompt", text: $automationPrompt, axis: .vertical)
-                    .lineLimit(2...4)
-                Button("REVIEW AND CREATE") {
-                    isShowingAutomationConfirmation = true
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
-                .disabled(automationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || automationSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || automationPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .textFieldStyle(.roundedBorder)
-            .padding(12)
-            .background(Color.scifiSurface4)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 10) {
+                controlFieldLabel("NAME")
+                scifiTextField("Morning review", text: $automationName)
 
-            sectionLabel("JOBS  ·  \(control.cronJobs.count)")
+                HStack(alignment: .firstTextBaseline) {
+                    controlFieldLabel("SCHEDULE")
+                    Spacer()
+                    Text("EVERY 2H  ·  0 9 * * *")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .tracking(0.4)
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+                scifiTextField("When should Hermes run this?", text: $automationSchedule)
+
+                controlFieldLabel("REQUEST")
+                TextField("What should Hermes do?", text: $automationPrompt, axis: .vertical)
+                    .lineLimit(2...3)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+                    .foregroundStyle(Color.scifiFg)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 36)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color.scifiSurface)
+                            .stroke(Color.scifiBorder, lineWidth: 0.5)
+                    )
+
+                Button {
+                    isShowingAutomationConfirmation = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("REVIEW AND CREATE")
+                        Image(systemName: "arrow.right")
+                    }
+                }
+                .buttonStyle(.scifiPrimary)
+                .opacity(canCreateAutomation && control.capabilityAvailable("rpc-scheduling") ? 1 : 0.42)
+                .disabled(!canCreateAutomation || !control.capabilityAvailable("rpc-scheduling"))
+            }
+            .padding(.bottom, 2)
+
+            if !control.cronJobs.isEmpty {
+                sectionLabel("AUTOMATION DETAILS")
+                ForEach(control.cronJobs) { job in
+                    cronReportCard(job)
+                }
+            }
+
+            sectionLabel("SCHEDULED JOBS  ·  \(control.cronJobs.count)")
             if control.cronJobs.isEmpty {
                 emptyState(icon: "clock.badge.questionmark", title: "No automations", detail: "Create a Hermes cron job above.")
             } else {
@@ -720,30 +908,91 @@ private struct WorkspaceActivitySidebar: View {
                                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
                         }
-                        Text(job.schedule).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiMuted)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(CronScheduleFormatting.humanReadable(job.schedule))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Color.scifiFg)
+                            Text(job.schedule)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color.scifiTertiary)
+                        }
+                        if let nextRun = job.nextRun {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.right.circle")
+                                Text("NEXT RUN")
+                                Text(HumanDateFormatting.dateAndTime(nextRun))
+                            }
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.scifiAccent)
+                        }
                         HStack(spacing: 12) {
-                            Button(job.enabled ? "PAUSE" : "RESUME") {
-                                cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
-                                isShowingCronConfirmation = true
+                            if control.capabilityAvailable("cron.runNow") {
+                                Button {
+                                    cronRunRequest = job
+                                    isShowingCronRunConfirmation = true
+                                } label: {
+                                    ScifiActionLabel(
+                                        title: "RUN NOW",
+                                        pendingTitle: "RUNNING…",
+                                        isPending: control.isActionPending(control.cronActionID("run", job: job))
+                                    )
+                                }
+                                .disabled(control.isActionPending(control.cronActionID("run", job: job)))
                             }
-                            Button("REMOVE") {
-                                cronRemovalRequest = job
-                                isShowingCronRemovalConfirmation = true
+                            if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
+                                Button { cronEditJob = job } label: {
+                                    ScifiActionLabel(
+                                        title: "EDIT",
+                                        pendingTitle: "SAVING…",
+                                        isPending: control.isActionPending(control.cronActionID("edit", job: job))
+                                    )
+                                }
+                                .disabled(control.isActionPending(control.cronActionID("edit", job: job)))
                             }
-                            .foregroundStyle(Color.scifiWarning)
+                            if control.capabilityAvailable("rpc-scheduling") {
+                                Button {
+                                    cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
+                                    isShowingCronConfirmation = true
+                                } label: {
+                                    ScifiActionLabel(
+                                        title: job.enabled ? "PAUSE" : "RESUME",
+                                        pendingTitle: job.enabled ? "PAUSING…" : "RESUMING…",
+                                        isPending: control.isActionPending(control.cronActionID(job.enabled ? "pause" : "resume", job: job))
+                                    )
+                                }
+                                .disabled(control.isActionPending(control.cronActionID(job.enabled ? "pause" : "resume", job: job)))
+                                Button {
+                                    cronRemovalRequest = job
+                                    isShowingCronRemovalConfirmation = true
+                                } label: {
+                                    ScifiActionLabel(
+                                        title: "REMOVE",
+                                        pendingTitle: "REMOVING…",
+                                        isPending: control.isActionPending(control.cronActionID("remove", job: job)),
+                                        tint: Color.scifiWarning
+                                    )
+                                }
+                                .foregroundStyle(Color.scifiWarning)
+                                .disabled(control.isActionPending(control.cronActionID("remove", job: job)))
+                            }
                             Spacer()
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.scifiPress)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.scifiAccent)
                     }
-                    .padding(11)
-                    .background(Color.scifiSurface4)
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                    .padding(12)
+                    .scifiGlassPane()
                 }
             }
             sectionLabel("RUN HISTORY  ·  \(control.cronRuns.count)")
-            if !control.cronHistoryAvailable {
+            if let state = control.refreshState(for: "cron.history"), state.isStale {
+                Text("Showing the last successful history while Hermes reconnects. \(state.error ?? "")")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !control.cronHistoryAvailable && control.cronRuns.isEmpty {
                 Text("Hermes cron history is unavailable through the installed CLI.")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.scifiTertiary)
@@ -756,24 +1005,169 @@ private struct WorkspaceActivitySidebar: View {
                 ForEach(control.cronRuns) { run in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Circle().fill(run.status.lowercased().contains("success") ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6)
+                            Circle().fill(cronRunIsSuccessful(run) ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6)
                             Text(run.status.uppercased()).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiFg)
                             Spacer()
                             Text(run.jobID ?? run.id).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(1)
                         }
                         if let claimedAt = run.claimedAt {
-                            Text(claimedAt).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                            Text(HumanDateFormatting.dateAndTime(claimedAt)).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
                         }
                         if let error = run.error {
                             Text(error).font(.system(size: 12)).foregroundStyle(Color.scifiWarning).lineLimit(3)
                         }
                     }
-                    .padding(10)
-                    .background(Color.scifiSurface4)
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                    .padding(12)
+                    .scifiGlassPane()
                 }
             }
         }
+    }
+
+    private func cronReportCard(_ job: CronSummary) -> some View {
+        let latestRun = control.cronRuns.first { $0.jobID == job.id }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: job.enabled ? "clock.badge.checkmark" : "clock.badge.xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(job.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.scifiFg)
+                        .lineLimit(2)
+                    Text(job.enabled ? "ENABLED AND SCHEDULED" : "PAUSED")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .tracking(0.45)
+                        .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Divider().overlay(Color.scifiBorderLight)
+
+            reportRow("SCHEDULE", value: CronScheduleFormatting.humanReadable(job.schedule))
+            reportRow("CRON", value: job.schedule)
+            reportRow("NEXT RUN", value: job.nextRun.map(HumanDateFormatting.dateAndTime) ?? "Not reported by Hermes")
+            reportRow("JOB ID", value: job.id)
+            if let delivery = job.delivery, !delivery.isEmpty {
+                reportRow("DELIVERY", value: delivery.uppercased())
+            }
+            if let prompt = job.prompt, !prompt.isEmpty {
+                reportRow("REQUEST", value: prompt)
+            }
+            if let latestRun {
+                reportRow("LAST RUN", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
+                HStack(spacing: 6) {
+                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.scifiSuccess : Color.scifiWarning).frame(width: 5, height: 5)
+                    Text("LAST STATUS")
+                    Text(latestRun.status.uppercased())
+                }
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(cronRunIsSuccessful(latestRun) ? Color.scifiSuccess : Color.scifiWarning)
+                if let error = latestRun.error, !error.isEmpty {
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.scifiWarning)
+                        .lineLimit(3)
+                }
+            } else {
+                reportRow("LAST RUN", value: "No execution recorded")
+            }
+            if let report = job.report, !report.isEmpty {
+                Divider().overlay(Color.scifiBorderLight)
+                Button {
+                    withAnimation(.scifiEase(duration: 0.2)) {
+                        if expandedCronReportIDs.contains(job.id) {
+                            expandedCronReportIDs.remove(job.id)
+                        } else {
+                            expandedCronReportIDs.insert(job.id)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: expandedCronReportIDs.contains(job.id) ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(expandedCronReportIDs.contains(job.id) ? "HIDE REPORT" : "VIEW LATEST REPORT")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    }
+                    .foregroundStyle(Color.scifiAccent)
+                }
+                .buttonStyle(.scifiPress)
+                if expandedCronReportIDs.contains(job.id) {
+                    MarkdownMessageView(markdown: report)
+                        .padding(10)
+                        .background(Color.black.opacity(0.16))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            } else {
+                Divider().overlay(Color.scifiBorderLight)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("REPORT BODY UNAVAILABLE")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                    Text("Hermes recorded this run, but the installed CLI only provides execution status and delivery metadata—not the response body. " + (job.delivery?.lowercased() == "origin" ? "This job delivers its result to its origin chat." : ""))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.scifiMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("RETURN TO CHAT") {
+                        onClose()
+                        model.requestComposerFocus()
+                    }
+                    .buttonStyle(.scifiPress)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                }
+            }
+        }
+        .padding(12)
+        .scifiGlassPane()
+    }
+
+    private func reportRow(_ label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .frame(width: 70, alignment: .leading)
+                .foregroundStyle(Color.scifiTertiary)
+            Text(value)
+                .foregroundStyle(Color.scifiMuted)
+                .lineLimit(2)
+        }
+        .font(.system(size: 11, design: .monospaced))
+    }
+
+    private func cronRunIsSuccessful(_ run: CronRunSummary) -> Bool {
+        let status = run.status.lowercased()
+        return ["ok", "success", "successful", "completed", "complete", "succeeded"].contains(status)
+    }
+
+    private func scifiTextField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(.body)
+            .foregroundStyle(Color.scifiFg)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(minHeight: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.scifiSurface)
+                    .stroke(Color.scifiBorder, lineWidth: 0.5)
+            )
+    }
+
+    private var canCreateAutomation: Bool {
+        !automationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !automationSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !automationPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func controlFieldLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(.body, design: .monospaced).weight(.semibold))
+            .tracking(0.9)
+            .foregroundStyle(Color.scifiMuted)
     }
 
     private var tabBadges: ControlTabBadgeState {
@@ -799,6 +1193,7 @@ private struct WorkspaceActivitySidebar: View {
 
     private var projectsContent: some View {
         VStack(alignment: .leading, spacing: 14) {
+            projectionRefreshNotice("projects")
             if let selectedProjectID = control.selectedProjectID,
                let project = control.projects.first(where: { $0.id == selectedProjectID }) {
                 HStack {
@@ -807,7 +1202,7 @@ private struct WorkspaceActivitySidebar: View {
                     } label: {
                         Label("PROJECTS", systemImage: "chevron.left")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiAccent)
                     Spacer()
@@ -841,11 +1236,10 @@ private struct WorkspaceActivitySidebar: View {
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(11)
-                            .background(Color.scifiSurface4)
-                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                            .scifiListRow()
+                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.scifiPress)
                     }
                 }
             } else if control.projects.isEmpty {
@@ -857,144 +1251,521 @@ private struct WorkspaceActivitySidebar: View {
                     Button {
                         control.openProject(project)
                     } label: {
-                        VStack(alignment: .leading, spacing: 7) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 10) {
                             Image(systemName: project.isActive ? "folder.fill" : "folder")
-                                .font(.system(size: 12))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(project.isActive ? Color.scifiAccent : Color.scifiMuted)
-                            Text(project.name)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.scifiFg)
-                                .lineLimit(1)
+                                .frame(width: 16)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(projectDisplayName(project))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.scifiFg)
+                                    .lineLimit(1)
+                                Text(projectMetadata(project))
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundStyle(Color.scifiTertiary)
+                                    .lineLimit(1)
+                            }
                             Spacer()
                             if project.isActive {
                                 Text("ACTIVE")
                                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .tracking(0.5)
                                     .foregroundStyle(Color.scifiSuccess)
                             }
-                        }
-                        Text("\(project.repoCount) repos  ·  \(project.sessionCount) sessions")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Color.scifiMuted)
-                        if let preview = project.preview {
-                            Text(preview)
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.scifiTertiary)
-                                .lineLimit(2)
-                        }
-                        HStack {
-                            Spacer()
-                            Text("OPEN SESSIONS  ›")
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Color.scifiAccent)
                         }
-                        }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(11)
-                        .background(Color.scifiSurface4)
-                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                        .padding(.vertical, 10)
+                        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                 }
             }
         }
+    }
+
+    private func projectDisplayName(_ project: ProjectSummary) -> String {
+        guard project.name != "__no_project__" else { return "Unassigned sessions" }
+        let path = URL(fileURLWithPath: project.name)
+        return path.lastPathComponent.isEmpty ? project.name : path.lastPathComponent
+    }
+
+    private func projectMetadata(_ project: ProjectSummary) -> String {
+        let counts = "\(project.repoCount) repos  ·  \(project.sessionCount) sessions"
+        guard project.name != "__no_project__" else { return counts }
+        return "\(counts)  ·  \(project.name)"
     }
 
     private var kanbanContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                sectionLabel("HERMES KANBAN  ·  \(control.kanbanTasks.count)")
-                Spacer()
-                Button { control.refreshKanban() } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.scifiAccent)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Task title", text: $kanbanTitle)
-                TextField("Task details (optional)", text: $kanbanBody, axis: .vertical)
-                    .lineLimit(2...4)
-                Button("REVIEW AND CREATE") { isShowingKanbanConfirmation = true }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
-                    .disabled(kanbanTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .textFieldStyle(.roundedBorder)
-            .padding(12)
-            .background(Color.scifiSurface4)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-
-            if control.kanbanTasks.isEmpty {
-                emptyState(icon: "rectangle.3.group", title: "No Kanban tasks", detail: "Hermes returned no tasks for the current board, or Kanban is not initialized.")
-            } else {
-                ForEach(control.kanbanTasks) { task in
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack {
-                            Circle().fill(task.status.lowercased() == "done" ? Color.scifiSuccess : Color.scifiAccent).frame(width: 6, height: 6)
-                            Text(task.title)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.scifiFg)
-                                .lineLimit(2)
-                            Spacer()
-                            Text(task.status.uppercased())
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(Color.scifiMuted)
-                        }
-                        HStack(spacing: 8) {
-                            if let priority = task.priority { Text("P\(priority)") }
-                            if let assignee = task.assignee { Text(assignee) }
-                            Text(task.id)
-                        }
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    sectionLabel("HERMES KANBAN")
+                    Text("\(control.kanbanTasks.count) tasks across \(KanbanLane.allCases.count) lanes")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Color.scifiTertiary)
-                        if let detail = task.detail, !detail.isEmpty {
-                            Text(detail).font(.system(size: 12)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
-                        }
-                        HStack(spacing: 12) {
-                            if task.status.lowercased() == "done" {
-                                kanbanActionButton("ARCHIVE", task: task, action: .archive)
-                            } else if task.status.lowercased() == "blocked" || task.status.lowercased() == "scheduled" {
-                                kanbanActionButton("UNBLOCK", task: task, action: .unblock)
-                            } else {
-                                kanbanActionButton("COMPLETE", task: task, action: .complete)
-                                kanbanActionButton("BLOCK", task: task, action: .block)
+                }
+                Spacer()
+                if control.capabilityAvailable("kanban.boards") {
+                    Menu {
+                        ForEach(control.kanbanBoards.filter { !$0.archived }) { board in
+                            Button {
+                                control.selectKanbanBoard(board)
+                            } label: {
+                                Label(board.name, systemImage: control.selectedKanbanBoardSlug == board.slug ? "checkmark.circle" : "circle")
                             }
                         }
-                        .padding(.top, 2)
+                        if control.kanbanBoards.isEmpty {
+                            Text("No boards reported by Hermes")
+                        }
+                        Button {
+                            control.refreshKanbanBoards()
+                        } label: {
+                            Label("Refresh boards", systemImage: "arrow.clockwise")
+                        }
+                    } label: {
+                        Label(control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name ?? "BOARD", systemImage: "rectangle.3.group")
                     }
-                    .padding(11)
-                    .background(Color.scifiSurface4)
-                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+                    .buttonStyle(.scifiPress)
+                    .foregroundStyle(Color.scifiAccent)
+                }
+                Button { control.refreshKanban() } label: {
+                    if control.isActionPending(control.refreshKanbanActionID) {
+                        ProgressView().controlSize(.small).tint(Color.scifiAccent)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                }
+                .buttonStyle(.scifiPress)
+                .foregroundStyle(Color.scifiAccent)
+                .disabled(control.isActionPending(control.refreshKanbanActionID))
+            }
+            if control.capabilityAvailable("kanban.create") {
+                createKanbanTaskForm
+            }
+
+            if control.capabilityAvailable("kanban.filters") {
+                kanbanFilterControls
+            }
+            if let stats = control.kanbanStats, !stats.counts.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(stats.counts.keys.sorted(), id: \.self) { status in
+                        Text("\(status.uppercased()) \(stats.counts[status] ?? 0)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiTertiary)
+                    }
+                }
+            }
+
+            if control.kanbanTasks.isEmpty {
+                emptyState(icon: "rectangle.3.group", title: "No Kanban tasks", detail: "Create the first task above, or refresh if you expected an existing Hermes board.")
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(KanbanLane.allCases) { lane in
+                            kanbanLane(lane)
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
             }
             Text("Hermes owns this board. The Dock only reads and submits confirmed CLI actions.")
-                .font(.system(size: 12))
+                .font(.body)
                 .foregroundStyle(Color.scifiTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let state = control.refreshState(for: "kanban.board"), let error = state.error {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 12, weight: .medium))
+                    Text(state.isStale ? "Showing the last successful board. \(error)" : error)
+                        .font(.system(.body, design: .monospaced))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(Color.scifiWarning)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(Color.scifiWarning.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiWarning.opacity(0.34), lineWidth: 0.5))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
         }
     }
 
+    private var kanbanFilterControls: some View {
+        HStack(spacing: 8) {
+            Menu(kanbanStatusFilter.uppercased()) {
+                Button("ALL") { kanbanStatusFilter = "All"; applyKanbanFilters() }
+                ForEach(KanbanLane.allCases) { lane in
+                    Button(lane.rawValue.uppercased()) { kanbanStatusFilter = lane.rawValue; applyKanbanFilters() }
+                }
+            }
+            Menu(kanbanAssigneeFilter.uppercased()) {
+                Button("ALL ASSIGNEES") { kanbanAssigneeFilter = "All"; applyKanbanFilters() }
+                ForEach(control.kanbanAssignees, id: \.self) { assignee in
+                    Button(assignee) { kanbanAssigneeFilter = assignee; applyKanbanFilters() }
+                }
+            }
+            Toggle("MINE", isOn: $kanbanMineOnly)
+                .toggleStyle(.button)
+                .onChange(of: kanbanMineOnly) { _, _ in applyKanbanFilters() }
+            if model.sessionID != nil {
+                Toggle("SESSION", isOn: $kanbanCurrentSessionOnly)
+                    .toggleStyle(.button)
+                    .onChange(of: kanbanCurrentSessionOnly) { _, _ in applyKanbanFilters() }
+            }
+            Menu("SORT") {
+                ForEach(["updated", "created-desc", "priority-desc", "title"], id: \.self) { value in
+                    Button(value.uppercased()) { kanbanSort = value; applyKanbanFilters() }
+                }
+            }
+        }
+        .buttonStyle(.scifiPress)
+        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+        .foregroundStyle(Color.scifiAccent)
+        .disabled(control.isActionPending(control.refreshKanbanActionID))
+    }
+
+    private func applyKanbanFilters() {
+        control.refreshKanban(filter: KanbanListFilter(
+            status: kanbanStatusFilter == "All" ? nil : kanbanStatusFilter.lowercased(),
+            assignee: kanbanAssigneeFilter == "All" ? nil : kanbanAssigneeFilter,
+            mine: kanbanMineOnly,
+            sessionID: kanbanCurrentSessionOnly ? model.sessionID : nil,
+            sort: kanbanSort
+        ))
+    }
+
+    private var createKanbanTaskForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.scifiAccent)
+                Text("ADD TASK")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.scifiMuted)
+            }
+            HStack(spacing: 8) {
+                scifiTextField("What needs to be done?", text: $kanbanTitle)
+                Button {
+                    isShowingKanbanConfirmation = true
+                } label: {
+                    Group {
+                        if control.isCreatingKanbanTask {
+                            ProgressView().controlSize(.small).tint(Color.scifiBg)
+                        } else {
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                    }
+                    .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.scifiPrimary)
+                .opacity(canCreateKanbanTask && !control.isCreatingKanbanTask ? 1 : 0.42)
+                .disabled(!canCreateKanbanTask || control.isCreatingKanbanTask)
+                .help("Create task")
+            }
+            TextField("Add context for Hermes (optional)", text: $kanbanBody, axis: .vertical)
+                .lineLimit(1...3)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.scifiFg)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.scifiSurface)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .padding(12)
+        .background(Color.scifiSurface2)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+    }
+
+    private func kanbanLane(_ lane: KanbanLane) -> some View {
+        let laneTasks = control.kanbanTasks.filter { kanbanLane(for: $0) == lane }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: lane.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(lane.color)
+                Text(lane.rawValue.uppercased())
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(Color.scifiMuted)
+                Spacer()
+                Text("\(laneTasks.count)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(lane.color)
+            }
+            .padding(.horizontal, 3)
+            Rectangle().fill(lane.color.opacity(0.55)).frame(height: 1)
+
+            if laneTasks.isEmpty {
+                Text("No tasks")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .frame(maxWidth: .infinity, minHeight: 72)
+                    .background(Color.scifiSurface2)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            } else {
+                ForEach(laneTasks) { task in
+                    kanbanTaskCard(task, lane: lane)
+                }
+            }
+        }
+        .padding(10)
+        .frame(width: 220, alignment: .topLeading)
+        .background(Color.black.opacity(0.14))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+    }
+
+    private func kanbanTaskCard(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(task.title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.scifiFg)
+                .lineLimit(3)
+            if let detail = task.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiMuted)
+                    .lineLimit(3)
+            }
+            HStack(spacing: 6) {
+                if let priority = task.priority, !priority.isEmpty {
+                    Text("P\(priority)")
+                        .foregroundStyle(Color.scifiWarning)
+                }
+                if let assignee = task.assignee, !assignee.isEmpty {
+                    Text(assignee)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Text(task.id)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(Color.scifiTertiary)
+
+            HStack(spacing: 10) {
+                if control.capabilityAvailable("kanban.taskDetails") {
+                    Button {
+                        selectedKanbanTask = task
+                        control.loadKanbanTask(task)
+                    } label: {
+                        ScifiActionLabel(
+                            title: "DETAILS",
+                            pendingTitle: "LOADING…",
+                            isPending: control.isLoadingKanbanDetail,
+                            tint: Color.scifiAccent
+                        )
+                    }
+                    .buttonStyle(.scifiPress)
+                    .foregroundStyle(Color.scifiMuted)
+                    .disabled(control.isLoadingKanbanDetail)
+                }
+                if lane == .done, control.capabilityAvailable("kanban.archive") {
+                    kanbanActionButton("ARCHIVE", task: task, action: .archive)
+                } else if lane == .blocked, control.capabilityAvailable("kanban.unblock") {
+                    kanbanActionButton("UNBLOCK", task: task, action: .unblock)
+                } else {
+                    if control.capabilityAvailable("kanban.complete") {
+                        kanbanActionButton("DONE", task: task, action: .complete)
+                    }
+                    if control.capabilityAvailable("kanban.block") {
+                        kanbanActionButton("BLOCK", task: task, action: .block)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(Color.scifiSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2).fill(lane.color).frame(width: 2)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+    }
+
+    private func kanbanDetailSheet(_ task: KanbanTaskSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("KANBAN TASK")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.scifiAccent)
+                Spacer()
+                Button("DONE") { selectedKanbanTask = nil }
+                    .buttonStyle(.scifiPress)
+                    .foregroundStyle(Color.scifiMuted)
+            }
+
+            if control.isLoadingKanbanDetail {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("LOADING HERMES TASK…")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                }
+            } else if let detail = control.kanbanDetail {
+                Text(detail.title)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                HStack(spacing: 10) {
+                    Text(detail.status.uppercased())
+                    if let priority = detail.priority { Text("P\(priority)") }
+                    if let assignee = detail.assignee { Text(assignee) }
+                }
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+                if let body = detail.body, !body.isEmpty {
+                    Text(body)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.scifiFg)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Menu {
+                    ForEach(KanbanMutationKind.allCases) { kind in
+                        if control.capabilityAvailable(kind.capabilityID) {
+                            Button(kind.title) {
+                                kanbanMutationRequest = KanbanMutationRequest(task: task, kind: kind, value: "", reclaimFirst: false)
+                            }
+                        }
+                    }
+                } label: {
+                    Label("TASK ACTIONS", systemImage: "ellipsis.circle")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                }
+                .menuStyle(.borderlessButton)
+                Divider().overlay(Color.scifiBorderLight)
+                Text("RUN HISTORY  ·  \(detail.runs.count)")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+                if detail.runs.isEmpty {
+                    Text("No run history returned by Hermes.")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                } else {
+                    ForEach(detail.runs) { run in
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack {
+                                Text(run.status.uppercased())
+                                if let outcome = run.outcome { Text(outcome) }
+                                Spacer()
+                                if let elapsed = run.elapsed { Text(elapsed) }
+                            }
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiAccent)
+                            if let summary = run.summary {
+                                Text(summary)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiMuted)
+                            }
+                        }
+                        .padding(.vertical, 5)
+                        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+                    }
+                }
+            } else {
+                Text("Hermes did not return structured details for this task.")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+            }
+        }
+        .padding(20)
+        .frame(width: 430, height: 500, alignment: .topLeading)
+        .background(Color.scifiBg)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func kanbanLane(for task: KanbanTaskSummary) -> KanbanLane {
+        let status = task.status.lowercased().replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: " ", with: "_")
+        if ["done", "completed", "complete", "archived"].contains(status) { return .done }
+        if ["blocked", "failed", "error"].contains(status) { return .blocked }
+        switch status {
+        case "triage": return .triage
+        case "todo": return .todo
+        case "ready": return .ready
+        case "running", "active", "in_progress", "inprogress", "working": return .running
+        case "review": return .review
+        case "scheduled": return .scheduled
+        default: return .todo
+        }
+    }
+
+    private var canCreateKanbanTask: Bool {
+        !kanbanTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func kanbanActionButton(_ label: String, task: KanbanTaskSummary, action: KanbanTaskAction) -> some View {
-        Button(label) {
+        let isPending = control.isActionPending(control.kanbanActionID(action, task: task))
+        return Button {
             kanbanChangeRequest = KanbanChangeRequest(task: task, action: action)
             isShowingKanbanChangeConfirmation = true
+        } label: {
+            ScifiActionLabel(
+                title: label,
+                pendingTitle: "UPDATING…",
+                isPending: isPending,
+                tint: action == .block || action == .archive ? Color.scifiWarning : Color.scifiAccent
+            )
         }
-        .buttonStyle(.plain)
-        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+        .buttonStyle(.scifiPress)
+        .font(.system(.body, design: .monospaced).weight(.semibold))
         .foregroundStyle(action == .block || action == .archive ? Color.scifiWarning : Color.scifiAccent)
+        .disabled(isPending)
     }
 
     private var searchContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("CONNECTED SOURCES")
-            TextField("Search sessions, projects, Inbox, reminders", text: $searchQuery)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12))
+            sectionLabel("SEARCH SOURCES")
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.scifiAccent)
+                    .frame(width: 16)
+                TextField("Sessions, projects, Inbox, reminders", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.scifiFg)
+                if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.scifiTertiary)
+                    }
+                    .buttonStyle(.scifiPress)
+                    .help("Clear search")
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.scifiControlSurface)
+                    .stroke(Color.scifiBorder, lineWidth: 0.5)
+            )
             if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                emptyState(icon: "magnifyingglass", title: "Search your control surface", detail: "Results come from hydrated Hermes sessions, projects, Inbox items, and Apple Reminders. Provider data is not fabricated locally.")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Search across the sources already connected to Hermes.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.scifiFg)
+                    Text("Sessions  ·  projects  ·  Inbox  ·  Apple Reminders")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+                .padding(.top, 2)
             } else if control.isSearching {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -1012,7 +1783,7 @@ private struct WorkspaceActivitySidebar: View {
                         Button { control.openSearchResult(result) } label: {
                             searchResultRow(result)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.scifiPress)
                     } else {
                         searchResultRow(result)
                     }
@@ -1049,19 +1820,27 @@ private struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.scifiTertiary)
             }
         }
-        .padding(11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.scifiSurface4)
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+        .scifiListRow()
+        .contentShape(Rectangle())
     }
 
     private var inboxContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("ATTENTION  ·  \(control.attention.filter { $0.state == .open }.count)")
-            if control.attention.filter({ $0.state == .open }).isEmpty {
+        let visibleItems = control.attention.filter { $0.state == .open && inboxFilter.includes($0) }
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                sectionLabel("ATTENTION  ·  \(visibleItems.count)")
+                Spacer()
+                Picker("Inbox filter", selection: $inboxFilter) {
+                    ForEach(InboxFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
+                }
+                .labelsHidden()
+                .font(.system(size: 11, design: .monospaced))
+            }
+            if visibleItems.isEmpty {
                 emptyState(icon: "checkmark.circle", title: "Nothing needs your attention", detail: "Approvals, failures, clarifications, and due reminders will appear here.")
             } else {
-                ForEach(control.attention.filter { $0.state == .open }) { item in
+                ForEach(visibleItems) { item in
                     attentionItemRow(item, isSelected: selectedAttentionID == item.id)
                 }
             }
@@ -1085,7 +1864,8 @@ private struct WorkspaceActivitySidebar: View {
             }
             HStack(spacing: 12) {
                 ForEach(item.actions.filter { $0 != .dismiss }, id: \.self) { action in
-                    Button(action.rawValue.uppercased()) {
+                    let isPending = control.isActionPending(control.attentionActionID(action, item: item))
+                    Button {
                         if action == .complete, let reminder = control.reminder(withID: item.reference.sourceID) {
                             reminderForConfirmation = reminder
                             isShowingReminderConfirmation = true
@@ -1094,211 +1874,402 @@ private struct WorkspaceActivitySidebar: View {
                         } else {
                             control.respond(to: item, action: action)
                         }
+                    } label: {
+                        ScifiActionLabel(
+                            title: action.rawValue.uppercased(),
+                            pendingTitle: action == .stop ? "STOPPING…" : "WORKING…",
+                            isPending: isPending,
+                            tint: action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent
+                        )
                     }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent)
+                    .buttonStyle(.scifiPress)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent)
+                    .disabled(isPending)
                 }
                 Button("DISMISS") { control.dismiss(item.id) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
                 Button("SNOOZE") { control.snooze(item.id) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
             }
         }
-        .padding(11)
-        .background(Color.scifiSurface4)
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(isSelected ? Color.scifiAccent : Color.scifiBorder, lineWidth: isSelected ? 1 : 0.5))
+        .padding(12)
+        .scifiGlassPane()
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? Color.scifiAccent : .clear, lineWidth: 0.5))
     }
 
     private var nowContent: some View {
-        VStack(alignment: .leading, spacing: 17) {
-            sectionLabel("CURRENT FOCUS")
-            if let focus = control.currentFocus {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(alignment: .top, spacing: 9) {
-                        Circle().fill(Color.scifiAccent).frame(width: 7, height: 7).padding(.top, 4)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(control.focusTitle(focus))
-                                .font(.system(size: 12.5, weight: .semibold))
-                                .foregroundStyle(Color.scifiFg)
-                                .lineLimit(3)
-                            Text(control.focusDetail(focus))
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .tracking(0.6)
-                                .foregroundStyle(Color.scifiAccent)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    HStack {
-                        Text("\(focus.source.rawValue.uppercased())  ·  AUTHORITATIVE")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .tracking(0.55)
-                            .foregroundStyle(Color.scifiTertiary)
-                        Spacer()
-                        if let task = currentTask {
-                            Button(task.status == .done ? "REOPEN" : "MARK DONE") {
-                                store.updateStatus(task.status == .done ? .inProgress : .done, for: task.id)
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
-                        }
-                    }
-                    if let task = currentTask {
-                        Text("LOCAL DISPLAY  ·  \(task.status.rawValue.uppercased())")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(taskColor(task.status))
-                    }
+        VStack(alignment: .leading, spacing: 14) {
+            let openAttention = control.attention.filter { $0.state == .open }
+
+            HStack(spacing: 8) {
+                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? Color.scifiSuccess : Color.scifiWarning)
+                todayMetric("RUNNING", value: control.activeAgents.count + control.processes.count, color: Color.scifiAccent)
+                todayMetric("SCHEDULED", value: control.cronJobs.count, color: Color.scifiSuccess)
+            }
+
+            if !openAttention.isEmpty {
+                attentionItemRow(openAttention.first!, isSelected: false)
+                if openAttention.count > 1 {
+                    Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
+                        .buttonStyle(.scifiPress)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                        .padding(.top, 2)
                 }
-                .padding(12)
-                .background(Color.scifiSurface4)
-                .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
             } else {
-                emptyState(icon: "scope", title: "No current focus", detail: "Open a Hermes session, project, or control item to make it your focus.")
-            }
-
-            sectionLabel("ATTENTION")
-            VStack(alignment: .leading, spacing: 9) {
                 attentionRow(
-                    icon: model.approvalText == nil ? "checkmark.circle" : "exclamationmark.triangle",
-                    title: model.approvalText == nil ? "No decisions waiting" : "Hermes needs approval",
-                    detail: model.approvalText ?? "You are clear to continue.",
-                    color: model.approvalText == nil ? .scifiSuccess : .scifiWarning
-                )
-                attentionRow(
-                    icon: model.activeSubagents.isEmpty ? "person.2" : "person.2.fill",
-                    title: model.activeSubagents.isEmpty ? "No agents running" : "\(model.activeSubagents.count) active agent\(model.activeSubagents.count == 1 ? "" : "s")",
-                    detail: model.activeToolCalls.isEmpty ? "No active tools" : "\(model.activeToolCalls.count) tool call\(model.activeToolCalls.count == 1 ? "" : "s") in progress",
-                    color: model.activeSubagents.isEmpty ? .scifiMuted : .scifiAccent
+                    icon: "checkmark.circle",
+                    title: "All clear",
+                    detail: "No approvals, clarifications, or failures need a response.",
+                    color: .scifiSuccess
                 )
             }
 
-            if !control.activeSessions.isEmpty || !control.activeAgents.isEmpty || !control.processes.isEmpty {
-                sectionLabel("RUNNING WORK")
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(control.activeAgents) { agent in
-                        HStack(spacing: 8) {
-                            Image(systemName: "person.2.fill").font(.system(size: 12)).foregroundStyle(Color.scifiAccent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(agent.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1)
-                                Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(Color.scifiTertiary)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                        }
+            let backgroundSessions = control.activeSessions.filter { $0.id != model.sessionID }
+            let hasRunningWork = !backgroundSessions.isEmpty || !control.activeAgents.isEmpty || !control.processes.isEmpty
+            if hasRunningWork {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiAccent)
+                        Text("LIVE OPERATIONS")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiAccent)
+                        Spacer()
                     }
-                    ForEach(control.activeSessions) { session in
-                        HStack(spacing: 8) {
-                            Circle().fill(Color.scifiAccent).frame(width: 5, height: 5)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1)
-                                Text(session.preview ?? session.state.uppercased()).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(control.activeAgents) { agent in
+                            HStack(spacing: 8) {
+                                Image(systemName: "person.2.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiAccent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(agent.name)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .lineLimit(1)
+                                    Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
                             }
-                            Spacer(minLength: 0)
-                            Button("OPEN") {
+                            .scifiListRow()
+                        }
+
+                        ForEach(backgroundSessions) { session in
+                            Button {
                                 Task {
                                     _ = try? await model.requestControl("session.activate", params: ["session_id": session.id])
                                     model.requestComposerFocus()
                                 }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Circle().fill(Color.scifiAccent).frame(width: 5, height: 5)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(session.title)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Color.scifiFg)
+                                            .lineLimit(1)
+                                        Text(session.preview ?? session.state.uppercased())
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(Color.scifiTertiary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.scifiAccent)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .scifiListRow()
+                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.scifiPress)
                         }
-                    }
-                    ForEach(control.processes) { process in
-                        HStack(spacing: 8) {
-                            Image(systemName: "gearshape.2").font(.system(size: 12)).foregroundStyle(Color.scifiMuted)
-                            Text(process.name).font(.system(size: 12)).foregroundStyle(Color.scifiFg).lineLimit(1)
-                            Spacer(minLength: 0)
-                            Text(process.state.uppercased()).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+
+                        ForEach(control.processes) { process in
+                            HStack(spacing: 8) {
+                                Image(systemName: "gearshape.2")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiMuted)
+                                Text(process.name)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiFg)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text(process.state.uppercased())
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.scifiTertiary)
+                            }
+                            .scifiListRow()
                         }
                     }
                 }
+                .scifiGlassPane()
             }
 
-            if activeRepositoryPath != nil {
-                sectionLabel("DEVELOPMENT CONTEXT")
-                repositoryContent
-            }
+            if !model.agentActivities.isEmpty || !control.cronRuns.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("RECENT ACTIVITY")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
 
-            if !control.reminders.isEmpty {
-                sectionLabel("REMINDERS  ·  \(control.reminders.count)")
-                ForEach(control.reminders.prefix(3)) { reminder in
-                    Button {
-                        reminderForConfirmation = reminder
-                        isShowingReminderConfirmation = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
-                                .font(.system(size: 12)).foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
-                            Text(reminder.title).font(.system(size: 12)).foregroundStyle(Color.scifiFg).lineLimit(1)
-                            Spacer(minLength: 0)
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(model.agentActivities.suffix(3).reversed())) { activity in
+                            todayActivityRow(
+                                timestamp: HumanDateFormatting.timeOnly(activity.timestamp),
+                                label: activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased(),
+                                detail: activity.text,
+                                color: Color.scifiAccent
+                            )
+                        }
+                        ForEach(control.cronRuns.prefix(3)) { run in
+                            todayActivityRow(
+                                timestamp: run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Recent",
+                                label: "CRON  ·  \(run.status.uppercased())",
+                                detail: run.jobID ?? "Scheduled job execution",
+                                color: cronRunIsSuccessful(run) ? Color.scifiSuccess : Color.scifiWarning
+                            )
                         }
                     }
-                    .buttonStyle(.plain)
                 }
+                .scifiGlassPane()
             }
 
             if !control.cronJobs.isEmpty {
-                sectionLabel("SCHEDULED WORK  ·  \(control.cronJobs.count)")
-                ForEach(control.cronJobs.prefix(3)) { job in
-                    HStack(spacing: 8) {
-                        Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary).frame(width: 5, height: 5)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(job.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
-                            Text(job.schedule).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
-                        }
-                        Spacer(minLength: 0)
-                        if job.sessionID != nil {
-                            Button("OPEN") { control.openCronSession(job) }
-                                .buttonStyle(.plain)
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(Color.scifiAccent)
-                        }
-                        Button(job.enabled ? "PAUSE" : "RESUME") {
-                            cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
-                            isShowingCronConfirmation = true
-                        }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(job.enabled ? Color.scifiWarning : Color.scifiAccent)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("SCHEDULED WORK  ·  \(control.cronJobs.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(control.cronJobs.prefix(3)) { job in
+                            HStack(spacing: 8) {
+                                Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary)
+                                    .frame(width: 5, height: 5)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(job.name)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color.scifiFg)
+                                    Text(CronScheduleFormatting.humanReadable(job.schedule))
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color.scifiFg)
+                                    Text(job.schedule)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                }
+                                Spacer(minLength: 0)
+                                if job.sessionID != nil {
+                                    Button("OPEN") { control.openCronSession(job) }
+                                        .buttonStyle(.scifiPress)
+                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.scifiAccent)
+                                }
+                                Button(job.enabled ? "PAUSE" : "RESUME") {
+                                    cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
+                                    isShowingCronConfirmation = true
+                                }
+                                .buttonStyle(.scifiPress)
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(job.enabled ? Color.scifiWarning : Color.scifiAccent)
+                            }
+                            .scifiListRow()
+                        }
+                    }
+
+                    Button("VIEW ALL AUTOMATIONS") { select(.automations) }
+                        .buttonStyle(.scifiPress)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 }
+                .scifiGlassPane()
             }
 
-            let setupCapabilities = control.capabilities.filter {
-                ["reminders", "notes", "calendar", "messaging", "email"].contains($0.id) && !$0.isAvailable
-            }
-            if !setupCapabilities.isEmpty {
-                sectionLabel("SETUP NEEDED")
-                ForEach(setupCapabilities) { capability in
-                    providerSetupCard(capability)
+            if !control.reminders.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("REMINDERS  ·  \(control.reminders.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(control.reminders.prefix(3)) { reminder in
+                            Button {
+                                reminderForConfirmation = reminder
+                                isShowingReminderConfirmation = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
+                                    Text(reminder.title)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .scifiListRow()
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.scifiPress)
+                        }
+                    }
                 }
+                .scifiGlassPane()
+            }
+
+            let setupCapabilities = unavailableSetupCapabilities
+            if !setupCapabilities.isEmpty {
+                Button { select(.core) } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.scifiWarning)
+                            .frame(width: 15)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("SETUP  ·  \(setupCapabilities.count)")
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .tracking(0.7)
+                                .foregroundStyle(Color.scifiFg)
+                            Text("Review integrations and required permissions in Core.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.scifiTertiary)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.scifiAccent)
+                    }
+                    .padding(12)
+                    .scifiGlassPane()
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.scifiPress)
             }
 
             if !store.tasks.isEmpty {
-                sectionLabel("RECENT TASKS  ·  \(store.tasks.count)")
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(store.tasks.prefix(4)) { task in
-                        HStack(spacing: 8) {
-                            Circle().fill(taskColor(task.status)).frame(width: 5, height: 5)
-                            Text(task.title).font(.system(size: 12)).foregroundStyle(Color.scifiFg).lineLimit(1)
-                            Spacer(minLength: 4)
-                            Text(task.status.rawValue.uppercased())
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(taskColor(task.status))
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("RECENT TASKS  ·  \(store.tasks.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(store.tasks.prefix(4)) { task in
+                            HStack(spacing: 8) {
+                                Circle().fill(taskColor(task.status)).frame(width: 5, height: 5)
+                                Text(task.title)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiFg)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(task.status.rawValue.uppercased())
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(taskColor(task.status))
+                            }
+                            .scifiListRow()
                         }
                     }
                 }
+                .scifiGlassPane()
+            }
+
+            if activeRepositoryPath != nil {
+                repositoryContent
             }
         }
+    }
+
+    private func todayMetric(_ label: String, value: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\(value)")
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .foregroundStyle(color)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .tracking(0.55)
+                .foregroundStyle(Color.scifiTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .scifiGlassPane()
+    }
+
+    private func todayActivityRow(timestamp: String, label: String, detail: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle().fill(color).frame(width: 5, height: 5).padding(.top, 5)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 7) {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(color)
+                    Text(timestamp)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiMuted)
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .scifiListRow()
     }
 
     private var repositoryContent: some View {
@@ -1332,15 +2303,23 @@ private struct WorkspaceActivitySidebar: View {
                 Button("CHANGE REPOSITORY") {
                     showingRepositoryPicker = true
                 }
-                Button("REFRESH") { Task { await refreshRepository() } }
+                Button {
+                    Task { await refreshRepository() }
+                } label: {
+                    ScifiActionLabel(
+                        title: "REFRESH",
+                        pendingTitle: "REFRESHING…",
+                        isPending: isRefreshingRepository
+                    )
+                }
+                .disabled(isRefreshingRepository)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scifiPress)
             .font(.system(size: 12, weight: .semibold, design: .monospaced))
             .foregroundStyle(Color.scifiAccent)
         }
         .padding(12)
-        .background(Color.scifiSurface4)
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiBorder, lineWidth: 0.5))
+        .scifiGlassPane()
     }
 
     private func providerSetupCard(_ capability: CapabilityState) -> some View {
@@ -1368,16 +2347,22 @@ private struct WorkspaceActivitySidebar: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiAccent)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(11)
-        .background(Color.scifiSurface4)
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.scifiWarning.opacity(0.35), lineWidth: 0.5))
+        .padding(12)
+        .scifiGlassPane()
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
+    }
+
+    private var unavailableSetupCapabilities: [CapabilityState] {
+        control.capabilities.filter {
+            ["reminders", "notes", "calendar", "messaging", "email"].contains($0.id) && !$0.isAvailable
+        }
     }
 
     private func attentionRow(icon: String, title: String, detail: String, color: Color) -> some View {
@@ -1389,6 +2374,7 @@ private struct WorkspaceActivitySidebar: View {
             }
             Spacer(minLength: 0)
         }
+        .scifiListRow()
     }
 
     private var currentTask: WorkspaceTask? {
@@ -1405,6 +2391,14 @@ private struct WorkspaceActivitySidebar: View {
         return task.projectPath
     }
 
+    /// A repository path can be shared by multiple sessions. The task identity
+    /// therefore includes the stable Hermes session ID so a session switch
+    /// always refreshes Today’s contextual repository projection.
+    private var activeRepositoryIdentity: String? {
+        guard let sessionID = model.sessionID, let path = activeRepositoryPath else { return nil }
+        return "\(sessionID):\(path)"
+    }
+
     private func taskColor(_ status: WorkspaceTaskStatus) -> Color {
         switch status {
         case .todo: .scifiMuted
@@ -1418,11 +2412,20 @@ private struct WorkspaceActivitySidebar: View {
     private func refreshRepository() async {
         guard let path = activeRepositoryPath else {
             repository = .empty
+            control.setDevelopmentContextProjection(nil)
+            isRefreshingRepository = false
             return
         }
         isRefreshingRepository = true
-        repository = await RepositoryService.inspect(path: path)
-        isRefreshingRepository = false
+        defer {
+            if path == activeRepositoryPath || activeRepositoryPath == nil {
+                isRefreshingRepository = false
+            }
+        }
+        let snapshot = await RepositoryService.inspect(path: path)
+        guard path == activeRepositoryPath else { return }
+        repository = snapshot
+        control.setDevelopmentContextProjection(snapshot)
     }
 
     private func handleRepositoryImport(_ result: Result<URL, Error>) {
@@ -1467,13 +2470,13 @@ private struct WorkspaceActivitySidebar: View {
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.scifiBorder, lineWidth: 0.5))
             .clipShape(RoundedRectangle(cornerRadius: 9))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scifiPress)
         .help(status)
     }
 
     private func activityRow(_ activity: AgentActivity) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Text(Self.timeFormatter.string(from: activity.timestamp))
+            Text(HumanDateFormatting.timeOnly(activity.timestamp))
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(Color.scifiTertiary)
                 .frame(width: 34, alignment: .leading)
@@ -1502,8 +2505,17 @@ private struct WorkspaceActivitySidebar: View {
 
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
-            sectionLabel("CAPABILITIES")
-            ForEach(control.capabilities) { capability in
+            if !unavailableSetupCapabilities.isEmpty {
+                sectionLabel("SETUP NEEDED  ·  \(unavailableSetupCapabilities.count)")
+                ForEach(unavailableSetupCapabilities) { capability in
+                    providerSetupCard(capability)
+                }
+                Divider().overlay(Color.scifiBorderLight)
+            }
+
+            sectionLabel("SYSTEM STATUS")
+            projectionRefreshNotice("core")
+            ForEach(control.capabilities.filter { !unavailableSetupCapabilities.contains($0) }) { capability in
                 HStack(alignment: .top, spacing: 8) {
                     Circle().fill(capability.isAvailable ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6).padding(.top, 4)
                     VStack(alignment: .leading, spacing: 2) {
@@ -1519,12 +2531,82 @@ private struct WorkspaceActivitySidebar: View {
                             } label: {
                                 Label("COPY \(command)", systemImage: "doc.on.doc")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.scifiPress)
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color.scifiAccent)
                         }
                     }
                     Spacer(minLength: 0)
+                }
+            }
+            if control.sessionUsage != nil || control.sessionContext != nil {
+                Divider().overlay(Color.scifiBorderLight)
+                sectionLabel("SESSION COCKPIT")
+                if let usage = control.sessionUsage {
+                    diagnosticRow(label: "TOKENS", value: "(usage.totalTokens) total  ·  (usage.inputTokens) in  ·  (usage.outputTokens) out", color: Color.scifiAccent)
+                    if let model = usage.model { diagnosticRow(label: "MODEL", value: model, color: Color.scifiTertiary) }
+                    if let percent = usage.contextPercent {
+                        diagnosticRow(label: "CONTEXT", value: String(format: "%.1f%%", percent), color: percent > 85 ? Color.scifiWarning : Color.scifiSuccess)
+                    }
+                }
+                if let context = control.sessionContext, !context.categories.isEmpty {
+                    ForEach(context.categories.prefix(6)) { category in
+                        diagnosticRow(label: category.label.uppercased(), value: "(category.tokens) tokens", color: Color.scifiTertiary)
+                    }
+                }
+                HStack(spacing: 8) {
+                    TextField("Steer the active turn…", text: $sessionSteerText)
+                        .textFieldStyle(.scifiGlass)
+                    Button("STEER") {
+                        control.steerActiveSession(sessionSteerText)
+                        sessionSteerText = ""
+                    }
+                    .buttonStyle(.scifiPress)
+                    .foregroundStyle(Color.scifiAccent)
+                    .disabled(sessionSteerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            if !control.diagnostics.isEmpty {
+                Divider().overlay(Color.scifiBorderLight)
+                sectionLabel("READ-ONLY DIAGNOSTICS")
+                ForEach(control.diagnostics) { diagnostic in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(diagnostic.isAvailable ? Color.scifiSuccess : Color.scifiWarning)
+                            .frame(width: 6, height: 6)
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(diagnostic.title)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.scifiFg)
+                            Text(diagnostic.detail)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(Color.scifiTertiary)
+                                .lineLimit(3)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            if !control.journeyNodes.isEmpty || control.sessionStoreStatus != nil || control.memoryHealthStatus != nil {
+                Divider().overlay(Color.scifiBorderLight)
+                sectionLabel("HERMES LEARNING & STORAGE")
+                ForEach([control.sessionStoreStatus, control.memoryHealthStatus].compactMap { $0 }) { status in
+                    diagnosticRow(label: status.title.uppercased(), value: status.detail, color: status.isAvailable ? Color.scifiSuccess : Color.scifiWarning)
+                }
+                if !control.journeyNodes.isEmpty {
+                    Text("JOURNEY  ·  \(control.journeyNodes.count) NODES")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                    ForEach(control.journeyNodes.prefix(8)) { node in
+                        HStack(spacing: 7) {
+                            Circle().fill(node.state == "active" ? Color.scifiSuccess : Color.scifiMuted).frame(width: 5, height: 5)
+                            Text(node.label).font(.system(size: 12)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                            Spacer()
+                            Text([node.kind, node.useCount.map { "\($0)x" }].compactMap { $0 }.joined(separator: " · "))
+                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                        }
+                    }
                 }
             }
             Divider().overlay(Color.scifiBorderLight)
@@ -1544,6 +2626,7 @@ private struct WorkspaceActivitySidebar: View {
                 }
             }
             .toggleStyle(.switch)
+            .tint(Color.scifiAccent)
             Divider().overlay(Color.scifiBorderLight)
             sectionLabel("QUICK CAPTURE")
             HStack {
@@ -1564,11 +2647,15 @@ private struct WorkspaceActivitySidebar: View {
                 sectionLabel("HERMES CONFIGURATION")
                 Spacer()
                 Button(action: { model.refreshRuntimeConfiguration() }) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiAccent)
+                    if model.isLoadingRuntimeConfiguration {
+                        ProgressView().controlSize(.small).tint(Color.scifiAccent)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.scifiAccent)
+                    }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scifiPress)
                 .disabled(model.isLoadingRuntimeConfiguration)
             }
 
@@ -1614,12 +2701,12 @@ private struct WorkspaceActivitySidebar: View {
                         .padding(.horizontal, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .frame(height: 36)
-                        .background(Color.scifiSurface4)
+                        .background(Color.scifiControlSurface)
                         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .menuStyle(.borderlessButton)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onChange(of: selectedModelID) { _, id in
                         guard let option = model.runtimeModelOptions.first(where: { $0.id == id }),
@@ -1682,19 +2769,47 @@ private struct WorkspaceActivitySidebar: View {
                                             .lineLimit(2)
                                     }
                                     Spacer(minLength: 0)
-                                    Text(server.isEnabled ? "ENABLED" : "DISABLED")
-                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(server.isEnabled ? Color.scifiSuccess : Color.scifiMuted)
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text(server.isEnabled ? "ENABLED" : "DISABLED")
+                                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(server.isEnabled ? Color.scifiSuccess : Color.scifiMuted)
+                                        if control.capabilityAvailable("mcp.test") {
+                                            Button { control.testMCP(server) } label: {
+                                                ScifiActionLabel(
+                                                    title: "TEST",
+                                                    pendingTitle: "TESTING…",
+                                                    isPending: control.isActionPending(control.mcpTestActionID(server))
+                                                )
+                                            }
+                                                .buttonStyle(.scifiPress)
+                                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                                .foregroundStyle(Color.scifiAccent)
+                                                .disabled(control.isActionPending(control.mcpTestActionID(server)))
+                                        }
+                                    }
+                                }
+                                if let result = control.mcpTestResults[server.id] {
+                                    Text(result)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                        .lineLimit(2)
                                 }
                             }
                         }
                     }
                 }
                 if model.sessionID != nil {
-                    Button("RELOAD MCP TOOLS") { isShowingMCPReloadConfirmation = true }
-                        .buttonStyle(.plain)
+                    Button { isShowingMCPReloadConfirmation = true } label: {
+                        ScifiActionLabel(
+                            title: "RELOAD MCP TOOLS",
+                            pendingTitle: "RELOADING…",
+                            isPending: control.isActionPending(control.reloadMCPActionID)
+                        )
+                    }
+                        .buttonStyle(.scifiPress)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.scifiAccent)
+                        .disabled(control.isActionPending(control.reloadMCPActionID))
                 }
 
                 if !configuration.plugins.isEmpty {
@@ -1723,7 +2838,30 @@ private struct WorkspaceActivitySidebar: View {
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(1.1).foregroundStyle(Color.scifiMuted)
+        Text(title).font(.system(.body, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(Color.scifiMuted)
+    }
+
+    @ViewBuilder
+    private func projectionRefreshNotice(_ projection: String) -> some View {
+        if let state = control.refreshState(for: projection) {
+            if state.isRefreshing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(state.isStale ? "Refreshing — showing last successful data" : "Refreshing Hermes data…")
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color.scifiTertiary)
+            } else if let error = state.error {
+                Text(state.isStale ? "Showing last successful data. \(error)" : error)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let lastSuccess = state.lastSuccess {
+                Text("Updated \(HumanDateFormatting.timeOnly(lastSuccess))")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+            }
+        }
     }
 
     private func agentRow(_ agent: HermesSubagent, expanded: Bool = false) -> some View {
@@ -1876,9 +3014,9 @@ struct DockPopover: View {
     @ObservedObject var model: DockModel
     var onWorkspaceWidthChange: (CGFloat) -> Void = { _ in }
     @State private var isConversationAtBottom = true
-    @State private var isWorkspaceManuallyExpanded = false
+    @State private var isWorkspaceManuallyExpanded = true
     @State private var isNarrowLayout = false
-    @State private var isNarrowControlVisible = false
+    @State private var isNarrowControlVisible = true
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
@@ -1924,6 +3062,18 @@ struct DockPopover: View {
             case .message: "Using the configured messaging skill, help me draft or send this message: "
             case .search: "Search all connected Hermes sources for: "
             case .kanban: "Create or update a Hermes Kanban task for: "
+            }
+        }
+
+        var requiredCapability: String? {
+            switch self {
+            case .reminder: "reminders"
+            case .notes: "notes"
+            case .automation: "rpc-scheduling"
+            case .email: "email"
+            case .message: "messaging"
+            case .kanban: "kanban.create"
+            case .research, .summarize, .review, .search: nil
             }
         }
     }
@@ -2003,6 +3153,10 @@ struct DockPopover: View {
         }
         .onChange(of: speechInput.completedTranscript) { _, transcript in
             guard let transcript, !transcript.isEmpty, !model.isSending else { return }
+            guard !voiceOutput.isSpeaking else {
+                speechInput.consumeCompletedTranscript()
+                return
+            }
             model.draft = transcript
             speechInput.consumeCompletedTranscript()
             model.send()
@@ -2022,6 +3176,7 @@ struct DockPopover: View {
             }
             if let response = model.messages.last(where: { $0.role == .hermes }),
                !response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                speechInput.stopForAssistantSpeech()
                 voiceOutput.speak(messageID: response.id, text: response.text)
             } else {
                 resumeVoiceConversationIfReady()
@@ -2033,6 +3188,11 @@ struct DockPopover: View {
             }
         }
         .onChange(of: model.voiceState) { _, state in
+            if state == .interrupted {
+                // The native gateway has accepted a spoken interruption. Stop
+                // any fallback playback immediately before it resumes capture.
+                voiceOutput.stop()
+            }
             if case .localFallback = state {
                 resumeVoiceConversationIfReady()
             }
@@ -2094,11 +3254,12 @@ struct DockPopover: View {
                         .foregroundStyle(Color.scifiMuted)
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scifiPress)
 
             Spacer()
 
-            HStack(spacing: 7) {
+            // Keep the visual rhythm compact while the surrounding hit targets stay 44pt.
+            HStack(spacing: 4) {
                 Button(action: {
                     inputMode = .talk
                     beginVoiceConversation()
@@ -2109,7 +3270,7 @@ struct DockPopover: View {
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.scifiSurface4))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scifiPress)
                 .dockHitTarget()
                 .help("Talk mode")
 
@@ -2124,9 +3285,9 @@ struct DockPopover: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(isWorkspaceVisibleForLayout ? Color.scifiAccent : Color.scifiMuted)
                         .frame(width: 36, height: 36)
-                        .background(Circle().fill(isWorkspaceVisibleForLayout ? Color.scifiAccent.opacity(0.1) : Color.clear))
+                        .background(Circle().fill(isWorkspaceVisibleForLayout ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scifiPress)
                 .dockHitTarget()
                 .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
 
@@ -2138,7 +3299,7 @@ struct DockPopover: View {
                             .frame(width: 36, height: 36)
                             .background(Circle().fill(Color.scifiSurface4))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .dockHitTarget()
                     .help("Stop")
                 }
@@ -2150,7 +3311,7 @@ struct DockPopover: View {
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.scifiSurface4))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scifiPress)
                 .dockHitTarget()
                 .help("New chat")
             }
@@ -2194,7 +3355,7 @@ struct DockPopover: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.scifiMuted)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .help("Refresh")
                 }
             }
@@ -2233,7 +3394,7 @@ struct DockPopover: View {
                             }
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.scifiPress)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
@@ -2282,12 +3443,12 @@ struct DockPopover: View {
             } label: {
                 VoiceOrbView(
                     isListening: model.voiceState == .listening || speechInput.isRecording,
-                    isResponding: model.voiceState == .preparing || model.voiceState == .thinking || (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking,
+                    isResponding: model.voiceState == .preparing || model.voiceState == .interrupted || model.voiceState == .thinking || (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking,
                     audioLevel: speechInput.audioLevel
                 )
                     .frame(width: 320, height: 320)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scifiPress)
             .help(model.voiceState.isNativeConversationActive || speechInput.isRecording ? "End voice conversation" : "Resume listening")
             .overlay(alignment: .bottom) {
                 if let detail = model.voiceState.fallbackDetail {
@@ -2416,7 +3577,7 @@ struct DockPopover: View {
                                 .id("activity")
                         }
                         if let approval = model.approvalText {
-                            approvalRow(approval)
+                            approvalRow(title: model.approvalTitle ?? "Review requested action", detail: approval)
                         }
                         Color.clear
                             .frame(height: 1)
@@ -2473,39 +3634,53 @@ struct DockPopover: View {
     }
 
     private var activityView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let reasoning = model.reasoningState {
-                reasoningBlock(reasoning)
-            }
-            if !importantEvents.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(importantEvents.suffix(6))) { event in
-                        eventRow(event)
-                    }
-                }
-            }
-            if model.reasoningState == nil && importantEvents.isEmpty {
-                HStack(spacing: 5) {
-                    ThinkingDots()
-                    Text("Thinking")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiMuted)
-                }
-            }
+        HStack(spacing: 6) {
+            ThinkingDots()
+            Text(currentActivityStatus)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.scifiMuted)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var importantEvents: [AgentEvent] {
-        model.recentEvents.filter { event in
-            let type = event.type.lowercased()
-            return type.contains("approval") ||
-                type.contains("error") ||
-                type.contains("permission") ||
-                type.contains("warning")
+    /// The activity row deliberately represents one current state. Showing a
+    /// history of streaming events here pushes the conversation out of view.
+    private var currentActivityStatus: String {
+        if let tool = model.activeToolCalls.last(where: { !$0.isComplete }) {
+            return "Running \(activityLabel(for: tool.name))"
         }
+        if let reasoning = model.reasoningState, !reasoning.isComplete {
+            return reasoning.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "Thinking"
+                : "Reasoning"
+        }
+        if let event = model.recentEvents.last(where: isUrgentActivityEvent) {
+            return activityLabel(for: event.type)
+        }
+        return "Thinking"
+    }
+
+    private func isUrgentActivityEvent(_ event: AgentEvent) -> Bool {
+        let type = event.type.lowercased()
+        return type.contains("approval") ||
+            type.contains("error") ||
+            type.contains("permission") ||
+            type.contains("warning")
+    }
+
+    private func activityLabel(for rawValue: String) -> String {
+        let normalized = rawValue
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: ".", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { $0.capitalized }
+            .joined(separator: " ")
+        return normalized.isEmpty ? "Task" : normalized
     }
 
     private func isAutoScrollEvent(_ type: String) -> Bool {
@@ -2515,31 +3690,6 @@ struct DockPopover: View {
             type.contains("think") ||
             type == "message.start"
     }
-
-    private func eventRow(_ event: AgentEvent) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Circle()
-                .fill(Color.scifiBorder)
-                .frame(width: 5, height: 5)
-                .padding(.top, 5)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(event.type)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
-                Text(event.detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(.vertical, 3)
-    }
-
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm"
-        return f
-    }()
 
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
@@ -2551,7 +3701,7 @@ struct DockPopover: View {
                     Spacer(minLength: 40)
                     VStack(alignment: .trailing, spacing: 4) {
                         HStack(spacing: 8) {
-                            Text(Self.timeFormatter.string(from: message.timestamp))
+                            Text(HumanDateFormatting.timeOnly(message.timestamp))
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(Color.scifiTertiary)
                             Text("You")
@@ -2596,7 +3746,7 @@ struct DockPopover: View {
                                 .tracking(1.0)
                                 .textCase(.uppercase)
                                 .foregroundStyle(Color.scifiMuted)
-                            Text(Self.timeFormatter.string(from: message.timestamp))
+                            Text(HumanDateFormatting.timeOnly(message.timestamp))
                                 .font(.system(size: 12, design: .monospaced))
                                 .foregroundStyle(Color.scifiTertiary)
                             if let modelName = message.modelName {
@@ -2662,7 +3812,7 @@ struct DockPopover: View {
         )
     }
 
-    private func approvalRow(_ text: String) -> some View {
+    private func approvalRow(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -2673,9 +3823,15 @@ struct DockPopover: View {
                         Circle()
                             .fill(Color.scifiWarning)
                     )
-                Text("Approval required")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Approval required")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.scifiWarning)
+                        .lineLimit(2)
+                }
+                .foregroundStyle(Color.scifiFg)
                 Spacer()
                 Text("ACTION NEEDED")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -2683,7 +3839,7 @@ struct DockPopover: View {
                     .foregroundStyle(Color.scifiWarning)
             }
 
-            Text(text)
+            Text(detail)
                 .font(.system(size: 12.5, design: .monospaced))
                 .textSelection(.enabled)
                 .foregroundStyle(Color.scifiFg)
@@ -2699,12 +3855,41 @@ struct DockPopover: View {
                 )
 
             HStack(spacing: 6) {
-                Button("Deny") { model.respondToApproval("deny") }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                Button("Allow once") { model.respondToApproval("once") }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                Button { model.respondToApproval("deny") } label: {
+                    ScifiActionLabel(
+                        title: "Deny",
+                        pendingTitle: "Working…",
+                        isPending: model.isRespondingToApproval,
+                        tint: Color.scifiWarning
+                    )
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiWarning)
+                .frame(minWidth: 88, minHeight: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.scifiWarning.opacity(0.08))
+                        .stroke(Color.scifiWarning.opacity(0.34), lineWidth: 0.5)
+                )
+                .disabled(model.isRespondingToApproval)
+                Button { model.respondToApproval("once") } label: {
+                    ScifiActionLabel(
+                        title: "Allow once",
+                        pendingTitle: "Allowing…",
+                        isPending: model.isRespondingToApproval,
+                        tint: Color.scifiBg
+                    )
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiBg)
+                .frame(minWidth: 112, minHeight: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.scifiAccent)
+                )
+                .disabled(model.isRespondingToApproval)
             }
         }
         .padding(14)
@@ -2753,7 +3938,7 @@ struct DockPopover: View {
                             .frame(width: 18, height: 18)
                             .background(Circle().fill(Color.scifiSurface6))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .help("Remove image")
                 }
                 .padding(.horizontal, 8)
@@ -2767,24 +3952,22 @@ struct DockPopover: View {
             }
 
             if !speechInput.isRecording {
-                ScrollView(.horizontal, showsIndicators: false) {
+                ViewThatFits(in: .horizontal) {
                     HStack(spacing: 6) {
                         ForEach(QuickPrompt.allCases) { quickPrompt in
-                            Button(quickPrompt.label) {
-                                model.draft = quickPrompt.prompt
-                                model.requestComposerFocus()
-                            }
-                            .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.scifiMuted)
-                            .padding(.horizontal, 9)
-                            .frame(minHeight: 26)
-                            .background(Capsule().fill(Color.scifiSurface4).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+                            quickPromptChip(quickPrompt)
                         }
                     }
-                    .padding(.horizontal, 10)
+
+                    HStack(spacing: 6) {
+                        quickPromptChip(.reminder)
+                        quickPromptChip(.notes)
+                        quickPromptOverflowMenu
+                    }
                 }
+                .padding(.horizontal, 10)
                 .padding(.top, 6)
+                .padding(.bottom, 8)
             }
 
             HStack(alignment: .bottom, spacing: 5) {
@@ -2806,7 +3989,7 @@ struct DockPopover: View {
                             .foregroundStyle(Color.scifiMuted)
                             .frame(width: 38, height: 38)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scifiPress)
                     .dockHitTarget()
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -2854,25 +4037,23 @@ struct DockPopover: View {
                                     .fill(Color.scifiDestructive)
                             )
                     } else {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(
-                                canSend && !model.isSending
-                                ? Color.black
-                                : Color.scifiMuted
-                            )
-                            .frame(width: 38, height: 38)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(
-                                        canSend && !model.isSending
-                                        ? Color.scifiAccent
-                                        : Color.scifiSurface6
-                                    )
-                            )
+                        Group {
+                            if model.isSending {
+                                ProgressView().controlSize(.small).tint(Color.scifiBg)
+                            } else {
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(canSend ? Color.black : Color.scifiMuted)
+                            }
+                        }
+                        .frame(width: 38, height: 38)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(canSend && !model.isSending ? Color.scifiAccent : Color.scifiSurface6)
+                        )
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scifiPress)
                 .dockHitTarget()
                 .disabled(!speechInput.isRecording && (!canSend || model.isSending))
                 .keyboardShortcut(.return, modifiers: [.command])
@@ -2932,6 +4113,55 @@ struct DockPopover: View {
                 self.pasteMonitor = nil
             }
         }
+    }
+
+    private func quickPromptChip(_ quickPrompt: QuickPrompt) -> some View {
+        let requiredCapability = quickPrompt.requiredCapability
+        let isAvailable = requiredCapability.map(controlCenter.capabilityAvailable) ?? true
+        return Button(quickPrompt.label) {
+            selectQuickPrompt(quickPrompt)
+        }
+        .buttonStyle(.scifiPress)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(isAvailable ? Color.scifiMuted : Color.scifiTertiary)
+        .padding(.horizontal, 9)
+        .frame(minHeight: 26)
+        .fixedSize(horizontal: true, vertical: false)
+        .background(Capsule().fill(Color.scifiSurface4).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+        .disabled(!isAvailable)
+        .help(isAvailable ? quickPrompt.label : unavailableCapabilityDetail(requiredCapability))
+    }
+
+    private var quickPromptOverflowMenu: some View {
+        Menu {
+            ForEach(QuickPrompt.allCases.dropFirst(2)) { quickPrompt in
+                Button(quickPrompt.label) {
+                    selectQuickPrompt(quickPrompt)
+                }
+                .disabled(quickPrompt.requiredCapability.map(controlCenter.capabilityAvailable) == false)
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.scifiMuted)
+                .padding(.horizontal, 9)
+                .frame(minHeight: 26)
+                .background(Capsule().fill(Color.scifiSurface4).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func selectQuickPrompt(_ quickPrompt: QuickPrompt) {
+        model.draft = quickPrompt.prompt
+        model.requestComposerFocus()
+    }
+
+    private func unavailableCapabilityDetail(_ id: String?) -> String {
+        guard let id, let capability = controlCenter.capabilities.first(where: { $0.id == id }) else {
+            return "This Hermes capability is unavailable. Open Core and refresh capabilities."
+        }
+        return capability.recovery ?? capability.detail
     }
 }
 
@@ -3179,5 +4409,216 @@ private struct MicWaveform: View {
             .foregroundStyle(Color.scifiAccent)
             .frame(width: 28, height: 28)
         }
+    }
+}
+
+private struct KanbanMutationEditor: View {
+    let request: KanbanMutationRequest
+    let assignees: [String]
+    let isPending: Bool
+    let submit: (KanbanMutationRequest) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var value = ""
+    @State private var reclaimFirst = false
+    @State private var confirming = false
+
+    private var placeholder: String {
+        switch request.kind {
+        case .comment: "Comment for Hermes"
+        case .schedule: "Reason or timing note"
+        case .assign, .reassign: "Profile name, or none to unassign"
+        case .promote, .reclaim: "Audit reason"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(request.kind.title)
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+            Text(request.task.title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.scifiFg)
+            TextField(placeholder, text: $value, axis: .vertical)
+                .lineLimit(2...5)
+                .textFieldStyle(.scifiGlass)
+            if (request.kind == .assign || request.kind == .reassign), !assignees.isEmpty {
+                Menu("Choose Hermes profile") {
+                    ForEach(assignees, id: \.self) { assignee in
+                        Button(assignee) { value = assignee }
+                    }
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+            }
+            if request.kind == .reassign {
+                Toggle("Reclaim active worker first", isOn: $reclaimFirst)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiMuted)
+            }
+            HStack {
+                Button("Cancel") { dismiss() }
+                Spacer()
+                Button(request.kind.title) { confirming = true }
+                    .buttonStyle(.scifiPrimary)
+                    .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .background(Color.scifiBg)
+        .environment(\.colorScheme, .dark)
+        .confirmationDialog("Confirm Kanban change?", isPresented: $confirming) {
+            Button(request.kind.title) {
+                submit(KanbanMutationRequest(task: request.task, kind: request.kind, value: value, reclaimFirst: reclaimFirst))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Hermes will persist this \(request.kind.rawValue) change on ‘\(request.task.title)’. The Dock will refresh the authoritative task afterwards.")
+        }
+    }
+}
+
+private struct CronEditEditor: View {
+    let job: CronSummary
+    let isPending: Bool
+    let submit: (CronEditDraft) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: CronEditDraft
+    @State private var confirming = false
+
+    init(job: CronSummary, isPending: Bool, submit: @escaping (CronEditDraft) -> Void) {
+        self.job = job
+        self.isPending = isPending
+        self.submit = submit
+        _draft = State(initialValue: CronEditDraft(job: job))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("EDIT SCHEDULED JOB")
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+            if job.editableFields.contains(.name) {
+                TextField("Name", text: $draft.name).textFieldStyle(.scifiGlass)
+            }
+            if job.editableFields.contains(.schedule) {
+                TextField("Schedule", text: $draft.schedule).textFieldStyle(.scifiGlass)
+            }
+            if job.editableFields.contains(.prompt), job.prompt != nil {
+                TextField("Prompt", text: $draft.prompt, axis: .vertical)
+                    .lineLimit(3...6)
+                    .textFieldStyle(.scifiGlass)
+            }
+            Text("Only values supplied by Hermes are editable. Unchanged values are not sent.")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color.scifiTertiary)
+            HStack {
+                Button("Cancel") { dismiss() }
+                Spacer()
+                Button("Save Changes") { confirming = true }
+                    .buttonStyle(.scifiPrimary)
+                    .disabled(draft.changes(comparedTo: job).filter { job.editableFields.contains($0.key) }.isEmpty || isPending)
+            }
+        }
+        .padding(20)
+        .frame(width: 440)
+        .background(Color.scifiBg)
+        .environment(\.colorScheme, .dark)
+        .confirmationDialog("Save scheduled-job changes?", isPresented: $confirming) {
+            Button("Save Changes") { submit(draft) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let fields = draft.changes(comparedTo: job).filter { job.editableFields.contains($0.key) }.keys.map(\.title).sorted().joined(separator: ", ")
+            Text("Hermes will update \(fields) for ‘\(job.name)’. The scheduler remains authoritative.")
+        }
+    }
+}
+
+private enum DockCommand: Identifiable, CaseIterable {
+    case tab(ControlTab)
+    case newChat
+    case focusComposer
+    case stop
+    case voice
+
+    static var allCases: [DockCommand] {
+        ControlTab.allCases.map(DockCommand.tab) + [.newChat, .focusComposer, .stop, .voice]
+    }
+
+    var id: String {
+        switch self {
+        case .tab(let tab): "tab.\(tab.rawValue)"
+        case .newChat: "new-chat"
+        case .focusComposer: "focus-composer"
+        case .stop: "stop"
+        case .voice: "voice"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .tab(let tab): "Open \(tab.tabLabel)"
+        case .newChat: "New chat"
+        case .focusComposer: "Focus composer"
+        case .stop: "Stop active request"
+        case .voice: "Start voice"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .tab(let tab): tab.icon
+        case .newChat: "square.and.pencil"
+        case .focusComposer: "text.cursor"
+        case .stop: "stop.circle"
+        case .voice: "mic"
+        }
+    }
+}
+
+private struct DockCommandPalette: View {
+    let select: (DockCommand) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private var commands: [DockCommand] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        guard !needle.isEmpty else { return DockCommand.allCases }
+        return DockCommand.allCases.filter { $0.title.localizedLowercase.contains(needle) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("COMMAND PALETTE")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                Spacer()
+                Text("⌘K")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+            }
+            TextField("Search actions", text: $query)
+                .textFieldStyle(.scifiGlass)
+            ForEach(commands) { command in
+                Button {
+                    select(command)
+                    dismiss()
+                } label: {
+                    Label(command.title, systemImage: command.icon)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.scifiFg)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 5)
+                }
+                .buttonStyle(.scifiPress)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+        .background(Color.scifiBg)
+        .environment(\.colorScheme, .dark)
     }
 }

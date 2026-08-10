@@ -66,6 +66,11 @@ struct NativeVoiceCaptureLifecycle: Equatable {
     private(set) var captureArmed = false
     private(set) var hasPendingTranscript = false
     private(set) var startFailures = 0
+    private(set) var generation = 0
+
+    func isCurrent(generation: Int) -> Bool {
+        self.generation == generation
+    }
 
     mutating func beginCapture() -> Bool {
         guard !captureArmed, !hasPendingTranscript else { return false }
@@ -84,6 +89,10 @@ struct NativeVoiceCaptureLifecycle: Equatable {
     }
 
     mutating func receivedTranscript(hasText: Bool) {
+        // A transcript resolves any prior capture or barge-in recovery timer.
+        // Incrementing the generation makes delayed start/timeout callbacks
+        // harmless instead of allowing them to claim the microphone again.
+        generation &+= 1
         captureArmed = false
         hasPendingTranscript = hasText
     }
@@ -99,7 +108,26 @@ struct NativeVoiceCaptureLifecycle: Equatable {
         return !captureArmed
     }
 
+    /// Hermes owns the microphone while it captures a spoken interruption.
+    /// Do not start a competing `voice.record` capture until its transcript
+    /// arrives, or a bounded recovery timeout proves it did not arrive.
+    @discardableResult
+    mutating func beginInterruption() -> Int {
+        generation &+= 1
+        captureArmed = false
+        hasPendingTranscript = true
+        startFailures = 0
+        return generation
+    }
+
+    mutating func interruptionTimedOut(generation: Int) -> Bool {
+        guard self.generation == generation, hasPendingTranscript else { return false }
+        hasPendingTranscript = false
+        return !captureArmed
+    }
+
     mutating func reset() {
+        generation &+= 1
         captureArmed = false
         hasPendingTranscript = false
         startFailures = 0

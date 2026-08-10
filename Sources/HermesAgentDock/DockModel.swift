@@ -30,12 +30,13 @@ enum HermesVoiceState: Equatable {
     case inactive
     case preparing
     case listening
+    case interrupted
     case thinking
     case localFallback(String)
 
     var isNativeConversationActive: Bool {
         switch self {
-        case .preparing, .listening, .thinking: true
+        case .preparing, .listening, .interrupted, .thinking: true
         case .inactive, .localFallback: false
         }
     }
@@ -45,6 +46,7 @@ enum HermesVoiceState: Equatable {
         case .inactive: "VOICE OFF"
         case .preparing: "CONNECTING VOICE"
         case .listening: "HERMES IS LISTENING"
+        case .interrupted: "HEARD YOU — TRANSCRIBING"
         case .thinking: "HERMES IS THINKING"
         case .localFallback: "LOCAL VOICE FALLBACK"
         }
@@ -60,8 +62,10 @@ struct ActiveToolCall: Identifiable, Equatable {
     let id: String
     let name: String
     let input: String
+    let startedAt: Date
     var result: String?
     var isComplete: Bool
+    var diffPreview: String? = nil
 }
 
 struct ReasoningState: Equatable {
@@ -138,6 +142,19 @@ struct AgentActivity: Identifiable, Equatable {
     let text: String
     let toolName: String?
     let handoffTarget: String?
+    let diffPreview: String?
+
+    init(id: UUID, timestamp: Date, agentID: String?, kind: String, text: String,
+         toolName: String?, handoffTarget: String?, diffPreview: String? = nil) {
+        self.id = id
+        self.timestamp = timestamp
+        self.agentID = agentID
+        self.kind = kind
+        self.text = text
+        self.toolName = toolName
+        self.handoffTarget = handoffTarget
+        self.diffPreview = diffPreview
+    }
 }
 
 struct HermesModelOption: Identifiable, Hashable {
@@ -196,7 +213,9 @@ final class DockModel: ObservableObject {
     @Published var draft = ""
     @Published var pendingImage: ImageAttachment?
     @Published var isSending = false
+    @Published var approvalTitle: String?
     @Published var approvalText: String?
+    @Published private(set) var isRespondingToApproval = false
     @Published var debugLines: [String] = []
     @Published var sessions: [HermesSession] = []
     @Published var isShowingSessions = false
@@ -298,7 +317,7 @@ final class DockModel: ObservableObject {
                     cleanupImageAttachment(attachedImage)
                 }
 
-                _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text + Self.workspaceDelegationInstruction])
+                _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
                 DebugLog.write("model: prompt submitted")
             } catch {
                 DebugLog.write("model: send failed: \(error.localizedDescription)")
@@ -583,9 +602,27 @@ final class DockModel: ObservableObject {
 
     func respondToApproval(_ choice: String) {
         guard let sessionID else { return }
+        guard !isRespondingToApproval else { return }
+        isRespondingToApproval = true
         Task {
-            _ = try? await gateway.request("approval.respond", params: ["session_id": sessionID, "choice": choice])
-            approvalText = nil
+            defer { isRespondingToApproval = false }
+            do {
+                _ = try await gateway.request("approval.respond", params: ["session_id": sessionID, "choice": choice])
+                resolveApproval(for: sessionID)
+            } catch {
+                DebugLog.write("model: approval response failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Reconciles an approval answered through another surface, such as Inbox.
+    /// The model only presents the current session, so responses for other
+    /// sessions must not alter the visible conversation.
+    func resolveApproval(for resolvedSessionID: String) {
+        guard sessionID == resolvedSessionID else { return }
+        approvalTitle = nil
+        approvalText = nil
+        if status == .needsApproval {
             status = .working
         }
     }
@@ -613,12 +650,12 @@ final class DockModel: ObservableObject {
             let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             nativeVoiceCapture.receivedTranscript(hasText: !transcript.isEmpty)
             if (payload["stop_phrase"] as? Bool) == true {
-                nativeVoiceCapture.reset()
-                voiceState = .inactive
+                stopVoiceConversation()
                 return
             }
             guard !transcript.isEmpty else {
                 voiceState = .listening
+                armNativeVoiceCapture()
                 return
             }
             voiceTelemetry.receivedTranscript()
@@ -642,9 +679,9 @@ final class DockModel: ObservableObject {
             status = .idle
             isSending = false
             voiceTelemetry.markInterrupted()
-            nativeVoiceCapture.reset()
-            voiceState = .listening
-            armNativeVoiceCapture()
+            let interruptionGeneration = nativeVoiceCapture.beginInterruption()
+            voiceState = .interrupted
+            recoverNativeVoiceCaptureIfInterruptedTranscriptIsMissing(generation: interruptionGeneration)
         case "message.start":
             let model = (payload["model"] as? String) ?? (payload["model_name"] as? String)
             if let model {
@@ -694,9 +731,11 @@ final class DockModel: ObservableObject {
                 }
             }
         case "approval.request":
-            approvalText = (payload["command"] as? String) ?? (payload["description"] as? String) ?? "Hermes wants to perform an action."
+            let approval = ApprovalPresentation.from(payload: payload)
+            approvalTitle = approval.title
+            approvalText = approval.detail
             status = .needsApproval
-            notify(title: "Hermes needs approval", body: approvalText ?? "Hermes wants to perform an action.", identifier: "approval:\(sessionID ?? "hermes")")
+            notify(title: approval.title, body: approval.detail, identifier: "approval:\(sessionID ?? "hermes")")
         case "clarification.request", "clarify.request":
             let question = (payload["question"] as? String)
                 ?? (payload["message"] as? String)
@@ -732,7 +771,11 @@ final class DockModel: ObservableObject {
 
         case "tool.call", "tool.start", "tool.use", "tool_use":
             let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "unknown"
-            let argsDict = (payload["arguments"] as? [String: Any]) ?? (payload["input"] as? [String: Any]) ?? [:]
+            let argsDict = (payload["arguments"] as? [String: Any])
+                ?? (payload["input"] as? [String: Any])
+                ?? (payload["args"] as? [String: Any])
+                ?? Self.parseArgsDict(payload["args_text"])
+                ?? [:]
             let input: String
             if let args = payload["arguments"] as? [String: Any] {
                 input = args.compactMap { "\($0.key): \($0.value)" }.joined(separator: ", ")
@@ -743,25 +786,34 @@ final class DockModel: ObservableObject {
             } else {
                 input = ""
             }
-            let id = (payload["id"] as? String) ?? UUID().uuidString
-            activeToolCalls.append(ActiveToolCall(id: id, name: name, input: input, result: nil, isComplete: false))
+            let id = (payload["id"] as? String) ?? (payload["tool_id"] as? String) ?? UUID().uuidString
+            activeToolCalls.append(ActiveToolCall(id: id, name: name, input: input, startedAt: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(), result: nil, isComplete: false))
             if Self.isDelegationTool(name) {
                 synthesizeSubagent(toolCallID: id, args: argsDict)
             }
         case "tool.result", "tool_result", "tool.complete", "tool_complete":
             let id = (payload["id"] as? String) ?? (payload["tool_id"] as? String) ?? ""
-            let result = (payload["result"] as? String) ?? (payload["output"] as? String) ?? ""
+            let result = Self.eventText(payload["result"] ?? payload["output"])
+            let diffPreview = Self.diffPreview(from: payload)
             if Self.isVisionUnsupportedError(result) {
                 activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
             } else if let index = activeToolCalls.firstIndex(where: { $0.id == id }) {
                 let wasDelegation = Self.isDelegationTool(activeToolCalls[index].name)
+                if wasDelegation, let args = payload["args"] as? [String: Any] {
+                    refreshSynthesizedSubagents(toolCallID: id, args: args)
+                }
                 activeToolCalls[index].result = result.isEmpty ? nil : result
                 activeToolCalls[index].isComplete = true
+                activeToolCalls[index].diffPreview = diffPreview
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: id, result: result, payload: payload) }
             } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
                 let wasDelegation = Self.isDelegationTool(activeToolCalls[last].name)
+                if wasDelegation, let args = payload["args"] as? [String: Any] {
+                    refreshSynthesizedSubagents(toolCallID: activeToolCalls[last].id, args: args)
+                }
                 activeToolCalls[last].result = result.isEmpty ? nil : result
                 activeToolCalls[last].isComplete = true
+                activeToolCalls[last].diffPreview = diffPreview
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload) }
             }
 
@@ -777,20 +829,26 @@ final class DockModel: ObservableObject {
         }
     }
 
-    private func armNativeVoiceCapture() {
+    private func armNativeVoiceCapture(generation expectedGeneration: Int? = nil) {
+        if let expectedGeneration, !nativeVoiceCapture.isCurrent(generation: expectedGeneration) {
+            return
+        }
         guard voiceState.isNativeConversationActive,
               !isSending,
               let sessionID,
               nativeVoiceCapture.beginCapture() else { return }
+        let captureGeneration = nativeVoiceCapture.generation
 
         Task {
             do {
                 let recording = try await gateway.request("voice.record", params: ["action": "start", "session_id": sessionID])
+                guard nativeVoiceCapture.isCurrent(generation: captureGeneration),
+                      voiceState.isNativeConversationActive else { return }
                 if (recording["status"] as? String) == "busy" {
                     let shouldRetry = nativeVoiceCapture.captureStartFailed()
                     if shouldRetry {
                         try? await Task.sleep(for: .milliseconds(300))
-                        armNativeVoiceCapture()
+                        armNativeVoiceCapture(generation: captureGeneration)
                     } else {
                         voiceState = .localFallback("Hermes microphone stayed busy. Tap the orb to retry voice.")
                     }
@@ -799,14 +857,27 @@ final class DockModel: ObservableObject {
                 nativeVoiceCapture.captureStarted()
                 voiceState = .listening
             } catch {
+                guard nativeVoiceCapture.isCurrent(generation: captureGeneration),
+                      voiceState.isNativeConversationActive else { return }
                 let shouldRetry = nativeVoiceCapture.captureStartFailed()
                 if shouldRetry {
                     try? await Task.sleep(for: .milliseconds(300))
-                    armNativeVoiceCapture()
+                    armNativeVoiceCapture(generation: captureGeneration)
                 } else {
                     voiceState = .localFallback("Hermes could not start the next voice capture: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    private func recoverNativeVoiceCaptureIfInterruptedTranscriptIsMissing(generation: Int) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self,
+                  self.voiceState.isNativeConversationActive,
+                  self.nativeVoiceCapture.interruptionTimedOut(generation: generation) else { return }
+            self.voiceState = .listening
+            self.armNativeVoiceCapture()
         }
     }
 
@@ -821,7 +892,7 @@ final class DockModel: ObservableObject {
             do {
                 _ = try await gateway.request(
                     "prompt.submit",
-                    params: ["session_id": sessionID, "text": text + Self.workspaceDelegationInstruction]
+                    params: ["session_id": sessionID, "text": text]
                 )
             } catch {
                 messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(error.localizedDescription)", modelName: currentModelName))
@@ -858,7 +929,10 @@ final class DockModel: ObservableObject {
                     return self.telemetry(from: row, fallbackStatus: "running")
                 }
                 let rpcIDs = Set(rpcAgents.map { $0.id })
-                let preserved = activeSubagents.filter { synthesizedSubagentIDs.contains($0.id) && !rpcIDs.contains($0.id) }
+                let preserved = activeSubagents.filter {
+                    !rpcIDs.contains($0.id)
+                        && (synthesizedSubagentIDs.contains($0.id) || Self.isTerminalAgentStatus($0.status))
+                }
                 activeSubagents = rpcAgents + preserved
                 for agent in activeSubagents { upsertSessionAgent(agent) }
             } catch {
@@ -902,14 +976,18 @@ final class DockModel: ObservableObject {
         let title = (row["title"] as? String) ?? (row["preview"] as? String) ?? "Delegated agent"
         let rawStatus = (row["status"] as? String) ?? (row["state"] as? String) ?? ""
         let status = Self.mapSessionStatus(rawStatus, messageCount: (row["message_count"] as? NSNumber)?.intValue ?? 0)
+        let rawRole = (row["agent_role"] as? String) ?? (row["role"] as? String)
+        let role = rawRole.flatMap { value in
+            ["leaf", "orchestrator"].contains(value.lowercased()) ? nil : value
+        } ?? Self.inferRole(from: title)
         return HermesSubagent(
             id: id,
-            name: (row["name"] as? String) ?? (row["agent_name"] as? String) ?? (row["display_name"] as? String),
+            name: (row["name"] as? String) ?? (row["agent_name"] as? String) ?? (row["display_name"] as? String) ?? role,
             parentID: parentID ?? sessionID,
             childSessionID: id,
             depth: 1,
             goal: title,
-            role: (row["role"] as? String) ?? (row["agent_role"] as? String) ?? Self.inferRole(from: title),
+            role: role,
             sourceSkill: row["source_skill"] as? String ?? row["source"] as? String,
             status: status,
             model: row["model"] as? String,
@@ -929,24 +1007,164 @@ final class DockModel: ObservableObject {
         return messageCount > 0 ? "running" : "queued"
     }
 
+    private static func isTerminalAgentStatus(_ status: String) -> Bool {
+        let lower = status.lowercased()
+        return lower.contains("complete") || lower.contains("done") || lower.contains("finish")
+            || lower.contains("error") || lower.contains("fail") || lower.contains("interrupt")
+    }
+
+    static func agentStatus(current: String, eventType: String) -> String {
+        let eventStatus: String? = switch eventType {
+        case "subagent.spawn_requested": "queued"
+        case "subagent.start", "subagent.tool", "subagent.progress", "subagent.thinking": "running"
+        case "subagent.complete": "complete"
+        case "subagent.error": "error"
+        case "subagent.interrupt", "subagent.interrupted": "interrupted"
+        default: nil
+        }
+        guard let eventStatus else { return current }
+        if isTerminalAgentStatus(current), !isTerminalAgentStatus(eventStatus) { return current }
+        return eventStatus
+    }
+
     private static func inferRole(from title: String) -> String? {
         let lower = title.lowercased()
-        for keyword in ["planner", "implementer", "reviewer", "verifier", "investigator", "researcher", "tester", "architect"] {
-            if lower.contains(keyword) { return keyword.capitalized }
+        let roles: [(needle: String, label: String)] = [
+            ("quality assurance", "QA"), ("security reviewer", "Security Reviewer"),
+            ("frontend", "Frontend"), ("front-end", "Frontend"),
+            ("backend", "Backend"), ("back-end", "Backend"),
+            ("security", "Security"), ("qa", "QA"),
+            ("planner", "Planner"), ("implementer", "Implementer"),
+            ("reviewer", "Reviewer"), ("verifier", "Verifier"),
+            ("investigator", "Investigator"), ("researcher", "Researcher"),
+            ("tester", "Tester"), ("testing", "QA"), ("architect", "Architect")
+        ]
+        for role in roles where lower.contains(role.needle) {
+            return role.label
         }
         return nil
     }
 
+    /// Converts one Hermes `delegate_task` call into the semantic workers the
+    /// call represents. Batch delegation is one tool call but many agents, so
+    /// the tool-call ID alone is not a sufficient row identity.
+    static func projectedDelegationAgents(toolCallID: String, args: [String: Any], startedAt: Date) -> [HermesSubagent] {
+        let taskRows = args["tasks"] as? [[String: Any]]
+        let rows = taskRows?.isEmpty == false ? taskRows! : [args]
+
+        return rows.enumerated().map { index, task in
+            func value(_ keys: [String]) -> String? {
+                for source in [task, args] {
+                    for key in keys {
+                        guard let raw = source[key] as? String else { continue }
+                        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !clean.isEmpty { return clean }
+                    }
+                }
+                return nil
+            }
+
+            let goal = value(["goal", "description", "prompt", "task", "instructions", "title"])
+                ?? "Delegated agent"
+            let orchestrationRole = value(["role"])
+            let humanRole = value(["agent_role", "role_label", "specialty", "agent_type"])
+                ?? orchestrationRole.flatMap { role in
+                    ["leaf", "orchestrator"].contains(role.lowercased()) ? nil : role
+                }
+                ?? inferRole(from: goal)
+            let name = value(["name", "agent_name", "display_name", "label"]) ?? humanRole
+            let id = rows.count == 1 ? toolCallID : "\(toolCallID):\(index)"
+
+            return HermesSubagent(
+                id: id,
+                name: name,
+                childSessionID: value(["session_id", "child_session_id"]),
+                goal: goal,
+                role: humanRole,
+                sourceSkill: value(["source_skill", "skill", "workflow"]),
+                status: "running",
+                model: value(["model"]),
+                startedAt: startedAt,
+                latestActivity: goal
+            )
+        }
+    }
+
+    static func isBackgroundDelegationDispatch(_ result: String) -> Bool {
+        guard let data = result.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        let status = (payload["status"] as? String)?.lowercased()
+        let mode = (payload["mode"] as? String)?.lowercased()
+        return status == "dispatched" || mode == "background"
+    }
+
+    static func eventText(_ value: Any?) -> String {
+        if let value = value as? String { return value }
+        guard let value,
+              JSONSerialization.isValidJSONObject(value),
+              let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else { return "" }
+        return text
+    }
+
+    /// Hermes emits `inline_diff` for edit tool completions. Some adapters use
+    /// `diff`, `patch`, or place the patch in a subagent output tail, so accept
+    /// those shapes while refusing ordinary tool output.
+    static func diffPreview(from payload: [String: Any]) -> String? {
+        for key in ["inline_diff", "diff_preview", "diff", "patch"] {
+            if let preview = normalizedDiff(payload[key] as? String, requireMarkers: false) {
+                return preview
+            }
+        }
+        if let result = payload["result"] as? [String: Any] {
+            for key in ["inline_diff", "diff_preview", "diff", "patch"] {
+                if let preview = normalizedDiff(result[key] as? String, requireMarkers: false) {
+                    return preview
+                }
+            }
+        }
+        if let tail = payload["output_tail"] as? [[String: Any]] {
+            for entry in tail.reversed() {
+                if let preview = normalizedDiff(entry["preview"] as? String, requireMarkers: true) {
+                    return preview
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func normalizedDiff(_ raw: String?, requireMarkers: Bool) -> String? {
+        guard let raw else { return nil }
+        let clean = HermesRuntimeInspector.stripANSI(raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        if requireMarkers {
+            let lines = clean.split(separator: "\n", omittingEmptySubsequences: false)
+            let hasMarkers = lines.contains {
+                $0.hasPrefix("+") || $0.hasPrefix("-") || $0.hasPrefix("@@") || $0.hasPrefix("diff --git")
+            }
+            guard hasMarkers else { return nil }
+        }
+        return String(clean.prefix(4_000))
+    }
+
     private func telemetry(from row: [String: Any], fallbackStatus: String? = nil) -> HermesSubagent? {
         guard let id = row["subagent_id"] as? String else { return nil }
+        let goal = row["goal"] as? String ?? "Hermes subagent"
+        let rawRole = (row["agent_role"] as? String)
+            ?? (row["role_label"] as? String)
+            ?? (row["role"] as? String)
+        let role = rawRole.flatMap { value in
+            ["leaf", "orchestrator"].contains(value.lowercased()) ? nil : value
+        } ?? Self.inferRole(from: goal)
         return HermesSubagent(
             id: id,
-            name: (row["name"] as? String) ?? (row["agent_name"] as? String) ?? (row["display_name"] as? String),
+            name: (row["name"] as? String) ?? (row["agent_name"] as? String) ?? (row["display_name"] as? String) ?? role,
             parentID: row["parent_id"] as? String,
             childSessionID: row["child_session_id"] as? String,
             depth: (row["depth"] as? NSNumber)?.intValue ?? 0,
-            goal: row["goal"] as? String ?? "Hermes subagent",
-            role: (row["agent_role"] as? String) ?? (row["role_label"] as? String) ?? (row["role"] as? String),
+            goal: goal,
+            role: role,
             sourceSkill: row["source_skill"] as? String,
             status: row["status"] as? String ?? fallbackStatus ?? "unknown",
             model: row["model"] as? String,
@@ -967,7 +1185,9 @@ final class DockModel: ObservableObject {
 
     private func mergeAgentEvent(_ type: String, payload: [String: Any]) {
         guard let id = payload["subagent_id"] as? String else { return }
-        var agent = sessionAgents.first(where: { $0.id == id }) ?? HermesSubagent(id: id, goal: payload["goal"] as? String ?? "Hermes subagent", status: "running")
+        var agent = sessionAgents.first(where: { $0.id == id })
+            ?? activeSubagents.first(where: { $0.id == id })
+            ?? HermesSubagent(id: id, goal: payload["goal"] as? String ?? "Hermes subagent", status: "running")
         if let hydrated = telemetry(from: payload.merging(["subagent_id": id]) { current, _ in current }) {
             agent.name = hydrated.name ?? agent.name
             agent.parentID = hydrated.parentID ?? agent.parentID
@@ -988,20 +1208,15 @@ final class DockModel: ObservableObject {
             agent.filesRead = hydrated.filesRead.isEmpty ? agent.filesRead : hydrated.filesRead
             agent.filesWritten = hydrated.filesWritten.isEmpty ? agent.filesWritten : hydrated.filesWritten
         }
-        let eventStatus: String? = switch type {
-        case "subagent.start": "running"
-        case "subagent.complete": "complete"
-        case "subagent.error": "error"
-        case "subagent.interrupt", "subagent.interrupted": "interrupted"
-        default: nil
-        }
-        if let eventStatus { agent.status = eventStatus }
+        agent.status = Self.agentStatus(current: agent.status, eventType: type)
         if type == "subagent.complete" || type == "subagent.error" || type.contains("interrupt") {
             agent.completedAt = dateValue(payload["completed_at"]) ?? Date()
             agent.durationSeconds = (payload["duration_seconds"] as? NSNumber)?.doubleValue ?? agent.durationSeconds
         }
         if let preview = payload["tool_preview"] as? String ?? payload["text"] as? String { agent.latestActivity = preview }
+        reconcileSyntheticPlaceholder(for: agent)
         upsertSessionAgent(agent)
+        upsertActiveAgent(agent)
     }
 
     private func upsertSessionAgent(_ agent: HermesSubagent) {
@@ -1012,6 +1227,32 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private func upsertActiveAgent(_ agent: HermesSubagent) {
+        if let index = activeSubagents.firstIndex(where: { $0.id == agent.id }) {
+            activeSubagents[index] = agent
+        } else {
+            activeSubagents.append(agent)
+        }
+    }
+
+    /// Native subagent events have a stable Hermes ID; synthesized rows only
+    /// bridge the short gap before that first event. Remove the matching
+    /// placeholder so a batch never renders both identities for one worker.
+    private func reconcileSyntheticPlaceholder(for nativeAgent: HermesSubagent) {
+        guard !synthesizedSubagentIDs.contains(nativeAgent.id) else { return }
+        let normalizedGoal = nativeAgent.goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedGoal.isEmpty, normalizedGoal != "hermes subagent" else { return }
+        guard let placeholder = activeSubagents.first(where: {
+            synthesizedSubagentIDs.contains($0.id)
+                && $0.goal.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalizedGoal
+        }) else { return }
+
+        synthesizedSubagentIDs.remove(placeholder.id)
+        activeSubagents.removeAll { $0.id == placeholder.id }
+        sessionAgents.removeAll { $0.id == placeholder.id }
+        agentActivities.removeAll { $0.agentID == placeholder.id }
+    }
+
     private static func isDelegationTool(_ name: String) -> Bool {
         let lower = name.lowercased()
         return lower.contains("delegate") || lower == "spawn" || lower == "spawn_agent"
@@ -1019,79 +1260,68 @@ final class DockModel: ObservableObject {
     }
 
     private func synthesizeSubagent(toolCallID: String, args: [String: Any]) {
-        guard !synthesizedSubagentIDs.contains(toolCallID) else { return }
-        let goal = (args["goal"] as? String)
-            ?? (args["description"] as? String)
-            ?? (args["prompt"] as? String)
-            ?? (args["task"] as? String)
-            ?? (args["instructions"] as? String)
-            ?? "Delegated agent"
-        let role = (args["role"] as? String)
-            ?? (args["agent_role"] as? String)
-            ?? (args["agent_type"] as? String)
-            ?? (args["role_label"] as? String)
-        let model = args["model"] as? String
-        let name = (args["name"] as? String)
-            ?? (args["agent_name"] as? String)
-            ?? (args["display_name"] as? String)
-        let agent = HermesSubagent(
-            id: toolCallID,
-            name: name,
-            childSessionID: args["session_id"] as? String ?? args["child_session_id"] as? String,
-            goal: goal,
-            role: role,
-            sourceSkill: args["skill"] as? String ?? args["source_skill"] as? String,
-            status: "running",
-            model: model,
-            startedAt: Date(),
-            toolCount: 0,
-            latestActivity: "Delegated\(role.map { " · \($0)" } ?? "")",
-            summary: nil
-        )
-        synthesizedSubagentIDs.insert(toolCallID)
-        upsertSessionAgent(agent)
-        if !activeSubagents.contains(where: { $0.id == toolCallID }) {
-            activeSubagents.append(agent)
+        let startedAt = Date()
+        let agents = Self.projectedDelegationAgents(toolCallID: toolCallID, args: args, startedAt: startedAt)
+        guard !agents.isEmpty, agents.contains(where: { !synthesizedSubagentIDs.contains($0.id) }) else { return }
+
+        for agent in agents where !synthesizedSubagentIDs.contains(agent.id) {
+            synthesizedSubagentIDs.insert(agent.id)
+            upsertSessionAgent(agent)
+            upsertActiveAgent(agent)
+            agentActivities.append(AgentActivity(
+                id: UUID(),
+                timestamp: startedAt,
+                agentID: agent.id,
+                kind: "subagent.start",
+                text: agent.goal,
+                toolName: nil,
+                handoffTarget: nil
+            ))
         }
-        agentActivities.append(AgentActivity(
-            id: UUID(),
-            timestamp: Date(),
-            agentID: toolCallID,
-            kind: "subagent.start",
-            text: role.map { "\($0) agent delegated" } ?? "Agent delegated",
-            toolName: nil,
-            handoffTarget: nil
-        ))
         if agentActivities.count > 250 {
             agentActivities.removeFirst(agentActivities.count - 250)
         }
-        DebugLog.write("model: synthesized subagent \(toolCallID) (role: \(role ?? "none"))")
+        DebugLog.write("model: synthesized \(agents.count) subagent row(s) for \(toolCallID)")
+    }
+
+    private func refreshSynthesizedSubagents(toolCallID: String, args: [String: Any]) {
+        let matchingIDs = synthesizedSubagentIDs.filter { $0 == toolCallID || $0.hasPrefix("\(toolCallID):") }
+        guard !matchingIDs.isEmpty else { return }
+        synthesizedSubagentIDs.subtract(matchingIDs)
+        activeSubagents.removeAll { matchingIDs.contains($0.id) }
+        sessionAgents.removeAll { matchingIDs.contains($0.id) }
+        agentActivities.removeAll { activity in
+            activity.agentID.map(matchingIDs.contains) == true
+        }
+        synthesizeSubagent(toolCallID: toolCallID, args: args)
     }
 
     private func completeSynthesizedSubagent(toolCallID: String, result: String, payload: [String: Any]) {
+        // Modern Hermes returns immediately after background dispatch. Native
+        // subagent.complete events, not this acknowledgement, own completion.
+        guard !Self.isBackgroundDelegationDispatch(result) else { return }
         let sessionID = (payload["session_id"] as? String) ?? (payload["child_session_id"] as? String)
         let summary = result.isEmpty ? nil : String(result.prefix(400))
-        if let index = activeSubagents.firstIndex(where: { $0.id == toolCallID }) {
+        let matchingIDs = synthesizedSubagentIDs.filter { $0 == toolCallID || $0.hasPrefix("\(toolCallID):") }
+        for id in matchingIDs {
+            guard let index = activeSubagents.firstIndex(where: { $0.id == id }) else { continue }
             activeSubagents[index].status = "complete"
             activeSubagents[index].completedAt = Date()
             if let sessionID { activeSubagents[index].childSessionID = sessionID }
             if let summary { activeSubagents[index].summary = summary }
+            if let sessionIndex = sessionAgents.firstIndex(where: { $0.id == id }) {
+                sessionAgents[sessionIndex] = activeSubagents[index]
+            }
+            agentActivities.append(AgentActivity(
+                id: UUID(),
+                timestamp: Date(),
+                agentID: id,
+                kind: "subagent.complete",
+                text: summary ?? "Delegated agent finished",
+                toolName: nil,
+                handoffTarget: nil
+            ))
         }
-        if let index = sessionAgents.firstIndex(where: { $0.id == toolCallID }) {
-            sessionAgents[index].status = "complete"
-            sessionAgents[index].completedAt = Date()
-            if let sessionID { sessionAgents[index].childSessionID = sessionID }
-            if let summary { sessionAgents[index].summary = summary }
-        }
-        agentActivities.append(AgentActivity(
-            id: UUID(),
-            timestamp: Date(),
-            agentID: toolCallID,
-            kind: "subagent.complete",
-            text: summary ?? "Delegated agent finished",
-            toolName: nil,
-            handoffTarget: nil
-        ))
         if agentActivities.count > 250 {
             agentActivities.removeFirst(agentActivities.count - 250)
         }
@@ -1102,7 +1332,16 @@ final class DockModel: ObservableObject {
         let agentID = payload["subagent_id"] as? String
         let toolName = payload["tool_name"] as? String
         let text = (payload["tool_preview"] as? String) ?? (payload["text"] as? String) ?? (payload["summary"] as? String) ?? type.replacingOccurrences(of: "subagent.", with: "").uppercased()
-        agentActivities.append(AgentActivity(id: UUID(), timestamp: dateValue(params["timestamp"]) ?? Date(), agentID: agentID, kind: type, text: text, toolName: toolName, handoffTarget: payload["handoff_target"] as? String))
+        agentActivities.append(AgentActivity(
+            id: UUID(),
+            timestamp: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
+            agentID: agentID,
+            kind: type,
+            text: text,
+            toolName: toolName,
+            handoffTarget: payload["handoff_target"] as? String,
+            diffPreview: Self.diffPreview(from: payload)
+        ))
         if agentActivities.count > 250 { agentActivities.removeFirst(agentActivities.count - 250) }
     }
 
@@ -1173,12 +1412,6 @@ final class DockModel: ObservableObject {
     }
 
     private static let visionUnsupportedNotice = "This model can't read images. Use a vision-capable model in Hermes to analyze images."
-    private static let workspaceDelegationInstruction = """
-
-
-[Hermes Workspace policy: You are the primary agent. For substantial development work that benefits from parallel investigation, implementation, review, or verification, use your native delegate_task tool with complete goal and repository context. Use background delegation when appropriate, then give the user a concise normal-chat update. Do not delegate small conversational requests.]
-"""
-
     private static func isVisionUnsupportedError(_ text: String) -> Bool {
         let lower = text.lowercased()
         return lower.contains("does not support image")

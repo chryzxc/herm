@@ -54,14 +54,13 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private let statusItem: NSStatusItem
     private let panel: DockPanel
     private var cancellables = Set<AnyCancellable>()
-    private var outsideClickMonitor: Any?
-    private var desiredWidth = Metrics.compactWidth
+    private var desiredWidth = Metrics.workspaceWidth
 
     init(model: DockModel) {
         self.model = model
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         panel = DockPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Metrics.compactWidth, height: Metrics.height),
+            contentRect: NSRect(x: 0, y: 0, width: Metrics.workspaceWidth, height: Metrics.height),
             styleMask: [.borderless, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -71,7 +70,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         configureStatusItem()
         configurePanel()
         observeModel()
-        observeOutsideClicks()
     }
 
     private func configureStatusItem() {
@@ -105,16 +103,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.updateStatusIcon() }
             .store(in: &cancellables)
-    }
-
-    private func observeOutsideClicks() {
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak self] _ in
-            DispatchQueue.main.async {
-                self?.hide()
-            }
-        }
     }
 
     private func updateStatusIcon() {
