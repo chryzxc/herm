@@ -62,9 +62,11 @@ struct ActiveToolCall: Identifiable, Equatable {
     let id: String
     let name: String
     let input: String
+    let context: String
     let startedAt: Date
     var result: String?
     var isComplete: Bool
+    var completedAt: Date? = nil
     var diffPreview: String? = nil
 }
 
@@ -77,6 +79,7 @@ struct AgentEvent: Identifiable, Equatable {
     let id: UUID
     let type: String
     let detail: String
+    let timestamp: Date
 }
 
 struct HermesSubagent: Identifiable, Equatable {
@@ -132,6 +135,26 @@ struct HermesSubagent: Identifiable, Equatable {
         self.filesRead = filesRead
         self.filesWritten = filesWritten
     }
+}
+
+enum HermesBackgroundTaskStatus: String, Equatable {
+    case running
+    case completed
+}
+
+enum HermesBackgroundTaskKind: String, Equatable {
+    case general, verification, handoff, review
+}
+
+struct HermesBackgroundTask: Identifiable, Equatable {
+    let id: String
+    let parentSessionID: String
+    let prompt: String
+    let kind: HermesBackgroundTaskKind
+    var status: HermesBackgroundTaskStatus
+    var output: String?
+    let startedAt: Date
+    var completedAt: Date?
 }
 
 struct AgentActivity: Identifiable, Equatable {
@@ -230,6 +253,7 @@ final class DockModel: ObservableObject {
     @Published var activeSubagents: [HermesSubagent] = []
     @Published var sessionAgents: [HermesSubagent] = []
     @Published var agentActivities: [AgentActivity] = []
+    @Published private(set) var backgroundTasks: [HermesBackgroundTask] = []
     @Published var runtimeConfiguration: HermesRuntimeConfiguration?
     @Published var isLoadingRuntimeConfiguration = false
     @Published var runtimeConfigurationError: String?
@@ -532,6 +556,16 @@ final class DockModel: ObservableObject {
         try await gateway.request(method, params: params)
     }
 
+    func registerBackgroundTask(id: String, prompt: String, parentSessionID: String, kind: HermesBackgroundTaskKind = .general) {
+        guard !id.isEmpty, !backgroundTasks.contains(where: { $0.id == id }) else { return }
+        backgroundTasks.append(HermesBackgroundTask(id: id, parentSessionID: parentSessionID, prompt: prompt, kind: kind, status: .running, output: nil, startedAt: .now, completedAt: nil))
+        if backgroundTasks.count > 50 { backgroundTasks.removeFirst(backgroundTasks.count - 50) }
+    }
+
+    func isSyntheticSubagent(_ id: String) -> Bool {
+        synthesizedSubagentIDs.contains(id)
+    }
+
     func submitControlPrompt(_ text: String) async throws {
         try await gateway.connect()
         if sessionID == nil {
@@ -628,23 +662,69 @@ final class DockModel: ObservableObject {
     }
 
     private func handleEvent(_ type: String, params: [String: Any]) {
-        if let eventSessionID = params["session_id"] as? String,
+        let rawPayload = params["payload"] as? [String: Any] ?? [:]
+        let eventSessionID = (params["session_id"] as? String) ?? (rawPayload["session_id"] as? String)
+        let explicitAgentID = (rawPayload["subagent_id"] as? String) ?? (params["subagent_id"] as? String)
+        let eventAgentID = Self.agentID(
+            explicitAgentID: explicitAgentID,
+            eventSessionID: eventSessionID,
+            agents: sessionAgents + activeSubagents
+        )
+        let isKnownAgent = eventAgentID.map { id in
+            sessionAgents.contains(where: { $0.id == id }) || activeSubagents.contains(where: { $0.id == id })
+        } ?? false
+        let parentSessionID = (rawPayload["parent_id"] as? String) ?? (rawPayload["parent_session_id"] as? String)
+
+        // A delegated worker emits the same ordinary tool/reasoning event types
+        // as the parent session. Project those events into that worker's history
+        // and do not let them mutate the parent conversation state.
+        if !type.hasPrefix("subagent."),
+           let eventAgentID,
+           Self.isAgentScopedActivity(
+               eventAgentID: eventAgentID,
+               eventSessionID: eventSessionID,
+               parentSessionID: parentSessionID,
+               currentSessionID: sessionID,
+               agents: sessionAgents + activeSubagents
+           ),
+           let activityKind = Self.agentActivityKind(for: type) {
+            var payload = rawPayload
+            payload["subagent_id"] = eventAgentID
+            recordAgentActivity(activityKind, params: params, payload: payload)
+            mergeAgentEvent(activityKind, payload: payload)
+            return
+        }
+
+        var payload = rawPayload
+        let isRelevantSubagentEvent = type.hasPrefix("subagent.")
+            && (eventSessionID == nil || eventSessionID == sessionID || parentSessionID == sessionID || isKnownAgent)
+        if isRelevantSubagentEvent {
+            if payload["subagent_id"] == nil, let explicitAgentID {
+                payload["subagent_id"] = explicitAgentID
+            }
+            recordAgentActivity(type, params: params, payload: payload)
+            mergeAgentEvent(type, payload: payload)
+        }
+        if let eventSessionID,
            !eventSessionID.isEmpty,
-           let sessionID, sessionID != eventSessionID {
+           let sessionID, sessionID != eventSessionID,
+           !isRelevantSubagentEvent {
             DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)")
             return
         }
         DebugLog.write("model: handling event \(type)")
-        let payload = params["payload"] as? [String: Any] ?? [:]
-        if type.hasPrefix("subagent.") {
-            recordAgentActivity(type, params: params, payload: payload)
-            mergeAgentEvent(type, payload: payload)
-        }
         if type == "message.start" {
             recentEvents.removeAll()
         }
         recordEvent(type, params: params)
         switch type {
+        case "background.complete":
+            let taskID = (payload["task_id"] as? String) ?? ""
+            guard !taskID.isEmpty,
+                  let index = backgroundTasks.firstIndex(where: { $0.id == taskID }) else { break }
+            backgroundTasks[index].status = .completed
+            backgroundTasks[index].output = payload["text"] as? String
+            backgroundTasks[index].completedAt = .now
         case "voice.transcript":
             guard voiceState.isNativeConversationActive else { return }
             let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -787,7 +867,15 @@ final class DockModel: ObservableObject {
                 input = ""
             }
             let id = (payload["id"] as? String) ?? (payload["tool_id"] as? String) ?? UUID().uuidString
-            activeToolCalls.append(ActiveToolCall(id: id, name: name, input: input, startedAt: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(), result: nil, isComplete: false))
+            activeToolCalls.append(ActiveToolCall(
+                id: id,
+                name: name,
+                input: input,
+                context: payload["context"] as? String ?? "",
+                startedAt: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
+                result: nil,
+                isComplete: false
+            ))
             if Self.isDelegationTool(name) {
                 synthesizeSubagent(toolCallID: id, args: argsDict)
             }
@@ -804,6 +892,7 @@ final class DockModel: ObservableObject {
                 }
                 activeToolCalls[index].result = result.isEmpty ? nil : result
                 activeToolCalls[index].isComplete = true
+                activeToolCalls[index].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 activeToolCalls[index].diffPreview = diffPreview
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: id, result: result, payload: payload) }
             } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
@@ -813,6 +902,7 @@ final class DockModel: ObservableObject {
                 }
                 activeToolCalls[last].result = result.isEmpty ? nil : result
                 activeToolCalls[last].isComplete = true
+                activeToolCalls[last].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 activeToolCalls[last].diffPreview = diffPreview
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload) }
             }
@@ -924,10 +1014,15 @@ final class DockModel: ObservableObject {
             do {
                 let result = try await gateway.request("delegation.status", params: [:])
                 let rows = result["active"] as? [[String: Any]] ?? []
-                let rpcAgents = rows.compactMap { row -> HermesSubagent? in
-                    guard row["subagent_id"] is String else { return nil }
-                    return self.telemetry(from: row, fallbackStatus: "running")
+                let projections = rows.compactMap { row -> (row: [String: Any], agent: HermesSubagent)? in
+                    guard row["subagent_id"] is String,
+                          let agent = self.telemetry(from: row, fallbackStatus: "running") else { return nil }
+                    return (row, agent)
                 }
+                for projection in projections {
+                    self.recordTelemetryActivityIfChanged(row: projection.row, agent: projection.agent)
+                }
+                let rpcAgents = projections.map(\.agent)
                 let rpcIDs = Set(rpcAgents.map { $0.id })
                 let preserved = activeSubagents.filter {
                     !rpcIDs.contains($0.id)
@@ -1025,6 +1120,56 @@ final class DockModel: ObservableObject {
         guard let eventStatus else { return current }
         if isTerminalAgentStatus(current), !isTerminalAgentStatus(eventStatus) { return current }
         return eventStatus
+    }
+
+    /// Resolves both native subagent IDs and the child session IDs used by
+    /// ordinary events emitted from inside a delegated worker.
+    static func agentID(explicitAgentID: String?, eventSessionID: String?, agents: [HermesSubagent]) -> String? {
+        if let explicitAgentID, !explicitAgentID.isEmpty { return explicitAgentID }
+        guard let eventSessionID, !eventSessionID.isEmpty else { return nil }
+        return agents.first(where: {
+            $0.id == eventSessionID || $0.childSessionID == eventSessionID
+        })?.id
+    }
+
+    /// The parent delegation call can carry a future subagent ID while still
+    /// belonging to the current session. It must reach the normal tool handler
+    /// so the agent card is created. Only known workers or events explicitly
+    /// attached to a child session are diverted into agent activity history.
+    static func isAgentScopedActivity(
+        eventAgentID: String,
+        eventSessionID: String?,
+        parentSessionID: String?,
+        currentSessionID: String?,
+        agents: [HermesSubagent]
+    ) -> Bool {
+        if agents.contains(where: { $0.id == eventAgentID }) { return true }
+        guard let currentSessionID else { return false }
+        return parentSessionID == currentSessionID && eventSessionID != currentSessionID
+    }
+
+    /// Stream deltas are intentionally omitted: one row per token would drown
+    /// out the useful activity. Lifecycle boundaries and complete tool actions
+    /// remain visible.
+    static func agentActivityKind(for eventType: String) -> String? {
+        switch eventType.lowercased() {
+        case "tool.call", "tool.start", "tool.use", "tool_use":
+            return "subagent.tool"
+        case "tool.result", "tool_result", "tool.complete", "tool_complete":
+            return "subagent.tool.complete"
+        case "reasoning.start", "thinking":
+            return "subagent.thinking"
+        case "reasoning.complete", "thinking.stop", "thinking.complete":
+            return "subagent.thinking.complete"
+        case "message.complete":
+            return "subagent.progress"
+        case "error":
+            return "subagent.error"
+        case "message.delta", "reasoning.delta", "thinking.delta":
+            return nil
+        default:
+            return nil
+        }
     }
 
     private static func inferRole(from title: String) -> String? {
@@ -1330,8 +1475,10 @@ final class DockModel: ObservableObject {
 
     private func recordAgentActivity(_ type: String, params: [String: Any], payload: [String: Any]) {
         let agentID = payload["subagent_id"] as? String
-        let toolName = payload["tool_name"] as? String
-        let text = (payload["tool_preview"] as? String) ?? (payload["text"] as? String) ?? (payload["summary"] as? String) ?? type.replacingOccurrences(of: "subagent.", with: "").uppercased()
+        let toolName = (payload["tool_name"] as? String)
+            ?? (payload["tool"] as? String)
+            ?? (payload["name"] as? String)
+        let text = Self.agentActivityText(type: type, payload: payload, toolName: toolName)
         agentActivities.append(AgentActivity(
             id: UUID(),
             timestamp: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
@@ -1343,6 +1490,32 @@ final class DockModel: ObservableObject {
             diffPreview: Self.diffPreview(from: payload)
         ))
         if agentActivities.count > 250 { agentActivities.removeFirst(agentActivities.count - 250) }
+    }
+
+    static func agentActivityText(type: String, payload: [String: Any], toolName: String?) -> String {
+        for key in ["tool_preview", "text", "summary", "message", "description", "question"] {
+            if let text = payload[key] as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return text
+            }
+        }
+        for key in ["result", "output", "arguments", "input", "args"] {
+            let text = eventText(payload[key])
+            if !text.isEmpty { return toolName.map { "\($0): \(text)" } ?? text }
+        }
+        if let toolName, !toolName.isEmpty { return toolName }
+        return type.replacingOccurrences(of: "subagent.", with: "").uppercased()
+    }
+
+    private func recordTelemetryActivityIfChanged(row: [String: Any], agent: HermesSubagent) {
+        guard let preview = (row["tool_preview"] as? String) ?? (row["text"] as? String),
+              !preview.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let previous = (sessionAgents.first(where: { $0.id == agent.id })
+            ?? activeSubagents.first(where: { $0.id == agent.id }))?.latestActivity
+        guard previous != preview else { return }
+        var payload = row
+        payload["subagent_id"] = agent.id
+        recordAgentActivity("subagent.progress", params: [:], payload: payload)
     }
 
     private func dateValue(_ value: Any?) -> Date? {
@@ -1405,7 +1578,12 @@ final class DockModel: ObservableObject {
             detail = String(describing: params)
         }
         DebugLog.write("event \(type): \(detail)")
-        recentEvents.append(AgentEvent(id: UUID(), type: type, detail: detail))
+        recentEvents.append(AgentEvent(
+            id: UUID(),
+            type: type,
+            detail: detail,
+            timestamp: dateValue(params["timestamp"]) ?? Date()
+        ))
         if recentEvents.count > 40 {
             recentEvents.removeFirst(recentEvents.count - 40)
         }

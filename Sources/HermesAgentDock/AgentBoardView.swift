@@ -230,10 +230,10 @@ struct AgentBoardView: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let diffPreview = agent.diffPreview {
-                miniDiffPreview(diffPreview)
-            }
             if expandedAgentID == agent.id {
+                if let diffPreview = agent.diffPreview {
+                    miniDiffPreview(diffPreview)
+                }
                 expandedActivity(for: agent)
             }
             }
@@ -260,7 +260,7 @@ struct AgentBoardView: View {
             Circle().stroke(agent.agentColor.opacity(0.7), lineWidth: 0.6)
             Circle().trim(from: 0.08, to: 0.42)
                 .stroke(agent.agentColor, style: StrokeStyle(lineWidth: 1, lineCap: .round))
-                .rotationEffect(.degrees(Double(abs(agent.id.hashValue % 360))))
+                .rotationEffect(.degrees(Double(agentRotation(for: agent.id))))
                 .padding(4)
             Text(agent.initials)
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -273,10 +273,10 @@ struct AgentBoardView: View {
         let activities = model.agentActivities
             .filter { $0.agentID == agent.id }
             .sorted { $0.timestamp > $1.timestamp }
-        let pending = activities.filter { activityStatus(for: $0.kind) == "Pending" }
-        let running = activities.filter { activityStatus(for: $0.kind) == "Running" }
+        let pending = activities.filter { activityPhase(for: $0) == .pending }
+        let running = activities.filter { activityPhase(for: $0) == .running }
         let completed = activities.filter {
-            ["Completed", "Failed", "Interrupted"].contains(activityStatus(for: $0.kind))
+            [.complete, .failed, .interrupted].contains(activityPhase(for: $0))
         }
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -571,63 +571,23 @@ struct AgentBoardView: View {
     }
 
     private var pipeline: [PipelineItem] {
-        var liveRows: [PipelineItem] = model.agentActivities
-            .sorted { $0.timestamp > $1.timestamp }
-            .prefix(6)
-            .map { activity in
-                let status = activityStatus(for: activity.kind)
-                return PipelineItem(
-                    id: "activity:\(activity.id.uuidString)",
-                    timestamp: activity.timestamp,
-                    status: status,
-                    task: activity.text,
-                    agent: activity.agentID.flatMap { id in
-                        model.activeSubagents.first(where: { $0.id == id }).map { $0.name ?? $0.role ?? "Agent" }
-                    } ?? "Hermes",
-                    time: HumanDateFormatting.timeOnly(activity.timestamp),
-                    color: color(for: status),
-                    detail: activityDetail(for: activity),
-                    diffPreview: activity.diffPreview
-                )
-            }
-
-        // Tool calls belong to Hermes' primary process, not only to delegated
-        // agents. Keep them visible in the pipeline even when no subagent exists.
-        liveRows.append(contentsOf: model.activeToolCalls.map { call in
+        AgentActivityPresentation.pipeline(
+            activities: model.agentActivities,
+            toolCalls: model.activeToolCalls,
+            subagents: model.activeSubagents
+        ).map { item in
             PipelineItem(
-                id: "tool:\(call.id)",
-                timestamp: call.startedAt,
-                status: call.isComplete ? "Complete" : "Running",
-                task: call.input.isEmpty ? call.name : "\(call.name): \(call.input)",
-                agent: "Hermes",
-                time: HumanDateFormatting.timeOnly(call.startedAt),
-                color: call.isComplete ? .scifiSuccess : .scifiAccent,
-                detail: toolDetail(for: call),
-                diffPreview: call.diffPreview
+                id: item.id,
+                timestamp: item.timestamp,
+                status: item.status,
+                task: item.task,
+                agent: item.agent,
+                time: HumanDateFormatting.timeOnly(item.timestamp),
+                color: color(for: item.status),
+                detail: item.detail,
+                diffPreview: item.diffPreview
             )
-        })
-
-        if !liveRows.isEmpty {
-            return liveRows.sorted { $0.timestamp > $1.timestamp }
         }
-
-        if !model.activeSubagents.isEmpty {
-            return model.activeSubagents.map { agent in
-                PipelineItem(
-                    id: "agent:\(agent.id)",
-                    timestamp: agent.startedAt ?? .distantPast,
-                    status: agent.status,
-                    task: agent.goal,
-                    agent: agent.name ?? agent.role ?? "Agent",
-                    time: agent.startedAt.map { HumanDateFormatting.timeOnly($0) } ?? "—",
-                    color: color(for: agent.status),
-                    detail: agent.summary ?? agent.latestActivity ?? agent.goal,
-                    diffPreview: latestDiffPreview(for: agent)
-                )
-            }
-        }
-
-        return []
     }
 
     private func initials(_ value: String) -> String {
@@ -635,27 +595,8 @@ struct AgentBoardView: View {
         return result.isEmpty ? "A" : result.uppercased()
     }
 
-    private func activityStatus(for kind: String) -> String {
-        let lower = kind.lowercased()
-        if lower.contains("complete") || lower.contains("finish") { return "Complete" }
-        if lower.contains("error") || lower.contains("fail") { return "Failed" }
-        if lower.contains("interrupt") { return "Interrupted" }
-        if lower.contains("queue") || lower.contains("spawn_requested") { return "Pending" }
-        if lower.hasPrefix("subagent.") { return "Running" }
-        return kind
-    }
-
-    private func activityDetail(for activity: AgentActivity) -> String {
-        var details = [activity.text]
-        if let toolName = activity.toolName { details.append("Tool: \(toolName)") }
-        if let handoffTarget = activity.handoffTarget { details.append("Handoff target: \(handoffTarget)") }
-        return details.joined(separator: "\n")
-    }
-
-    private func toolDetail(for call: ActiveToolCall) -> String {
-        var details = [call.input.isEmpty ? call.name : "Input: \(call.input)"]
-        if let result = call.result, !result.isEmpty { details.append("Result: \(result)") }
-        return details.joined(separator: "\n")
+    private func activityPhase(for activity: AgentActivity) -> AgentActivityPhase {
+        AgentActivityPresentation.phase(for: activity.kind)
     }
 
     private func color(for status: String) -> Color {
@@ -676,7 +617,15 @@ struct AgentBoardView: View {
             Color(red: 1.0, green: 0.72, blue: 0.28),
             Color(red: 0.42, green: 0.62, blue: 1.0)
         ]
-        let hash = id.utf8.reduce(0) { ($0 &* 31) &+ Int($1) }
-        return palette[abs(hash) % palette.count]
+        return palette[stableHash(for: id) % palette.count]
+    }
+
+    private func agentRotation(for id: String) -> Int {
+        stableHash(for: id) % 360
+    }
+
+    private func stableHash(for id: String) -> Int {
+        let hash = id.utf8.reduce(UInt64(0)) { ($0 &* 31) &+ UInt64($1) }
+        return Int(hash % UInt64(Int.max))
     }
 }
