@@ -1,4 +1,161 @@
+import CryptoKit
 import Foundation
+
+enum RepositoryFileStatus: String, Equatable {
+    case modified, added, deleted, renamed, untracked, conflicted, unknown
+}
+
+struct RepositoryFileChange: Identifiable, Equatable {
+    let path: String
+    let status: RepositoryFileStatus
+    let isStaged: Bool
+    let renameSource: String?
+    var id: String { "\(isStaged ? "staged" : "worktree"):\(path)" }
+}
+
+struct RepositoryChangeSnapshot: Equatable {
+    let repositoryID: String
+    let headRevision: String?
+    let branch: String
+    let files: [RepositoryFileChange]
+    let refreshedAt: Date
+
+    var changedFiles: Int { files.count }
+    var stagedCount: Int { files.filter(\.isStaged).count }
+    var unstagedCount: Int { files.filter { !$0.isStaged && $0.status != .untracked }.count }
+    var untrackedCount: Int { files.filter { $0.status == .untracked }.count }
+    var conflictedCount: Int { files.filter { $0.status == .conflicted }.count }
+}
+
+struct RepositoryDiff: Equatable {
+    let path: String
+    let text: String
+    let isTruncated: Bool
+    let isStaged: Bool
+}
+
+enum RepositoryDiffAuditSeverity: String, Equatable {
+    case blocker, warning, note
+}
+
+struct RepositoryDiffAuditFinding: Identifiable, Equatable {
+    let ruleID: String
+    let severity: RepositoryDiffAuditSeverity
+    let path: String
+    let line: Int?
+    let title: String
+    let detail: String
+
+    var id: String { "\(path):\(line ?? 0):\(ruleID)" }
+}
+
+enum RepositoryReviewCompleteness: String, Equatable {
+    case complete, partial
+}
+
+struct RepositoryReviewFile: Identifiable, Equatable {
+    let change: RepositoryFileChange
+    let findings: [RepositoryDiffAuditFinding]
+    let isTruncated: Bool
+    let isBinary: Bool
+    let isReadable: Bool
+    let contentIdentity: String?
+    var id: String { change.id }
+}
+
+struct RepositoryReviewSnapshot: Equatable {
+    let repositoryID: String
+    let headRevision: String?
+    let fingerprint: String
+    let files: [RepositoryReviewFile]
+    let completeness: RepositoryReviewCompleteness
+    let refreshedAt: Date
+    let omittedFileCount: Int
+
+    var findings: [RepositoryDiffAuditFinding] { files.flatMap(\.findings) }
+    var blockerCount: Int { findings.filter { $0.severity == .blocker }.count }
+    var warningCount: Int { findings.filter { $0.severity == .warning }.count }
+    var noteCount: Int { findings.filter { $0.severity == .note }.count }
+}
+
+struct RepositoryWorktreeSummary: Identifiable, Equatable {
+    let path: String
+    let displayName: String
+    let branch: String?
+    let headRevision: String?
+    let isDetached: Bool
+    let isLocked: Bool
+    let isPrunable: Bool
+    let snapshot: RepositorySnapshot?
+    var id: String { RepositorySnapshot.stableID(path: path) }
+}
+
+/// A deliberately small pre-commit signal pass over added diff lines. It never
+/// returns source text, so credential-like values cannot leak into the UI.
+enum RepositoryDiffAuditor {
+    static func audit(_ diff: RepositoryDiff) -> [RepositoryDiffAuditFinding] {
+        var results: [RepositoryDiffAuditFinding] = []
+        var newLine: Int?
+
+        for row in diff.text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if row.hasPrefix("@@") {
+                newLine = newLineStart(from: row)
+                continue
+            }
+            guard let line = newLine else { continue }
+            if row.hasPrefix("+") && !row.hasPrefix("+++") {
+                let source = String(row.dropFirst())
+                results.append(contentsOf: findings(in: source, path: diff.path, line: line))
+                newLine = line + 1
+            } else if row.hasPrefix("-") && !row.hasPrefix("---") {
+                continue
+            } else {
+                newLine = line + 1
+            }
+        }
+        return results
+    }
+
+    private static func findings(in source: String, path: String, line: Int) -> [RepositoryDiffAuditFinding] {
+        let trimmed = source.trimmingCharacters(in: .whitespaces)
+        let lower = trimmed.lowercased()
+        var result: [RepositoryDiffAuditFinding] = []
+
+        if trimmed.hasPrefix("<<<<<<<") || trimmed.hasPrefix("=======") || trimmed.hasPrefix(">>>>>>>") {
+            result.append(finding("conflict-marker", .blocker, path, line, "Conflict marker added", "Resolve the merge marker before committing."))
+        }
+        if looksLikeCredentialAssignment(lower) {
+            result.append(finding("credential-assignment", .blocker, path, line, "Possible credential added", "Inspect this line for a hardcoded secret. The value is intentionally hidden."))
+        }
+        if lower.contains("console.log(") || lower.contains("debugger;") || lower.contains("breakpoint()") || lower.contains("nslog(") || lower.contains("print(") {
+            result.append(finding("debug-statement", .warning, path, line, "Debug statement added", "Confirm the diagnostic output is intentional."))
+        }
+        if lower.contains("todo") || lower.contains("fixme") {
+            result.append(finding("unfinished-marker", .note, path, line, "Unfinished-work marker added", "Review the TODO or FIXME before shipping."))
+        }
+        if lower.range(of: #"^except\s*:"#, options: .regularExpression) != nil {
+            result.append(finding("bare-except", .warning, path, line, "Bare except clause added", "Catch a specific exception or document why a broad catch is required."))
+        }
+        return result
+    }
+
+    private static func looksLikeCredentialAssignment(_ lower: String) -> Bool {
+        let keyTerms = ["api_key", "api-key", "apikey", "secret", "password", "passwd", "access_token", "auth_token", "private_key"]
+        guard keyTerms.contains(where: lower.contains) else { return false }
+        return lower.contains("=") || lower.contains(":")
+    }
+
+    private static func newLineStart(from hunk: String) -> Int? {
+        guard let plus = hunk.firstIndex(of: "+") else { return nil }
+        let suffix = hunk[hunk.index(after: plus)...]
+        let digits = suffix.prefix(while: { $0.isNumber })
+        return Int(digits)
+    }
+
+    private static func finding(_ ruleID: String, _ severity: RepositoryDiffAuditSeverity, _ path: String, _ line: Int, _ title: String, _ detail: String) -> RepositoryDiffAuditFinding {
+        RepositoryDiffAuditFinding(ruleID: ruleID, severity: severity, path: path, line: line, title: title, detail: detail)
+    }
+}
 
 struct RepositorySnapshot: Equatable {
     var path: String
@@ -6,20 +163,287 @@ struct RepositorySnapshot: Equatable {
     var changedFiles: Int
     var latestCommit: String
     var isGitRepository: Bool
+    var repositoryID: String
+    var headRevision: String?
+    var stagedFiles: Int
+    var unstagedFiles: Int
+    var untrackedFiles: Int
+    var conflictedFiles: Int
+    var aheadCount: Int?
+    var behindCount: Int?
+    var worktreeCount: Int
+    var stashCount: Int
+    var operation: String?
+    var refreshedAt: Date
+    var isStale: Bool
+
+    init(path: String, branch: String, changedFiles: Int, latestCommit: String, isGitRepository: Bool, repositoryID: String? = nil, headRevision: String? = nil, stagedFiles: Int = 0, unstagedFiles: Int = 0, untrackedFiles: Int = 0, conflictedFiles: Int = 0, aheadCount: Int? = nil, behindCount: Int? = nil, worktreeCount: Int = 0, stashCount: Int = 0, operation: String? = nil, refreshedAt: Date = .now, isStale: Bool = false) {
+        self.path = path
+        self.branch = branch
+        self.changedFiles = changedFiles
+        self.latestCommit = latestCommit
+        self.isGitRepository = isGitRepository
+        self.repositoryID = repositoryID ?? Self.stableID(path: path)
+        self.headRevision = headRevision
+        self.stagedFiles = stagedFiles
+        self.unstagedFiles = unstagedFiles
+        self.untrackedFiles = untrackedFiles
+        self.conflictedFiles = conflictedFiles
+        self.aheadCount = aheadCount
+        self.behindCount = behindCount
+        self.worktreeCount = worktreeCount
+        self.stashCount = stashCount
+        self.operation = operation
+        self.refreshedAt = refreshedAt
+        self.isStale = isStale
+    }
 
     static let empty = RepositorySnapshot(path: "", branch: "No repository selected", changedFiles: 0, latestCommit: "", isGitRepository: false)
+
+    static func stableID(path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
 }
 
 enum RepositoryService {
+    private static let maxDiffBytes = 48_000
+    private static let maxDiffLines = 900
+    static let maxReviewFiles = 200
+    static let maxConcurrentWorktreeInspections = 8
+
     static func inspect(path: String) async -> RepositorySnapshot {
-        let branchResult = await runGit(path: path, arguments: ["branch", "--show-current"])
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let branchResult = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
         guard branchResult.exitCode == 0 else {
-            return RepositorySnapshot(path: path, branch: "Not a Git repository", changedFiles: 0, latestCommit: "", isGitRepository: false)
+            return RepositorySnapshot(path: normalizedPath, branch: "Not a Git repository", changedFiles: 0, latestCommit: "", isGitRepository: false)
         }
-        let statusResult = await runGit(path: path, arguments: ["status", "--porcelain"])
-        let commitResult = await runGit(path: path, arguments: ["log", "-1", "--pretty=format:%h %s"])
-        let changedFiles = statusResult.output.split(separator: "\n", omittingEmptySubsequences: true).count
-        return RepositorySnapshot(path: path, branch: branchResult.output.isEmpty ? "detached HEAD" : branchResult.output, changedFiles: changedFiles, latestCommit: commitResult.output, isGitRepository: true)
+        async let changes = changeSnapshot(path: normalizedPath)
+        async let head = runGit(path: normalizedPath, arguments: ["rev-parse", "--short", "HEAD"])
+        async let commit = runGit(path: normalizedPath, arguments: ["log", "-1", "--pretty=format:%h %s"])
+        async let upstream = runGit(path: normalizedPath, arguments: ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])
+        async let worktrees = runGit(path: normalizedPath, arguments: ["worktree", "list", "--porcelain"])
+        async let stashes = runGit(path: normalizedPath, arguments: ["stash", "list"])
+        async let operation = operationState(path: normalizedPath)
+        let result = await changes
+        let headResult = await head
+        let commitResult = await commit
+        let upstreamResult = await upstream
+        let worktreeResult = await worktrees
+        let stashResult = await stashes
+        let currentOperation = await operation
+        let counts = upstreamCounts(upstreamResult)
+        return RepositorySnapshot(
+            path: normalizedPath,
+            branch: branchResult.output.isEmpty ? "detached HEAD" : branchResult.output,
+            changedFiles: result.changedFiles,
+            latestCommit: commitResult.output,
+            isGitRepository: true,
+            headRevision: headResult.exitCode == 0 ? headResult.output : nil,
+            stagedFiles: result.stagedCount,
+            unstagedFiles: result.unstagedCount,
+            untrackedFiles: result.untrackedCount,
+            conflictedFiles: result.conflictedCount,
+            aheadCount: counts?.ahead,
+            behindCount: counts?.behind,
+            worktreeCount: worktreeResult.output.split(separator: "\n").filter { $0.hasPrefix("worktree ") }.count,
+            stashCount: stashResult.output.split(separator: "\n", omittingEmptySubsequences: true).count,
+            operation: currentOperation
+        )
+    }
+
+    static func changeSnapshot(path: String) async -> RepositoryChangeSnapshot {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let status = await runGit(path: normalizedPath, arguments: ["status", "--porcelain=v1", "-z"])
+        let branch = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
+        let head = await runGit(path: normalizedPath, arguments: ["rev-parse", "--short", "HEAD"])
+        let files = status.exitCode == 0 ? parsePorcelainV1(status.output) : []
+        return RepositoryChangeSnapshot(repositoryID: RepositorySnapshot.stableID(path: normalizedPath), headRevision: head.exitCode == 0 ? head.output : nil, branch: branch.output.isEmpty ? "detached HEAD" : branch.output, files: files, refreshedAt: .now)
+    }
+
+    static func diff(path: String, file: RepositoryFileChange) async -> RepositoryDiff? {
+        guard isSafeRelativePath(file.path) else { return nil }
+        let command = diffCommand(for: file)
+        let result = await runGit(path: path, arguments: command.arguments)
+        guard command.successCodes.contains(result.exitCode) else { return nil }
+        let bounded = boundDiff(result.output)
+        return RepositoryDiff(path: file.path, text: bounded.text, isTruncated: bounded.isTruncated, isStaged: file.isStaged)
+    }
+
+    static func review(path: String) async -> RepositoryReviewSnapshot? {
+        let changes = await changeSnapshot(path: path)
+        let inspected = Array(changes.files.prefix(maxReviewFiles))
+        let omitted = max(0, changes.files.count - inspected.count)
+        var results: [RepositoryReviewFile] = []
+        await withTaskGroup(of: RepositoryReviewFile.self) { group in
+            var iterator = inspected.makeIterator()
+            for _ in 0..<min(4, inspected.count) {
+                if let file = iterator.next() { group.addTask { await reviewFile(path: path, file: file) } }
+            }
+            while let completed = await group.next() {
+                results.append(completed)
+                if let file = iterator.next() { group.addTask { await reviewFile(path: path, file: file) } }
+            }
+        }
+        results.sort { $0.change.id < $1.change.id }
+        let partial = omitted > 0 || results.contains { !$0.isReadable || $0.isTruncated || $0.isBinary }
+        let fingerprintInput = ([changes.repositoryID, changes.headRevision ?? "no-head"] + results.map {
+            "\($0.change.id)|\($0.change.status.rawValue)|\($0.contentIdentity ?? "unavailable")"
+        }).joined(separator: "\n")
+        let fingerprint = SHA256.hash(data: Data(fingerprintInput.utf8)).map { String(format: "%02x", $0) }.joined()
+        return RepositoryReviewSnapshot(repositoryID: changes.repositoryID, headRevision: changes.headRevision, fingerprint: fingerprint, files: results, completeness: partial ? .partial : .complete, refreshedAt: .now, omittedFileCount: omitted)
+    }
+
+    /// Stable, content-free identity for baseline invalidation and watch events.
+    static func fingerprint(path: String) async -> String? {
+        let changes = await changeSnapshot(path: path)
+        let identities = await withTaskGroup(of: String.self, returning: [String].self) { group in
+            var iterator = changes.files.makeIterator()
+            for _ in 0..<min(4, changes.files.count) {
+                if let file = iterator.next() {
+                    group.addTask { "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")" }
+                }
+            }
+            var values: [String] = []
+            while let value = await group.next() {
+                values.append(value)
+                if let file = iterator.next() {
+                    group.addTask { "\(file.id)|\(file.status.rawValue)|\(await fileIdentity(path: path, file: file) ?? "unavailable")" }
+                }
+            }
+            return values
+        }
+        let input = ([changes.repositoryID, changes.headRevision ?? "no-head"] + identities.sorted()).joined(separator: "\n")
+        return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func worktrees(path: String) async -> [RepositoryWorktreeSummary] {
+        let result = await runGit(path: path, arguments: ["worktree", "list", "--porcelain", "-z"])
+        guard result.exitCode == 0 else { return [] }
+        let records = result.output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+        var rows: [[String]] = [[]]
+        for record in records {
+            if record.hasPrefix("worktree "), !rows.last!.isEmpty { rows.append([]) }
+            rows[rows.count - 1].append(record)
+        }
+        return await withTaskGroup(of: RepositoryWorktreeSummary?.self, returning: [RepositoryWorktreeSummary].self) { group in
+            var iterator = rows.makeIterator()
+            func add(_ row: [String]) {
+                group.addTask {
+                    guard let worktree = row.first(where: { $0.hasPrefix("worktree ") }) else { return nil }
+                    let worktreePath = String(worktree.dropFirst("worktree ".count))
+                    let branchRow = row.first(where: { $0.hasPrefix("branch ") })
+                    let branch = branchRow.map { URL(fileURLWithPath: String($0.dropFirst("branch ".count))).lastPathComponent }
+                    let head = row.first(where: { $0.hasPrefix("HEAD ") }).map { String($0.dropFirst("HEAD ".count).prefix(12)) }
+                    let snapshot = await inspect(path: worktreePath)
+                    return RepositoryWorktreeSummary(path: worktreePath, displayName: URL(fileURLWithPath: worktreePath).lastPathComponent, branch: branch, headRevision: head, isDetached: branch == nil, isLocked: row.contains(where: { $0 == "locked" || $0.hasPrefix("locked ") }), isPrunable: row.contains(where: { $0.hasPrefix("prunable") }), snapshot: snapshot.isGitRepository ? snapshot : nil)
+                }
+            }
+            for _ in 0..<min(maxConcurrentWorktreeInspections, rows.count) {
+                if let row = iterator.next() { add(row) }
+            }
+            var summaries: [RepositoryWorktreeSummary] = []
+            while let summary = await group.next() {
+                if let summary { summaries.append(summary) }
+                if let row = iterator.next() { add(row) }
+            }
+            return summaries.sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
+        }
+    }
+
+    private static func reviewFile(path: String, file: RepositoryFileChange) async -> RepositoryReviewFile {
+        let loaded = await diff(path: path, file: file)
+        let binary = loaded?.text.contains("Binary files") == true
+        let identity = await fileIdentity(path: path, file: file)
+        return RepositoryReviewFile(change: file, findings: loaded.map(RepositoryDiffAuditor.audit) ?? [], isTruncated: loaded?.isTruncated ?? false, isBinary: binary, isReadable: loaded != nil, contentIdentity: identity)
+    }
+
+    private static func fileIdentity(path: String, file: RepositoryFileChange) async -> String? {
+        guard isSafeRelativePath(file.path) else { return nil }
+        if file.isStaged {
+            let result = await runGit(path: path, arguments: ["rev-parse", ":\(file.path)"])
+            return result.exitCode == 0 ? result.output : nil
+        }
+        if file.status == .deleted { return "deleted" }
+        let result = await runGit(path: path, arguments: ["hash-object", "--no-filters", "--", file.path])
+        return result.exitCode == 0 ? result.output : nil
+    }
+
+    static func diffCommand(for file: RepositoryFileChange) -> (arguments: [String], successCodes: Set<Int32>) {
+        if file.status == .untracked {
+            // `git diff --no-index` returns 1 when it successfully finds a
+            // difference. Comparing with /dev/null keeps new-file review
+            // read-only while producing a normal bounded unified diff.
+            return (["diff", "--no-index", "--no-ext-diff", "--unified=3", "--", "/dev/null", file.path], [0, 1])
+        }
+        return ((file.isStaged ? ["diff", "--cached"] : ["diff"]) + ["--no-ext-diff", "--unified=3", "--", file.path], [0])
+    }
+
+    static func parsePorcelainV1(_ output: String) -> [RepositoryFileChange] {
+        let records = output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+        var result: [RepositoryFileChange] = []
+        var index = 0
+        while index < records.count {
+            let row = records[index]
+            guard row.count >= 4 else { index += 1; continue }
+            let chars = Array(row)
+            let indexCode = chars[0]
+            let worktreeCode = chars[1]
+            let path = String(row.dropFirst(3))
+            let isRename = indexCode == "R" || indexCode == "C"
+            let renameSource = isRename && index + 1 < records.count ? records[index + 1] : nil
+            let staged = indexCode != " " && indexCode != "?"
+            let worktree = worktreeCode != " " && worktreeCode != "?"
+            if indexCode == "?" && worktreeCode == "?" {
+                result.append(RepositoryFileChange(path: path, status: .untracked, isStaged: false, renameSource: nil))
+            } else if indexCode == "U" || worktreeCode == "U" || (indexCode == "A" && worktreeCode == "A") {
+                result.append(RepositoryFileChange(path: path, status: .conflicted, isStaged: staged, renameSource: renameSource))
+            } else {
+                if staged { result.append(RepositoryFileChange(path: path, status: status(for: indexCode), isStaged: true, renameSource: renameSource)) }
+                if worktree { result.append(RepositoryFileChange(path: path, status: status(for: worktreeCode), isStaged: false, renameSource: nil)) }
+            }
+            index += isRename ? 2 : 1
+        }
+        return result.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    static func boundDiff(_ value: String) -> (text: String, isTruncated: Bool) {
+        let byteBound = String(decoding: value.utf8.prefix(maxDiffBytes), as: UTF8.self)
+        let lines = byteBound.split(separator: "\n", omittingEmptySubsequences: false)
+        let limitedLines = lines.prefix(maxDiffLines)
+        let text = limitedLines.joined(separator: "\n")
+        return (text, value.utf8.count > maxDiffBytes || lines.count > maxDiffLines)
+    }
+
+    private static func status(for code: Character) -> RepositoryFileStatus {
+        switch code {
+        case "M": .modified
+        case "A": .added
+        case "D": .deleted
+        case "R", "C": .renamed
+        case "U": .conflicted
+        default: .unknown
+        }
+    }
+
+    private static func upstreamCounts(_ result: (output: String, exitCode: Int32)) -> (ahead: Int, behind: Int)? {
+        guard result.exitCode == 0 else { return nil }
+        let parts = result.output.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        guard parts.count == 2, let ahead = Int(parts[0]), let behind = Int(parts[1]) else { return nil }
+        return (ahead, behind)
+    }
+
+    private static func operationState(path: String) async -> String? {
+        for (file, name) in [("MERGE_HEAD", "Merge"), ("CHERRY_PICK_HEAD", "Cherry-pick"), ("REVERT_HEAD", "Revert"), ("rebase-merge", "Rebase"), ("rebase-apply", "Rebase")] {
+            let result = await runGit(path: path, arguments: ["rev-parse", "--git-path", file])
+            guard result.exitCode == 0, !result.output.isEmpty else { continue }
+            let resolved = URL(fileURLWithPath: path).appendingPathComponent(result.output).path
+            if FileManager.default.fileExists(atPath: resolved) { return name }
+        }
+        return nil
+    }
+
+    private static func isSafeRelativePath(_ path: String) -> Bool {
+        !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
 
     private static func runGit(path: String, arguments: [String]) async -> (output: String, exitCode: Int32) {
