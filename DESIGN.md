@@ -1,247 +1,195 @@
-# Scifi UI Design System
-
-> Category: Project Design System
-> Surface: desktop web / macOS glassmorphism popups
-> Source project: "Scifi Ui Design Menubar Popup Ai" (6e32f780-a480-45e0-ad1a-0ae54d64c0f3)
-
-## Source Context
-
-This system was extracted from two preserved source artifacts in the project workspace:
-
-- `jarvis-voice.html` — 440×440px voice-assistant popup with animated orb, concentric rings, SVG waveform, circular spectrum bars, particle drift, and transcript typing effect.
-- `ai-chat-popup.html` — 420×560px chat popup with glass message bubbles (user/assistant), suggestion chips, search input bar, thinking loader, and macOS traffic-light window chrome.
-
-Both files share identical token values, easing curves, border strategies, background treatments, and component anatomy. Every token, measurement, and pattern in this document was derived directly from the CSS in these files. When building with this system, reference the source artifacts for complete implementation details.
-
-## 1. Visual Theme & Atmosphere
-
-**Source context:** Both `jarvis-voice.html` and `ai-chat-popup.html` open with `body { background: #000; }` and a fixed `bg-layer` of layered radial gradients (deep blue orbs at ~15% opacity). This establishes the dark canvas.
-
-A cinematic sci-fi assistant UI built around macOS-style glassmorphism. The mood is dark, precise, and quietly powerful — think JARVIS operating inside a frosted window floating over a void. Deep black backgrounds let ambient cyan-blue light leak through translucent surfaces. Every element feels physical: thin glass edges, glowing accents, and slow orbital motion behind the panes.
-
-**Product context:** AI assistant popups, voice interfaces, and command dashboards that live in a menubar or overlay context. The user is a pilot or operator speaking to a capable system.
-
-**Feeling:** Controlled, futuristic, trustworthy, minimal.
-
-## 2. Color
-
-**Source context:** The `:root` blocks in both `jarvis-voice.html` and `ai-chat-popup.html` declare identical tokens: `--fg: oklch(94% 0.015 260)`, `--muted: oklch(58% 0.05 240)`, and `--accent: oklch(68% 0.15 215)`. All colors are authored in OKLch for perceptual uniformity. The palette is intentionally narrow — one accent, two text levels, and translucent surface tints.
-
-| Token           | Value                    | Role                                                                                               |
-| --------------- | ------------------------ | -------------------------------------------------------------------------------------------------- |
-| `--bg`          | `#000`                   | Deepest background (pure black) — from `body { background: #000; }` in both sources                |
-| `--surface`     | `rgba(255,255,255,0.03)` | Glass panel fill — from `.window { background: rgba(255,255,255,0.03); }`                          |
-| `--fg`          | `oklch(94% 0.015 260)`   | Primary text — near-white with cool undertone — verbatim from both `:root` blocks                  |
-| `--muted`       | `oklch(58% 0.05 240)`    | Secondary text, placeholders, disabled — verbatim from both `:root` blocks                         |
-| `--border`      | `rgba(255,255,255,0.12)` | Glass pane borders, dividers — from `.window { border: 0.5px solid rgba(255,255,255,0.12); }`      |
-| `--accent`      | `oklch(68% 0.15 215)`    | Cyan-blue — interactive highlights, focus rings, active states — verbatim from both `:root` blocks |
-| `--accent-glow` | `rgba(0,170,255,0.25)`   | Hover glow, orb halos, button borders — observed in hover states across both files                 |
-| `--success`     | `#28c840`                | Traffic-light zoom / positive status — from `.tl-zoom { background: #28c840; }`                    |
-| `--warning`     | `#febc2e`                | Traffic-light minimize / caution — from `.tl-min { background: #febc2e; }`                         |
-| `--danger`      | `#ff5f57`                | Traffic-light close / destructive — from `.tl-close { background: #ff5f57; }`                      |
-
-**Surface hierarchy:**
-
-- **Level 0** — pure black with subtle radial-gradient ambient light (deep blue orbs at ~15% opacity)
-- **Level 1** — `.window` glass card at `rgba(255,255,255,0.03)` with `backdrop-filter: blur(80px) saturate(180%) brightness(1.1)`
-- **Level 2** — titlebar at `rgba(255,255,255,0.02)` + `0.5px` border-bottom
-- **Level 3** — buttons/inputs at `rgba(255,255,255,0.04)` with `blur(10px) saturate(150%)`
-
-## 3. Typography
-
-**Source context:** Both source files declare `--font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif` and `--font-mono: 'SF Mono', ui-monospace, Menlo, monospace` in their `:root` blocks. All type sizes and weights were measured directly from the CSS declarations in `jarvis-voice.html` and `ai-chat-popup.html`.
-
-| Role        | Stack                                                                                    | Size      | Weight  | Tracking   | Notes                                              |
-| ----------- | ---------------------------------------------------------------------------------------- | --------- | ------- | ---------- | -------------------------------------------------- |
-| **Display** | `-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif` | 36–64px   | 600     | -0.01em    | Hero headlines in slides or landing pages          |
-| **Heading** | Same as body                                                                             | 20–28px   | 600     | -0.01em    | Section titles inside glass panels                 |
-| **Body**    | `-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif`    | 13–14px   | 400–500 | 0          | Default UI text; anti-aliased                      |
-| **Caption** | Same as body                                                                             | 10.5–11px | 450     | 0.04em     | Timestamps, meta lines, hints                      |
-| **Mono**    | `'SF Mono', ui-monospace, Menlo, monospace`                                              | 11–13px   | 400     | 0.02em     | Code blocks, assistant replies, status readouts    |
-| **Label**   | Same as body                                                                             | 9.5–13px  | 550     | 0.08–0.1em | Uppercase role labels (YOU, JARVIS), status badges |
-
-**Line heights:**
-
-- Body: 1.5
-- Mono: 1.5
-- Display: 1.1–1.2
-
-## 4. Spacing
-
-**Source context:** Spacing values were measured from padding, margin, gap, height, and radius declarations across both source files. The scale (`4px` → `80px`) covers every increment observed in `jarvis-voice.html` and `ai-chat-popup.html`.
-
-| Token        | Value  | Usage                                                          |
-| ------------ | ------ | -------------------------------------------------------------- |
-| `--space-1`  | `4px`  | Tight gaps, scrollbar width, icon padding                      |
-| `--space-2`  | `8px`  | Chip gaps, traffic-light spacing, icon-btn inset               |
-| `--space-3`  | `10px` | Input-area padding, suggestion wrap gap                        |
-| `--space-4`  | `12px` | Chip padding-x, icon-btn size (36px)                           |
-| `--space-5`  | `14px` | Button/icon radius, body border-radius                         |
-| `--space-6`  | `16px` | Window titlebar padding, message padding, card inset           |
-| `--space-7`  | `18px` | Message bubble radius                                          |
-| `--space-8`  | `20px` | Message area horizontal padding, suggestion horizontal padding |
-| `--space-9`  | `32px` | Large shadow offset, titlebar height (40px)                    |
-| `--space-10` | `80px` | Blur radii for background orbs                                 |
-
-**Density:** Compact. This is a popup/menubar UI — vertical real estate is scarce. Padding is tight, gutters are narrow, and borders are hairline (`0.5px`).
-
-## 5. Layout & Composition
-
-**Source context:** Window dimensions (`440×440px` for voice, `420×560px` for chat), titlebar height (`40px`), padding (`0 16px`), and `border-radius: 14px` were all measured directly from `.window` and `.titlebar` declarations in the source files.
-
-**Window anatomy:**
-
-- Fixed-size glass cards (e.g. `420×560px` chat, `440×440px` voice) centered on screen.
-- `border-radius: 14px` on the window.
-- Top-edge 1px highlight gradient (white at 30% opacity, fading to transparent at edges).
-- Titlebar: `40px` high, flex row, traffic lights left, centered title, right spacer.
-- Content area: flex column, `overflow: hidden` on window, internal scroll on messages.
-
-**Responsive behavior:**
-
-- Primary target is desktop web / macOS menubar popups.
-- On narrower viewports, the window scales down proportionally with `max-width: 95vw` and `max-height: 90vh`.
-- Touch targets must remain ≥ 44px; icon buttons are 36×36px minimum, with increased padding on tablet.
-
-## 6. Components
-
-**Source context:** All component descriptions below were catalogued from the CSS class definitions in `jarvis-voice.html` and `ai-chat-popup.html`. Every value (backdrop-filter strength, border opacity, shadow stack, animation duration) was copied verbatim from the source.
-
-### Glass Window (`.window`)
-
-- `backdrop-filter: blur(80px) saturate(180%) brightness(1.1)`
-- `background: rgba(255,255,255,0.03)`
-- `border: 0.5px solid rgba(255,255,255,0.12)`
-- `border-radius: 14px`
-- Box-shadow stack: inset highlight, inset dark rim, deep drop shadow (`0 32px 100px rgba(0,0,0,0.5)`)
-- `::before` pseudo-element for the top-edge 1px light bar.
-
-### Titlebar
-
-- Height `40px`, padding `0 16px`.
-- Background `rgba(255,255,255,0.02)`.
-- Bottom border `0.5px solid rgba(255,255,255,0.06)`.
-- Traffic lights: 12px circles in `#ff5f57`, `#febc2e`, `#28c840`. Icons appear only on hover at 8px stroke.
-
-### Buttons
-
-All buttons share a glass base class (`.btn`):
-
-- `backdrop-filter: blur(10px) saturate(150%)`
-- `border: 0.5px solid rgba(255,255,255,0.12)`
-- `background: rgba(255,255,255,0.04)`
-- `color: var(--muted)`
-- Hover: brighter background, accent border tint, subtle glow shadow.
-- Active: `scale(0.96)`.
-
-**Variants:**
-
-- `.chip` — pill shape, `border-radius: 999px`, `padding: 6px 14px`, `font-size: 12px`.
-- `.icon-btn` — square `36×36px`, `border-radius: 8px`.
-- `.btn-primary` — solid accent fill, dark text, hover brightens and glows.
-
-### Input Field
-
-- Height `36px`, `border-radius: 8px`.
-- `background: rgba(255,255,255,0.03)` with `border: 0.5px solid rgba(255,255,255,0.08)`.
-- Focus: brighter background, accent border, `box-shadow: 0 0 0 3px rgba(0,170,255,0.08)`.
-- Search icon absolutely positioned inside left padding.
-
-### Message Bubble
-
-- Max-width `88%`, `border-radius: 18px` with directional corner cut (`6px` on the side closer to the edge).
-- User variant: accent-tinted background (`rgba(0,170,255,0.08)`), accent border.
-- Assistant variant: neutral glass (`rgba(255,255,255,0.03)`), mono font.
-- Entrance animation: `msg-in` — fade + translateY(12px) + scale(0.97) over `0.4s` with signature easing.
-
-### Orb / Voice Button
-
-- Circular `90×90px`, radial-gradient fill with accent tint.
-- Glass border + inner glow + outer glow.
-- Listening state: brighter fill, stronger shadow, `orb-pulse` scale animation.
-- Mic icon `36×36px` with drop-shadow.
-
-### Status Label
-
-- `font-size: 13px`, uppercase, `letter-spacing: 0.08em`, `color: var(--muted)`.
-- Listening: switches to accent color with text-shadow glow.
-
-### Thinking Loader
-
-- Three dots `6×6px`, accent fill, staggered `think-bounce` animation (`1.4s ease-in-out`).
-
-### Background Orbs
-
-- Fixed-position circles (`180–300px`), `filter: blur(80px)`, low opacity (`0.15–0.4`).
-- Slow drift animation (`18–25s ease-in-out infinite`).
-
-## 7. Motion & Interaction
-
-**Source context:** The signature easing `cubic-bezier(0.2, 0.8, 0.2, 1)` appears in almost every transition across both source files. All keyframes (orb-drift, ring-pulse, orb-pulse, mic-beat, particle-drift, think-bounce, msg-in, blink) were preserved verbatim from the source CSS.
-
-**Signature easing:** `cubic-bezier(0.2, 0.8, 0.2, 1)` — soft deceleration, used for almost every transition.
-
-**Hover states:**
-
-- Buttons: background lightens, border shifts toward accent, glow shadow appears. `transition: all 0.2s` with signature easing.
-- Traffic lights: `scale(1.1)` on hover, icon opacity 0 → 1.
-
-**Focus states:**
-
-- Inputs: accent border + soft outer glow ring (`3px` spread at 8% opacity).
-- Buttons: same glow pattern.
-
-**Active/press:**
-
-- All interactive elements: `transform: scale(0.96)`.
-
-**Loading / listening:**
-
-- Orb pulse: `scale(1)` ↔ `scale(1.08)` over `2s ease-in-out infinite`.
-- Mic beat: `scale(1)` ↔ `scale(0.88)` over `1.2s ease-in-out infinite`.
-- Ring pulse: concentric rings scale and fade in staggered waves (`2.5s`).
-- Thinking dots: vertical bounce with opacity fade (`1.4s` staggered).
-- Particle drift: `4s ease-out infinite`, radiating from center.
-
-**Window chrome animations:**
-
-- Close: opacity `0` + `scale(0.96)` over `0.25s`, then restore after `1.8s`.
-- Minimize: `scaleY(0)` from top over `0.2s`, restore after `1.5s`.
-- Zoom: width/height resize with `0.3s` transition.
-
-**Reduced motion:**
-
-- Respect `prefers-reduced-motion: reduce` by disabling orb drift, particle drift, ring pulse, and mic beat. Keep instant state changes and simple opacity fades.
-
-## 8. Voice & Brand
-
-**Source context:** Copy tone was inferred from the sample content in `ai-chat-popup.html` (assistant diagnostic replies, user commands, welcome banner) and the status labels in `jarvis-voice.html` ("Tap to speak", "Listening…").
-
-**Copy style:** Direct, concise, slightly formal. The assistant speaks like a capable ops copilot, not a chatty bot.
-
-- Use short imperative sentences for status: _"Listening…"_, _"Processing. One moment, sir."_
-- System labels in ALL CAPS with wide tracking: `YOU`, `JARVIS`.
-- Timestamps in 24-hour `HH:MM` mono.
-- Avoid exclamation marks. Avoid emojis. Avoid filler pleasantries.
-- Hints and meta copy are lowercase, small, and unobtrusive: _"Press orb or spacebar"_.
-
-**Terminology:**
-
-- "Orb" for the primary voice button.
-- "Traffic lights" for the macOS window controls.
-- "Glass" for any translucent frosted surface.
-
-## 9. Anti-patterns
-
-**Source context:** These anti-patterns are the inverse of what the source artifacts actually do. The source uses pure black, one accent, system fonts, hairline borders, and thin-stroke SVGs — never gradients on every background, emojis, or thick colored borders.
-
-- **No warm beige/cream canvases.** Backgrounds stay pure black or very dark cool gray.
-- **No purple gradient washes.** Gradients are limited to subtle radial ambient light and the single top-edge glass highlight.
-- **No emoji as feature icons.** Use thin-stroke SVGs (2px stroke, `currentColor`).
-- **No rounded card with left color-border accent.** Cards are full glass panes with uniform hairline borders.
-- **No hand-drawn SVG scenery.** Decorative elements are abstract orbs, rings, and spectrum bars.
-- **No Inter/Roboto/Arial as display faces.** Stick to system font stack; body face is fine there.
-- **No invented metrics or filler copy.** Missing a real value → honest placeholder label, never a fake stat.
-- **No `scrollIntoView` in embedded previews.** It breaks the container; use manual scrollTop instead.
-- **No app-chrome color choices.** Palette is driven by the sci-fi brand, not OS defaults.
-- **No horizontal scroll on mobile.** Redesign small screens; never squeeze the desktop layout.
+# Hermes Agent Dock — Design Specification
+
+## Purpose
+
+Hermes Agent Dock is a native macOS menu-bar control surface for a local Hermes
+Agent session. It is an operational workspace, not a decorative dashboard or a
+second task manager. The interface must make live Hermes state easy to scan,
+safe actions obvious, and missing capability honest.
+
+This document is the source of truth for UI decisions. When implementing or
+reviewing a view, prefer the rules here over generic macOS defaults or a visual
+reference from another project.
+
+## Product principles
+
+1. Hermes owns operational data. The Dock renders canonical sessions, agents,
+   tasks, tools, and runtime state; it only owns presentation state.
+2. Scan first, inspect second. Dense lists show status and a short summary;
+   full payloads are disclosed after explicit selection.
+3. Show real state or an honest empty/unavailable state. Never use sample
+   activity, invented counts, placeholder output, or guessed capability state.
+4. Actions are narrow and visible. Mutating controls need a clear label,
+   confirmation where appropriate, and an in-place pending state.
+5. Compact does not mean tiny. The menu-bar surface keeps labels and metadata
+   legible at a 12pt minimum.
+6. Motion supports state change; it must never delay work or obscure a status.
+
+## Visual language
+
+The app uses a dark, precise sci-fi glass treatment. The intended feeling is a
+calm operational instrument: low-noise, high-contrast, and technical without
+being theatrical.
+
+### Color tokens
+
+Use the SwiftUI color names below rather than introducing ad hoc colors.
+Definitions live in `Views.swift`.
+
+| Token | Purpose |
+| --- | --- |
+| `scifiBg` | Main near-black background |
+| `scifiSurface`, `scifiSurface2`, `scifiSurface4` | Layered translucent glass surfaces |
+| `scifiFg` | Primary readable text |
+| `scifiMuted`, `scifiTertiary` | Secondary metadata and inactive detail |
+| `scifiBorder`, `scifiBorderLight`, `scifiBorderStrong` | Hairline boundaries and dividers |
+| `scifiAccent` | Primary interactive emphasis and active work |
+| `scifiSuccess` | Completed or healthy state |
+| `scifiWarning` | Attention, blocked, destructive confirmation, or caution |
+| `scifiDestructive` | Failure or destructive result |
+
+The accent is cyan-blue. Status colors communicate state; they must not be
+repurposed as identity colors. Avoid broad gradient fills. Ambient glow is
+subtle and reserved for the app background, voice orb, or focused state.
+
+### Surfaces and borders
+
+- Use `scifiGlassPane()` for a focused interactive unit of work.
+- Use `scifiListRow()` for dense operational rows. Prefer divider-led lists to
+  a grid of unrelated cards.
+- Glass surfaces use 0.5pt borders and modest opacity. Do not add thick colored
+  borders or a left-accent stripe to ordinary cards.
+- Inputs and compact controls use an 8pt corner radius. Larger panes use 14pt.
+- The menubar popover and embedded views share the same surface hierarchy; an
+  embedded view must not introduce a second black window inside its parent.
+
+### Typography
+
+- Use the system font for primary labels and body text.
+- Use monospaced system type for IDs, timestamps, command-like values, status
+  labels, logs, and concise operational metadata.
+- Standard body and metadata text: 12pt or larger.
+- Section labels: uppercase, semibold monospaced, with restrained tracking.
+- Use sentence case for action labels; use uppercase only for compact status or
+  section labels.
+- Truncate only the compact summary. Expanded details must wrap or remain
+  selectable when they contain useful Hermes output.
+
+## Layout and information hierarchy
+
+The Dock has two primary work areas:
+
+| Area | Responsibility |
+| --- | --- |
+| Ask | Conversation, voice, attachments, active session, and immediate controls |
+| Control | Today, Inbox, Activity, Automations, Projects, Search, Kanban, and Core |
+
+On narrow displays, switch between Ask and Control rather than compressing both
+into an unreadable split pane. Never require horizontal scrolling for primary
+content.
+
+Within a control tab, use this hierarchy:
+
+1. Section label and a compact count or live-state label.
+2. Current status and actionable exceptions.
+3. Dense list or projection rows.
+4. On-demand detail, forms, and confirmations.
+
+The most urgent or active information belongs near the top. Secondary
+diagnostics, history, and setup guidance follow it.
+
+## Component rules
+
+### Buttons and inputs
+
+- Use `.scifiPress` for compact controls and `.scifiPrimary` for the one primary
+  action in a local section.
+- Keep primary icon controls visually compact but give them a 44pt minimum hit
+  target.
+- Use `.scifiGlass` for text input. Disabled controls must remain legible and
+  explain why they are unavailable through nearby text or capability guidance.
+- An action that calls Hermes retains its footprint while pending. Use a spinner
+  and pending label rather than replacing nearby content or allowing duplicate
+  submission.
+
+### Lists, statuses, and empty states
+
+- Every row needs a stable semantic ID from Hermes or a locally owned
+  presentation identity. Do not key state by a mutable title.
+- Show status with both text and color. Color alone is insufficient.
+- Empty states explain what Hermes must provide or what the user can do next.
+- Refresh failures retain the last successful projection, mark it stale, and
+  show the error locally to the affected section.
+
+### Confirmations and mutations
+
+- Confirm persistent or externally visible Hermes mutations before sending them.
+- State exactly what the action affects; do not use vague labels such as
+  “Continue.”
+- In-turn steering is an exception: it is explicitly presented as an ephemeral
+  correction and does not need a confirmation dialog.
+- After a mutation, refresh or apply Hermes’ authoritative result. Do not
+  optimistically fabricate a final state.
+
+## Agent Board and activity disclosure
+
+The Agent Board is a live operational projection of Hermes subagents, agent
+events, and main-agent tool activity.
+
+### Identity and status
+
+- Give every displayed subagent a stable accent color derived from its stable
+  agent ID. The color must survive reorder and status updates.
+- Identity color differentiates agents only. Status color remains responsible
+  for Pending, Running, Completed, Failed, Interrupted, and other lifecycle
+  meaning.
+- Render one row/card per Hermes worker for batch delegation. Do not merge
+  workers just because their display names match.
+
+### Disclosure behavior
+
+- Agent cards and pipeline rows are collapsed by default.
+- Selecting an agent expands the available live event history, grouped as
+  Pending, Running, and Completed.
+- Selecting an individual activity expands only that event’s available content:
+  event text, tool name, handoff target, input, result, and diff preview.
+- Diff previews never appear by default and never cause an activity to expand.
+- Expanded content must come from the same canonical Hermes event payload as
+  the compact row. Do not synthesize output, summaries, or metrics.
+- The activity history is an in-memory live event window, not durable audit
+  storage. Say so in the UI or docs when a user could reasonably expect history
+  to be permanent.
+
+## Motion and accessibility
+
+- Use the project’s `scifiEase` for short state transitions (roughly 0.16–0.22
+  seconds). Pressed controls scale to 0.96.
+- Respect `accessibilityReduceMotion`: disclosure and pressed-state changes
+  become immediate; continuous decorative animation is disabled.
+- Do not rely on hover, color, animation, or an icon alone to convey state.
+- Use accessible labels that include control purpose and disclosure state, for
+  example “Agent A, running. Click to expand activity.”
+- Preserve keyboard focus through refreshes and disclosures where SwiftUI
+  permits. Textual output that may be copied should use text selection.
+
+## Implementation boundaries
+
+- Keep shared styles in `ScifiComponentStyles.swift` and color tokens in
+  `Views.swift`; do not duplicate control styling in every view.
+- Views render typed models. Transport dictionaries, shell command assembly, and
+  JSON parsing belong in transport/adapters/models, not in a SwiftUI body.
+- A view may own local disclosure, selection, form, and confirmation state. It
+  must not create another source of truth for Hermes data.
+- Do not render private filesystem paths, credentials, raw environment data, or
+  unredacted provider output.
+
+## Review checklist
+
+Before considering a UI change complete, verify:
+
+- The new state has a canonical owner and stable identity.
+- The compact view is useful without expanding every row.
+- Expanded content is real, bounded, and safe to render.
+- Pending, error, unavailable, empty, and stale states are intentional.
+- Controls meet hit-target, contrast, and reduced-motion rules.
+- The README is updated when user-visible behavior changes.

@@ -29,9 +29,14 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Scheduled-work controls.** Today lists cron jobs and supports confirmed
   pause/resume actions plus related-session opening.
 - **Automations.** The Automations tab can review, create, pause, resume, and
-  remove Hermes cron jobs through `cron.manage`, and reads recent run history
-  through Hermes `cron runs`. History remains a live CLI projection rather than
-  a second local execution database.
+  remove Hermes cron jobs through `cron.manage` only when the runtime scheduler
+  capability is verified, and reads recent run history
+  through Hermes `cron runs`. When the installed Hermes CLI supports it, a
+  confirmed Run Now action starts a job immediately. Jobs expose a confirmed
+  edit form only for name, schedule, and prompt values explicitly returned by
+  Hermes; unchanged or unavailable fields are never sent. History remains a
+  live CLI projection rather than a second local execution database, and report
+  files are not read from Hermes' private filesystem.
 - **Hermes Projects.** Projects reads the authoritative `projects.tree`
   projection from Hermes, showing active project context, repository counts,
   and grouped session previews without maintaining a second project database.
@@ -55,9 +60,22 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   global shortcut that opens the Dock and focuses Ask.
 - **Kanban boundary.** When Hermes exposes its Kanban CLI, the Kanban tab reads
   the authoritative board and supports confirmed task creation through Hermes
-  `shell.exec`, plus confirmed complete, block/unblock, and archive actions. The
+  `shell.exec`, plus confirmed complete, block/unblock, archive, comment,
+  schedule, assign/reassign, promote, and reclaim actions when their individual
+  Hermes CLI contracts are verified. The Dock can also open structured task
+  details and run history when the installed CLI exposes the corresponding JSON
+  commands. Native status/assignee/mine/sort filters are forwarded to Hermes,
+  including an optional current-session filter, and the assignment picker is
+  populated from `kanban assignees --json`. Hermes v0.19.1 does not provide an
+  unschedule operation, so the Dock deliberately does not invent one. The
+  Dock treats board selection as local view state and scopes every supported
+  task command with Hermes' per-call `kanban --board <slug>` option. Choosing a
+  board in the Dock never changes Hermes' shared current-board pointer. The
   Dock does not create a competing local board or expose permanent purge;
   desktop Kanban RPC actions remain unavailable.
+- **Daily workflow controls.** The Control sidebar includes a local Command-K
+  palette for existing Dock actions and local Inbox filters. The palette cannot
+  execute arbitrary shell or Hermes commands.
 - **Canonical-source projections.** Hermes remains authoritative for sessions,
   agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
   authoritative for reminder content. The Dock stores references, display state,
@@ -77,12 +95,25 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Conditional development context.** Repository status appears only when the
   active Hermes work references a repository; development is a contextual module,
   not the product's organizing model.
-- **Live agent activity.** Shows real Hermes subagents by name, their
-  current activity, and a pipeline containing both subagent work and main-agent
-  tool activity. Its Now view persists one task per Hermes session, keeps task
-  state synchronized with live execution, and shows the selected repository's
+- **Live agent activity.** Shows real Hermes subagents by name, with a stable
+  identity-based accent color and a compact current-status card. Selecting an
+  agent expands its Hermes event history grouped into Pending, Running, and
+  Completed states. The Active Pipeline likewise stays collapsed until an
+  individual event is selected; the expanded detail can show the Hermes event
+  text, tool name, handoff target, tool input/result, and a color-coded diff
+  preview when Hermes supplied one. Batch `delegate_task` calls render one row
+  per worker, using Hermes' human-facing `agent_role` (or a goal-derived role
+  for older payloads), and background dispatch acknowledgements remain running
+  until Hermes emits the worker's terminal lifecycle event. The history is the
+  in-memory live event window supplied by Hermes, not a separate activity
+  database. Its Now view persists one task per Hermes session, keeps task state
+  synchronized with live execution, and shows the selected repository's
   branch, working-tree state, and latest commit. It deliberately does not fall
   back to sample or mock data.
+- **Session Cockpit.** Core shows the active session's Hermes-reported token
+  usage and context breakdown when available. A compact steering control sends
+  an in-turn correction through `session.steer`; it does not create a local
+  prompt queue or interrupt the current turn.
 - **Runtime core.** Exposes the active provider/model, execution limits,
   installed skills, configured MCP servers, and enabled plugins supplied by
   Hermes. Unavailable gateway/version states include copyable recovery commands;
@@ -90,7 +121,23 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   is active, configured MCP tools can be explicitly reloaded after confirmation.
   Core also shows a live, read-only MCP inventory with each server's transport,
   tool scope, and enabled state; third-party MCP browsing/actions remain
-  dependent on future Hermes RPCs.
+  dependent on future Hermes RPCs. When Hermes exposes `mcp test`, Core can run
+  a read-only connection test for a configured server and show the result.
+- **Read-only Hermes health.** When the installed CLI advertises the commands,
+  Core displays a compact Journey projection plus sanitized session-store and
+  memory-health summaries. These cards never edit memory, sessions, skills, or
+  Hermes configuration.
+- **Capability-gated controls.** Optional Dock controls are classified at
+  runtime as verified Hermes gateway RPCs, stable read-only Hermes CLI
+  projections, confirmed CLI mutations, unsupported operations, or external
+  setup. Mutation probes require the documented help terms the Dock will send,
+  not merely a successful `--help` exit. A missing or failed capability probe fails closed and leaves the
+  existing recovery guidance visible; the Dock does not infer support from a
+  Hermes version string alone.
+- **Refresh resilience.** Automations, Projects, Core, Kanban, cron history,
+  and MCP inventory show their own refresh state. A transient Hermes failure
+  keeps the last successful projection visible, marks it stale, and keeps the
+  error local to that section instead of replacing the data with an empty state.
 - **Voice conversation.** Prefers Hermes' native voice gateway: server VAD,
   Hermes transcription, streaming TTS, and spoken barge-in. The Dock retains
   macOS speech recognition and system speech as an explicitly labelled fallback
@@ -167,10 +214,29 @@ The app expects the `hermes` executable to be available on the user’s PATH. On
 Every user-facing feature or behavior change must update the relevant section of
 this README in the same change set. Mark incomplete work as planned, and do not
 describe mock data or provider capabilities as live functionality. Calendar,
-email, iMessage, full automation editing, and third-party MCP browsing remain
-planned follow-on integrations. Read-only MCP connection inventory is available
+email, iMessage, automation fields Hermes does not return, and third-party MCP
+browsing remain planned follow-on integrations. Read-only MCP connection inventory is available
 today; the Dock does not add, remove, authenticate, or invoke MCP servers
 directly.
+
+## Hermes contracts still required
+
+The Dock intentionally leaves these features unavailable until Hermes exposes a
+stable, capability-advertised gateway RPC or JSON response:
+
+- Project mutation: structured identifiers, current values, mutation
+  request/response schemas, and conflict errors. Kanban board enumeration is
+  available through Hermes v0.19.1's verified JSON/CLI contract. The Dock uses
+  local board selection plus per-call `--board` scope, so it deliberately does
+  not expose a shared-board switch action.
+- Third-party MCP discovery/invocation: scoped authorization, tool schemas, and
+  redacted results; the Dock will not call providers directly.
+- Structured Cron reports and richer diagnostics: response schemas that avoid
+  reading private Hermes directories or parsing terminal tables.
+- Provider-neutral realtime audio: voice session create/configure/audio/cancel/
+  close operations plus model VAD/audio capability metadata.
+- Calendar access: explicit provider capability, authorization state, and
+  stable event operations.
 
 ## Quality checks
 
@@ -180,5 +246,7 @@ Run the same baseline checks before submitting changes:
 swift build
 swift test
 ```
+
+At the current documented baseline, `swift test` runs 71 tests across 15 suites.
 
 Keep transport and process-launch concerns in the gateway/runtime services, persistent workspace state in `WorkspaceStore`, and presentation state in `DockModel`. New parsing or state-transition behavior should be extracted into testable helpers instead of expanding view types.
