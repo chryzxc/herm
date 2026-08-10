@@ -43,7 +43,10 @@ struct ScifiGlassTextFieldStyle: TextFieldStyle {
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.scifiSurface)
+                    // Inputs use the same opaque cool surface as the rest of
+                    // the controls, keeping their color stable over glass panes
+                    // and preventing the gray material tint seen in Activity.
+                    .fill(Color.scifiControlSurface)
                     .stroke(Color.scifiBorder, lineWidth: 0.5)
             )
     }

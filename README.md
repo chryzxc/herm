@@ -76,6 +76,30 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Daily workflow controls.** The Control sidebar includes a local Command-K
   palette for existing Dock actions and local Inbox filters. The palette cannot
   execute arbitrary shell or Hermes commands.
+- **Developer command center.** Today starts with a Mission Control focus strip
+  and an honest readiness state. Changes provides a read-only, bounded Git
+  working-tree and bounded diff projection, including new untracked files.
+  Loaded diffs receive a local, added-line-only
+  pre-commit signal pass for conflict markers, likely credential assignments,
+  debug statements, unfinished-work markers, and bare Python exception clauses;
+  suspected credential values are never repeated in the UI. Verification reuses Hermes-provided project
+  facts and evidence without inventing commands; Repositories lists local
+  repositories explicitly attached to Hermes sessions. Command-K includes
+  capability-aware navigation, refresh, and transparent built-in review recipes.
+- **Repository review and watch.** Changes can run a bounded repository-wide
+  local review over staged, unstaged, and untracked files, reporting only safe
+  finding metadata and clearly marking truncated, binary, unreadable, or
+  over-limit coverage as partial. A complete baseline also requires every
+  covered file to be explicitly marked reviewed; any Git-derived fingerprint
+  change immediately makes it stale. Partial coverage can be acknowledged only
+  after every covered file is reviewed and remains visibly partial. Baselines
+  persist only stable fingerprints and acknowledged finding IDs. Repositories can be passively watched with
+  opt-in notifications; multiple explicitly watched repositories share a
+  managed watcher, and a detected change refreshes local state and adds an
+  in-app notice with explicit review and verification actions, but never starts
+  Hermes work automatically. Repositories also
+  expose a read-only worktree fleet with local session association controls;
+  inspection is bounded to eight worktrees at once.
 - **Canonical-source projections.** Hermes remains authoritative for sessions,
   agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
   authoritative for reminder content. The Dock stores references, display state,
@@ -111,9 +135,27 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   branch, working-tree state, and latest commit. It deliberately does not fall
   back to sample or mock data.
 - **Session Cockpit.** Core shows the active session's Hermes-reported token
-  usage and context breakdown when available. A compact steering control sends
-  an in-turn correction through `session.steer`; it does not create a local
-  prompt queue or interrupt the current turn.
+  usage and context breakdown when available. It also shows Hermes prompt
+  budget, verification evidence, and a compact steering control. Steering and
+  active-turn redirect preserve rejected text instead of silently discarding it.
+- **Context guardrails and handoffs.** Hermes-reported context use is labelled
+  normal below 80%, warning at 80–89.99%, and critical at 90% or higher. The
+  Dock offers explicit branch, confirmed compression, and a confirmed no-edit
+  Hermes background handoff. Handoff Markdown is retained only in the current
+  runtime and can be copied or opened as an editable Kanban draft.
+- **Verification Center.** Core consumes Hermes `project.facts` and
+  `verification.status` to show detected manifests, package managers, exact
+  verification commands, and best-known evidence. Targeted evidence remains
+  labelled targeted; the Dock never upgrades it into a repository-wide claim.
+  Commands can be copied or submitted to Hermes as explicit background tasks.
+- **Background tasks.** Activity can submit a prompt through Hermes
+  `prompt.background`, track its task ID, and display the eventual
+  `background.complete` output. Background rows are collapsed by default and
+  are retained only in the current Dock runtime window.
+- **Session and runtime controls.** Core provides confirmed rename, redirect,
+  branch, compress, undo, delegation pause/resume, native-agent interrupt, and
+  session-scoped process-stop actions. Hermes responses remain authoritative;
+  the Dock does not optimistically invent final state.
 - **Runtime core.** Exposes the active provider/model, execution limits,
   installed skills, configured MCP servers, and enabled plugins supplied by
   Hermes. Unavailable gateway/version states include copyable recovery commands;
@@ -127,6 +169,11 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   Core displays a compact Journey projection plus sanitized session-store and
   memory-health summaries. These cards never edit memory, sessions, skills, or
   Hermes configuration.
+- **Kanban health and attachments.** Kanban diagnostics and attachments are
+  read-only, board/task scoped, and use Hermes JSON output. Diagnostic and
+  attachment identities remain stable even when Hermes omits an ID. Prompt
+  budget and Kanban refreshes retain their last successful projection when a
+  transient request fails and mark the section stale.
 - **Capability-gated controls.** Optional Dock controls are classified at
   runtime as verified Hermes gateway RPCs, stable read-only Hermes CLI
   projections, confirmed CLI mutations, unsupported operations, or external
@@ -209,6 +256,11 @@ swift run
 
 The app expects the `hermes` executable to be available on the user’s PATH. On launch it starts a loopback-only Hermes backend, connects over Hermes’s authenticated `/api/ws` WebSocket gateway, and speaks the TUI Gateway JSON-RPC protocol. It uses `session.create`, `prompt.submit`, `session.interrupt`, and `approval.respond`, streams assistant messages, and surfaces approval requests in the native UI.
 
+The Dock targets the locally installed Hermes Agent v0.19.1 contract. Optional
+controls fail closed when their Hermes RPC or CLI capability is unavailable.
+The Dock does not update Hermes, configure providers, invoke arbitrary shell
+commands, expose bulk destructive controls, or create a second Hermes runtime.
+
 ## Documentation rule
 
 Every user-facing feature or behavior change must update the relevant section of
@@ -237,6 +289,9 @@ stable, capability-advertised gateway RPC or JSON response:
   close operations plus model VAD/audio capability metadata.
 - Calendar access: explicit provider capability, authorization state, and
   stable event operations.
+- Durable activity feeds, fleet session usage, PR/CI/error projections, and
+  authoritative project repository enumeration: see
+  `HERMES_COMMAND_CENTER_CONTRACTS.md` for the required fail-closed contracts.
 
 ## Quality checks
 

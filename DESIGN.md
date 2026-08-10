@@ -82,11 +82,18 @@ The Dock has two primary work areas:
 | Area | Responsibility |
 | --- | --- |
 | Ask | Conversation, voice, attachments, active session, and immediate controls |
-| Control | Today, Inbox, Activity, Automations, Projects, Search, Kanban, and Core |
+| Control | Today, Inbox, Kanban, and Activity are primary. Review, workspace, and tool views live in the grouped More menu. |
 
 On narrow displays, switch between Ask and Control rather than compressing both
 into an unreadable split pane. Never require horizontal scrolling for primary
 content.
+
+The Control navigation strip is ordered by daily decision frequency: Today,
+Inbox, Kanban, then Activity. The More menu groups Changes and Verification
+under Review; Projects and Repositories under Workspace; and Automations,
+Search, and Core under Tools. Secondary views remain directly accessible from
+the command palette. Keep the overflow trigger label stable so long view names
+cannot resize or truncate the strip.
 
 Within a control tab, use this hierarchy:
 
@@ -160,6 +167,88 @@ events, and main-agent tool activity.
   storage. Say so in the UI or docs when a user could reasonably expect history
   to be permanent.
 
+## Developer workflow surfaces
+
+### Mission Control, changes, and verification
+
+- Today answers needs-me, running-now, changed, and readiness using only live
+  Hermes projections plus an explicitly attached local repository snapshot.
+- A targeted verification result is never a ship-ready result. A clean tree and
+  repository-wide passed evidence are required for a green readiness state.
+- Change Review reads Git state only. It renders repository-relative paths and
+  bounded diffs after explicit disclosure. Agent attribution requires an exact
+  Hermes-reported written-file match; otherwise the change is unattributed.
+- Repository watchlists and last-seen state may persist only stable references
+  and presentation preferences, never prompts, diffs, tool output, or copied
+  Hermes records.
+- Repository-wide local review is bounded, added-line-only, and honest about
+  partial coverage. A complete saved review baseline additionally requires all
+  covered files to be explicitly marked reviewed. Partial coverage may be
+  acknowledged after its covered files are reviewed, but remains partial and
+  cannot become a green readiness signal. A baseline contains only stable repository
+  identity, revision/fingerprint, time, and acknowledged finding IDs; it never
+  stores source or diff content. Hermes review is a separate explicit no-edit
+  background request.
+- Repository watching is opt-in and passive. One managed service owns retained
+  FSEvent registrations for every explicitly watched repository and debounces
+  each repository independently. It may refresh local Git state,
+  invalidate stale presentation, and suggest Hermes actions, but it never
+  submits prompts, verification, or mutations automatically. System notices
+  contain only a repository display name and aggregate count.
+- Worktree fleet views are read-only local Git projections. Selecting a
+  worktree changes only the Dock's session-to-repository presentation reference.
+
+### Verification Center
+
+- Consume `project.facts` and `verification.status` from Hermes; do not
+  re-detect package managers or invent verification commands in the Dock.
+- Show manifests, package managers, context filenames, and Hermes-provided
+  verification commands as read-only facts.
+- Copying a command is always available when a command exists.
+- Running a verification command requires an explicit user action and is
+  submitted through Hermes background execution with a no-file-edit request.
+- Preserve Hermes evidence scope. `targeted` evidence must never be labelled
+  as a repository-wide pass.
+- Do not display prompt contents, credentials, raw environment data, or private
+  filesystem details.
+
+### Background tasks
+
+- `DockModel` owns the in-memory background-task lifecycle.
+- Register a task only after Hermes returns a valid `task_id`.
+- Match `background.complete` by task ID and update the existing row.
+- Background rows are collapsed by default and show prompt/output only after
+  selection.
+- Keep a bounded recent window; background tasks are not durable audit history.
+
+### Session and runtime controls
+
+- Control actions call named Hermes RPCs and use Hermes responses as truth.
+- Rename and in-turn steering are direct actions; branch, compress, undo,
+  global delegation pause, agent interrupt, and process stop require
+  confirmation.
+- Rejected text remains in its input field for retry.
+- Never optimistically mark an agent interrupted or a process stopped before
+  Hermes confirms the transition.
+- Delegation pause is global and must be labelled as such.
+
+## State ownership
+
+- `HermesGateway` owns the authenticated loopback connection and raw RPC.
+- `HermesControlRPC` owns named gateway method wrappers.
+- `HermesCLIAdapter` owns allow-listed Hermes CLI command construction.
+- `DockModel` owns the active conversation, event stream, subagents, tool
+  calls, agent activity, and background tasks.
+- `ControlCenterModel` owns read-only projections, refresh generations, stale
+  state, and user-triggered control actions.
+- `DeveloperWorkflowModel` owns the single active local repository projection,
+  bounded review/baseline state, watch coordination, worktree inventory, and
+  local notices. It does
+  not own Hermes records or retain prompts, diffs, or Hermes output.
+- SwiftUI views own only disclosure, selection, form, and confirmation state.
+- `WorkspaceStore` persists local task/reference presentation metadata. It must
+  not create a second Hermes gateway or execute background agents.
+
 ## Motion and accessibility
 
 - Use the project’s `scifiEase` for short state transitions (roughly 0.16–0.22
@@ -182,6 +271,9 @@ events, and main-agent tool activity.
   must not create another source of truth for Hermes data.
 - Do not render private filesystem paths, credentials, raw environment data, or
   unredacted provider output.
+- Context pressure is derived only from Hermes session context breakdown: below
+  80% is normal, 80–89.99% is warning, and 90% or higher is critical. It guides
+  handoff, branch, and confirmed compression; it is not verification evidence.
 
 ## Review checklist
 
