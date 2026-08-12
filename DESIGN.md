@@ -163,9 +163,9 @@ events, and main-agent tool activity.
 - Diff previews never appear by default and never cause an activity to expand.
 - Expanded content must come from the same canonical Hermes event payload as
   the compact row. Do not synthesize output, summaries, or metrics.
-- The activity history is an in-memory live event window, not durable audit
-  storage. Say so in the UI or docs when a user could reasonably expect history
-  to be permanent.
+- The bounded activity window is retained locally per Hermes session so session
+  switches and app relaunches preserve the agent graph and pipeline. It remains
+  operational context rather than durable audit storage.
 
 ## Developer workflow surfaces
 

@@ -26,10 +26,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Active-work projection.** Today can show active Hermes sessions and managed
   delegated agents, and managed processes, with controls to open related
   sessions when Hermes provides their identifiers.
-- **Scheduled-work controls.** Today lists cron jobs and supports confirmed
-  pause/resume actions plus related-session opening.
-- **Automations.** The Automations tab can review, create, pause, resume, and
-  remove Hermes cron jobs through `cron.manage` only when the runtime scheduler
+- **Scheduled-work controls.** Today lists cron jobs and supports related-session
+  opening.
+- **Automations.** The Automations tab can review, create, and remove Hermes cron
+  jobs through `cron.manage` only when the runtime scheduler
   capability is verified, and reads recent run history
   through Hermes `cron runs`. When the installed Hermes CLI supports it, a
   confirmed Run Now action starts a job immediately. Jobs expose a confirmed
@@ -113,6 +113,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   clarification, and failure notifications open the exact attention item.
 - **Completion alerts.** Core provides an opt-in, locally persisted notification
   for completed Hermes work while the Dock is hidden; it is disabled by default.
+- **Menu-bar unread badge.** A compact red badge appears on the Hermes status
+  icon when hidden work completes or needs attention, and clears when the Dock
+  is opened.
 - **Safe reminder completion.** Clicking a due reminder opens a confirmation
   before the Dock submits a transparent completion request through Hermes and
   the Apple Reminders skill.
@@ -128,12 +131,22 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   preview when Hermes supplied one. Batch `delegate_task` calls render one row
   per worker, using Hermes' human-facing `agent_role` (or a goal-derived role
   for older payloads), and background dispatch acknowledgements remain running
-  until Hermes emits the worker's terminal lifecycle event. The history is the
-  in-memory live event window supplied by Hermes, not a separate activity
-  database. Its Now view persists one task per Hermes session, keeps task state
+  until Hermes emits the worker's terminal lifecycle event. Each bounded
+  activity window is retained locally by Hermes session ID, so switching
+  sessions or relaunching the Dock restores that session's agents and pipeline.
+  This local projection is operational context, not an audit database. Its Now
+  view persists one task per Hermes session, keeps task state
   synchronized with live execution, and shows the selected repository's
   branch, working-tree state, and latest commit. It deliberately does not fall
-  back to sample or mock data.
+  back to sample or mock data. The Active Agents section includes an inline
+  handoff map derived from live parent IDs and Hermes handoff events. The map
+  lays out recursive agent-to-agent delegation as a left-to-right scrollable
+  tree, resolving both stable agent IDs and child-session parent references so
+  every reported generation remains nested. It animates active directional
+  flows and shows each agent's current task, lifecycle, and tool count.
+  Selecting a node discloses that agent's canonical in-memory
+  activity beneath the map. Parent-session tool calls are labelled Orchestrator
+  so they remain distinct from explicitly attributed delegated-agent activity.
 - **Session Cockpit.** Core shows the active session's Hermes-reported token
   usage and context breakdown when available. It also shows Hermes prompt
   budget, verification evidence, and a compact steering control. Steering and
@@ -247,6 +260,12 @@ yet establish a provider-native bidirectional audio session. Therefore steps
 1–3 still require gateway and provider work in Hermes, not only a Dock UI
 change. An OpenAI realtime-capable model is one possible adapter, but it must be
 surfaced by Hermes as a supported capability before the Dock uses it.
+
+For the current continuous voice mode, the Dock keeps the ordinary turn recorder
+closed while streamed TTS drains after `message.complete`. Hermes' full-duplex
+listener still owns spoken barge-in during playback; the next quiet listening
+turn opens only after the estimated speech and CoreAudio tail have finished.
+This prevents speaker output from being transcribed as the user's next reply.
 
 ## Run locally
 
