@@ -1,0 +1,76 @@
+name: Release macOS DMG
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package ${{ github.event_name == 'workflow_dispatch' && 'manual build' || 'version update' }}
+    runs-on: macos-14
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      changed: ${{ steps.version.outputs.changed }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(node -p \"require('./package.json').version\")"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || ! git cat-file -e HEAD^:package.json 2>/dev/null; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PREVIOUS_VERSION="$(git show HEAD^:package.json | node -p \"JSON.parse(require('fs').readFileSync(0, 'utf8')).version\")"
+          if [ "$VERSION" = "$PREVIOUS_VERSION" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build versioned DMG
+        if: steps.version.outputs.changed == 'true'
+        run: Scripts/package-app.sh "${{ steps.version.outputs.value }}"
+
+      - name: Upload DMG artifact
+        if: steps.version.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: HermesAgentDock-${{ steps.version.outputs.value }}-dmg
+          path: dist/HermesAgentDock.dmg
+          if-no-files-found: error
+
+      - name: Create or update GitHub release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.value }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/HermesAgentDock.dmg --clobber
+          else
+            gh release create "$TAG" dist/HermesAgentDock.dmg --title "$TAG" --generate-notes
+          fi
+
+      - name: Skip unchanged manifest
+        if: steps.version.outputs.changed != 'true'
+        run: echo "package.json changed without a version update; no release was created."
