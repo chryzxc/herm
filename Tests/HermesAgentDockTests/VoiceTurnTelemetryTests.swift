@@ -34,7 +34,9 @@ struct VoiceTurnTelemetryTests {
         #expect(lifecycle.receivedIdle() == false)
         #expect(lifecycle.beginCapture() == false)
 
-        #expect(lifecycle.completedResponse() == true)
+        let drainGeneration = lifecycle.completedResponse()
+        #expect(lifecycle.beginCapture() == false)
+        #expect(lifecycle.playbackDrainCompleted(generation: drainGeneration) == true)
         #expect(lifecycle.beginCapture() == true)
     }
 
@@ -71,11 +73,14 @@ struct VoiceTurnTelemetryTests {
         lifecycle.receivedTranscript(hasText: true)
         let staleTimeoutRecovered = lifecycle.interruptionTimedOut(generation: interruptionGeneration)
         let captureStartedBeforeResponse = lifecycle.beginCapture()
-        let responseCompleted = lifecycle.completedResponse()
+        let drainGeneration = lifecycle.completedResponse()
+        let captureStartedDuringPlaybackDrain = lifecycle.beginCapture()
+        let playbackDrained = lifecycle.playbackDrainCompleted(generation: drainGeneration)
         let captureStartedAfterResponse = lifecycle.beginCapture()
         #expect(!staleTimeoutRecovered)
         #expect(!captureStartedBeforeResponse)
-        #expect(responseCompleted)
+        #expect(!captureStartedDuringPlaybackDrain)
+        #expect(playbackDrained)
         #expect(captureStartedAfterResponse)
     }
 
@@ -87,5 +92,29 @@ struct VoiceTurnTelemetryTests {
         let captureStartedAfterTimeout = lifecycle.beginCapture()
         #expect(timeoutRecovered)
         #expect(captureStartedAfterTimeout)
+    }
+
+    @Test func bargeInInvalidatesAQueuedPlaybackDrain() {
+        var lifecycle = NativeVoiceCaptureLifecycle()
+        lifecycle.receivedTranscript(hasText: true)
+        let drainGeneration = lifecycle.completedResponse()
+
+        _ = lifecycle.beginInterruption()
+        let staleDrainCompleted = lifecycle.playbackDrainCompleted(generation: drainGeneration)
+        let competingCaptureStarted = lifecycle.beginCapture()
+
+        #expect(!staleDrainCompleted)
+        #expect(!competingCaptureStarted)
+    }
+
+    @Test func playbackDrainAccountsForSpeechAndSynthesisLatency() {
+        let shortReply = NativeVoicePlaybackDrain.estimatedDuration(for: "Hello there.")
+        let conversationalReply = NativeVoicePlaybackDrain.estimatedDuration(
+            for: "Hello! I'm here and ready. What can I help you with?"
+        )
+
+        #expect(shortReply >= 2.5)
+        #expect(conversationalReply >= 5.0)
+        #expect(conversationalReply > shortReply)
     }
 }

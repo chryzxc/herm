@@ -41,6 +41,111 @@ struct AgentProjectionTests {
         #expect(agents.allSatisfy { $0.startedAt == startedAt })
     }
 
+    @Test func inlineAgentMapPreservesTopDownDepthAndScrollableSpacing() {
+        let agents = [
+            HermesSubagent(id: "parent", childSessionID: "parent-session", goal: "Plan implementation", status: "running"),
+            HermesSubagent(id: "child", parentID: "parent-session", childSessionID: "child-session", goal: "Build feature", status: "running"),
+            HermesSubagent(id: "grandchild", parentID: "child-session", goal: "Verify feature", status: "running"),
+            HermesSubagent(id: "sibling", goal: "Review work", status: "running")
+        ]
+
+        let layout = AgentMapTreeLayout.make(agents: agents, minimumSize: CGSize(width: 500, height: 460))
+        let parent = layout.positions["parent"]!
+        let child = layout.positions["child"]!
+        let grandchild = layout.positions["grandchild"]!
+        let sibling = layout.positions["sibling"]!
+
+        #expect(child.y - parent.y == AgentMapTreeLayout.verticalStride)
+        #expect(grandchild.y - child.y == AgentMapTreeLayout.verticalStride)
+        #expect(abs(sibling.x - parent.x) >= AgentMapTreeLayout.horizontalStride)
+        #expect(layout.contentSize.height > 460)
+    }
+
+    @Test func inlineAgentMapWrapsWideDelegationBatchesIntoThreeColumns() {
+        let agents = (0..<8).map { index in
+            HermesSubagent(id: "agent-\(index)", goal: "Task \(index)", status: "running")
+        }
+
+        let layout = AgentMapTreeLayout.make(agents: agents, minimumSize: CGSize(width: 700, height: 460))
+
+        #expect(layout.positions["agent-0"]?.y == layout.positions["agent-2"]?.y)
+        #expect(layout.positions["agent-3"]!.y - layout.positions["agent-0"]!.y == AgentMapTreeLayout.verticalStride)
+        #expect(layout.positions["agent-6"]!.y - layout.positions["agent-3"]!.y == AgentMapTreeLayout.verticalStride)
+        #expect(layout.rootPosition.x == AgentMapTreeLayout.horizontalInset + AgentMapTreeLayout.nodeWidth / 2)
+    }
+
+    @Test func switchingSessionsRestoresEachSessionsAgentStateWithoutLeakage() {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("session-agent-state-\(UUID().uuidString).json")
+        let model = DockModel(sessionAgentStateFileURL: storeURL)
+        let activityA = AgentActivity(
+            id: UUID(),
+            timestamp: Date(timeIntervalSince1970: 10),
+            agentID: "agent-a",
+            kind: "subagent.tool.complete",
+            text: "Updated session A",
+            toolName: "patch",
+            handoffTarget: nil
+        )
+        let activityB = AgentActivity(
+            id: UUID(),
+            timestamp: Date(timeIntervalSince1970: 20),
+            agentID: "agent-b",
+            kind: "subagent.tool.complete",
+            text: "Tested session B",
+            toolName: "terminal",
+            handoffTarget: nil
+        )
+
+        model.activeSubagents = [HermesSubagent(id: "agent-a", goal: "Work in A", status: "complete")]
+        model.sessionAgents = model.activeSubagents
+        model.agentActivities = [activityA]
+        model.cacheAgentState(for: "session-a")
+
+        model.activeSubagents = [HermesSubagent(id: "agent-b", goal: "Work in B", status: "running")]
+        model.sessionAgents = model.activeSubagents
+        model.agentActivities = [activityB]
+        model.cacheAgentState(for: "session-b")
+
+        #expect(model.restoreAgentState(for: "session-a"))
+        #expect(model.activeSubagents.map(\.id) == ["agent-a"])
+        #expect(model.agentActivities == [activityA])
+
+        #expect(model.restoreAgentState(for: "session-b"))
+        #expect(model.activeSubagents.map(\.id) == ["agent-b"])
+        #expect(model.agentActivities == [activityB])
+
+        #expect(!model.restoreAgentState(for: "session-c"))
+        #expect(model.activeSubagents.isEmpty)
+        #expect(model.agentActivities.isEmpty)
+    }
+
+    @Test func sessionAgentStateSurvivesModelRelaunch() {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("session-agent-state-\(UUID().uuidString).json")
+        let activity = AgentActivity(
+            id: UUID(),
+            timestamp: Date(timeIntervalSince1970: 30),
+            agentID: "persistent-agent",
+            kind: "subagent.tool.complete",
+            text: "Completed retained work",
+            toolName: "patch",
+            handoffTarget: nil
+        )
+
+        let firstLaunch = DockModel(sessionAgentStateFileURL: storeURL)
+        firstLaunch.activeSubagents = [HermesSubagent(id: "persistent-agent", goal: "Retain me", status: "complete")]
+        firstLaunch.sessionAgents = firstLaunch.activeSubagents
+        firstLaunch.agentActivities = [activity]
+        firstLaunch.cacheAgentState(for: "persistent-session")
+
+        let secondLaunch = DockModel(sessionAgentStateFileURL: storeURL)
+        #expect(secondLaunch.restoreAgentState(for: "persistent-session"))
+        #expect(secondLaunch.activeSubagents.map(\.id) == ["persistent-agent"])
+        #expect(secondLaunch.agentActivities == [activity])
+        try? FileManager.default.removeItem(at: storeURL)
+    }
+
     @Test func legacyGoalTextStillProducesUsefulAgentIdentity() {
         let agents = DockModel.projectedDelegationAgents(
             toolCallID: "delegate-2",
@@ -80,6 +185,150 @@ struct AgentProjectionTests {
 
         #expect(DockModel.agentID(explicitAgentID: nil, eventSessionID: "child-session-1", agents: [agent]) == "agent-1")
         #expect(DockModel.agentID(explicitAgentID: "agent-2", eventSessionID: nil, agents: [agent]) == "agent-2")
+        #expect(DockModel.agentID(
+            explicitAgentID: nil,
+            eventSessionID: "parent-session",
+            childSessionID: "child-session-1",
+            agents: [agent]
+        ) == "agent-1")
+    }
+
+    @Test func legacySubagentEventsResolveByGoalOrBatchIndex() {
+        let agents = [
+            HermesSubagent(id: "delegate-call:0", goal: "Inspect the API", status: "running"),
+            HermesSubagent(id: "delegate-call:1", goal: "Implement the UI", status: "running")
+        ]
+
+        #expect(DockModel.agentID(
+            explicitAgentID: nil,
+            eventSessionID: "parent-session",
+            goal: "Implement the UI",
+            agents: agents
+        ) == "delegate-call:1")
+        #expect(DockModel.agentID(
+            explicitAgentID: nil,
+            eventSessionID: "parent-session",
+            taskIndex: 0,
+            agents: agents
+        ) == "delegate-call:0")
+    }
+
+    @Test func stableSessionIdentityPrefersDurableGatewayKeys() {
+        #expect(DockModel.stableSessionID(from: [
+            "session_id": "live-1234",
+            "stored_session_id": "stored-2026"
+        ]) == "stored-2026")
+        #expect(DockModel.stableSessionID(from: [
+            "session_id": "live-5678",
+            "session_key": "stored-resumed"
+        ]) == "stored-resumed")
+    }
+
+    @Test func realHermesSubagentEnvelopeSequenceProjectsEveryTaskToOneAgent() {
+        let agent = HermesSubagent(
+            id: "sa-0-abcd1234",
+            childSessionID: "child-session-1",
+            goal: "Implement issue 51",
+            status: "running"
+        )
+        let base: [String: Any] = [
+            "session_id": "parent-live-session",
+            "timestamp": 100.0
+        ]
+        let payloads: [[String: Any]] = [
+            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "text": agent.goal],
+            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "tool_name": "read_file", "tool_preview": "Sources/App.swift"],
+            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "tool_name": "terminal", "tool_preview": "swift test"],
+            ["subagent_id": agent.id, "child_session_id": "child-session-1", "goal": agent.goal, "task_index": 0, "status": "completed", "summary": "Implemented and tested"]
+        ]
+        let types = ["subagent.start", "subagent.tool", "subagent.tool", "subagent.complete"]
+
+        let projections = zip(types, payloads).compactMap { type, payload in
+            DockModel.agentActivityProjection(
+                type: type,
+                params: base.merging(["payload": payload]) { _, new in new },
+                currentSessionID: "parent-live-session",
+                agents: [agent]
+            )
+        }
+
+        #expect(projections.count == 4)
+        #expect(projections.allSatisfy { $0.payload["subagent_id"] as? String == agent.id })
+        #expect(projections.compactMap { ($0.payload["tool_name"] as? String) } == ["read_file", "terminal"])
+        #expect(projections.last?.kind == "subagent.complete")
+    }
+
+    @Test func delegationStatusLastToolBecomesAgentOwnedActivity() {
+        let previous = HermesSubagent(
+            id: "agent-1",
+            goal: "Implement the feature",
+            status: "running",
+            toolCount: 2,
+            latestActivity: "read_file"
+        )
+        let current = HermesSubagent(
+            id: "agent-1",
+            goal: "Implement the feature",
+            status: "running",
+            toolCount: 3,
+            latestActivity: "read_file"
+        )
+
+        let projection = DockModel.telemetryActivityProjection(
+            row: [
+                "subagent_id": "agent-1",
+                "last_tool": "read_file",
+                "tool_count": 3
+            ],
+            agent: current,
+            previous: previous
+        )
+
+        #expect(projection?.kind == "subagent.tool")
+        #expect(projection?.payload["subagent_id"] as? String == "agent-1")
+        #expect(projection?.payload["tool_name"] as? String == "read_file")
+        #expect(projection?.payload["text"] as? String == "read_file")
+    }
+
+    @Test func unchangedDelegationStatusDoesNotDuplicateAgentActivity() {
+        let agent = HermesSubagent(
+            id: "agent-1",
+            goal: "Implement the feature",
+            status: "running",
+            toolCount: 3,
+            latestActivity: "read_file"
+        )
+
+        let projection = DockModel.telemetryActivityProjection(
+            row: [
+                "subagent_id": "agent-1",
+                "last_tool": "read_file",
+                "tool_count": 3
+            ],
+            agent: agent,
+            previous: agent
+        )
+
+        #expect(projection?.kind == nil)
+    }
+
+    @Test func resolvedChildSessionIDIsPersistedOnEveryAgentActivity() {
+        let agent = HermesSubagent(
+            id: "frontend-agent",
+            childSessionID: "frontend-session",
+            goal: "Implement the todo feature",
+            status: "running"
+        )
+        let resolvedID = DockModel.agentID(
+            explicitAgentID: nil,
+            eventSessionID: "frontend-session",
+            agents: [agent]
+        )
+        let start = DockModel.agentActivityPayload(["text": "Read TodoView.swift"], resolvedAgentID: resolvedID)
+        let complete = DockModel.agentActivityPayload(["text": "Updated TodoView.swift"], resolvedAgentID: resolvedID)
+
+        #expect(start["subagent_id"] as? String == "frontend-agent")
+        #expect(complete["subagent_id"] as? String == "frontend-agent")
     }
 
     @Test func parentDelegationToolCallIsNotSwallowedAsAgentActivity() {
@@ -144,7 +393,86 @@ struct AgentProjectionTests {
 
         #expect(pipeline.first?.task == "Edit Sources/App.swift")
         #expect(pipeline.first?.status == "Complete")
+        #expect(pipeline.first?.agent == "Orchestrator")
         #expect(pipeline.first?.timestamp == Date(timeIntervalSince1970: 30))
+        #expect(pipeline.first?.elapsedDuration() == 10)
+    }
+
+    @Test func pipelinePreservesExactAgentAndSessionOwnership() {
+        let agent = HermesSubagent(
+            id: "agent-1",
+            parentID: "parent-agent",
+            childSessionID: "child-session",
+            goal: "Implement the UI",
+            role: "Frontend",
+            status: "running"
+        )
+        let call = ActiveToolCall(
+            id: "tool-1",
+            name: "read_file",
+            input: "",
+            context: "Sources/App.swift",
+            startedAt: .distantPast,
+            result: nil,
+            isComplete: false,
+            agentID: agent.id,
+            parentAgentID: agent.parentID,
+            childSessionID: agent.childSessionID
+        )
+
+        let row = AgentActivityPresentation.pipeline(
+            activities: [],
+            toolCalls: [call],
+            subagents: [agent]
+        ).first
+
+        #expect(row?.agent == "Frontend")
+        #expect(row?.agentID == "agent-1")
+        #expect(AgentActivityPresentation.pipeline(activities: [], toolCalls: [call], subagents: [agent]).filter { $0.agentID == agent.id }.count == 1)
+        #expect(row?.parentAgentID == "parent-agent")
+        #expect(row?.childSessionID == "child-session")
+    }
+
+    @Test func agentActivityTitleMatchesThePipelineTaskLabel() {
+        let activity = AgentActivity(
+            id: UUID(),
+            timestamp: .distantPast,
+            agentID: "frontend-agent",
+            kind: "subagent.tool",
+            text: "Sources/HermesAgentDock/AgentMapView.swift",
+            toolName: "read_file",
+            handoffTarget: nil
+        )
+
+        let pipeline = AgentActivityPresentation.pipeline(
+            activities: [activity],
+            toolCalls: [],
+            subagents: [HermesSubagent(id: "frontend-agent", goal: "Improve the UI", status: "running")]
+        )
+
+        #expect(AgentActivityPresentation.activityTitle(for: activity) == "Read Sources/HermesAgentDock/AgentMapView.swift")
+        #expect(pipeline.first?.task == AgentActivityPresentation.activityTitle(for: activity))
+    }
+
+    @Test func pipelineDurationUsesCanonicalAgentDurationAndFormatsCompactly() {
+        let agent = HermesSubagent(
+            id: "agent-duration",
+            goal: "Review the patch",
+            status: "Complete",
+            startedAt: Date(timeIntervalSince1970: 10),
+            completedAt: Date(timeIntervalSince1970: 92),
+            durationSeconds: 82
+        )
+
+        let pipeline = AgentActivityPresentation.pipeline(
+            activities: [],
+            toolCalls: [],
+            subagents: [agent]
+        )
+
+        #expect(pipeline.first?.elapsedDuration() == 82)
+        #expect(AgentBoardView.formatDuration(82) == "1m 22s")
+        #expect(AgentBoardView.formatDuration(3_785) == "1h 3m")
     }
 
     @Test func terminalActivityTitlesAreMeaningfulAndHideLeadingEnvironmentValues() {
@@ -225,6 +553,57 @@ struct AgentProjectionTests {
 
         #expect(running.isActive)
         #expect(!complete.isActive)
+    }
+
+    @Test func completedDelegationHistoryDoesNotKeepConversationActivityVisible() {
+        let completedAgent = HermesSubagent(
+            id: "qa-agent",
+            goal: "Review the working tree",
+            status: "completed",
+            completedAt: Date()
+        )
+        let historicalStart = AgentActivity(
+            id: UUID(),
+            timestamp: Date(),
+            agentID: completedAgent.id,
+            kind: "subagent.start",
+            text: completedAgent.goal,
+            toolName: nil,
+            handoffTarget: nil
+        )
+
+        let pipeline = AgentActivityPresentation.pipeline(
+            activities: [historicalStart],
+            toolCalls: [],
+            subagents: [completedAgent]
+        )
+
+        #expect(pipeline.first?.isActive == true)
+        #expect(!AgentActivityPresentation.hasActiveWork(
+            toolCalls: [],
+            subagents: [completedAgent]
+        ))
+    }
+
+    @Test func activeToolOrSubagentKeepsConversationActivityVisible() {
+        let runningAgent = HermesSubagent(
+            id: "qa-agent",
+            goal: "Review the working tree",
+            status: "running"
+        )
+        let completeTool = ActiveToolCall(
+            id: "tool-1",
+            name: "terminal",
+            input: "swift test",
+            context: "",
+            startedAt: Date(),
+            result: "ok",
+            isComplete: true,
+            completedAt: Date()
+        )
+
+        #expect(AgentActivityPresentation.hasActiveWork(toolCalls: [], subagents: [runningAgent]))
+        #expect(!AgentActivityPresentation.hasActiveWork(toolCalls: [completeTool], subagents: []))
     }
 
     @Test func extractsOnlyAvailableDiffDataForMiniPreview() {

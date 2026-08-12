@@ -5,10 +5,10 @@ import Testing
 struct ControlTabBadgeStateTests {
     @Test func keepsDailyWorkInThePrimaryNavigationAndGroupsSupportingViews() {
         #expect(ControlTab.primaryNavigation == [.today, .inbox, .kanban, .activity])
-        #expect(ControlTab.reviewNavigation == [.changes, .verification])
-        #expect(ControlTab.workspaceNavigation == [.projects, .repositories])
+        #expect(ControlTab.sessionNavigation == [.activity, .changes, .verification])
+        #expect(ControlTab.workspaceNavigation == [.projects])
         #expect(ControlTab.toolsNavigation == [.automations, .search, .core])
-        #expect(Set(ControlTab.primaryNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
+        #expect(Set(ControlTab.primaryNavigation + ControlTab.workspaceNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
     }
 
     @Test func surfacesUrgentAttentionSeparatelyFromTheFullInbox() {

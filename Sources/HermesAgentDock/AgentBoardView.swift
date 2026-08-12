@@ -10,34 +10,33 @@ struct AgentBoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
     @State private var expandedAgentID: String?
-    @State private var expandedActivityID: UUID?
+    @State private var expandedActivityID: String?
     @State private var expandedPipelineItemID: String?
 
     private struct Agent: Identifiable {
         let id: String
-        let initials: String
-        let name: String
-        let specialty: String
-        let status: String
-        let activity: String
-        let diffPreview: String?
-        let statusColor: Color
         let agentColor: Color
     }
 
     private struct PipelineItem: Identifiable {
         let id: String
+        let agentID: String?
         let timestamp: Date
         let status: String
         let task: String
         let agent: String
         let time: String
+        let startedAt: Date?
+        let completedAt: Date?
+        let durationSeconds: TimeInterval?
+        let isActive: Bool
         let color: Color
         let detail: String?
         let diffPreview: String?
     }
 
     var body: some View {
+        let pipelineItems = pipeline
         ZStack {
             // Embedded mode belongs to the Control pane and must inherit its
             // dark glass surface instead of introducing a separate black block.
@@ -49,16 +48,12 @@ struct AgentBoardView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
                         sectionHeading("ACTIVE AGENTS", detail: dataSource)
-                        if agents.isEmpty {
-                            emptyState(title: "No active Hermes subagents", detail: "Delegate work from Hermes to see named agents and live activity here.")
-                        } else {
-                            agentsGrid
-                        }
-                        sectionHeading("ACTIVE PIPELINE", detail: "\(pipeline.count) ITEMS")
-                        if pipeline.isEmpty {
+                        agentSectionContent
+                        sectionHeading("ACTIVE PIPELINE", detail: "\(pipelineItems.count) ITEMS")
+                        if pipelineItems.isEmpty {
                             emptyState(title: "No live activity", detail: "The pipeline will populate when a Hermes subagent starts work.")
                         } else {
-                            pipelineList
+                            pipelineList(pipelineItems)
                         }
                     }
                     .padding(embedded ? 0 : 20)
@@ -106,6 +101,23 @@ struct AgentBoardView: View {
                 .offset(x: 250, y: 180)
         }
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private var agentSectionContent: some View {
+        if agents.isEmpty {
+            emptyState(title: "No active Hermes subagents", detail: "Delegate work from Hermes to see named agents and live activity here.")
+        } else {
+            AgentHandoffMapView(model: model, selectedAgentID: $expandedAgentID)
+                .frame(height: 460)
+            if let selectedAgent = agents.first(where: { $0.id == expandedAgentID }) {
+                expandedActivity(for: selectedAgent)
+                    .padding(12)
+                    .background(Color.scifiSurface4)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
     }
 
     private var titlebar: some View {
@@ -181,103 +193,16 @@ struct AgentBoardView: View {
         .padding(.vertical, 4)
     }
 
-    @ViewBuilder
-    private var agentsGrid: some View {
-        if embedded {
-            VStack(spacing: 0) {
-                ForEach(agents) { agent in
-                    agentTile(agent)
-                }
-            }
-        } else {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                ForEach(agents) { agent in
-                    agentTile(agent)
-                }
-            }
-        }
-    }
-
-    private func agentTile(_ agent: Agent) -> some View {
-        Button {
-            withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.22)) {
-                expandedAgentID = expandedAgentID == agent.id ? nil : agent.id
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: embedded ? 6 : 13) {
-            HStack(spacing: 10) {
-                agentOrb(agent)
-                    .frame(width: 42, height: 42)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(agent.name)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
-                        .lineLimit(1)
-                    Text(agent.specialty)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiMuted)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                statusBadge(agent.status, color: agent.statusColor)
-            }
-
-            Rectangle().fill(Color.scifiBorderLight).frame(height: 0.5)
-
-            Text(agent.activity)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.scifiMuted)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if expandedAgentID == agent.id {
-                if let diffPreview = agent.diffPreview {
-                    miniDiffPreview(diffPreview)
-                }
-                expandedActivity(for: agent)
-            }
-            }
-            .padding(embedded ? 8 : 14)
-            .background(embedded ? Color.clear : Color.scifiSurface)
-            .overlay {
-                if embedded {
-                    VStack { Spacer(); Color.scifiBorderLight.frame(height: 0.5) }
-                } else {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(expandedAgentID == agent.id ? agent.agentColor.opacity(0.8) : Color.scifiBorderStrong, lineWidth: expandedAgentID == agent.id ? 1 : 0.5)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: embedded ? 8 : 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .accessibilityLabel("\(agent.name), \(agent.status). Click to \(expandedAgentID == agent.id ? "collapse" : "expand") activity.")
-    }
-
-    private func agentOrb(_ agent: Agent) -> some View {
-        ZStack {
-            Circle().fill(agent.agentColor.opacity(0.12))
-            Circle().stroke(agent.agentColor.opacity(0.7), lineWidth: 0.6)
-            Circle().trim(from: 0.08, to: 0.42)
-                .stroke(agent.agentColor, style: StrokeStyle(lineWidth: 1, lineCap: .round))
-                .rotationEffect(.degrees(Double(agentRotation(for: agent.id))))
-                .padding(4)
-            Text(agent.initials)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiFg)
-        }
-        .shadow(color: agent.agentColor.opacity(0.28), radius: 6)
-    }
-
     private func expandedActivity(for agent: Agent) -> some View {
-        let activities = model.agentActivities
+        // The node inspector and the pipeline intentionally share the same
+        // projection. A tool call already attributed to Architect/Security in
+        // the pipeline must also appear in that worker's node history.
+        let activities = pipeline
             .filter { $0.agentID == agent.id }
             .sorted { $0.timestamp > $1.timestamp }
-        let pending = activities.filter { activityPhase(for: $0) == .pending }
-        let running = activities.filter { activityPhase(for: $0) == .running }
-        let completed = activities.filter {
-            [.complete, .failed, .interrupted].contains(activityPhase(for: $0))
-        }
+        let pending = activities.filter { $0.status.localizedCaseInsensitiveContains("pending") }
+        let running = activities.filter { isInProgress($0.status) }
+        let completed = activities.filter { !$0.status.localizedCaseInsensitiveContains("pending") && !isInProgress($0.status) }
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -304,7 +229,7 @@ struct AgentBoardView: View {
     }
 
     @ViewBuilder
-    private func activityGroup(_ title: String, items: [AgentActivity], color: Color, agentColor: Color) -> some View {
+    private func activityGroup(_ title: String, items: [PipelineItem], color: Color, agentColor: Color) -> some View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(title)  ·  \(items.count)")
@@ -321,14 +246,22 @@ struct AgentBoardView: View {
                                 Circle().fill(color).frame(width: 5, height: 5).padding(.top, 4)
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
-                                        Text(activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased())
+                                        Text(activity.status.uppercased())
                                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(agentColor)
+                                        if !activity.agent.isEmpty {
+                                            Text("·")
+                                                .foregroundStyle(Color.scifiTertiary)
+                                            Text(activity.agent)
+                                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                                .foregroundStyle(agentColor)
+                                                .lineLimit(1)
+                                        }
                                         Text(HumanDateFormatting.timeOnly(activity.timestamp))
                                             .font(.system(size: 10, design: .monospaced))
                                             .foregroundStyle(Color.scifiTertiary)
                                     }
-                                    Text(activity.text)
+                                    Text(activity.task)
                                         .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(Color.scifiMuted)
                                         .lineLimit(2)
@@ -340,7 +273,7 @@ struct AgentBoardView: View {
                                     .foregroundStyle(Color.scifiTertiary)
                             }
                             if expandedActivityID == activity.id {
-                                activityContent(activity, accent: agentColor)
+                                pipelineContent(activity)
                             }
                         }
                     }
@@ -351,32 +284,23 @@ struct AgentBoardView: View {
         }
     }
 
-    private func statusBadge(_ status: String, color: Color) -> some View {
-        Text(status.uppercased())
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .tracking(0.55)
-            .foregroundStyle(color)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .background(color.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
-    private var pipelineList: some View {
+    private func pipelineList(_ items: [PipelineItem]) -> some View {
         let timeColumnWidth: CGFloat = 68
+        let durationColumnWidth: CGFloat = 72
 
-        return VStack(spacing: 0) {
+        return LazyVStack(spacing: 0) {
             HStack(spacing: 10) {
                 pipelineHeader("STATUS", width: 76)
                 pipelineHeader("TASK", width: nil)
                 pipelineHeader("AGENT", width: 88)
                 pipelineHeader("TIME", width: timeColumnWidth)
+                pipelineHeader("DURATION", width: durationColumnWidth, alignment: .trailing)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 4)
             .padding(.bottom, 8)
 
-            ForEach(pipeline) { item in
+            ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 7) {
                     Button {
                         withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.18)) {
@@ -396,6 +320,8 @@ struct AgentBoardView: View {
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .frame(width: timeColumnWidth, alignment: .trailing)
+                            pipelineDuration(item)
+                                .frame(width: durationColumnWidth, alignment: .trailing)
                             Image(systemName: expandedPipelineItemID == item.id ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(Color.scifiTertiary)
@@ -497,17 +423,76 @@ struct AgentBoardView: View {
     }
 
     @ViewBuilder
-    private func pipelineHeader(_ title: String, width: CGFloat?) -> some View {
+    private func pipelineHeader(
+        _ title: String,
+        width: CGFloat?,
+        alignment: Alignment = .leading
+    ) -> some View {
         let label = Text(title)
             .font(.system(size: 12, weight: .semibold, design: .monospaced))
             .tracking(1.1)
             .foregroundStyle(Color.scifiMuted)
 
         if let width {
-            label.frame(width: width, alignment: .leading)
+            label.frame(width: width, alignment: alignment)
         } else {
             label.frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private func pipelineDuration(_ item: PipelineItem) -> some View {
+        if item.isActive, item.startedAt != nil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                durationText(item, at: context.date)
+            }
+        } else {
+            durationText(item, at: Date())
+        }
+    }
+
+    private func durationText(_ item: PipelineItem, at date: Date) -> some View {
+        let duration = elapsedDuration(for: item, at: date)
+        let text = duration.map(Self.formatDuration) ?? "—"
+        return Text(text)
+            .foregroundStyle(duration == nil ? Color.scifiTertiary : Color.scifiMuted)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .monospacedDigit()
+            .accessibilityLabel(duration.map { "Duration \(Self.accessibleDuration($0))" } ?? "Duration unavailable")
+    }
+
+    private func elapsedDuration(for item: PipelineItem, at date: Date) -> TimeInterval? {
+        if let durationSeconds = item.durationSeconds {
+            return max(0, durationSeconds)
+        }
+        guard let startedAt = item.startedAt else { return nil }
+        if let completedAt = item.completedAt {
+            return max(0, completedAt.timeIntervalSince(startedAt))
+        }
+        guard item.isActive else { return nil }
+        return max(0, date.timeIntervalSince(startedAt))
+    }
+
+    static func formatDuration(_ duration: TimeInterval) -> String {
+        let seconds = max(0, Int(duration.rounded(.down)))
+        if seconds < 60 { return "\(seconds)s" }
+        if seconds < 3_600 { return "\(seconds / 60)m \(seconds % 60)s" }
+        return "\(seconds / 3_600)h \((seconds % 3_600) / 60)m"
+    }
+
+    private static func accessibleDuration(_ duration: TimeInterval) -> String {
+        let seconds = max(0, Int(duration.rounded(.down)))
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        let remainder = seconds % 60
+        return [
+            hours > 0 ? "\(hours) hours" : nil,
+            minutes > 0 ? "\(minutes) minutes" : nil,
+            remainder > 0 || seconds == 0 ? "\(remainder) seconds" : nil
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
     }
 
     @ViewBuilder
@@ -538,36 +523,11 @@ struct AgentBoardView: View {
 
     private var agents: [Agent] {
         return model.activeSubagents.map { subagent in
-            let name = subagent.name ?? subagent.role ?? "Agent"
-            let activity = latestActivity(for: subagent) ?? subagent.latestActivity ?? subagent.goal
             return Agent(
                 id: subagent.id,
-                initials: initials(name),
-                name: name,
-                specialty: subagent.sourceSkill ?? subagent.model ?? "Hermes delegate",
-                status: subagent.status,
-                activity: activity,
-                diffPreview: latestDiffPreview(for: subagent),
-                statusColor: color(for: subagent.status),
                 agentColor: agentColor(for: subagent.id)
             )
         }
-    }
-
-    private func latestActivity(for agent: HermesSubagent) -> String? {
-        model.agentActivities
-            .filter { $0.agentID == agent.id && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .sorted { $0.timestamp > $1.timestamp }
-            .first?
-            .text
-    }
-
-    private func latestDiffPreview(for agent: HermesSubagent) -> String? {
-        model.agentActivities
-            .filter { $0.agentID == agent.id && $0.diffPreview != nil }
-            .sorted { $0.timestamp > $1.timestamp }
-            .first?
-            .diffPreview
     }
 
     private var pipeline: [PipelineItem] {
@@ -578,21 +538,21 @@ struct AgentBoardView: View {
         ).map { item in
             PipelineItem(
                 id: item.id,
+                agentID: item.agentID,
                 timestamp: item.timestamp,
                 status: item.status,
                 task: item.task,
                 agent: item.agent,
                 time: HumanDateFormatting.timeOnly(item.timestamp),
+                startedAt: item.startedAt,
+                completedAt: item.completedAt,
+                durationSeconds: item.durationSeconds,
+                isActive: item.isActive,
                 color: color(for: item.status),
                 detail: item.detail,
                 diffPreview: item.diffPreview
             )
         }
-    }
-
-    private func initials(_ value: String) -> String {
-        let result = String(value.split(separator: " ").prefix(2).compactMap { $0.first })
-        return result.isEmpty ? "A" : result.uppercased()
     }
 
     private func activityPhase(for activity: AgentActivity) -> AgentActivityPhase {
@@ -618,10 +578,6 @@ struct AgentBoardView: View {
             Color(red: 0.42, green: 0.62, blue: 1.0)
         ]
         return palette[stableHash(for: id) % palette.count]
-    }
-
-    private func agentRotation(for id: String) -> Int {
-        stableHash(for: id) % 360
     }
 
     private func stableHash(for id: String) -> Int {

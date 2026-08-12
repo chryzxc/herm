@@ -30,6 +30,20 @@ struct WorkspaceStoreTests {
         #expect(store.task(forSessionID: "session-2")?.status == .inProgress)
     }
 
+    @Test func projectFolderPropagatesToEverySessionInTheHermesProject() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+
+        store.attachProject(at: "/tmp/project", toSessions: [
+            SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
+            SessionSummary(id: "session-2", title: "Second", state: "idle", preview: nil)
+        ])
+
+        #expect(store.task(forSessionID: "session-1")?.projectPath == "/tmp/project")
+        #expect(store.task(forSessionID: "session-2")?.projectPath == "/tmp/project")
+    }
+
     @Test func migratesLegacySessionTasksAndCreatesOneBackup() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }
@@ -53,12 +67,64 @@ struct WorkspaceStoreTests {
         #expect(FileManager.default.fileExists(atPath: backupURL.path))
     }
 
+    @Test func currentSchemaReloadPreservesAllControlReferences() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+
+        let task = WorkspaceTask(title: "Session work", projectPath: "/tmp/project", sessionID: "session-1")
+        let references = [
+            ControlReference(source: .hermesSession, sourceID: "session-1", sessionID: "session-1", projectID: "/tmp/project"),
+            ControlReference(source: .hermesProject, sourceID: "project-1", projectID: "project-1"),
+            ControlReference(source: .hermesCronJob, sourceID: "cron-1")
+        ]
+        try JSONEncoder.workspaceFixture.encode(CurrentWorkspaceState(
+            schemaVersion: 2,
+            tasks: [task],
+            agentRuns: [],
+            projectPath: "/tmp/project",
+            controlReferences: references
+        )).write(to: fixture.fileURL)
+
+        let firstLoad = WorkspaceStore(fileURL: fixture.fileURL)
+        #expect(firstLoad.controlReferences == references)
+
+        let persisted = try JSONDecoder.workspaceFixture.decode(CurrentWorkspaceState.self, from: Data(contentsOf: fixture.fileURL))
+        #expect(persisted.controlReferences == references)
+
+        let secondLoad = WorkspaceStore(fileURL: fixture.fileURL)
+        #expect(secondLoad.controlReferences == references)
+    }
+
 }
 
 private struct LegacyWorkspaceState: Encodable {
     let tasks: [WorkspaceTask]
     let agentRuns: [WorkspaceAgentRun]
     let projectPath: String?
+}
+
+private struct CurrentWorkspaceState: Codable {
+    let schemaVersion: Int
+    let tasks: [WorkspaceTask]
+    let agentRuns: [WorkspaceAgentRun]
+    let projectPath: String?
+    let controlReferences: [ControlReference]
+}
+
+private extension JSONEncoder {
+    static var workspaceFixture: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}
+
+private extension JSONDecoder {
+    static var workspaceFixture: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
 }
 
 private struct WorkspaceFixture {

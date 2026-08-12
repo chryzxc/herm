@@ -35,20 +35,11 @@ enum HermesRuntimeInspector {
         )
     }
 
-    static func setModel(_ model: String, provider: String) -> Bool {
-        guard run(arguments: ["config", "set", "model.provider", provider]) else { return false }
-        return run(arguments: ["config", "set", "model.default", model])
-    }
-
     private static func output(arguments: [String]) -> String? {
         guard let data = runData(arguments: arguments) else { return nil }
         return String(data: data, encoding: .utf8)
             .map(stripANSI)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-    }
-
-    private static func run(arguments: [String]) -> Bool {
-        runData(arguments: arguments) != nil
     }
 
     private static func runData(arguments: [String]) -> Data? {

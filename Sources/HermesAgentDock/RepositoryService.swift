@@ -286,16 +286,17 @@ enum RepositoryService {
         }
         results.sort { $0.change.id < $1.change.id }
         let partial = omitted > 0 || results.contains { !$0.isReadable || $0.isTruncated || $0.isBinary }
-        let fingerprintInput = ([changes.repositoryID, changes.headRevision ?? "no-head"] + results.map {
-            "\($0.change.id)|\($0.change.status.rawValue)|\($0.contentIdentity ?? "unavailable")"
-        }).joined(separator: "\n")
-        let fingerprint = SHA256.hash(data: Data(fingerprintInput.utf8)).map { String(format: "%02x", $0) }.joined()
+        let fingerprint = await canonicalFingerprint(path: path, changes: changes)
         return RepositoryReviewSnapshot(repositoryID: changes.repositoryID, headRevision: changes.headRevision, fingerprint: fingerprint, files: results, completeness: partial ? .partial : .complete, refreshedAt: .now, omittedFileCount: omitted)
     }
 
     /// Stable, content-free identity for baseline invalidation and watch events.
     static func fingerprint(path: String) async -> String? {
         let changes = await changeSnapshot(path: path)
+        return await canonicalFingerprint(path: path, changes: changes)
+    }
+
+    private static func canonicalFingerprint(path: String, changes: RepositoryChangeSnapshot) async -> String {
         let identities = await withTaskGroup(of: String.self, returning: [String].self) { group in
             var iterator = changes.files.makeIterator()
             for _ in 0..<min(4, changes.files.count) {
@@ -312,7 +313,11 @@ enum RepositoryService {
             }
             return values
         }
-        let input = ([changes.repositoryID, changes.headRevision ?? "no-head"] + identities.sorted()).joined(separator: "\n")
+        return fingerprint(repositoryID: changes.repositoryID, headRevision: changes.headRevision, identities: identities)
+    }
+
+    static func fingerprint(repositoryID: String, headRevision: String?, identities: [String]) -> String {
+        let input = ([repositoryID, headRevision ?? "no-head"] + identities.sorted()).joined(separator: "\n")
         return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 

@@ -4,6 +4,19 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func projectCountsNestedSessionsWhenTheDeclaredCountIsStale() {
+        let projects = ControlCenterModel.parseProjects([
+            "projects": [[
+                "id": "dock",
+                "name": "hermes-agent-dock",
+                "session_count": 0,
+                "repos": [["sessions": [["id": "session-1", "state": "active"]]]]
+            ]]
+        ])
+
+        #expect(projects.first?.sessionCount == 1)
+    }
+
     @Test func malformedSessionContextRemainsUnavailableAndUsesUniqueFallbackCategories() {
         let context = ControlCenterModel.parseSessionContext([
             "categories": [

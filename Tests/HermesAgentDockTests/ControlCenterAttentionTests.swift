@@ -29,12 +29,30 @@ struct ControlCenterAttentionTests {
             "session_id": "session-approval-title",
             "payload": [
                 "title": "Review repository activity",
-                "command": "gh api repos/example/project/events"
+                "command": "gh api repos/example/project/events",
+                "description": "network access"
             ]
         ])
 
         #expect(model.attention.first?.title == "Review repository activity")
         #expect(model.attention.first?.detail == "gh api repos/example/project/events")
+    }
+
+    @Test func approvalEventsShowExactCommandInsteadOfSafetyCategory() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("approval.request", params: [
+            "session_id": "session-recursive-delete",
+            "payload": [
+                "command": "rm -rf -- .omo",
+                "description": "recursive delete",
+                "pattern_key": "recursive delete"
+            ]
+        ])
+
+        let item = model.attention.first
+        #expect(item?.title == "Run command")
+        #expect(item?.detail == "rm -rf -- .omo")
     }
 
     @Test func clarificationEventsExposeAResponseAction() {
@@ -49,6 +67,20 @@ struct ControlCenterAttentionTests {
         #expect(item?.kind == .clarification)
         #expect(item?.detail == "Which account should I use?")
         #expect(item?.actions.contains(.respond) == true)
+    }
+
+    @Test func clarificationEventsPreserveSuggestedResponses() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("clarify.request", params: [
+            "session_id": "session-clarify-choices",
+            "payload": [
+                "question": "Which approach should I take?",
+                "choices": ["Use the first approach", "Use the second approach"]
+            ]
+        ])
+
+        #expect(model.attention.first?.choices == ["Use the first approach", "Use the second approach"])
     }
 
     @Test func partialAttentionEventsPreserveExistingDetail() {

@@ -138,9 +138,6 @@ final class HermesControlRPC {
             "action": "add", "name": name, "schedule": schedule, "prompt": prompt
         ])
     }
-    func setCron(jobID: String, enabled: Bool) async throws -> [String: Any] {
-        try await cron(action: enabled ? "resume" : "pause", jobID: jobID)
-    }
     func removeCron(jobID: String) async throws -> [String: Any] {
         try await cron(action: "remove", jobID: jobID)
     }

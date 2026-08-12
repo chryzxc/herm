@@ -126,8 +126,11 @@ struct ApprovalPresentation: Equatable {
 
     static func from(payload: [String: Any]) -> ApprovalPresentation {
         let command = stringValue(in: payload, keys: ["command", "cmd"])
-        let detail = stringValue(in: payload, keys: ["description", "details", "message", "reason"])
-            ?? command
+        // The description/reason is usually the safety rule that triggered the
+        // approval (for example, "recursive delete"). Lead with the command so
+        // every approval surface shows the exact action the user is deciding on.
+        let detail = command
+            ?? stringValue(in: payload, keys: ["message", "details", "description", "reason"])
             ?? "Hermes wants to perform an action."
 
         let title = stringValue(in: payload, keys: ["title", "approval_title", "action_title"])
@@ -207,6 +210,10 @@ struct AttentionItem: Identifiable, Codable, Equatable {
     var createdAt: Date
     var state: AttentionState
     var actions: [AttentionAction]
+    /// Hermes may offer safe, concrete replies for a clarification. Optional
+    /// preserves compatibility with attention rows saved before choices were
+    /// introduced.
+    var choices: [String]? = nil
 }
 
 struct ReminderSummary: Identifiable, Codable, Equatable {
@@ -222,6 +229,64 @@ struct SessionSummary: Identifiable, Codable, Equatable {
     let title: String
     let state: String
     let preview: String?
+
+    var displayPreview: String? {
+        SessionPreviewPresentation.summary(preview)
+    }
+}
+
+/// Session list rows are an operational summary, not a transport log. Hermes
+/// can return the last response as a JSON envelope (for example a failed shell
+/// command), which is useful in Activity but noisy and potentially sensitive in
+/// navigation.
+enum SessionPreviewPresentation {
+    static func summary(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let data = trimmed.data(using: .utf8),
+           let payload = try? JSONSerialization.jsonObject(with: data),
+           let dictionary = payload as? [String: Any] {
+            return summary(for: dictionary)
+        }
+
+        let normalized = trimmed.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        if normalized.lowercased().hasPrefix("blocked:") {
+            return "Blocked — action needs approval"
+        }
+        if normalized.lowercased().hasPrefix("error:") {
+            return "Session reported an error"
+        }
+        if normalized.hasPrefix("{") || normalized.hasPrefix("[") {
+            return "Session activity updated"
+        }
+        return normalized
+    }
+
+    private static func summary(for payload: [String: Any]) -> String {
+        let error = (payload["error"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let exitCode = payload["exit_code"] as? Int
+
+        if let error, !error.isEmpty {
+            let lowercaseError = error.lowercased()
+            if lowercaseError.contains("blocked") || lowercaseError.contains("approval") {
+                return "Blocked — action needs approval"
+            }
+            if lowercaseError.contains("permission") || lowercaseError.contains("denied") {
+                return "Blocked — permission required"
+            }
+            return "Session command failed"
+        }
+        if let exitCode, exitCode != 0 {
+            return "Command failed (exit code \(exitCode))"
+        }
+        if let state = payload["state"] as? String, !state.isEmpty {
+            return state.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+        return "Session activity updated"
+    }
 }
 
 struct AgentSummary: Identifiable, Codable, Equatable {
@@ -562,12 +627,6 @@ struct MCPServerSummary: Identifiable, Equatable {
     let isEnabled: Bool
 }
 
-struct CronChangeRequest: Identifiable {
-    let job: CronSummary
-    let enable: Bool
-    var id: String { "\(job.id):\(enable)" }
-}
-
 struct CapabilityState: Identifiable, Equatable {
     let id: String
     let title: String
@@ -673,13 +732,13 @@ struct VerificationSummary: Equatable {
 
 enum ControlTab: String, CaseIterable, Identifiable {
     case today = "Today"
+    case session = "Session"
     case inbox = "Inbox"
     case activity = "Activity"
     case changes = "Changes"
     case verification = "Verification"
     case automations = "Automations"
     case projects = "Projects"
-    case repositories = "Repositories"
     case search = "Search"
     case kanban = "Kanban"
     case core = "Core"
@@ -687,20 +746,20 @@ enum ControlTab: String, CaseIterable, Identifiable {
     /// The fixed navigation strip is deliberately limited to the destinations
     /// used to orient, triage, and act on work. Everything else remains one
     /// click away in a grouped menu instead of competing for horizontal space.
-    static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban, .activity]
-    static let reviewNavigation: [ControlTab] = [.changes, .verification]
-    static let workspaceNavigation: [ControlTab] = [.projects, .repositories]
+    static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban]
+    static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
+    static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .core]
 
     static var secondaryNavigation: [ControlTab] {
-        reviewNavigation + workspaceNavigation + toolsNavigation
+        sessionNavigation + toolsNavigation
     }
 
     var id: String { rawValue }
     var tabLabel: String {
         switch self {
+        case .session: "Overview"
         case .automations: "Automate"
-        case .repositories: "Repos"
         default: rawValue
         }
     }
@@ -708,13 +767,13 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .today: "sun.max"
+        case .session: "bubble.left.and.bubble.right"
         case .inbox: "tray"
         case .activity: "waveform.path.ecg"
         case .changes: "doc.text.magnifyingglass"
         case .verification: "checkmark.seal"
         case .automations: "clock.arrow.circlepath"
         case .projects: "folder.badge.gearshape"
-        case .repositories: "folder.badge.gearshape"
         case .search: "magnifyingglass"
         case .kanban: "rectangle.3.group"
         case .core: "cpu"
@@ -773,21 +832,23 @@ struct ControlTabBadgeState: Equatable {
     func count(for tab: ControlTab) -> Int {
         switch tab {
         case .today: urgentAttentionCount
+        case .session: 0
         case .inbox: inboxCount
         case .activity: activityCount
         case .changes: changeCount
         case .verification: verificationCount
-        case .automations, .projects, .repositories, .search, .kanban, .core: 0
+        case .automations, .projects, .search, .kanban, .core: 0
         }
     }
 
     func isUrgent(for tab: ControlTab) -> Bool {
         switch tab {
         case .today: urgentAttentionCount > 0
+        case .session: false
         case .inbox: urgentAttentionCount > 0
         case .changes: changeCount > 0
         case .verification: verificationCount > 0
-        case .activity, .automations, .projects, .repositories, .search, .kanban, .core: false
+        case .activity, .automations, .projects, .search, .kanban, .core: false
         }
     }
 }

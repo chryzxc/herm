@@ -89,9 +89,7 @@ final class WorkspaceStore: ObservableObject {
     @Published private(set) var tasks: [WorkspaceTask] = []
     @Published private(set) var agentRuns: [WorkspaceAgentRun] = []
     @Published private(set) var controlReferences: [ControlReference] = []
-    @Published var projectPath: String? {
-        didSet { save() }
-    }
+    @Published var projectPath: String?
 
     private let fileURL: URL
     init(fileURL: URL? = nil) {
@@ -174,6 +172,29 @@ final class WorkspaceStore: ObservableObject {
         if let sessionID, let index = tasks.firstIndex(where: { $0.sessionID == sessionID }) {
             tasks[index].projectPath = path
             tasks[index].updatedAt = Date()
+        }
+        save()
+    }
+
+    /// A Hermes project groups multiple sessions around one checkout. Persist
+    /// the selected local folder against each known session so change review
+    /// follows the current session instead of relying on a global path.
+    func attachProject(at path: String, toSessions sessions: [SessionSummary]) {
+        projectPath = path
+        for session in sessions {
+            if let index = tasks.firstIndex(where: { $0.sessionID == session.id }) {
+                tasks[index].projectPath = path
+                tasks[index].updatedAt = Date()
+            } else {
+                let task = WorkspaceTask(
+                    title: session.title,
+                    status: .inProgress,
+                    projectPath: path,
+                    sessionID: session.id
+                )
+                tasks.insert(task, at: 0)
+                addControlReference(for: task)
+            }
         }
         save()
     }

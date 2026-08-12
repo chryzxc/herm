@@ -14,8 +14,14 @@ PROCESS_NAME="HermesAgentDock"
 
 cd "$PROJECT_DIR"
 
-echo "[1/4] Building Hermes Agent Dock..."
-swift build
+if [ -x "$EXECUTABLE_PATH" ] && \
+   ! find "$PROJECT_DIR/Sources" "$PROJECT_DIR/Package.swift" "$PROJECT_DIR/Package.resolved" \
+        -newer "$EXECUTABLE_PATH" -print -quit | grep -q .; then
+    echo "[1/4] Debug build is up to date; skipping SwiftPM build."
+else
+    echo "[1/4] Building Hermes Agent Dock..."
+    swift build --disable-automatic-resolution
+fi
 
 echo "[2/4] Closing running Hermes Agent Dock instances..."
 pkill -x "$PROCESS_NAME" 2>/dev/null || true
@@ -35,7 +41,6 @@ if pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
 fi
 
 echo "[3/4] Replacing and signing the debug app bundle..."
-rm -rf "$APP_PATH"
 mkdir -p "$APP_PATH/Contents/MacOS"
 cp "$EXECUTABLE_PATH" "$APP_PATH/Contents/MacOS/HermesAgentDock"
 cp "$PROJECT_DIR/Sources/HermesAgentDock/Info.plist" "$APP_PATH/Contents/Info.plist"

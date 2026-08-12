@@ -265,7 +265,7 @@ final class HermesGateway: NSObject {
                        outputLength > Self.maximumBackendOutputLength {
                         self?.backendOutput.removeFirst(outputLength - Self.maximumBackendOutputLength)
                     }
-                    DebugLog.write("backend output: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                    DebugLog.write("backend: output received")
                     guard let output = self?.backendOutput else { return }
                     let pattern = #"(?:HERMES_BACKEND_READY port=|listening on 127\.0\.0\.1:)(\d+)"#
                     guard let match = try? NSRegularExpression(pattern: pattern).firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),

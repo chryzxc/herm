@@ -15,15 +15,59 @@ enum AgentActivityPresentation {
         let status: String
         let task: String
         let agent: String
+        let agentID: String?
+        let parentAgentID: String?
+        let childSessionID: String?
         let detail: String?
         let diffPreview: String?
+        let startedAt: Date?
+        let completedAt: Date?
+        let durationSeconds: TimeInterval?
+
+        init(
+            id: String,
+            timestamp: Date,
+            status: String,
+            task: String,
+            agent: String,
+            agentID: String? = nil,
+            parentAgentID: String? = nil,
+            childSessionID: String? = nil,
+            detail: String?,
+            diffPreview: String?,
+            startedAt: Date? = nil,
+            completedAt: Date? = nil,
+            durationSeconds: TimeInterval? = nil
+        ) {
+            self.id = id
+            self.timestamp = timestamp
+            self.status = status
+            self.task = task
+            self.agent = agent
+            self.agentID = agentID
+            self.parentAgentID = parentAgentID
+            self.childSessionID = childSessionID
+            self.detail = detail
+            self.diffPreview = diffPreview
+            self.startedAt = startedAt
+            self.completedAt = completedAt
+            self.durationSeconds = durationSeconds
+        }
 
         var isActive: Bool {
-            let normalized = status
-                .lowercased()
-                .replacingOccurrences(of: "-", with: "_")
-                .replacingOccurrences(of: " ", with: "_")
-            return ["running", "in_progress", "inprogress", "pending", "queued"].contains(normalized)
+            AgentActivityPresentation.isActiveStatus(status)
+        }
+
+        func elapsedDuration(at date: Date = Date()) -> TimeInterval? {
+            if let durationSeconds {
+                return max(0, durationSeconds)
+            }
+            guard let startedAt else { return nil }
+            if let completedAt {
+                return max(0, completedAt.timeIntervalSince(startedAt))
+            }
+            guard isActive else { return nil }
+            return max(0, date.timeIntervalSince(startedAt))
         }
     }
 
@@ -47,6 +91,23 @@ enum AgentActivityPresentation {
         }
     }
 
+    /// Whether the current runtime still has work in flight. Historical
+    /// activity is intentionally excluded: a completed delegation retains its
+    /// `subagent.start` and tool records for the board, but must not keep the
+    /// conversation's animated activity row on screen.
+    static func hasActiveWork(toolCalls: [ActiveToolCall], subagents: [HermesSubagent]) -> Bool {
+        toolCalls.contains(where: { !$0.isComplete }) ||
+            subagents.contains(where: { isActiveStatus($0.status) })
+    }
+
+    static func isActiveStatus(_ status: String) -> Bool {
+        let normalized = status
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        return ["running", "working", "in_progress", "inprogress", "pending", "queued", "starting", "active"].contains(normalized)
+    }
+
     /// Canonical projection shared by the Agent Board pipeline and the chat's
     /// single latest-activity row.
     static func pipeline(
@@ -63,12 +124,17 @@ enum AgentActivityPresentation {
                 id: "activity:\(activity.id.uuidString)",
                 timestamp: activity.timestamp,
                 status: status,
-                task: activity.text,
+                task: activityTitle(for: activity),
                 agent: activity.agentID.flatMap { id in
                     subagents.first(where: { $0.id == id }).map { $0.name ?? $0.role ?? "Agent" }
                 } ?? "Hermes",
+                agentID: activity.agentID,
+                parentAgentID: activity.parentAgentID,
+                childSessionID: activity.childSessionID,
                 detail: details.joined(separator: "\n"),
-                diffPreview: activity.diffPreview
+                diffPreview: activity.diffPreview,
+                startedAt: nil,
+                completedAt: nil
             )
         }
 
@@ -80,9 +146,16 @@ enum AgentActivityPresentation {
                 timestamp: call.completedAt ?? call.startedAt,
                 status: call.isComplete ? "Complete" : "Running",
                 task: toolActivityTitle(name: call.name, context: call.context),
-                agent: "Hermes",
+                agent: call.agentID.flatMap { id in
+                    subagents.first(where: { $0.id == id }).map { $0.name ?? $0.role ?? "Agent" }
+                } ?? "Orchestrator",
+                agentID: call.agentID,
+                parentAgentID: call.parentAgentID,
+                childSessionID: call.childSessionID,
                 detail: details.joined(separator: "\n"),
-                diffPreview: call.diffPreview
+                diffPreview: call.diffPreview,
+                startedAt: call.startedAt,
+                completedAt: call.completedAt
             )
         })
 
@@ -97,14 +170,35 @@ enum AgentActivityPresentation {
                 status: agent.status,
                 task: agent.goal,
                 agent: agent.name ?? agent.role ?? "Agent",
+                agentID: agent.id,
+                parentAgentID: agent.parentID,
+                childSessionID: agent.childSessionID,
                 detail: agent.summary ?? agent.latestActivity ?? agent.goal,
                 diffPreview: activities
                     .filter { $0.agentID == agent.id && $0.diffPreview != nil }
                     .sorted { $0.timestamp > $1.timestamp }
-                    .first?.diffPreview
+                    .first?.diffPreview,
+                startedAt: agent.startedAt,
+                completedAt: agent.completedAt,
+                durationSeconds: agent.durationSeconds
             )
         }
         .sorted { $0.timestamp > $1.timestamp }
+    }
+
+    /// Converts a raw agent event into the same operator-friendly activity
+    /// title used by the pipeline. This keeps map cards and pipeline rows in
+    /// sync instead of letting a card fall back to a generic lifecycle label.
+    static func activityTitle(for activity: AgentActivity) -> String {
+        let text = compact(activity.text)
+        guard let toolName = activity.toolName, !toolName.isEmpty else {
+            return text
+        }
+
+        let normalizedTool = toolName.lowercased().replacingOccurrences(of: "-", with: "_")
+        let normalizedText = text.lowercased().replacingOccurrences(of: "-", with: "_")
+        let context = normalizedText == normalizedTool ? "" : text
+        return toolActivityTitle(name: toolName, context: context)
     }
 
     static func conversationTitle(

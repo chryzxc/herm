@@ -368,25 +368,6 @@ final class ControlCenterModel: ObservableObject {
         rebuildAttention()
     }
 
-    func setCron(_ job: CronSummary, enabled: Bool) {
-        guard rpc != nil, capabilityAvailable("rpc-scheduling") else {
-            lastError = "Cron control is unavailable through this Hermes gateway."
-            return
-        }
-        let actionID = cronActionID(enabled ? "resume" : "pause", job: job)
-        guard beginAction(actionID) else { return }
-        Task {
-            defer { finishAction(actionID) }
-            do {
-                guard let rpc else { return }
-                _ = try await rpc.setCron(jobID: job.id, enabled: enabled)
-                refresh()
-            } catch {
-                lastError = error.localizedDescription
-            }
-        }
-    }
-
     func runCronNow(_ job: CronSummary) {
         guard let cli, capabilityAvailable("cron.runNow") else {
             lastError = "Run-now is unavailable through the installed Hermes CLI."
@@ -1292,16 +1273,16 @@ final class ControlCenterModel: ObservableObject {
 
     func openProjectSession(_ session: SessionSummary) {
         guard let dockModel else { return }
-        Task {
-            do {
-                guard let rpc else { return }
-                _ = try await rpc.activate(sessionID: session.id)
-                focus(sessionID: session.id)
-                dockModel.requestComposerFocus()
-            } catch {
-                lastError = error.localizedDescription
-            }
-        }
+        dockModel.resumeSession(HermesSession(
+            id: session.id,
+            title: session.title,
+            preview: session.displayPreview ?? "",
+            startedAt: nil,
+            messageCount: 0,
+            source: "project"
+        ))
+        focus(sessionID: session.id)
+        dockModel.requestComposerFocus()
     }
 
     func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
@@ -1415,6 +1396,9 @@ final class ControlCenterModel: ObservableObject {
                 actions: [.approve, .deny, .stop]
             ))
         case "clarification.request", "clarify.request":
+            let choices = (payload["choices"] as? [String])?.filter {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
             upsertAttention(AttentionItem(
                 id: "clarification:\(sessionID)",
                 reference: ControlReference(source: .hermesClarification, sourceID: sessionID, sessionID: sessionID),
@@ -1423,7 +1407,8 @@ final class ControlCenterModel: ObservableObject {
                 detail: detail,
                 createdAt: Date(),
                 state: .open,
-                actions: [.respond, .open, .stop]
+                actions: [.respond, .open, .stop],
+                choices: choices
             ))
         case "error":
             upsertAttention(AttentionItem(
@@ -2123,18 +2108,23 @@ final class ControlCenterModel: ObservableObject {
         )
     }
 
-    private static func parseProjects(_ result: [String: Any]) -> [ProjectSummary] {
+    static func parseProjects(_ result: [String: Any]) -> [ProjectSummary] {
         let activeID = result["active_id"] as? String
         let rows = (result["projects"] as? [[String: Any]]) ?? []
         return rows.compactMap { row in
             guard let id = row["id"] as? String else { return nil }
             let repos = (row["repos"] as? [[String: Any]]) ?? (row["repositories"] as? [[String: Any]]) ?? []
             let sessions = (row["sessions"] as? [[String: Any]]) ?? (row["preview_sessions"] as? [[String: Any]]) ?? []
+            let declaredSessionCount = (row["session_count"] as? NSNumber)?.intValue
+            // Projects can return session records inside their repository lanes,
+            // while `session_count` is absent or stale. Preserve a larger
+            // declared total but never hide the sessions that are present.
+            let sessionCount = max(max(declaredSessionCount ?? 0, sessions.count), parseProjectSessions(row).count)
             return ProjectSummary(
                 id: id,
                 name: (row["name"] as? String) ?? id,
                 repoCount: (row["repo_count"] as? NSNumber)?.intValue ?? repos.count,
-                sessionCount: (row["session_count"] as? NSNumber)?.intValue ?? sessions.count,
+                sessionCount: sessionCount,
                 preview: (sessions.first?["preview"] as? String) ?? (sessions.first?["title"] as? String),
                 isActive: (row["active"] as? Bool) ?? (id == activeID)
             )

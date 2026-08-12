@@ -12,9 +12,9 @@ extension Color {
     static let scifiSurface4 = Color.white.opacity(0.04)
     static let scifiSurface6 = Color.white.opacity(0.06)
     static let scifiSurface8 = Color.white.opacity(0.08)
-    // An explicit cool control fill prevents translucent fields from inheriting
-    // a warm macOS-material tint from whatever sits behind the popup.
-    static let scifiControlSurface = Color(red: 0.075, green: 0.085, blue: 0.135)
+    // Controls use the same canvas as their surrounding workspace. Keeping this
+    // opaque prevents native macOS field materials from introducing a warm tint.
+    static let scifiControlSurface = scifiCanvas
     static let scifiBorderStrong = Color.white.opacity(0.12)
     static let scifiBorder = Color.white.opacity(0.08)
     static let scifiBorderLight = Color.white.opacity(0.06)
@@ -430,17 +430,19 @@ private struct ConversationBottomPreferenceKey: PreferenceKey {
 
 private struct ConversationActivityRow: View {
     @ObservedObject var model: DockModel
+    var horizontalInset: CGFloat = 20
 
     private var latestPipelineActivity: AgentActivityPresentation.PipelineActivity? {
         AgentActivityPresentation.pipeline(
             activities: model.agentActivities,
             toolCalls: model.activeToolCalls,
             subagents: model.activeSubagents
-        ).first
+        ).first(where: \.isActive)
     }
 
     private var title: String {
-        AgentActivityPresentation.conversationTitle(
+        guard latestPipelineActivity != nil else { return "Responding" }
+        return AgentActivityPresentation.conversationTitle(
             latestPipelineActivity: latestPipelineActivity,
             recentEvents: model.recentEvents
         )
@@ -455,7 +457,7 @@ private struct ConversationActivityRow: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, horizontalInset)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -467,6 +469,7 @@ private struct WorkspaceActivitySidebar: View {
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
     var onClose: () -> Void = {}
+    var showsHeader = true
     @State private var selectedMode: ControlTab = .today
     @State private var selectedAttentionID: String?
     @State private var inboxFilter: InboxFilter = .all
@@ -480,8 +483,6 @@ private struct WorkspaceActivitySidebar: View {
     @State private var showingRepositoryPicker = false
     @State private var reminderForConfirmation: ReminderSummary?
     @State private var isShowingReminderConfirmation = false
-    @State private var cronChangeRequest: CronChangeRequest?
-    @State private var isShowingCronConfirmation = false
     @State private var cronRemovalRequest: CronSummary?
     @State private var isShowingCronRemovalConfirmation = false
     @State private var cronRunRequest: CronSummary?
@@ -565,17 +566,35 @@ private struct WorkspaceActivitySidebar: View {
 
     private var sidebarContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("HERMES CONTROL")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .tracking(1.4)
-                        .foregroundStyle(Color.scifiAccent)
-                    Text("PERSONAL OPERATING SURFACE")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.scifiTertiary)
+            if showsHeader {
+                sidebarHeader
+            }
+
+            modePicker
+
+            ScrollView {
+                Group {
+                     switch selectedMode {
+                     case .today: nowContent
+                     case .session: sessionOverviewContent
+                     case .inbox: inboxContent
+                     case .activity: activityContent
+                     case .changes: changesContent
+                     case .verification: verificationContent
+                     case .automations: automationsContent
+                     case .projects: projectsContent
+                     case .search: searchContent
+                     case .kanban: kanbanContent
+                     case .core: coreContent
+                     }
                 }
+                .padding(16)
+            }
+        }
+    }
+
+    private var sidebarHeader: some View {
+            HStack {
                 Spacer()
                 Button { isShowingCommandPalette = true } label: {
                     Image(systemName: "command")
@@ -600,28 +619,6 @@ private struct WorkspaceActivitySidebar: View {
             .padding(.horizontal, 16)
             .frame(height: 50)
             .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
-
-            modePicker
-
-            ScrollView {
-                Group {
-                     switch selectedMode {
-                     case .today: nowContent
-                     case .inbox: inboxContent
-                     case .activity: activityContent
-                     case .changes: changesContent
-                     case .verification: verificationContent
-                     case .automations: automationsContent
-                     case .projects: projectsContent
-                     case .repositories: repositoriesContent
-                     case .search: searchContent
-                     case .kanban: kanbanContent
-                     case .core: coreContent
-                     }
-                }
-                .padding(16)
-            }
-        }
     }
 
     private var observedSidebar: some View {
@@ -694,16 +691,6 @@ private struct WorkspaceActivitySidebar: View {
         } message: {
             if let reminder = reminderForConfirmation {
                 Text("Hermes will submit a request to complete ‘\(reminder.title)’ through the Apple Reminders skill. No other reminder will be changed.")
-            }
-        }
-        .confirmationDialog("Change Scheduled Job?", isPresented: $isShowingCronConfirmation) {
-            if let request = cronChangeRequest {
-                Button(request.enable ? "Resume Job" : "Pause Job") { control.setCron(request.job, enabled: request.enable) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let request = cronChangeRequest {
-                Text("Hermes will \(request.enable ? "resume" : "pause") ‘\(request.job.name)’.")
             }
         }
         .confirmationDialog("Remove Scheduled Job?", isPresented: $isShowingCronRemovalConfirmation) {
@@ -843,6 +830,37 @@ private struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.scifiFg)
                     .fixedSize(horizontal: false, vertical: true)
+                if let choices = item.choices, !choices.isEmpty {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("SUGGESTED RESPONSES")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiMuted)
+                        ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
+                            Button {
+                                clarificationResponse = choice
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: clarificationResponse == choice ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text(choice)
+                                        .font(.system(size: 12))
+                                        .multilineTextAlignment(.leading)
+                                    Spacer(minLength: 0)
+                                }
+                                .foregroundStyle(clarificationResponse == choice ? Color.scifiAccent : Color.scifiFg)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(clarificationResponse == choice ? Color.scifiAccent.opacity(0.12) : Color.scifiControlSurface)
+                                        .stroke(clarificationResponse == choice ? Color.scifiAccent.opacity(0.65) : Color.scifiBorder, lineWidth: 0.5)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
                 TextField("Your response", text: $clarificationResponse, axis: .vertical)
                     .textFieldStyle(.scifiGlass)
                     .lineLimit(3...6)
@@ -869,60 +887,77 @@ private struct WorkspaceActivitySidebar: View {
             ForEach(ControlTab.primaryNavigation) { mode in
                 modeButton(mode)
             }
+            Button { select(.projects) } label: {
+                Text("PROJECTS")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .tracking(0.75)
+                    .foregroundStyle(selectedMode == .projects ? Color.scifiFg : Color.scifiMuted)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .background(selectedMode == .projects ? Color.scifiAccent.opacity(0.11) : .clear)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+            .buttonStyle(.scifiPress)
+            .frame(maxWidth: .infinity)
+            .help("Projects")
 
             Menu {
-                Section("Review") {
-                    ForEach(ControlTab.reviewNavigation) { mode in
-                        secondaryModeButton(mode)
-                    }
-                }
-                Section("Workspace") {
-                    ForEach(ControlTab.workspaceNavigation) { mode in
-                        secondaryModeButton(mode)
-                    }
-                }
                 Section("Tools") {
                     ForEach(ControlTab.toolsNavigation) { mode in
                         secondaryModeButton(mode)
                     }
                 }
             } label: {
-                HStack(spacing: 5) {
-                    Text("MORE")
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                    if secondaryBadgeCount > 0 {
-                        badgeView(count: secondaryBadgeCount, isUrgent: secondaryBadgeIsUrgent)
-                    }
-                }
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .tracking(0.75)
-                .foregroundStyle(isSecondaryModeSelected ? Color.scifiFg : Color.scifiMuted)
-                .frame(maxWidth: .infinity, minHeight: 36)
-                .background(isSecondaryModeSelected ? Color.scifiAccent.opacity(0.11) : .clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .contentShape(Rectangle())
+                navigationMenuLabel(
+                    title: "MORE",
+                    detail: isToolsModeSelected ? selectedMode.tabLabel : nil,
+                    badgeCount: toolsBadgeCount,
+                    isUrgent: toolsBadgeIsUrgent,
+                    isSelected: isToolsModeSelected
+                )
             }
             .menuStyle(.borderlessButton)
             .buttonStyle(.scifiPress)
             .frame(maxWidth: .infinity)
-            .help(isSecondaryModeSelected ? selectedMode.tabLabel : "More control views")
+            .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
     }
 
-    private var isSecondaryModeSelected: Bool {
-        ControlTab.secondaryNavigation.contains(selectedMode)
+    private var isToolsModeSelected: Bool {
+        ControlTab.toolsNavigation.contains(selectedMode)
     }
 
-    private var secondaryBadgeCount: Int {
-        ControlTab.secondaryNavigation.reduce(0) { $0 + badgeCount(for: $1) }
+    private var toolsBadgeCount: Int {
+        ControlTab.toolsNavigation.reduce(0) { $0 + badgeCount(for: $1) }
     }
 
-    private var secondaryBadgeIsUrgent: Bool {
-        ControlTab.secondaryNavigation.contains(where: badgeIsUrgent(for:))
+    private var toolsBadgeIsUrgent: Bool {
+        ControlTab.toolsNavigation.contains(where: badgeIsUrgent(for:))
+    }
+
+    private func navigationMenuLabel(
+        title: String,
+        detail: String?,
+        badgeCount: Int,
+        isUrgent: Bool,
+        isSelected: Bool
+    ) -> some View {
+        HStack(spacing: 5) {
+            Text(detail ?? title)
+                .lineLimit(1)
+            if badgeCount > 0 {
+                badgeView(count: badgeCount, isUrgent: isUrgent)
+            }
+        }
+        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+        .tracking(0.75)
+        .foregroundStyle(isSelected ? Color.scifiFg : Color.scifiMuted)
+        .frame(maxWidth: .infinity, minHeight: 36)
+        .background(isSelected ? Color.scifiAccent.opacity(0.11) : .clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .contentShape(Rectangle())
     }
 
     private func secondaryModeButton(_ mode: ControlTab) -> some View {
@@ -978,11 +1013,14 @@ private struct WorkspaceActivitySidebar: View {
             control.refresh(forceCapabilities: true)
         }
         if mode == .automations { control.refresh(); control.refreshCronRuns() }
-        if mode == .projects { control.refresh() }
+        if mode == .projects {
+            control.refresh()
+            Task { await refreshRepository() }
+        }
         if mode == .search { control.search(searchQuery) }
         if mode == .kanban { control.refreshKanban() }
         if mode == .verification { control.refreshVerification() }
-        if mode == .changes || mode == .repositories { Task { await refreshRepository() } }
+        if mode == .changes { Task { await refreshRepository() } }
     }
 
     private func run(_ command: DockAction) {
@@ -1164,7 +1202,13 @@ private struct WorkspaceActivitySidebar: View {
                     }
                 }
             } else {
-                emptyState(icon: "doc.text.magnifyingglass", title: "No active repository", detail: "Attach a repository to the active Hermes session to inspect its read-only working tree.")
+                emptyState(icon: "doc.text.magnifyingglass", title: "No local project folder", detail: "Open the active Hermes project, then select its local folder to inspect read-only changes.")
+                Button("SELECT PROJECT FOLDER") {
+                    showingRepositoryPicker = true
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
             }
         }
     }
@@ -1235,7 +1279,7 @@ private struct WorkspaceActivitySidebar: View {
                     if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: .scifiTertiary) }
                 }
             } else if control.projectFacts == nil {
-                emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Attach a repository and refresh Core to request Hermes verification facts.")
+                emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Core to request verification facts.")
             }
         }
     }
@@ -1427,17 +1471,6 @@ private struct WorkspaceActivitySidebar: View {
                                 .disabled(control.isActionPending(control.cronActionID("edit", job: job)))
                             }
                             if control.capabilityAvailable("rpc-scheduling") {
-                                Button {
-                                    cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
-                                    isShowingCronConfirmation = true
-                                } label: {
-                                    ScifiActionLabel(
-                                        title: job.enabled ? "PAUSE" : "RESUME",
-                                        pendingTitle: job.enabled ? "PAUSING…" : "RESUMING…",
-                                        isPending: control.isActionPending(control.cronActionID(job.enabled ? "pause" : "resume", job: job))
-                                    )
-                                }
-                                .disabled(control.isActionPending(control.cronActionID(job.enabled ? "pause" : "resume", job: job)))
                                 Button {
                                     cronRemovalRequest = job
                                     isShowingCronRemovalConfirmation = true
@@ -1736,11 +1769,17 @@ private struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.scifiAccent)
                     Spacer()
                 }
-                sectionLabel("PROJECT  ·  \(project.name)")
+                selectedProjectSummary(project)
                 if control.projectSessions.isEmpty {
-                    emptyState(icon: "bubble.left.and.bubble.right", title: "No sessions in this project", detail: "Hermes returned no grouped sessions for this project.")
+                    emptyState(icon: "bubble.left.and.bubble.right", title: "No sessions in this project", detail: "No grouped sessions were found for this project.")
                 } else {
-                    sectionLabel("SESSIONS  ·  \(control.projectSessions.count)")
+                    HStack {
+                        sectionLabel("SESSIONS")
+                        Spacer()
+                        Text("\(control.projectSessions.count)")
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiAccent)
+                    }
                     ForEach(control.projectSessions) { session in
                         Button {
                             control.openProjectSession(session)
@@ -1756,8 +1795,11 @@ private struct WorkspaceActivitySidebar: View {
                                     Text(session.state.uppercased())
                                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(Color.scifiMuted)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(Color.scifiAccent)
                                 }
-                                if let preview = session.preview {
+                                if let preview = session.displayPreview {
                                     Text(preview)
                                         .font(.system(size: 12))
                                         .foregroundStyle(Color.scifiTertiary)
@@ -1771,11 +1813,14 @@ private struct WorkspaceActivitySidebar: View {
                         .buttonStyle(.scifiPress)
                     }
                 }
+                if projectContainsCurrentSession {
+                    projectChangesContent
+                }
             } else if control.projects.isEmpty {
-                sectionLabel("HERMES PROJECTS  ·  0")
-                emptyState(icon: "folder", title: "No Hermes projects", detail: "Projects will appear here when Hermes has project contexts configured.")
+                sectionLabel("PROJECTS  ·  0")
+                emptyState(icon: "folder", title: "No projects", detail: "Projects will appear here when project contexts are available.")
             } else {
-                sectionLabel("HERMES PROJECTS  ·  \(control.projects.count)")
+                sectionLabel("PROJECTS  ·  \(control.projects.count)")
                 ForEach(control.projects) { project in
                     Button {
                         control.openProject(project)
@@ -1817,6 +1862,29 @@ private struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private func selectedProjectSummary(_ project: ProjectSummary) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Image(systemName: project.isActive ? "folder.fill" : "folder")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(project.isActive ? Color.scifiAccent : Color.scifiMuted)
+                Text(projectDisplayName(project))
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+            }
+            if project.name != "__no_project__" {
+                Text(project.name)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 4)
+    }
+
     private func projectDisplayName(_ project: ProjectSummary) -> String {
         guard project.name != "__no_project__" else { return "Unassigned sessions" }
         let path = URL(fileURLWithPath: project.name)
@@ -1827,6 +1895,50 @@ private struct WorkspaceActivitySidebar: View {
         let counts = "\(project.repoCount) repos  ·  \(project.sessionCount) sessions"
         guard project.name != "__no_project__" else { return counts }
         return "\(counts)  ·  \(project.name)"
+    }
+
+    private var projectContainsCurrentSession: Bool {
+        guard let sessionID = model.sessionID else { return false }
+        return control.projectSessions.contains { $0.id == sessionID }
+    }
+
+    private var projectChangesContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionLabel("LOCAL CHANGES")
+            if workflow.repository.isGitRepository {
+                HStack(spacing: 8) {
+                    todayMetric("STAGED", value: workflow.changes?.stagedCount ?? 0, color: .scifiAccent)
+                    todayMetric("UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: .scifiWarning)
+                    todayMetric("UNTRACKED", value: workflow.changes?.untrackedCount ?? 0, color: .scifiMuted)
+                    todayMetric("CONFLICTS", value: workflow.changes?.conflictedCount ?? 0, color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .scifiDestructive : .scifiSuccess)
+                }
+                Text(workflow.repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S") · \(workflow.repository.branch)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.scifiSuccess : Color.scifiWarning)
+                HStack(spacing: 10) {
+                    Button("OPEN CHANGES") { select(.changes) }
+                    Button(commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID) ? "STOP WATCHING" : "WATCH REPOSITORY") {
+                        workflow.toggleWatching(preferences: commandCenterPreferences, control: control)
+                    }
+                    Button("REFRESH") { Task { await refreshRepository() } }
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+            } else {
+                Text("No local project folder is attached to the active session.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiTertiary)
+                Button("SELECT PROJECT FOLDER") {
+                    showingRepositoryPicker = true
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+            }
+        }
+        .padding(12)
+        .scifiGlassPane()
     }
 
     private var kanbanContent: some View {
@@ -2500,7 +2612,71 @@ private struct WorkspaceActivitySidebar: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? Color.scifiAccent : .clear, lineWidth: 0.5))
     }
 
+    /// Global operations overview. It deliberately excludes the active chat's
+    /// focus, readiness, handoff, and runtime transcript; those live in the
+    /// Session overview.
     private var nowContent: some View {
+        let openAttention = control.attention.filter { $0.state == .open }
+        let activeSessions = control.activeSessions
+        return VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("WORKSPACE OVERVIEW")
+            HStack(spacing: 8) {
+                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .scifiSuccess : .scifiWarning)
+                todayMetric("SESSIONS", value: activeSessions.count, color: .scifiAccent)
+                todayMetric("SCHEDULED", value: control.cronJobs.count, color: .scifiSuccess)
+            }
+
+            sectionLabel("NEEDS ME")
+            if let attention = openAttention.first {
+                attentionItemRow(attention)
+                if openAttention.count > 1 {
+                    Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
+                        .buttonStyle(.scifiPress)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                }
+            } else {
+                attentionRow(icon: "checkmark.circle", title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .scifiSuccess)
+            }
+
+            if !activeSessions.isEmpty {
+                sectionLabel("ACTIVE SESSIONS  ·  \(activeSessions.count)")
+                ForEach(activeSessions.prefix(4)) { session in
+                    Button {
+                        if session.id != model.sessionID {
+                            control.openProjectSession(session)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Circle().fill(session.id == model.sessionID ? Color.scifiAccent : Color.scifiMuted).frame(width: 5, height: 5)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                                Text(session.displayPreview ?? session.state.uppercased()).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                            }
+                            Spacer()
+                            if session.id == model.sessionID {
+                                Text("CURRENT").font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .scifiListRow()
+                    }
+                    .buttonStyle(.scifiPress)
+                }
+            }
+
+            if !control.cronJobs.isEmpty {
+                Button("VIEW \(control.cronJobs.count) AUTOMATIONS") { select(.automations) }
+                    .buttonStyle(.scifiPress)
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+            }
+        }
+    }
+
+    /// The active-chat dashboard. All focus, readiness, and runtime details
+    /// below are scoped to `model.sessionID`.
+    private var sessionOverviewContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             let openAttention = control.attention.filter { $0.state == .open }
             let mission = MissionControlSnapshotBuilder.make(
@@ -2519,6 +2695,7 @@ private struct WorkspaceActivitySidebar: View {
                 verification: control.verification
             )
 
+            sessionWorkspaceHeader
             missionFocusStrip(mission.focus)
             readinessCard(mission.readiness)
             sessionHandoffCard(mission: mission)
@@ -2601,7 +2778,7 @@ private struct WorkspaceActivitySidebar: View {
                                             .font(.system(size: 12, weight: .medium))
                                             .foregroundStyle(Color.scifiFg)
                                             .lineLimit(1)
-                                        Text(session.preview ?? session.state.uppercased())
+                                        Text(session.displayPreview ?? session.state.uppercased())
                                             .font(.system(size: 12, design: .monospaced))
                                             .foregroundStyle(Color.scifiTertiary)
                                             .lineLimit(1)
@@ -2716,13 +2893,6 @@ private struct WorkspaceActivitySidebar: View {
                                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(Color.scifiAccent)
                                 }
-                                Button(job.enabled ? "PAUSE" : "RESUME") {
-                                    cronChangeRequest = CronChangeRequest(job: job, enable: !job.enabled)
-                                    isShowingCronConfirmation = true
-                                }
-                                .buttonStyle(.scifiPress)
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(job.enabled ? Color.scifiWarning : Color.scifiAccent)
                             }
                             .scifiListRow()
                         }
@@ -2853,6 +3023,50 @@ private struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private var sessionWorkspaceHeader: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Button {
+                select(.today)
+            } label: {
+                Label("WORKSPACE", systemImage: "chevron.left")
+            }
+            .buttonStyle(.scifiPress)
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Color.scifiAccent)
+
+            Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5, height: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.currentSessionTitle ?? "Untitled session")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+
+            Menu {
+                ForEach(ControlTab.sessionNavigation) { mode in
+                    secondaryModeButton(mode)
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(selectedMode.tabLabel.uppercased())
+                    if badgeCount(for: selectedMode) > 0 {
+                        badgeView(count: badgeCount(for: selectedMode), isUrgent: badgeIsUrgent(for: selectedMode))
+                    }
+                }
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .tracking(0.65)
+                .foregroundStyle(Color.scifiAccent)
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.scifiPress)
+            .help("Session view")
+        }
+        .padding(.bottom, 2)
+    }
+
     private func todayMetric(_ label: String, value: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
@@ -2978,7 +3192,7 @@ private struct WorkspaceActivitySidebar: View {
                 Image(systemName: workflow.repository.isGitRepository ? "arrow.triangle.branch" : "folder")
                     .foregroundStyle(workflow.repository.isGitRepository ? Color.scifiSuccess : Color.scifiMuted)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(workflow.repository.isGitRepository ? workflow.repository.branch : "No repository selected")
+                    Text(workflow.repository.isGitRepository ? workflow.repository.branch : "No project folder selected")
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(Color.scifiFg)
                         .lineLimit(1)
@@ -3000,7 +3214,7 @@ private struct WorkspaceActivitySidebar: View {
                     .lineLimit(2)
             }
             HStack(spacing: 14) {
-                Button("CHANGE REPOSITORY") {
+                Button("CHANGE PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
                 Button {
@@ -3131,7 +3345,15 @@ private struct WorkspaceActivitySidebar: View {
 
     private func handleRepositoryImport(_ result: Result<URL, Error>) {
         guard case .success(let url) = result else { return }
-        store.attachProject(at: url.path, toSessionID: model.sessionID)
+        let sessions = control.projectSessions
+        let currentSessionIsInSelectedProject = model.sessionID.map { id in
+            sessions.contains { $0.id == id }
+        } ?? false
+        if currentSessionIsInSelectedProject, !sessions.isEmpty {
+            store.attachProject(at: url.path, toSessions: sessions)
+        } else {
+            store.attachProject(at: url.path, toSessionID: model.sessionID)
+        }
     }
 
     private var agentRoster: some View {
@@ -3569,13 +3791,14 @@ private struct WorkspaceActivitySidebar: View {
                     .menuStyle(.borderlessButton)
                     .buttonStyle(.scifiPress)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(model.isLoadingRuntimeConfiguration)
                     .onChange(of: selectedModelID) { _, id in
                         guard let option = model.runtimeModelOptions.first(where: { $0.id == id }),
                               option.model != configuration.model || option.provider != configuration.provider else { return }
                         model.updateRuntimeModel(option)
                     }
                 }
-                Text("Catalog is supplied live by Hermes. Selection updates provider and model for new sessions.")
+                Text("Selection updates the saved default for new sessions. Use the session model picker in the chat header to override one conversation. During a running turn, Hermes applies changes to the next turn.")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
                 if let error = model.runtimeConfigurationError {
@@ -3871,10 +4094,209 @@ private struct WorkspaceActivitySidebar: View {
     }
 }
 
+/// The session inspector is deliberately a separate surface from the workspace.
+/// Workspace navigation answers "what needs attention overall?"; this panel
+/// answers "what is happening in this conversation?".
+private struct SessionInspector: View {
+    @ObservedObject var model: DockModel
+    @ObservedObject var control: ControlCenterModel
+    @ObservedObject var workflow: DeveloperWorkflowModel
+    var showsHeader = true
+    @State private var selectedSection = Section.overview
+
+    private enum Section: String, CaseIterable, Identifiable {
+        case overview = "Overview"
+        case activity = "Activity"
+        case changes = "Changes"
+        case verification = "Verify"
+
+        var id: Self { self }
+        var icon: String {
+            switch self {
+            case .overview: "bubble.left.and.bubble.right"
+            case .activity: "waveform.path.ecg"
+            case .changes: "doc.text.magnifyingglass"
+            case .verification: "checkmark.seal"
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if showsHeader {
+                inspectorHeader
+            }
+            sessionModePicker
+
+            ScrollView {
+                inspectorContent
+                    .padding(16)
+            }
+        }
+        .background(Color.scifiCanvas)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private var sessionModePicker: some View {
+        HStack(spacing: 3) {
+            ForEach(Section.allCases) { section in
+                Button {
+                    withAnimation(.scifiEase(duration: 0.2)) {
+                        selectedSection = section
+                    }
+                } label: {
+                    Text(section.rawValue.uppercased())
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(0.75)
+                        .foregroundStyle(selectedSection == section ? Color.scifiFg : Color.scifiMuted)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .background(selectedSection == section ? Color.scifiAccent.opacity(0.11) : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.scifiPress)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel("Show \(section.rawValue)")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+    }
+
+    private var inspectorHeader: some View {
+        HStack(alignment: .center, spacing: 9) {
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.scifiAccent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(model.currentSessionTitle ?? "Untitled session")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Text(model.status.title.uppercased())
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(model.status == .working ? Color.scifiAccent : Color.scifiMuted)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 50)
+        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+    }
+
+    @ViewBuilder
+    private var inspectorContent: some View {
+        switch selectedSection {
+        case .overview:
+            VStack(alignment: .leading, spacing: 14) {
+                inspectorLabel("SESSION OVERVIEW")
+                inspectorCard(title: "MISSION", value: model.currentSessionTitle ?? "Waiting for a message")
+                HStack(spacing: 8) {
+                    inspectorMetric("AGENTS", value: control.activeAgents.count, color: .scifiAccent)
+                    inspectorMetric("RUNNING", value: model.activeSubagents.count, color: model.activeSubagents.isEmpty ? .scifiMuted : .scifiAccent)
+                }
+                inspectorCard(
+                    title: "LATEST ACTIVITY",
+                    value: model.recentEvents.last?.detail ?? "No Hermes activity in this session yet."
+                )
+            }
+        case .activity:
+            AgentBoardView(model: model, embedded: true)
+        case .changes:
+            VStack(alignment: .leading, spacing: 14) {
+                inspectorLabel("LOCAL CHANGES")
+                if let changes = workflow.changes, workflow.repository.isGitRepository {
+                    HStack(spacing: 8) {
+                        inspectorMetric("STAGED", value: changes.stagedCount, color: .scifiAccent)
+                        inspectorMetric("UNSTAGED", value: changes.unstagedCount, color: .scifiWarning)
+                        inspectorMetric("UNTRACKED", value: changes.untrackedCount, color: .scifiMuted)
+                    }
+                    if changes.files.isEmpty {
+                        inspectorCard(title: "WORKING TREE", value: "Clean — no local changes found.")
+                    } else {
+                        ForEach(changes.files.prefix(8)) { file in
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc")
+                                    .foregroundStyle(Color.scifiAccent)
+                                Text(file.path).lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text(file.isStaged ? "STAGED" : file.status.rawValue.uppercased())
+                                    .foregroundStyle(Color.scifiTertiary)
+                            }
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.scifiFg)
+                            .padding(.vertical, 8)
+                            .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+                        }
+                    }
+                } else {
+                    inspectorCard(title: "NO PROJECT FOLDER", value: "Choose a local folder from the session's project to inspect changes.")
+                }
+            }
+        case .verification:
+            VStack(alignment: .leading, spacing: 14) {
+                inspectorLabel("VERIFICATION")
+                if let verification = control.verification {
+                    let color: Color = verification.state == .passed ? .scifiSuccess : verification.state == .failed ? .scifiDestructive : .scifiWarning
+                    inspectorCard(title: "STATUS", value: verification.state.rawValue.uppercased(), accent: color)
+                    if let evidence = verification.evidence,
+                       let command = evidence.canonicalCommand ?? evidence.command {
+                        inspectorCard(title: "EVIDENCE", value: command)
+                    }
+                } else {
+                    inspectorCard(title: "NOT AVAILABLE", value: "Verification results will appear when Hermes reports them for this session.")
+                }
+            }
+        }
+    }
+
+    private func inspectorLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .tracking(1)
+            .foregroundStyle(Color.scifiMuted)
+    }
+
+    private func inspectorMetric(_ label: String, value: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("\(value)")
+                .font(.system(size: 22, weight: .bold, design: .monospaced))
+                .foregroundStyle(color)
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .tracking(0.7)
+                .foregroundStyle(Color.scifiTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.scifiSurface4)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func inspectorCard(title: String, value: String, accent: Color = .scifiFg) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .tracking(0.75)
+                .foregroundStyle(Color.scifiTertiary)
+            Text(value)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(accent)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.scifiSurface4)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
 struct DockPopover: View {
     @ObservedObject var model: DockModel
-    var onWorkspaceWidthChange: (CGFloat) -> Void = { _ in }
+    var onWorkspaceWidthChange: (CGFloat) -> CGFloat = { $0 }
     @State private var isConversationAtBottom = true
+    @State private var unseenMessageCount = 0
     @State private var isWorkspaceManuallyExpanded = true
     @State private var isNarrowLayout = false
     @State private var isNarrowControlVisible = true
@@ -3889,9 +4311,24 @@ struct DockPopover: View {
     @StateObject private var developerWorkflow = DeveloperWorkflowModel()
     @State private var inputMode: InputMode = .chat
     @State private var suppressNextVoiceResponse = false
+    @State private var inspectorScope: InspectorScope = .global
 
     private enum InputMode {
         case chat, talk
+    }
+
+    private enum InspectorScope: String, CaseIterable, Identifiable {
+        case global = "Global"
+        case session = "Session"
+
+        var id: Self { self }
+
+        var icon: String {
+            switch self {
+            case .global: "square.grid.2x2"
+            case .session: "bubble.left.and.bubble.right"
+            }
+        }
     }
 
     private enum QuickPrompt: CaseIterable, Identifiable {
@@ -3942,38 +4379,32 @@ struct DockPopover: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                if inputMode == .talk {
-                    voiceMode
-                } else {
-                    header
-                    if model.isShowingSessions {
-                        sessionPicker
+            if !isNarrowLayout || !isNarrowControlVisible {
+                VStack(spacing: 0) {
+                    if inputMode == .talk {
+                        voiceMode
+                    } else {
+                        header
+                        if model.isShowingSessions {
+                            sessionPicker
+                            Divider().overlay(Color.scifiBorderLight)
+                        }
+                        conversation
                         Divider().overlay(Color.scifiBorderLight)
+                        composer
                     }
-                    conversation
-                    Divider().overlay(Color.scifiBorderLight)
-                    composer
                 }
+                .frame(width: showsDesktopContextPanel ? 480 : 500, height: 720)
             }
-            .frame(width: 420, height: 640)
 
-            // The Control workspace belongs to the popup, not to chat mode.
-            // Voice swaps only the left-hand surface and keeps this pane live.
             if isWorkspaceVisibleForLayout {
                 Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5)
-                WorkspaceActivitySidebar(model: model, store: workspaceStore, control: controlCenter, workflow: developerWorkflow, onClose: {
-                    if isNarrowLayout {
-                        isNarrowControlVisible = false
-                    } else {
-                        isWorkspaceManuallyExpanded = false
-                    }
-                })
-                    .frame(width: isNarrowLayout ? 420 : 540, height: 640)
+                contextPanel
+                    .frame(width: isNarrowLayout ? 500 : 480, height: 720)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: isWorkspaceVisibleForLayout ? (isNarrowLayout ? 420 : 960) : 420, height: 640)
+        .frame(width: popupWidth, height: 720)
         .background {
             ZStack {
                 Color(red: 0.055, green: 0.065, blue: 0.115)
@@ -3986,9 +4417,9 @@ struct DockPopover: View {
             }
             .background(.ultraThinMaterial)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(Color.scifiBorderLight, lineWidth: 0.5)
         }
         .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
@@ -4000,15 +4431,14 @@ struct DockPopover: View {
         }
         .task { model.restoreLatestSessionIfNeeded() }
         .onAppear {
-            isNarrowLayout = (NSScreen.main?.visibleFrame.width ?? 1200) < 1000
-            onWorkspaceWidthChange(isWorkspaceVisibleForLayout ? (isNarrowLayout ? 420 : 960) : 420)
+            synchronizePanelLayout()
             synchronizeWorkspace()
             controlCenter.bind(to: model)
             controlCenter.refresh()
         }
         .onChange(of: isWorkspaceVisible) { _, visible in
             if isNarrowLayout { isNarrowControlVisible = visible }
-            onWorkspaceWidthChange(isWorkspaceVisibleForLayout ? (isNarrowLayout ? 420 : 960) : 420)
+            synchronizePanelLayout()
         }
         .onChange(of: model.composerFocusRequest) { _, _ in
             isComposerFocused = true
@@ -4059,7 +4489,11 @@ struct DockPopover: View {
                 resumeVoiceConversationIfReady()
             }
         }
-        .onChange(of: model.sessionID) { _, _ in synchronizeWorkspace() }
+        .onChange(of: model.sessionID) { _, _ in
+            synchronizeWorkspace()
+            synchronizePanelLayout()
+        }
+        .onChange(of: model.sessionID) { _, _ in model.refreshSessionModelOptions() }
         .onChange(of: model.currentSessionTitle) { _, _ in synchronizeWorkspace() }
         .onChange(of: model.messages) { _, _ in synchronizeWorkspace() }
     }
@@ -4070,6 +4504,109 @@ struct DockPopover: View {
 
     private var isWorkspaceVisibleForLayout: Bool {
         isNarrowLayout ? isNarrowControlVisible : isWorkspaceVisible
+    }
+
+    private var popupWidth: CGFloat {
+        guard showsDesktopContextPanel else { return 500 }
+        return 480 + 0.5 + 480
+    }
+
+    private var showsDesktopContextPanel: Bool {
+        !isNarrowLayout && isWorkspaceVisibleForLayout
+    }
+
+    /// The status-bar item can live on a different display from `NSScreen.main`.
+    /// Ask the native panel for the width it can actually occupy before choosing
+    /// the desktop layout, then render only a layout that fits that screen.
+    private func synchronizePanelLayout() {
+        let fittedDesktopWidth = onWorkspaceWidthChange(desktopRequiredWidth)
+        let shouldUseNarrowLayout = fittedDesktopWidth < desktopRequiredWidth
+        if isNarrowLayout != shouldUseNarrowLayout {
+            isNarrowLayout = shouldUseNarrowLayout
+            if shouldUseNarrowLayout { isNarrowControlVisible = false }
+        }
+        _ = onWorkspaceWidthChange(popupWidth)
+    }
+
+    private var desktopRequiredWidth: CGFloat { 960.5 }
+
+    private var contextPanel: some View {
+        VStack(spacing: 0) {
+            contextPanelHeader
+
+            Group {
+                switch inspectorScope {
+                case .global:
+                    WorkspaceActivitySidebar(
+                        model: model,
+                        store: workspaceStore,
+                        control: controlCenter,
+                        workflow: developerWorkflow,
+                        onClose: closeContextPanel,
+                        showsHeader: false
+                    )
+                case .session:
+                    SessionInspector(model: model, control: controlCenter, workflow: developerWorkflow, showsHeader: false)
+                }
+            }
+            .transition(.opacity)
+            .animation(.scifiEase(duration: 0.2), value: inspectorScope)
+        }
+        .background(Color.scifiCanvas)
+    }
+
+    private var contextPanelHeader: some View {
+        HStack(spacing: 12) {
+            if inspectorScope == .session {
+                Text(model.currentSessionTitle ?? "Untitled session")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            scopePicker
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 58)
+        .background(Color.scifiSurface2)
+        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+    }
+
+    private var scopePicker: some View {
+        HStack(spacing: 2) {
+            ForEach(InspectorScope.allCases) { scope in
+                Button {
+                    withAnimation(.scifiEase(duration: 0.18)) {
+                        inspectorScope = scope
+                    }
+                } label: {
+                    Text(scope.rawValue.uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(0.6)
+                        .foregroundStyle(inspectorScope == scope ? Color.scifiFg : Color.scifiTertiary)
+                        .frame(width: 70, height: 28)
+                        .background(inspectorScope == scope ? Color.scifiAccent.opacity(0.16) : .clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.scifiPress)
+                .accessibilityLabel("Show \(scope.rawValue) inspector")
+            }
+        }
+        .padding(3)
+        .background(Color.scifiSurface4)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Inspector scope")
+    }
+
+    private func closeContextPanel() {
+        if isNarrowLayout {
+            isNarrowControlVisible = false
+        } else {
+            isWorkspaceManuallyExpanded = false
+        }
     }
 
     private func synchronizeWorkspace(status: HermesStatus? = nil) {
@@ -4092,51 +4629,31 @@ struct DockPopover: View {
     }
 
     private var header: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
             Button(action: { model.toggleSessions() }) {
                 HStack(spacing: 10) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(statusColor.opacity(0.12))
-                            .frame(width: 28, height: 28)
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(statusColor.opacity(0.28), lineWidth: 0.5)
-                            .frame(width: 28, height: 28)
-                        Image(systemName: statusSymbol)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(statusColor)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.currentSessionTitle ?? "Untitled chat")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.scifiFg)
-                            .lineLimit(1)
-                        HStack(spacing: 6) {
-                            Text("HERMES CONSOLE")
-                                .foregroundStyle(Color.scifiTertiary)
-                            Circle()
-                                .fill(statusColor)
-                                .frame(width: 4, height: 4)
-                            Text(statusLabel)
-                                .foregroundStyle(statusColor)
-                        }
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .tracking(0.75)
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 10, height: 10)
+                        .shadow(color: statusColor.opacity(0.7), radius: 4)
+                    Text(model.currentSessionTitle ?? "Untitled chat")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.scifiFg)
                         .lineLimit(1)
-                    }
                     Image(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Color.scifiMuted)
                 }
             }
             .buttonStyle(.scifiPress)
-            .help("Hermes status: \(model.status.title)")
-            .accessibilityLabel("\(model.currentSessionTitle ?? "Untitled chat"), Hermes \(statusLabel.lowercased())")
+            .help("Session status: \(model.status.title)")
+            .accessibilityLabel("\(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
 
-            Spacer()
+            Spacer(minLength: 12)
 
             // Keep the visual rhythm compact while the surrounding hit targets stay 44pt.
-            HStack(spacing: 4) {
+            HStack(spacing: 0) {
                 Button(action: {
                     inputMode = .talk
                     beginVoiceConversation()
@@ -4192,9 +4709,66 @@ struct DockPopover: View {
                 .dockHitTarget()
                 .help("New chat")
             }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+
+            HStack(spacing: 8) {
+                Text("SESSION MODEL")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(Color.scifiMuted)
+
+                if model.sessionID != nil {
+                    Menu {
+                        if model.runtimeModelOptions.isEmpty {
+                            Text("Loading model catalog…")
+                        } else {
+                            ForEach(model.runtimeModelOptions) { option in
+                                Button {
+                                    model.updateSessionModel(option)
+                                } label: {
+                                    HStack {
+                                        Text(option.displayName)
+                                        if option.id == model.sessionModelOptionID {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "cpu")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(sessionModelDisplayName)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .foregroundStyle(Color.scifiFg)
+                        .padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 32)
+                        .background(Color.scifiSurface4)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.scifiPress)
+                    .disabled(model.isUpdatingSessionModel)
+                    .help("Change the model for this session only")
+                } else {
+                    Text("Choose a model when a session starts")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
-        .padding(.horizontal, 14)
-        .frame(height: 50)
         .background(Color.scifiSurface2)
         .overlay(alignment: .bottom) {
             Color.scifiBorderLight.frame(height: 0.5)
@@ -4211,22 +4785,12 @@ struct DockPopover: View {
         }
     }
 
-    private var statusLabel: String {
-        switch model.status {
-        case .idle: "AVAILABLE"
-        case .working: "WORKING"
-        case .needsApproval: "APPROVAL NEEDED"
-        case .offline: "UNAVAILABLE"
+    private var sessionModelDisplayName: String {
+        guard let id = model.sessionModelOptionID,
+              let option = model.runtimeModelOptions.first(where: { $0.id == id }) else {
+            return "Session model"
         }
-    }
-
-    private var statusSymbol: String {
-        switch model.status {
-        case .idle: "checkmark"
-        case .working: "arrow.triangle.2.circlepath"
-        case .needsApproval: "exclamationmark"
-        case .offline: "xmark"
-        }
+        return option.displayName
     }
 
     private var sessionPicker: some View {
@@ -4270,8 +4834,8 @@ struct DockPopover: View {
                                         .font(.system(size: 12))
                                         .lineLimit(1)
                                         .foregroundStyle(Color.scifiFg)
-                                    if !session.preview.isEmpty {
-                                        Text(session.preview)
+                                    if let preview = session.displayPreview {
+                                        Text(preview)
                                             .font(.system(size: 12, design: .monospaced))
                                             .foregroundStyle(Color.scifiMuted)
                                             .lineLimit(1)
@@ -4335,7 +4899,7 @@ struct DockPopover: View {
             } label: {
                 VoiceOrbView(
                     isListening: model.voiceState == .listening || speechInput.isRecording,
-                    isResponding: model.voiceState == .preparing || model.voiceState == .interrupted || model.voiceState == .thinking || (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking,
+                    isResponding: model.voiceState == .preparing || model.voiceState == .interrupted || model.voiceState == .thinking || model.voiceState == .speaking || (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking,
                     audioLevel: speechInput.audioLevel
                 )
                     .frame(width: 320, height: 320)
@@ -4444,81 +5008,107 @@ struct DockPopover: View {
     private var chatScroll: some View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if model.messages.isEmpty && model.status != .working {
-                            StartupAssistantView()
-                                .frame(maxWidth: .infinity)
-                                .frame(minHeight: max(300, viewport.size.height - 16))
-                        }
-                        let msgList = model.messages
-                        ForEach(msgList) { message in
-                            let isLast = message.id == msgList.last?.id
-                            if isConversationActivityVisible && message.role == .hermes && isLast {
-                                activityView.id("activity")
+                ZStack(alignment: .bottom) {
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            if model.messages.isEmpty && model.status != .working {
+                                StartupAssistantView()
+                                    .frame(maxWidth: .infinity)
+                                    .frame(minHeight: max(300, viewport.size.height - 16))
                             }
-                            messageRow(message)
-                                .id(message.id)
-                                .transition(.asymmetric(
-                                    insertion: .opacity.combined(with: .move(edge: .bottom)).combined(with: .scale(scale: 0.97)),
-                                    removal: .opacity
-                                ))
+                            let msgList = model.messages
+                            ForEach(msgList) { message in
+                                messageRow(message)
+                                    .id(message.id)
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .move(edge: .bottom)).combined(with: .scale(scale: 0.97)),
+                                        removal: .opacity
+                                    ))
+                            }
+                            if let approval = model.approvalText {
+                                approvalRow(title: model.approvalTitle ?? "Review requested action", detail: approval)
+                            }
+                            if isConversationActivityVisible {
+                                activityView
+                                    .id("activity")
+                            }
+                            Color.clear
+                                .frame(height: 1)
+                                .id("conversationBottom")
+                                .background(
+                                    GeometryReader { geometry in
+                                        Color.clear.preference(
+                                            key: ConversationBottomPreferenceKey.self,
+                                            value: geometry.frame(in: .named("conversationScroll")).maxY
+                                        )
+                                    }
+                                )
                         }
-                        if isConversationActivityVisible && model.messages.last?.role != .hermes {
-                            activityView
-                                .id("activity")
-                        }
-                        if let approval = model.approvalText {
-                            approvalRow(title: model.approvalTitle ?? "Review requested action", detail: approval)
-                        }
-                        Color.clear
-                            .frame(height: 1)
-                            .id("conversationBottom")
-                            .background(
-                                GeometryReader { geometry in
-                                    Color.clear.preference(
-                                        key: ConversationBottomPreferenceKey.self,
-                                        value: geometry.frame(in: .named("conversationScroll")).maxY
-                                    )
-                                }
-                            )
+                        .padding(.vertical, 8)
                     }
-                    .padding(.vertical, 8)
-                }
-                .coordinateSpace(name: "conversationScroll")
-                .onPreferenceChange(ConversationBottomPreferenceKey.self) { bottomY in
-                    isConversationAtBottom = bottomY <= viewport.size.height + 32
-                }
-                .animation(Animation.scifiEase(duration: 0.4), value: model.messages.count)
-                .onChange(of: model.messages.count) { _, _ in
-                    if isConversationAtBottom, let last = model.messages.last {
-                        withAnimation(.scifiEase(duration: 0.2)) {
-                            proxy.scrollTo(last.id, anchor: .bottom)
+                    .coordinateSpace(name: "conversationScroll")
+                    .onPreferenceChange(ConversationBottomPreferenceKey.self) { bottomY in
+                        let isAtBottom = bottomY <= viewport.size.height + 32
+                        isConversationAtBottom = isAtBottom
+                        if isAtBottom { unseenMessageCount = 0 }
+                    }
+                    .animation(Animation.scifiEase(duration: 0.4), value: model.messages.count)
+                    .onChange(of: model.scrollToLatestMessageRequest) { _, _ in
+                        unseenMessageCount = 0
+                        isConversationAtBottom = true
+                        scrollConversationToBottom(proxy, animated: false)
+                    }
+                    .onChange(of: model.messages.count) { oldCount, newCount in
+                        guard newCount > oldCount else {
+                            if newCount < oldCount { unseenMessageCount = 0 }
+                            return
+                        }
+                        if isConversationAtBottom {
+                            scrollConversationToBottom(proxy)
+                        } else {
+                            unseenMessageCount += newCount - oldCount
                         }
                     }
-                }
-                .onChange(of: model.activeToolCalls) { _, _ in
-                    if isConversationActivityVisible && isConversationAtBottom {
-                        withAnimation(.scifiEase(duration: 0.2)) {
-                            proxy.scrollTo("conversationBottom", anchor: .bottom)
+                    .onChange(of: model.activeToolCalls) { _, _ in
+                        if isConversationActivityVisible && isConversationAtBottom {
+                            scrollConversationToBottom(proxy)
                         }
                     }
-                }
-                .onChange(of: model.reasoningState) { _, _ in
-                    if isConversationActivityVisible && isConversationAtBottom {
-                        withAnimation(.scifiEase(duration: 0.2)) {
-                            proxy.scrollTo("conversationBottom", anchor: .bottom)
+                    .onChange(of: model.reasoningState) { _, _ in
+                        if isConversationActivityVisible && isConversationAtBottom {
+                            scrollConversationToBottom(proxy)
                         }
                     }
-                }
-                .onChange(of: model.recentEvents.last) { _, _ in
-                    if isConversationActivityVisible,
-                       let event = model.recentEvents.last,
-                       isAutoScrollEvent(event.type),
-                       isConversationAtBottom {
-                        withAnimation(.scifiEase(duration: 0.2)) {
-                            proxy.scrollTo("conversationBottom", anchor: .bottom)
+                    .onChange(of: model.recentEvents.last) { _, _ in
+                        if isConversationActivityVisible,
+                           let event = model.recentEvents.last,
+                           isAutoScrollEvent(event.type),
+                           isConversationAtBottom {
+                            scrollConversationToBottom(proxy)
                         }
+                    }
+
+                    if unseenMessageCount > 0 {
+                        Button {
+                            unseenMessageCount = 0
+                            isConversationAtBottom = true
+                            scrollConversationToBottom(proxy, duration: 0.25)
+                        } label: {
+                            HStack(spacing: 7) {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 11, weight: .bold))
+                                Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            }
+                            .foregroundStyle(Color.scifiBg)
+                            .padding(.horizontal, 14)
+                            .frame(height: 34)
+                            .background(Capsule().fill(Color.scifiAccent))
+                            .shadow(color: Color.scifiAccent.opacity(0.3), radius: 10, y: 3)
+                        }
+                        .buttonStyle(.scifiPress)
+                        .padding(.bottom, 12)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
             }
@@ -4540,7 +5130,10 @@ struct DockPopover: View {
     }
 
     private var isConversationActivityVisible: Bool {
-        model.status == .working || conversationPipelineActivities.contains(where: \.isActive)
+        model.status == .working || AgentActivityPresentation.hasActiveWork(
+            toolCalls: model.activeToolCalls,
+            subagents: model.activeSubagents
+        )
     }
 
     private func activityLabel(for rawValue: String) -> String {
@@ -4562,6 +5155,22 @@ struct DockPopover: View {
             type == "message.start"
     }
 
+    private func scrollConversationToBottom(
+        _ proxy: ScrollViewProxy,
+        animated: Bool = true,
+        duration: TimeInterval = 0.2
+    ) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.scifiEase(duration: duration)) {
+                    proxy.scrollTo("conversationBottom", anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo("conversationBottom", anchor: .bottom)
+            }
+        }
+    }
+
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
         if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && message.image == nil {
@@ -4571,18 +5180,6 @@ struct DockPopover: View {
                 if message.role == .user {
                     Spacer(minLength: 40)
                     VStack(alignment: .trailing, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text(HumanDateFormatting.timeOnly(message.timestamp))
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(Color.scifiTertiary)
-                            Text("You")
-                                .font(.system(size: 12, weight: .semibold))
-                                .tracking(1.0)
-                                .textCase(.uppercase)
-                                .foregroundStyle(Color.scifiMuted)
-                        }
-                        .padding(.horizontal, 4)
-
                         VStack(alignment: .trailing, spacing: 6) {
                             if let image = message.image {
                                 Image(nsImage: image)
@@ -4599,52 +5196,48 @@ struct DockPopover: View {
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(Color.scifiFg)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(Color.scifiAccentMuted)
+                        .clipShape(MessageBubbleShape(isUser: true))
+                        .overlay(
+                            MessageBubbleShape(isUser: true)
+                                .stroke(Color.scifiAccent.opacity(0.15), lineWidth: 0.5)
+                        )
+                        .shadow(color: Color.scifiAccent.opacity(0.05), radius: 4)
+
+                        Text(HumanDateFormatting.timeOnly(message.timestamp))
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color.scifiTertiary)
+                            .padding(.horizontal, 4)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color.scifiAccentMuted)
-                    .clipShape(MessageBubbleShape(isUser: true))
-                    .overlay(
-                        MessageBubbleShape(isUser: true)
-                            .stroke(Color.scifiAccent.opacity(0.15), lineWidth: 0.5)
-                    )
-                    .shadow(color: Color.scifiAccent.opacity(0.05), radius: 4)
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Text("Hermes")
-                                .font(.system(size: 12, weight: .semibold))
-                                .tracking(1.0)
-                                .textCase(.uppercase)
-                                .foregroundStyle(Color.scifiMuted)
-                            Text(HumanDateFormatting.timeOnly(message.timestamp))
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(Color.scifiTertiary)
-                            if let modelName = message.modelName {
-                                Text("· \(modelName)")
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(Color.scifiTertiary)
-                            }
-                        }
-                        .padding(.horizontal, 4)
-
-                        if message.text.isEmpty {
-                            EmptyView()
-                        } else {
+                        if !message.text.isEmpty {
                             MarkdownMessageView(markdown: message.text)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .foregroundStyle(Color.scifiFg)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color.scifiSurface)
+                                .clipShape(MessageBubbleShape(isUser: false))
+                                .overlay(
+                                    MessageBubbleShape(isUser: false)
+                                        .stroke(Color.scifiBorder, lineWidth: 0.5)
+                                )
                         }
+
+                        HStack(spacing: 6) {
+                            Text(HumanDateFormatting.timeOnly(message.timestamp))
+                            if let modelName = message.modelName {
+                                Text("· \(modelName)")
+                            }
+                        }
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                        .padding(.horizontal, 4)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .foregroundStyle(Color.scifiFg)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.scifiSurface)
-                    .clipShape(MessageBubbleShape(isUser: false))
-                    .overlay(
-                        MessageBubbleShape(isUser: false)
-                            .stroke(Color.scifiBorder, lineWidth: 0.5)
-                    )
                 }
             }
             .padding(.horizontal, 12)
@@ -4710,13 +5303,16 @@ struct DockPopover: View {
                     .foregroundStyle(Color.scifiWarning)
             }
 
-            Text(detail)
-                .font(.system(size: 12.5, design: .monospaced))
-                .textSelection(.enabled)
-                .foregroundStyle(Color.scifiFg)
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView(.vertical) {
+                Text(detail)
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .textSelection(.enabled)
+                    .foregroundStyle(Color.scifiFg)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+                .frame(maxHeight: 160)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
                 .background(
@@ -4858,7 +5454,7 @@ struct DockPopover: View {
                         Image(systemName: "paperclip")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.scifiMuted)
-                            .frame(width: 38, height: 38)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(.scifiPress)
                     .dockHitTarget()
@@ -4869,17 +5465,15 @@ struct DockPopover: View {
                     )
                     .help("Attach image")
 
-                    TextField("Ask Hermes…", text: $model.draft, axis: .vertical)
+                    TextField("Message…", text: $model.draft)
                         .textFieldStyle(.plain)
                         .focused($isComposerFocused)
-                        .lineLimit(1...4)
                         .onSubmit {
                             model.send()
                         }
                         .font(.system(size: 13))
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(Color.scifiSurface4)
@@ -4901,10 +5495,10 @@ struct DockPopover: View {
                     }
                 }) {
                     if speechInput.isRecording {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 38, height: 38)
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                            .frame(width: 44, height: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(Color.scifiDestructive)
@@ -4919,7 +5513,7 @@ struct DockPopover: View {
                                     .foregroundStyle(canSend ? Color.black : Color.scifiMuted)
                             }
                         }
-                        .frame(width: 38, height: 38)
+                        .frame(width: 44, height: 44)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(canSend && !model.isSending ? Color.scifiAccent : Color.scifiSurface6)

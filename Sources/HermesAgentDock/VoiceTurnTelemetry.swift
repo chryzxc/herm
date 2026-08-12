@@ -65,6 +65,7 @@ struct VoiceTurnTelemetry: Equatable {
 struct NativeVoiceCaptureLifecycle: Equatable {
     private(set) var captureArmed = false
     private(set) var hasPendingTranscript = false
+    private(set) var isAwaitingPlaybackDrain = false
     private(set) var startFailures = 0
     private(set) var generation = 0
 
@@ -73,7 +74,7 @@ struct NativeVoiceCaptureLifecycle: Equatable {
     }
 
     mutating func beginCapture() -> Bool {
-        guard !captureArmed, !hasPendingTranscript else { return false }
+        guard !captureArmed, !hasPendingTranscript, !isAwaitingPlaybackDrain else { return false }
         captureArmed = true
         return true
     }
@@ -95,6 +96,7 @@ struct NativeVoiceCaptureLifecycle: Equatable {
         generation &+= 1
         captureArmed = false
         hasPendingTranscript = hasText
+        isAwaitingPlaybackDrain = false
     }
 
     mutating func receivedIdle() -> Bool {
@@ -102,10 +104,23 @@ struct NativeVoiceCaptureLifecycle: Equatable {
         return !hasPendingTranscript
     }
 
-    mutating func completedResponse() -> Bool {
+    /// `message.complete` closes model generation, not speaker playback. Hold
+    /// the normal recorder while Hermes flushes its streamed TTS queue; its
+    /// full-duplex listener remains responsible for real user barge-in.
+    @discardableResult
+    mutating func completedResponse() -> Int {
+        generation &+= 1
         hasPendingTranscript = false
+        captureArmed = false
+        isAwaitingPlaybackDrain = true
         startFailures = 0
-        return !captureArmed
+        return generation
+    }
+
+    mutating func playbackDrainCompleted(generation: Int) -> Bool {
+        guard self.generation == generation, isAwaitingPlaybackDrain else { return false }
+        isAwaitingPlaybackDrain = false
+        return !captureArmed && !hasPendingTranscript
     }
 
     /// Hermes owns the microphone while it captures a spoken interruption.
@@ -116,6 +131,7 @@ struct NativeVoiceCaptureLifecycle: Equatable {
         generation &+= 1
         captureArmed = false
         hasPendingTranscript = true
+        isAwaitingPlaybackDrain = false
         startFailures = 0
         return generation
     }
@@ -130,6 +146,30 @@ struct NativeVoiceCaptureLifecycle: Equatable {
         generation &+= 1
         captureArmed = false
         hasPendingTranscript = false
+        isAwaitingPlaybackDrain = false
         startFailures = 0
+    }
+}
+
+/// Hermes currently has no gateway event for "the final speaker sample has
+/// played". Streaming TTS can finish several seconds after `message.complete`,
+/// so reopening the ordinary recorder at that event feeds Hermes its own
+/// voice. This conservative estimate keeps barge-in on Hermes' dedicated
+/// full-duplex listener while delaying only the next quiet listening turn.
+enum NativeVoicePlaybackDrain {
+    static func estimatedDuration(for text: String) -> TimeInterval {
+        // Hermes' speech path caps a reply at 4,000 characters.
+        let spokenText = String(text.prefix(4_000))
+        let words = spokenText.split(whereSeparator: { $0.isWhitespace }).count
+        let sentenceEnds = spokenText.reduce(into: 0) { count, character in
+            if character == "." || character == "!" || character == "?" {
+                count += 1
+            }
+        }
+        let sentences = max(1, min(sentenceEnds, 12))
+
+        // About 135 spoken words/minute, plus synthesis startup per sentence
+        // and an acoustic tail so CoreAudio has released the output device.
+        return max(2.5, (Double(words) / 2.25) + (Double(sentences) * 0.65) + 0.8)
     }
 }

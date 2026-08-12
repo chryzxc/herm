@@ -241,7 +241,7 @@ final class DeveloperWorkflowModel: ObservableObject {
             updateBaselineStatus(preferences: preferencesStore, repositoryID: id, fingerprint: fingerprint)
             updateWatchState(preferences: preferencesStore)
         }
-        if notificationsEnabled {
+        if notificationsEnabled, HermesAppRuntime.supportsUserNotifications {
             let content = UNMutableNotificationContent()
             content.title = "Repository changed"
             content.body = "\(notice.displayName): \(notice.changedFiles) changed files"

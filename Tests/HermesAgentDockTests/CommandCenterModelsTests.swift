@@ -4,6 +4,19 @@ import Testing
 @testable import HermesAgentDock
 
 struct CommandCenterModelsTests {
+    @Test func sessionPreviewFormatsTransportEnvelopesForNavigation() {
+        let preview = SessionPreviewPresentation.summary("{\"output\":\"\",\"exit_code\":-1,\"error\":\"BLOCKED: Command requires approval\"}")
+
+        #expect(preview == "Blocked — action needs approval")
+        #expect(!preview!.contains("exit_code"))
+        #expect(!preview!.contains("output"))
+    }
+
+    @Test func sessionPreviewKeepsPlainLanguageUpdatesReadable() {
+        #expect(SessionPreviewPresentation.summary("  Reviewing the latest changes.  ") == "Reviewing the latest changes.")
+        #expect(SessionPreviewPresentation.summary("{\"payload\":{}}") == "Session activity updated")
+    }
+
     @Test func missionPrioritizesAttentionAndDoesNotUpgradeTargetedEvidence() {
         let approval = attention("approval", .approval)
         let reminder = attention("reminder", .reminder)
@@ -118,6 +131,17 @@ struct CommandCenterModelsTests {
         let legacy = RepositoryReviewBaseline(repositoryID: "repo", headRevision: "abc", fingerprint: "one", acknowledgedFindingIDs: [])
         #expect(RepositoryReviewBaselineStatus.make(baseline: legacy, fingerprint: "one") == .partial(legacy.reviewedAt))
         #expect(RepositoryReviewBaselineStatus.make(baseline: legacy, fingerprint: "two") == .stale(legacy.reviewedAt))
+    }
+
+    @Test func repositoryFingerprintIncludesFilesBeyondTheReviewDisplayLimit() {
+        let covered = (0..<RepositoryService.maxReviewFiles).map { "worktree:Sources/File\($0).swift|modified|hash-\($0)" }
+        let fullState = covered + ["worktree:Sources/OutsideReviewLimit.swift|modified|outside-hash"]
+
+        let coveredFingerprint = RepositoryService.fingerprint(repositoryID: "repo", headRevision: "abc", identities: covered)
+        let fullFingerprint = RepositoryService.fingerprint(repositoryID: "repo", headRevision: "abc", identities: fullState)
+
+        #expect(coveredFingerprint != fullFingerprint)
+        #expect(fullFingerprint == RepositoryService.fingerprint(repositoryID: "repo", headRevision: "abc", identities: Array(fullState.reversed())))
     }
 
     @Test func worktreeInspectionConcurrencyHasAnExplicitBound() {

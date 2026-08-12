@@ -4,10 +4,12 @@ import Foundation
 final class HermesCapabilityService {
     private var cachedSnapshot: CapabilitySnapshot?
     private var cachedRemindersAvailability: Bool?
+    private var cachedSessionID: String?
 
     func invalidate() {
         cachedSnapshot = nil
         cachedRemindersAvailability = nil
+        cachedSessionID = nil
     }
 
     func probe(
@@ -16,17 +18,20 @@ final class HermesCapabilityService {
         sessionID: String? = nil,
         forceRefresh: Bool = false
     ) async -> [CapabilityState] {
+        let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeSessionID = normalizedSessionID?.isEmpty == false ? normalizedSessionID : nil
         if !forceRefresh,
            let cachedSnapshot,
-           cachedRemindersAvailability == remindersAvailable {
+           cachedRemindersAvailability == remindersAvailable,
+           cachedSessionID == activeSessionID {
             return cachedSnapshot.states
         }
 
         let sessionRPC = await request(client, method: "session.active_list")
         let schedulingRPC = await request(client, method: "cron.manage", params: ["action": "list"])
         let activityRPC: [String: Any]?
-        if let sessionID, !sessionID.isEmpty {
-            activityRPC = await request(client, method: "process.list", params: ["session_id": sessionID])
+        if let activeSessionID {
+            activityRPC = await request(client, method: "process.list", params: ["session_id": activeSessionID])
         } else {
             activityRPC = nil
         }
@@ -356,6 +361,7 @@ final class HermesCapabilityService {
         let snapshot = CapabilitySnapshot(states: states, generatedAt: Date())
         cachedSnapshot = snapshot
         cachedRemindersAvailability = remindersAvailable
+        cachedSessionID = activeSessionID
         return states
     }
 

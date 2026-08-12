@@ -209,7 +209,7 @@ enum DockActionRegistry {
             DockActionDescriptor(action: .refresh, title: "Refresh command center", subtitle: "Refresh live Hermes projections", icon: "arrow.clockwise", category: "Control", keywords: ["reload", "update"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
         ]
         let workflows = WorkflowRecipe.allCases.map { recipe in
-            DockActionDescriptor(action: .workflow(recipe), title: recipe.title, subtitle: recipe.explanation, icon: "wand.and.stars", category: "Workflow", keywords: ["recipe", "review", "verification"], isAvailable: !recipe.requiresRepository || repositoryAvailable, unavailableReason: recipe.requiresRepository && !repositoryAvailable ? "Attach a repository to the active session first" : nil, requiresConfirmation: false)
+            DockActionDescriptor(action: .workflow(recipe), title: recipe.title, subtitle: recipe.explanation, icon: "wand.and.stars", category: "Workflow", keywords: ["recipe", "review", "verification"], isAvailable: !recipe.requiresRepository || repositoryAvailable, unavailableReason: recipe.requiresRepository && !repositoryAvailable ? "Select a local folder for the active project session first" : nil, requiresConfirmation: false)
         }
         return tabs + basics + workflows
     }

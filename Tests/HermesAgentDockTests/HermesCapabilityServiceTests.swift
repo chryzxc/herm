@@ -34,6 +34,24 @@ struct HermesCapabilityServiceTests {
         #expect(client.requestCount > firstRequestCount)
     }
 
+    @Test func capabilityCacheIsScopedToTheActiveSession() async {
+        let client = CapabilityProbeClient()
+        let service = HermesCapabilityService()
+
+        _ = await service.probe(client: client, remindersAvailable: false)
+        let noSessionRequestCount = client.requestCount
+
+        _ = await service.probe(client: client, remindersAvailable: false, sessionID: "session-a")
+        let firstSessionRequestCount = client.requestCount
+        #expect(firstSessionRequestCount > noSessionRequestCount)
+
+        _ = await service.probe(client: client, remindersAvailable: false, sessionID: "session-a")
+        #expect(client.requestCount == firstSessionRequestCount)
+
+        _ = await service.probe(client: client, remindersAvailable: false, sessionID: "session-b")
+        #expect(client.requestCount > firstSessionRequestCount)
+    }
+
     @Test func classifiesCapabilitiesBySourceAndAccess() async {
         let client = CapabilityProbeClient()
         let capabilities = await HermesCapabilityService().probe(client: client, remindersAvailable: true)

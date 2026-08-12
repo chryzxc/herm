@@ -36,6 +36,7 @@ struct ScifiPrimaryButtonStyle: ButtonStyle {
 struct ScifiGlassTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
+            .textFieldStyle(.plain)
             .font(.body)
             .foregroundStyle(Color.scifiFg)
             .padding(.horizontal, 10)
@@ -43,9 +44,8 @@ struct ScifiGlassTextFieldStyle: TextFieldStyle {
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    // Inputs use the same opaque cool surface as the rest of
-                    // the controls, keeping their color stable over glass panes
-                    // and preventing the gray material tint seen in Activity.
+                    // The shared canvas keeps inputs consistent across panes;
+                    // the plain field style removes the warm native field fill.
                     .fill(Color.scifiControlSurface)
                     .stroke(Color.scifiBorder, lineWidth: 0.5)
             )
