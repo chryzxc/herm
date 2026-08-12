@@ -1,5 +1,42 @@
 import SwiftUI
 
+extension Color {
+    static let scifiBg = Color.black
+    static let scifiCanvas = Color(red: 0.035, green: 0.045, blue: 0.085)
+    static let scifiSurface = Color.white.opacity(0.03)
+    static let scifiSurface2 = Color.white.opacity(0.02)
+    static let scifiSurface4 = Color.white.opacity(0.04)
+    static let scifiSurface6 = Color.white.opacity(0.06)
+    static let scifiSurface8 = Color.white.opacity(0.08)
+    static let scifiControlSurface = scifiCanvas
+    static let scifiBorderStrong = Color.white.opacity(0.12)
+    static let scifiBorder = Color.white.opacity(0.08)
+    static let scifiBorderLight = Color.white.opacity(0.06)
+    static let scifiAccent = Color(red: 0, green: 0.65, blue: 0.95)
+    static let scifiAccentMuted = Color(red: 0, green: 0.67, blue: 1).opacity(0.08)
+    static let scifiAccentGlow = Color(red: 0, green: 0.67, blue: 1).opacity(0.25)
+    static let scifiFg = Color(white: 0.94)
+    static let scifiMuted = Color(white: 0.58)
+    static let scifiTertiary = Color(white: 0.35)
+    static let scifiSuccess = Color(red: 0.16, green: 0.78, blue: 0.25)
+    static let scifiWarning = Color(red: 1, green: 0.74, blue: 0.18)
+    static let scifiDestructive = Color(red: 1, green: 0.37, blue: 0.34)
+}
+
+extension Animation {
+    static func scifiEase(duration: TimeInterval = 0.3) -> Animation {
+        .timingCurve(0.2, 0.8, 0.2, 1, duration: duration)
+    }
+}
+
+extension View {
+    /// Keeps compact glass controls visually light while preserving the 44pt
+    /// hit area specified by the Dock design system.
+    func dockHitTarget() -> some View {
+        frame(minWidth: 44, minHeight: 44)
+    }
+}
+
 /// Shared interaction and input treatments derived from DESIGN.md's glass
 /// button and input specifications. Keeping them here prevents native control
 /// styles from leaking into individual Control, chat, or Activity views.

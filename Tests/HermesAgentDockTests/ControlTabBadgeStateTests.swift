@@ -4,8 +4,8 @@ import Testing
 
 struct ControlTabBadgeStateTests {
     @Test func keepsDailyWorkInThePrimaryNavigationAndGroupsSupportingViews() {
-        #expect(ControlTab.primaryNavigation == [.today, .inbox, .kanban, .activity])
-        #expect(ControlTab.sessionNavigation == [.activity, .changes, .verification])
+        #expect(ControlTab.primaryNavigation == [.today, .inbox, .kanban])
+        #expect(ControlTab.sessionNavigation == [.session, .activity, .changes, .verification])
         #expect(ControlTab.workspaceNavigation == [.projects])
         #expect(ControlTab.toolsNavigation == [.automations, .search, .core])
         #expect(Set(ControlTab.primaryNavigation + ControlTab.workspaceNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
