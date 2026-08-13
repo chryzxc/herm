@@ -176,6 +176,18 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
+    /// The selected Hermes project is the default local context. A session can
+    /// override it when it belongs to a different project, but an unrelated or
+    /// newly opened session should still render the currently selected project.
+    func projectPath(forSessionID sessionID: String?) -> String? {
+        if let sessionID,
+           let sessionPath = task(forSessionID: sessionID)?.projectPath,
+           !sessionPath.isEmpty {
+            return sessionPath
+        }
+        return projectPath?.isEmpty == false ? projectPath : nil
+    }
+
     /// A Hermes project groups multiple sessions around one checkout. Persist
     /// the selected local folder against each known session so change review
     /// follows the current session instead of relying on a global path.

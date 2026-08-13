@@ -18,6 +18,10 @@ struct WorkspaceActivitySidebar: View {
     @State private var selectedModelID = ""
     @State private var selectedAgentID: String?
     @State private var selectedRepositoryDiff: RepositoryDiff?
+    @State private var codeDocument: RepositoryFileDocument?
+    @State private var selectedRepositoryFile: RepositoryFileChange?
+    @State private var selectedProjectSessionID: String?
+    @State private var codeWorkspaceError: String?
     @State private var isLoadingRepositoryDiff = false
     @State private var isRefreshingRepository = false
     @State private var showingRepositoryPicker = false
@@ -184,6 +188,10 @@ struct WorkspaceActivitySidebar: View {
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
         .onChange(of: model.sessionID) { _, sessionID in control.focus(sessionID: sessionID) }
+        .onChange(of: control.projectSessions) { _, sessions in
+            guard let path = selectedProjectFolderPath, !sessions.isEmpty else { return }
+            store.attachProject(at: path, toSessions: sessions)
+        }
         .onChange(of: control.capabilities) { _, _ in
             guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
             control.refreshKanban()
@@ -423,18 +431,20 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var modePicker: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 0) {
             ForEach(ControlTab.primaryNavigation) { mode in
                 modeButton(mode)
             }
             Button { select(.projects) } label: {
-                Text("PROJECTS")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .tracking(0.75)
+                Text("Projects")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(selectedMode == .projects ? Color.scifiFg : Color.scifiMuted)
-                    .frame(maxWidth: .infinity, minHeight: 36)
-                    .background(selectedMode == .projects ? Color.scifiAccent.opacity(0.11) : .clear)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .overlay(alignment: .bottom) {
+                        if selectedMode == .projects {
+                            Color.scifiAccent.frame(height: 2)
+                        }
+                    }
             }
             .buttonStyle(.scifiPress)
             .frame(maxWidth: .infinity)
@@ -448,7 +458,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             } label: {
                 navigationMenuLabel(
-                    title: "MORE",
+                    title: "More",
                     detail: isToolsModeSelected ? selectedMode.tabLabel : nil,
                     badgeCount: toolsBadgeCount,
                     isUrgent: toolsBadgeIsUrgent,
@@ -461,7 +471,7 @@ struct WorkspaceActivitySidebar: View {
             .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 0)
         .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
     }
 
@@ -491,12 +501,14 @@ struct WorkspaceActivitySidebar: View {
                 badgeView(count: badgeCount, isUrgent: isUrgent)
             }
         }
-        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-        .tracking(0.75)
+        .font(.system(size: 12, weight: .medium))
         .foregroundStyle(isSelected ? Color.scifiFg : Color.scifiMuted)
-        .frame(maxWidth: .infinity, minHeight: 36)
-        .background(isSelected ? Color.scifiAccent.opacity(0.11) : .clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 34)
+        .overlay(alignment: .bottom) {
+            if isSelected {
+                Color.scifiAccent.frame(height: 2)
+            }
+        }
         .contentShape(Rectangle())
     }
 
@@ -517,18 +529,20 @@ struct WorkspaceActivitySidebar: View {
     private func modeButton(_ mode: ControlTab) -> some View {
         Button { select(mode) } label: {
             HStack(spacing: 5) {
-                Text(mode.tabLabel.uppercased())
+                Text(mode.tabLabel)
                     .lineLimit(1)
                 if badgeCount(for: mode) > 0 {
                     badgeView(count: badgeCount(for: mode), isUrgent: badgeIsUrgent(for: mode))
                 }
             }
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .tracking(0.75)
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
-            .frame(maxWidth: .infinity, minHeight: 36)
-            .background(selectedMode == mode ? Color.scifiAccent.opacity(0.11) : .clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .overlay(alignment: .bottom) {
+                if selectedMode == mode {
+                    Color.scifiAccent.frame(height: 2)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.scifiPress)
@@ -641,6 +655,15 @@ struct WorkspaceActivitySidebar: View {
     private var changesContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("CHANGE REVIEW")
+            if let codeWorkspaceError {
+                Text(codeWorkspaceError)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.scifiWarning.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
             if let review = workflow.review {
                 HStack(spacing: 8) {
                     todayMetric("BLOCKERS", value: review.blockerCount, color: review.blockerCount > 0 ? .scifiDestructive : .scifiSuccess)
@@ -678,71 +701,59 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiAccent)
             }
-            if let changes = workflow.changes, workflow.repository.isGitRepository {
+            if workflow.repository.path == workflow.repository.path {
+                RepositoryChangesBrowser(
+                    model: model,
+                    workflow: workflow,
+                    projectPath: activeRepositoryPath,
+                    onRefresh: { await refreshRepository() },
+                    onSelectProjectFolder: { showingRepositoryPicker = true }
+                )
+            } else if let changes = workflow.changes, workflow.repository.isGitRepository {
+                if let codeDocument {
+                    RepositoryCodeWorkspaceView(
+                        document: codeDocument,
+                        diff: selectedRepositoryDiff,
+                        isLoadingDiff: isLoadingRepositoryDiff,
+                        onClose: {
+                            self.codeDocument = nil
+                            selectedRepositoryFile = nil
+                            selectedRepositoryDiff = nil
+                        },
+                        onReloadDiff: {
+                            if let selectedRepositoryFile { loadRepositoryDiff(for: selectedRepositoryFile) }
+                        },
+                        onSave: { draft in
+                            let saved = await RepositoryService.saveDocument(path: workflow.repository.path, filePath: codeDocument.path, contents: draft)
+                            guard saved else { return false }
+                            await refreshRepository()
+                            self.codeDocument = RepositoryFileDocument(path: codeDocument.path, contents: draft, byteCount: draft.lengthOfBytes(using: .utf8))
+                            if let selectedRepositoryFile { loadRepositoryDiff(for: selectedRepositoryFile) }
+                            return true
+                        }
+                    )
+                } else {
                 HStack(spacing: 8) {
                     todayMetric("STAGED", value: changes.stagedCount, color: .scifiAccent)
                     todayMetric("UNSTAGED", value: changes.unstagedCount, color: .scifiWarning)
                     todayMetric("UNTRACKED", value: changes.untrackedCount, color: .scifiMuted)
                     todayMetric("CONFLICTS", value: changes.conflictedCount, color: changes.conflictedCount > 0 ? .scifiDestructive : .scifiSuccess)
                 }
-                Text("Read-only working-tree projection. Agent attribution appears only when Hermes reported an exact written file path.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiTertiary)
                 if changes.files.isEmpty {
                     emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
                 } else {
-                    ForEach(changes.files) { file in
-                        DisclosureGroup {
-                            VStack(alignment: .leading, spacing: 8) {
-                                if let diff = selectedRepositoryDiff, diff.path == file.path, diff.isStaged == file.isStaged {
-                                    Text(diff.text.isEmpty ? "No textual diff is available for this file." : diff.text)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.scifiFg)
-                                        .textSelection(.enabled)
-                                    if diff.isTruncated { Text("Diff truncated for safe display.").font(.system(size: 12)).foregroundStyle(Color.scifiWarning) }
-                                    diffAuditSummary(diff)
-                                } else {
-                                    Button(isLoadingRepositoryDiff ? "LOADING DIFF…" : "LOAD DIFF") {
-                                        Task {
-                                            isLoadingRepositoryDiff = true
-                                            selectedRepositoryDiff = await RepositoryService.diff(path: workflow.repository.path, file: file)
-                                            isLoadingRepositoryDiff = false
-                                        }
-                                    }
-                                    .buttonStyle(.scifiPress)
-                                    .foregroundStyle(Color.scifiAccent)
-                                    .disabled(isLoadingRepositoryDiff)
-                                }
-                                let writers = model.activeSubagents.filter { $0.filesWritten.contains(file.path) }
-                                if workflow.isReviewCovered(file) {
-                                    Button(workflow.isReviewed(file) ? "REVIEWED" : "MARK REVIEWED") { workflow.toggleReviewed(file) }
-                                        .buttonStyle(.scifiPress)
-                                        .foregroundStyle(workflow.isReviewed(file) ? Color.scifiSuccess : Color.scifiAccent)
-                                }
-                                if writers.isEmpty {
-                                    Text("UNATTRIBUTED LOCAL CHANGE").font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
-                                } else {
-                                    Text("HERMES REPORTED WRITE · " + writers.map { $0.name ?? $0.role ?? $0.id }.joined(separator: ", "))
-                                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiAccent)
-                                }
-                            }
-                            .padding(.top, 5)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: file.status == .conflicted ? "exclamationmark.octagon" : "doc")
-                                    .foregroundStyle(file.status == .conflicted ? Color.scifiDestructive : Color.scifiAccent)
-                                Text(file.path).lineLimit(1).foregroundStyle(Color.scifiFg)
-                                Spacer()
-                                Text(file.isStaged ? "STAGED" : file.status.rawValue.uppercased())
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
-                            }
-                            .font(.system(size: 12))
-                        }
-                        .scifiListRow()
-                    }
+                    changeSections(changes)
                 }
+                }
+            } else if let path = activeRepositoryPath {
+                let inspecting = isRefreshingRepository || workflow.isRefreshing
+                emptyState(
+                    icon: inspecting ? "arrow.triangle.2.circlepath" : "folder",
+                    title: inspecting ? "Inspecting project" : "Project is not a Git repository",
+                    detail: inspecting ? path : "\(path) is available as a local project folder, but it has no Git working tree to inspect."
+                )
             } else {
-                emptyState(icon: "doc.text.magnifyingglass", title: "No local project folder", detail: "Open the active Hermes project, then select its local folder to inspect read-only changes.")
+                emptyState(icon: "doc.text.magnifyingglass", title: "No project selected", detail: "Choose a project from Projects to inspect its local changes.")
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
@@ -750,6 +761,104 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.scifiAccent)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func changeSections(_ changes: RepositoryChangeSnapshot) -> some View {
+        let staged = changes.files.filter(\.isStaged)
+        let unstaged = changes.files.filter { !$0.isStaged && $0.status != .untracked }
+        let untracked = changes.files.filter { $0.status == .untracked }
+        changeSection("STAGED", files: staged, color: .scifiAccent)
+        changeSection("UNSTAGED", files: unstaged, color: .scifiWarning)
+        changeSection("UNTRACKED", files: untracked, color: .scifiMuted)
+    }
+
+    @ViewBuilder
+    private func changeSection(_ title: String, files: [RepositoryFileChange], color: Color) -> some View {
+        if !files.isEmpty {
+            HStack(spacing: 7) {
+                Circle().fill(color).frame(width: 6, height: 6)
+                sectionLabel("\(title)  ·  \(files.count)")
+            }
+            ForEach(files) { file in
+                changeFileRow(file)
+            }
+        }
+    }
+
+    private func changeFileRow(_ file: RepositoryFileChange) -> some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: 8) {
+                if let diff = selectedRepositoryDiff, diff.path == file.path, diff.isStaged == file.isStaged {
+                    Text(diff.text.isEmpty ? "No textual diff is available for this file." : diff.text)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.scifiFg)
+                        .textSelection(.enabled)
+                    if diff.isTruncated { Text("Diff truncated for safe display.").font(.system(size: 12)).foregroundStyle(Color.scifiWarning) }
+                    diffAuditSummary(diff)
+                } else {
+                    Button(isLoadingRepositoryDiff ? "LOADING DIFF…" : "LOAD DIFF") { loadRepositoryDiff(for: file) }
+                        .buttonStyle(.scifiPress)
+                        .foregroundStyle(Color.scifiAccent)
+                        .disabled(isLoadingRepositoryDiff)
+                }
+                let writers = model.activeSubagents.filter { $0.filesWritten.contains(file.path) }
+                Button("OPEN CODE WORKSPACE") { openCodeWorkspace(for: file) }
+                    .buttonStyle(.scifiPress)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                    .disabled(isLoadingRepositoryDiff)
+                if workflow.isReviewCovered(file) {
+                    Button(workflow.isReviewed(file) ? "REVIEWED" : "MARK REVIEWED") { workflow.toggleReviewed(file) }
+                        .buttonStyle(.scifiPress)
+                        .foregroundStyle(workflow.isReviewed(file) ? Color.scifiSuccess : Color.scifiAccent)
+                }
+                Text(writers.isEmpty
+                    ? "UNATTRIBUTED LOCAL CHANGE"
+                    : "HERMES REPORTED WRITE · " + writers.map { $0.name ?? $0.role ?? $0.id }.joined(separator: ", "))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(writers.isEmpty ? Color.scifiTertiary : Color.scifiAccent)
+            }
+            .padding(.top, 5)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: file.status == .conflicted ? "exclamationmark.octagon" : "doc")
+                    .foregroundStyle(file.status == .conflicted ? Color.scifiDestructive : file.isStaged ? Color.scifiAccent : Color.scifiMuted)
+                Text(file.path).lineLimit(1).foregroundStyle(Color.scifiFg)
+                Spacer()
+                Text(file.isStaged ? "STAGED" : file.status.rawValue.uppercased())
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+            }
+            .font(.system(size: 12))
+        }
+        .scifiListRow()
+    }
+
+    private func loadRepositoryDiff(for file: RepositoryFileChange) {
+        Task {
+            isLoadingRepositoryDiff = true
+            selectedRepositoryDiff = await RepositoryService.diff(path: workflow.repository.path, file: file)
+            isLoadingRepositoryDiff = false
+        }
+    }
+
+    private func openCodeWorkspace(for file: RepositoryFileChange) {
+        Task {
+            isLoadingRepositoryDiff = true
+            codeWorkspaceError = nil
+            async let document = RepositoryService.loadDocument(path: workflow.repository.path, filePath: file.path)
+            async let diff = RepositoryService.diff(path: workflow.repository.path, file: file)
+            let (loadedDocument, loadedDiff) = await (document, diff)
+            guard let loadedDocument else {
+                isLoadingRepositoryDiff = false
+                codeWorkspaceError = "This file cannot be opened inline. Only regular UTF-8 files up to 256 KB are supported."
+                return
+            }
+            selectedRepositoryFile = file
+            codeDocument = loadedDocument
+            selectedRepositoryDiff = loadedDiff
+            isLoadingRepositoryDiff = false
         }
     }
 
@@ -1273,7 +1382,7 @@ struct WorkspaceActivitySidebar: View {
     private var tabBadges: ControlTabBadgeState {
         ControlTabBadgeState.make(
             attention: control.attention,
-            activeAgentCount: model.activeSubagents.filter { $0.status.lowercased() != "complete" }.count,
+            activeAgentCount: model.activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.count,
             activeToolCount: model.activeToolCalls.filter { !$0.isComplete }.count,
             changeCount: workflow.repository.conflictedFiles > 0 ? workflow.repository.conflictedFiles : workflow.repository.changedFiles,
             verificationCount: control.verification?.state == .failed ? 1 : (control.verification?.evidence?.scope?.lowercased() == "targeted" ? 1 : 0)
@@ -1296,11 +1405,11 @@ struct WorkspaceActivitySidebar: View {
     private var projectsContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             projectionRefreshNotice("projects")
-            if let selectedProjectID = control.selectedProjectID,
-               let project = control.projects.first(where: { $0.id == selectedProjectID }) {
+            if let project = control.selectedProject {
                 HStack {
                     Button {
                         control.closeProject()
+                        selectedProjectSessionID = nil
                     } label: {
                         Label("PROJECTS", systemImage: "chevron.left")
                     }
@@ -1322,7 +1431,8 @@ struct WorkspaceActivitySidebar: View {
                     }
                     ForEach(control.projectSessions) { session in
                         Button {
-                            control.openProjectSession(session)
+                            selectedProjectSessionID = session.id
+                        openProjectSession(session)
                         } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack {
@@ -1353,7 +1463,7 @@ struct WorkspaceActivitySidebar: View {
                         .buttonStyle(.scifiPress)
                     }
                 }
-                if projectContainsCurrentSession {
+                if selectedProjectSessionID != nil {
                     projectChangesContent
                 }
             } else if control.projects.isEmpty {
@@ -1363,7 +1473,7 @@ struct WorkspaceActivitySidebar: View {
                 sectionLabel("PROJECTS  ·  \(control.projects.count)")
                 ForEach(control.projects) { project in
                     Button {
-                        control.openProject(project)
+                        openProject(project)
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: project.isActive ? "folder.fill" : "folder")
@@ -1432,14 +1542,34 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private func projectMetadata(_ project: ProjectSummary) -> String {
-        let counts = "\(project.repoCount) repos  ·  \(project.sessionCount) sessions"
+        let folderLabel = project.repoCount == 1 ? "1 folder" : "\(project.repoCount) folders"
+        let sessionLabel = project.sessionCount == 1 ? "1 session" : "\(project.sessionCount) sessions"
+        let counts = "\(folderLabel)  ·  \(sessionLabel)"
         guard project.name != "__no_project__" else { return counts }
         return "\(counts)  ·  \(project.name)"
     }
 
-    private var projectContainsCurrentSession: Bool {
-        guard let sessionID = model.sessionID else { return false }
-        return control.projectSessions.contains { $0.id == sessionID }
+    private var selectedProjectFolderPath: String? {
+        guard let project = control.selectedProject,
+              project.name != "__no_project__",
+              project.name.hasPrefix("/"),
+              FileManager.default.fileExists(atPath: project.name) else { return nil }
+        return project.name
+    }
+
+    private func openProject(_ project: ProjectSummary) {
+        control.openProject(project)
+        guard project.name != "__no_project__",
+              project.name.hasPrefix("/"),
+              FileManager.default.fileExists(atPath: project.name) else { return }
+        store.attachProject(at: project.name)
+    }
+
+    private func openProjectSession(_ session: SessionSummary) {
+        if let path = selectedProjectFolderPath {
+            store.attachProject(at: path, toSessionID: session.id)
+        }
+        control.openProjectSession(session)
     }
 
     private var projectChangesContent: some View {
@@ -2839,10 +2969,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var activeRepositoryPath: String? {
-        guard let task = currentTask,
-              let sessionID = model.sessionID,
-              task.sessionID == sessionID else { return nil }
-        return task.projectPath
+        store.projectPath(forSessionID: model.sessionID)
     }
 
     /// A repository path can be shared by multiple sessions. The task identity
@@ -2900,7 +3027,7 @@ struct WorkspaceActivitySidebar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 rosterTile(title: "ALL", subtitle: "Hermes", status: model.status.title, color: statusColor, id: nil)
-                ForEach(model.activeSubagents) { agent in
+                ForEach(model.displayedSubagents) { agent in
                     rosterTile(title: agent.role ?? initials(for: agent.goal), subtitle: shortGoal(agent.goal), status: agent.status, color: nativeAgentColor(agent.status), id: agent.id)
                 }
             }

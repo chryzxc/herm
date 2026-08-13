@@ -65,6 +65,18 @@ struct ControlCenterProjectTests {
         #expect(agents.first?.sessionID == "session-1")
     }
 
+    @Test func excludesCompletedAgentsFromTheLiveDelegationProjection() {
+        let agents = ControlCenterModel.parseAgents([
+            "active": [
+                ["subagent_id": "running", "status": "running"],
+                ["subagent_id": "finished", "status": "completed"],
+                ["subagent_id": "failed", "status": "failed"]
+            ]
+        ])
+
+        #expect(agents.map(\.id) == ["running"])
+    }
+
     @Test func searchesAcrossHydratedControlSources() {
         let results = ControlCenterModel.makeSearchResults(
             query: "launch",
@@ -292,6 +304,7 @@ struct ControlCenterProjectTests {
         try await Task.sleep(for: .milliseconds(80))
 
         #expect(model.selectedProjectID == "fast")
+        #expect(model.selectedProject?.id == "fast")
         #expect(model.projectSessions.map(\.id) == ["fast-session"])
 
         model.openProject(slowProject)
@@ -299,6 +312,7 @@ struct ControlCenterProjectTests {
         try await Task.sleep(for: .milliseconds(80))
 
         #expect(model.selectedProjectID == nil)
+        #expect(model.selectedProject == nil)
         #expect(model.projectSessions.isEmpty)
     }
 

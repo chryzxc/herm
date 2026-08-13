@@ -13,6 +13,25 @@ struct RepositoryFileChange: Identifiable, Equatable {
     var id: String { "\(isStaged ? "staged" : "worktree"):\(path)" }
 }
 
+/// A compact, deterministic tree projection for the Changes explorer. It is
+/// intentionally limited to files Git reports as changed; browsing arbitrary
+/// project files stays outside the Dock's source-control surface.
+struct RepositoryExplorerEntry: Identifiable, Equatable {
+    let path: String
+    let depth: Int
+    let isDirectory: Bool
+    let change: RepositoryFileChange?
+
+    var id: String { "\(isDirectory ? "directory" : "file"):\(path)" }
+}
+
+struct ProjectFileEntry: Identifiable, Equatable {
+    let path: String
+    let depth: Int
+    let isDirectory: Bool
+    var id: String { "\(isDirectory ? "directory" : "file"):\(path)" }
+}
+
 struct RepositoryChangeSnapshot: Equatable {
     let repositoryID: String
     let headRevision: String?
@@ -32,6 +51,17 @@ struct RepositoryDiff: Equatable {
     let text: String
     let isTruncated: Bool
     let isStaged: Bool
+}
+
+/// A bounded, UTF-8 text file projection for the Dock's inline code workspace.
+/// The repository remains the canonical owner; this is only an ephemeral editor
+/// draft rendered inside the menu-bar popover.
+struct RepositoryFileDocument: Identifiable, Equatable {
+    let path: String
+    let contents: String
+    let byteCount: Int
+
+    var id: String { path }
 }
 
 enum RepositoryDiffAuditSeverity: String, Equatable {
@@ -208,8 +238,10 @@ struct RepositorySnapshot: Equatable {
 enum RepositoryService {
     private static let maxDiffBytes = 48_000
     private static let maxDiffLines = 900
+    static let maxDocumentBytes = 256_000
     static let maxReviewFiles = 200
     static let maxConcurrentWorktreeInspections = 8
+    static let maxProjectExplorerEntries = 400
 
     static func inspect(path: String) async -> RepositorySnapshot {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
@@ -260,6 +292,52 @@ enum RepositoryService {
         return RepositoryChangeSnapshot(repositoryID: RepositorySnapshot.stableID(path: normalizedPath), headRevision: head.exitCode == 0 ? head.output : nil, branch: branch.output.isEmpty ? "detached HEAD" : branch.output, files: files, refreshedAt: .now)
     }
 
+    static func explorerEntries(for files: [RepositoryFileChange]) -> [RepositoryExplorerEntry] {
+        var entries: [RepositoryExplorerEntry] = []
+        var knownDirectories = Set<String>()
+        for file in files.sorted(by: { $0.path.localizedStandardCompare($1.path) == .orderedAscending }) {
+            let components = file.path.split(separator: "/").map(String.init)
+            guard !components.isEmpty else { continue }
+            for index in components.indices.dropLast() {
+                let directory = components[...index].joined(separator: "/")
+                if knownDirectories.insert(directory).inserted {
+                    entries.append(RepositoryExplorerEntry(path: directory, depth: index, isDirectory: true, change: nil))
+                }
+            }
+            entries.append(RepositoryExplorerEntry(path: file.path, depth: max(0, components.count - 1), isDirectory: false, change: file))
+        }
+        return entries
+    }
+
+    static func projectFiles(path: String) async -> [ProjectFileEntry] {
+        let root = URL(fileURLWithPath: path).standardizedFileURL
+        return await Task.detached(priority: .utility) {
+            let ignored = Set([".git", ".build", "node_modules", "DerivedData"])
+            guard let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else { return [] }
+            var entries: [ProjectFileEntry] = []
+            while let url = enumerator.nextObject() as? URL, entries.count < maxProjectExplorerEntries {
+                let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
+                let components = relative.split(separator: "/").map(String.init)
+                guard !components.isEmpty else { continue }
+                if ignored.contains(components.last ?? "") {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                guard values?.isDirectory == true || values?.isRegularFile == true else { continue }
+                entries.append(ProjectFileEntry(path: relative, depth: components.count - 1, isDirectory: values?.isDirectory == true))
+            }
+            return entries.sorted { lhs, rhs in
+                if lhs.path == rhs.path { return lhs.isDirectory && !rhs.isDirectory }
+                return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
+            }
+        }.value
+    }
+
     static func diff(path: String, file: RepositoryFileChange) async -> RepositoryDiff? {
         guard isSafeRelativePath(file.path) else { return nil }
         let command = diffCommand(for: file)
@@ -267,6 +345,44 @@ enum RepositoryService {
         guard command.successCodes.contains(result.exitCode) else { return nil }
         let bounded = boundDiff(result.output)
         return RepositoryDiff(path: file.path, text: bounded.text, isTruncated: bounded.isTruncated, isStaged: file.isStaged)
+    }
+
+    static func loadDocument(path repositoryPath: String, filePath: String) async -> RepositoryFileDocument? {
+        guard let url = documentURL(repositoryPath: repositoryPath, filePath: filePath) else { return nil }
+        return await Task.detached(priority: .utility) {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let data = try? Data(contentsOf: url),
+                  data.count <= maxDocumentBytes,
+                  let contents = String(data: data, encoding: .utf8) else { return nil }
+            return RepositoryFileDocument(path: filePath, contents: contents, byteCount: data.count)
+        }.value
+    }
+
+    /// Writes only a regular UTF-8 file inside the active repository. The
+    /// caller refreshes Git projections afterwards; no editor state is stored.
+    static func saveDocument(path repositoryPath: String, filePath: String, contents: String) async -> Bool {
+        guard let url = documentURL(repositoryPath: repositoryPath, filePath: filePath),
+              contents.lengthOfBytes(using: .utf8) <= maxDocumentBytes else { return false }
+        return await Task.detached(priority: .utility) {
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular else { return false }
+            do {
+                try Data(contents.utf8).write(to: url, options: .atomic)
+                return true
+            } catch {
+                return false
+            }
+        }.value
+    }
+
+    static func documentURL(repositoryPath: String, filePath: String) -> URL? {
+        guard isSafeRelativePath(filePath) else { return nil }
+        let root = URL(fileURLWithPath: repositoryPath).standardizedFileURL
+        let file = root.appendingPathComponent(filePath).standardizedFileURL
+        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        guard file.path.hasPrefix(rootPath) else { return nil }
+        return file
     }
 
     static func review(path: String) async -> RepositoryReviewSnapshot? {

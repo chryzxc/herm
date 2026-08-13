@@ -44,6 +44,19 @@ struct WorkspaceStoreTests {
         #expect(store.task(forSessionID: "session-2")?.projectPath == "/tmp/project")
     }
 
+    @Test func selectedProjectFolderProvidesContextUntilASessionOverridesIt() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+
+        store.attachProject(at: "/tmp/selected-project")
+        #expect(store.projectPath(forSessionID: "new-session") == "/tmp/selected-project")
+
+        store.attachProject(at: "/tmp/session-project", toSessionID: "session-1")
+        #expect(store.projectPath(forSessionID: "session-1") == "/tmp/session-project")
+        #expect(store.projectPath(forSessionID: "another-session") == "/tmp/session-project")
+    }
+
     @Test func migratesLegacySessionTasksAndCreatesOneBackup() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }
