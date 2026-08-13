@@ -40,6 +40,10 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var isCreatingKanbanTask = false
     @Published private(set) var projectSessions: [SessionSummary] = []
     @Published private(set) var selectedProjectID: String?
+    /// Keeps the Projects detail view stable while its background projection is
+    /// refreshing. A selected project can briefly be absent from a partial
+    /// `projects.tree` response, but that must not dismiss the user's detail.
+    @Published private(set) var selectedProject: ProjectSummary?
     @Published private(set) var capabilities: [CapabilityState] = []
     @Published private(set) var diagnostics: [HermesDiagnostic] = []
     @Published private(set) var isRefreshing = false
@@ -303,7 +307,12 @@ final class ControlCenterModel: ObservableObject {
 
                 do {
                     let result = try await rpc.projectsTree()
-                    projects = Self.parseProjects(result)
+                    let refreshedProjects = Self.parseProjects(result)
+                    projects = refreshedProjects
+                    if let selectedProjectID,
+                       let refreshedSelection = refreshedProjects.first(where: { $0.id == selectedProjectID }) {
+                        selectedProject = refreshedSelection
+                    }
                     recordProjectionSuccess("projects")
                 } catch {
                     let message = error.localizedDescription
@@ -566,6 +575,7 @@ final class ControlCenterModel: ObservableObject {
         projectSessionsGeneration = generation
         currentFocus = ControlReference(source: .hermesProject, sourceID: project.id, projectID: project.id)
         selectedProjectID = project.id
+        selectedProject = project
         projectSessions = []
         Task {
             do {
@@ -583,6 +593,7 @@ final class ControlCenterModel: ObservableObject {
     func closeProject() {
         projectSessionsGeneration = UUID()
         selectedProjectID = nil
+        selectedProject = nil
         projectSessions = []
     }
 
@@ -1688,10 +1699,14 @@ final class ControlCenterModel: ObservableObject {
         return rows.compactMap { row in
             let id = (row["subagent_id"] as? String) ?? (row["id"] as? String)
             guard let id else { return nil }
+            let state = DockModel.canonicalAgentStatus(
+                (row["status"] as? String) ?? (row["state"] as? String)
+            ) ?? "running"
+            guard AgentActivityPresentation.isActiveStatus(state) else { return nil }
             return AgentSummary(
                 id: id,
                 name: (row["name"] as? String) ?? (row["role"] as? String) ?? id,
-                state: (row["status"] as? String) ?? (row["state"] as? String) ?? "running",
+                state: state,
                 sessionID: row["session_id"] as? String ?? row["sessionID"] as? String
             )
         }

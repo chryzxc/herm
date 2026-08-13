@@ -53,6 +53,24 @@ struct CommandCenterModelsTests {
         #expect(files.contains { $0.path == "new.swift" && $0.status == .untracked })
     }
 
+    @Test func changedFileExplorerBuildsAStablePathTree() {
+        let files = [
+            RepositoryFileChange(path: "Sources/App/App.swift", status: .modified, isStaged: false, renameSource: nil),
+            RepositoryFileChange(path: "Sources/App/Theme.swift", status: .modified, isStaged: true, renameSource: nil),
+            RepositoryFileChange(path: "README.md", status: .untracked, isStaged: false, renameSource: nil)
+        ]
+
+        let entries = RepositoryService.explorerEntries(for: files)
+
+        #expect(entries.map(\.path) == ["README.md", "Sources", "Sources/App", "Sources/App/App.swift", "Sources/App/Theme.swift"])
+        #expect(entries.map(\.depth) == [0, 0, 1, 2, 2])
+        #expect(entries.filter(\.isDirectory).map(\.path) == ["Sources", "Sources/App"])
+    }
+
+    @Test func projectExplorerHasAnExplicitBound() {
+        #expect(RepositoryService.maxProjectExplorerEntries == 400)
+    }
+
     @Test func diffBoundReportsTruncation() {
         let input = Array(repeating: "line", count: 1_000).joined(separator: "\n")
         let result = RepositoryService.boundDiff(input)

@@ -35,6 +35,8 @@ final class DockModel: ObservableObject {
     @Published var runtimeModelOptions: [HermesModelOption] = []
     @Published private(set) var sessionModelOptionID: String?
     @Published private(set) var isUpdatingSessionModel = false
+    @Published private(set) var sessionReasoningVariant: HermesReasoningVariant?
+    @Published private(set) var isUpdatingSessionReasoning = false
     @Published private(set) var voiceState: HermesVoiceState = .inactive
     @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
     @Published private(set) var composerFocusRequest = 0
@@ -56,10 +58,26 @@ final class DockModel: ObservableObject {
     private var agentStateBySessionID: [String: SessionAgentState] = [:]
     private let agentStateStore: SessionAgentStateStore
     private var sessionResumeGeneration = 0
-    private var lastAgentDiscovery = Date.distantPast
     private var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
     private let playApprovalSound: () -> Void
+
+    /// Presentation-only union for the Agent map and pipeline. Hermes'
+    /// `delegation.status.active` owns liveness; cached agents are retained as
+    /// completed history so a finished delegation remains inspectable without
+    /// falsely animating as current work.
+    var displayedSubagents: [HermesSubagent] {
+        let liveIDs = Set(activeSubagents.map(\.id))
+        let historical = sessionAgents
+            .filter { !liveIDs.contains($0.id) }
+            .map { agent -> HermesSubagent in
+                guard !Self.isTerminalAgentStatus(agent.status) else { return agent }
+                var completed = agent
+                completed.status = "complete"
+                return completed
+            }
+        return activeSubagents + historical
+    }
 
     init(
         sessionAgentStateFileURL: URL? = nil,
@@ -114,7 +132,7 @@ final class DockModel: ObservableObject {
                     currentModelName = model
                 }
                 refreshSessionModelOptions()
-                discoverDelegatedAgents()
+                refreshSessionReasoningVariant()
                 refreshDelegationStatus()
                 DebugLog.write("model: session created (id present: \(sessionID != nil))")
                 }
@@ -260,13 +278,13 @@ final class DockModel: ObservableObject {
         let resumeGeneration = sessionResumeGeneration
         sessionID = session.id
         sessionModelOptionID = nil
+        sessionReasoningVariant = nil
         sessionStorageID = session.id
         _ = restoreAgentState(for: session.id)
         isShowingSessions = false
         isSending = false
         status = .working
         reasoningState = nil
-        lastAgentDiscovery = .distantPast
         streamingMessageID = nil
         streamingMessageIsVisionNotice = false
         currentSessionTitle = session.displayTitle
@@ -283,14 +301,10 @@ final class DockModel: ObservableObject {
                 let model = (result["model"] as? String) ?? (result["model_name"] as? String)
                 if let model { currentModelName = model }
                 refreshSessionModelOptions()
+                refreshSessionReasoningVariant()
                 messages = Self.parseMessages(result["messages"])
                 scrollToLatestMessageRequest &+= 1
-                // Rehydration is additive: known delegation IDs are skipped,
-                // while work completed while the app was closed can enrich
-                // the durable snapshot restored above.
-                rehydrateSubagents(from: result["messages"])
                 cacheCurrentAgentState()
-                discoverDelegatedAgents()
                 refreshDelegationStatus()
                 status = .idle
                 DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)")
@@ -314,6 +328,7 @@ final class DockModel: ObservableObject {
         currentSessionTitle = nil
         currentModelName = nil
         sessionModelOptionID = nil
+        sessionReasoningVariant = nil
         messages = []
         activeToolCalls = []
         reasoningState = nil
@@ -359,7 +374,10 @@ final class DockModel: ObservableObject {
         activeToolCalls = state.activeToolCalls
         recentEvents = state.recentEvents
         sessionAgents = state.sessionAgents
-        activeSubagents = state.activeSubagents
+        // Persisted spawn rows are history, not proof that a worker is still
+        // live. Only a current delegation.status result or fresh subagent.*
+        // event may populate the live map.
+        activeSubagents = []
         agentActivities = state.agentActivities
         synthesizedSubagentIDs = state.synthesizedSubagentIDs
         return true
@@ -832,9 +850,6 @@ final class DockModel: ObservableObject {
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload) }
             }
 
-        case "sessions.changed":
-            discoverDelegatedAgents()
-
         default:
             DebugLog.write("model: unknown event type: \(type) params: \(params.keys.sorted().joined(separator: ", "))")
             break
@@ -989,14 +1004,19 @@ final class DockModel: ObservableObject {
                     self.reconcileSyntheticPlaceholder(for: projection.agent)
                     self.recordTelemetryActivityIfChanged(row: projection.row, agent: projection.agent)
                 }
+                // `active` is Hermes' live-worker projection. Do not retain a
+                // native worker after it disappears from this response: doing
+                // so leaves a finished agent permanently shown as running.
+                // Session history remains in sessionAgents; only locally
+                // synthesized placeholders survive until Hermes identifies
+                // their native worker ID.
                 let rpcAgents = projections.map(\.agent)
-                let rpcIDs = Set(rpcAgents.map { $0.id })
-                // delegation.status is frequently partial or empty. It may
-                // enrich known agents, but it must not erase the session's
-                // already-rendered activity graph.
-                let preserved = activeSubagents.filter { !rpcIDs.contains($0.id) }
-                activeSubagents = rpcAgents + preserved
-                for agent in activeSubagents { upsertSessionAgent(agent) }
+                for agent in rpcAgents { upsertSessionAgent(agent) }
+                activeSubagents = Self.reconciledLiveAgents(
+                    authoritative: rpcAgents.filter { AgentActivityPresentation.isActiveStatus($0.status) },
+                    current: activeSubagents,
+                    synthesizedIDs: synthesizedSubagentIDs
+                )
                 ActivityAttributionTrace.append("delegation_status.applied", fields: [
                     "current_session_id": expectedSessionID ?? "",
                     "agent_ids_from_status": rpcAgents.map(\.id),
@@ -1010,93 +1030,57 @@ final class DockModel: ObservableObject {
         }
     }
 
-    func discoverDelegatedAgents() {
-        guard Date().timeIntervalSince(lastAgentDiscovery) > 2.0 else { return }
-        let expectedSessionID = sessionID
-        lastAgentDiscovery = Date()
-        Task {
-            do {
-                let result = try await gateway.request("session.list", params: ["limit": 50])
-                guard sessionID == expectedSessionID else { return }
-                let rows = result["sessions"] as? [[String: Any]] ?? []
-                let discovered = rows.compactMap { row -> HermesSubagent? in
-                    self.parseAgentSession(row)
-                }
-                guard !discovered.isEmpty else { return }
-                let discoveredIDs = Set(discovered.map { $0.id })
-                let preserved = activeSubagents.filter { synthesizedSubagentIDs.contains($0.id) && !discoveredIDs.contains($0.id) }
-                let rpcIDs = Set(activeSubagents.filter { !synthesizedSubagentIDs.contains($0.id) }.map { $0.id })
-                activeSubagents = discovered + preserved + activeSubagents.filter { rpcIDs.contains($0.id) && !discoveredIDs.contains($0.id) }
-                for agent in discovered { upsertSessionAgent(agent) }
-                cacheCurrentAgentState()
-                DebugLog.write("model: discovered \(discovered.count) delegated agent session(s)")
-            } catch {
-                DebugLog.write("model: agent discovery failed: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func parseAgentSession(_ row: [String: Any]) -> HermesSubagent? {
-        guard let id = row["id"] as? String else { return nil }
-        if id == sessionID { return nil }
-        let source = (row["source"] as? String ?? "").lowercased()
-        let parentID = (row["parent_id"] as? String) ?? (row["parent_session_id"] as? String)
-        let isChild = parentID != nil && parentID == sessionID
-        let isAgentSource = source.contains("delegate") || source.contains("subagent") || source.contains("agent")
-        let isOwnApp = source == "hermes-agent-dock" || source.hasPrefix("hermes-workspace-")
-        guard isChild || (isAgentSource && !isOwnApp) else { return nil }
-        let title = (row["title"] as? String) ?? (row["preview"] as? String) ?? "Delegated agent"
-        let rawStatus = (row["status"] as? String) ?? (row["state"] as? String) ?? ""
-        let status = Self.mapSessionStatus(rawStatus, messageCount: (row["message_count"] as? NSNumber)?.intValue ?? 0)
-        let rawRole = (row["agent_role"] as? String) ?? (row["role"] as? String)
-        let role = rawRole.flatMap { value in
-            ["leaf", "orchestrator"].contains(value.lowercased()) ? nil : value
-        } ?? Self.inferRole(from: title)
-        return HermesSubagent(
-            id: id,
-            name: (row["name"] as? String) ?? (row["agent_name"] as? String) ?? (row["display_name"] as? String) ?? role,
-            parentID: parentID ?? sessionID,
-            childSessionID: id,
-            depth: 1,
-            goal: title,
-            role: role,
-            sourceSkill: row["source_skill"] as? String ?? row["source"] as? String,
-            status: status,
-            model: row["model"] as? String,
-            startedAt: dateValue(row["started_at"]),
-            toolCount: 0,
-            latestActivity: (row["preview"] as? String)?.isEmpty == false ? row["preview"] as? String : nil,
-            summary: nil
-        )
-    }
-
-    private static func mapSessionStatus(_ raw: String, messageCount: Int) -> String {
-        let lower = raw.lowercased()
-        if lower.contains("run") || lower.contains("active") || lower.contains("work") { return "running" }
-        if lower.contains("complete") || lower.contains("done") || lower.contains("finish") { return "complete" }
-        if lower.contains("block") || lower.contains("error") || lower.contains("fail") { return "blocked" }
-        if lower.contains("idle") || lower.contains("wait") { return "queued" }
-        return messageCount > 0 ? "running" : "queued"
-    }
-
     private static func isTerminalAgentStatus(_ status: String) -> Bool {
         let lower = status.lowercased()
         return lower.contains("complete") || lower.contains("done") || lower.contains("finish")
             || lower.contains("error") || lower.contains("fail") || lower.contains("interrupt")
     }
 
-    static func agentStatus(current: String, eventType: String) -> String {
-        let eventStatus: String? = switch eventType {
+    /// Builds the visible live-worker list from an authoritative Hermes
+    /// response. Completed workers remain in session history, not this list.
+    static func reconciledLiveAgents(
+        authoritative: [HermesSubagent],
+        current: [HermesSubagent],
+        synthesizedIDs: Set<String>
+    ) -> [HermesSubagent] {
+        let authoritativeIDs = Set(authoritative.map(\.id))
+        let pendingPlaceholders = current.filter {
+            synthesizedIDs.contains($0.id) && !authoritativeIDs.contains($0.id)
+        }
+        return authoritative + pendingPlaceholders
+    }
+
+    static func agentStatus(current: String, eventType: String, reportedStatus: String? = nil) -> String {
+        let normalizedType = eventType.lowercased()
+        let reportedStatus = canonicalAgentStatus(reportedStatus)
+        let eventStatus: String? = switch normalizedType {
         case "subagent.spawn_requested": "queued"
         case "subagent.start", "subagent.tool", "subagent.progress", "subagent.thinking": "running"
-        case "subagent.complete": "complete"
-        case "subagent.error": "error"
+        case "subagent.complete", "subagent.completed", "subagent.done", "subagent.finished", "subagent.finish": "complete"
+        case "subagent.error", "subagent.failed", "subagent.fail": "error"
         case "subagent.interrupt", "subagent.interrupted": "interrupted"
         default: nil
         }
-        guard let eventStatus else { return current }
-        if isTerminalAgentStatus(current), !isTerminalAgentStatus(eventStatus) { return current }
-        return eventStatus
+        let nextStatus = reportedStatus ?? eventStatus
+        guard let nextStatus else { return current }
+        if isTerminalAgentStatus(current), !isTerminalAgentStatus(nextStatus) { return current }
+        return nextStatus
+    }
+
+    /// Hermes has used both lifecycle event names and status fields for agent
+    /// completion. Normalize the latter before it reaches presentation state so
+    /// a completed worker cannot remain visually running after a status update.
+    static func canonicalAgentStatus(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return nil }
+        if normalized.contains("complete") || normalized.contains("done") || normalized.contains("finish") || normalized.contains("success") { return "complete" }
+        if normalized.contains("interrupt") || normalized.contains("cancel") || normalized.contains("abort") { return "interrupted" }
+        if normalized.contains("error") || normalized.contains("fail") { return "error" }
+        if normalized.contains("block") { return "blocked" }
+        if normalized.contains("queue") || normalized.contains("pending") || normalized.contains("wait") { return "queued" }
+        if normalized.contains("run") || normalized.contains("work") || normalized.contains("active") || normalized.contains("start") { return "running" }
+        return normalized
     }
 
     /// Resolves both native subagent IDs and the child session IDs used by
@@ -1223,7 +1207,12 @@ final class DockModel: ObservableObject {
         case "reasoning.complete", "thinking.stop", "thinking.complete":
             return "subagent.thinking.complete"
         case "message.complete":
-            return "subagent.progress"
+            // Delegated workers commonly finish through their child session's
+            // ordinary response boundary rather than a separate
+            // `subagent.complete` envelope. This method is reached only after
+            // the event is proven agent-scoped, so the parent conversation's
+            // own message completion is unaffected.
+            return "subagent.complete"
         case "error":
             return "subagent.error"
         case "message.delta", "reasoning.delta", "thinking.delta":
@@ -1376,7 +1365,7 @@ final class DockModel: ObservableObject {
             goal: goal,
             role: role,
             sourceSkill: row["source_skill"] as? String,
-            status: row["status"] as? String ?? fallbackStatus ?? "unknown",
+            status: Self.canonicalAgentStatus(row["status"] as? String) ?? fallbackStatus ?? "unknown",
             model: row["model"] as? String,
             startedAt: dateValue(row["started_at"]),
             completedAt: dateValue(row["completed_at"]),
@@ -1420,8 +1409,12 @@ final class DockModel: ObservableObject {
             agent.filesRead = hydrated.filesRead.isEmpty ? agent.filesRead : hydrated.filesRead
             agent.filesWritten = hydrated.filesWritten.isEmpty ? agent.filesWritten : hydrated.filesWritten
         }
-        agent.status = Self.agentStatus(current: agent.status, eventType: type)
-        if type == "subagent.complete" || type == "subagent.error" || type.contains("interrupt") {
+        agent.status = Self.agentStatus(
+            current: agent.status,
+            eventType: type,
+            reportedStatus: (payload["status"] as? String) ?? (payload["state"] as? String)
+        )
+        if Self.isTerminalAgentStatus(agent.status) {
             agent.completedAt = dateValue(payload["completed_at"]) ?? Date()
             agent.durationSeconds = (payload["duration_seconds"] as? NSNumber)?.doubleValue ?? agent.durationSeconds
         }
@@ -1710,6 +1703,24 @@ final class DockModel: ObservableObject {
         refreshRuntimeModelOptions(sessionID: sessionID)
     }
 
+    func refreshSessionReasoningVariant() {
+        guard let sessionID, !sessionID.isEmpty else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await gateway.request("config.get", params: [
+                    "key": "reasoning",
+                    "session_id": sessionID
+                ])
+                guard self.sessionID == sessionID,
+                      let value = result["value"] as? String else { return }
+                self.sessionReasoningVariant = HermesReasoningVariant(rawValue: value.lowercased())
+            } catch {
+                DebugLog.write("model: session reasoning lookup failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func updateRuntimeModel(_ option: HermesModelOption) {
         guard !isLoadingRuntimeConfiguration else { return }
         isLoadingRuntimeConfiguration = true
@@ -1758,6 +1769,29 @@ final class DockModel: ObservableObject {
                 runtimeConfigurationError = "Hermes could not apply the session provider/model change: \(error.localizedDescription)"
             }
             isUpdatingSessionModel = false
+        }
+    }
+
+    func updateSessionReasoning(_ variant: HermesReasoningVariant) {
+        guard let sessionID, !sessionID.isEmpty, !isUpdatingSessionReasoning else { return }
+        isUpdatingSessionReasoning = true
+        runtimeConfigurationError = nil
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.isUpdatingSessionReasoning = false }
+            do {
+                _ = try await gateway.request("config.set", params: [
+                    "key": "reasoning",
+                    "value": variant.rawValue,
+                    "session_id": sessionID
+                ])
+                guard self.sessionID == sessionID else { return }
+                self.sessionReasoningVariant = variant
+                DebugLog.write("model: session reasoning set to \(variant.rawValue)")
+            } catch {
+                self.runtimeConfigurationError = "Hermes could not apply the session reasoning change: \(error.localizedDescription)"
+            }
         }
     }
 

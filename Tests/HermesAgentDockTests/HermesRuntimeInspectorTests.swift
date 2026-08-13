@@ -2,6 +2,12 @@ import Testing
 @testable import HermesAgentDock
 
 struct HermesRuntimeInspectorTests {
+    @Test func reasoningVariantsMatchHermesSupportedLevels() {
+        #expect(HermesReasoningVariant.allCases.map(\.rawValue) == [
+            "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"
+        ])
+    }
+
     @Test func stripsANSIControlSequences() {
         let decorated = "\u{001B}[32menabled\u{001B}[0m"
 

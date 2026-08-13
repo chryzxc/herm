@@ -269,10 +269,18 @@ struct DockPopover: View {
     private var contextPanelHeader: some View {
         HStack(spacing: 12) {
             if inspectorScope == .session {
-                Text(model.currentSessionTitle ?? "Untitled session")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.currentSessionTitle ?? "Untitled session")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.scifiFg)
+                        .lineLimit(1)
+                    if let contextProjectName {
+                        Label(contextProjectName, systemImage: "folder")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.scifiTertiary)
+                            .lineLimit(1)
+                    }
+                }
             }
 
             Spacer(minLength: 8)
@@ -283,6 +291,12 @@ struct DockPopover: View {
         .frame(height: 58)
         .background(Color.scifiSurface2)
         .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+    }
+
+    private var contextProjectName: String? {
+        guard let path = workspaceStore.projectPath(forSessionID: model.sessionID), !path.isEmpty else { return nil }
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name.isEmpty ? nil : name
     }
 
     private var scopePicker: some View {
@@ -425,11 +439,7 @@ struct DockPopover: View {
             .padding(.top, 12)
 
             HStack(spacing: 8) {
-                Text("SESSION MODEL")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.scifiMuted)
-
+                HStack(spacing: 8) {
                 if model.sessionID != nil {
                     Menu {
                         if model.runtimeModelOptions.isEmpty {
@@ -451,18 +461,17 @@ struct DockPopover: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "cpu")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                             Text(sessionModelDisplayName)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 9, weight: .bold))
                         }
                         .foregroundStyle(Color.scifiFg)
-                        .padding(.horizontal, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: 32)
+                        .padding(.horizontal, 7)
+                        .frame(height: 27)
                         .background(Color.scifiSurface4)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
@@ -476,9 +485,56 @@ struct DockPopover: View {
                         .foregroundStyle(Color.scifiTertiary)
                 }
             }
+                .padding(.top, 0)
+
+                Text("/")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+
+                HStack(spacing: 8) {
+                if model.sessionID != nil {
+                    Menu {
+                        ForEach(HermesReasoningVariant.allCases) { variant in
+                            Button {
+                                model.updateSessionReasoning(variant)
+                            } label: {
+                                HStack {
+                                    Text(variant.displayName)
+                                    if variant == model.sessionReasoningVariant {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "brain")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(sessionReasoningDisplayName)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                        }
+                        .foregroundStyle(Color.scifiFg)
+                        .padding(.horizontal, 7)
+                        .frame(height: 27)
+                        .background(Color.scifiSurface4)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.scifiPress)
+                    .disabled(model.isUpdatingSessionReasoning)
+                    .help("Change reasoning depth for this session only")
+                } else {
+                    Text("Choose reasoning after starting a session")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+            }
+                .padding(.top, 0)
+                .padding(.bottom, 8)
+            }
             .padding(.horizontal, 18)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
         }
         .background(Color.scifiSurface2)
         .overlay(alignment: .bottom) {
@@ -502,6 +558,10 @@ struct DockPopover: View {
             return "Session model"
         }
         return option.displayName
+    }
+
+    private var sessionReasoningDisplayName: String {
+        model.sessionReasoningVariant?.displayName ?? "LOADING…"
     }
 
     private var sessionPicker: some View {
@@ -836,7 +896,7 @@ struct DockPopover: View {
         AgentActivityPresentation.pipeline(
             activities: model.agentActivities,
             toolCalls: model.activeToolCalls,
-            subagents: model.activeSubagents
+            subagents: model.displayedSubagents
         )
     }
 

@@ -308,7 +308,7 @@ struct ConversationActivityRow: View {
   private var latestPipelineActivity: AgentActivityPresentation.PipelineActivity? {
     AgentActivityPresentation.pipeline(
       activities: model.agentActivities, toolCalls: model.activeToolCalls,
-      subagents: model.activeSubagents
+      subagents: model.displayedSubagents
     ).first(where: \.isActive)
   }
   private var title: String {

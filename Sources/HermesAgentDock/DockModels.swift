@@ -270,6 +270,13 @@ struct HermesModelOption: Identifiable, Hashable {
     var displayName: String { "\(provider)  /  \(model)" }
 }
 
+enum HermesReasoningVariant: String, CaseIterable, Identifiable {
+    case none, minimal, low, medium, high, xhigh, max, ultra
+
+    var id: String { rawValue }
+    var displayName: String { rawValue.uppercased() }
+}
+
 struct HermesRuntimeModelSwitchRequest: Equatable {
     let sessionID: String?
     let value: String

@@ -117,6 +117,7 @@ struct AgentHandoffMapView: View {
         .environment(\.colorScheme, .dark)
         .onAppear {
             startHandoffFlowIfNeeded()
+            model.refreshDelegationStatus()
         }
         .onChange(of: hasActiveFlows) { _, _ in
             startHandoffFlowIfNeeded()
@@ -147,7 +148,7 @@ struct AgentHandoffMapView: View {
 
     private var mapSurface: some View {
         GeometryReader { viewport in
-            let layout = AgentMapTreeLayout.make(agents: model.activeSubagents, minimumSize: viewport.size)
+            let layout = AgentMapTreeLayout.make(agents: model.displayedSubagents, minimumSize: viewport.size)
             let mapNodes = nodes
             let mapEdges = edges(for: mapNodes)
 
@@ -356,7 +357,7 @@ struct AgentHandoffMapView: View {
     }
 
     private var nodes: [MapNode] {
-        return model.activeSubagents.map { agent in
+        return model.displayedSubagents.map { agent in
             let name = agent.name ?? agent.role ?? "Agent"
             return MapNode(
                 id: agent.id,
@@ -427,7 +428,7 @@ struct AgentHandoffMapView: View {
         AgentActivityPresentation.pipeline(
             activities: model.agentActivities,
             toolCalls: model.activeToolCalls,
-            subagents: model.activeSubagents
+            subagents: model.displayedSubagents
         )
         .reduce(into: [:]) { counts, item in
             guard let agentID = item.agentID else { return }

@@ -116,7 +116,22 @@ enum AgentActivityPresentation {
         subagents: [HermesSubagent]
     ) -> [PipelineActivity] {
         var rows = activities.map { activity in
-            let status = displayStatus(for: phase(for: activity.kind))
+            let activityPhase = phase(for: activity.kind)
+            let currentAgentStatus = activity.agentID.flatMap { id in
+                subagents.first(where: { $0.id == id })?.status
+            }
+            // Activity rows are historical, but a terminal agent state is the
+            // authoritative lifecycle result. Without this override an old
+            // `subagent.start` row remains labelled Running forever after that
+            // worker completes.
+            let status: String
+            if activityPhase == .running,
+               let currentAgentStatus,
+               !isActiveStatus(currentAgentStatus) {
+                status = currentAgentStatus
+            } else {
+                status = displayStatus(for: activityPhase)
+            }
             var details = [activity.text]
             if let toolName = activity.toolName { details.append("Tool: \(toolName)") }
             if let handoffTarget = activity.handoffTarget { details.append("Handoff target: \(handoffTarget)") }

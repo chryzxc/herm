@@ -108,11 +108,15 @@ struct AgentProjectionTests {
         model.cacheAgentState(for: "session-b")
 
         #expect(model.restoreAgentState(for: "session-a"))
-        #expect(model.activeSubagents.map(\.id) == ["agent-a"])
+        #expect(model.activeSubagents.isEmpty)
+        #expect(model.sessionAgents.map(\.id) == ["agent-a"])
+        #expect(model.displayedSubagents.first?.status == "complete")
         #expect(model.agentActivities == [activityA])
 
         #expect(model.restoreAgentState(for: "session-b"))
-        #expect(model.activeSubagents.map(\.id) == ["agent-b"])
+        #expect(model.activeSubagents.isEmpty)
+        #expect(model.sessionAgents.map(\.id) == ["agent-b"])
+        #expect(model.displayedSubagents.first?.status == "complete")
         #expect(model.agentActivities == [activityB])
 
         #expect(!model.restoreAgentState(for: "session-c"))
@@ -141,7 +145,9 @@ struct AgentProjectionTests {
 
         let secondLaunch = DockModel(sessionAgentStateFileURL: storeURL)
         #expect(secondLaunch.restoreAgentState(for: "persistent-session"))
-        #expect(secondLaunch.activeSubagents.map(\.id) == ["persistent-agent"])
+        #expect(secondLaunch.activeSubagents.isEmpty)
+        #expect(secondLaunch.sessionAgents.map(\.id) == ["persistent-agent"])
+        #expect(secondLaunch.displayedSubagents.first?.status == "complete")
         #expect(secondLaunch.agentActivities == [activity])
         try? FileManager.default.removeItem(at: storeURL)
     }
@@ -173,6 +179,53 @@ struct AgentProjectionTests {
         #expect(DockModel.agentStatus(current: "complete", eventType: "subagent.tool") == "complete")
         #expect(DockModel.agentStatus(current: "running", eventType: "subagent.complete") == "complete")
         #expect(DockModel.agentStatus(current: "queued", eventType: "subagent.start") == "running")
+    }
+
+    @Test func completionStatusUpdatesAndLifecycleVariantsAreTerminal() {
+        #expect(DockModel.agentStatus(
+            current: "running",
+            eventType: "subagent.status",
+            reportedStatus: "completed"
+        ) == "complete")
+        #expect(DockModel.agentStatus(current: "running", eventType: "subagent.completed") == "complete")
+        #expect(DockModel.agentStatus(
+            current: "complete",
+            eventType: "subagent.status",
+            reportedStatus: "running"
+        ) == "complete")
+        #expect(!AgentActivityPresentation.isActiveStatus(
+            DockModel.canonicalAgentStatus("succeeded") ?? "running"
+        ))
+    }
+
+    @Test func authoritativeLiveRefreshDropsFinishedNativeAgentsButKeepsPendingPlaceholders() {
+        let finished = HermesSubagent(id: "native-finished", goal: "Done", status: "running")
+        let placeholder = HermesSubagent(id: "delegate:0", goal: "Awaiting native ID", status: "running")
+        let running = HermesSubagent(id: "native-running", goal: "Still working", status: "running")
+
+        let live = DockModel.reconciledLiveAgents(
+            authoritative: [running],
+            current: [finished, placeholder],
+            synthesizedIDs: [placeholder.id]
+        )
+
+        #expect(live.map(\.id) == ["native-running", "delegate:0"])
+    }
+
+    @Test func emptyAuthoritativeLiveProjectionDoesNotResurrectSavedChildSessions() {
+        let previouslyVisibleChild = HermesSubagent(
+            id: "saved-child-session",
+            goal: "Already finished",
+            status: "running"
+        )
+
+        let live = DockModel.reconciledLiveAgents(
+            authoritative: [],
+            current: [previouslyVisibleChild],
+            synthesizedIDs: []
+        )
+
+        #expect(live.isEmpty)
     }
 
     @Test func childSessionEventsResolveToTheirAgent() {
@@ -353,6 +406,7 @@ struct AgentProjectionTests {
     @Test func delegatedToolEventsBecomeMeaningfulActivityRows() {
         #expect(DockModel.agentActivityKind(for: "tool.call") == "subagent.tool")
         #expect(DockModel.agentActivityKind(for: "tool.result") == "subagent.tool.complete")
+        #expect(DockModel.agentActivityKind(for: "message.complete") == "subagent.complete")
         #expect(DockModel.agentActivityKind(for: "reasoning.delta") == nil)
         let text = DockModel.agentActivityText(
             type: "subagent.tool",
@@ -578,7 +632,8 @@ struct AgentProjectionTests {
             subagents: [completedAgent]
         )
 
-        #expect(pipeline.first?.isActive == true)
+        #expect(pipeline.first?.status == "completed")
+        #expect(pipeline.first?.isActive == false)
         #expect(!AgentActivityPresentation.hasActiveWork(
             toolCalls: [],
             subagents: [completedAgent]

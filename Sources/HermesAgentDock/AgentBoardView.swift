@@ -518,11 +518,11 @@ struct AgentBoardView: View {
     }
 
     private var dataSource: String {
-        model.activeSubagents.isEmpty ? "NO ACTIVE SUBAGENTS" : "LIVE HERMES STATE"
+        model.activeSubagents.isEmpty ? "COMPLETED SESSION HISTORY" : "LIVE HERMES STATE"
     }
 
     private var agents: [Agent] {
-        return model.activeSubagents.map { subagent in
+        return model.displayedSubagents.map { subagent in
             return Agent(
                 id: subagent.id,
                 agentColor: agentColor(for: subagent.id)
@@ -534,7 +534,7 @@ struct AgentBoardView: View {
         AgentActivityPresentation.pipeline(
             activities: model.agentActivities,
             toolCalls: model.activeToolCalls,
-            subagents: model.activeSubagents
+            subagents: model.displayedSubagents
         ).map { item in
             PipelineItem(
                 id: item.id,
