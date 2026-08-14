@@ -11,7 +11,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   connected.
 - **Conversation workspace.** Streams assistant messages, supports attachments
   and approvals, and lets you interrupt an in-progress request. Tool calls stay
-  out of the conversation transcript.
+  out of the conversation transcript. Streaming deltas are coalesced before
+  publication to keep long responses responsive, and session restoration shows
+  an explicit loading state that prevents prompts from being sent while a
+  conversation is being rehydrated.
 - **General control center.** Today summarizes current focus, approvals,
   failures, due Apple Reminders, active Hermes work, and scheduled jobs. Inbox
   groups actionable approvals, clarifications, failures, and completed work.
@@ -50,6 +53,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   switches between Ask and Control as a single pane without horizontal clipping.
 - **Readable controls.** UI text uses a 12pt minimum for labels, metadata, and
   status text so the compact menu-bar surface remains legible.
+- **Single-row session configuration.** The active model and thinking depth
+  live in one divider-led control rail, keeping both settings visible and
+  independently selectable without adding a second configuration row.
 - **Design-system interactions.** Primary icon controls retain their compact
   36pt glass appearance while using 44pt hit targets, matching the interaction
   guidance in `DESIGN.md`.
@@ -143,7 +149,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   lays out recursive agent-to-agent delegation as a left-to-right scrollable
   tree, resolving both stable agent IDs and child-session parent references so
   every reported generation remains nested. It animates active directional
-  flows and shows each agent's current task, lifecycle, and tool count.
+  flows and shows each agent's current task, lifecycle, and tool count. The
+  activity surface can switch between a bounded Live view and the full
+  available history; embedded views limit the newest pipeline items and reduce
+  continuous animation to keep the compact Control pane responsive.
   Selecting a node discloses that agent's canonical in-memory
   activity beneath the map. Parent-session tool calls are labelled Orchestrator
   so they remain distinct from explicitly attributed delegated-agent activity.

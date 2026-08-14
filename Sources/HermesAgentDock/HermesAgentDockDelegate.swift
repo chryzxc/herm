@@ -29,6 +29,13 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNoti
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        // This is deliberately explicit: a menu-bar app can terminate without
+        // releasing its delegate/model graph, so deinit is not a process-life
+        // cycle hook for the local Hermes backend.
+        model.shutdown()
+    }
+
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let attentionID = response.notification.request.content.userInfo["attention_id"] as? String
         await MainActor.run { [weak self] in

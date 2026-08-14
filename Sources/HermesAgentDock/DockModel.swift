@@ -18,8 +18,10 @@ final class DockModel: ObservableObject {
     @Published var sessions: [HermesSession] = []
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
+    @Published private(set) var isRestoringSession = false
     @Published var currentSessionTitle: String?
     @Published var reasoningState: ReasoningState?
+    @Published private(set) var conversationActivityPhase: ConversationActivityPhase = .idle
     @Published var isShowingReasoning = false
     @Published var activeToolCalls: [ActiveToolCall] = []
     @Published var hasUnreadResponse = false
@@ -34,6 +36,9 @@ final class DockModel: ObservableObject {
     @Published var runtimeConfigurationError: String?
     @Published var runtimeModelOptions: [HermesModelOption] = []
     @Published private(set) var sessionModelOptionID: String?
+    /// The canonical session response can provide a model before the optional
+    /// catalog has resolved its provider/model option identity.
+    @Published private(set) var sessionModelValue: String?
     @Published private(set) var isUpdatingSessionModel = false
     @Published private(set) var sessionReasoningVariant: HermesReasoningVariant?
     @Published private(set) var isUpdatingSessionReasoning = false
@@ -49,17 +54,32 @@ final class DockModel: ObservableObject {
     @Published private(set) var sessionID: String?
     private var sessionStorageID: String?
     private var streamingMessageID: UUID?
+    private var streamingMessageSessionID: String?
+    private var streamingMessageChunks: [String] = []
+    private var streamingMessagePublishedText = ""
+    private var streamingMessageFlushTask: Task<Void, Never>?
+    private var streamingMessageGeneration = 0
     private var streamingMessageIsVisionNotice = false
     private var didRestoreLatestSession = false
     private var currentModelName: String?
     private var isPopoverVisible = false
     private var isRefreshingDelegationStatus = false
+    private var delegationRefreshTask: Task<Void, Never>?
+    private var delegationRefreshRequested = false
+    private var lastDelegationRefreshAt: Date = .distantPast
     private var synthesizedSubagentIDs: Set<String> = []
+    private var cachedAgentSnapshot: AgentPresentationSnapshot?
+    private var cachedAgentSnapshotInputs: ([HermesSubagent], [AgentActivity], [ActiveToolCall])?
+    private var agentSnapshotRevision: UInt = 0
     private var agentStateBySessionID: [String: SessionAgentState] = [:]
     private let agentStateStore: SessionAgentStateStore
+    private let agentStateWriter: SessionAgentStateWriter
     private var sessionResumeGeneration = 0
     private var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
+    private var hasShutDown = false
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
+    private let lastSessionIDKey = "hermes.session.last-active.v1"
+    private let defaults: UserDefaults
     private let playApprovalSound: () -> Void
 
     /// Presentation-only union for the Agent map and pipeline. Hermes'
@@ -79,15 +99,52 @@ final class DockModel: ObservableObject {
         return activeSubagents + historical
     }
 
+    var streamingMessageIDForPresentation: UUID? { streamingMessageID }
+
+    var agentPresentationSnapshot: AgentPresentationSnapshot {
+        let displayed = displayedSubagents
+        let inputs = (displayed, agentActivities, activeToolCalls)
+        if let cachedAgentSnapshot,
+           let cachedAgentSnapshotInputs,
+           cachedAgentSnapshotInputs.0 == inputs.0,
+           cachedAgentSnapshotInputs.1 == inputs.1,
+           cachedAgentSnapshotInputs.2 == inputs.2 {
+            return cachedAgentSnapshot
+        }
+        let pipeline = AgentActivityPresentation.pipeline(
+            activities: agentActivities,
+            toolCalls: activeToolCalls,
+            subagents: displayed
+        )
+        var counts: [String: Int] = [:]
+        for activity in agentActivities {
+            if let agentID = activity.agentID { counts[agentID, default: 0] += 1 }
+        }
+        let snapshot = AgentPresentationSnapshot(
+            displayedSubagents: displayed,
+            pipeline: pipeline,
+            activityCountsByAgentID: counts,
+            activeAgentIDs: Set(activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.map(\.id)),
+            revision: agentSnapshotRevision &+ 1
+        )
+        agentSnapshotRevision &+= 1
+        cachedAgentSnapshotInputs = inputs
+        cachedAgentSnapshot = snapshot
+        return snapshot
+    }
+
     init(
         sessionAgentStateFileURL: URL? = nil,
+        defaults: UserDefaults = .standard,
         approvalSoundPlayer: @escaping () -> Void = { NSSound.beep() }
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
         self.agentStateStore = agentStateStore
+        self.agentStateWriter = SessionAgentStateWriter(store: agentStateStore)
         self.agentStateBySessionID = agentStateStore.load()
+        self.defaults = defaults
         self.playApprovalSound = approvalSoundPlayer
-        completionNotificationsEnabled = UserDefaults.standard.bool(forKey: completionNotificationsKey)
+        completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.onLine = { [weak self] line in
             guard let self else { return }
             debugLines = Array((debugLines + [line]).suffix(80))
@@ -107,10 +164,24 @@ final class DockModel: ObservableObject {
         }
     }
 
+    /// The app delegate owns terminal cleanup. Relying on `HermesGateway`'s
+    /// deinitializer leaves its child `hermes serve` process running when
+    /// AppKit tears down the application without releasing the model first.
+    func shutdown() {
+        guard !hasShutDown else { return }
+        hasShutDown = true
+        streamingMessageFlushTask?.cancel()
+        delegationRefreshTask?.cancel()
+        nativeVoiceCapture.reset()
+        gateway.close()
+        Task { await agentStateWriter.flush() }
+        DebugLog.write("model: shutdown complete")
+    }
+
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImage = pendingImage
-        guard (!prompt.isEmpty || attachedImage != nil), !isSending else { return }
+        guard (!prompt.isEmpty || attachedImage != nil), !isSending, !isRestoringSession else { return }
 
         let text = (prompt.isEmpty && attachedImage != nil) ? "What do you see in this image?" : prompt
         draft = ""
@@ -127,9 +198,11 @@ final class DockModel: ObservableObject {
                     let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock"])
                     sessionID = result["session_id"] as? String
                     sessionStorageID = Self.stableSessionID(from: result) ?? sessionID
+                    persistActiveSessionID(sessionID)
                     let model = (result["model"] as? String) ?? (result["model_name"] as? String)
                 if let model {
                     currentModelName = model
+                    sessionModelValue = model
                 }
                 refreshSessionModelOptions()
                 refreshSessionReasoningVariant()
@@ -137,13 +210,16 @@ final class DockModel: ObservableObject {
                 DebugLog.write("model: session created (id present: \(sessionID != nil))")
                 }
                 guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
+                // Keep this operation bound to the session selected above. A
+                // late resume must not redirect a prompt into another chat.
+                let promptSessionID = sessionID
 
                 if let attachedImage {
                     let imageData = try Data(contentsOf: attachedImage.fileURL)
                     let base64 = imageData.base64EncodedString()
                     let attachResult = try await gateway.request(
                         "image.attach",
-                        params: ["session_id": sessionID, "data": base64, "file_name": attachedImage.fileName]
+                        params: ["session_id": promptSessionID, "data": base64, "file_name": attachedImage.fileName]
                     )
                     let attached = (attachResult["attached"] as? Bool) ?? false
                     guard attached else {
@@ -155,7 +231,7 @@ final class DockModel: ObservableObject {
                     cleanupImageAttachment(attachedImage)
                 }
 
-                _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
+                _ = try await gateway.request("prompt.submit", params: ["session_id": promptSessionID, "text": text])
                 DebugLog.write("model: prompt submitted")
             } catch {
                 DebugLog.write("model: send failed: \(error.localizedDescription)")
@@ -253,17 +329,25 @@ final class DockModel: ObservableObject {
     func restoreLatestSessionIfNeeded() {
         guard !didRestoreLatestSession else { return }
         didRestoreLatestSession = true
+        isRestoringSession = true
         Task {
+            defer { isRestoringSession = false }
             do {
                 try await gateway.connect()
+                if let savedSessionID = defaults.string(forKey: lastSessionIDKey),
+                   !savedSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   await resumeSession(HermesSession(id: savedSessionID, title: "", preview: "", startedAt: nil, messageCount: 0, source: ""), reportFailure: false) {
+                    return
+                }
                 let result = try await gateway.request("session.list", params: ["limit": 1])
                 let latest = (result["sessions"] as? [[String: Any]] ?? []).compactMap(Self.parseSession).first
                 guard let latest else {
+                    defaults.removeObject(forKey: lastSessionIDKey)
                     DebugLog.write("model: no saved session to restore")
                     return
                 }
                 sessions = [latest]
-                resumeSession(latest)
+                _ = await resumeSession(latest, reportFailure: true)
             } catch {
                 DebugLog.write("model: latest session restore failed: \(error.localizedDescription)")
             }
@@ -271,6 +355,12 @@ final class DockModel: ObservableObject {
     }
 
     func resumeSession(_ session: HermesSession) {
+        Task { _ = await resumeSession(session, reportFailure: true) }
+    }
+
+    @discardableResult
+    private func resumeSession(_ session: HermesSession, reportFailure: Bool) async -> Bool {
+        flushStreamingMessage()
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
@@ -278,6 +368,7 @@ final class DockModel: ObservableObject {
         let resumeGeneration = sessionResumeGeneration
         sessionID = session.id
         sessionModelOptionID = nil
+        sessionModelValue = nil
         sessionReasoningVariant = nil
         sessionStorageID = session.id
         _ = restoreAgentState(for: session.id)
@@ -288,52 +379,68 @@ final class DockModel: ObservableObject {
         streamingMessageID = nil
         streamingMessageIsVisionNotice = false
         currentSessionTitle = session.displayTitle
-        Task {
-            do {
-                try await gateway.connect()
-                let result = try await gateway.request("session.resume", params: [
-                    "session_id": session.id,
-                    "source": "hermes-agent-dock"
-                ])
-                guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return }
-                sessionID = (result["session_id"] as? String) ?? session.id
-                sessionStorageID = Self.stableSessionID(from: result) ?? session.id
-                let model = (result["model"] as? String) ?? (result["model_name"] as? String)
-                if let model { currentModelName = model }
-                refreshSessionModelOptions()
-                refreshSessionReasoningVariant()
-                messages = Self.parseMessages(result["messages"])
-                scrollToLatestMessageRequest &+= 1
-                cacheCurrentAgentState()
-                refreshDelegationStatus()
-                status = .idle
-                DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)")
-            } catch {
-                guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return }
+        do {
+            try await gateway.connect()
+            let result = try await gateway.request("session.resume", params: [
+                "session_id": session.id,
+                "source": "hermes-agent-dock"
+            ])
+            guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+            sessionID = (result["session_id"] as? String) ?? session.id
+            sessionStorageID = Self.stableSessionID(from: result) ?? session.id
+            persistActiveSessionID(sessionID)
+            let model = (result["model"] as? String) ?? (result["model_name"] as? String)
+            if let model {
+                currentModelName = model
+                sessionModelValue = model
+            }
+            refreshSessionModelOptions()
+            refreshSessionReasoningVariant()
+            messages = Self.parseMessages(result["messages"])
+            scrollToLatestMessageRequest &+= 1
+            cacheCurrentAgentState()
+            refreshDelegationStatus()
+            status = .idle
+            DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)")
+            return true
+        } catch {
+            guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+            if reportFailure {
                 status = .offline
                 messages = [ChatMessage(role: .hermes, text: "I couldn't load that conversation: \(error.localizedDescription)", modelName: currentModelName)]
                 scrollToLatestMessageRequest &+= 1
-                DebugLog.write("model: session resume failed: \(error.localizedDescription)")
             }
+            DebugLog.write("model: session resume failed: \(error.localizedDescription)")
+            return false
         }
     }
 
     func newChat() {
+        flushStreamingMessage()
+        streamingMessageFlushTask?.cancel()
+        streamingMessageFlushTask = nil
+        streamingMessageGeneration &+= 1
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
         sessionResumeGeneration &+= 1
         sessionID = nil
         sessionStorageID = nil
+        defaults.removeObject(forKey: lastSessionIDKey)
         currentSessionTitle = nil
         currentModelName = nil
         sessionModelOptionID = nil
+        sessionModelValue = nil
         sessionReasoningVariant = nil
         messages = []
         activeToolCalls = []
         reasoningState = nil
         recentEvents = []
         streamingMessageID = nil
+        streamingMessageSessionID = nil
+            streamingMessageChunks = []
+        streamingMessagePublishedText = ""
+        conversationActivityPhase = .idle
         streamingMessageIsVisionNotice = false
         isSending = false
         status = .idle
@@ -421,7 +528,7 @@ final class DockModel: ObservableObject {
 
     func setCompletionNotificationsEnabled(_ enabled: Bool) {
         completionNotificationsEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: completionNotificationsKey)
+        defaults.set(enabled, forKey: completionNotificationsKey)
     }
 
     func requestControlInbox() {
@@ -463,11 +570,15 @@ final class DockModel: ObservableObject {
     }
 
     func submitControlPrompt(_ text: String) async throws {
+        guard !isRestoringSession else {
+            throw NSError(domain: "HermesAgentDock", code: 409, userInfo: [NSLocalizedDescriptionKey: "The previous conversation is still loading."])
+        }
         try await gateway.connect()
         if sessionID == nil {
             let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock-control"])
             sessionID = result["session_id"] as? String
             sessionStorageID = Self.stableSessionID(from: result) ?? sessionID
+            persistActiveSessionID(sessionID)
         }
         guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
         _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
@@ -478,6 +589,7 @@ final class DockModel: ObservableObject {
     /// If the locally installed CLI is missing those optional dependencies, the
     /// Dock keeps its existing Apple speech-recognition flow as a clear fallback.
     func startVoiceConversation() {
+        guard !isRestoringSession else { return }
         guard voiceState == .inactive || {
             if case .localFallback = voiceState { return true }
             return false
@@ -493,6 +605,7 @@ final class DockModel: ObservableObject {
                     let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock"])
                     sessionID = result["session_id"] as? String
                     sessionStorageID = Self.stableSessionID(from: result) ?? sessionID
+                    persistActiveSessionID(sessionID)
                     currentModelName = (result["model"] as? String) ?? (result["model_name"] as? String)
                 }
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
@@ -562,22 +675,24 @@ final class DockModel: ObservableObject {
     private func handleEvent(_ type: String, params: [String: Any]) {
         let rawPayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (rawPayload["session_id"] as? String)
-        let activityProjection = Self.agentActivityProjection(
+        let activityProjection = Self.isHighFrequencyEvent(type) ? nil : Self.agentActivityProjection(
             type: type,
             params: params,
             currentSessionID: sessionID,
             agents: sessionAgents + activeSubagents
         )
-        let receivedTrace: [String: Any] = [
-            "type": type,
-            "current_session_id": sessionID ?? "",
-            "event_session_id": eventSessionID ?? "",
-            "raw_params": params,
-            "raw_payload": rawPayload,
-            "known_agents": (sessionAgents + activeSubagents).map(Self.activityTraceAgent),
-            "activity_projection": Self.activityTraceProjection(activityProjection)
-        ]
-        ActivityAttributionTrace.append("gateway_event.received", fields: receivedTrace)
+        if ActivityAttributionTrace.enabled {
+            let receivedTrace: [String: Any] = [
+                "type": type,
+                "current_session_id": sessionID ?? "",
+                "event_session_id": eventSessionID ?? "",
+                "raw_params": params,
+                "raw_payload": rawPayload,
+                "known_agents": (sessionAgents + activeSubagents).map(Self.activityTraceAgent),
+                "activity_projection": Self.activityTraceProjection(activityProjection)
+            ]
+            ActivityAttributionTrace.append("gateway_event.received", fields: receivedTrace)
+        }
         if let activityProjection {
             recordAgentActivity(activityProjection.kind, params: params, payload: activityProjection.payload)
             mergeAgentEvent(activityProjection.kind, payload: activityProjection.payload)
@@ -588,7 +703,9 @@ final class DockModel: ObservableObject {
                 "active_agents_after_merge": activeSubagents.map(Self.activityTraceAgent),
                 "activity_count": agentActivities.count
             ]
-            ActivityAttributionTrace.append("gateway_event.applied", fields: appliedTrace)
+            if ActivityAttributionTrace.enabled {
+                ActivityAttributionTrace.append("gateway_event.applied", fields: appliedTrace)
+            }
             cacheCurrentAgentState()
             if activityProjection.consumesParentEvent { return }
         }
@@ -598,20 +715,22 @@ final class DockModel: ObservableObject {
            !eventSessionID.isEmpty,
            let sessionID, sessionID != eventSessionID,
            !isRelevantSubagentEvent {
-            ActivityAttributionTrace.append("gateway_event.ignored_other_session", fields: [
+            if ActivityAttributionTrace.enabled { ActivityAttributionTrace.append("gateway_event.ignored_other_session", fields: [
                 "type": type,
                 "current_session_id": sessionID,
                 "event_session_id": eventSessionID,
                 "raw_payload": rawPayload
-            ])
-            DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)")
+            ]) }
+            if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)") }
             return
         }
-        DebugLog.write("model: handling event \(type)")
+        if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: handling event \(type)") }
         if type == "message.start" {
             recentEvents.removeAll()
         }
-        recordEvent(type, params: params)
+        if !Self.isHighFrequencyEvent(type) {
+            recordEvent(type, params: params)
+        }
         switch type {
         case "background.complete":
             let taskID = (payload["task_id"] as? String) ?? ""
@@ -668,26 +787,25 @@ final class DockModel: ObservableObject {
             }
             messages.append(ChatMessage(role: .hermes, text: "", modelName: currentModelName))
             streamingMessageID = messages.last?.id
+            streamingMessageSessionID = sessionID
+        streamingMessageChunks = []
+            streamingMessagePublishedText = ""
+            streamingMessageGeneration &+= 1
+            conversationActivityPhase = .responding
             streamingMessageIsVisionNotice = false
             reasoningState = nil
             isShowingReasoning = false
             activeToolCalls = []
         case "message.delta":
-            guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String),
-                  let id = streamingMessageID,
-                  let index = messages.firstIndex(where: { $0.id == id }) else { return }
+            guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String), streamingMessageID != nil else { return }
             if streamingMessageIsVisionNotice { return }
             if voiceState.isNativeConversationActive {
                 voiceTelemetry.receivedResponse()
             }
-            var newText = messages[index].text + delta
-            if Self.isVisionUnsupportedError(newText) {
-                streamingMessageIsVisionNotice = true
-                newText = Self.visionUnsupportedNotice
-                activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
-            }
-            messages[index] = ChatMessage(id: id, role: .hermes, text: newText, image: messages[index].image, timestamp: messages[index].timestamp, modelName: messages[index].modelName)
+            streamingMessageChunks.append(delta)
+            scheduleStreamingMessageFlush()
         case "message.complete":
+            flushStreamingMessage()
             if let id = streamingMessageID,
                let index = messages.firstIndex(where: { $0.id == id }),
                Self.isVisionUnsupportedError(messages[index].text) {
@@ -702,6 +820,7 @@ final class DockModel: ObservableObject {
                 activeToolCalls[index].completedAt = Date()
             }
             status = .idle
+            conversationActivityPhase = .idle
             isSending = false
             streamingMessageID = nil
             if completionNotificationsEnabled {
@@ -718,6 +837,7 @@ final class DockModel: ObservableObject {
                     responseText: response
                 )
             }
+            if let sessionStorageID { cacheAgentState(for: sessionStorageID); Task { await agentStateWriter.flush() } }
         case "approval.request":
             let approval = ApprovalPresentation.from(payload: payload)
             let isPresentingApproval = approvalText == nil
@@ -735,10 +855,14 @@ final class DockModel: ObservableObject {
                 ?? "Hermes needs more information."
             notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")")
         case "error":
+            flushStreamingMessage()
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
             let text = Self.isVisionUnsupportedError(raw) ? Self.visionUnsupportedNotice : raw
             messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
             status = .idle
+            conversationActivityPhase = .idle
+            streamingMessageID = nil
+            streamingMessageSessionID = nil
             isSending = false
             if voiceState.isNativeConversationActive {
                 nativeVoiceCapture.reset()
@@ -748,6 +872,7 @@ final class DockModel: ObservableObject {
             notify(title: "Hermes encountered an error", body: text, identifier: "failure:\(sessionID ?? "hermes")")
 
         case "reasoning.start", "thinking":
+            conversationActivityPhase = .thinking
             reasoningState = ReasoningState(text: "", isComplete: false)
             isShowingReasoning = false
         case "reasoning.delta", "thinking.delta":
@@ -755,10 +880,12 @@ final class DockModel: ObservableObject {
             let delta = (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
             state.text += delta
             reasoningState = state
+            conversationActivityPhase = .thinking
         case "reasoning.complete", "thinking.stop", "thinking.complete":
             guard var state = reasoningState else { return }
             state.isComplete = true
             reasoningState = state
+            conversationActivityPhase = .responding
 
         case "tool.call", "tool.start", "tool.use", "tool_use":
             let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "unknown"
@@ -861,9 +988,58 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private static func isHighFrequencyEvent(_ type: String) -> Bool {
+        switch type {
+        case "message.delta", "reasoning.delta", "thinking.delta", "voice.status": true
+        default: false
+        }
+    }
+
+    private func scheduleStreamingMessageFlush() {
+        guard streamingMessageFlushTask == nil else { return }
+        let generation = streamingMessageGeneration
+        streamingMessageFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(33))
+            guard !Task.isCancelled, let self, self.streamingMessageGeneration == generation else { return }
+            self.streamingMessageFlushTask = nil
+            self.flushStreamingMessage()
+        }
+    }
+
+    private func flushStreamingMessage() {
+        streamingMessageFlushTask?.cancel()
+        streamingMessageFlushTask = nil
+        guard let id = streamingMessageID,
+              streamingMessageSessionID == sessionID,
+              let index = messages.firstIndex(where: { $0.id == id }),
+              streamingMessagePublishedText != (streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()) else { return }
+        let newText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()
+        if !streamingMessageIsVisionNotice && Self.isVisionUnsupportedError(newText) {
+            streamingMessageIsVisionNotice = true
+            activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
+        }
+        let message = messages[index]
+        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
+        messages[index] = ChatMessage(id: id, role: .hermes, text: publishedText, image: message.image, timestamp: message.timestamp, modelName: message.modelName)
+        streamingMessagePublishedText = publishedText
+    }
+
     private func cacheCurrentAgentState() {
         guard let sessionStorageID else { return }
-        cacheAgentState(for: sessionStorageID)
+        let snapshot = agentStateBySessionID.merging([sessionStorageID: SessionAgentState(
+            activeToolCalls: activeToolCalls,
+            recentEvents: recentEvents,
+            sessionAgents: sessionAgents,
+            activeSubagents: activeSubagents,
+            agentActivities: agentActivities,
+            synthesizedSubagentIDs: synthesizedSubagentIDs
+        )]) { _, new in new }
+        Task { await agentStateWriter.enqueue(snapshot) }
+    }
+
+    private func persistActiveSessionID(_ sessionID: String?) {
+        guard let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionID.isEmpty else { return }
+        defaults.set(sessionID, forKey: lastSessionIDKey)
     }
 
     static func stableSessionID(from result: [String: Any]) -> String? {
@@ -979,11 +1155,26 @@ final class DockModel: ObservableObject {
     }
 
     func refreshDelegationStatus() {
+        guard sessionID != nil else { return }
+        delegationRefreshRequested = true
+        if isRefreshingDelegationStatus { return }
+        guard delegationRefreshTask == nil else { return }
+        let delay = max(0, 0.25 - Date().timeIntervalSince(lastDelegationRefreshAt))
+        delegationRefreshTask = Task { @MainActor [weak self] in
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            guard !Task.isCancelled, let self else { return }
+            self.delegationRefreshTask = nil
+            self.delegationRefreshRequested = false
+            self.lastDelegationRefreshAt = Date()
+            self.performDelegationStatusRefresh()
+        }
+    }
+
+    private func performDelegationStatusRefresh() {
         guard !isRefreshingDelegationStatus else { return }
         let expectedSessionID = sessionID
         isRefreshingDelegationStatus = true
         Task {
-            defer { isRefreshingDelegationStatus = false }
             do {
                 let result = try await gateway.request("delegation.status", params: [:])
                 guard sessionID == expectedSessionID else { return }
@@ -1026,6 +1217,10 @@ final class DockModel: ObservableObject {
                 cacheCurrentAgentState()
             } catch {
                 DebugLog.write("workspace: delegation status failed: \(error.localizedDescription)")
+            }
+            self.isRefreshingDelegationStatus = false
+            if self.delegationRefreshRequested {
+                self.refreshDelegationStatus()
             }
         }
     }
@@ -1691,6 +1886,10 @@ final class DockModel: ObservableObject {
                    let provider = result["provider"] as? String,
                    let model = result["model"] as? String {
                     sessionModelOptionID = HermesModelOption(provider: provider, model: model).id
+                    sessionModelValue = HermesModelOption(provider: provider, model: model).displayName
+                } else if let sessionID, sessionID == self.sessionID,
+                          let model = result["model"] as? String {
+                    sessionModelValue = model
                 }
             } catch {
                 runtimeConfigurationError = "Hermes could not load its model catalog."
@@ -1761,6 +1960,7 @@ final class DockModel: ObservableObject {
             do {
                 let result = try await gateway.request("config.set", params: request.parameters)
                 sessionModelOptionID = option.id
+                sessionModelValue = option.displayName
                 currentModelName = option.model
                 if result["deferred"] as? Bool == true {
                     DebugLog.write("model: session provider/model switch queued for the next turn")
@@ -1818,9 +2018,9 @@ final class DockModel: ObservableObject {
         let detail: String
         if let data = try? JSONSerialization.data(withJSONObject: params, options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
-            detail = json
+            detail = String(json.prefix(500))
         } else {
-            detail = String(describing: params)
+            detail = String(String(describing: params).prefix(500))
         }
         DebugLog.write("event")
         recentEvents.append(AgentEvent(

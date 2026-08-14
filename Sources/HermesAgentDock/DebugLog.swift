@@ -97,6 +97,7 @@ enum ActivityAttributionTrace {
     private static let maximumFileSize: UInt64 = 5 * 1_024 * 1_024
 
     static func reset() {
+        guard enabled else { return }
         queue.sync {
             do {
                 try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -109,6 +110,7 @@ enum ActivityAttributionTrace {
     }
 
     static func append(_ stage: String, fields: [String: Any]) {
+        guard enabled else { return }
         var entry = fields
         entry["timestamp"] = ISO8601DateFormatter().string(from: Date())
         entry["stage"] = stage
@@ -134,5 +136,9 @@ enum ActivityAttributionTrace {
                 print("[HermesAgentDock] Could not write activity trace: \(error.localizedDescription)")
             }
         }
+    }
+
+    static var enabled: Bool {
+        ProcessInfo.processInfo.environment["HERMES_AGENT_DOCK_ACTIVITY_TRACE"] == "1"
     }
 }

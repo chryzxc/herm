@@ -84,6 +84,8 @@ struct AgentMapTreeLayout {
 struct AgentHandoffMapView: View {
     @ObservedObject var model: DockModel
     @Binding var selectedAgentID: String?
+    var allowsContinuousAnimation = true
+    var agents: [HermesSubagent]
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var flowPhase: CGFloat = 0
@@ -122,6 +124,7 @@ struct AgentHandoffMapView: View {
         .onChange(of: hasActiveFlows) { _, _ in
             startHandoffFlowIfNeeded()
         }
+        .onDisappear { flowPhase = 0 }
     }
 
     private var hasActiveHandoffs: Bool {
@@ -129,7 +132,7 @@ struct AgentHandoffMapView: View {
     }
 
     private var activelyWorkingAgentIDs: Set<String> {
-        Set(model.activeSubagents.filter { isActive($0.status) }.map(\.id))
+        model.agentPresentationSnapshot.activeAgentIDs
             .union(model.activeToolCalls.filter { !$0.isComplete }.compactMap(\.agentID))
     }
 
@@ -138,7 +141,7 @@ struct AgentHandoffMapView: View {
     }
 
     private func startHandoffFlowIfNeeded() {
-        guard !reduceMotion, hasActiveFlows, flowPhase == 0 else { return }
+        guard allowsContinuousAnimation, !reduceMotion, hasActiveFlows, agents.count <= 12, flowPhase == 0 else { return }
         // The phase must not finish on a multiple of the dash pattern: that
         // renders identically to its starting position and looks static.
         withAnimation(.linear(duration: 1.25).repeatForever(autoreverses: false)) {
@@ -147,13 +150,19 @@ struct AgentHandoffMapView: View {
     }
 
     private var mapSurface: some View {
-        GeometryReader { viewport in
-            let layout = AgentMapTreeLayout.make(agents: model.displayedSubagents, minimumSize: viewport.size)
-            let mapNodes = nodes
-            let mapEdges = edges(for: mapNodes)
+        let layout = AgentMapTreeLayout.make(
+            agents: agents,
+            minimumSize: CGSize(width: 480, height: 460)
+        )
+        let mapNodes = nodes
+        let mapEdges = edges(for: mapNodes)
+        let animateEdges = mapNodes.count <= 12
+        let showWideGlow = mapNodes.count <= 6
 
-            ScrollView([.horizontal, .vertical], showsIndicators: true) {
-                ZStack {
+        // The board owns vertical scrolling. This map has an explicit content
+        // height so it cannot paint into the pipeline below it.
+        return ScrollView(.horizontal, showsIndicators: true) {
+            ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.scifiCanvas.opacity(0.86))
                     .overlay(alignment: .topLeading) { grid }
@@ -181,7 +190,7 @@ struct AgentHandoffMapView: View {
                                 lineCap: .round
                             )
                         )
-                        if edge.isFlowing && !reduceMotion {
+                        if edge.isFlowing && allowsContinuousAnimation && animateEdges && showWideGlow && !reduceMotion {
                             context.stroke(
                                 connection.path,
                                 with: .color(edge.color.opacity(0.32)),
@@ -199,8 +208,8 @@ struct AgentHandoffMapView: View {
                             style: StrokeStyle(
                                 lineWidth: edge.isHandoff ? 2 : 1.2,
                                 lineCap: .round,
-                                dash: edge.isFlowing ? [10, 18] : [],
-                                dashPhase: edge.isFlowing && !reduceMotion ? flowPhase : 0
+                                dash: edge.isFlowing && allowsContinuousAnimation && animateEdges ? [10, 18] : [],
+                                dashPhase: edge.isFlowing && allowsContinuousAnimation && animateEdges && !reduceMotion ? flowPhase : 0
                             )
                         )
                         context.fill(arrowhead(at: connection.end, direction: connection.direction), with: .color(edge.color.opacity(0.9)))
@@ -215,13 +224,14 @@ struct AgentHandoffMapView: View {
                     agentNode(node)
                         .position(layout.positions[node.id] ?? .zero)
                 }
-                }
-                .frame(width: layout.contentSize.width, height: layout.contentSize.height)
             }
-            .background(Color.scifiCanvas.opacity(0.86))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiBorderStrong, lineWidth: 0.5))
+            .frame(width: layout.contentSize.width, height: layout.contentSize.height)
         }
+        .frame(minWidth: min(layout.contentSize.width, 480))
+        .frame(height: layout.contentSize.height)
+        .background(Color.scifiCanvas.opacity(0.86))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiBorderStrong, lineWidth: 0.5))
     }
 
     private var grid: some View {
@@ -275,7 +285,7 @@ struct AgentHandoffMapView: View {
         } label: {
             VStack(spacing: 5) {
                 ZStack {
-                    if node.shouldPulse && !reduceMotion {
+                    if node.shouldPulse && allowsContinuousAnimation && !reduceMotion {
                         RunningAgentPulse(color: node.statusColor)
                     }
                     // The opaque base intentionally masks connectors beneath
@@ -304,14 +314,20 @@ struct AgentHandoffMapView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.scifiFg)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: AgentMapTreeLayout.nodeWidth)
                 Text(node.role)
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.scifiMuted)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: AgentMapTreeLayout.nodeWidth)
                 Text("\(node.activityCount) \(node.activityCount == 1 ? "EVENT" : "EVENTS") · \(node.status.uppercased())")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(node.statusColor)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: AgentMapTreeLayout.nodeWidth)
             }
             .frame(width: AgentMapTreeLayout.nodeWidth, height: AgentMapTreeLayout.nodeHeight, alignment: .top)
             .contentShape(Rectangle())
@@ -357,7 +373,7 @@ struct AgentHandoffMapView: View {
     }
 
     private var nodes: [MapNode] {
-        return model.displayedSubagents.map { agent in
+        return agents.map { agent in
             let name = agent.name ?? agent.role ?? "Agent"
             return MapNode(
                 id: agent.id,
@@ -425,15 +441,7 @@ struct AgentHandoffMapView: View {
     /// Materialize the shared pipeline only once for the node collection,
     /// instead of rebuilding it once per agent badge during live updates.
     private var activityCountsByAgentID: [String: Int] {
-        AgentActivityPresentation.pipeline(
-            activities: model.agentActivities,
-            toolCalls: model.activeToolCalls,
-            subagents: model.displayedSubagents
-        )
-        .reduce(into: [:]) { counts, item in
-            guard let agentID = item.agentID else { return }
-            counts[agentID, default: 0] += 1
-        }
+        model.agentPresentationSnapshot.activityCountsByAgentID
     }
 
     private func nodeDetail(for agent: HermesSubagent, displayName: String) -> String {

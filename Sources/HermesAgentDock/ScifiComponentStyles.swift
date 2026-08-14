@@ -8,6 +8,10 @@ extension Color {
     static let scifiSurface4 = Color.white.opacity(0.04)
     static let scifiSurface6 = Color.white.opacity(0.06)
     static let scifiSurface8 = Color.white.opacity(0.08)
+    /// Softer charcoal-indigo message surface. Keeping this opaque avoids the
+    /// high-contrast black/white glass effect that can cause eye strain during
+    /// long reading sessions.
+    static let scifiMessageBubble = Color(red: 0.112, green: 0.118, blue: 0.16)
     static let scifiControlSurface = scifiCanvas
     static let scifiBorderStrong = Color.white.opacity(0.12)
     static let scifiBorder = Color.white.opacity(0.08)

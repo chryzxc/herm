@@ -209,19 +209,120 @@ struct SessionInspector: View {
     }
 
     private func inspectorCard(title: String, value: String, accent: Color = .scifiFg) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let isLatestActivity = title == "LATEST ACTIVITY"
+        return VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(0.75)
                 .foregroundStyle(Color.scifiTertiary)
-            Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(accent)
-                .fixedSize(horizontal: false, vertical: true)
+            if isLatestActivity {
+                ActivityObjectView(detail: value, accent: accent)
+            } else {
+                Text(value)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(accent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(Color.scifiSurface4)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+/// Presents event payloads as a compact object inspector instead of forcing
+/// users to read a single horizontally-wrapped JSON string.
+private struct ActivityObjectView: View {
+    let detail: String
+    let accent: Color
+
+    var body: some View {
+        if let object = Self.decode(detail) {
+            ActivityObjectValue(value: object, accent: accent)
+        } else {
+            Text(detail)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(accent)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private static func decode(_ detail: String) -> Any? {
+        guard let data = detail.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data)
+    }
+}
+
+private struct ActivityObjectValue: View {
+    let value: Any
+    let accent: Color
+
+    var body: some View {
+        switch value {
+        case let dictionary as [String: Any]:
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(dictionary.keys.sorted(), id: \.self) { key in
+                    if let child = dictionary[key] {
+                        ActivityObjectField(key: key, value: child, accent: accent)
+                    }
+                }
+            }
+        case let array as [Any]:
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(Array(array.enumerated()), id: \.offset) { index, child in
+                    ActivityObjectField(key: "[\(index)]", value: child, accent: accent)
+                }
+            }
+        default:
+            Text(Self.scalarText(value))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(accent)
+                .textSelection(.enabled)
+        }
+    }
+
+    fileprivate static func scalarText(_ value: Any) -> String {
+        if value is NSNull { return "null" }
+        if let string = value as? String { return string }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue ? "true" : "false" }
+            return number.stringValue
+        }
+        return String(describing: value)
+    }
+}
+
+private struct ActivityObjectField: View {
+    let key: String
+    let value: Any
+    let accent: Color
+
+    private var isNested: Bool {
+        value is [String: Any] || value is [Any]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(key)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+                if !isNested {
+                    Text(ActivityObjectValue.scalarText(value))
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(accent)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if isNested {
+                ActivityObjectValue(value: value, accent: accent)
+                    .padding(.leading, 12)
+                    .padding(.vertical, 5)
+                    .background(Color.scifiCanvas.opacity(0.42))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+        }
     }
 }

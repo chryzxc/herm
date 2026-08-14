@@ -136,6 +136,7 @@ final class WorkspaceStore: ObservableObject {
 
     func updateStatus(_ status: WorkspaceTaskStatus, for taskID: UUID) {
         guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        guard tasks[index].status != status else { return }
         tasks[index].status = status
         tasks[index].updatedAt = Date()
         save()

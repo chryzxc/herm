@@ -4,15 +4,26 @@ import SwiftUI
 /// Reusable conversation-only presentation primitives. They render DockModel
 /// state but deliberately do not own transport, session, or input state.
 struct ThinkingDots: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   var body: some View {
-    TimelineView(.animation) { context in
-      let t = context.date.timeIntervalSinceReferenceDate
-      HStack(spacing: 4) {
-        ForEach(0..<3) { i in
-          let p = (t + Double(i) * 0.2).truncatingRemainder(dividingBy: 1.4) / 1.4
-          let s = 0.6 + 0.4 * max(0, sin(p * .pi * 2))
-          Circle().fill(Color.scifiAccent).frame(width: 6, height: 6).scaleEffect(s).opacity(s)
-        }
+    if reduceMotion {
+      dots(at: 0)
+    } else {
+      // This indicator is informative, not motion-critical. Eight updates a
+      // second reads smoothly enough while avoiding a display-rate wakeup.
+      TimelineView(.periodic(from: .now, by: 1.0 / 8.0)) { context in
+        dots(at: context.date.timeIntervalSinceReferenceDate)
+      }
+    }
+  }
+
+  private func dots(at time: TimeInterval) -> some View {
+    HStack(spacing: 4) {
+      ForEach(0..<3) { i in
+        let p = (time + Double(i) * 0.2).truncatingRemainder(dividingBy: 1.4) / 1.4
+        let s = 0.6 + 0.4 * max(0, sin(p * .pi * 2))
+        Circle().fill(Color.scifiAccent).frame(width: 6, height: 6).scaleEffect(s).opacity(s)
       }
     }
   }
@@ -27,12 +38,6 @@ struct VoiceModeToolbar: View {
 
   var body: some View {
     HStack {
-      Button(action: onReturnToChat) {
-        Image(systemName: "text.bubble").font(.system(size: 13, weight: .medium)).foregroundStyle(
-          Color.scifiMuted
-        ).frame(width: 36, height: 36).background(Circle().fill(Color.scifiSurface4))
-      }
-      .buttonStyle(.scifiPress).dockHitTarget().help("Return to chat")
       Spacer()
       HStack(spacing: 8) {
         Button(action: onToggleWorkspace) {
@@ -56,6 +61,12 @@ struct VoiceModeToolbar: View {
           }
           .buttonStyle(.scifiPress).dockHitTarget().help("Stop Hermes request")
         }
+        Button(action: onReturnToChat) {
+          Image(systemName: "text.bubble").font(.system(size: 13, weight: .medium)).foregroundStyle(
+            Color.scifiMuted
+          ).frame(width: 36, height: 36).background(Circle().fill(Color.scifiSurface4))
+        }
+        .buttonStyle(.scifiPress).dockHitTarget().help("Return to chat")
       }
     }
   }
@@ -123,6 +134,7 @@ struct MessageBubbleShape: Shape {
 
 struct MarkdownMessageView: View {
   let markdown: String
+  @State private var parsedBlocks: [Block]
   private enum Block {
     case heading(level: Int, text: String)
     case paragraph(String)
@@ -131,9 +143,14 @@ struct MarkdownMessageView: View {
     case quote(String)
   }
 
+  init(markdown: String) {
+    self.markdown = markdown
+    _parsedBlocks = State(initialValue: Self.parseBlocks(markdown))
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+      ForEach(Array(parsedBlocks.enumerated()), id: \.offset) { _, block in
         switch block {
         case .heading(let level, let text):
           renderedText(text).font(.system(size: Self.headingSize(level), weight: .bold)).padding(
@@ -177,7 +194,7 @@ struct MarkdownMessageView: View {
   private static func headingSize(_ level: Int) -> CGFloat {
     level == 1 ? 20 : level == 2 ? 17 : level == 3 ? 15 : 14
   }
-  private var blocks: [Block] {
+  private static func parseBlocks(_ markdown: String) -> [Block] {
     var result: [Block] = []
     var code: [String] = []
     var language: String?
@@ -306,12 +323,14 @@ struct ConversationActivityRow: View {
   @ObservedObject var model: DockModel
   var horizontalInset: CGFloat = 20
   private var latestPipelineActivity: AgentActivityPresentation.PipelineActivity? {
-    AgentActivityPresentation.pipeline(
-      activities: model.agentActivities, toolCalls: model.activeToolCalls,
-      subagents: model.displayedSubagents
-    ).first(where: \.isActive)
+    model.agentPresentationSnapshot.pipeline.first(where: \.isActive)
   }
   private var title: String {
+    switch model.conversationActivityPhase {
+    case .thinking: return "Thinking"
+    case .responding: break
+    case .idle: break
+    }
     guard latestPipelineActivity != nil else { return "Responding" }
     return AgentActivityPresentation.conversationTitle(
       latestPipelineActivity: latestPipelineActivity, recentEvents: model.recentEvents)

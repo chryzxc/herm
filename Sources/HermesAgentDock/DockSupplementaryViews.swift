@@ -32,7 +32,7 @@ struct StartupAssistantView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 30.0)) { context in
+        TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 12.0)) { context in
             let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
 
             VStack(spacing: 0) {
@@ -167,14 +167,22 @@ struct VoiceOrbView: View {
     let audioLevel: CGFloat
 
     var body: some View {
-        TimelineView(.animation) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            let isActive = isListening || isResponding
-            let animationTime = isActive ? t : 0
+        let isActive = isListening || isResponding
+        if isActive {
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
+                orb(time: context.date.timeIntervalSinceReferenceDate, isActive: true)
+            }
+        } else {
+            // An idle voice control must not keep the display link alive.
+            orb(time: 0, isActive: false)
+        }
+    }
+
+    private func orb(time animationTime: TimeInterval, isActive: Bool) -> some View {
             let voiceLevel = Double(audioLevel)
             let waveSpeed = isResponding ? 6.0 : (isListening ? 4.0 : 0)
             let waveAmplitude = isResponding ? 22.0 : (isListening ? 4.0 + voiceLevel * 26.0 : 0)
-            ZStack {
+        return ZStack {
                 ForEach(0..<4) { i in
                     let size = 140.0 + Double(i) * 60
                     Circle()
@@ -227,7 +235,6 @@ struct VoiceOrbView: View {
                             .foregroundStyle(Color.scifiAccent)
                             .scaleEffect(1 - 0.12 * (1 + sin(animationTime * .pi * 1.6)) / 2)
                     }
-            }
         }
     }
 }
@@ -236,17 +243,25 @@ struct MicWaveform: View {
     let isActive: Bool
 
     var body: some View {
-        TimelineView(.animation) { context in
-            HStack(spacing: 2) {
-                ForEach(0..<5, id: \.self) { index in
-                    let phase = context.date.timeIntervalSinceReferenceDate * 4 + Double(index) * 0.8
-                    Capsule()
-                        .frame(width: 2, height: isActive ? 5 + CGFloat(abs(sin(phase)) * 13) : 3)
-                }
+        if isActive {
+            TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { context in
+                waveform(at: context.date.timeIntervalSinceReferenceDate)
             }
-            .foregroundStyle(Color.scifiAccent)
-            .frame(width: 28, height: 28)
+        } else {
+            waveform(at: 0)
         }
+    }
+
+    private func waveform(at time: TimeInterval) -> some View {
+        HStack(spacing: 2) {
+            ForEach(0..<5, id: \.self) { index in
+                let phase = time * 4 + Double(index) * 0.8
+                Capsule()
+                    .frame(width: 2, height: isActive ? 5 + CGFloat(abs(sin(phase)) * 13) : 3)
+            }
+        }
+        .foregroundStyle(Color.scifiAccent)
+        .frame(width: 28, height: 28)
     }
 }
 

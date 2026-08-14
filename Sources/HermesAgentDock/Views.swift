@@ -140,7 +140,10 @@ struct DockPopover: View {
                 model.stageImageFile(at: url)
             }
         }
-        .task { model.restoreLatestSessionIfNeeded() }
+        .task {
+            model.restoreLatestSessionIfNeeded()
+            model.refreshRuntimeConfiguration()
+        }
         .onAppear {
             synchronizePanelLayout()
             synchronizeWorkspace()
@@ -206,7 +209,9 @@ struct DockPopover: View {
         }
         .onChange(of: model.sessionID) { _, _ in model.refreshSessionModelOptions() }
         .onChange(of: model.currentSessionTitle) { _, _ in synchronizeWorkspace() }
-        .onChange(of: model.messages) { _, _ in synchronizeWorkspace() }
+        .onChange(of: model.messages.count) { oldCount, newCount in
+            if newCount > oldCount { synchronizeWorkspace() }
+        }
     }
 
     private var isWorkspaceVisible: Bool {
@@ -432,109 +437,17 @@ struct DockPopover: View {
                 }
                 .buttonStyle(.scifiPress)
                 .dockHitTarget()
+                .disabled(model.isRestoringSession)
                 .help("New chat")
             }
             }
             .padding(.horizontal, 18)
             .padding(.top, 12)
 
-            HStack(spacing: 8) {
-                HStack(spacing: 8) {
-                if model.sessionID != nil {
-                    Menu {
-                        if model.runtimeModelOptions.isEmpty {
-                            Text("Loading model catalog…")
-                        } else {
-                            ForEach(model.runtimeModelOptions) { option in
-                                Button {
-                                    model.updateSessionModel(option)
-                                } label: {
-                                    HStack {
-                                        Text(option.displayName)
-                                        if option.id == model.sessionModelOptionID {
-                                            Image(systemName: "checkmark")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "cpu")
-                                .font(.system(size: 10, weight: .semibold))
-                            Text(sessionModelDisplayName)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 9, weight: .bold))
-                        }
-                        .foregroundStyle(Color.scifiFg)
-                        .padding(.horizontal, 7)
-                        .frame(height: 27)
-                        .background(Color.scifiSurface4)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .buttonStyle(.scifiPress)
-                    .disabled(model.isUpdatingSessionModel)
-                    .help("Change the model for this session only")
-                } else {
-                    Text("Choose a model when a session starts")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
-                }
-            }
-                .padding(.top, 0)
-
-                Text("/")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
-
-                HStack(spacing: 8) {
-                if model.sessionID != nil {
-                    Menu {
-                        ForEach(HermesReasoningVariant.allCases) { variant in
-                            Button {
-                                model.updateSessionReasoning(variant)
-                            } label: {
-                                HStack {
-                                    Text(variant.displayName)
-                                    if variant == model.sessionReasoningVariant {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "brain")
-                                .font(.system(size: 10, weight: .semibold))
-                            Text(sessionReasoningDisplayName)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 8, weight: .bold))
-                        }
-                        .foregroundStyle(Color.scifiFg)
-                        .padding(.horizontal, 7)
-                        .frame(height: 27)
-                        .background(Color.scifiSurface4)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .buttonStyle(.scifiPress)
-                    .disabled(model.isUpdatingSessionReasoning)
-                    .help("Change reasoning depth for this session only")
-                } else {
-                    Text("Choose reasoning after starting a session")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
-                }
-            }
-                .padding(.top, 0)
+            sessionConfigurationRow
+                .padding(.horizontal, 18)
+                .padding(.top, 8)
                 .padding(.bottom, 8)
-            }
-            .padding(.horizontal, 18)
         }
         .background(Color.scifiSurface2)
         .overlay(alignment: .bottom) {
@@ -553,15 +466,134 @@ struct DockPopover: View {
     }
 
     private var sessionModelDisplayName: String {
-        guard let id = model.sessionModelOptionID,
-              let option = model.runtimeModelOptions.first(where: { $0.id == id }) else {
-            return "Session model"
+        if let id = model.sessionModelOptionID,
+           let option = model.runtimeModelOptions.first(where: { $0.id == id }) {
+            return option.displayName
         }
-        return option.displayName
+        if let value = model.sessionModelValue, !value.isEmpty {
+            return value
+        }
+        let runtime = model.runtimeConfiguration
+        if let provider = runtime?.provider, let modelName = runtime?.model {
+            return "\(provider)  /  \(modelName)"
+        }
+        return "LOADING…"
     }
 
     private var sessionReasoningDisplayName: String {
         model.sessionReasoningVariant?.displayName ?? "LOADING…"
+    }
+
+    /// A single, divider-led rail keeps the two session settings scannable as
+    /// one piece of context instead of presenting competing controls.
+    @ViewBuilder
+    private var sessionConfigurationRow: some View {
+        if model.sessionID != nil {
+            HStack(spacing: 0) {
+                Menu {
+                    if model.runtimeModelOptions.isEmpty {
+                        Text("Loading model catalog…")
+                    } else {
+                        ForEach(model.runtimeModelOptions) { option in
+                            Button {
+                                model.updateSessionModel(option)
+                            } label: {
+                                HStack {
+                                    Text(option.displayName)
+                                    if option.id == model.sessionModelOptionID {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    sessionConfigurationLabel(
+                        icon: "cpu",
+                        title: "MODEL",
+                        value: sessionModelDisplayName,
+                        truncatesValue: true
+                    )
+                }
+                .menuStyle(.borderlessButton)
+                .buttonStyle(.scifiPress)
+                .disabled(model.isUpdatingSessionModel)
+                .help("Change the model for this session only")
+                .accessibilityLabel("Model: \(sessionModelDisplayName)")
+
+                Color.scifiBorderLight
+                    .frame(width: 0.5, height: 24)
+
+                Menu {
+                    ForEach(HermesReasoningVariant.allCases) { variant in
+                        Button {
+                            model.updateSessionReasoning(variant)
+                        } label: {
+                            HStack {
+                                Text(variant.displayName)
+                                if variant == model.sessionReasoningVariant {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    sessionConfigurationLabel(
+                        icon: "brain",
+                        title: "THINKING",
+                        value: sessionReasoningDisplayName
+                    )
+                }
+                .menuStyle(.borderlessButton)
+                .buttonStyle(.scifiPress)
+                .disabled(model.isUpdatingSessionReasoning)
+                .help("Change thinking depth for this session only")
+                .accessibilityLabel("Thinking depth: \(sessionReasoningDisplayName)")
+            }
+            .foregroundStyle(Color.scifiFg)
+            .background(Color.scifiSurface4)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.scifiBorder, lineWidth: 0.5)
+            }
+        } else {
+            Text("Session configuration becomes available when a chat starts")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(Color.scifiTertiary)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        }
+    }
+
+    private func sessionConfigurationLabel(
+        icon: String,
+        title: String,
+        value: String,
+        truncatesValue: Bool = false
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.scifiAccent)
+
+            Text(title)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .tracking(0.6)
+                .foregroundStyle(Color.scifiMuted)
+
+            Text(value)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(truncatesValue ? .middle : .tail)
+                .layoutPriority(1)
+
+            Image(systemName: "chevron.down")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Color.scifiMuted)
+        }
+        .padding(.horizontal, 10)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 
     private var sessionPicker: some View {
@@ -893,11 +925,7 @@ struct DockPopover: View {
     /// The activity row deliberately represents one current state. Showing a
     /// history of streaming events here pushes the conversation out of view.
     private var conversationPipelineActivities: [AgentActivityPresentation.PipelineActivity] {
-        AgentActivityPresentation.pipeline(
-            activities: model.agentActivities,
-            toolCalls: model.activeToolCalls,
-            subagents: model.displayedSubagents
-        )
+        model.agentPresentationSnapshot.pipeline
     }
 
     private var isConversationActivityVisible: Bool {
@@ -985,13 +1013,23 @@ struct DockPopover: View {
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         if !message.text.isEmpty {
-                            MarkdownMessageView(markdown: message.text)
+                            Group {
+                                if message.id == model.streamingMessageIDForPresentation {
+                                    Text(message.text)
+                                        .font(.system(size: 14))
+                                        .lineSpacing(3)
+                                        .textSelection(.enabled)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                } else {
+                                    MarkdownMessageView(markdown: message.text)
+                                }
+                            }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
                                 .foregroundStyle(Color.scifiFg)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.scifiSurface)
+                                .background(Color.scifiMessageBubble)
                                 .clipShape(MessageBubbleShape(isUser: false))
                                 .overlay(
                                     MessageBubbleShape(isUser: false)
@@ -1236,7 +1274,7 @@ struct DockPopover: View {
                     )
                     .help("Attach image")
 
-                    TextField("Message…", text: $model.draft)
+                    TextField(model.isRestoringSession ? "Restoring conversation…" : "Message…", text: $model.draft)
                         .textFieldStyle(.plain)
                         .focused($isComposerFocused)
                         .onSubmit {
@@ -1252,6 +1290,7 @@ struct DockPopover: View {
                         )
                         .foregroundStyle(Color.scifiFg)
                         .environment(\.colorScheme, .dark)
+                        .disabled(model.isRestoringSession)
                         .onChange(of: model.draft) { _, draft in
                             DebugLog.write("composer: draft changed (length: \(draft.count))")
                         }
@@ -1287,13 +1326,13 @@ struct DockPopover: View {
                         .frame(width: 44, height: 44)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(canSend && !model.isSending ? Color.scifiAccent : Color.scifiSurface6)
+                            .fill(canSend && !model.isSending && !model.isRestoringSession ? Color.scifiAccent : Color.scifiSurface6)
                         )
                     }
                 }
                 .buttonStyle(.scifiPress)
                 .dockHitTarget()
-                .disabled(!speechInput.isRecording && (!canSend || model.isSending))
+                .disabled(model.isRestoringSession || (!speechInput.isRecording && (!canSend || model.isSending)))
                 .keyboardShortcut(.return, modifiers: [.command])
                 .help(speechInput.isRecording ? "Send voice prompt" : "Send message (↩; ⌘↩ also works)")
             }

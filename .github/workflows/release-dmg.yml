@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(node -p \"require('./package.json').version\")"
+          VERSION="$(node -p "require('./package.json').version")"
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || ! git cat-file -e HEAD^:package.json 2>/dev/null; then
@@ -37,7 +37,7 @@ jobs:
             exit 0
           fi
 
-          PREVIOUS_VERSION="$(git show HEAD^:package.json | node -p \"JSON.parse(require('fs').readFileSync(0, 'utf8')).version\")"
+          PREVIOUS_VERSION="$(git show HEAD^:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
           if [ "$VERSION" = "$PREVIOUS_VERSION" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else

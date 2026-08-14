@@ -12,6 +12,20 @@ struct AgentBoardView: View {
     @State private var expandedAgentID: String?
     @State private var expandedActivityID: String?
     @State private var expandedPipelineItemID: String?
+    @State private var agentScope: AgentScope
+
+    private enum AgentScope: String, CaseIterable, Identifiable {
+        case live = "Live"
+        case all = "All"
+        var id: Self { self }
+    }
+
+    init(model: DockModel, onClose: @escaping () -> Void = {}, embedded: Bool = false) {
+        self.model = model
+        self.onClose = onClose
+        self.embedded = embedded
+        _agentScope = State(initialValue: embedded ? .live : .all)
+    }
 
     private struct Agent: Identifiable {
         let id: String
@@ -36,7 +50,8 @@ struct AgentBoardView: View {
     }
 
     var body: some View {
-        let pipelineItems = pipeline
+        let totalPipelineItemCount = pipeline.count
+        let pipelineItems = Array(pipeline.prefix(embedded ? 20 : 40))
         ZStack {
             // Embedded mode belongs to the Control pane and must inherit its
             // dark glass surface instead of introducing a separate black block.
@@ -46,10 +61,10 @@ struct AgentBoardView: View {
             VStack(spacing: 0) {
                 if !embedded { titlebar }
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        sectionHeading("ACTIVE AGENTS", detail: dataSource)
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        activeAgentsHeading
                         agentSectionContent
-                        sectionHeading("ACTIVE PIPELINE", detail: "\(pipelineItems.count) ITEMS")
+                        sectionHeading("ACTIVE PIPELINE", detail: totalPipelineItemCount > pipelineItems.count ? "LATEST \(pipelineItems.count) / \(totalPipelineItemCount)" : "\(totalPipelineItemCount) ITEMS")
                         if pipelineItems.isEmpty {
                             emptyState(title: "No live activity", detail: "The pipeline will populate when a Hermes subagent starts work.")
                         } else {
@@ -105,11 +120,16 @@ struct AgentBoardView: View {
 
     @ViewBuilder
     private var agentSectionContent: some View {
-        if agents.isEmpty {
+        if mapAgents.isEmpty {
             emptyState(title: "No active Hermes subagents", detail: "Delegate work from Hermes to see named agents and live activity here.")
         } else {
-            AgentHandoffMapView(model: model, selectedAgentID: $expandedAgentID)
-                .frame(height: 460)
+            AgentHandoffMapView(
+                model: model,
+                selectedAgentID: $expandedAgentID,
+                allowsContinuousAnimation: !embedded,
+                agents: mapAgents
+            )
+                .frame(maxWidth: .infinity, minHeight: 460, alignment: .leading)
             if let selectedAgent = agents.first(where: { $0.id == expandedAgentID }) {
                 expandedActivity(for: selectedAgent)
                     .padding(12)
@@ -117,6 +137,46 @@ struct AgentBoardView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
+        }
+    }
+
+    private var activeAgentsHeading: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("ACTIVE AGENTS")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.scifiMuted)
+                Spacer(minLength: 0)
+                Text(agentSummary)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .lineLimit(1)
+            }
+            HStack(spacing: 2) {
+                ForEach(AgentScope.allCases) { scope in
+                    Button {
+                        withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.16)) {
+                            agentScope = scope
+                        }
+                    } label: {
+                        Text(scope.rawValue.uppercased())
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(agentScope == scope ? Color.scifiFg : Color.scifiMuted)
+                            .frame(width: 50, height: 30)
+                            .background(agentScope == scope ? Color.scifiAccentMuted : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(agentScope == scope ? .isSelected : [])
+                }
+            }
+            .padding(2)
+            .background(Color.scifiSurface4)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Active agents scope")
         }
     }
 
@@ -521,8 +581,26 @@ struct AgentBoardView: View {
         model.activeSubagents.isEmpty ? "COMPLETED SESSION HISTORY" : "LIVE HERMES STATE"
     }
 
+    /// The embedded Activity panel is a live monitor, not an unbounded
+    /// historical graph. Keep every active worker and only the newest finished
+    /// workers needed for nearby context; full history stays in the pipeline.
+    private var mapAgents: [HermesSubagent] {
+        let all = model.agentPresentationSnapshot.displayedSubagents
+        guard agentScope == .live else { return all }
+        let liveIDs = Set(model.activeSubagents.map(\.id))
+        let live = all.filter { liveIDs.contains($0.id) }
+        let recentHistory = all.filter { !liveIDs.contains($0.id) }
+        return live + recentHistory.prefix(max(0, 12 - live.count))
+    }
+
+    private var agentSummary: String {
+        let total = model.agentPresentationSnapshot.displayedSubagents.count
+        if agentScope == .all { return "ALL \(total)" }
+        return "LIVE \(mapAgents.count) / \(total)"
+    }
+
     private var agents: [Agent] {
-        return model.displayedSubagents.map { subagent in
+        return model.agentPresentationSnapshot.displayedSubagents.map { subagent in
             return Agent(
                 id: subagent.id,
                 agentColor: agentColor(for: subagent.id)
@@ -531,11 +609,7 @@ struct AgentBoardView: View {
     }
 
     private var pipeline: [PipelineItem] {
-        AgentActivityPresentation.pipeline(
-            activities: model.agentActivities,
-            toolCalls: model.activeToolCalls,
-            subagents: model.displayedSubagents
-        ).map { item in
+        model.agentPresentationSnapshot.pipeline.map { item in
             PipelineItem(
                 id: item.id,
                 agentID: item.agentID,

@@ -115,11 +115,10 @@ enum AgentActivityPresentation {
         toolCalls: [ActiveToolCall],
         subagents: [HermesSubagent]
     ) -> [PipelineActivity] {
+        let agentByID = Dictionary(uniqueKeysWithValues: subagents.map { ($0.id, $0) })
         var rows = activities.map { activity in
             let activityPhase = phase(for: activity.kind)
-            let currentAgentStatus = activity.agentID.flatMap { id in
-                subagents.first(where: { $0.id == id })?.status
-            }
+            let currentAgentStatus = activity.agentID.flatMap { agentByID[$0]?.status }
             // Activity rows are historical, but a terminal agent state is the
             // authoritative lifecycle result. Without this override an old
             // `subagent.start` row remains labelled Running forever after that
@@ -140,9 +139,7 @@ enum AgentActivityPresentation {
                 timestamp: activity.timestamp,
                 status: status,
                 task: activityTitle(for: activity),
-                agent: activity.agentID.flatMap { id in
-                    subagents.first(where: { $0.id == id }).map { $0.name ?? $0.role ?? "Agent" }
-                } ?? "Hermes",
+                agent: activity.agentID.flatMap { agentByID[$0].map { $0.name ?? $0.role ?? "Agent" } } ?? "Hermes",
                 agentID: activity.agentID,
                 parentAgentID: activity.parentAgentID,
                 childSessionID: activity.childSessionID,
@@ -161,9 +158,7 @@ enum AgentActivityPresentation {
                 timestamp: call.completedAt ?? call.startedAt,
                 status: call.isComplete ? "Complete" : "Running",
                 task: toolActivityTitle(name: call.name, context: call.context),
-                agent: call.agentID.flatMap { id in
-                    subagents.first(where: { $0.id == id }).map { $0.name ?? $0.role ?? "Agent" }
-                } ?? "Orchestrator",
+                agent: call.agentID.flatMap { agentByID[$0].map { $0.name ?? $0.role ?? "Agent" } } ?? "Orchestrator",
                 agentID: call.agentID,
                 parentAgentID: call.parentAgentID,
                 childSessionID: call.childSessionID,

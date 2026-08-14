@@ -80,6 +80,12 @@ struct ReasoningState: Equatable {
     var isComplete: Bool
 }
 
+enum ConversationActivityPhase: Equatable {
+    case idle
+    case thinking
+    case responding
+}
+
 struct AgentEvent: Identifiable, Equatable, Codable {
     let id: UUID
     let type: String
@@ -196,6 +202,14 @@ struct AgentActivityEnvelopeProjection {
     let consumesParentEvent: Bool
 }
 
+struct AgentPresentationSnapshot: Equatable {
+    let displayedSubagents: [HermesSubagent]
+    let pipeline: [AgentActivityPresentation.PipelineActivity]
+    let activityCountsByAgentID: [String: Int]
+    let activeAgentIDs: Set<String>
+    let revision: UInt
+}
+
 struct SessionAgentState: Equatable, Codable {
     let activeToolCalls: [ActiveToolCall]
     let recentEvents: [AgentEvent]
@@ -215,7 +229,6 @@ private struct SessionAgentStateArchive: Codable {
     }
 }
 
-@MainActor
 struct SessionAgentStateStore {
     let fileURL: URL
 
@@ -236,13 +249,56 @@ struct SessionAgentStateStore {
 
     func save(_ states: [String: SessionAgentState]) {
         guard let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: states)) else { return }
+        saveEncoded(data)
+    }
+
+    func saveEncoded(_ data: Data) {
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch {
-            DebugLog.write("model: session agent state persistence failed")
+            print("[HermesAgentDock] session agent state persistence failed")
         }
+    }
+}
+
+actor SessionAgentStateWriter {
+    private let store: SessionAgentStateStore
+    private var pending: [String: SessionAgentState]?
+    private var generation = 0
+    private var lastEncoded: Data?
+
+    init(store: SessionAgentStateStore) { self.store = store }
+
+    func enqueue(_ states: [String: SessionAgentState]) {
+        pending = states
+        generation &+= 1
+        let expected = generation
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            await self.commitIfCurrent(expected)
+        }
+    }
+
+    func flush() {
+        generation &+= 1
+        commit()
+    }
+
+    private func commitIfCurrent(_ expected: Int) {
+        guard expected == generation else { return }
+        commit()
+    }
+
+    private func commit() {
+        guard let pending,
+              let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: pending)),
+              data != lastEncoded else { return }
+        lastEncoded = data
+        store.saveEncoded(data)
+        self.pending = nil
     }
 }
 
