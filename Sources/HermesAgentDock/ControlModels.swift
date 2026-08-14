@@ -308,6 +308,7 @@ struct ProjectSummary: Identifiable, Codable, Equatable {
     let name: String
     let repoCount: Int
     let sessionCount: Int
+    let sessionIDs: Set<String>
     let preview: String?
     let isActive: Bool
 }

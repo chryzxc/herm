@@ -16,6 +16,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var delegationPaused = false
     @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var projects: [ProjectSummary] = []
+    @Published private(set) var projectIDBySessionID: [String: String] = [:]
     @Published private(set) var searchResults: [ControlSearchResult] = []
     @Published private(set) var isSearching = false
     @Published private(set) var kanbanTasks: [KanbanTaskSummary] = []
@@ -67,6 +68,7 @@ final class ControlCenterModel: ObservableObject {
     private var projectFactsGeneration = UUID()
     private var verificationGeneration = UUID()
     private var projectSessionsGeneration = UUID()
+    private var projectMembershipGeneration = UUID()
     private var cronRunsGeneration = UUID()
     private var mcpInventoryGeneration = UUID()
     private var journeyGeneration = UUID()
@@ -309,10 +311,27 @@ final class ControlCenterModel: ObservableObject {
                     let result = try await rpc.projectsTree()
                     let refreshedProjects = Self.parseProjects(result)
                     projects = refreshedProjects
+                    let validProjectIDs = Set(refreshedProjects.map(\.id))
+                    // A compact tree response may provide only session counts.
+                    // Keep memberships already verified through
+                    // `projects.project_sessions` as long as their project is
+                    // still present, then enrich them with inline rows.
+                    var memberships = projectIDBySessionID.filter { validProjectIDs.contains($0.value) }
+                    for project in refreshedProjects {
+                        for sessionID in project.sessionIDs {
+                            memberships[sessionID] = project.id
+                        }
+                    }
+                    projectIDBySessionID = memberships
                     if let selectedProjectID,
                        let refreshedSelection = refreshedProjects.first(where: { $0.id == selectedProjectID }) {
                         selectedProject = refreshedSelection
                     }
+                    // The projects projection can complete after focus was
+                    // set (or before a dock model is bound). Resolve against
+                    // the focused session, which is the authoritative UI
+                    // selection for this model.
+                    resolveProjectMembership(for: currentFocus?.sessionID)
                     recordProjectionSuccess("projects")
                 } catch {
                     let message = error.localizedDescription
@@ -583,6 +602,9 @@ final class ControlCenterModel: ObservableObject {
                 guard let result else { throw HermesGateway.GatewayError.malformedResponse }
                 guard generation == projectSessionsGeneration, selectedProjectID == project.id else { return }
                 projectSessions = Self.parseProjectSessions(result)
+                for session in projectSessions {
+                    projectIDBySessionID[session.id] = project.id
+                }
             } catch {
                 guard generation == projectSessionsGeneration, selectedProjectID == project.id else { return }
                 lastError = error.localizedDescription
@@ -1561,6 +1583,39 @@ final class ControlCenterModel: ObservableObject {
             developmentContext = nil
         }
         currentFocus = ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID)
+        resolveProjectMembership(for: sessionID)
+    }
+
+    func project(forSessionID sessionID: String) -> ProjectSummary? {
+        if let project = projects.first(where: { $0.sessionIDs.contains(sessionID) }) {
+            return project
+        }
+        guard let projectID = projectIDBySessionID[sessionID] else { return nil }
+        return projects.first(where: { $0.id == projectID })
+    }
+
+    /// The project tree sometimes reports counts without embedding session
+    /// rows. Resolve the active session through the supported per-project
+    /// projection so session UI can always display its real owner.
+    private func resolveProjectMembership(for sessionID: String?) {
+        guard let sessionID, !sessionID.isEmpty,
+              project(forSessionID: sessionID) == nil,
+              let rpc, !projects.isEmpty else { return }
+        let generation = UUID()
+        projectMembershipGeneration = generation
+        let candidates = projects
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for project in candidates {
+                guard generation == projectMembershipGeneration else { return }
+                guard let result = try? await rpc.projectSessions(projectID: project.id) else { continue }
+                guard generation == projectMembershipGeneration else { return }
+                if Self.parseProjectSessions(result).contains(where: { $0.id == sessionID }) {
+                    projectIDBySessionID[sessionID] = project.id
+                    return
+                }
+            }
+        }
     }
 
     func focusTitle(_ reference: ControlReference) -> String {
@@ -2134,12 +2189,14 @@ final class ControlCenterModel: ObservableObject {
             // Projects can return session records inside their repository lanes,
             // while `session_count` is absent or stale. Preserve a larger
             // declared total but never hide the sessions that are present.
-            let sessionCount = max(max(declaredSessionCount ?? 0, sessions.count), parseProjectSessions(row).count)
+            let projectSessions = parseProjectSessions(row)
+            let sessionCount = max(max(declaredSessionCount ?? 0, sessions.count), projectSessions.count)
             return ProjectSummary(
                 id: id,
                 name: (row["name"] as? String) ?? id,
                 repoCount: (row["repo_count"] as? NSNumber)?.intValue ?? repos.count,
                 sessionCount: sessionCount,
+                sessionIDs: Set(projectSessions.map(\.id)),
                 preview: (sessions.first?["preview"] as? String) ?? (sessions.first?["title"] as? String),
                 isActive: (row["active"] as? Bool) ?? (id == activeID)
             )

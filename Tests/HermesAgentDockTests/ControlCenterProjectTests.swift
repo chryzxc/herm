@@ -15,6 +15,7 @@ struct ControlCenterProjectTests {
         ])
 
         #expect(projects.first?.sessionCount == 1)
+        #expect(projects.first?.sessionIDs == Set(["session-1"]))
     }
 
     @Test func malformedSessionContextRemainsUnavailableAndUsesUniqueFallbackCategories() {
@@ -296,8 +297,8 @@ struct ControlCenterProjectTests {
     @Test func latestProjectSelectionOwnsTheSessionProjection() async throws {
         let client = ProjectSessionRaceClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
-        let slowProject = ProjectSummary(id: "slow", name: "Slow", repoCount: 0, sessionCount: 1, preview: nil, isActive: false)
-        let fastProject = ProjectSummary(id: "fast", name: "Fast", repoCount: 0, sessionCount: 1, preview: nil, isActive: false)
+        let slowProject = ProjectSummary(id: "slow", name: "Slow", repoCount: 0, sessionCount: 1, sessionIDs: [], preview: nil, isActive: false)
+        let fastProject = ProjectSummary(id: "fast", name: "Fast", repoCount: 0, sessionCount: 1, sessionIDs: [], preview: nil, isActive: false)
 
         model.openProject(slowProject)
         model.openProject(fastProject)
@@ -314,6 +315,27 @@ struct ControlCenterProjectTests {
         #expect(model.selectedProjectID == nil)
         #expect(model.selectedProject == nil)
         #expect(model.projectSessions.isEmpty)
+    }
+
+    @Test func verifiedSessionProjectSurvivesCompactProjectRefresh() async throws {
+        let client = SessionProjectMembershipClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+
+        model.focus(sessionID: "session-1")
+        model.refresh()
+        // The full suite schedules many MainActor projections concurrently;
+        // give this independently scheduled membership fetch time to finish.
+        try await Task.sleep(for: .seconds(1))
+
+        #expect(model.project(forSessionID: "session-1")?.name == "/work/iboard-lokal")
+
+        client.returnCompactTree = true
+        model.refresh()
+        try await Task.sleep(for: .seconds(1))
+
+        // A compact tree omits session rows; it is not evidence that an
+        // already verified Hermes membership was removed.
+        #expect(model.project(forSessionID: "session-1")?.name == "/work/iboard-lokal")
     }
 
     @Test func parsesHermesAssigneesAndJourneyNodes() {
@@ -378,6 +400,31 @@ private final class ProjectSessionRaceClient: HermesRPCClientProtocol {
             try await Task.sleep(for: .milliseconds(40))
         }
         return ["sessions": [["id": "\(projectID)-session", "title": projectID, "state": "active"]]]
+    }
+}
+
+@MainActor
+private final class SessionProjectMembershipClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var returnCompactTree = false
+
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        switch method {
+        case "projects.tree":
+            if returnCompactTree {
+                return ["projects": [["id": "iboard", "name": "/work/iboard-lokal", "session_count": 1]]]
+            }
+            return ["projects": [["id": "iboard", "name": "/work/iboard-lokal", "session_count": 1]]]
+        case "projects.project_sessions":
+            return ["sessions": [["id": "session-1", "title": "Fix issues", "state": "active"]]]
+        case "shell.exec":
+            return ["code": 0, "stdout": ""]
+        default:
+            return [:]
+        }
     }
 }
 

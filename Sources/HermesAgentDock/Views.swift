@@ -96,10 +96,6 @@ struct DockPopover: View {
                         voiceMode
                     } else {
                         header
-                        if model.isShowingSessions {
-                            sessionPicker
-                            Divider().overlay(Color.scifiBorderLight)
-                        }
                         conversation
                         Divider().overlay(Color.scifiBorderLight)
                         composer
@@ -143,6 +139,8 @@ struct DockPopover: View {
         .task {
             model.restoreLatestSessionIfNeeded()
             model.refreshRuntimeConfiguration()
+            model.refreshRuntimeModelOptions()
+            model.refreshDefaultReasoningVariant()
         }
         .onAppear {
             synchronizePanelLayout()
@@ -205,6 +203,7 @@ struct DockPopover: View {
         }
         .onChange(of: model.sessionID) { _, _ in
             synchronizeWorkspace()
+            controlCenter.focus(sessionID: model.sessionID)
             synchronizePanelLayout()
         }
         .onChange(of: model.sessionID) { _, _ in model.refreshSessionModelOptions() }
@@ -280,10 +279,28 @@ struct DockPopover: View {
                         .foregroundStyle(Color.scifiFg)
                         .lineLimit(1)
                     if let contextProjectName {
-                        Label(contextProjectName, systemImage: "folder")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.scifiTertiary)
-                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Label(contextProjectName, systemImage: "folder")
+                                .lineLimit(1)
+                                .layoutPriority(1)
+
+                            Button(action: newChatForContextProject) {
+                                Label("NEW SESSION", systemImage: "plus.bubble")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .tracking(0.35)
+                                    .padding(.horizontal, 7)
+                                    .frame(height: 22)
+                                    .background(Color.scifiAccent.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            }
+                            .buttonStyle(.scifiPress)
+                            .foregroundStyle(Color.scifiAccent)
+                            .disabled(model.isRestoringSession)
+                            .help("Start a new chat in \(contextProjectName)")
+                            .accessibilityLabel("Start a new chat in \(contextProjectName)")
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
                     }
                 }
             }
@@ -298,10 +315,24 @@ struct DockPopover: View {
         .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
     }
 
+    private var contextProjectPath: String? {
+        guard let sessionID = model.sessionID,
+              let project = controlCenter.project(forSessionID: sessionID),
+              project.name != "__no_project__",
+              !project.name.isEmpty else { return nil }
+        return project.name
+    }
+
     private var contextProjectName: String? {
-        guard let path = workspaceStore.projectPath(forSessionID: model.sessionID), !path.isEmpty else { return nil }
+        let path = contextProjectPath
+        guard let path, !path.isEmpty else { return nil }
         let name = URL(fileURLWithPath: path).lastPathComponent
         return name.isEmpty ? nil : name
+    }
+
+    private func newChatForContextProject() {
+        model.newChat()
+        model.requestComposerFocus()
     }
 
     private var scopePicker: some View {
@@ -379,6 +410,13 @@ struct DockPopover: View {
             .buttonStyle(.scifiPress)
             .help("Session status: \(model.status.title)")
             .accessibilityLabel("\(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
+            .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                sessionPicker
+                    .frame(width: 390, height: 310)
+                    .padding(.vertical, 4)
+                    .background(Color.scifiCanvas)
+                    .environment(\.colorScheme, .dark)
+            }
 
             Spacer(minLength: 12)
 
@@ -481,87 +519,106 @@ struct DockPopover: View {
     }
 
     private var sessionReasoningDisplayName: String {
-        model.sessionReasoningVariant?.displayName ?? "LOADING…"
+        let reasoning = model.sessionID == nil
+            ? model.defaultReasoningVariant
+            : model.sessionReasoningVariant
+        return reasoning?.displayName ?? "LOADING…"
+    }
+
+    private var selectedModelOptionID: String? {
+        if model.sessionID != nil { return model.sessionModelOptionID }
+        guard let provider = model.runtimeConfiguration?.provider,
+              let modelName = model.runtimeConfiguration?.model else { return nil }
+        return HermesModelOption(provider: provider, model: modelName).id
+    }
+
+    private var selectedReasoningVariant: HermesReasoningVariant? {
+        model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
+    }
+
+    private var configurationScopeLabel: String {
+        model.sessionID == nil ? "new chats" : "this session"
     }
 
     /// A single, divider-led rail keeps the two session settings scannable as
     /// one piece of context instead of presenting competing controls.
     @ViewBuilder
     private var sessionConfigurationRow: some View {
-        if model.sessionID != nil {
-            HStack(spacing: 0) {
-                Menu {
-                    if model.runtimeModelOptions.isEmpty {
-                        Text("Loading model catalog…")
-                    } else {
-                        ForEach(model.runtimeModelOptions) { option in
-                            Button {
-                                model.updateSessionModel(option)
-                            } label: {
-                                HStack {
-                                    Text(option.displayName)
-                                    if option.id == model.sessionModelOptionID {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    sessionConfigurationLabel(
-                        icon: "cpu",
-                        title: "MODEL",
-                        value: sessionModelDisplayName,
-                        truncatesValue: true
-                    )
-                }
-                .menuStyle(.borderlessButton)
-                .buttonStyle(.scifiPress)
-                .disabled(model.isUpdatingSessionModel)
-                .help("Change the model for this session only")
-                .accessibilityLabel("Model: \(sessionModelDisplayName)")
-
-                Color.scifiBorderLight
-                    .frame(width: 0.5, height: 24)
-
-                Menu {
-                    ForEach(HermesReasoningVariant.allCases) { variant in
+        HStack(spacing: 0) {
+            Menu {
+                if model.runtimeModelOptions.isEmpty {
+                    Text("Loading model catalog…")
+                } else {
+                    ForEach(model.runtimeModelOptions) { option in
                         Button {
-                            model.updateSessionReasoning(variant)
+                            if model.sessionID == nil {
+                                model.updateRuntimeModel(option)
+                            } else {
+                                model.updateSessionModel(option)
+                            }
                         } label: {
                             HStack {
-                                Text(variant.displayName)
-                                if variant == model.sessionReasoningVariant {
+                                Text(option.displayName)
+                                if option.id == selectedModelOptionID {
                                     Image(systemName: "checkmark")
                                 }
                             }
                         }
                     }
-                } label: {
-                    sessionConfigurationLabel(
-                        icon: "brain",
-                        title: "THINKING",
-                        value: sessionReasoningDisplayName
-                    )
                 }
-                .menuStyle(.borderlessButton)
-                .buttonStyle(.scifiPress)
-                .disabled(model.isUpdatingSessionReasoning)
-                .help("Change thinking depth for this session only")
-                .accessibilityLabel("Thinking depth: \(sessionReasoningDisplayName)")
+            } label: {
+                sessionConfigurationLabel(
+                    icon: "cpu",
+                    title: "MODEL",
+                    value: sessionModelDisplayName,
+                    truncatesValue: true
+                )
             }
-            .foregroundStyle(Color.scifiFg)
-            .background(Color.scifiSurface4)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.scifiBorder, lineWidth: 0.5)
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.scifiPress)
+            .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
+            .help("Change the model for \(configurationScopeLabel)")
+            .accessibilityLabel("Model for \(configurationScopeLabel): \(sessionModelDisplayName)")
+
+            Color.scifiBorderLight
+                .frame(width: 0.5, height: 24)
+
+            Menu {
+                ForEach(HermesReasoningVariant.allCases) { variant in
+                    Button {
+                        if model.sessionID == nil {
+                            model.updateDefaultReasoning(variant)
+                        } else {
+                            model.updateSessionReasoning(variant)
+                        }
+                    } label: {
+                        HStack {
+                            Text(variant.displayName)
+                            if variant == selectedReasoningVariant {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                sessionConfigurationLabel(
+                    icon: "brain",
+                    title: "THINKING",
+                    value: sessionReasoningDisplayName
+                )
             }
-        } else {
-            Text("Session configuration becomes available when a chat starts")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.scifiTertiary)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.scifiPress)
+            .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
+            .help("Change thinking depth for \(configurationScopeLabel)")
+            .accessibilityLabel("Thinking depth for \(configurationScopeLabel): \(sessionReasoningDisplayName)")
+        }
+        .foregroundStyle(Color.scifiFg)
+        .background(Color.scifiSurface4)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.scifiBorder, lineWidth: 0.5)
         }
     }
 
@@ -618,15 +675,16 @@ struct DockPopover: View {
                     .help("Refresh")
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(Color.scifiSurface2)
 
             if model.sessions.isEmpty && !model.isLoadingSessions {
                 Text("No saved conversations")
                     .font(.system(size: 12))
                     .foregroundStyle(Color.scifiMuted)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
             } else {
                 List {
                     ForEach(model.sessions) { session in
@@ -656,14 +714,16 @@ struct DockPopover: View {
                         .buttonStyle(.scifiPress)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
+                        .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
                     }
                 }
                 .listStyle(.plain)
-                .frame(maxHeight: 150)
+                .frame(maxHeight: 250)
                 .scrollContentBackground(.hidden)
             }
         }
+        .background(Color.scifiCanvas)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @ViewBuilder

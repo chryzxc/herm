@@ -42,6 +42,8 @@ final class DockModel: ObservableObject {
     @Published private(set) var isUpdatingSessionModel = false
     @Published private(set) var sessionReasoningVariant: HermesReasoningVariant?
     @Published private(set) var isUpdatingSessionReasoning = false
+    @Published private(set) var defaultReasoningVariant: HermesReasoningVariant?
+    @Published private(set) var isUpdatingDefaultReasoning = false
     @Published private(set) var voiceState: HermesVoiceState = .inactive
     @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
     @Published private(set) var composerFocusRequest = 0
@@ -1920,6 +1922,21 @@ final class DockModel: ObservableObject {
         }
     }
 
+    /// New conversations inherit Hermes' global thinking default until they
+    /// receive a session-specific override.
+    func refreshDefaultReasoningVariant() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await gateway.request("config.get", params: ["key": "reasoning"])
+                guard let value = result["value"] as? String else { return }
+                defaultReasoningVariant = HermesReasoningVariant(rawValue: value.lowercased())
+            } catch {
+                DebugLog.write("model: default reasoning lookup failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func updateRuntimeModel(_ option: HermesModelOption) {
         guard !isLoadingRuntimeConfiguration else { return }
         isLoadingRuntimeConfiguration = true
@@ -1991,6 +2008,29 @@ final class DockModel: ObservableObject {
                 DebugLog.write("model: session reasoning set to \(variant.rawValue)")
             } catch {
                 self.runtimeConfigurationError = "Hermes could not apply the session reasoning change: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Updates the global default only; active sessions retain their own
+    /// configuration unless the user changes it from an established chat.
+    func updateDefaultReasoning(_ variant: HermesReasoningVariant) {
+        guard !isUpdatingDefaultReasoning else { return }
+        isUpdatingDefaultReasoning = true
+        runtimeConfigurationError = nil
+
+        Task { [weak self] in
+            guard let self else { return }
+            defer { self.isUpdatingDefaultReasoning = false }
+            do {
+                _ = try await gateway.request("config.set", params: [
+                    "key": "reasoning",
+                    "value": variant.rawValue
+                ])
+                self.defaultReasoningVariant = variant
+                DebugLog.write("model: default reasoning set to \(variant.rawValue)")
+            } catch {
+                self.runtimeConfigurationError = "Hermes could not apply the default thinking depth: \(error.localizedDescription)"
             }
         }
     }
