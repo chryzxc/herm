@@ -9,8 +9,12 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Local Hermes connection.** Starts a loopback-only Hermes backend, establishes
   an authenticated WebSocket session, and clearly shows whether the CLI agent is
   connected.
-- **Conversation workspace.** Streams assistant messages, supports attachments
-  and approvals, and lets you interrupt an in-progress request. Tool calls stay
+- **Conversation workspace.** Streams assistant messages, supports multiple image
+  attachments and approvals, and lets you interrupt an in-progress request.
+  Selected and pasted images can be reviewed and removed individually before
+  sending. Image bytes are uploaded through Hermes' dedicated attachment RPC.
+  While Hermes is responding, the same composer automatically submits typed
+  guidance as in-turn steering. Tool calls stay
   out of the conversation transcript. Streaming deltas are coalesced before
   publication to keep long responses responsive, and session restoration shows
   an explicit loading state that prevents prompts from being sent while a
@@ -158,8 +162,12 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   so they remain distinct from explicitly attributed delegated-agent activity.
 - **Session Cockpit.** Core shows the active session's Hermes-reported token
   usage and context breakdown when available. It also shows Hermes prompt
-  budget, verification evidence, and a compact steering control. Steering and
-  active-turn redirect preserve rejected text instead of silently discarding it.
+  budget, verification evidence, and a compact steering control while a turn is
+  working. Steering queues guidance for Hermes's next tool-result boundary
+  without restarting the turn; rejected text remains in the field instead of
+  being silently discarded.
+- **Adaptive composer.** The chat composer grows with longer prompts up to six
+  lines, then scrolls within the field so the send controls remain visible.
 - **Context guardrails and handoffs.** Hermes-reported context use is labelled
   normal below 80%, warning at 80–89.99%, and critical at 90% or higher. The
   Dock offers explicit branch, confirmed compression, and a confirmed no-edit

@@ -94,15 +94,19 @@ final class HermesGateway: NSObject {
         try await startBackendIfNeeded()
         guard let port else { throw GatewayError.backendUnavailable }
         DebugLog.write("connect: backend ready on port \(port)")
-        let url = URL(string: "ws://127.0.0.1:\(port)/api/ws?token=\(token)")!
+        let request = Self.webSocketRequest(port: port, token: token)
         let session = URLSession(configuration: .ephemeral)
         urlSession = session
-        let task = session.webSocketTask(with: url)
+        let task = session.webSocketTask(with: request)
         socket = task
         task.resume()
         onConnectionChange?(true)
         DebugLog.write("connect: WebSocket task resumed")
         receiveNext()
+    }
+
+    static func webSocketRequest(port: Int, token: String) -> URLRequest {
+        URLRequest(url: URL(string: "ws://127.0.0.1:\(port)/api/ws?token=\(token)")!)
     }
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
@@ -142,7 +146,8 @@ final class HermesGateway: NSObject {
         }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, response) = try await URLSession.shared.data(for: req)
+        let session = urlSession ?? URLSession(configuration: .ephemeral)
+        let (data, response) = try await session.data(for: req)
         guard let response = response as? HTTPURLResponse else {
             throw GatewayError.malformedResponse
         }

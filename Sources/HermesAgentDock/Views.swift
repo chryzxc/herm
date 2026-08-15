@@ -12,6 +12,7 @@ struct DockPopover: View {
     @State private var isNarrowLayout = false
     @State private var isNarrowControlVisible = true
     @State private var isComposerPulsing = false
+    @State private var composerHeight: CGFloat = 44
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
     @FocusState private var isComposerFocused: Bool
@@ -131,9 +132,9 @@ struct DockPopover: View {
         }
         .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
         .environment(\.colorScheme, .dark)
-        .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image]) { result in
-            if case .success(let url) = result {
-                model.stageImageFile(at: url)
+        .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result {
+                urls.forEach { model.stageImageFile(at: $0) }
             }
         }
         .task {
@@ -392,100 +393,94 @@ struct DockPopover: View {
     private var header: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-            Button(action: { model.toggleSessions() }) {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 10, height: 10)
-                        .shadow(color: statusColor.opacity(0.7), radius: 4)
-                    Text(model.currentSessionTitle ?? "Untitled chat")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
-                        .lineLimit(1)
-                    Image(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.scifiMuted)
-                }
-            }
-            .buttonStyle(.scifiPress)
-            .help("Session status: \(model.status.title)")
-            .accessibilityLabel("\(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
-            .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                sessionPicker
-                    .frame(width: 390, height: 310)
-                    .padding(.vertical, 4)
-                    .background(Color.scifiCanvas)
-                    .environment(\.colorScheme, .dark)
-            }
-
-            Spacer(minLength: 12)
-
-            // Keep the visual rhythm compact while the surrounding hit targets stay 44pt.
-            HStack(spacing: 0) {
-                Button(action: {
-                    inputMode = .talk
-                    beginVoiceConversation()
-                }) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiMuted)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.scifiSurface4))
-                }
-                .buttonStyle(.scifiPress)
-                .dockHitTarget()
-                .help("Talk mode")
-
-                Button(action: {
-                    if isNarrowLayout {
-                        isNarrowControlVisible.toggle()
-                    } else {
-                        isWorkspaceManuallyExpanded.toggle()
-                    }
-                }) {
-                    Image(systemName: isWorkspaceVisibleForLayout ? "rectangle.compress.vertical" : "rectangle.split.2x1")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(isWorkspaceVisibleForLayout ? Color.scifiAccent : Color.scifiMuted)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(isWorkspaceVisibleForLayout ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
-                }
-                .buttonStyle(.scifiPress)
-                .dockHitTarget()
-                .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
-
-                if model.status == .working || model.isSending {
-                    Button(action: stopCurrentRequest) {
-                        Image(systemName: "square.fill")
-                            .font(.system(size: 12))
+                // Session title button with status indicator dot
+                Button(action: { model.toggleSessions() }) {
+                    HStack(spacing: 8) {
+                        // Compact status dot — smaller than before
+                        Circle()
+                            .fill(statusColor)
+                            .frame(width: 7, height: 7)
+                            .shadow(color: statusColor.opacity(0.7), radius: 3)
+                        Text(model.currentSessionTitle ?? "Untitled chat")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.scifiFg)
+                            .lineLimit(1)
+                        Image(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.scifiMuted)
-                            .frame(width: 36, height: 36)
+                    }
+                }
+                .buttonStyle(.scifiPress)
+                .help("Session status: \(model.status.title)")
+                .accessibilityLabel("\(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
+                .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                    sessionPicker
+                        .frame(width: 390, height: 310)
+                        .padding(.vertical, 4)
+                        .background(Color.scifiCanvas)
+                        .environment(\.colorScheme, .dark)
+                }
+
+                Spacer(minLength: 8)
+
+                // Header action buttons — compact 28pt circles with 6pt gap matching voice component toolbar
+                HStack(spacing: 6) {
+                    Button(action: {
+                        inputMode = .talk
+                        beginVoiceConversation()
+                    }) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.scifiMuted)
+                            .frame(width: 28, height: 28)
                             .background(Circle().fill(Color.scifiSurface4))
                     }
                     .buttonStyle(.scifiPress)
-                    .dockHitTarget()
-                    .help("Stop")
-                }
+                    .help("Talk mode")
 
-                Button(action: { model.newChat() }) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiMuted)
-                        .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.scifiSurface4))
-                }
-                .buttonStyle(.scifiPress)
-                .dockHitTarget()
-                .disabled(model.isRestoringSession)
-                .help("New chat")
-            }
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
+                    Button(action: {
+                        if isNarrowLayout {
+                            isNarrowControlVisible.toggle()
+                        } else {
+                            isWorkspaceManuallyExpanded.toggle()
+                        }
+                    }) {
+                        Image(systemName: isWorkspaceVisibleForLayout ? "rectangle.compress.vertical" : "rectangle.split.2x1")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(isWorkspaceVisibleForLayout ? Color.scifiAccent : Color.scifiMuted)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(isWorkspaceVisibleForLayout ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
+                    }
+                    .buttonStyle(.scifiPress)
+                    .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
 
-            sessionConfigurationRow
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                .padding(.bottom, 8)
+                    if model.status == .working || model.isSending {
+                        Button(action: stopCurrentRequest) {
+                            Image(systemName: "square.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.scifiMuted)
+                                .frame(width: 28, height: 28)
+                                .background(Circle().fill(Color.scifiSurface4))
+                        }
+                        .buttonStyle(.scifiPress)
+                        .help("Stop")
+                    }
+
+                    Button(action: { model.newChat() }) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.scifiMuted)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Color.scifiSurface4))
+                    }
+                    .buttonStyle(.scifiPress)
+                    .disabled(model.isRestoringSession)
+                    .help("New chat")
+                }
+            }
+            // Reduced vertical padding for a more compact header bar
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
         }
         .background(Color.scifiSurface2)
         .overlay(alignment: .bottom) {
@@ -1032,7 +1027,7 @@ struct DockPopover: View {
 
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
-        if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && message.image == nil {
+        if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && message.images.isEmpty {
             EmptyView()
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -1040,7 +1035,12 @@ struct DockPopover: View {
                     Spacer(minLength: 40)
                     VStack(alignment: .trailing, spacing: 4) {
                         VStack(alignment: .trailing, spacing: 6) {
-                            if let image = message.image {
+                            if message.isSteering {
+                                Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.scifiAccent)
+                            }
+                            ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
                                 Image(nsImage: image)
                                     .resizable()
                                     .scaledToFit()
@@ -1057,13 +1057,14 @@ struct DockPopover: View {
                         .foregroundStyle(Color.scifiFg)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .background(Color.scifiAccentMuted)
+                        // Use opaque slate-navy user message bubble background to eliminate eye strain
+                        .background(Color.scifiUserMessageBubble)
                         .clipShape(MessageBubbleShape(isUser: true))
                         .overlay(
                             MessageBubbleShape(isUser: true)
-                                .stroke(Color.scifiAccent.opacity(0.15), lineWidth: 0.5)
+                                .stroke(Color.scifiBorderStrong, lineWidth: 0.5)
                         )
-                        .shadow(color: Color.scifiAccent.opacity(0.05), radius: 4)
+                        .shadow(color: Color.black.opacity(0.12), radius: 4)
 
                         Text(HumanDateFormatting.timeOnly(message.timestamp))
                             .font(.system(size: 12, design: .monospaced))
@@ -1089,6 +1090,7 @@ struct DockPopover: View {
                                 .padding(.vertical, 12)
                                 .foregroundStyle(Color.scifiFg)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                // Use opaque charcoal-indigo AI message bubble (DESIGN.md) to eliminate high-contrast glare
                                 .background(Color.scifiMessageBubble)
                                 .clipShape(MessageBubbleShape(isUser: false))
                                 .overlay(
@@ -1245,190 +1247,278 @@ struct DockPopover: View {
         .padding(.vertical, 8)
     }
 
+    /// Modern unified chat composer matching reference screenshot design.
     private var composer: some View {
+        // Evaluate submission capabilities based on draft text, images, and steering state
         let draftIsEmpty = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let canSend = !draftIsEmpty || model.pendingImage != nil
-        return VStack(spacing: 0) {
-            if let image = model.pendingImage {
-                HStack(spacing: 8) {
-                    Image(nsImage: image.image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 36, height: 36)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(image.fileName)
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color.scifiFg)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text("Image")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.scifiMuted)
-                    }
-                    Spacer(minLength: 4)
-                    Button(action: { model.clearPendingImage() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Color.scifiMuted)
-                            .frame(width: 18, height: 18)
-                            .background(Circle().fill(Color.scifiSurface6))
-                    }
-                    .buttonStyle(.scifiPress)
-                    .help("Remove image")
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.scifiSurface)
-                )
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
-            }
+        let isSteeringTurn = model.status == .working && model.isSending && model.sessionID != nil
+        let canSubmit = isSteeringTurn ? !draftIsEmpty : (!draftIsEmpty || !model.pendingImages.isEmpty)
 
-            if !speechInput.isRecording {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) {
-                        ForEach(QuickPrompt.allCases) { quickPrompt in
-                            quickPromptChip(quickPrompt)
+        return VStack(spacing: 8) {
+            // Main multi-line text input area at top of card container.
+            // TextEditor on macOS has a built-in ~5px leading inset; we apply a
+            // negative horizontal padding of -5 so the cursor lands exactly where
+            // the placeholder text starts, then re-apply an equal positive padding
+            // on the surrounding ZStack to restore the visual offset.
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $model.draft)
+                    .font(.system(size: 14))
+                    .focused($isComposerFocused)
+                    .onKeyPress(phases: .down) { press in
+                        guard press.key == .return,
+                              !press.modifiers.contains(.shift) else {
+                            return .ignored
+                        }
+                        // Submit on Return without Shift
+                        model.submitComposerInput()
+                        return .handled
+                    }
+                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(.automatic)
+                    // Negate the TextEditor's internal 5pt inset so text starts
+                    // at the same x position as the placeholder overlay.
+                    .padding(.horizontal, -5)
+                    .padding(.vertical, 0)
+                    .foregroundStyle(Color.scifiFg)
+                    .environment(\.colorScheme, .dark)
+                    .disabled(model.isRestoringSession)
+
+                // Placeholder text displayed when input draft is empty.
+                // Padding must match the TextEditor's effective content origin.
+                if model.draft.isEmpty {
+                    Text(model.isRestoringSession ? "Restoring conversation…" : "Do anything")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.scifiMuted.opacity(0.6))
+                        .padding(.horizontal, 0)
+                        .padding(.vertical, 7)
+                        .allowsHitTesting(false)
+                }
+
+                // Invisible measurement overlay — same font/padding as real text —
+                // so the ZStack grows to the correct height for dynamic sizing.
+                Text(model.draft.isEmpty ? " " : model.draft)
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 0)
+                    .padding(.vertical, 7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .opacity(0)
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: ComposerContentHeightKey.self, value: proxy.size.height)
                         }
                     }
-
-                    HStack(spacing: 6) {
-                        quickPromptChip(.reminder)
-                        quickPromptChip(.notes)
-                        quickPromptOverflowMenu
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.top, 6)
-                .padding(.bottom, 8)
+            }
+            // Add back the horizontal inset we removed from TextEditor so the
+            // whole block still respects the composer's visual gutter.
+            .padding(.horizontal, 5)
+            .frame(maxWidth: .infinity, minHeight: composerHeight, maxHeight: composerHeight)
+            .onPreferenceChange(ComposerContentHeightKey.self) { contentHeight in
+                // Cap composer height between 40px and 140px
+                composerHeight = min(max(contentHeight, 40), 140)
             }
 
-            HStack(alignment: .bottom, spacing: 5) {
-                if speechInput.isRecording {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(Color.scifiDestructive)
-                            .frame(width: 6, height: 6)
-                        Text("Listening")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.scifiMuted)
+            // Image Attachment Previews (if any images are pending)
+            if !model.pendingImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.pendingImages) { image in
+                            HStack(spacing: 6) {
+                                Image(nsImage: image.image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 32, height: 32)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                Text(image.fileName)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(Color.scifiFg)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Button(action: { model.removePendingImage(image) }) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(Color.scifiMuted)
+                                }
+                                .buttonStyle(.scifiPress)
+                                .help("Remove image")
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.scifiSurface))
+                        }
                     }
-                    .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                    .padding(.horizontal, 10)
-                } else {
+                }
+            }
+
+            // Integrated Bottom Toolbar Row
+            HStack(alignment: .center, spacing: 8) {
+                // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
+                HStack(spacing: 6) {
+                    // Attachment Paperclip Button
                     Button(action: { showingImagePicker = true }) {
                         Image(systemName: "paperclip")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(Color.scifiMuted)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.scifiPress)
-                    .dockHitTarget()
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(Color.scifiSurface4)
-                            .stroke(Color.scifiBorderLight, lineWidth: 0.5)
-                    )
-                    .help("Attach image")
+                    .help("Attach image or file")
 
-                    TextField(model.isRestoringSession ? "Restoring conversation…" : "Message…", text: $model.draft)
-                        .textFieldStyle(.plain)
-                        .focused($isComposerFocused)
-                        .onSubmit {
-                            model.send()
+                    // Model Selector Dropdown Menu
+                    Menu {
+                        if model.runtimeModelOptions.isEmpty {
+                            Text("Loading model catalog…")
+                        } else {
+                            ForEach(model.runtimeModelOptions) { option in
+                                Button {
+                                    if model.sessionID == nil {
+                                        model.updateRuntimeModel(option)
+                                    } else {
+                                        model.updateSessionModel(option)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(option.displayName)
+                                        if option.id == selectedModelOptionID {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        .font(.system(size: 13))
-                        .padding(.horizontal, 10)
-                        .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color.scifiSurface4)
-                                .stroke(Color.scifiBorder, lineWidth: 0.5)
-                        )
-                        .foregroundStyle(Color.scifiFg)
-                        .environment(\.colorScheme, .dark)
-                        .disabled(model.isRestoringSession)
-                        .onChange(of: model.draft) { _, draft in
-                            DebugLog.write("composer: draft changed (length: \(draft.count))")
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(sessionModelDisplayName)
+                                .font(.system(size: 12, weight: .regular))
+                                .lineLimit(1)
+                                .foregroundStyle(Color.scifiMuted)
                         }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.scifiPress)
+                    .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
+                    .help("Select model")
                 }
 
-                Button(action: {
-                    if speechInput.isRecording {
-                        speechInput.stop()
-                        model.send()
-                    } else {
-                        model.send()
+                Spacer(minLength: 4)
+
+                // Right Toolbar Group: Thinking depth selector menu & circular submit button
+                HStack(spacing: 8) {
+                    // Thinking depth variant selector menu
+                    Menu {
+                        ForEach(HermesReasoningVariant.allCases) { variant in
+                            Button {
+                                if model.sessionID == nil {
+                                    model.updateDefaultReasoning(variant)
+                                } else {
+                                    model.updateSessionReasoning(variant)
+                                }
+                            } label: {
+                                HStack {
+                                    Text(variant.displayName)
+                                    if variant == selectedReasoningVariant {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "brain")
+                                .font(.system(size: 12, weight: .medium))
+                            Text(sessionReasoningDisplayName)
+                                .font(.system(size: 12, weight: .regular))
+                        }
+                        .foregroundStyle(Color.scifiMuted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(Color.white.opacity(0.04))
+                        )
                     }
-                }) {
-                    if speechInput.isRecording {
-                            Image(systemName: "stop.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                    .fill(Color.scifiDestructive)
-                            )
-                    } else {
-                        Group {
-                            if model.isSending {
-                                ProgressView().controlSize(.small).tint(Color.scifiBg)
+                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.scifiPress)
+                    .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
+                    .help("Select thinking depth")
+
+                    // Circular Submit / Action Button with Upward Arrow
+                    Button(action: {
+                        if speechInput.isRecording {
+                            speechInput.stop()
+                            model.send()
+                        } else {
+                            model.submitComposerInput()
+                        }
+                    }) {
+                        ZStack {
+                            Circle()
+                                // Soft translucent fill for submit circle
+                                .fill(canSubmit && !model.isSteering && !model.isRestoringSession ? Color.scifiFg.opacity(0.20) : Color.scifiSurface6)
+                                .frame(width: 28, height: 28)
+
+                            if speechInput.isRecording {
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Color.scifiFg)
+                            } else if model.isSending && !isSteeringTurn {
+                                ProgressView().controlSize(.small).tint(Color.scifiFg)
                             } else {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(canSend ? Color.black : Color.scifiMuted)
+                                    // Use soft scifiFg instead of stark white to prevent eye strain
+                                    .foregroundStyle(canSubmit && !model.isSteering ? Color.scifiFg : Color.scifiMuted.opacity(0.5))
                             }
                         }
-                        .frame(width: 44, height: 44)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(canSend && !model.isSending && !model.isRestoringSession ? Color.scifiAccent : Color.scifiSurface6)
-                        )
                     }
-                }
-                .buttonStyle(.scifiPress)
-                .dockHitTarget()
-                .disabled(model.isRestoringSession || (!speechInput.isRecording && (!canSend || model.isSending)))
-                .keyboardShortcut(.return, modifiers: [.command])
-                .help(speechInput.isRecording ? "Send voice prompt" : "Send message (↩; ⌘↩ also works)")
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(speechInput.isRecording ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.12 : 0.05) : Color.scifiSurface2)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(
-                        speechInput.isRecording
-                        ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
-                        : Color.scifiBorderLight,
-                        lineWidth: 0.5
-                    )
-            )
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isComposerPulsing)
-            .onChange(of: speechInput.isRecording) { _, isRecording in
-                isComposerPulsing = isRecording
-            }
-            .onChange(of: speechInput.transcript) { _, transcript in
-                if speechInput.isRecording {
-                    model.draft = transcript
+                    .buttonStyle(.plain)
+                    .disabled(model.isRestoringSession || (!speechInput.isRecording && (!canSubmit || (isSteeringTurn ? model.isSteering : model.isSending))))
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .help(speechInput.isRecording ? "Send voice prompt" : (isSteeringTurn ? "Steer active turn (↩; ⇧↩ for newline)" : "Send message (↩; ⇧↩ for newline)"))
                 }
             }
+            .padding(.top, 4)
 
+            // Voice Recording & Steering Status Messages
             if let error = speechInput.errorMessage {
                 Text(error)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.scifiWarning)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 6)
+                    .padding(.top, 2)
             }
+            if let steeringError = model.steeringError {
+                Text(steeringError)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+                    .padding(.top, 2)
+            } else if let steeringNotice = model.steeringNotice {
+                Text(steeringNotice)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiSuccess)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        // Outer composer background styled with square rectangular edges
+        .background(
+            Rectangle()
+                .fill(speechInput.isRecording ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.12 : 0.05) : Color(nsColor: NSColor(red: 0.09, green: 0.10, blue: 0.14, alpha: 1.0)))
+        )
+        // Outer composer border styled with square rectangular stroke
+        .overlay(
+            Rectangle()
+                .stroke(
+                    speechInput.isRecording
+                    ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
+                    : Color.scifiBorderLight.opacity(0.3),
+                    lineWidth: 0.8
+                )
+        )
+        .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isComposerPulsing)
+        .onChange(of: speechInput.isRecording) { _, isRecording in
+            isComposerPulsing = isRecording
         }
         .onAppear {
             DebugLog.write("composer: appeared")
@@ -1499,5 +1589,13 @@ struct DockPopover: View {
             return "This Hermes capability is unavailable. Open Core and refresh capabilities."
         }
         return capability.recovery ?? capability.detail
+    }
+}
+
+private struct ComposerContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 44
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

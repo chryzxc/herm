@@ -587,6 +587,21 @@ struct CronEditDraft: Equatable {
     }
 }
 
+enum CronSchedule {
+    /// 5-field cron sanity check; Hermes remains the authoritative validator.
+    static func isValid(_ schedule: String) -> Bool {
+        let trimmed = schedule.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fields = trimmed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard fields.count == 5 else { return false }
+        let allowed = CharacterSet(charactersIn: "0123456789*/,-").union(.letters)
+        return fields.allSatisfy { field in
+            !field.isEmpty
+                && field.count <= 20
+                && field.unicodeScalars.allSatisfy { allowed.contains($0) }
+        }
+    }
+}
+
 struct CronRunSummary: Identifiable, Equatable {
     let id: String
     let status: String

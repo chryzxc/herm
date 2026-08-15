@@ -353,18 +353,24 @@ struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
     let text: String
-    let image: NSImage?
+    let images: [NSImage]
     let timestamp: Date
     let modelName: String?
+    let isSteering: Bool
+    let steeringStatus: String?
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, timestamp: Date = Date(), modelName: String? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, isSteering: Bool = false, steeringStatus: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
-        self.image = image
+        self.images = images.isEmpty ? image.map { [$0] } ?? [] : images
         self.timestamp = timestamp
         self.modelName = modelName
+        self.isSteering = isSteering
+        self.steeringStatus = steeringStatus
     }
+
+    var image: NSImage? { images.first }
 
     enum Role { case user, hermes }
 }

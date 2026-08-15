@@ -8,10 +8,12 @@ extension Color {
     static let scifiSurface4 = Color.white.opacity(0.04)
     static let scifiSurface6 = Color.white.opacity(0.06)
     static let scifiSurface8 = Color.white.opacity(0.08)
-    /// Softer charcoal-indigo message surface. Keeping this opaque avoids the
-    /// high-contrast black/white glass effect that can cause eye strain during
-    /// long reading sessions.
-    static let scifiMessageBubble = Color(red: 0.112, green: 0.118, blue: 0.16)
+    /// Softer opaque charcoal-indigo surface for Hermes AI responses (DESIGN.md).
+    /// Opaque background avoids high-contrast glass reflections and eliminates eye strain.
+    static let scifiMessageBubble = Color(red: 0.09, green: 0.10, blue: 0.14)
+    /// Soft opaque slate-blue surface for user prompt bubbles (DESIGN.md).
+    /// Low-glare dark tint eliminates eye strain while cleanly distinguishing user turns.
+    static let scifiUserMessageBubble = Color(red: 0.12, green: 0.14, blue: 0.20)
     static let scifiControlSurface = scifiCanvas
     static let scifiBorderStrong = Color.white.opacity(0.12)
     static let scifiBorder = Color.white.opacity(0.08)
@@ -19,9 +21,13 @@ extension Color {
     static let scifiAccent = Color(red: 0, green: 0.65, blue: 0.95)
     static let scifiAccentMuted = Color(red: 0, green: 0.67, blue: 1).opacity(0.08)
     static let scifiAccentGlow = Color(red: 0, green: 0.67, blue: 1).opacity(0.25)
-    static let scifiFg = Color(white: 0.94)
-    static let scifiMuted = Color(white: 0.58)
-    static let scifiTertiary = Color(white: 0.35)
+    /// Primary text token — soft slate off-white (75% luminance, #BCC3CE).
+    /// Prevents high-contrast white glare and halation for comfortable long reading sessions.
+    static let scifiFg = Color(red: 0.74, green: 0.78, blue: 0.84)
+    /// Secondary metadata text token — soft slate gray (#858F9E) for calm visual hierarchy.
+    static let scifiMuted = Color(red: 0.52, green: 0.56, blue: 0.62)
+    /// Tertiary text token — subdued dark slate (#596170) for subtle operational details.
+    static let scifiTertiary = Color(red: 0.35, green: 0.38, blue: 0.44)
     static let scifiSuccess = Color(red: 0.16, green: 0.78, blue: 0.25)
     static let scifiWarning = Color(red: 1, green: 0.74, blue: 0.18)
     static let scifiDestructive = Color(red: 1, green: 0.37, blue: 0.34)

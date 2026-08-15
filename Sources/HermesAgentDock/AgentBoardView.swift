@@ -404,34 +404,67 @@ struct AgentBoardView: View {
 
     @ViewBuilder
     private func activityContent(_ activity: AgentActivity, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let toolName = activity.toolName {
-                contentField("TOOL", toolName, accent: accent)
+        VStack(alignment: .leading, spacing: 8) {
+            // Header metadata grid for subagent activities: Agent, Tool, and Time
+            HStack(alignment: .top, spacing: 14) {
+                if let agentID = activity.agentID, !agentID.isEmpty {
+                    contentField("AGENT", agentID, accent: accent)
+                }
+                if let toolName = activity.toolName, !toolName.isEmpty {
+                    contentField("TOOL", toolName, accent: accent)
+                }
+                contentField("TIME", HumanDateFormatting.timeOnly(activity.timestamp), accent: Color.scifiTertiary)
             }
-            if let handoffTarget = activity.handoffTarget {
-                contentField("HANDOFF", handoffTarget, accent: accent)
+
+            if let handoffTarget = activity.handoffTarget, !handoffTarget.isEmpty {
+                contentField("HANDOFF TARGET", handoffTarget, accent: accent)
             }
             contentField("DETAIL", activity.text, accent: accent)
-            if let diffPreview = activity.diffPreview {
+            if let diffPreview = activity.diffPreview, !diffPreview.isEmpty {
                 miniDiffPreview(diffPreview)
             }
         }
         .padding(.leading, 12)
-        .padding(.top, 2)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.scifiSurface4))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
     }
 
     @ViewBuilder
     private func pipelineContent(_ item: PipelineItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let detail = item.detail {
+        VStack(alignment: .leading, spacing: 8) {
+            // Enhanced expanded view displaying Agent, Task Name, Duration, and Status
+            HStack(alignment: .top, spacing: 14) {
+                if !item.task.isEmpty {
+                    contentField("TASK NAME", item.task, accent: item.color)
+                }
+                if !item.agent.isEmpty {
+                    contentField("AGENT", item.agent, accent: Color.scifiAccent)
+                }
+                let durationStr = elapsedDuration(for: item, at: Date()).map(Self.formatDuration) ?? (item.isActive ? "RUNNING" : "—")
+                contentField("DURATION", durationStr, accent: Color.scifiFg)
+                contentField("STATUS", item.status.uppercased(), accent: item.color)
+            }
+
+            if let startedAt = item.startedAt {
+                let startStr = HumanDateFormatting.timeOnly(startedAt)
+                let endStr = item.completedAt.map(HumanDateFormatting.timeOnly) ?? (item.isActive ? "Now" : "—")
+                contentField("TIMESTAMPS", "Started: \(startStr)  ·  Ended: \(endStr)", accent: Color.scifiTertiary)
+            }
+
+            if let detail = item.detail, !detail.isEmpty {
                 contentField("DETAIL", detail, accent: item.color)
             }
-            if let diffPreview = item.diffPreview {
+            if let diffPreview = item.diffPreview, !diffPreview.isEmpty {
                 miniDiffPreview(diffPreview)
             }
         }
         .padding(.leading, 12)
-        .padding(.top, 2)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 10)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.scifiSurface4))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
     }
 
     private func contentField(_ label: String, _ value: String, accent: Color) -> some View {

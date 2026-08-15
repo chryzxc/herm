@@ -85,6 +85,13 @@ struct HermesControlTransportTests {
         #expect(received == 1)
     }
 
+    @Test func webSocketRequestAuthenticatesViaQueryToken() {
+        let request = HermesGateway.webSocketRequest(port: 54321, token: "secret-session-token")
+
+        #expect(request.url?.absoluteString == "ws://127.0.0.1:54321/api/ws?token=secret-session-token")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+    }
+
     @Test func namedProjectRPCsUseHermesMethodNames() async throws {
         let client = RecordingRPCClient()
         let rpc = HermesControlRPC(client: client)
@@ -116,6 +123,17 @@ struct HermesControlTransportTests {
 
         #expect(client.calls.map(\.method) == ["session.usage", "session.context_breakdown", "process.list"])
         #expect(client.calls.allSatisfy { $0.params["session_id"] as? String == "session-1" })
+    }
+
+    @Test func steeringRPCForwardsSessionAndText() async throws {
+        let client = RecordingRPCClient()
+        let rpc = HermesControlRPC(client: client)
+
+        _ = try await rpc.steer(sessionID: "session-1", text: "focus on the auth module")
+
+        #expect(client.calls.last?.method == "session.steer")
+        #expect(client.calls.last?.params["session_id"] as? String == "session-1")
+        #expect(client.calls.last?.params["text"] as? String == "focus on the auth module")
     }
 
     @Test func workflowRPCsUseHermesContracts() async throws {

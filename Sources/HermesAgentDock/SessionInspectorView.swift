@@ -17,7 +17,6 @@ struct SessionInspector: View {
         case files = "Files"
         case changes = "Changes"
         case terminal = "Terminal"
-        case browser = "Browser"
         case verification = "Verify"
 
         var id: Self { self }
@@ -28,7 +27,6 @@ struct SessionInspector: View {
             case .files: "folder"
             case .changes: "doc.text.magnifyingglass"
             case .terminal: "terminal"
-            case .browser: "safari"
             case .verification: "checkmark.seal"
             }
         }
@@ -56,7 +54,7 @@ struct SessionInspector: View {
                 sectionButton(section)
             }
             Menu {
-                ForEach([Section.changes, .terminal, .browser, .verification]) { section in
+                ForEach([Section.changes, .terminal, .verification]) { section in
                     Button {
                         withAnimation(.scifiEase(duration: 0.2)) { selectedSection = section }
                     } label: {
@@ -132,17 +130,124 @@ struct SessionInspector: View {
     private var inspectorContent: some View {
         switch selectedSection {
         case .overview:
+            // Build the unified session mission control snapshot
+            let mission = MissionControlSnapshotBuilder.make(
+                sessionTitle: model.currentSessionTitle,
+                repository: workflow.repository.isGitRepository ? workflow.repository : nil,
+                model: model.runtimeConfiguration?.model,
+                context: control.sessionContext,
+                attention: control.attention,
+                sessions: control.activeSessions,
+                activeSessionID: model.sessionID,
+                agents: control.activeAgents,
+                processes: control.processes,
+                backgroundTasks: model.backgroundTasks,
+                activities: model.agentActivities,
+                cronRuns: control.cronRuns,
+                verification: control.verification
+            )
+            let openAttention = control.attention.filter { $0.state == .open }
+            let activeSubagentCount = model.activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.count
+
             VStack(alignment: .leading, spacing: 14) {
+                // Section Header
                 inspectorLabel("SESSION OVERVIEW")
-                inspectorCard(title: "MISSION", value: model.currentSessionTitle ?? "Waiting for a message")
+
+                // Compact Telemetry Bar (Branch, Model, Context %, Changed Files)
+                sessionTelemetryStrip(focus: mission.focus)
+
+                // Interactive Metrics Bar
                 HStack(spacing: 8) {
                     inspectorMetric("AGENTS", value: control.activeAgents.count, color: .scifiAccent)
-                    inspectorMetric("RUNNING", value: model.activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.count, color: model.activeSubagents.contains { AgentActivityPresentation.isActiveStatus($0.status) } ? .scifiAccent : .scifiMuted)
+                    inspectorMetric("RUNNING", value: activeSubagentCount, color: activeSubagentCount > 0 ? .scifiAccent : .scifiMuted)
+                    inspectorMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .scifiSuccess : .scifiWarning)
                 }
-                inspectorCard(
-                    title: "LATEST ACTIVITY",
-                    value: model.recentEvents.last?.detail ?? "No Hermes activity in this session yet."
-                )
+
+                // Pre-flight Readiness & Health Card
+                sessionReadinessCard(readiness: mission.readiness)
+
+                // Session Action Items requiring user attention
+                if !openAttention.isEmpty {
+                    inspectorLabel("NEEDS ME")
+                    ForEach(openAttention.prefix(2)) { attention in
+                        attentionRow(attention)
+                    }
+                }
+
+                // Latest Session Activity section displaying recent agent activities or events
+                inspectorLabel("LATEST ACTIVITY")
+                if !model.agentActivities.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(model.agentActivities.prefix(3)) { activity in
+                            HStack(alignment: .top, spacing: 10) {
+                                Circle()
+                                    .fill(Color.scifiAccent)
+                                    .frame(width: 6, height: 6)
+                                    .padding(.top, 4)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(activity.toolName ?? activity.kind.uppercased())
+                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(Color.scifiFg)
+                                        Spacer()
+                                        Text(HumanDateFormatting.timeOnly(activity.timestamp))
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundStyle(Color.scifiTertiary)
+                                    }
+                                    Text(activity.text)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.scifiMuted)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.scifiSurface4))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+                        }
+                    }
+                } else if !model.recentEvents.isEmpty {
+                    VStack(spacing: 8) {
+                        ForEach(model.recentEvents.prefix(3)) { event in
+                            HStack(alignment: .top, spacing: 10) {
+                                Circle()
+                                    .fill(Color.scifiAccent)
+                                    .frame(width: 6, height: 6)
+                                    .padding(.top, 4)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(event.type.uppercased())
+                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(Color.scifiFg)
+                                        Spacer()
+                                        Text(HumanDateFormatting.timeOnly(event.timestamp))
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundStyle(Color.scifiTertiary)
+                                    }
+                                    Text(event.detail)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.scifiMuted)
+                                        .lineLimit(2)
+                                }
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.scifiSurface4))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+                        }
+                    }
+                } else {
+                    inspectorCard(title: "NO RECENT ACTIVITY", value: "Activity events will be recorded here as Hermes executes tool calls or subagent tasks.")
+                }
+
+                // Verification Summary Card
+                if let verification = control.verification {
+                    inspectorLabel("VERIFICATION")
+                    let color: Color = verification.state == .passed ? .scifiSuccess : verification.state == .failed ? .scifiDestructive : .scifiWarning
+                    inspectorCard(
+                        title: "STATUS  ·  \(verification.state.rawValue.uppercased())",
+                        value: verification.evidence?.canonicalCommand ?? verification.evidence?.command ?? "Verification reported for active session.",
+                        accent: color
+                    )
+                }
             }
         case .activity:
             AgentBoardView(model: model, embedded: true)
@@ -163,11 +268,6 @@ struct SessionInspector: View {
             )
         case .terminal:
             SessionTerminalView(projectPath: workflow.repository.path.isEmpty ? nil : workflow.repository.path)
-        case .browser:
-            VStack(alignment: .leading, spacing: 14) {
-                inspectorLabel("SESSION BROWSER")
-                SessionBrowserView(model: model)
-            }
         case .verification:
             VStack(alignment: .leading, spacing: 14) {
                 inspectorLabel("VERIFICATION")
@@ -188,141 +288,161 @@ struct SessionInspector: View {
     private func inspectorLabel(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .tracking(1)
+            .tracking(0.8)
             .foregroundStyle(Color.scifiMuted)
     }
 
+    /// Renders a metric card matching the DESIGN.md glass pane specifications.
     private func inspectorMetric(_ label: String, value: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
-                .font(.system(size: 22, weight: .bold, design: .monospaced))
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
                 .foregroundStyle(color)
             Text(label)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(0.7)
+                .tracking(0.55)
                 .foregroundStyle(Color.scifiTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.scifiSurface4)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(10)
+        .scifiGlassPane()
     }
 
+    /// Renders a glass card pane matching DESIGN.md rules.
     private func inspectorCard(title: String, value: String, accent: Color = .scifiFg) -> some View {
-        let isLatestActivity = title == "LATEST ACTIVITY"
-        return VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(title)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(0.75)
                 .foregroundStyle(Color.scifiTertiary)
-            if isLatestActivity {
-                ActivityObjectView(detail: value, accent: accent)
-            } else {
-                Text(value)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(accent)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.scifiSurface4)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-}
-
-/// Presents event payloads as a compact object inspector instead of forcing
-/// users to read a single horizontally-wrapped JSON string.
-private struct ActivityObjectView: View {
-    let detail: String
-    let accent: Color
-
-    var body: some View {
-        if let object = Self.decode(detail) {
-            ActivityObjectValue(value: object, accent: accent)
-        } else {
-            Text(detail)
+            Text(value)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(accent)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .scifiGlassPane()
     }
 
-    private static func decode(_ detail: String) -> Any? {
-        guard let data = detail.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: data)
-    }
-}
+    /// Renders a multi-column telemetry grid displaying branch, model, context usage, and changed files without truncation using DESIGN.md glass surfaces.
+    private func sessionTelemetryStrip(focus: MissionControlFocus) -> some View {
+        struct TelemetryItem: Identifiable {
+            let id: String
+            let icon: String
+            let label: String
+            let value: String
+        }
 
-private struct ActivityObjectValue: View {
-    let value: Any
-    let accent: Color
+        let items: [TelemetryItem] = [
+            focus.branch.map { TelemetryItem(id: "branch", icon: "git.branch", label: "BRANCH", value: $0) },
+            focus.model.map { TelemetryItem(id: "model", icon: "cpu", label: "MODEL", value: $0) },
+            focus.contextPercent.map { TelemetryItem(id: "context", icon: "chart.bar.fill", label: "CONTEXT", value: "\(Int($0.rounded()))%") },
+            focus.changedFiles.map { TelemetryItem(id: "files", icon: "doc.badge.gearshape", label: "CHANGED", value: "\($0) files") }
+        ].compactMap { $0 }
 
-    var body: some View {
-        switch value {
-        case let dictionary as [String: Any]:
-            VStack(alignment: .leading, spacing: 7) {
-                ForEach(dictionary.keys.sorted(), id: \.self) { key in
-                    if let child = dictionary[key] {
-                        ActivityObjectField(key: key, value: child, accent: accent)
+        let gridColumns = [
+            GridItem(.flexible(), spacing: 8),
+            GridItem(.flexible(), spacing: 8)
+        ]
+
+        return Group {
+            if !items.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    LazyVGrid(columns: gridColumns, spacing: 8) {
+                        ForEach(items) { item in
+                            HStack(spacing: 6) {
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.scifiAccent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.label)
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.scifiMuted)
+                                    Text(item.value)
+                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(Color.scifiSurface2)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+                        }
                     }
                 }
+                .padding(10)
+                .scifiGlassPane()
             }
-        case let array as [Any]:
-            VStack(alignment: .leading, spacing: 7) {
-                ForEach(Array(array.enumerated()), id: \.offset) { index, child in
-                    ActivityObjectField(key: "[\(index)]", value: child, accent: accent)
-                }
+        }
+    }
+
+    /// Renders pre-flight readiness checks for repository cleanliness and model configuration.
+    private func sessionReadinessCard(readiness: ReadinessSummary) -> some View {
+        let color: Color = switch readiness.state {
+        case .ready: .scifiSuccess
+        case .needsReview: .scifiWarning
+        case .blocked: .scifiDestructive
+        case .notApplicable: .scifiMuted
+        }
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.shield")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+                Text("PRE-FLIGHT READINESS")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(0.75)
+                    .foregroundStyle(color)
+                Spacer(minLength: 0)
+                Text(readiness.state.rawValue.uppercased())
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(color)
             }
-        default:
-            Text(Self.scalarText(value))
+
+            Text(readiness.detail)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(accent)
-                .textSelection(.enabled)
+                .foregroundStyle(Color.scifiFg)
+
+            if let scope = readiness.verificationScope {
+                Text("Scope: \(scope)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .scifiGlassPane()
     }
 
-    fileprivate static func scalarText(_ value: Any) -> String {
-        if value is NSNull { return "null" }
-        if let string = value as? String { return string }
-        if let number = value as? NSNumber {
-            if CFGetTypeID(number) == CFBooleanGetTypeID() { return number.boolValue ? "true" : "false" }
-            return number.stringValue
-        }
-        return String(describing: value)
-    }
-}
-
-private struct ActivityObjectField: View {
-    let key: String
-    let value: Any
-    let accent: Color
-
-    private var isNested: Bool {
-        value is [String: Any] || value is [Any]
-    }
-
-    var body: some View {
+    /// Renders an individual attention item requiring user action or response.
+    private func attentionRow(_ attention: AttentionItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(key)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
-                if !isNested {
-                    Text(ActivityObjectValue.scalarText(value))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(accent)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.scifiWarning)
+                Text(attention.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text(attention.kind.rawValue.uppercased())
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
             }
-            if isNested {
-                ActivityObjectValue(value: value, accent: accent)
-                    .padding(.leading, 12)
-                    .padding(.vertical, 5)
-                    .background(Color.scifiCanvas.opacity(0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            if !attention.detail.isEmpty {
+                Text(attention.detail)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .lineLimit(2)
             }
         }
+        .padding(12)
+        .scifiGlassPane()
     }
 }

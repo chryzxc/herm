@@ -252,6 +252,7 @@ final class WorkspaceStore: ObservableObject {
         guard !FileManager.default.fileExists(atPath: backupURL.path) else { return }
         do {
             try FileManager.default.copyItem(at: fileURL, to: backupURL)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
         } catch {
             DebugLog.write("workspace: migration backup failed: \(error.localizedDescription)")
         }
@@ -268,6 +269,7 @@ final class WorkspaceStore: ObservableObject {
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch {
             DebugLog.write("workspace: persistence failed: \(error.localizedDescription)")
         }

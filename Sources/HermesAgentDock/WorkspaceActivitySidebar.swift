@@ -55,6 +55,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var kanbanSort = "updated"
     @State private var kanbanDiagnosticSeverity = "ALL"
     @State private var sessionSteerText = ""
+    @State private var sessionSteerFeedback: String?
     @State private var backgroundTaskPrompt = ""
     @State private var isStartingBackgroundTask = false
     @State private var sessionRenameText = ""
@@ -187,7 +188,10 @@ struct WorkspaceActivitySidebar: View {
         }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
         .onChange(of: model.approvalText) { _, _ in control.rebuildAttention() }
-        .onChange(of: model.sessionID) { _, sessionID in control.focus(sessionID: sessionID) }
+        .onChange(of: model.sessionID) { _, sessionID in
+            sessionSteerFeedback = nil
+            control.focus(sessionID: sessionID)
+        }
         .onChange(of: control.projectSessions) { _, sessions in
             guard let path = selectedProjectFolderPath, !sessions.isEmpty else { return }
             store.attachProject(at: path, toSessions: sessions)
@@ -2285,17 +2289,63 @@ struct WorkspaceActivitySidebar: View {
     /// Global operations overview. It deliberately excludes the active chat's
     /// focus, readiness, handoff, and runtime transcript; those live in the
     /// Session overview.
+    /// Global cross-session Control Center overview dashboard.
+    /// Aggregates state across all sessions including active agents, processes,
+    /// tasks, reminders, automations, and global operational controls.
     private var nowContent: some View {
+        // Collect cross-session metrics and states
         let openAttention = control.attention.filter { $0.state == .open }
         let activeSessions = control.activeSessions
+        let runningAgentsCount = control.activeAgents.count
+        let runningProcessesCount = control.processes.count
+        let runningBgTasksCount = model.backgroundTasks.filter { $0.status == .running }.count
+        let totalRunningCount = runningAgentsCount + runningProcessesCount + runningBgTasksCount
+        let setupCapabilities = unavailableSetupCapabilities
+
         return VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("WORKSPACE OVERVIEW")
-            HStack(spacing: 8) {
-                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .scifiSuccess : .scifiWarning)
-                todayMetric("SESSIONS", value: activeSessions.count, color: .scifiAccent)
-                todayMetric("SCHEDULED", value: control.cronJobs.count, color: .scifiSuccess)
+            // Banner if delegation is globally paused
+            if control.delegationPaused {
+                HStack(spacing: 8) {
+                    Image(systemName: "pause.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.scifiWarning)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("DELEGATION PAUSED")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiWarning)
+                        Text("Subagent auto-dispatch is currently paused globally.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.scifiTertiary)
+                    }
+                    Spacer(minLength: 0)
+                    Button("RESUME") {
+                        Task { _ = await control.pauseDelegation(false) }
+                    }
+                    .buttonStyle(.scifiPress)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+                }
+                .padding(10)
+                .scifiGlassPane()
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
             }
 
+            // Interactive Workspace Metrics Strip
+            sectionLabel("WORKSPACE OVERVIEW")
+            HStack(spacing: 8) {
+                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .scifiSuccess : .scifiWarning) {
+                    select(.inbox)
+                }
+                todayMetric("RUNNING", value: totalRunningCount, color: .scifiAccent)
+                todayMetric("SESSIONS", value: activeSessions.count, color: .scifiAccent) {
+                    select(.projects)
+                }
+                todayMetric("SCHEDULED", value: control.cronJobs.count, color: .scifiSuccess) {
+                    select(.automations)
+                }
+            }
+
+            // Triage section for items needing immediate user action
             sectionLabel("NEEDS ME")
             if let attention = openAttention.first {
                 attentionItemRow(attention)
@@ -2309,23 +2359,118 @@ struct WorkspaceActivitySidebar: View {
                 attentionRow(icon: "checkmark.circle", title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .scifiSuccess)
             }
 
+            // Cross-session active agents, processes, and running background tasks
+            let hasRunningWork = totalRunningCount > 0
+            if hasRunningWork {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiAccent)
+                        Text("RUNNING NOW")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiAccent)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Display active subagents across all sessions
+                        ForEach(control.activeAgents) { agent in
+                            HStack(spacing: 8) {
+                                Image(systemName: "person.2.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiAccent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(agent.name)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .lineLimit(1)
+                                    Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .scifiListRow()
+                        }
+
+                        // Display active processes
+                        ForEach(control.processes) { process in
+                            HStack(spacing: 8) {
+                                Image(systemName: "gearshape.2")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiMuted)
+                                Text(process.name)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiFg)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                                Text(process.state.uppercased())
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.scifiTertiary)
+                            }
+                            .scifiListRow()
+                        }
+
+                        // Display running background tasks
+                        ForEach(model.backgroundTasks.filter { $0.status == .running }) { bgTask in
+                            HStack(spacing: 8) {
+                                Image(systemName: "terminal.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiAccent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(bgTask.prompt)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .lineLimit(1)
+                                    Text(bgTask.id)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                }
+                                Spacer(minLength: 0)
+                                Text("RUNNING")
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.scifiAccent)
+                            }
+                            .scifiListRow()
+                        }
+                    }
+                }
+                .scifiGlassPane()
+            }
+
+            // List of active sessions with state indicator badges
             if !activeSessions.isEmpty {
                 sectionLabel("ACTIVE SESSIONS  ·  \(activeSessions.count)")
-                ForEach(activeSessions.prefix(4)) { session in
+                ForEach(activeSessions.prefix(6)) { session in
                     Button {
                         if session.id != model.sessionID {
                             control.openProjectSession(session)
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Circle().fill(session.id == model.sessionID ? Color.scifiAccent : Color.scifiMuted).frame(width: 5, height: 5)
+                            Circle().fill(session.id == model.sessionID ? Color.scifiAccent : sessionStateColor(session.state)).frame(width: 5, height: 5)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1)
-                                Text(session.displayPreview ?? session.state.uppercased()).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                                HStack(spacing: 6) {
+                                    if let projectID = control.projectIDBySessionID[session.id] {
+                                        Text(projectID.uppercased())
+                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(Color.scifiAccent)
+                                    }
+                                    Text(session.displayPreview ?? session.state.uppercased()).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                                }
                             }
-                            Spacer()
+                            Spacer(minLength: 0)
                             if session.id == model.sessionID {
                                 Text("CURRENT").font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
+                            } else {
+                                Text(session.state.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(sessionStateColor(session.state))
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2335,11 +2480,198 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
+            // Recent cron runs
+            if !control.cronRuns.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("RECENT CRON RUNS")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(control.cronRuns.prefix(3)) { run in
+                            todayActivityRow(
+                                timestamp: run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Recent",
+                                label: "CRON  ·  \(run.status.uppercased())",
+                                detail: run.jobID ?? "Scheduled job execution",
+                                color: cronRunIsSuccessful(run) ? Color.scifiSuccess : Color.scifiWarning
+                            )
+                        }
+                    }
+                }
+                .scifiGlassPane()
+            }
+
+            // Scheduled automations
             if !control.cronJobs.isEmpty {
-                Button("VIEW \(control.cronJobs.count) AUTOMATIONS") { select(.automations) }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("SCHEDULED WORK  ·  \(control.cronJobs.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(control.cronJobs.prefix(3)) { job in
+                            HStack(spacing: 8) {
+                                Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary)
+                                    .frame(width: 5, height: 5)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(job.name)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color.scifiFg)
+                                    Text(CronScheduleFormatting.humanReadable(job.schedule))
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                }
+                                Spacer(minLength: 0)
+                                if job.sessionID != nil {
+                                    Button("OPEN") { control.openCronSession(job) }
+                                        .buttonStyle(.scifiPress)
+                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.scifiAccent)
+                                }
+                            }
+                            .scifiListRow()
+                        }
+                    }
+
+                    Button("VIEW ALL AUTOMATIONS") { select(.automations) }
+                        .buttonStyle(.scifiPress)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                }
+                .scifiGlassPane()
+            }
+
+            // Reminders section
+            if !control.reminders.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("REMINDERS  ·  \(control.reminders.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(control.reminders.prefix(3)) { reminder in
+                            Button {
+                                reminderForConfirmation = reminder
+                                isShowingReminderConfirmation = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
+                                    Text(reminder.title)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .scifiListRow()
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.scifiPress)
+                        }
+                    }
+                }
+                .scifiGlassPane()
+            }
+
+            // Recent workspace tasks
+            if !store.tasks.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiMuted)
+                        Text("RECENT TASKS  ·  \(store.tasks.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiMuted)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(store.tasks.prefix(4)) { task in
+                            HStack(spacing: 8) {
+                                Circle().fill(taskColor(task.status)).frame(width: 5, height: 5)
+                                Text(task.title)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.scifiFg)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                Text(task.status.rawValue.uppercased())
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(taskColor(task.status))
+                            }
+                            .scifiListRow()
+                        }
+                    }
+                }
+                .scifiGlassPane()
+            }
+
+            // Integration & capability setup warning banner
+            if !setupCapabilities.isEmpty {
+                Button { select(.core) } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.scifiWarning)
+                            .frame(width: 15)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("SETUP  ·  \(setupCapabilities.count)")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .tracking(0.7)
+                                .foregroundStyle(Color.scifiFg)
+                            Text("Review integrations and required permissions in Core.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.scifiTertiary)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.scifiAccent)
+                    }
+                    .padding(12)
+                    .scifiGlassPane()
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.scifiPress)
             }
         }
     }
@@ -2737,8 +3069,19 @@ struct WorkspaceActivitySidebar: View {
         .padding(.bottom, 2)
     }
 
-    private func todayMetric(_ label: String, value: Int, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    /// Returns the color indicator matching a session's current operational state.
+    private func sessionStateColor(_ state: String) -> Color {
+        switch state.lowercased() {
+        case "running", "active": Color.scifiAccent
+        case "blocked", "error", "failed": Color.scifiWarning
+        case "completed", "idle", "done": Color.scifiSuccess
+        default: Color.scifiMuted
+        }
+    }
+
+    /// Renders a metric card in the workspace overview, with an optional tap action to switch tabs.
+    private func todayMetric(_ label: String, value: Int, color: Color, action: (() -> Void)? = nil) -> some View {
+        let cardContent = VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
                 .font(.system(size: 20, weight: .semibold, design: .monospaced))
                 .foregroundStyle(color)
@@ -2750,6 +3093,17 @@ struct WorkspaceActivitySidebar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .scifiGlassPane()
+
+        return Group {
+            if let action {
+                Button(action: action) {
+                    cardContent
+                }
+                .buttonStyle(.scifiPress)
+            } else {
+                cardContent
+            }
+        }
     }
 
     private func missionFocusStrip(_ focus: MissionControlFocus) -> some View {
@@ -3175,7 +3529,8 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
-            if control.sessionUsage != nil || control.sessionContext != nil {
+            let canSteerSession = model.status == .working && model.sessionID != nil
+            if control.sessionUsage != nil || control.sessionContext != nil || canSteerSession {
                 Divider().overlay(Color.scifiBorderLight)
                 sectionLabel("SESSION COCKPIT")
                 if let usage = control.sessionUsage {
@@ -3207,20 +3562,34 @@ struct WorkspaceActivitySidebar: View {
                         }
                     }
                 }
-                HStack(spacing: 8) {
+                if canSteerSession, let sessionID = model.sessionID {
+                    Text("Hermes will apply this guidance after the next tool-result boundary without restarting the turn.")
+                        .font(.system(size: 11)).foregroundStyle(Color.scifiTertiary)
+                    HStack(spacing: 8) {
                     TextField("Steer the active turn…", text: $sessionSteerText)
                         .textFieldStyle(.scifiGlass)
                     Button("STEER") {
                         let text = sessionSteerText
                         Task {
-                            if let result = await control.steerActiveSession(text), result.wasAccepted {
+                            guard let result = await control.steerActiveSession(text) else { return }
+                            if result.wasAccepted {
                                 sessionSteerText = ""
+                                sessionSteerFeedback = "GUIDANCE QUEUED"
+                            } else {
+                                sessionSteerFeedback = "GUIDANCE REJECTED — text retained"
                             }
                         }
                     }
                     .buttonStyle(.scifiPress)
                     .foregroundStyle(Color.scifiAccent)
-                    .disabled(sessionSteerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(sessionSteerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || control.isActionPending(control.sessionSteerActionID(sessionID)))
+                    }
+                    if let sessionSteerFeedback {
+                        Text(sessionSteerFeedback)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(sessionSteerFeedback.contains("REJECTED") ? Color.scifiWarning : Color.scifiSuccess)
+                    }
                 }
             }
             if let budget = control.promptBudget {
@@ -3361,10 +3730,8 @@ struct WorkspaceActivitySidebar: View {
             }
             Divider().overlay(Color.scifiBorderLight)
             sectionLabel("NOTIFICATIONS")
-            Toggle(isOn: Binding(
-                get: { model.completionNotificationsEnabled },
-                set: { model.setCompletionNotificationsEnabled($0) }
-            )) {
+            // Notifications toggle row with space-between layout so the switch is placed at the far right end
+            HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Completion alerts")
                         .font(.system(size: 12, weight: .medium))
@@ -3374,9 +3741,16 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.scifiTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                Spacer(minLength: 16)
+                Toggle("", isOn: Binding(
+                    get: { model.completionNotificationsEnabled },
+                    set: { model.setCompletionNotificationsEnabled($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Color.scifiAccent)
             }
-            .toggleStyle(.switch)
-            .tint(Color.scifiAccent)
+            .frame(maxWidth: .infinity, alignment: .leading)
             Divider().overlay(Color.scifiBorderLight)
             sectionLabel("QUICK CAPTURE")
             HStack {

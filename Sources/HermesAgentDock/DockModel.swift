@@ -9,8 +9,11 @@ final class DockModel: ObservableObject {
     @Published private(set) var isHermesConnected = false
     @Published var messages: [ChatMessage] = []
     @Published var draft = ""
-    @Published var pendingImage: ImageAttachment?
+    @Published var pendingImages: [ImageAttachment] = []
     @Published var isSending = false
+    @Published private(set) var isSteering = false
+    @Published private(set) var steeringError: String?
+    @Published private(set) var steeringNotice: String?
     @Published var approvalTitle: String?
     @Published var approvalText: String?
     @Published private(set) var isRespondingToApproval = false
@@ -182,16 +185,16 @@ final class DockModel: ObservableObject {
 
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachedImage = pendingImage
-        guard (!prompt.isEmpty || attachedImage != nil), !isSending, !isRestoringSession else { return }
+        let attachedImages = pendingImages
+        guard (!prompt.isEmpty || !attachedImages.isEmpty), !isSending, !isRestoringSession else { return }
 
-        let text = (prompt.isEmpty && attachedImage != nil) ? "What do you see in this image?" : prompt
+        let text = (prompt.isEmpty && !attachedImages.isEmpty) ? "What do you see in these images?" : prompt
         draft = ""
-        pendingImage = nil
-        messages.append(ChatMessage(role: .user, text: text, image: attachedImage?.image))
+        pendingImages = []
+        messages.append(ChatMessage(role: .user, text: text, images: attachedImages.map(\.image)))
         status = .working
         isSending = true
-        DebugLog.write("model: send started (\(prompt.count) characters, image: \(attachedImage != nil))")
+        DebugLog.write("model: send started (\(prompt.count) characters, images: \(attachedImages.count))")
 
         Task {
             do {
@@ -216,12 +219,18 @@ final class DockModel: ObservableObject {
                 // late resume must not redirect a prompt into another chat.
                 let promptSessionID = sessionID
 
-                if let attachedImage {
+                for attachedImage in attachedImages {
+                    let accessing = attachedImage.fileURL.startAccessingSecurityScopedResource()
+                    defer { if accessing { attachedImage.fileURL.stopAccessingSecurityScopedResource() } }
                     let imageData = try Data(contentsOf: attachedImage.fileURL)
                     let base64 = imageData.base64EncodedString()
                     let attachResult = try await gateway.request(
-                        "image.attach",
-                        params: ["session_id": promptSessionID, "data": base64, "file_name": attachedImage.fileName]
+                        "image.attach_bytes",
+                        params: [
+                            "session_id": promptSessionID,
+                            "content_base64": base64,
+                            "filename": attachedImage.fileName
+                        ]
                     )
                     let attached = (attachResult["attached"] as? Bool) ?? false
                     guard attached else {
@@ -237,11 +246,72 @@ final class DockModel: ObservableObject {
                 DebugLog.write("model: prompt submitted")
             } catch {
                 DebugLog.write("model: send failed: \(error.localizedDescription)")
-                cleanupImageAttachment(attachedImage)
-                messages.append(ChatMessage(role: .hermes, text: "I couldn’t connect to Hermes: \(error.localizedDescription)", modelName: currentModelName))
-                status = .offline
+                cleanupImageAttachments(attachedImages)
+                let transportFailure: Bool
+                if let gatewayError = error as? HermesGateway.GatewayError {
+                    switch gatewayError {
+                    case .backendUnavailable, .disconnected, .httpError:
+                        transportFailure = true
+                    case .malformedResponse, .imageAttachFailed:
+                        transportFailure = false
+                    }
+                } else {
+                    let nsError = error as NSError
+                    transportFailure = nsError.domain == NSURLErrorDomain || nsError.domain == NSPOSIXErrorDomain
+                }
+                let message = transportFailure
+                    ? "I couldn’t connect to Hermes: \(error.localizedDescription)"
+                    : "Hermes couldn’t process this request: \(error.localizedDescription)"
+                messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
+                status = transportFailure ? .offline : .idle
                 isSending = false
             }
+        }
+    }
+
+    func steerDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        guard status == .working, isSending, !isSteering, let sessionID, !sessionID.isEmpty else {
+            steeringError = "Steering is unavailable until Hermes has an active turn."
+            return
+        }
+
+        isSteering = true
+        steeringError = nil
+        steeringNotice = nil
+        Task {
+            defer { isSteering = false }
+            do {
+                let result = try await gateway.request(
+                    "session.steer",
+                    params: ["session_id": sessionID, "text": text]
+                )
+                guard (result["status"] as? String)?.lowercased() == "queued" else {
+                    steeringError = "Hermes rejected the steering guidance."
+                    return
+                }
+                draft = ""
+                messages.append(ChatMessage(
+                    role: .user,
+                    text: text,
+                    isSteering: true,
+                    steeringStatus: "QUEUED"
+                ))
+                steeringNotice = nil
+                DebugLog.write("model: steering guidance queued")
+            } catch {
+                steeringError = error.localizedDescription
+                DebugLog.write("model: steering failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func submitComposerInput() {
+        if status == .working && isSending {
+            steerDraft()
+        } else {
+            send()
         }
     }
 
@@ -269,13 +339,18 @@ final class DockModel: ObservableObject {
             DebugLog.write("model: could not load image at \(url.path)")
             return
         }
-        pendingImage = ImageAttachment(image: nsImage, fileURL: url)
+        pendingImages.append(ImageAttachment(image: nsImage, fileURL: url))
         DebugLog.write("model: picked image \(url.lastPathComponent)")
     }
 
-    func clearPendingImage() {
-        cleanupImageAttachment(pendingImage)
-        pendingImage = nil
+    func removePendingImage(_ image: ImageAttachment) {
+        cleanupImageAttachment(image)
+        pendingImages.removeAll { $0.id == image.id }
+    }
+
+    func clearPendingImages() {
+        cleanupImageAttachments(pendingImages)
+        pendingImages = []
     }
 
     @discardableResult
@@ -287,16 +362,21 @@ final class DockModel: ObservableObject {
             return false
         }
         let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("hermes-paste-\(Int(Date().timeIntervalSince1970)).png")
+            .appendingPathComponent("hermes-paste-\(UUID().uuidString).png")
         do {
-            try png.write(to: tempURL)
+            try png.write(to: tempURL, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
         } catch {
             DebugLog.write("model: failed to write image temp file: \(error.localizedDescription)")
             return false
         }
-        pendingImage = ImageAttachment(image: nsImage, fileURL: tempURL)
+        pendingImages.append(ImageAttachment(image: nsImage, fileURL: tempURL))
         DebugLog.write("model: staged pasted image at \(tempURL.lastPathComponent)")
         return true
+    }
+
+    private func cleanupImageAttachments(_ attachments: [ImageAttachment]) {
+        attachments.forEach(cleanupImageAttachment)
     }
 
     private func cleanupImageAttachment(_ attachment: ImageAttachment?) {

@@ -154,6 +154,9 @@ final class HermesControlRPC {
     func projectSessions(projectID: String) async throws -> [String: Any] {
         try await client.request("projects.project_sessions", params: ["project_id": projectID])
     }
-    func shell(_ command: String) async throws -> [String: Any] { try await client.request("shell.exec", params: ["command": command]) }
-    func raw(_ method: String, params: [String: Any] = [:]) async throws -> [String: Any] { try await client.request(method, params: params) }
+    /// Structured-command entry point; never accept an arbitrary shell string.
+    func runCommand(_ command: HermesCLICommand) async throws -> [String: Any] {
+        let rendered = try command.rendered()
+        return try await client.request("shell.exec", params: ["command": rendered])
+    }
 }

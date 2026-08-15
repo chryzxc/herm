@@ -128,44 +128,126 @@ struct SessionFilesView: View {
     }
 }
 
+/// Real interactive terminal view following DESIGN.md glass pane & typography specifications.
 struct SessionTerminalView: View {
     let projectPath: String?
     @StateObject private var terminal = LocalTerminalSession()
     @State private var command = ""
     @FocusState private var commandFocused: Bool
 
+    private var directoryName: String {
+        guard let projectPath, !projectPath.isEmpty else { return "TERMINAL" }
+        return URL(fileURLWithPath: projectPath).lastPathComponent
+    }
+
+    private var statusColor: Color {
+        switch terminal.state {
+        case .running: Color.scifiSuccess
+        case .starting: Color.scifiWarning
+        case .closed, .idle: Color.scifiMuted
+        case .failed: Color.scifiDestructive
+        }
+    }
+
+    private var statusText: String {
+        switch terminal.state {
+        case .running: "RUNNING"
+        case .starting: "STARTING"
+        case .closed: "CLOSED"
+        case .idle: "IDLE"
+        case .failed(let err): "FAILED (\(err))"
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Terminal Header Bar with status indicator and quick actions
+            HStack(spacing: 8) {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiAccent)
+
+                Text("TERMINAL  ·  \(directoryName.uppercased())")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .tracking(0.75)
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 6, height: 6)
+
+                Text(statusText)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(statusColor)
+
+                Spacer(minLength: 0)
+
+                // Quick Terminal Action Buttons
+                Button("CTRL+C") {
+                    terminal.interrupt()
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiWarning)
+
+                Button("CLEAR") {
+                    terminal.clear()
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+
+                Button("RESTART") {
+                    if let projectPath { terminal.start(directory: projectPath) }
+                }
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiMuted)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+
+            // Scrollable Output Window
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(terminal.output)
+                    Text(terminal.output.isEmpty ? "Terminal session initialized. Ready for commands.\n" : terminal.output)
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(terminal.output.isEmpty ? Color.scifiMuted : Color.scifiFg)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 12)
+                        .padding(12)
                         .id("terminal-output")
                 }
-                .frame(maxHeight: .infinity)
+                .frame(minHeight: 220, maxHeight: .infinity)
                 .background(Color.scifiCanvas)
                 .onChange(of: terminal.output) { _, _ in
-                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo("terminal-output", anchor: .bottom) }
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        proxy.scrollTo("terminal-output", anchor: .bottom)
+                    }
                 }
             }
+
+            // Command Prompt Input Bar
             HStack(spacing: 8) {
-                Text("❯").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
-                TextField("Type a command", text: $command)
+                Text("❯")
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
+
+                TextField("Type a shell command (e.g. git status, npm test)...", text: $command)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color.scifiFg)
                     .focused($commandFocused)
                     .onSubmit { submit() }
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, 12)
             .padding(.vertical, 10)
+            .background(Color.scifiSurface2)
             .overlay(alignment: .top) { Color.scifiBorderLight.frame(height: 0.5) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scifiGlassPane()
         .task(id: projectPath) {
             guard let projectPath else { terminal.close(); return }
             terminal.start(directory: projectPath)
@@ -178,37 +260,5 @@ struct SessionTerminalView: View {
         guard !command.isEmpty else { return }
         terminal.send(command + "\n")
         command = ""
-    }
-
-}
-
-struct SessionBrowserView: View {
-    @ObservedObject var model: DockModel
-
-    var body: some View {
-        let events = model.agentActivities.filter { activity in
-            let tool = activity.toolName?.lowercased() ?? ""
-            return tool.contains("browser") || tool.contains("web") || tool.contains("search")
-        }
-        VStack(alignment: .leading, spacing: 8) {
-            if events.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label("No browser activity", systemImage: "safari") .font(.system(size: 12, weight: .semibold))
-                    Text("A live web page will appear here when Hermes exposes a browser-session capability. This Dock currently shows only Hermes-reported browser activity.")
-                        .font(.system(size: 12)).foregroundStyle(Color.scifiTertiary)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .scifiGlassPane()
-            } else {
-                Text("HERMES BROWSER ACTIVITY · \(events.count)").font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiMuted)
-                ForEach(events.reversed()) { event in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(event.toolName?.uppercased() ?? "BROWSER").font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
-                        Text(event.text).font(.system(size: 12)).foregroundStyle(Color.scifiFg).lineLimit(3)
-                    }.padding(.vertical, 5).overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
-                }
-            }
-        }
     }
 }

@@ -368,6 +368,26 @@ struct ControlCenterProjectTests {
         #expect(succeedingClient.createdParams?["prompt"] as? String == "Review")
     }
 
+    @Test func cronCreationRejectsInvalidScheduleBeforeSending() async {
+        let capability = CapabilityState(id: "rpc-scheduling", title: "Cron", detail: "Available", isAvailable: true, recovery: nil)
+        let client = CronCreationClient(shouldFail: false)
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [capability])
+
+        #expect(await model.createCron(name: "Bad", schedule: "not a schedule", prompt: "Review") == false)
+        #expect(client.createdParams == nil)
+        #expect(model.lastError?.contains("5-field") == true)
+    }
+
+    @Test func killProcessRequiresActivityCapabilityAndNeverCallsRPC() async {
+        let client = ProcessControlClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+
+        let process = ProcessSummary(id: "p-1", name: "node", state: "running", detail: nil)
+        #expect(await model.killProcess(process) == false)
+        #expect(client.killCallCount == 0)
+        #expect(model.lastError?.contains("unavailable") == true)
+    }
+
     @Test func projectionRefreshPreservesLastSuccessAfterTransientFailure() async throws {
         let client = ProjectionRefreshClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
@@ -448,6 +468,20 @@ private final class CronCreationClient: HermesRPCClientProtocol {
             createdParams = params
             if shouldFail { throw Failure.rejected }
         }
+        return [:]
+    }
+}
+
+@MainActor
+private final class ProcessControlClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var killCallCount = 0
+
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "process.kill" { killCallCount += 1 }
         return [:]
     }
 }

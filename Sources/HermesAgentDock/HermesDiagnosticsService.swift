@@ -39,15 +39,44 @@ final class HermesDiagnosticsService {
         let lines = ansiFree
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { Self.scrubSecrets(in: $0) }
+            .map { Self.scrubHomePath(in: $0) }
             .filter { line in
                 !line.isEmpty
                     && !line.contains("Auth file:")
                     && !line.contains(".env")
-                    && !line.contains("/Users/")
-                    && !line.contains("/home/")
-                    && !line.contains("/var/")
             }
         return lines.prefix(3).joined(separator: "  ·  ")
+    }
+
+    nonisolated private static func scrubSecrets(in line: String) -> String {
+        var scrubbed = replace(in: line,
+                               pattern: "(token|password|passwd|secret|api[_-]?key|auth[_-]?token|access[_-]?key|bearer)\\s*[:=]\\s*\\S+",
+                               options: [.caseInsensitive],
+                               template: "$1: ••••")
+        scrubbed = replace(in: scrubbed,
+                          pattern: "(?:sk-ant-|sk-|ghp_|gho_|github_pat_|xox[bpoa]-|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})[A-Za-z0-9_-]+",
+                          options: [],
+                          template: "••••")
+        return scrubbed
+    }
+
+    nonisolated private static func scrubHomePath(in line: String) -> String {
+        var scrubbed = line
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if !home.isEmpty, home != "/" {
+            scrubbed = scrubbed.replacingOccurrences(of: home, with: "••••")
+        }
+        for pattern in ["/Users/[^/\\s]+", "/home/[^/\\s]+"] {
+            scrubbed = replace(in: scrubbed, pattern: pattern, options: [], template: "••••")
+        }
+        return scrubbed.replacingOccurrences(of: "~/", with: "••••/")
+    }
+
+    nonisolated private static func replace(in input: String, pattern: String, options: NSRegularExpression.Options, template: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return input }
+        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        return regex.stringByReplacingMatches(in: input, range: range, withTemplate: template)
     }
 
     private static func title(for id: String) -> String {

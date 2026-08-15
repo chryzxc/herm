@@ -134,8 +134,7 @@ final class HermesCLIAdapter {
     }
 
     private func run(_ words: [String]) async throws -> HermesCLIResult {
-        let rendered = try HermesCLICommand(words).rendered()
-        let raw = try await rpc.shell(rendered)
+        let raw = try await rpc.runCommand(HermesCLICommand(words))
         let stdout = raw["stdout"] as? String ?? ""
         let stderr = HermesDiagnosticsService.safeSummary(raw["stderr"] as? String ?? "")
         let succeeded = AppleRemindersAdapter.shellResultSucceeded(raw)

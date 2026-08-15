@@ -39,34 +39,35 @@ struct VoiceModeToolbar: View {
   var body: some View {
     HStack {
       Spacer()
-      HStack(spacing: 8) {
+      // Voice mode action toolbar buttons — using uniform 28pt frames and 6pt gap matching the header
+      HStack(spacing: 6) {
         Button(action: onToggleWorkspace) {
           Image(
             systemName: isWorkspaceVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1"
           )
-          .font(.system(size: 12, weight: .medium)).foregroundStyle(
+          .font(.system(size: 11, weight: .medium)).foregroundStyle(
             isWorkspaceVisible ? Color.scifiAccent : Color.scifiMuted
-          ).frame(width: 36, height: 36)
+          ).frame(width: 28, height: 28)
           .background(
             Circle().fill(isWorkspaceVisible ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4)
           )
         }
-        .buttonStyle(.scifiPress).dockHitTarget().help(
+        .buttonStyle(.scifiPress).help(
           isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
         if canStopRequest {
           Button(action: onStopRequest) {
-            Image(systemName: "stop.fill").font(.system(size: 12, weight: .semibold))
-              .foregroundStyle(Color.scifiDestructive).frame(width: 36, height: 36).background(
+            Image(systemName: "stop.fill").font(.system(size: 11, weight: .semibold))
+              .foregroundStyle(Color.scifiDestructive).frame(width: 28, height: 28).background(
                 Circle().fill(Color.scifiDestructive.opacity(0.1)))
           }
-          .buttonStyle(.scifiPress).dockHitTarget().help("Stop Hermes request")
+          .buttonStyle(.scifiPress).help("Stop Hermes request")
         }
         Button(action: onReturnToChat) {
-          Image(systemName: "text.bubble").font(.system(size: 13, weight: .medium)).foregroundStyle(
+          Image(systemName: "text.bubble").font(.system(size: 11, weight: .medium)).foregroundStyle(
             Color.scifiMuted
-          ).frame(width: 36, height: 36).background(Circle().fill(Color.scifiSurface4))
+          ).frame(width: 28, height: 28).background(Circle().fill(Color.scifiSurface4))
         }
-        .buttonStyle(.scifiPress).dockHitTarget().help("Return to chat")
+        .buttonStyle(.scifiPress).help("Return to chat")
       }
     }
   }
@@ -141,6 +142,7 @@ struct MarkdownMessageView: View {
     case listItem(text: String, marker: String)
     case code(String, language: String?)
     case quote(String)
+    case tableRow([String])
   }
 
   init(markdown: String) {
@@ -153,7 +155,7 @@ struct MarkdownMessageView: View {
       ForEach(Array(parsedBlocks.enumerated()), id: \.offset) { _, block in
         switch block {
         case .heading(let level, let text):
-          renderedText(text).font(.system(size: Self.headingSize(level), weight: .bold)).padding(
+          renderedText(text).font(.system(size: Self.headingSize(level), weight: .semibold)).foregroundStyle(Color.scifiFg).padding(
             .top, 2)
         case .paragraph(let text): renderedText(text).font(.system(size: 14)).lineSpacing(3)
         case .listItem(let text, let marker):
@@ -167,13 +169,27 @@ struct MarkdownMessageView: View {
           renderedText(text).font(.system(size: 14)).foregroundStyle(Color.scifiMuted).padding(
             .leading, 10
           ).overlay(alignment: .leading) { Rectangle().fill(Color.scifiBorder).frame(width: 2) }
+        case .tableRow(let columns):
+          // Render markdown table rows as clean structured cards to avoid eye strain from raw syntax
+          HStack(spacing: 8) {
+            ForEach(Array(columns.enumerated()), id: \.offset) { _, col in
+              renderedText(col)
+                .font(.system(size: 12.5, weight: .regular))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+          .padding(.horizontal, 8)
+          .padding(.vertical, 4)
+          .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.scifiSurface4))
+          .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
         }
       }
     }
   }
 
   private func renderedText(_ value: String) -> some View {
-    Text(inlineMarkdown(value)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+    // Explicitly apply soft scifiFg text color to eliminate pure white glare
+    Text(inlineMarkdown(value)).foregroundStyle(Color.scifiFg).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
   }
   private func codeBlock(_ code: String, language: String?) -> some View {
     VStack(alignment: .leading, spacing: 2) {
@@ -183,7 +199,7 @@ struct MarkdownMessageView: View {
             .top, 6)
       }
       ScrollView(.horizontal, showsIndicators: false) {
-        Text(code).font(.system(size: 12.5, design: .monospaced)).textSelection(.enabled).frame(
+        Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.scifiFg).textSelection(.enabled).frame(
           maxWidth: .infinity, alignment: .leading
         ).padding(.horizontal, 8).padding(.vertical, 6)
       }
@@ -192,7 +208,7 @@ struct MarkdownMessageView: View {
         Color.scifiBorder, lineWidth: 0.5))
   }
   private static func headingSize(_ level: Int) -> CGFloat {
-    level == 1 ? 20 : level == 2 ? 17 : level == 3 ? 15 : 14
+    level == 1 ? 18 : level == 2 ? 16 : level == 3 ? 14.5 : 14
   }
   private static func parseBlocks(_ markdown: String) -> [Block] {
     var result: [Block] = []
@@ -228,6 +244,17 @@ struct MarkdownMessageView: View {
       if inCode {
         code.append(line)
         continue
+      }
+      if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+        if trimmed.contains("---") {
+          continue // skip table separator syntax lines cleanly
+        }
+        let cols = trimmed.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }
+        if !cols.isEmpty {
+          flushParagraph()
+          result.append(.tableRow(cols))
+          continue
+        }
       }
       if let level = Self.headingLevel(trimmed) {
         flushParagraph()
@@ -285,32 +312,9 @@ struct MarkdownMessageView: View {
   }
   private func inlineMarkdown(_ value: String) -> AttributedString {
     (try? AttributedString(
-      markdown: groupedNumbers(in: value),
+      markdown: value,
       options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
       ?? AttributedString(value)
-  }
-  private func groupedNumbers(in value: String) -> String {
-    guard
-      let regex = try? NSRegularExpression(
-        pattern: #"(?<![A-Za-z0-9_./-])\d{4,}(?![A-Za-z0-9_./-])"#)
-    else { return value }
-    var result = value
-    let range = NSRange(value.startIndex..., in: value)
-    for match in regex.matches(in: value, range: range).reversed() {
-      guard let matchRange = Range(match.range, in: result) else { continue }
-      let number = String(result[matchRange])
-      guard !(number.count == 4 && (number.hasPrefix("19") || number.hasPrefix("20"))) else {
-        continue
-      }
-      let digits = Array(number)
-      var grouped = ""
-      for index in digits.indices {
-        if index > 0 && (digits.count - index).isMultiple(of: 3) { grouped.append(",") }
-        grouped.append(digits[index])
-      }
-      result.replaceSubrange(matchRange, with: grouped)
-    }
-    return result
   }
 }
 

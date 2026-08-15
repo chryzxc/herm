@@ -17,6 +17,22 @@ struct CommandCenterModelsTests {
         #expect(SessionPreviewPresentation.summary("{\"payload\":{}}") == "Session activity updated")
     }
 
+    @Test func cronScheduleValidationAcceptsFiveFieldExpressions() {
+        #expect(CronSchedule.isValid("0 9 * * *"))
+        #expect(CronSchedule.isValid("0 9 * * 1"))
+        #expect(CronSchedule.isValid("*/15 * * * *"))
+        #expect(CronSchedule.isValid("  30 2 1,15 * *  "))
+        #expect(CronSchedule.isValid("0 0 1 jan,jul mon"))
+    }
+
+    @Test func cronScheduleValidationRejectsMalformedInput() {
+        #expect(!CronSchedule.isValid(""))
+        #expect(!CronSchedule.isValid("0 9 * *"))
+        #expect(!CronSchedule.isValid("0 9 * * * *"))
+        #expect(!CronSchedule.isValid("not a schedule"))
+        #expect(!CronSchedule.isValid("0 9 * * *; rm -rf /"))
+    }
+
     @Test func missionPrioritizesAttentionAndDoesNotUpgradeTargetedEvidence() {
         let approval = attention("approval", .approval)
         let reminder = attention("reminder", .reminder)

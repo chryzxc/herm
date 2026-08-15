@@ -110,6 +110,10 @@ final class ControlCenterModel: ObservableObject {
         pendingActionIDs.contains(id)
     }
 
+    func sessionSteerActionID(_ sessionID: String) -> String {
+        "session.steer:\(sessionID)"
+    }
+
     func refreshState(for projection: String) -> ProjectionRefreshState? {
         projectionRefreshStates[projection]
     }
@@ -515,6 +519,10 @@ final class ControlCenterModel: ObservableObject {
             lastError = "Name, schedule, and request are required to create an automation."
             return false
         }
+        guard CronSchedule.isValid(cleanSchedule) else {
+            lastError = "Schedule must be a 5-field cron expression (minute hour day month weekday)."
+            return false
+        }
         let actionID = "cron.create"
         guard beginAction(actionID) else { return false }
         defer { finishAction(actionID) }
@@ -846,11 +854,20 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func steerActiveSession(_ text: String) async -> SessionTextActionResult? {
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return nil }
+        guard let dockModel,
+              dockModel.status == .working,
+              capabilityAvailable("rpc-sessions"),
+              let rpc,
+              let sessionID = dockModel.sessionID,
+              !sessionID.isEmpty else { return nil }
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty else { return nil }
+        let actionID = sessionSteerActionID(sessionID)
+        guard beginAction(actionID) else { return nil }
+        defer { finishAction(actionID) }
         do {
             let result = try await rpc.steer(sessionID: sessionID, text: cleanText)
+            guard dockModel.sessionID == sessionID else { return nil }
             guard let rawStatus = result["status"] as? String,
                   let status = SessionTextActionStatus(rawValue: rawStatus.lowercased()) else {
                 lastError = "Hermes returned an invalid steering response."
@@ -1104,6 +1121,13 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func killProcess(_ process: ProcessSummary) async -> Bool {
+        guard rpc != nil, capabilityAvailable("rpc-activity") else {
+            lastError = "Process control is unavailable through this Hermes gateway."
+            return false
+        }
+        let actionID = "process.kill:\(process.id)"
+        guard beginAction(actionID) else { return false }
+        defer { finishAction(actionID) }
         guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return false }
         do {
             _ = try await rpc.killProcess(sessionID: sessionID, processID: process.id)
@@ -1287,6 +1311,10 @@ final class ControlCenterModel: ObservableObject {
             lastError = "Scheduled-job fields cannot be empty in the Dock."
             return
         }
+        if let schedule = changes[.schedule], !CronSchedule.isValid(schedule) {
+            lastError = "Schedule must be a 5-field cron expression (minute hour day month weekday)."
+            return
+        }
         let actionID = cronActionID("edit", job: job)
         guard beginAction(actionID) else { return }
         Task {
@@ -1328,13 +1356,13 @@ final class ControlCenterModel: ObservableObject {
             do {
                 switch action {
                 case .approve:
-                    guard let rpc else { return }
-                    _ = try await rpc.respondToApproval(sessionID: reference.sessionID ?? "", choice: "once")
-                    dockModel.resolveApproval(for: reference.sessionID ?? "")
+                    guard let rpc, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
+                    _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "once")
+                    dockModel.resolveApproval(for: sessionID)
                 case .deny:
-                    guard let rpc else { return }
-                    _ = try await rpc.respondToApproval(sessionID: reference.sessionID ?? "", choice: "deny")
-                    dockModel.resolveApproval(for: reference.sessionID ?? "")
+                    guard let rpc, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
+                    _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "deny")
+                    dockModel.resolveApproval(for: sessionID)
                 case .respond:
                     let response = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     guard !response.isEmpty else { return }
