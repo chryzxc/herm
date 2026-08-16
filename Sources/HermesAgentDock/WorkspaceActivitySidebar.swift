@@ -181,7 +181,10 @@ struct WorkspaceActivitySidebar: View {
         }
         .environment(\.colorScheme, .dark)
         .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder], onCompletion: handleRepositoryImport)
-        .task(id: activeRepositoryIdentity) { await refreshRepository() }
+        // Repository loading is owned by DockPopover's shared context-panel
+        // task so switching Global/Session cannot let this view clear or race
+        // the workflow projection. Manual Refresh actions still use the local
+        // refreshRepository() path below.
         .task {
             control.bind(to: model)
             control.refresh()
@@ -3323,7 +3326,10 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var activeRepositoryPath: String? {
-        store.projectPath(forSessionID: model.sessionID)
+        store.resolvedProjectPath(
+            forSessionID: model.sessionID,
+            hermesProjectPath: model.sessionID.flatMap { control.project(forSessionID: $0)?.name }
+        )
     }
 
     /// A repository path can be shared by multiple sessions. The task identity

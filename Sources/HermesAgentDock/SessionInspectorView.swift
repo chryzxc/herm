@@ -7,6 +7,8 @@ struct SessionInspector: View {
     @ObservedObject var model: DockModel
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
+    let sessionRepositoryPath: String?
+    let sessionProjectIsBound: Bool
     var showsHeader = true
     @State private var selectedSection = Section.overview
     @StateObject private var preferences = CommandCenterPreferencesStore()
@@ -130,10 +132,14 @@ struct SessionInspector: View {
     private var inspectorContent: some View {
         switch selectedSection {
         case .overview:
-            // Build the unified session mission control snapshot
+            // Build the unified session mission control snapshot. Repository
+            // telemetry is only meaningful when this session owns a repository;
+            // the workflow model can otherwise still contain a prior snapshot
+            // while the session-scoped refresh is catching up.
+            let sessionRepository = model.sessionID == nil || !sessionProjectIsBound ? nil : self.sessionRepository
             let mission = MissionControlSnapshotBuilder.make(
                 sessionTitle: model.currentSessionTitle,
-                repository: workflow.repository.isGitRepository ? workflow.repository : nil,
+                repository: sessionRepository,
                 model: model.runtimeConfiguration?.model,
                 context: control.sessionContext,
                 attention: control.attention,
@@ -153,8 +159,11 @@ struct SessionInspector: View {
                 // Section Header
                 inspectorLabel("SESSION OVERVIEW")
 
-                // Compact Telemetry Bar (Branch, Model, Context %, Changed Files)
-                sessionTelemetryStrip(focus: mission.focus)
+                // Compact repository telemetry bar. The active model is shown in
+                // the composer, which is the authoritative session model control.
+                if sessionRepository != nil {
+                    sessionTelemetryStrip(focus: mission.focus)
+                }
 
                 // Interactive Metrics Bar
                 HStack(spacing: 8) {
@@ -255,7 +264,7 @@ struct SessionInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 inspectorLabel("PROJECT FILES")
                 SessionFilesView(
-                    projectPath: workflow.repository.path.isEmpty ? nil : workflow.repository.path,
+                    projectPath: sessionRepositoryPath,
                     onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
                 )
             }
@@ -263,11 +272,11 @@ struct SessionInspector: View {
             RepositoryChangesBrowser(
                 model: model,
                 workflow: workflow,
-                projectPath: workflow.repository.path.isEmpty ? nil : workflow.repository.path,
+                projectPath: sessionRepositoryPath,
                 onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
             )
         case .terminal:
-            SessionTerminalView(projectPath: workflow.repository.path.isEmpty ? nil : workflow.repository.path)
+            SessionTerminalView(projectPath: sessionRepositoryPath)
         case .verification:
             VStack(alignment: .leading, spacing: 14) {
                 inspectorLabel("VERIFICATION")
@@ -283,6 +292,11 @@ struct SessionInspector: View {
                 }
             }
         }
+    }
+
+    private var sessionRepository: RepositorySnapshot? {
+        guard sessionRepositoryPath != nil, workflow.repository.isGitRepository else { return nil }
+        return workflow.repository
     }
 
     private func inspectorLabel(_ text: String) -> some View {
@@ -325,7 +339,7 @@ struct SessionInspector: View {
         .scifiGlassPane()
     }
 
-    /// Renders a multi-column telemetry grid displaying branch, model, context usage, and changed files without truncation using DESIGN.md glass surfaces.
+    /// Renders repository telemetry without duplicating the model selector from the composer.
     private func sessionTelemetryStrip(focus: MissionControlFocus) -> some View {
         struct TelemetryItem: Identifiable {
             let id: String
@@ -335,8 +349,7 @@ struct SessionInspector: View {
         }
 
         let items: [TelemetryItem] = [
-            focus.branch.map { TelemetryItem(id: "branch", icon: "git.branch", label: "BRANCH", value: $0) },
-            focus.model.map { TelemetryItem(id: "model", icon: "cpu", label: "MODEL", value: $0) },
+            focus.branch.map { TelemetryItem(id: "branch", icon: "arrow.triangle.branch", label: "BRANCH", value: $0) },
             focus.contextPercent.map { TelemetryItem(id: "context", icon: "chart.bar.fill", label: "CONTEXT", value: "\(Int($0.rounded()))%") },
             focus.changedFiles.map { TelemetryItem(id: "files", icon: "doc.badge.gearshape", label: "CHANGED", value: "\($0) files") }
         ].compactMap { $0 }

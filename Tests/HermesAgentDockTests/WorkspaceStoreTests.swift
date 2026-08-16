@@ -44,17 +44,43 @@ struct WorkspaceStoreTests {
         #expect(store.task(forSessionID: "session-2")?.projectPath == "/tmp/project")
     }
 
-    @Test func selectedProjectFolderProvidesContextUntilASessionOverridesIt() throws {
+    @Test func selectedProjectFolderDoesNotLeakIntoUnrelatedSession() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }
         let store = WorkspaceStore(fileURL: fixture.fileURL)
 
         store.attachProject(at: "/tmp/selected-project")
-        #expect(store.projectPath(forSessionID: "new-session") == "/tmp/selected-project")
+        #expect(store.projectPath(forSessionID: nil) == nil)
+        #expect(store.projectPath(forSessionID: "new-session") == nil)
 
+        _ = store.ensureTask(title: "Session one", sessionID: "session-1")
         store.attachProject(at: "/tmp/session-project", toSessionID: "session-1")
         #expect(store.projectPath(forSessionID: "session-1") == "/tmp/session-project")
-        #expect(store.projectPath(forSessionID: "another-session") == "/tmp/session-project")
+        #expect(store.projectPath(forSessionID: "another-session") == nil)
+    }
+
+    @Test func newSessionTaskDoesNotImplicitlyInheritGlobalProject() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+
+        store.attachProject(at: "/tmp/selected-project")
+        _ = store.ensureTask(title: "New chat", sessionID: "new-session")
+
+        #expect(store.task(forSessionID: "new-session")?.projectPath == nil)
+        #expect(store.projectPath(forSessionID: "new-session") == nil)
+    }
+
+    @Test func boundHermesProjectCanResolveRepositoryWithoutGlobalFallback() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+
+        store.attachProject(at: "/tmp/global-project")
+
+        #expect(store.resolvedProjectPath(forSessionID: "project-session", hermesProjectPath: "/tmp/hermes-project") == "/tmp/hermes-project")
+        #expect(store.resolvedProjectPath(forSessionID: "unbound-session", hermesProjectPath: nil) == nil)
+        #expect(store.resolvedProjectPath(forSessionID: nil, hermesProjectPath: "/tmp/hermes-project") == nil)
     }
 
     @Test func migratesLegacySessionTasksAndCreatesOneBackup() throws {

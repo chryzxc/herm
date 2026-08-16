@@ -74,6 +74,7 @@ final class ControlCenterModel: ObservableObject {
     private var journeyGeneration = UUID()
     private var sessionCockpitGeneration = UUID()
     private var sessionCockpitSessionID: String?
+    private var sessionProcessesGeneration = UUID()
     private var knownAttention: [String: AttentionItem] = [:]
     private var eventSubscription: UUID?
     private let capabilityService = HermesCapabilityService()
@@ -300,8 +301,10 @@ final class ControlCenterModel: ObservableObject {
                 if !sessionID.isEmpty {
                     do {
                         let result = try await rpc.processes(sessionID: sessionID)
-                        processes = Self.parseProcesses(result)
-                        recordProjectionSuccess("processes")
+                        if dockModel?.sessionID == sessionID {
+                            processes = Self.parseProcesses(result)
+                            recordProjectionSuccess("processes")
+                        }
                     } catch {
                         let message = error.localizedDescription
                         recordProjectionFailure("processes", error: message)
@@ -358,7 +361,7 @@ final class ControlCenterModel: ObservableObject {
                 if forceCapabilities || sessionStoreStatus == nil || memoryHealthStatus == nil {
                     refreshReadOnlyHealth()
                 }
-                refreshSessionCockpit()
+                refreshSessionCockpit(for: dockModel.sessionID)
                 refreshPromptBudget()
                 refreshVerification()
                 recordProjectionSuccess("core")
@@ -829,14 +832,19 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    func refreshSessionCockpit() {
+    func refreshSessionCockpit(for requestedSessionID: String? = nil) {
         let generation = UUID()
         sessionCockpitGeneration = generation
-        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else {
+        let sessionID = requestedSessionID ?? dockModel?.sessionID
+        guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID, !sessionID.isEmpty else {
             sessionCockpitSessionID = nil
             sessionUsage = nil
             sessionContext = nil
             return
+        }
+        if sessionCockpitSessionID != sessionID {
+            sessionUsage = nil
+            sessionContext = nil
         }
         sessionCockpitSessionID = sessionID
         Task { @MainActor in
@@ -844,7 +852,7 @@ final class ControlCenterModel: ObservableObject {
             let context = try? await rpc.sessionContextBreakdown(sessionID: sessionID)
             guard generation == sessionCockpitGeneration,
                   sessionCockpitSessionID == sessionID,
-                  dockModel?.sessionID == sessionID else { return }
+                  (requestedSessionID != nil || dockModel?.sessionID == sessionID) else { return }
             if let usage { sessionUsage = Self.parseSessionUsage(usage) }
             if let context { sessionContext = Self.parseSessionContext(context) }
             if usage != nil || context != nil {
@@ -960,7 +968,7 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    func refreshVerification() {
+    func refreshVerification(for requestedSessionID: String? = nil) {
         guard let rpc, let repository = developmentContext, !repository.path.isEmpty else {
             projectFacts = nil
             verification = VerificationSummary(state: .notApplicable, evidence: nil)
@@ -970,7 +978,7 @@ final class ControlCenterModel: ObservableObject {
         let verificationGeneration = UUID()
         projectFactsGeneration = factsGeneration
         self.verificationGeneration = verificationGeneration
-        let sessionID = dockModel?.sessionID
+        let sessionID = requestedSessionID ?? dockModel?.sessionID
         Task { @MainActor in
             do {
                 let factsResult = try await rpc.projectFacts(cwd: repository.path)
@@ -1612,6 +1620,36 @@ final class ControlCenterModel: ObservableObject {
         }
         currentFocus = ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID)
         resolveProjectMembership(for: sessionID)
+        refreshSessionScopedProjections(for: sessionID)
+    }
+
+    /// Refreshes data whose meaning is owned by the selected session. The
+    /// broad control-center refresh can already be running when the user
+    /// switches sessions, so this path must not wait for that refresh or leave
+    /// the previous session's projection visible in the Session tab.
+    private func refreshSessionScopedProjections(for sessionID: String) {
+        let generation = UUID()
+        sessionProcessesGeneration = generation
+        processes = []
+        refreshSessionCockpit(for: sessionID)
+        refreshVerification(for: sessionID)
+
+        guard capabilityAvailable("rpc-sessions"), let rpc else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await rpc.processes(sessionID: sessionID)
+                guard generation == self.sessionProcessesGeneration,
+                      self.currentFocus?.sessionID == sessionID else { return }
+                self.processes = Self.parseProcesses(result)
+                self.recordProjectionSuccess("processes")
+            } catch {
+                guard generation == self.sessionProcessesGeneration,
+                      self.currentFocus?.sessionID == sessionID else { return }
+                self.processes = []
+                self.recordProjectionFailure("processes", error: error.localizedDescription)
+            }
+        }
     }
 
     func project(forSessionID sessionID: String) -> ProjectSummary? {

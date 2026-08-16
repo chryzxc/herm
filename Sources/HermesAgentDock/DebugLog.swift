@@ -23,6 +23,16 @@ enum DebugLog {
         writer.append(line, to: fileURL)
     }
 
+    /// Temporary state-transition diagnostics. These are intentionally
+    /// separate from the bounded event log so debugging can show the actual
+    /// session/repository decision without changing normal telemetry events.
+    static func writeDiagnostic(_ message: String) {
+        let line = "[\(ISO8601DateFormatter().string(from: Date()))] diagnostic=\(message)\n"
+        print(line, terminator: "")
+        onLine?(line.trimmingCharacters(in: .newlines))
+        writer.append(line, to: fileURL)
+    }
+
     /// Persistent diagnostics deliberately retain only a bounded event category.
     /// Hermes payloads, backend output, tool data, paths, and error text remain
     /// runtime-only and must never cross this boundary.

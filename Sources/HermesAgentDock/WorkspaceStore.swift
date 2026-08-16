@@ -127,7 +127,10 @@ final class WorkspaceStore: ObservableObject {
 
     @discardableResult
     func createTask(title: String, sessionID: String? = nil) -> WorkspaceTask {
-        let task = WorkspaceTask(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled task" : title, status: .inProgress, projectPath: projectPath, sessionID: sessionID)
+        // A global project selection is not an attachment to a newly created
+        // Hermes session. Repository context must be assigned explicitly to
+        // the session (or to the full set of sessions in its project).
+        let task = WorkspaceTask(title: title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled task" : title, status: .inProgress, projectPath: nil, sessionID: sessionID)
         tasks.insert(task, at: 0)
         addControlReference(for: task)
         save()
@@ -177,16 +180,31 @@ final class WorkspaceStore: ObservableObject {
         save()
     }
 
-    /// The selected Hermes project is the default local context. A session can
-    /// override it when it belongs to a different project, but an unrelated or
-    /// newly opened session should still render the currently selected project.
+    /// Repository context is session-scoped. The global path is retained for
+    /// project selection and for creating/attaching work, but it must not leak
+    /// into an unrelated session's inspector.
     func projectPath(forSessionID sessionID: String?) -> String? {
         if let sessionID,
            let sessionPath = task(forSessionID: sessionID)?.projectPath,
            !sessionPath.isEmpty {
             return sessionPath
         }
-        return projectPath?.isEmpty == false ? projectPath : nil
+        return nil
+    }
+
+    /// Resolves the repository for a session without allowing the global
+    /// selection to leak into unrelated conversations. Hermes project paths
+    /// are accepted only when they are absolute; names such as "__no_project__"
+    /// remain non-repository context.
+    func resolvedProjectPath(forSessionID sessionID: String?, hermesProjectPath: String?) -> String? {
+        if let sessionPath = projectPath(forSessionID: sessionID) {
+            return sessionPath
+        }
+        guard sessionID != nil,
+              let hermesProjectPath,
+              hermesProjectPath.hasPrefix("/"),
+              !hermesProjectPath.isEmpty else { return nil }
+        return hermesProjectPath
     }
 
     /// A Hermes project groups multiple sessions around one checkout. Persist

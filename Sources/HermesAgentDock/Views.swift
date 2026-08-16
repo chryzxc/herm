@@ -21,9 +21,16 @@ struct DockPopover: View {
     @StateObject private var workspaceStore = WorkspaceStore()
     @StateObject private var controlCenter = ControlCenterModel()
     @StateObject private var developerWorkflow = DeveloperWorkflowModel()
+    @StateObject private var repositoryPreferences = CommandCenterPreferencesStore()
     @State private var inputMode: InputMode = .chat
     @State private var suppressNextVoiceResponse = false
     @State private var inspectorScope: InspectorScope = .global
+    /// Cached project/repo folder name for the active session.
+    /// Only updated when a non-nil value is resolved — never cleared on transient
+    /// refresh-cycle gaps where projectIDBySessionID is momentarily empty.
+    @State private var cachedProjectName: String? = nil
+    @State private var cachedSessionRepositoryPath: String? = nil
+    @State private var lastSessionTitleAtIdentityChange: String?
 
     private enum InputMode {
         case chat, talk
@@ -148,6 +155,9 @@ struct DockPopover: View {
             synchronizeWorkspace()
             controlCenter.bind(to: model)
             controlCenter.refresh()
+            // Seed the project name cache immediately after bind so the label
+            // is visible from the first render if membership data is already loaded.
+            refreshCachedProjectName()
         }
         .onChange(of: isWorkspaceVisible) { _, visible in
             if isNarrowLayout { isNarrowControlVisible = visible }
@@ -202,13 +212,37 @@ struct DockPopover: View {
                 resumeVoiceConversationIfReady()
             }
         }
-        .onChange(of: model.sessionID) { _, _ in
+        .onChange(of: model.sessionID) { oldValue, newValue in
+            DebugLog.writeDiagnostic("session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")")
             synchronizeWorkspace()
-            controlCenter.focus(sessionID: model.sessionID)
+            controlCenter.focus(sessionID: newValue)
             synchronizePanelLayout()
+            // Only clear the cached project name when the session ID genuinely changes to a different
+            // session. DockModel publishes sessionID twice during resume (an optimistic set then a confirmed
+            // set), so we must compare old vs new to avoid wiping the cache on same-value re-publications.
+            if oldValue != newValue {
+                let title = model.currentSessionTitle
+                let isLogicalSessionSwitch = lastSessionTitleAtIdentityChange != nil
+                    && title != lastSessionTitleAtIdentityChange
+                lastSessionTitleAtIdentityChange = title
+                if newValue == nil || isLogicalSessionSwitch {
+                    cachedProjectName = nil
+                    cachedSessionRepositoryPath = nil
+                    refreshCachedProjectName()
+                    cacheSessionRepositoryPath()
+                }
+            }
         }
         .onChange(of: model.sessionID) { _, _ in model.refreshSessionModelOptions() }
         .onChange(of: model.currentSessionTitle) { _, _ in synchronizeWorkspace() }
+        // Refresh the cached project name whenever the membership map updates.
+        // This fires after the async resolveProjectMembership completes and
+        // ensures the label reappears even after a refresh cycle wiped it.
+        .onChange(of: controlCenter.projectIDBySessionID) { _, _ in
+            DebugLog.writeDiagnostic("session.membership_changed session=\(model.sessionID ?? "nil") project=\(contextProjectName ?? "nil") cachedProject=\(cachedProjectName ?? "nil")")
+            refreshCachedProjectName()
+            cacheSessionRepositoryPath()
+        }
         .onChange(of: model.messages.count) { oldCount, newCount in
             if newCount > oldCount { synchronizeWorkspace() }
         }
@@ -262,29 +296,66 @@ struct DockPopover: View {
                         showsHeader: false
                     )
                 case .session:
-                    SessionInspector(model: model, control: controlCenter, workflow: developerWorkflow, showsHeader: false)
+                    SessionInspector(
+                        model: model,
+                        control: controlCenter,
+                        workflow: developerWorkflow,
+                        sessionRepositoryPath: cachedProjectName == nil ? nil : activeSessionRepositoryPath,
+                        sessionProjectIsBound: cachedProjectName != nil,
+                        showsHeader: false
+                    )
                 }
             }
             .transition(.opacity)
             .animation(.scifiEase(duration: 0.2), value: inspectorScope)
         }
         .background(Color.scifiCanvas)
+        // This task belongs to the shared context panel, not the Global
+        // sidebar. The sidebar is removed in Session scope, but the session
+        // inspector still needs the same repository projection loaded.
+        .task(id: activeSessionRepositoryIdentity) {
+            // Capture the resolved path at the start of the task. Project
+            // membership can transiently disappear during a refresh after
+            // this task has been scheduled; that must not turn a valid
+            // session repository into nil.
+            let repositoryPath = liveSessionRepositoryPath ?? cachedSessionRepositoryPath
+            guard let repositoryPath else { return }
+            if let liveSessionRepositoryPath { cachedSessionRepositoryPath = liveSessionRepositoryPath }
+            await developerWorkflow.setActiveRepository(
+                path: repositoryPath,
+                preferences: repositoryPreferences,
+                control: controlCenter
+            )
+        }
+        .onAppear {
+            refreshCachedProjectName()
+            cacheSessionRepositoryPath()
+        }
     }
 
     private var contextPanelHeader: some View {
         HStack(spacing: 12) {
-            if inspectorScope == .session {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.currentSessionTitle ?? "Untitled session")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
-                        .lineLimit(1)
-                    if let contextProjectName {
-                        HStack(spacing: 6) {
-                            Label(contextProjectName, systemImage: "folder")
-                                .lineLimit(1)
-                                .layoutPriority(1)
+            // Always show the session title and project/repo name regardless of the selected scope.
+            // This gives persistent context so the user knows which session and project they're looking at
+            // even when browsing the Global tab.
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.currentSessionTitle ?? "Untitled session")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
 
+                // Use cachedProjectName instead of the live computed value so that transient
+                // refresh-cycle gaps (where projectIDBySessionID is momentarily empty) don't
+                // cause the label to flicker or disappear. The cache is only updated with
+                // non-nil values via onChange(of: controlCenter.projectIDBySessionID).
+                if let cachedProjectName {
+                    HStack(spacing: 6) {
+                        Label(cachedProjectName, systemImage: "folder")
+                            .lineLimit(1)
+                            .layoutPriority(1)
+
+                        // Only show the "NEW SESSION" button when in session scope to avoid clutter
+                        if inspectorScope == .session {
                             Button(action: newChatForContextProject) {
                                 Label("NEW SESSION", systemImage: "plus.bubble")
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -297,12 +368,12 @@ struct DockPopover: View {
                             .buttonStyle(.scifiPress)
                             .foregroundStyle(Color.scifiAccent)
                             .disabled(model.isRestoringSession)
-                            .help("Start a new chat in \(contextProjectName)")
-                            .accessibilityLabel("Start a new chat in \(contextProjectName)")
+                            .help("Start a new chat in \(cachedProjectName)")
+                            .accessibilityLabel("Start a new chat in \(cachedProjectName)")
                         }
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
                     }
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
                 }
             }
 
@@ -329,6 +400,37 @@ struct DockPopover: View {
         guard let path, !path.isEmpty else { return nil }
         let name = URL(fileURLWithPath: path).lastPathComponent
         return name.isEmpty ? nil : name
+    }
+
+    private var activeSessionRepositoryPath: String? {
+        liveSessionRepositoryPath ?? cachedSessionRepositoryPath
+    }
+
+    private var liveSessionRepositoryPath: String? {
+        workspaceStore.resolvedProjectPath(
+            forSessionID: model.sessionID,
+            hermesProjectPath: model.sessionID.flatMap { controlCenter.project(forSessionID: $0)?.name }
+        )
+    }
+
+    private var activeSessionRepositoryIdentity: String? {
+        guard let sessionID = model.sessionID,
+              let path = activeSessionRepositoryPath else { return nil }
+        return "\(sessionID):\(path)"
+    }
+
+    /// Updates the cached project name from the live computed value.
+    /// Called whenever the session or project membership changes.
+    private func refreshCachedProjectName() {
+        if let contextProjectName {
+            cachedProjectName = contextProjectName
+        }
+    }
+
+    private func cacheSessionRepositoryPath() {
+        if let liveSessionRepositoryPath {
+            cachedSessionRepositoryPath = liveSessionRepositoryPath
+        }
     }
 
     private func newChatForContextProject() {
@@ -696,6 +798,13 @@ struct DockPopover: View {
                                             .foregroundStyle(Color.scifiMuted)
                                             .lineLimit(1)
                                     }
+                                    if let projectName = conversationProjectName(for: session) {
+                                        Label(projectName, systemImage: "folder")
+                                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(Color.scifiTertiary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
                                 }
                                 Spacer()
                                 if let date = session.startedAt {
@@ -719,6 +828,17 @@ struct DockPopover: View {
         }
         .background(Color.scifiCanvas)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func conversationProjectName(for session: HermesSession) -> String? {
+        guard let project = controlCenter.project(forSessionID: session.id),
+              !project.name.isEmpty,
+              project.name != "__no_project__" else {
+            return nil
+        }
+
+        let name = URL(fileURLWithPath: project.name).lastPathComponent
+        return name.isEmpty ? project.name : name
     }
 
     @ViewBuilder
@@ -1253,6 +1373,10 @@ struct DockPopover: View {
         let draftIsEmpty = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isSteeringTurn = model.status == .working && model.isSending && model.sessionID != nil
         let canSubmit = isSteeringTurn ? !draftIsEmpty : (!draftIsEmpty || !model.pendingImages.isEmpty)
+        // TextEditor adds a small native leading inset on macOS. Keep that
+        // correction in one place so the editor, placeholder, and measurement
+        // text all share the same content origin.
+        let textInset: CGFloat = 5
 
         return VStack(spacing: 8) {
             // Main multi-line text input area at top of card container.
@@ -1277,7 +1401,7 @@ struct DockPopover: View {
                     .scrollIndicators(.automatic)
                     // Negate the TextEditor's internal 5pt inset so text starts
                     // at the same x position as the placeholder overlay.
-                    .padding(.horizontal, -5)
+                    .padding(.horizontal, -textInset)
                     .padding(.vertical, 0)
                     .foregroundStyle(Color.scifiFg)
                     .environment(\.colorScheme, .dark)
@@ -1289,17 +1413,17 @@ struct DockPopover: View {
                     Text(model.isRestoringSession ? "Restoring conversation…" : "Do anything")
                         .font(.system(size: 14))
                         .foregroundStyle(Color.scifiMuted.opacity(0.6))
-                        .padding(.horizontal, 0)
+                        .padding(.horizontal, textInset)
                         .padding(.vertical, 7)
                         .allowsHitTesting(false)
                 }
 
                 // Invisible measurement overlay — same font/padding as real text —
                 // so the ZStack grows to the correct height for dynamic sizing.
-                Text(model.draft.isEmpty ? " " : model.draft)
-                    .font(.system(size: 14))
-                    .padding(.horizontal, 0)
-                    .padding(.vertical, 7)
+                    Text(model.draft.isEmpty ? " " : model.draft)
+                        .font(.system(size: 14))
+                        .padding(.horizontal, textInset)
+                        .padding(.vertical, 7)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(0)
                     .background {
@@ -1310,7 +1434,7 @@ struct DockPopover: View {
             }
             // Add back the horizontal inset we removed from TextEditor so the
             // whole block still respects the composer's visual gutter.
-            .padding(.horizontal, 5)
+            .padding(.horizontal, textInset)
             .frame(maxWidth: .infinity, minHeight: composerHeight, maxHeight: composerHeight)
             .onPreferenceChange(ComposerContentHeightKey.self) { contentHeight in
                 // Cap composer height between 40px and 140px
@@ -1352,7 +1476,7 @@ struct DockPopover: View {
             // Integrated Bottom Toolbar Row
             HStack(alignment: .center, spacing: 8) {
                 // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
-                HStack(spacing: 6) {
+                HStack(alignment: .center, spacing: 6) {
                     // Attachment Paperclip Button
                     Button(action: { showingImagePicker = true }) {
                         Image(systemName: "paperclip")
@@ -1396,6 +1520,7 @@ struct DockPopover: View {
                     }
                     .menuStyle(.borderlessButton)
                     .buttonStyle(.scifiPress)
+                    .frame(minHeight: 28, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
                     .help("Select model")
                 }
@@ -1403,7 +1528,7 @@ struct DockPopover: View {
                 Spacer(minLength: 4)
 
                 // Right Toolbar Group: Thinking depth selector menu & circular submit button
-                HStack(spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
                     // Thinking depth variant selector menu
                     Menu {
                         ForEach(HermesReasoningVariant.allCases) { variant in
@@ -1439,6 +1564,7 @@ struct DockPopover: View {
                     }
                     .menuStyle(.borderlessButton)
                     .buttonStyle(.scifiPress)
+                    .frame(minHeight: 28, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
                     .help("Select thinking depth")
 

@@ -99,13 +99,21 @@ final class DeveloperWorkflowModel: ObservableObject {
 
     func setActiveRepository(path: String?, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async {
         preferencesStore = preferences
-        guard path != activePath else { return }
+        DebugLog.writeDiagnostic("repository.workflow set path=\(path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") active=\(activePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") snapshot=\(repository.path.isEmpty ? "empty" : URL(fileURLWithPath: repository.path).lastPathComponent) git=\(repository.isGitRepository)")
+        if path == activePath {
+            guard let path,
+                  repository.path != path || !repository.isGitRepository else { return }
+            DebugLog.writeDiagnostic("repository.workflow same_path_refresh path=\(URL(fileURLWithPath: path).lastPathComponent)")
+            await refresh(preferences: preferences, control: control)
+            return
+        }
         activePath = path
         generation = UUID()
         review = nil
         reviewedFileIDs = []
         worktrees = []
         guard path != nil else {
+            DebugLog.writeDiagnostic("repository.workflow cleared")
             repository = .empty; changes = nil; baselineStatus = .none; isRefreshing = false; control.setDevelopmentContextProjection(nil); syncWatchers(preferences: preferences, control: control); return
         }
         await refresh(preferences: preferences, control: control)
@@ -123,6 +131,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedFingerprint) = await (snapshot, changes, worktrees, fingerprint)
         guard token == generation, path == activePath else { return }
         repository = resolvedSnapshot; self.changes = resolvedChanges; self.worktrees = resolvedWorktrees
+        DebugLog.writeDiagnostic("repository.workflow refreshed path=\(resolvedSnapshot.path.isEmpty ? "empty" : URL(fileURLWithPath: resolvedSnapshot.path).lastPathComponent) branch=\(resolvedSnapshot.branch) changed=\(resolvedSnapshot.changedFiles) git=\(resolvedSnapshot.isGitRepository)")
         control.setDevelopmentContextProjection(resolvedSnapshot)
         if let resolvedFingerprint { watchedFingerprints[resolvedSnapshot.repositoryID] = resolvedFingerprint }
         isRefreshing = false
