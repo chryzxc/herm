@@ -266,7 +266,7 @@ struct AgentHandoffMapView: View {
             .frame(width: 62, height: 62)
             .shadow(color: Color.scifiAccentGlow, radius: 14)
             Text("HERMES")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Color.scifiFg)
             Text("ORCHESTRATOR")
                 .font(.system(size: 10, design: .monospaced))
@@ -311,7 +311,7 @@ struct AgentHandoffMapView: View {
                 }
                 .shadow(color: node.identityColor.opacity(selectedAgentID == node.id ? 0.42 : 0.16), radius: selectedAgentID == node.id ? 12 : 6)
                 Text(node.name)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.scifiFg)
                     .lineLimit(1)
                     .truncationMode(.tail)

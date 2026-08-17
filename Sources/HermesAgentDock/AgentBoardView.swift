@@ -144,8 +144,8 @@ struct AgentBoardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("ACTIVE AGENTS")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .tracking(1.4)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .tracking(0.8)
                     .foregroundStyle(Color.scifiMuted)
                 Spacer(minLength: 0)
                 Text(agentSummary)
@@ -227,8 +227,8 @@ struct AgentBoardView: View {
     private func sectionHeading(_ title: String, detail: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .tracking(1.4)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .tracking(0.8)
                 .foregroundStyle(Color.scifiMuted)
             Spacer()
             Text(detail)
