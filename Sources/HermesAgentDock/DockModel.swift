@@ -21,6 +21,8 @@ final class DockModel: ObservableObject {
     @Published var sessions: [HermesSession] = []
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
+    @Published private(set) var deletingSessionID: String?
+    @Published private(set) var sessionDeletionError: String?
     @Published private(set) var isRestoringSession = false
     @Published var currentSessionTitle: String?
     @Published var reasoningState: ReasoningState?
@@ -406,6 +408,32 @@ final class DockModel: ObservableObject {
                 DebugLog.write("model: session list failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    func deleteSession(_ session: HermesSession) {
+        guard session.id != sessionID else {
+            sessionDeletionError = "The active session cannot be deleted."
+            return
+        }
+        guard deletingSessionID == nil else { return }
+        sessionDeletionError = nil
+        deletingSessionID = session.id
+        Task {
+            defer { deletingSessionID = nil }
+            do {
+                try await gateway.connect()
+                _ = try await gateway.request("session.delete", params: ["session_id": session.id])
+                sessions.removeAll { $0.id == session.id }
+                DebugLog.write("model: deleted saved session \(session.id)")
+            } catch {
+                sessionDeletionError = "Could not delete the session: \(error.localizedDescription)"
+                DebugLog.write("model: session delete failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    func clearSessionDeletionError() {
+        sessionDeletionError = nil
     }
 
     func restoreLatestSessionIfNeeded() {

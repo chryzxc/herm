@@ -24,6 +24,7 @@ struct DockPopover: View {
     @StateObject private var repositoryPreferences = CommandCenterPreferencesStore()
     @State private var inputMode: InputMode = .chat
     @State private var suppressNextVoiceResponse = false
+    @State private var sessionPendingDeletion: HermesSession?
     @State private var inspectorScope: InspectorScope = .global
     /// Cached project/repo folder name for the active session.
     /// Only updated when a non-nil value is resolved — never cleared on transient
@@ -785,8 +786,8 @@ struct DockPopover: View {
             } else {
                 List {
                     ForEach(model.sessions) { session in
-                        Button(action: { model.resumeSession(session) }) {
-                            HStack(spacing: 6) {
+                        HStack(spacing: 6) {
+                            Button(action: { model.resumeSession(session) }) {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(session.displayTitle)
                                         .font(.system(size: 12))
@@ -805,17 +806,30 @@ struct DockPopover: View {
                                             .lineLimit(1)
                                             .truncationMode(.middle)
                                     }
+                                    if let date = session.startedAt {
+                                        Text(date, style: .relative)
+                                            .font(.system(size: 12, design: .monospaced))
+                                            .foregroundStyle(Color.scifiTertiary)
+                                    }
                                 }
-                                Spacer()
-                                if let date = session.startedAt {
-                                    Text(date, style: .relative)
-                                        .font(.system(size: 12, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
-                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                             }
-                            .contentShape(Rectangle())
+                            .buttonStyle(.scifiPress)
+
+                            Button {
+                                sessionPendingDeletion = session
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.scifiWarning)
+                                    .frame(width: 28, height: 28)
+                            }
+                            .buttonStyle(.scifiPress)
+                            .disabled(session.id == model.sessionID || model.deletingSessionID != nil)
+                            .help(session.id == model.sessionID ? "The active session cannot be deleted" : "Delete session")
+                            .accessibilityLabel("Delete \(session.displayTitle)")
                         }
-                        .buttonStyle(.scifiPress)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 5, leading: 12, bottom: 5, trailing: 12))
@@ -828,6 +842,37 @@ struct DockPopover: View {
         }
         .background(Color.scifiCanvas)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .confirmationDialog(
+            "Delete Session?",
+            isPresented: Binding(
+                get: { sessionPendingDeletion != nil },
+                set: { if !$0 { sessionPendingDeletion = nil } }
+            ),
+            presenting: sessionPendingDeletion
+        ) { session in
+            Button("Delete \(session.displayTitle)", role: .destructive) {
+                model.deleteSession(session)
+                sessionPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) {
+                sessionPendingDeletion = nil
+            }
+        } message: { session in
+            Text("This permanently deletes the saved conversation and its transcript.")
+        }
+        .alert(
+            "Could Not Delete Session",
+            isPresented: Binding(
+                get: { model.sessionDeletionError != nil },
+                set: { if !$0 { model.clearSessionDeletionError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                model.clearSessionDeletionError()
+            }
+        } message: {
+            Text(model.sessionDeletionError ?? "The session could not be deleted.")
+        }
     }
 
     private func conversationProjectName(for session: HermesSession) -> String? {

@@ -78,6 +78,7 @@ final class HermesControlRPC {
     }
     func activate(sessionID: String) async throws -> [String: Any] { try await client.request("session.activate", params: ["session_id": sessionID]) }
     func resume(sessionID: String) async throws -> [String: Any] { try await client.request("session.resume", params: ["session_id": sessionID, "source": "hermes-agent-dock-control"]) }
+    func delete(sessionID: String) async throws -> [String: Any] { try await client.request("session.delete", params: ["session_id": sessionID]) }
     func interrupt(sessionID: String) async throws -> [String: Any] { try await client.request("session.interrupt", params: ["session_id": sessionID]) }
     func sessionUsage(sessionID: String) async throws -> [String: Any] { try await client.request("session.usage", params: ["session_id": sessionID]) }
     func sessionContextBreakdown(sessionID: String) async throws -> [String: Any] { try await client.request("session.context_breakdown", params: ["session_id": sessionID]) }

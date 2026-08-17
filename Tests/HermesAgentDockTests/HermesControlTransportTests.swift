@@ -125,6 +125,16 @@ struct HermesControlTransportTests {
         #expect(client.calls.allSatisfy { $0.params["session_id"] as? String == "session-1" })
     }
 
+    @Test func deletingSessionUsesSessionDeleteRPC() async throws {
+        let client = RecordingRPCClient()
+        let rpc = HermesControlRPC(client: client)
+
+        _ = try await rpc.delete(sessionID: "session-1")
+
+        #expect(client.calls.last?.method == "session.delete")
+        #expect(client.calls.last?.params["session_id"] as? String == "session-1")
+    }
+
     @Test func steeringRPCForwardsSessionAndText() async throws {
         let client = RecordingRPCClient()
         let rpc = HermesControlRPC(client: client)
