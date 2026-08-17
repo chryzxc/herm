@@ -30,6 +30,7 @@ extension Color {
     static let scifiTertiary = Color(red: 0.35, green: 0.38, blue: 0.44)
     static let scifiSuccess = Color(red: 0.16, green: 0.78, blue: 0.25)
     static let scifiWarning = Color(red: 1, green: 0.74, blue: 0.18)
+    static let scifiFolder = Color(red: 1, green: 0.70, blue: 0.30)
     static let scifiDestructive = Color(red: 1, green: 0.37, blue: 0.34)
 }
 
@@ -52,12 +53,24 @@ extension View {
 /// styles from leaking into individual Control, chat, or Activity views.
 struct ScifiPressButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHovering ? Color.scifiAccent.opacity(0.12) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(isHovering ? Color.scifiAccent.opacity(0.28) : Color.clear, lineWidth: 0.5)
+            )
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(configuration.isPressed ? 0.86 : 1)
             .animation(reduceMotion ? nil : .scifiEase(duration: 0.16), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .scifiEase(duration: 0.16), value: isHovering)
+            .onHover { isHovering = $0 }
     }
 }
 

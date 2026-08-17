@@ -9,18 +9,17 @@ struct SessionFilesView: View {
     @State private var isLoading = false
     @State private var isOpeningFile = false
     @State private var error: String?
+    @State private var filterText = ""
+    @State private var selectedPath: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let document {
+        VStack(alignment: .leading, spacing: 0) {
+            if let document, let projectPath {
                 RepositoryCodeWorkspaceView(
+                    repositoryPath: projectPath,
                     document: document,
-                    diff: nil,
-                    isLoadingDiff: false,
                     onClose: { self.document = nil },
-                    onReloadDiff: {},
                     onSave: { draft in
-                        guard let projectPath else { return false }
                         guard await RepositoryService.saveDocument(path: projectPath, filePath: document.path, contents: draft) else { return false }
                         await onRefresh()
                         self.document = RepositoryFileDocument(path: document.path, contents: draft, byteCount: draft.lengthOfBytes(using: .utf8))
@@ -28,44 +27,7 @@ struct SessionFilesView: View {
                     }
                 )
             } else if projectPath != nil {
-                if isLoading { ProgressView("Loading project files…").font(.system(size: 12)) }
-                else if entries.isEmpty { empty("folder", "No readable files", "The selected project folder has no readable files.") }
-                else {
-                    Text("\(entries.count) files\(entries.count == RepositoryService.maxProjectExplorerEntries ? "+" : "")")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
-                    if let error { Text(error).font(.system(size: 12)).foregroundStyle(Color.scifiWarning) }
-                    ForEach(visibleEntries) { entry in
-                        if entry.isDirectory {
-                            Button { toggle(entry.path) } label: {
-                                HStack(spacing: 7) {
-                                    Image(systemName: expandedDirectories.contains(entry.path) ? "chevron.down" : "chevron.right")
-                                        .font(.system(size: 8, weight: .bold))
-                                    Image(systemName: expandedDirectories.contains(entry.path) ? "folder.fill" : "folder")
-                                    Text(entryName(entry)).lineLimit(1)
-                                    Spacer()
-                                }
-                                .foregroundStyle(Color.scifiTertiary)
-                                .padding(.leading, CGFloat(entry.depth) * 12)
-                                .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                            }
-                            .buttonStyle(.scifiPress)
-                        } else {
-                            Button { open(entry) } label: {
-                                HStack(spacing: 7) {
-                                    Image(systemName: "doc")
-                                    Text(entryName(entry)).lineLimit(1)
-                                    Spacer()
-                                    if isOpeningFile { ProgressView().controlSize(.mini) }
-                                }
-                                .foregroundStyle(Color.scifiFg)
-                                .padding(.leading, CGFloat(entry.depth) * 12 + 15)
-                                .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                            }
-                            .buttonStyle(.scifiPress)
-                            .disabled(isOpeningFile)
-                        }
-                    }
-                }
+                explorer
             } else {
                 empty("folder.badge.questionmark", "No project selected", "Choose a project before browsing its local files.")
             }
@@ -74,13 +36,167 @@ struct SessionFilesView: View {
             guard let projectPath else { entries = []; return }
             isLoading = true
             expandedDirectories = []
+            selectedPath = nil
             entries = await RepositoryService.projectFiles(path: projectPath)
             isLoading = false
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var explorer: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("EXPLORER")
+                Spacer()
+                Text(projectName.uppercased())
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .tracking(1.1)
+            .foregroundStyle(Color.scifiMuted)
+            .padding(.horizontal, 12)
+            .padding(.top, 2)
+            .padding(.bottom, 12)
+
+            TextField("Filter files…", text: $filterText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.scifiFg)
+                .padding(.horizontal, 12)
+                .frame(height: 38)
+                .background(Color.scifiCanvas)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(.horizontal, 8)
+                .padding(.bottom, 18)
+
+            if isLoading {
+                ProgressView("Loading files…")
+                    .font(.system(size: 12))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+            } else if entries.isEmpty {
+                empty("folder", "No readable files", "The selected project folder has no readable files.")
+                    .padding(.horizontal, 8)
+            } else {
+                Button { } label: {
+                    explorerRow(
+                        icon: "folder.fill",
+                        title: projectName,
+                        path: nil,
+                        depth: 0,
+                        isDirectory: true,
+                        isExpanded: true,
+                        color: Color.scifiFolder
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(true)
+
+                if let error {
+                    Text(error)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.scifiWarning)
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 6)
+                }
+
+                ForEach(visibleEntries) { entry in
+                    if entry.isDirectory {
+                        Button { toggle(entry.path) } label: {
+                            explorerRow(
+                                icon: expandedDirectories.contains(entry.path) ? "folder.fill" : "folder",
+                                title: entryName(entry),
+                                path: entry.path,
+                                depth: entry.depth + 1,
+                                isDirectory: true,
+                                isExpanded: expandedDirectories.contains(entry.path),
+                                color: Color.scifiFolder
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button { open(entry) } label: {
+                            explorerRow(
+                                icon: fileIcon(for: entry),
+                                title: entryName(entry),
+                                path: entry.path,
+                                depth: entry.depth + 1,
+                                isDirectory: false,
+                                isExpanded: false,
+                                color: fileColor(for: entry)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isOpeningFile)
+                    }
+                }
+
+                if visibleEntries.isEmpty {
+                    Text("No matching files")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 12)
+                }
+            }
+        }
+    }
+
+    private func explorerRow(icon: String, title: String, path: String?, depth: Int, isDirectory: Bool, isExpanded: Bool, color: Color) -> some View {
+        HStack(spacing: 8) {
+            if isDirectory {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.scifiMuted)
+                    .frame(width: 12)
+            } else {
+                Color.clear.frame(width: 12)
+            }
+
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(color)
+                .frame(width: 20)
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.scifiFg)
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            if isOpeningFile && selectedPath == path { ProgressView().controlSize(.mini) }
+        }
+        .padding(.leading, CGFloat(depth) * 14 + 8)
+        .padding(.trailing, 8)
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .background(selectedPath == path && !isDirectory ? Color.scifiAccent.opacity(0.13) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .padding(.horizontal, 2)
+    }
+
+    private var projectName: String {
+        guard let projectPath else { return "HERMES-WORKSPACE" }
+        return URL(fileURLWithPath: projectPath).lastPathComponent
+    }
+
+    private var filterQuery: String {
+        filterText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private var visibleEntries: [ProjectFileEntry] {
-        entries.filter { entry in
+        let matchingPaths: Set<String>? = filterQuery.isEmpty ? nil : {
+            var paths = Set<String>()
+            for entry in entries where !entry.isDirectory && entry.path.lowercased().contains(filterQuery) {
+                paths.insert(entry.path)
+                let components = entry.path.split(separator: "/").map(String.init)
+                for index in 0..<(max(0, components.count - 1)) {
+                    paths.insert(components[...index].joined(separator: "/"))
+                }
+            }
+            return paths
+        }()
+
+        return entries.filter { entry in
+            if let matchingPaths { return matchingPaths.contains(entry.path) }
             let components = entry.path.split(separator: "/").map(String.init)
             guard components.count > 1 else { return true }
             let ancestorCount = entry.isDirectory ? components.count - 1 : components.count - 1
@@ -105,6 +221,7 @@ struct SessionFilesView: View {
         guard let projectPath else { return }
         Task {
             isOpeningFile = true
+            selectedPath = entry.path
             error = nil
             let loaded = await RepositoryService.loadDocument(path: projectPath, filePath: entry.path)
             isOpeningFile = false
@@ -113,6 +230,23 @@ struct SessionFilesView: View {
                 return
             }
             document = loaded
+        }
+    }
+
+    private func fileIcon(for entry: ProjectFileEntry) -> String {
+        switch entry.path.split(separator: ".").last.map(String.init)?.lowercased() {
+        case "ts", "tsx", "js", "jsx", "swift", "py", "go", "rs": "curlybraces"
+        case "json", "yaml", "yml", "toml": "doc.text"
+        case "md", "txt": "doc.plaintext"
+        default: "doc"
+        }
+    }
+
+    private func fileColor(for entry: ProjectFileEntry) -> Color {
+        switch entry.path.split(separator: ".").last.map(String.init)?.lowercased() {
+        case "json", "yaml", "yml", "toml": return .scifiWarning
+        case "md", "txt": return .scifiMuted
+        default: return .scifiAccent
         }
     }
 
@@ -135,11 +269,6 @@ struct SessionTerminalView: View {
     @State private var command = ""
     @FocusState private var commandFocused: Bool
 
-    private var directoryName: String {
-        guard let projectPath, !projectPath.isEmpty else { return "TERMINAL" }
-        return URL(fileURLWithPath: projectPath).lastPathComponent
-    }
-
     private var statusColor: Color {
         switch terminal.state {
         case .running: Color.scifiSuccess
@@ -161,66 +290,37 @@ struct SessionTerminalView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Terminal Header Bar with status indicator and quick actions
-            HStack(spacing: 8) {
-                Image(systemName: "terminal.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiAccent)
-
-                Text("TERMINAL  ·  \(directoryName.uppercased())")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .tracking(0.75)
-                    .foregroundStyle(Color.scifiFg)
-                    .lineLimit(1)
-
+            HStack {
+                Text("SHELL")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.scifiMuted)
+                Spacer()
                 Circle()
                     .fill(statusColor)
                     .frame(width: 6, height: 6)
-
                 Text(statusText)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(statusColor)
-
-                Spacer(minLength: 0)
-
-                // Quick Terminal Action Buttons
-                Button("CTRL+C") {
-                    terminal.interrupt()
-                }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiWarning)
-
-                Button("CLEAR") {
-                    terminal.clear()
-                }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
-
-                Button("RESTART") {
-                    if let projectPath { terminal.start(directory: projectPath) }
-                }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiMuted)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+            .padding(.horizontal, 28)
+            .padding(.top, 30)
+            .padding(.bottom, 14)
 
             // Scrollable Output Window
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(terminal.output.isEmpty ? "Terminal session initialized. Ready for commands.\n" : terminal.output)
+                    Text(terminal.output.isEmpty ? "Terminal session initialized. Ready for commands." : terminal.output)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(terminal.output.isEmpty ? Color.scifiMuted : Color.scifiFg)
+                        .lineSpacing(4)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .padding(.horizontal, 28)
+                        .padding(.bottom, 20)
                         .id("terminal-output")
                 }
-                .frame(minHeight: 220, maxHeight: .infinity)
+                .frame(minHeight: 260, maxHeight: .infinity)
                 .background(Color.scifiCanvas)
                 .onChange(of: terminal.output) { _, _ in
                     withAnimation(.easeOut(duration: 0.12)) {
@@ -231,23 +331,23 @@ struct SessionTerminalView: View {
 
             // Command Prompt Input Bar
             HStack(spacing: 8) {
-                Text("❯")
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                Text("$")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.scifiSuccess)
 
-                TextField("Type a shell command (e.g. git status, npm test)...", text: $command)
+                TextField("", text: $command)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color.scifiFg)
                     .focused($commandFocused)
                     .onSubmit { submit() }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 16)
             .background(Color.scifiSurface2)
             .overlay(alignment: .top) { Color.scifiBorderLight.frame(height: 0.5) }
         }
-        .scifiGlassPane()
+        .background(Color.scifiCanvas)
         .task(id: projectPath) {
             guard let projectPath else { terminal.close(); return }
             terminal.start(directory: projectPath)

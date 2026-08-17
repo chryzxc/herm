@@ -751,7 +751,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case session = "Session"
     case inbox = "Inbox"
     case activity = "Activity"
-    case changes = "Changes"
+    case changes = "Source Control"
     case verification = "Verification"
     case automations = "Automations"
     case projects = "Projects"

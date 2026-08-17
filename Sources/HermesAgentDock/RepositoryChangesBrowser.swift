@@ -20,16 +20,12 @@ struct RepositoryChangesBrowser: View {
         if let changes = workflow.changes, workflow.repository.isGitRepository {
             if let document {
                 RepositoryCodeWorkspaceView(
+                    repositoryPath: workflow.repository.path,
                     document: document,
-                    diff: selectedDiff,
-                    isLoadingDiff: isLoading,
                     onClose: {
                         self.document = nil
                         selectedFile = nil
                         selectedDiff = nil
-                    },
-                    onReloadDiff: {
-                        if let selectedFile { loadDiff(for: selectedFile) }
                     },
                     onSave: { draft in
                         guard await RepositoryService.saveDocument(path: workflow.repository.path, filePath: document.path, contents: draft) else { return false }
@@ -66,21 +62,78 @@ struct RepositoryChangesBrowser: View {
             if let error {
                 Text(error).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiWarning)
             }
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.branch").foregroundStyle(Color.scifiAccent)
-                Text("Changes").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.scifiFg)
-                Text("\(changes.changedFiles)").font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiMuted)
-                Spacer()
-                Text(changes.branch).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+
+            sourceControlHeader(changes)
+
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.scifiAccent)
+                Text(changes.branch)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                sourceControlIcon("arrow.triangle.2.circlepath", help: "Refresh source control") {
+                    Task { await onRefresh() }
+                }
             }
-            .padding(.vertical, 6)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 5)
             .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+
+            HStack(alignment: .center, spacing: 8) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.scifiMuted)
+                Text("Changes")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Color.scifiFg)
+                Spacer()
+                Text("\(changes.changedFiles)")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(Color.scifiSurface8))
+            }
+            .padding(.top, 4)
             if changes.files.isEmpty {
                 emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
             } else {
                 ForEach(changes.files) { file in fileRow(file) }
             }
         }
+    }
+
+    private func sourceControlHeader(_ changes: RepositoryChangeSnapshot) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.scifiAccent)
+            Text("SOURCE CONTROL")
+                .font(.system(size: 13, weight: .bold))
+                .tracking(0.9)
+                .foregroundStyle(Color.scifiFg)
+            Spacer()
+            Text("\(changes.stagedCount) staged")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiTertiary)
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func sourceControlIcon(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.scifiMuted)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.scifiPress)
+        .help(help)
     }
 
     private func fileRow(_ file: RepositoryFileChange) -> some View {
@@ -150,11 +203,9 @@ struct RepositoryChangesBrowser: View {
     private func openWorkspace(_ file: RepositoryFileChange) {
         Task {
             isLoading = true; error = nil
-            async let loadedDocument = RepositoryService.loadDocument(path: workflow.repository.path, filePath: file.path)
-            async let loadedDiff = RepositoryService.diff(path: workflow.repository.path, file: file)
-            let (resolvedDocument, resolvedDiff) = await (loadedDocument, loadedDiff)
+            let resolvedDocument = await RepositoryService.loadDocument(path: workflow.repository.path, filePath: file.path)
             guard let resolvedDocument else { isLoading = false; error = "This file cannot be opened inline. Only regular UTF-8 files up to 256 KB are supported."; return }
-            selectedFile = file; document = resolvedDocument; selectedDiff = resolvedDiff; isLoading = false
+            selectedFile = file; document = resolvedDocument; selectedDiff = nil; isLoading = false
         }
     }
 

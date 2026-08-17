@@ -719,16 +719,12 @@ struct WorkspaceActivitySidebar: View {
             } else if let changes = workflow.changes, workflow.repository.isGitRepository {
                 if let codeDocument {
                     RepositoryCodeWorkspaceView(
+                        repositoryPath: workflow.repository.path,
                         document: codeDocument,
-                        diff: selectedRepositoryDiff,
-                        isLoadingDiff: isLoadingRepositoryDiff,
                         onClose: {
                             self.codeDocument = nil
                             selectedRepositoryFile = nil
                             selectedRepositoryDiff = nil
-                        },
-                        onReloadDiff: {
-                            if let selectedRepositoryFile { loadRepositoryDiff(for: selectedRepositoryFile) }
                         },
                         onSave: { draft in
                             let saved = await RepositoryService.saveDocument(path: workflow.repository.path, filePath: codeDocument.path, contents: draft)
@@ -3233,6 +3229,39 @@ struct WorkspaceActivitySidebar: View {
                 }
                 Spacer(minLength: 0)
                 if isRefreshingRepository { ProgressView().controlSize(.small) }
+            }
+            if workflow.repository.isGitRepository {
+                Menu {
+                    if workflow.branches.isEmpty {
+                        Text("No local branches found")
+                    } else {
+                        ForEach(workflow.branches, id: \.self) { branch in
+                            Button {
+                                Task {
+                                    _ = await workflow.switchBranch(branch, preferences: commandCenterPreferences, control: control)
+                                }
+                            } label: {
+                                if branch == workflow.repository.branch {
+                                    Label(branch, systemImage: "checkmark")
+                                } else {
+                                    Text(branch)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.branch")
+                        Text("SWITCH BRANCH")
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .buttonStyle(.scifiPress)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiAccent)
+                .disabled(isRefreshingRepository || workflow.isRefreshing)
             }
             if workflow.repository.isGitRepository, !workflow.repository.latestCommit.isEmpty {
                 Text(workflow.repository.latestCommit)

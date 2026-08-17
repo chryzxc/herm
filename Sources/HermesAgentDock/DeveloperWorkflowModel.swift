@@ -80,6 +80,7 @@ final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var handoffState: HandoffWorkflowState = .idle
     @Published private(set) var isRefreshing = false
     @Published private(set) var error: String?
+    @Published private(set) var branches: [String] = []
     private var activePath: String?
     private var generation = UUID()
     private var debounceTasks: [String: Task<Void, Never>] = [:]
@@ -112,6 +113,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         review = nil
         reviewedFileIDs = []
         worktrees = []
+        branches = []
         guard path != nil else {
             DebugLog.writeDiagnostic("repository.workflow cleared")
             repository = .empty; changes = nil; baselineStatus = .none; isRefreshing = false; control.setDevelopmentContextProjection(nil); syncWatchers(preferences: preferences, control: control); return
@@ -127,16 +129,30 @@ final class DeveloperWorkflowModel: ObservableObject {
         async let snapshot = RepositoryService.inspect(path: path)
         async let changes = RepositoryService.changeSnapshot(path: path)
         async let worktrees = RepositoryService.worktrees(path: path)
+        async let branches = RepositoryService.branches(path: path)
         async let fingerprint = RepositoryService.fingerprint(path: path)
-        let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedFingerprint) = await (snapshot, changes, worktrees, fingerprint)
+        let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint) = await (snapshot, changes, worktrees, branches, fingerprint)
         guard token == generation, path == activePath else { return }
-        repository = resolvedSnapshot; self.changes = resolvedChanges; self.worktrees = resolvedWorktrees
+        repository = resolvedSnapshot; self.changes = resolvedChanges; self.worktrees = resolvedWorktrees; self.branches = resolvedBranches
         DebugLog.writeDiagnostic("repository.workflow refreshed path=\(resolvedSnapshot.path.isEmpty ? "empty" : URL(fileURLWithPath: resolvedSnapshot.path).lastPathComponent) branch=\(resolvedSnapshot.branch) changed=\(resolvedSnapshot.changedFiles) git=\(resolvedSnapshot.isGitRepository)")
         control.setDevelopmentContextProjection(resolvedSnapshot)
         if let resolvedFingerprint { watchedFingerprints[resolvedSnapshot.repositoryID] = resolvedFingerprint }
         isRefreshing = false
         updateBaselineStatus(preferences: preferences, repositoryID: resolvedSnapshot.repositoryID, fingerprint: resolvedFingerprint)
         updateWatchState(preferences: preferences)
+    }
+
+    func switchBranch(_ branch: String, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async -> Bool {
+        guard let path = activePath, repository.isGitRepository else { return false }
+        isRefreshing = true
+        defer { isRefreshing = false }
+        let result = await RepositoryService.switchBranch(path: path, branch: branch)
+        guard result.success else {
+            error = result.error
+            return false
+        }
+        await refresh(preferences: preferences, control: control)
+        return true
     }
 
     func runReview(preferences: CommandCenterPreferencesStore) async {

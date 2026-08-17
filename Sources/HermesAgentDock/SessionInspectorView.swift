@@ -11,17 +11,30 @@ struct SessionInspector: View {
     let sessionProjectIsBound: Bool
     var showsHeader = true
     @State private var selectedSection = Section.overview
+    @State private var isSwitchingBranch = false
     @StateObject private var preferences = CommandCenterPreferencesStore()
+
+    private let sessionTabFont = Font.system(size: 12, weight: .medium)
 
     private enum Section: String, CaseIterable, Identifiable {
         case overview = "Overview"
         case activity = "Activity"
         case files = "Files"
-        case changes = "Changes"
+        case changes = "Source Control"
         case terminal = "Terminal"
         case verification = "Verify"
 
         var id: Self { self }
+        var navigationTitle: String {
+            switch self {
+            case .files: "Explorer"
+            case .terminal: "Terminal"
+            case .activity: "Activity"
+            case .changes: "Source Control"
+            case .overview: "Overview"
+            case .verification: "Verify"
+            }
+        }
         var icon: String {
             switch self {
             case .overview: "bubble.left.and.bubble.right"
@@ -41,9 +54,30 @@ struct SessionInspector: View {
             }
             sessionModePicker
 
-            ScrollView {
-                inspectorContent
-                    .padding(16)
+            if let workflowError = workflow.error {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(Color.scifiWarning)
+                    Text(workflowError)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.scifiWarning)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(Color.scifiWarning.opacity(0.08))
+                .overlay(alignment: .bottom) {
+                    Color.scifiWarning.opacity(0.25).frame(height: 0.5)
+                }
+            }
+
+            GeometryReader { proxy in
+                ScrollView {
+                    inspectorContent
+                        .padding(16)
+                        .frame(minHeight: max(0, proxy.size.height - 32), alignment: .top)
+                }
             }
         }
         .background(Color.scifiCanvas)
@@ -52,11 +86,11 @@ struct SessionInspector: View {
 
     private var sessionModePicker: some View {
         HStack(spacing: 0) {
-            ForEach([Section.overview, .activity, .files]) { section in
+            ForEach([Section.overview, .files, .terminal, .activity, .changes]) { section in
                 sectionButton(section)
             }
             Menu {
-                ForEach([Section.changes, .terminal, .verification]) { section in
+                ForEach([Section.verification]) { section in
                     Button {
                         withAnimation(.scifiEase(duration: 0.2)) { selectedSection = section }
                     } label: {
@@ -64,20 +98,19 @@ struct SessionInspector: View {
                     }
                 }
             } label: {
-                HStack(spacing: 4) {
-                    Text(selectedSection == .overview || selectedSection == .activity || selectedSection == .files ? "More" : selectedSection.rawValue)
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(selectedSection == .overview || selectedSection == .activity || selectedSection == .files ? Color.scifiMuted : Color.scifiFg)
-                .frame(maxWidth: .infinity, minHeight: 34)
+                Text("More")
+                    .font(sessionTabFont)
+                    .foregroundStyle(selectedSection == .verification ? Color.scifiFg : Color.scifiMuted)
+                    .frame(maxWidth: .infinity, minHeight: 34)
                 .overlay(alignment: .bottom) {
-                    if selectedSection != .overview && selectedSection != .activity && selectedSection != .files {
+                    if selectedSection == .verification {
                         Color.scifiAccent.frame(height: 2)
                     }
                 }
                 .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
+            .buttonStyle(.scifiPress)
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 12)
@@ -91,9 +124,10 @@ struct SessionInspector: View {
                 selectedSection = section
             }
         } label: {
-            Text(section.rawValue)
-                .font(.system(size: 12, weight: .medium))
+            Text(section.navigationTitle)
+                .font(sessionTabFont)
                 .foregroundStyle(selectedSection == section ? Color.scifiFg : Color.scifiMuted)
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, minHeight: 34)
                 .overlay(alignment: .bottom) {
                     if selectedSection == section {
@@ -268,6 +302,7 @@ struct SessionInspector: View {
                     onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
                 )
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         case .changes:
             RepositoryChangesBrowser(
                 model: model,
@@ -364,26 +399,75 @@ struct SessionInspector: View {
                 VStack(alignment: .leading, spacing: 8) {
                     LazyVGrid(columns: gridColumns, spacing: 8) {
                         ForEach(items) { item in
-                            HStack(spacing: 6) {
-                                Image(systemName: item.icon)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Color.scifiAccent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.label)
-                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(Color.scifiMuted)
-                                    Text(item.value)
-                                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                        .foregroundStyle(Color.scifiFg)
-                                        .fixedSize(horizontal: false, vertical: true)
+                            if item.id == "branch", workflow.repository.isGitRepository {
+                                Menu {
+                                    ForEach(workflow.branches, id: \.self) { branch in
+                                        Button {
+                                            isSwitchingBranch = true
+                                            Task {
+                                                _ = await workflow.switchBranch(branch, preferences: preferences, control: control)
+                                                isSwitchingBranch = false
+                                            }
+                                        } label: {
+                                            if branch == workflow.repository.branch {
+                                                Label(branch, systemImage: "checkmark")
+                                            } else {
+                                                Text(branch)
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: isSwitchingBranch ? "arrow.triangle.2.circlepath" : item.icon)
+                                                .font(.system(size: 11))
+                                            Image(systemName: "chevron.down")
+                                                .font(.system(size: 8, weight: .bold))
+                                        }
+                                        .foregroundStyle(Color.scifiAccent)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(item.label)
+                                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                                .foregroundStyle(Color.scifiMuted)
+                                            Text(item.value)
+                                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                                .foregroundStyle(Color.scifiFg)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color.scifiSurface2)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
                                 }
-                                Spacer(minLength: 0)
+                                .menuStyle(.borderlessButton)
+                                .buttonStyle(.scifiPress)
+                                .disabled(isSwitchingBranch || workflow.branches.isEmpty)
+                            } else {
+                                HStack(spacing: 6) {
+                                    Image(systemName: item.icon)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.scifiAccent)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.label)
+                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(Color.scifiMuted)
+                                        Text(item.value)
+                                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                            .foregroundStyle(Color.scifiFg)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(Color.scifiSurface2)
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
                             }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(Color.scifiSurface2)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
                         }
                     }
                 }

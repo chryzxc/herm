@@ -53,6 +53,38 @@ struct RepositoryDiff: Equatable {
     let isStaged: Bool
 }
 
+struct RepositoryBlameCommit: Identifiable, Equatable {
+    let hash: String
+    let author: String
+    let authoredAt: Date?
+    let summary: String
+    let isUncommitted: Bool
+
+    var id: String { hash }
+
+    var shortHash: String {
+        String(hash.prefix(8))
+    }
+}
+
+struct RepositoryBlameLine: Identifiable, Equatable {
+    let lineNumber: Int
+    let text: String
+    let commit: RepositoryBlameCommit
+
+    var id: Int { lineNumber }
+}
+
+struct RepositoryBlameDocument: Equatable {
+    let path: String
+    let lines: [RepositoryBlameLine]
+}
+
+enum RepositoryBlameResult: Equatable {
+    case available(RepositoryBlameDocument)
+    case unavailable(String)
+}
+
 /// A bounded, UTF-8 text file projection for the Dock's inline code workspace.
 /// The repository remains the canonical owner; this is only an ephemeral editor
 /// draft rendered inside the menu-bar popover.
@@ -242,6 +274,7 @@ enum RepositoryService {
     static let maxReviewFiles = 200
     static let maxConcurrentWorktreeInspections = 8
     static let maxProjectExplorerEntries = 400
+    static let maxBlameLines = 10_000
 
     static func inspect(path: String) async -> RepositorySnapshot {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
@@ -281,6 +314,29 @@ enum RepositoryService {
             stashCount: stashResult.output.split(separator: "\n", omittingEmptySubsequences: true).count,
             operation: currentOperation
         )
+    }
+
+    /// Returns local branches in the order Git reports them. Keeping this
+    /// scoped to local branches makes the picker safe to use with `switch` and
+    /// avoids silently creating tracking branches from remotes.
+    static func branches(path: String) async -> [String] {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let result = await runGit(path: normalizedPath, arguments: ["branch", "--format=%(refname:short)"])
+        guard result.exitCode == 0 else { return [] }
+        return result.output
+            .split(whereSeparator: { $0.isNewline })
+            .map(String.init)
+            .filter { !$0.isEmpty }
+    }
+
+    /// Switches the working tree to an existing local branch.
+    static func switchBranch(path: String, branch: String) async -> (success: Bool, error: String?) {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard !branch.isEmpty, !branch.contains("\0"), !branch.contains("\n") else {
+            return (false, "Invalid branch name")
+        }
+        let result = await runGit(path: normalizedPath, arguments: ["switch", "--no-guess", "--", branch])
+        return result.exitCode == 0 ? (true, nil) : (false, result.output.isEmpty ? "Git could not switch branches" : result.output)
     }
 
     static func changeSnapshot(path: String) async -> RepositoryChangeSnapshot {
@@ -357,6 +413,30 @@ enum RepositoryService {
                   let contents = String(data: data, encoding: .utf8) else { return nil }
             return RepositoryFileDocument(path: filePath, contents: contents, byteCount: data.count)
         }.value
+    }
+
+    static func blame(path repositoryPath: String, filePath: String) async -> RepositoryBlameResult {
+        guard isSafeRelativePath(filePath) else {
+            return .unavailable("Blame is unavailable for this file path.")
+        }
+
+        let result = await runGit(
+            path: repositoryPath,
+            arguments: ["blame", "--line-porcelain", "--", filePath],
+            trimOutput: false
+        )
+        guard result.exitCode == 0 else {
+            return .unavailable("Blame is unavailable for untracked, binary, or non-Git files.")
+        }
+
+        guard blameLineCount(in: result.output) <= maxBlameLines else {
+            return .unavailable("Blame is unavailable for files over \(maxBlameLines.formatted()) lines.")
+        }
+
+        guard let document = parseBlamePorcelain(result.output, path: filePath) else {
+            return .unavailable("Git returned incomplete blame information for this file.")
+        }
+        return .available(document)
     }
 
     /// Writes only a regular UTF-8 file inside the active repository. The
@@ -535,6 +615,73 @@ enum RepositoryService {
         return (text, value.utf8.count > maxDiffBytes || lines.count > maxDiffLines)
     }
 
+    static func parseBlamePorcelain(_ output: String, path: String = "") -> RepositoryBlameDocument? {
+        let rows = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var lines: [RepositoryBlameLine] = []
+        var index = 0
+
+        while index < rows.count {
+            let header = rows[index]
+            let fields = header.split(separator: " ", omittingEmptySubsequences: true)
+            if header.isEmpty && index == rows.index(before: rows.endIndex) {
+                break
+            }
+            guard fields.count >= 3,
+                  fields[0].count == 40,
+                  Int(fields[2]) != nil else {
+                return nil
+            }
+
+            let hash = String(fields[0])
+            let finalLine = Int(fields[2])!
+            var author = "Unknown author"
+            var authoredAt: Date?
+            var summary = "No commit subject"
+            var sourceText: String?
+            index += 1
+
+            while index < rows.count {
+                let row = rows[index]
+                if row.hasPrefix("\t") {
+                    sourceText = String(row.dropFirst())
+                    index += 1
+                    break
+                }
+                if row.hasPrefix("author ") {
+                    author = String(row.dropFirst("author ".count))
+                } else if row.hasPrefix("author-time ") {
+                    authoredAt = Date(timeIntervalSince1970: TimeInterval(String(row.dropFirst("author-time ".count))) ?? 0)
+                } else if row.hasPrefix("summary ") {
+                    summary = String(row.dropFirst("summary ".count))
+                }
+                index += 1
+            }
+
+            guard let sourceText else { return nil }
+            let isUncommitted = hash.allSatisfy { $0 == "0" }
+            let commit = RepositoryBlameCommit(
+                hash: hash,
+                author: isUncommitted ? "Not committed yet" : author,
+                authoredAt: isUncommitted ? nil : authoredAt,
+                summary: isUncommitted ? "Working tree changes" : summary,
+                isUncommitted: isUncommitted
+            )
+            lines.append(RepositoryBlameLine(lineNumber: finalLine, text: sourceText, commit: commit))
+        }
+
+        guard !lines.isEmpty || output.isEmpty else { return nil }
+        return RepositoryBlameDocument(path: path, lines: lines)
+    }
+
+    private static func blameLineCount(in output: String) -> Int {
+        output.split(separator: "\n", omittingEmptySubsequences: false).reduce(into: 0) { count, row in
+            let fields = row.split(separator: " ", omittingEmptySubsequences: true)
+            if fields.count >= 3, fields[0].count == 40, Int(fields[2]) != nil {
+                count += 1
+            }
+        }
+    }
+
     private static func status(for code: Character) -> RepositoryFileStatus {
         switch code {
         case "M": .modified
@@ -567,7 +714,7 @@ enum RepositoryService {
         !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
 
-    private static func runGit(path: String, arguments: [String]) async -> (output: String, exitCode: Int32) {
+    private static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (output: String, exitCode: Int32) {
         await Task.detached(priority: .utility) {
             let process = Process()
             let pipe = Pipe()
@@ -579,7 +726,8 @@ enum RepositoryService {
                 try process.run()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
-                let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let rawOutput = String(data: data, encoding: .utf8) ?? ""
+                let output = trimOutput ? rawOutput.trimmingCharacters(in: .whitespacesAndNewlines) : rawOutput
                 return (output, process.terminationStatus)
             } catch {
                 return ("", 1)
