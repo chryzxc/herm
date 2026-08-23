@@ -336,7 +336,7 @@ struct DockPopover: View {
                          showsHeader: false
                      )
                 case .artifacts:
-                    PlanArtifactsInspectorView(repositoryPath: activeSessionRepositoryPath ?? contextProjectPath)
+                    PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
                 }
             }
             .transition(.opacity)

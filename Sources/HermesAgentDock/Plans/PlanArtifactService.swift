@@ -2,13 +2,13 @@ import CryptoKit
 import Foundation
 
 struct PlanArtifactService {
-    let projectRoot: URL
+    let plansRoot: URL
     let maxArtifactBytes: Int
     let fileManager: FileManager
     private let isoFormatter: ISO8601DateFormatter
 
     init(projectRoot: URL, maxArtifactBytes: Int = 512_000, fileManager: FileManager = .default) {
-        self.projectRoot = projectRoot.standardizedFileURL
+        self.plansRoot = projectRoot.appendingPathComponent(".hermes/plans", isDirectory: true).standardizedFileURL
         self.maxArtifactBytes = maxArtifactBytes
         self.fileManager = fileManager
         let formatter = ISO8601DateFormatter()
@@ -16,7 +16,20 @@ struct PlanArtifactService {
         self.isoFormatter = formatter
     }
 
-    var plansRoot: URL { projectRoot.appendingPathComponent(".hermes/plans", isDirectory: true).standardizedFileURL }
+    init(plansRoot: URL, maxArtifactBytes: Int = 512_000, fileManager: FileManager = .default) {
+        self.plansRoot = plansRoot.standardizedFileURL
+        self.maxArtifactBytes = maxArtifactBytes
+        self.fileManager = fileManager
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        self.isoFormatter = formatter
+    }
+
+    static var defaultPlansRoot: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".hermes/plans", isDirectory: true)
+            .standardizedFileURL
+    }
 
     func list() -> [PlanArtifactSummary] {
         guard fileManager.fileExists(atPath: plansRoot.path) else { return [] }

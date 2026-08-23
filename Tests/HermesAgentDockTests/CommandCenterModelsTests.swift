@@ -67,26 +67,48 @@ struct CommandCenterModelsTests {
         #expect(WorkspaceOverviewMetrics.runningCount(activeSessions: sessions, agents: agents, processes: processes, backgroundTasks: backgroundTasks) == 5)
     }
 
-    @Test func latestActivityDropsIdleSessionsAndBoundsTheList() {
-        let sessions = (1...12).map { index in
-            SessionSummary(id: "session-\(index)", title: "Session \(index)", state: index.isMultiple(of: 3) ? "idle" : "active", preview: nil)
-        }
+    @Test func latestActivityFlattensAllSessionsSortsGloballyAndBoundsTheFeed() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let sessions = [
+            SessionSummary(id: "session-1", title: "First", state: "idle", preview: "user prompt"),
+            SessionSummary(id: "session-2", title: "Second", state: "active", preview: nil)
+        ]
+        let steps: [String: [SessionActivityStep]] = [
+            "session-1": [
+                SessionActivityStep(id: "a", name: "read_file", timestamp: now.addingTimeInterval(-1)),
+                SessionActivityStep(id: "b", name: "patch", timestamp: now.addingTimeInterval(-3))
+            ],
+            "session-2": [
+                SessionActivityStep(id: "c", name: "swift_test", timestamp: now.addingTimeInterval(-2))
+            ]
+        ]
 
-        let latest = SessionActivityPresentation.latestActivity(sessions)
+        let latest = SessionActivityPresentation.latestActivity(sessions, stepsBySessionID: steps, limit: 2)
 
-        #expect(latest.count == 8)
-        #expect(latest.allSatisfy { $0.state == "active" })
-        #expect(latest.first?.id == "session-1")
+        #expect(latest.map(\.activityName) == ["read_file", "swift_test"])
+        #expect(latest.allSatisfy { $0.sessionID == "session-1" || $0.sessionID == "session-2" })
     }
 
-    @Test func idleDetectionIsCaseAndWhitespaceInsensitive() {
-        #expect(SessionActivityPresentation.isIdle("idle"))
-        #expect(SessionActivityPresentation.isIdle("  IDLE "))
-        #expect(!SessionActivityPresentation.isIdle("active"))
-        #expect(!SessionActivityPresentation.isIdle("done"))
-        #expect(SessionActivityPresentation.latestActivity([
-            SessionSummary(id: "only", title: "Only", state: "Idle", preview: nil)
-        ]).isEmpty)
+    @Test func latestActivityAllowsMultipleRowsFromOneSessionAndRespectsZeroLimit() {
+        let timestamp = Date(timeIntervalSince1970: 10_000)
+        let session = SessionSummary(id: "session", title: "Session", state: "idle", preview: "user prompt")
+        let steps = [
+            SessionActivityStep(id: "one", name: "first", timestamp: timestamp),
+            SessionActivityStep(id: "two", name: "second", timestamp: timestamp.addingTimeInterval(-1))
+        ]
+
+        #expect(SessionActivityPresentation.latestActivity([session], stepsBySessionID: [session.id: steps]).count == 2)
+        #expect(SessionActivityPresentation.latestActivity([session], stepsBySessionID: [session.id: steps], limit: 0).isEmpty)
+    }
+
+    @Test func latestActivityDoesNotUseTheSessionPreviewAsTheActivityName() {
+        let session = SessionSummary(id: "session", title: "Session", state: "active", preview: "user prompt")
+        let step = SessionActivityStep(id: "tool", name: "read_file", timestamp: Date(timeIntervalSince1970: 10_000))
+
+        let latest = SessionActivityPresentation.latestActivity([session], stepsBySessionID: [session.id: [step]])
+
+        #expect(latest.first?.activityName == "read_file")
+        #expect(latest.first?.activityName != session.displayPreview)
     }
 
     @Test func paletteRanksAvailablePrefixMatchAndRetainsUnavailableActions() {

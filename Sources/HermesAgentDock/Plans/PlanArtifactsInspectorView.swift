@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlanArtifactsInspectorView: View {
-    let repositoryPath: String?
+    let plansRoot: URL
 
     @State private var artifacts: [PlanArtifactSummary] = []
     @State private var selectedPath: String?
@@ -16,27 +16,23 @@ struct PlanArtifactsInspectorView: View {
 
     var body: some View {
         Group {
-            if let repositoryPath {
-                content(repositoryPath: repositoryPath)
-            } else {
-                emptyState(title: "No repository context", detail: "Select a session or project with a local repository to browse .hermes/plans.")
-            }
+            content
         }
         .background(Color.scifiCanvas)
-        .task(id: repositoryPath) { await refresh() }
+        .task(id: plansRoot.path) { await refresh() }
         .onDisappear { refreshGeneration = UUID() }
     }
 
     @ViewBuilder
-    private func content(repositoryPath: String) -> some View {
+    private var content: some View {
         if artifacts.isEmpty, errorMessage == nil {
-            emptyState(title: "No plan artifacts", detail: "No Markdown files were found under \(repositoryPath)/.hermes/plans.")
+            emptyState(title: "No plan artifacts", detail: "No Markdown files were found under \(plansRoot.path).")
         } else {
             HStack(spacing: 0) {
                 artifactList
                     .frame(width: 190)
                 Divider().overlay(Color.scifiBorderLight)
-                detail(repositoryPath: repositoryPath)
+                detail
             }
         }
     }
@@ -81,7 +77,7 @@ struct PlanArtifactsInspectorView: View {
     }
 
     @ViewBuilder
-    private func detail(repositoryPath: String) -> some View {
+    private var detail: some View {
         if let errorMessage {
             emptyState(title: "Artifact unavailable", detail: errorMessage)
         } else if let document, let presentation {
@@ -94,7 +90,7 @@ struct PlanArtifactsInspectorView: View {
                         MarkdownMessageView(markdown: document.contents)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         reviewPanel(document: document)
-                        ProvenanceInspectorView(presentation: ProvenancePresentation(sessionID: nil, projectID: nil, repositoryPath: repositoryPath, branch: nil, sourceLabel: "CANONICAL PLAN ARTIFACT", verified: true))
+                        ProvenanceInspectorView(presentation: ProvenancePresentation(sessionID: nil, projectID: nil, repositoryPath: plansRoot.path, branch: nil, sourceLabel: "CANONICAL PLAN ARTIFACT", verified: true))
                         if let revisionDraft {
                             revisionPanel(revisionDraft)
                         }
@@ -125,7 +121,7 @@ struct PlanArtifactsInspectorView: View {
                     .foregroundStyle(Color.scifiTertiary)
             }
             Spacer(minLength: 6)
-            Button("NEW REVISION") { revisionDraft = PlanArtifactService(projectRoot: URL(fileURLWithPath: repositoryPathForCurrentDocument)).revisionDraft(for: document) }
+            Button("NEW REVISION") { revisionDraft = PlanArtifactService(plansRoot: plansRoot).revisionDraft(for: document) }
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .buttonStyle(.scifiPress)
                 .foregroundStyle(Color.scifiAccent)
@@ -232,13 +228,12 @@ struct PlanArtifactsInspectorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var repositoryPathForCurrentDocument: String { repositoryPath ?? "" }
+    private var repositoryPathForCurrentDocument: String { plansRoot.path }
 
     private func refresh() async {
         let generation = UUID()
         refreshGeneration = generation
-        guard let repositoryPath else { return }
-        let service = PlanArtifactService(projectRoot: URL(fileURLWithPath: repositoryPath))
+        let service = PlanArtifactService(plansRoot: plansRoot)
         let values = service.list()
         guard generation == refreshGeneration else { return }
         artifacts = values
@@ -247,8 +242,8 @@ struct PlanArtifactsInspectorView: View {
     }
 
     private func loadSelected() async {
-        guard let repositoryPath, let selectedPath else { return }
-        let service = PlanArtifactService(projectRoot: URL(fileURLWithPath: repositoryPath))
+        guard let selectedPath else { return }
+        let service = PlanArtifactService(plansRoot: plansRoot)
         do {
             let loaded = try service.load(relativePath: selectedPath)
             let loadedComments = try service.comments(for: loaded)
@@ -260,9 +255,8 @@ struct PlanArtifactsInspectorView: View {
     }
 
     private func saveComment(_ document: PlanArtifactDocument) {
-        guard let repositoryPath else { return }
         isSaving = true
-        let service = PlanArtifactService(projectRoot: URL(fileURLWithPath: repositoryPath))
+        let service = PlanArtifactService(plansRoot: plansRoot)
         let comment = PlanReviewComment(id: UUID(), planPath: document.relativePath, planSHA256: document.sha256 ?? "", anchor: nil, body: commentDraft, createdAt: .now)
         do {
             _ = try service.saveComment(comment)
@@ -274,9 +268,8 @@ struct PlanArtifactsInspectorView: View {
     }
 
     private func saveRevision(_ draft: PlanRevisionDraft) {
-        guard let repositoryPath else { return }
         do {
-            _ = try PlanArtifactService(projectRoot: URL(fileURLWithPath: repositoryPath)).saveRevision(draft)
+            _ = try PlanArtifactService(plansRoot: plansRoot).saveRevision(draft)
             revisionDraft = nil
             Task { await refresh() }
         } catch { errorMessage = error.localizedDescription }

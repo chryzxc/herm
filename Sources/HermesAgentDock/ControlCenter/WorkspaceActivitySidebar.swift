@@ -2491,17 +2491,26 @@ struct WorkspaceActivitySidebar: View {
                 attentionRow(icon: "checkmark.circle", title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .scifiSuccess)
             }
 
-            // The session projection is already ordered by Hermes from newest
-            // activity to oldest. Keep this deliberately bounded for the
-            // Global overview and open the authoritative session on selection.
-            let latestActivitySessions = SessionActivityPresentation.latestActivity(activeSessions)
-            if !latestActivitySessions.isEmpty {
+            // The feed is flattened across every persisted session, then sorted
+            // globally so one session can contribute multiple recent steps.
+            let latestActivities = control.latestActivities
+            if latestActivities.isEmpty,
+               let state = control.refreshState(for: "latest.activity"),
+               state.isStale {
+                Text("Latest activity is unavailable. \(state.error ?? "Retry when Hermes reconnects.")")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(12)
+                    .scifiGlassPane()
+            }
+            if !latestActivities.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
                         Image(systemName: "waveform.path.ecg")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.scifiAccent)
-                        Text("LATEST ACTIVITY  ·  \(latestActivitySessions.count)")
+                        Text("LATEST ACTIVITY  ·  \(latestActivities.count)")
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .tracking(0.8)
                             .foregroundStyle(Color.scifiAccent)
@@ -2511,33 +2520,42 @@ struct WorkspaceActivitySidebar: View {
                     .padding(.top, 10)
                     .padding(.bottom, 6)
 
-                    ForEach(latestActivitySessions) { session in
+                    if let state = control.refreshState(for: "latest.activity"), state.isStale {
+                        Text("Showing the last successful activity snapshot. \(state.error ?? "Retry when Hermes reconnects.")")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.scifiWarning)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 6)
+                    }
+
+                    ForEach(latestActivities) { activity in
                         Button {
-                            control.openLatestActivitySession(session)
+                            control.openLatestActivitySession(activity)
                         } label: {
                             HStack(spacing: 8) {
                                 Circle()
-                                    .fill(session.id == model.sessionID ? Color.scifiAccent : sessionStateColor(session.state))
+                                    .fill(activity.sessionID == model.sessionID ? Color.scifiAccent : sessionStateColor(activity.state))
                                     .frame(width: 5, height: 5)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    if let project = control.project(forSessionID: session.id),
+                                    if let project = control.project(forSessionID: activity.sessionID),
                                        !project.name.isEmpty,
                                        project.name != "__no_project__" {
                                         Text(projectDisplayName(project))
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundStyle(Color.scifiFg)
                                             .lineLimit(1)
-                                        Text(session.title)
+                                        Text(activity.sessionTitle)
                                             .font(.system(size: 11, weight: .medium))
                                             .foregroundStyle(Color.scifiTertiary)
                                             .lineLimit(1)
                                     } else {
-                                        Text(session.title)
+                                        Text(activity.sessionTitle)
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundStyle(Color.scifiFg)
                                             .lineLimit(1)
                                     }
-                                    Text(session.displayPreview ?? session.state.uppercased())
+                                    Text(activity.activityName)
                                         .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(Color.scifiTertiary)
                                         .lineLimit(2)

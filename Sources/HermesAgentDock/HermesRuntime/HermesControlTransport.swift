@@ -68,6 +68,9 @@ final class HermesControlRPC {
 
     func activeSessions() async throws -> [String: Any] { try await client.request("session.active_list", params: [:]) }
     func sessions(limit: Int = 50) async throws -> [String: Any] { try await client.request("session.list", params: ["limit": limit]) }
+    func sessionPages(limit: Int = 200, offset: Int = 0) async throws -> [String: Any] {
+        try await client.fetchHTTP("/api/sessions?limit=\(limit)&offset=\(offset)")
+    }
     func sessionMessages(sessionID: String) async throws -> [String: Any] {
         let disallowed = CharacterSet(charactersIn: "/")
         let allowed = CharacterSet.urlPathAllowed.subtracting(disallowed)
