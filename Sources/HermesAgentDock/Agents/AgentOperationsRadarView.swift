@@ -31,7 +31,7 @@ struct AgentOperationsRadarView: View {
                                     .foregroundStyle(Color.scifiFg)
                                     .lineLimit(1)
 
-                                Text("\(row.state.rawValue.uppercased()) · \(row.model)")
+                                Text("\(row.state.displayLabel) · \(row.model)")
                                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                                     .foregroundStyle(Color.scifiTertiary)
                                     .lineLimit(1)
@@ -41,7 +41,7 @@ struct AgentOperationsRadarView: View {
                         }
                         .scifiListRow()
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("Agent \(row.name), \(row.state.rawValue), model \(row.model)")
+                        .accessibilityLabel("Agent \(row.name), \(row.state.displayLabel), model \(row.model)")
                     }
                 }
             }
@@ -54,7 +54,7 @@ struct AgentOperationsRadarView: View {
     private func color(for state: AgentOperationsState) -> Color {
         switch state {
         case .running: return .scifiAccent
-        case .stalled, .failed: return .scifiWarning
+        case .stalled, .failed, .pending: return .scifiWarning
         case .completed: return .scifiSuccess
         case .unknown, .unverified: return .scifiMuted
         }
