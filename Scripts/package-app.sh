@@ -14,6 +14,7 @@ APP_DISPLAY="Hermes Agent Dock"
 VERSION="${1:-}"
 
 echo "==> Building release (this may take a while)…"
+swift build -c release --package-path "$ROOT_DIR"
 BIN_DIR=$(swift build -c release --show-bin-path --package-path "$ROOT_DIR")
 APP_DIR="$BIN_DIR/${APP_NAME}.app"
 OUTPUT_DIR="$ROOT_DIR/dist"
@@ -48,7 +49,7 @@ cp -R "$APP_DIR" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
 DMG_PATH="$OUTPUT_DIR/${APP_NAME}.dmg"
-echo "==> Creating $DMG_PATH…"
+echo "==> Creating ${DMG_PATH}…"
 rm -f "$DMG_PATH"
 hdiutil create -volname "$APP_DISPLAY" -fs HFS+ \
     -srcfolder "$STAGING" -ov -format UDZO "$DMG_PATH"
@@ -58,4 +59,4 @@ rm -rf "$STAGING"
 
 echo "==> Done"
 echo "    App: $APP_DIR"
-echo "    DMG: $DMG_PATH"
+echo "    DMG: ${DMG_PATH}"
