@@ -10,6 +10,11 @@ on:
         description: "Release version without the leading v (for example 1.2.3)"
         required: true
         type: string
+      source_ref:
+        description: "Git ref to package (optional; defaults to the workflow ref)"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: write
@@ -28,6 +33,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.source_ref || github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -60,6 +66,7 @@ jobs:
 
           echo "value=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Run release test suite
         run: swift test
@@ -91,11 +98,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.value }}
           TAG: ${{ steps.version.outputs.tag }}
+          TARGET_SHA: ${{ steps.version.outputs.source_sha }}
         shell: bash
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            if ! gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes; then
+            if ! gh release create "$TAG" --target "$TARGET_SHA" --title "$TAG" --generate-notes; then
               # Another tag/manual run may have created it concurrently.
               gh release view "$TAG" >/dev/null
             fi
