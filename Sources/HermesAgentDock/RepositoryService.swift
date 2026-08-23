@@ -368,25 +368,52 @@ enum RepositoryService {
     static func projectFiles(path: String) async -> [ProjectFileEntry] {
         let root = URL(fileURLWithPath: path).standardizedFileURL
         return await Task.detached(priority: .utility) {
-            let ignored = Set([".git", ".build", "node_modules", "DerivedData"])
-            guard let enumerator = FileManager.default.enumerator(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { return [] }
+            // Keep the project tree faithful to the filesystem. Hidden
+            // project files such as .github, .husky, and dotfiles are useful
+            // source files. Skip only internal/generated trees entirely, and
+            // expose dependency folders as entries without enumerating their
+            // potentially enormous contents.
+            let skippedTrees = Set([".git", ".build", "DerivedData"])
+            let shallowTrees = Set(["node_modules"])
             var entries: [ProjectFileEntry] = []
-            while let url = enumerator.nextObject() as? URL, entries.count < maxProjectExplorerEntries {
-                let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
-                let components = relative.split(separator: "/").map(String.init)
-                guard !components.isEmpty else { continue }
-                if ignored.contains(components.last ?? "") {
-                    enumerator.skipDescendants()
-                    continue
+
+            func visit(_ directory: URL, depth: Int, isRoot: Bool = false) {
+                guard let children = try? FileManager.default.contentsOfDirectory(
+                    at: directory,
+                    includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+                    options: []
+                ) else { return }
+
+                let sortedChildren = children.sorted {
+                    $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
                 }
-                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
-                guard values?.isDirectory == true || values?.isRegularFile == true else { continue }
-                entries.append(ProjectFileEntry(path: relative, depth: components.count - 1, isDirectory: values?.isDirectory == true))
+                var directories: [URL] = []
+
+                // Add every direct child before descending. This guarantees
+                // that a large folder cannot consume the entry budget and
+                // hide sibling files at the project root.
+                for url in sortedChildren {
+                    let name = url.lastPathComponent
+                    if skippedTrees.contains(name) { continue }
+                    let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                    guard values?.isDirectory == true || values?.isRegularFile == true else { continue }
+                    if !isRoot && entries.count >= maxProjectExplorerEntries { continue }
+                    let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
+                    let components = relative.split(separator: "/").map(String.init)
+                    guard !components.isEmpty else { continue }
+                    let isDirectory = values?.isDirectory == true
+                    entries.append(ProjectFileEntry(path: relative, depth: components.count - 1, isDirectory: isDirectory))
+                    if isDirectory && !shallowTrees.contains(name) {
+                        directories.append(url)
+                    }
+                }
+
+                for directory in directories {
+                    visit(directory, depth: depth + 1)
+                }
             }
+
+            visit(root, depth: 0, isRoot: true)
             return entries.sorted { lhs, rhs in
                 if lhs.path == rhs.path { return lhs.isDirectory && !rhs.isDirectory }
                 return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending

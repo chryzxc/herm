@@ -446,7 +446,10 @@ struct AgentHandoffMapView: View {
 
     private func nodeDetail(for agent: HermesSubagent, displayName: String) -> String {
         let normalizedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let candidates = [agent.role, agent.sourceSkill, agent.model]
+        // Prefer the runtime identity for the subtitle. Workflow/skill names
+        // describe how an agent was launched, but are not the model identity
+        // users need to distinguish in the map.
+        let candidates = [agent.model, agent.role, agent.sourceSkill]
         return candidates.compactMap { value -> String? in
             guard let value else { return nil }
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)

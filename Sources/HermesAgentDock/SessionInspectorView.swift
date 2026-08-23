@@ -1,5 +1,4 @@
 import AppKit
-import KeyboardShortcuts
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
@@ -151,6 +150,12 @@ struct SessionInspector: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.scifiFg)
                     .lineLimit(1)
+                if let sessionProjectName {
+                    Label(sessionProjectName, systemImage: "folder")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             Text(model.status.title.uppercased())
@@ -158,8 +163,30 @@ struct SessionInspector: View {
                 .foregroundStyle(model.status == .working ? Color.scifiAccent : Color.scifiMuted)
         }
         .padding(.horizontal, 16)
-        .frame(height: 50)
+        .frame(height: sessionProjectName == nil ? 50 : 58)
         .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+    }
+
+    private var sessionProjectName: String? {
+        guard sessionProjectIsBound,
+              let sessionRepositoryPath,
+              !sessionRepositoryPath.isEmpty else { return nil }
+        let name = URL(fileURLWithPath: sessionRepositoryPath).lastPathComponent
+        return name.isEmpty ? nil : name
+    }
+
+    private var latestSessionActivities: [AgentActivityPresentation.PipelineActivity] {
+        Array(
+            AgentActivityPresentation.pipeline(
+                activities: model.agentActivities,
+                toolCalls: model.activeToolCalls,
+                subagents: model.sessionAgents
+            ).prefix(3)
+        )
+    }
+
+    private var latestSessionEvents: [AgentEvent] {
+        Array(model.recentEvents.sorted { $0.timestamp > $1.timestamp }.prefix(3))
     }
 
     @ViewBuilder
@@ -176,17 +203,18 @@ struct SessionInspector: View {
                 repository: sessionRepository,
                 model: model.runtimeConfiguration?.model,
                 context: control.sessionContext,
-                attention: control.attention,
+                attention: control.attention(for: model.sessionID),
                 sessions: control.activeSessions,
                 activeSessionID: model.sessionID,
-                agents: control.activeAgents,
+                agents: control.activeAgents.filter { $0.sessionID == model.sessionID },
                 processes: control.processes,
-                backgroundTasks: model.backgroundTasks,
+                backgroundTasks: model.currentSessionBackgroundTasks,
                 activities: model.agentActivities,
                 cronRuns: control.cronRuns,
                 verification: control.verification
             )
-            let openAttention = control.attention.filter { $0.state == .open }
+            let openAttention = control.openAttention(for: model.sessionID)
+            let sessionActiveAgents = control.activeAgents.filter { $0.sessionID == model.sessionID }
             let activeSubagentCount = model.activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.count
 
             VStack(alignment: .leading, spacing: 14) {
@@ -201,13 +229,14 @@ struct SessionInspector: View {
 
                 // Interactive Metrics Bar
                 HStack(spacing: 8) {
-                    inspectorMetric("AGENTS", value: control.activeAgents.count, color: .scifiAccent)
+                    inspectorMetric("AGENTS", value: sessionActiveAgents.count, color: .scifiAccent)
                     inspectorMetric("RUNNING", value: activeSubagentCount, color: activeSubagentCount > 0 ? .scifiAccent : .scifiMuted)
                     inspectorMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .scifiSuccess : .scifiWarning)
                 }
 
                 // Pre-flight Readiness & Health Card
                 sessionReadinessCard(readiness: mission.readiness)
+                AgentOperationsRadarView(agents: model.sessionAgents)
 
                 // Session Action Items requiring user attention
                 if !openAttention.isEmpty {
@@ -219,9 +248,9 @@ struct SessionInspector: View {
 
                 // Latest Session Activity section displaying recent agent activities or events
                 inspectorLabel("LATEST ACTIVITY")
-                if !model.agentActivities.isEmpty {
+                if !latestSessionActivities.isEmpty {
                     VStack(spacing: 8) {
-                        ForEach(model.agentActivities.prefix(3)) { activity in
+                        ForEach(latestSessionActivities, id: \.id) { (activity: AgentActivityPresentation.PipelineActivity) in
                             HStack(alignment: .top, spacing: 10) {
                                 Circle()
                                     .fill(Color.scifiAccent)
@@ -229,7 +258,7 @@ struct SessionInspector: View {
                                     .padding(.top, 4)
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
-                                        Text(activity.toolName ?? activity.kind.uppercased())
+                                        Text(activity.task)
                                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(Color.scifiFg)
                                         Spacer()
@@ -237,7 +266,7 @@ struct SessionInspector: View {
                                             .font(.system(size: 10, design: .monospaced))
                                             .foregroundStyle(Color.scifiTertiary)
                                     }
-                                    Text(activity.text)
+                                    Text(activity.detail ?? "")
                                         .font(.system(size: 11))
                                         .foregroundStyle(Color.scifiMuted)
                                         .lineLimit(2)
@@ -248,9 +277,9 @@ struct SessionInspector: View {
                             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
                         }
                     }
-                } else if !model.recentEvents.isEmpty {
+                } else if !latestSessionEvents.isEmpty {
                     VStack(spacing: 8) {
-                        ForEach(model.recentEvents.prefix(3)) { event in
+                        ForEach(latestSessionEvents, id: \.id) { (event: AgentEvent) in
                             HStack(alignment: .top, spacing: 10) {
                                 Circle()
                                     .fill(Color.scifiAccent)
@@ -293,7 +322,10 @@ struct SessionInspector: View {
                 }
             }
         case .activity:
-            AgentBoardView(model: model, embedded: true)
+            VStack(alignment: .leading, spacing: 12) {
+                SessionKanbanActivityView(control: control, sessionID: model.kanbanSessionID)
+                AgentBoardView(model: model, embedded: true)
+            }
         case .files:
             VStack(alignment: .leading, spacing: 14) {
                 inspectorLabel("PROJECT FILES")
@@ -330,8 +362,8 @@ struct SessionInspector: View {
     }
 
     private var sessionRepository: RepositorySnapshot? {
-        guard sessionRepositoryPath != nil, workflow.repository.isGitRepository else { return nil }
-        return workflow.repository
+        guard sessionRepositoryPath != nil else { return nil }
+        return workflow.repository.isGitRepository ? workflow.repository : nil
     }
 
     private func inspectorLabel(_ text: String) -> some View {
@@ -426,13 +458,20 @@ struct SessionInspector: View {
                                         }
                                         .foregroundStyle(Color.scifiAccent)
                                         VStack(alignment: .leading, spacing: 2) {
-                                            Text(item.label)
-                                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                                .foregroundStyle(Color.scifiMuted)
-                                            Text(item.value)
-                                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                                .foregroundStyle(Color.scifiFg)
-                                                .fixedSize(horizontal: false, vertical: true)
+                                            if item.id == "branch" {
+                                                Text(item.value)
+                                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                                    .foregroundStyle(Color.scifiFg)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            } else {
+                                                Text(item.label)
+                                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                                    .foregroundStyle(Color.scifiMuted)
+                                                Text(item.value)
+                                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                                    .foregroundStyle(Color.scifiFg)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            }
                                         }
                                         Spacer(minLength: 0)
                                     }

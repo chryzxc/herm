@@ -52,7 +52,10 @@ struct RepositoryCodeWorkspaceView: View {
         .background(Color.scifiCanvas)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiBorderStrong, lineWidth: 0.5))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Keep a finite viewport so the embedded AppKit scroll view owns
+        // scrolling for long files instead of expanding with the inspector's
+        // outer ScrollView.
+        .frame(maxWidth: .infinity, minHeight: 360, maxHeight: 620)
         .task(id: document.id) { await loadBlame() }
         .onChange(of: document.contents) { _, contents in
             draft = contents

@@ -289,6 +289,19 @@ enum SessionPreviewPresentation {
     }
 }
 
+/// The Global overview's LATEST ACTIVITY strip shows recent work, not session
+/// inventory. Idle sessions have no activity to surface, so they are dropped
+/// before the list is bounded.
+enum SessionActivityPresentation {
+    static func isIdle(_ state: String) -> Bool {
+        state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "idle"
+    }
+
+    static func latestActivity(_ sessions: [SessionSummary], limit: Int = 10) -> [SessionSummary] {
+        Array(sessions.filter { !isIdle($0.state) }.prefix(limit))
+    }
+}
+
 struct AgentSummary: Identifiable, Codable, Equatable {
     let id: String
     let name: String
@@ -435,6 +448,36 @@ struct SessionUsageSummary: Equatable {
     let contextMax: Int?
     let contextPercent: Double?
     let model: String?
+}
+
+struct ProviderQuotaWindow: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let remainingPercent: Double?
+    let remainingDisplay: String?
+    let limitDisplay: String?
+    let resetsAt: Date?
+    let resetsDisplay: String?
+
+    var threshold: ProviderQuotaThreshold {
+        guard let remainingPercent else { return .unknown }
+        if remainingPercent <= 10 { return .critical }
+        if remainingPercent <= 20 { return .warning }
+        return .healthy
+    }
+}
+
+struct ProviderQuotaSnapshot: Equatable {
+    let provider: String
+    let displayName: String
+    let model: String?
+    let updatedAt: Date
+    let windows: [ProviderQuotaWindow]
+    let safeDetail: String?
+}
+
+enum ProviderQuotaThreshold: Equatable {
+    case healthy, warning, critical, unknown
 }
 
 struct SessionContextCategory: Identifiable, Equatable {
@@ -758,11 +801,15 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case search = "Search"
     case kanban = "Kanban"
     case core = "Core"
+    case quota = "Quota"
 
     /// The fixed navigation strip is deliberately limited to the destinations
     /// used to orient, triage, and act on work. Everything else remains one
     /// click away in a grouped menu instead of competing for horizontal space.
     static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban]
+    /// The Global strip has five directly visible destinations; secondary
+    /// operational views remain behind More.
+    static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota]
     static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
     static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .core]
@@ -793,6 +840,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .search: "magnifyingglass"
         case .kanban: "rectangle.3.group"
         case .core: "cpu"
+        case .quota: "gauge.with.dots.needle.50percent"
         }
     }
 }
@@ -853,7 +901,7 @@ struct ControlTabBadgeState: Equatable {
         case .activity: activityCount
         case .changes: changeCount
         case .verification: verificationCount
-        case .automations, .projects, .search, .kanban, .core: 0
+        case .automations, .projects, .search, .kanban, .core, .quota: 0
         }
     }
 
@@ -864,7 +912,7 @@ struct ControlTabBadgeState: Equatable {
         case .inbox: urgentAttentionCount > 0
         case .changes: changeCount > 0
         case .verification: verificationCount > 0
-        case .activity, .automations, .projects, .search, .kanban, .core: false
+        case .activity, .automations, .projects, .search, .kanban, .core, .quota: false
         }
     }
 }

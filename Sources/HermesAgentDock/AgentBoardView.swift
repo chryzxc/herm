@@ -13,6 +13,7 @@ struct AgentBoardView: View {
     @State private var expandedActivityID: String?
     @State private var expandedPipelineItemID: String?
     @State private var agentScope: AgentScope
+    @State private var showsAgentNodes = false
 
     private enum AgentScope: String, CaseIterable, Identifiable {
         case live = "Live"
@@ -123,14 +124,18 @@ struct AgentBoardView: View {
         if mapAgents.isEmpty {
             emptyState(title: "No active Hermes subagents", detail: "Delegate work from Hermes to see named agents and live activity here.")
         } else {
-            AgentHandoffMapView(
-                model: model,
-                selectedAgentID: $expandedAgentID,
-                allowsContinuousAnimation: !embedded,
-                agents: mapAgents
-            )
-                .frame(maxWidth: .infinity, minHeight: 460, alignment: .leading)
-            if let selectedAgent = agents.first(where: { $0.id == expandedAgentID }) {
+            if showsAgentNodes {
+                AgentHandoffMapView(
+                    model: model,
+                    selectedAgentID: $expandedAgentID,
+                    allowsContinuousAnimation: !embedded,
+                    agents: mapAgents
+                )
+                    .frame(maxWidth: .infinity, minHeight: 460, alignment: .leading)
+            } else {
+                agentList
+            }
+            if showsAgentNodes, let selectedAgent = agents.first(where: { $0.id == expandedAgentID }) {
                 expandedActivity(for: selectedAgent)
                     .padding(12)
                     .background(Color.scifiSurface4)
@@ -152,6 +157,14 @@ struct AgentBoardView: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color.scifiTertiary)
                     .lineLimit(1)
+                Toggle(isOn: $showsAgentNodes) {
+                    Text(showsAgentNodes ? "NODES" : "LIST")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .tracking(0.7)
+                        .foregroundStyle(Color.scifiMuted)
+                }
+                .toggleStyle(.scifiSwitch)
+                .accessibilityLabel("Show agents as \(showsAgentNodes ? "nodes" : "list")")
             }
             HStack(spacing: 2) {
                 ForEach(AgentScope.allCases) { scope in
@@ -178,6 +191,95 @@ struct AgentBoardView: View {
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Active agents scope")
         }
+    }
+
+    private var agentList: some View {
+        LazyVStack(spacing: 6) {
+            ForEach(mapAgents) { subagent in
+                let agent = agents.first(where: { $0.id == subagent.id })
+                VStack(alignment: .leading, spacing: 0) {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.18)) {
+                            expandedAgentID = expandedAgentID == subagent.id ? nil : subagent.id
+                        }
+                    } label: {
+                        agentListRow(subagent, agent: agent)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+
+                    if let agent, expandedAgentID == subagent.id {
+                        expandedActivity(for: agent)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 2)
+                            .padding(.bottom, 12)
+                    }
+                }
+                .background(Color.scifiSurface4.opacity(expandedAgentID == subagent.id ? 1 : 0.72))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(expandedAgentID == subagent.id ? Color.scifiAccent.opacity(0.55) : Color.scifiBorderLight, lineWidth: 0.5)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private func agentListRow(_ subagent: HermesSubagent, agent: Agent?) -> some View {
+        let name = subagent.name ?? subagent.role ?? "Agent"
+        let detail = agentListDetail(for: subagent, displayName: name)
+        let eventCount = pipeline.filter { $0.agentID == subagent.id }.count
+        let isSelected = expandedAgentID == subagent.id
+
+        return HStack(spacing: 10) {
+            Circle()
+                .fill((agent?.agentColor ?? agentColor(for: subagent.id)).opacity(0.2))
+                .overlay {
+                    Circle().stroke(agent?.agentColor ?? agentColor(for: subagent.id), lineWidth: 1.2)
+                    Text(String(name.prefix(1)).uppercased())
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.scifiFg)
+                }
+                .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Text("\(eventCount) \(eventCount == 1 ? "EVENT" : "EVENTS")")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(color(for: subagent.status))
+            Text(subagent.status.uppercased())
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(color(for: subagent.status))
+                .frame(minWidth: 62, alignment: .trailing)
+            Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.scifiTertiary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+    }
+
+    private func agentListDetail(for agent: HermesSubagent, displayName: String) -> String {
+        let normalizedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let candidates = [agent.model, agent.sourceSkill, agent.role]
+        return candidates.compactMap { value -> String? in
+            guard let value else { return nil }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed.lowercased() != normalizedName else { return nil }
+            return trimmed
+        }.first ?? "Hermes delegate"
     }
 
     private var titlebar: some View {

@@ -1,20 +1,47 @@
 import AppKit
 import Combine
-import KeyboardShortcuts
 import SwiftUI
 import UserNotifications
 
-extension KeyboardShortcuts.Name {
-    static let toggleHermesControl = Self(
-        "toggleHermesControl",
-        initial: .init(.space, modifiers: [.command, .option])
-    )
+struct CommandDoubleTapDetector {
+    static let maximumInterval: TimeInterval = 0.35
+
+    private(set) var isCommandDown = false
+    private var lastReleaseTime: TimeInterval?
+    private var interveningKeyOccurred = false
+
+    mutating func handle(isCommandDown: Bool, at time: TimeInterval) -> Bool {
+        guard isCommandDown != self.isCommandDown else { return false }
+        self.isCommandDown = isCommandDown
+
+        if isCommandDown {
+            let isCleanPair = lastReleaseTime.map { time - $0 <= Self.maximumInterval } ?? false
+            let triggered = isCleanPair && !interveningKeyOccurred
+            lastReleaseTime = nil
+            interveningKeyOccurred = false
+            return triggered
+        }
+
+        if interveningKeyOccurred {
+            interveningKeyOccurred = false
+            lastReleaseTime = nil
+        } else {
+            lastReleaseTime = time
+        }
+        return false
+    }
+
+    mutating func noteKeyActivity() {
+        interveningKeyOccurred = true
+    }
 }
 
 @MainActor
 final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let model = DockModel()
     private var dockPanel: DockPanelController?
+    private var commandDoubleTapDetector = CommandDoubleTapDetector()
+    private var commandEventMonitors: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         dockPanel = DockPanelController(model: model)
@@ -24,8 +51,48 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNoti
         } else {
             DebugLog.write("model: UserNotifications unavailable outside an app bundle")
         }
-        KeyboardShortcuts.onKeyUp(for: .toggleHermesControl) { [weak self] in
-            self?.dockPanel?.toggleFromShortcut()
+        installCommandDoubleTapShortcut()
+    }
+
+    private func installCommandDoubleTapShortcut() {
+        let handler: (NSEvent) -> NSEvent? = { [weak self] event in
+            self?.handleCommandEvent(event)
+            return event
+        }
+
+        if let localMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged, handler: handler) {
+            commandEventMonitors.append(localMonitor)
+        }
+        if let globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: { [weak self] event in
+            self?.handleCommandEvent(event)
+        }) {
+            commandEventMonitors.append(globalMonitor)
+        }
+        // Two rapid Command shortcuts (⌘C then ⌘V) must not read as a
+        // double-tap. Observing key activity between releases invalidates the
+        // pair; events are inspected only for timing and never retained.
+        if let localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: handler) {
+            commandEventMonitors.append(localKeyMonitor)
+        }
+        if let globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] _ in
+            self?.commandDoubleTapDetector.noteKeyActivity()
+        }) {
+            commandEventMonitors.append(globalKeyMonitor)
+        }
+    }
+
+    private func handleCommandEvent(_ event: NSEvent) {
+        if event.type == .keyDown {
+            commandDoubleTapDetector.noteKeyActivity()
+            return
+        }
+        // 54 and 55 are the right and left Command keys on macOS keyboards.
+        guard event.keyCode == 54 || event.keyCode == 55 else { return }
+        if commandDoubleTapDetector.handle(
+            isCommandDown: event.modifierFlags.contains(.command),
+            at: event.timestamp
+        ) {
+            dockPanel?.toggleFromShortcut()
         }
     }
 
@@ -71,6 +138,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private let panel: DockPanel
     private var cancellables = Set<AnyCancellable>()
     private var desiredWidth = Metrics.workspaceWidth
+    private var isFullscreen = false
 
     init(model: DockModel) {
         self.model = model
@@ -90,7 +158,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
-        button.image = NSImage(systemSymbolName: "bubble.left.and.bubble.right.fill", accessibilityDescription: "Hermes")
+        button.image = robotStatusImage()
         button.imagePosition = .imageOnly
         button.target = self
         button.action = #selector(togglePanel)
@@ -124,6 +192,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         let hostingView = NSHostingView(
             rootView: DockPopover(model: model, onWorkspaceWidthChange: { [weak self] width in
                 self?.resizePanel(to: width) ?? width
+            }, onClose: { [weak self] in
+                self?.hide()
+            }, onFullscreenToggle: { [weak self] in
+                self?.toggleFullscreen()
             })
         )
         hostingView.wantsLayer = true
@@ -144,16 +216,48 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private func updateStatusIcon(hasUnreadResponse: Bool) {
-        let symbol = hasUnreadResponse
-            ? "bubble.left.and.bubble.right.fill"
-            : "bubble.left.and.bubble.right"
-        statusItem.button?.image = NSImage(
-            systemSymbolName: symbol,
-            accessibilityDescription: hasUnreadResponse ? "Hermes, unread update" : "Hermes"
-        )
-        statusItem.button?.toolTip = hasUnreadResponse ? "Hermes — unread update" : "Hermes"
+        statusItem.button?.image = robotStatusImage()
+        statusItem.button?.image?.accessibilityDescription = hasUnreadResponse ? "Hermes AI agent, unread update" : "Hermes AI agent"
+        statusItem.button?.toolTip = hasUnreadResponse ? "Hermes AI agent — unread update" : "Hermes AI agent"
         unreadBadge.isHidden = !hasUnreadResponse
         DebugLog.write("status item: unread badge \(hasUnreadResponse ? "shown" : "hidden")")
+    }
+
+    private func robotStatusImage() -> NSImage {
+        let image = NSImage(size: NSSize(width: 18, height: 18))
+        image.lockFocus()
+
+        let ink = NSColor.black
+        ink.setStroke()
+        ink.setFill()
+
+        let antenna = NSBezierPath()
+        antenna.lineWidth = 1.4
+        antenna.move(to: NSPoint(x: 9, y: 14.5))
+        antenna.line(to: NSPoint(x: 9, y: 16.5))
+        antenna.stroke()
+        NSBezierPath(ovalIn: NSRect(x: 8, y: 16, width: 2, height: 2)).fill()
+
+        let head = NSBezierPath(
+            roundedRect: NSRect(x: 2.5, y: 4, width: 13, height: 11),
+            xRadius: 2.5,
+            yRadius: 2.5
+        )
+        head.lineWidth = 1.5
+        head.stroke()
+
+        NSBezierPath(ovalIn: NSRect(x: 5.5, y: 9, width: 2, height: 2)).fill()
+        NSBezierPath(ovalIn: NSRect(x: 10.5, y: 9, width: 2, height: 2)).fill()
+
+        let mouth = NSBezierPath()
+        mouth.lineWidth = 1.2
+        mouth.move(to: NSPoint(x: 6, y: 6.5))
+        mouth.line(to: NSPoint(x: 12, y: 6.5))
+        mouth.stroke()
+
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
     }
 
     @objc private func togglePanel() {
@@ -174,7 +278,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private func show() {
-        resizePanel(to: desiredWidth, animated: false)
+        if isFullscreen {
+            guard let screen = NSScreen.main else { return }
+            panel.setFrame(screen.visibleFrame, display: true)
+        } else {
+            resizePanel(to: desiredWidth, animated: false)
+        }
         // `swift run` leaves Terminal as the active app. A status-bar panel can
         // become key visually without receiving keyboard input until its agent
         // application is explicitly activated.
@@ -190,14 +299,87 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func hide() {
         guard panel.isVisible else { return }
+        if isFullscreen {
+            exitFullscreen()
+        }
         panel.orderOut(nil)
         model.markPopoverHidden()
+    }
+
+    private func toggleFullscreen() {
+        isFullscreen.toggle()
+        if isFullscreen {
+            enterFullscreen()
+        } else {
+            exitFullscreen()
+        }
+    }
+
+    private func enterFullscreen() {
+        guard let screen = NSScreen.main else { return }
+        let screenFrame = screen.visibleFrame
+
+        panel.isFloatingPanel = false
+        panel.hidesOnDeactivate = false
+        panel.ignoresMouseEvents = false
+        panel.acceptsMouseMovedEvents = true
+        panel.styleMask.insert(.resizable)
+        panel.styleMask.insert(.closable)
+        panel.styleMask.insert(.miniaturizable)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.level = .normal
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
+
+        if let hostingView = panel.contentView {
+            hostingView.wantsLayer = true
+            hostingView.layer?.masksToBounds = false
+            hostingView.layer?.cornerRadius = 0
+            hostingView.layer?.cornerCurve = .continuous
+            hostingView.frame = NSRect(origin: .zero, size: screenFrame.size)
+            hostingView.autoresizingMask = [.width, .height]
+            hostingView.setNeedsDisplay(hostingView.bounds)
+            hostingView.invalidateIntrinsicContentSize()
+        }
+
+        panel.setFrame(screenFrame, display: true, animate: true)
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        panel.makeMain()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.panel.makeKey()
+            self?.panel.makeMain()
+            self?.panel.orderFrontRegardless()
+        }
+    }
+
+    private func exitFullscreen() {
+        panel.isFloatingPanel = true
+        panel.styleMask.remove(.resizable)
+        panel.styleMask.remove(.closable)
+        panel.styleMask.remove(.miniaturizable)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.level = .statusBar
+        panel.isMovable = false
+        panel.isMovableByWindowBackground = false
+
+        if let hostingView = panel.contentView {
+            hostingView.layer?.masksToBounds = true
+            hostingView.layer?.cornerRadius = 22
+            hostingView.layer?.cornerCurve = .continuous
+            hostingView.autoresizingMask = []
+        }
+
+        if panel.isVisible {
+            resizePanel(to: desiredWidth, animated: true)
+        }
     }
 
     @discardableResult
     private func resizePanel(to width: CGFloat, animated: Bool = true) -> CGFloat {
         desiredWidth = width
-        guard let button = statusItem.button else { return width }
+        guard !isFullscreen, let button = statusItem.button else { return width }
 
         let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil))
         let screen = buttonRect.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } }
@@ -241,7 +423,8 @@ private final class DockPanel: NSPanel {
     var onCancel: (() -> Void)?
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
+    override var canBecomeMain: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
 
     override func cancelOperation(_ sender: Any?) {
         onCancel?()

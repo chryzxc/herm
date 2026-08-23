@@ -1,18 +1,21 @@
 import AppKit
-import KeyboardShortcuts
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 struct DockPopover: View {
     @ObservedObject var model: DockModel
     var onWorkspaceWidthChange: (CGFloat) -> CGFloat = { $0 }
+    var onClose: () -> Void = {}
+    var onFullscreenToggle: () -> Void = {}
     @State private var isConversationAtBottom = true
     @State private var unseenMessageCount = 0
+    @State private var scrollSettleTask: Task<Void, Never>?
     @State private var isWorkspaceManuallyExpanded = true
     @State private var isNarrowLayout = false
     @State private var isNarrowControlVisible = true
     @State private var isComposerPulsing = false
     @State private var composerHeight: CGFloat = 44
+    @State private var selectedChatImage: ChatImagePreview?
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
     @FocusState private var isComposerFocused: Bool
@@ -32,6 +35,7 @@ struct DockPopover: View {
     @State private var cachedProjectName: String? = nil
     @State private var cachedSessionRepositoryPath: String? = nil
     @State private var lastSessionTitleAtIdentityChange: String?
+    @State private var isFullscreen = false
 
     private enum InputMode {
         case chat, talk
@@ -40,6 +44,7 @@ struct DockPopover: View {
     private enum InspectorScope: String, CaseIterable, Identifiable {
         case global = "Global"
         case session = "Session"
+        case artifacts = "Artifacts"
 
         var id: Self { self }
 
@@ -47,6 +52,7 @@ struct DockPopover: View {
             switch self {
             case .global: "square.grid.2x2"
             case .session: "bubble.left.and.bubble.right"
+            case .artifacts: "doc.text.magnifyingglass"
             }
         }
     }
@@ -110,17 +116,17 @@ struct DockPopover: View {
                         composer
                     }
                 }
-                .frame(width: showsDesktopContextPanel ? 480 : 500, height: 720)
+                .frame(width: isFullscreen ? .infinity : (showsDesktopContextPanel ? 480 : 500), height: isFullscreen ? .infinity : 720)
             }
 
             if isWorkspaceVisibleForLayout {
                 Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5)
                 contextPanel
-                    .frame(width: isNarrowLayout ? 500 : 480, height: 720)
+                    .frame(width: isFullscreen ? .infinity : (isNarrowLayout ? 500 : 480), height: isFullscreen ? .infinity : 720)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .frame(width: popupWidth, height: 720)
+        .frame(width: isFullscreen ? nil : popupWidth, height: isFullscreen ? nil : 720)
         .background {
             ZStack {
                 Color(red: 0.055, green: 0.065, blue: 0.115)
@@ -133,9 +139,9 @@ struct DockPopover: View {
             }
             .background(.ultraThinMaterial)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 22, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: isFullscreen ? 0 : 22, style: .continuous)
                 .stroke(Color.scifiBorderLight, lineWidth: 0.5)
         }
         .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
@@ -144,6 +150,9 @@ struct DockPopover: View {
             if case .success(let urls) = result {
                 urls.forEach { model.stageImageFile(at: $0) }
             }
+        }
+        .sheet(item: $selectedChatImage) { preview in
+            ChatImagePreviewModal(image: preview.image)
         }
         .task {
             model.restoreLatestSessionIfNeeded()
@@ -182,6 +191,14 @@ struct DockPopover: View {
                 inputMode = .chat
             }
         }
+        .onChange(of: inputMode) { _, mode in
+            guard mode == .chat else { return }
+            // Returning to chat must always release both fallback and native
+            // voice capture, including a microphone that is still starting.
+            speechInput.stop()
+            voiceOutput.stop()
+            model.stopVoiceConversation()
+        }
         .onChange(of: model.status) { _, status in
             synchronizeWorkspace(status: status)
             guard inputMode == .talk, status == .idle, !model.voiceState.isNativeConversationActive else { return }
@@ -217,6 +234,11 @@ struct DockPopover: View {
             DebugLog.writeDiagnostic("session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")")
             synchronizeWorkspace()
             controlCenter.focus(sessionID: newValue)
+            // Session membership and title projections are loaded separately
+            // from the conversation stream. Refresh them whenever identity
+            // changes so an already-wired session does not require visiting
+            // Projects first to reveal its repository and title.
+            controlCenter.refresh()
             synchronizePanelLayout()
             // Only clear the cached project name when the session ID genuinely changes to a different
             // session. DockModel publishes sessionID twice during resume (an optimistic set then a confirmed
@@ -234,8 +256,17 @@ struct DockPopover: View {
                 }
             }
         }
-        .onChange(of: model.sessionID) { _, _ in model.refreshSessionModelOptions() }
+        .onChange(of: model.sessionID) { _, _ in
+            model.refreshSessionModelOptions()
+            synchronizeSessionMetadataFromControlCenter()
+        }
         .onChange(of: model.currentSessionTitle) { _, _ in synchronizeWorkspace() }
+        .onChange(of: controlCenter.projectSessions) { _, _ in
+            synchronizeSessionMetadataFromControlCenter()
+        }
+        .onChange(of: controlCenter.activeSessions) { _, _ in
+            synchronizeSessionMetadataFromControlCenter()
+        }
         // Refresh the cached project name whenever the membership map updates.
         // This fires after the async resolveProjectMembership completes and
         // ensures the label reappears even after a refresh cycle wiped it.
@@ -243,9 +274,15 @@ struct DockPopover: View {
             DebugLog.writeDiagnostic("session.membership_changed session=\(model.sessionID ?? "nil") project=\(contextProjectName ?? "nil") cachedProject=\(cachedProjectName ?? "nil")")
             refreshCachedProjectName()
             cacheSessionRepositoryPath()
+            synchronizeSessionMetadataFromControlCenter()
         }
         .onChange(of: model.messages.count) { oldCount, newCount in
-            if newCount > oldCount { synchronizeWorkspace() }
+            if newCount > oldCount {
+                synchronizeWorkspace()
+                // The first user turn can cause Hermes to assign the real
+                // session title and project membership asynchronously.
+                controlCenter.refresh()
+            }
         }
     }
 
@@ -293,18 +330,21 @@ struct DockPopover: View {
                         store: workspaceStore,
                         control: controlCenter,
                         workflow: developerWorkflow,
-                        onClose: closeContextPanel,
+                        onClose: onClose,
+                        onOpenArtifacts: { inspectorScope = .artifacts },
                         showsHeader: false
                     )
-                case .session:
-                    SessionInspector(
-                        model: model,
-                        control: controlCenter,
-                        workflow: developerWorkflow,
-                        sessionRepositoryPath: cachedProjectName == nil ? nil : activeSessionRepositoryPath,
-                        sessionProjectIsBound: cachedProjectName != nil,
-                        showsHeader: false
-                    )
+                 case .session:
+                     SessionInspector(
+                         model: model,
+                         control: controlCenter,
+                         workflow: developerWorkflow,
+                         sessionRepositoryPath: activeSessionRepositoryPath,
+                         sessionProjectIsBound: activeSessionRepositoryPath != nil,
+                         showsHeader: false
+                     )
+                case .artifacts:
+                    PlanArtifactsInspectorView(repositoryPath: activeSessionRepositoryPath ?? contextProjectPath)
                 }
             }
             .transition(.opacity)
@@ -331,6 +371,7 @@ struct DockPopover: View {
         .onAppear {
             refreshCachedProjectName()
             cacheSessionRepositoryPath()
+            synchronizeSessionMetadataFromControlCenter()
         }
     }
 
@@ -349,9 +390,9 @@ struct DockPopover: View {
                 // refresh-cycle gaps (where projectIDBySessionID is momentarily empty) don't
                 // cause the label to flicker or disappear. The cache is only updated with
                 // non-nil values via onChange(of: controlCenter.projectIDBySessionID).
-                if let cachedProjectName {
+                if let activeSessionProjectName {
                     HStack(spacing: 6) {
-                        Label(cachedProjectName, systemImage: "folder")
+                        Label(activeSessionProjectName, systemImage: "folder")
                             .lineLimit(1)
                             .layoutPriority(1)
 
@@ -368,9 +409,9 @@ struct DockPopover: View {
                             }
                             .buttonStyle(.scifiPress)
                             .foregroundStyle(Color.scifiAccent)
-                            .disabled(model.isRestoringSession)
-                            .help("Start a new chat in \(cachedProjectName)")
-                            .accessibilityLabel("Start a new chat in \(cachedProjectName)")
+                            .disabled(model.isRestoringSession || model.isCreatingSession)
+                            .help("Start a new chat in \(activeSessionProjectName)")
+                            .accessibilityLabel("Start a new chat in \(activeSessionProjectName)")
                         }
                     }
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -420,6 +461,14 @@ struct DockPopover: View {
         return "\(sessionID):\(path)"
     }
 
+    private var activeSessionProjectName: String? {
+        let path = activeSessionRepositoryPath
+            ?? controlCenter.project(forSessionID: model.sessionID ?? "")?.name
+        guard let path, !path.isEmpty, path != "__no_project__" else { return nil }
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name.isEmpty ? path : name
+    }
+
     /// Updates the cached project name from the live computed value.
     /// Called whenever the session or project membership changes.
     private func refreshCachedProjectName() {
@@ -432,6 +481,12 @@ struct DockPopover: View {
         if let liveSessionRepositoryPath {
             cachedSessionRepositoryPath = liveSessionRepositoryPath
         }
+    }
+
+    private func synchronizeSessionMetadataFromControlCenter() {
+        guard let sessionID = model.sessionID,
+              let summary = controlCenter.sessionSummary(for: sessionID) else { return }
+        model.updateCurrentSessionTitle(summary.title)
     }
 
     private func newChatForContextProject() {
@@ -466,14 +521,6 @@ struct DockPopover: View {
         .accessibilityLabel("Inspector scope")
     }
 
-    private func closeContextPanel() {
-        if isNarrowLayout {
-            isNarrowControlVisible = false
-        } else {
-            isWorkspaceManuallyExpanded = false
-        }
-    }
-
     private func synchronizeWorkspace(status: HermesStatus? = nil) {
         guard let sessionID = model.sessionID else { return }
         let title = model.currentSessionTitle
@@ -485,6 +532,8 @@ struct DockPopover: View {
         case .working:
             workspaceStore.updateStatus(.inProgress, for: task.id)
         case .needsApproval:
+            workspaceStore.updateStatus(.awaitingApproval, for: task.id)
+        case .needsClarification:
             workspaceStore.updateStatus(.awaitingApproval, for: task.id)
         case .idle where task.status == .inProgress || task.status == .awaitingApproval:
             workspaceStore.updateStatus(.readyForReview, for: task.id)
@@ -557,18 +606,6 @@ struct DockPopover: View {
                     .buttonStyle(.scifiPress)
                     .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
 
-                    if model.status == .working || model.isSending {
-                        Button(action: stopCurrentRequest) {
-                            Image(systemName: "square.fill")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.scifiMuted)
-                                .frame(width: 28, height: 28)
-                                .background(Circle().fill(Color.scifiSurface4))
-                        }
-                        .buttonStyle(.scifiPress)
-                        .help("Stop")
-                    }
-
                     Button(action: { model.newChat() }) {
                         Image(systemName: "square.and.pencil")
                             .font(.system(size: 11, weight: .medium))
@@ -577,8 +614,21 @@ struct DockPopover: View {
                             .background(Circle().fill(Color.scifiSurface4))
                     }
                     .buttonStyle(.scifiPress)
-                    .disabled(model.isRestoringSession)
+                    .disabled(model.isRestoringSession || model.isCreatingSession)
                     .help("New chat")
+
+                    Button(action: {
+                        isFullscreen.toggle()
+                        onFullscreenToggle()
+                    }) {
+                        Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(isFullscreen ? Color.scifiAccent : Color.scifiMuted)
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(isFullscreen ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
+                    }
+                    .buttonStyle(.scifiPress)
+                    .help(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")
                 }
             }
             // Reduced vertical padding for a more compact header bar
@@ -597,6 +647,7 @@ struct DockPopover: View {
         case .idle: .scifiSuccess
         case .working: .scifiAccent
         case .needsApproval: .scifiWarning
+        case .needsClarification: .scifiWarning
         case .offline: .scifiDestructive
         }
     }
@@ -1033,7 +1084,13 @@ struct DockPopover: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        // Conversation rows can change height while Hermes is
+                        // streaming and while Markdown is being laid out.
+                        // A lazy stack may temporarily evict rows at the
+                        // viewport boundary, causing the bottom sentinel and
+                        // scrollbar range to move when those rows rematerialize.
+                        // Keep the conversation's geometry stable instead.
+                        VStack(spacing: 0) {
                             if model.messages.isEmpty && model.status != .working {
                                 StartupAssistantView()
                                     .frame(maxWidth: .infinity)
@@ -1071,7 +1128,10 @@ struct DockPopover: View {
                     }
                     .coordinateSpace(name: "conversationScroll")
                     .onPreferenceChange(ConversationBottomPreferenceKey.self) { bottomY in
-                        let isAtBottom = bottomY <= viewport.size.height + 32
+                        let isAtBottom = ConversationScrollMetrics.isAtBottom(
+                            bottomMaxY: bottomY,
+                            viewportHeight: viewport.size.height
+                        )
                         isConversationAtBottom = isAtBottom
                         if isAtBottom { unseenMessageCount = 0 }
                     }
@@ -1179,13 +1239,24 @@ struct DockPopover: View {
         animated: Bool = true,
         duration: TimeInterval = 0.2
     ) {
-        DispatchQueue.main.async {
-            if animated {
-                withAnimation(.scifiEase(duration: duration)) {
+        scrollSettleTask?.cancel()
+        scrollSettleTask = Task { @MainActor in
+            // A single scrollTo can race content that was inserted in the same
+            // tick (activity row, streaming growth, Markdown layout): it targets
+            // the bottom sentinel's pre-growth frame and lands mid-conversation.
+            // Re-assert after layout settles; a newer request cancels this one.
+            for delayNanos: UInt64 in [0, 80_000_000, 180_000_000] {
+                if delayNanos > 0 {
+                    try? await Task.sleep(nanoseconds: delayNanos)
+                    guard !Task.isCancelled else { return }
+                }
+                if animated {
+                    withAnimation(.scifiEase(duration: duration)) {
+                        proxy.scrollTo("conversationBottom", anchor: .bottom)
+                    }
+                } else {
                     proxy.scrollTo("conversationBottom", anchor: .bottom)
                 }
-            } else {
-                proxy.scrollTo("conversationBottom", anchor: .bottom)
             }
         }
     }
@@ -1206,11 +1277,18 @@ struct DockPopover: View {
                                     .foregroundStyle(Color.scifiAccent)
                             }
                             ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
-                                Image(nsImage: image)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(maxWidth: 220, maxHeight: 220)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                Button {
+                                    selectedChatImage = ChatImagePreview(image: image)
+                                } label: {
+                                    Image(nsImage: image)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxWidth: 220, maxHeight: 220)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .help("Open image preview")
                             }
                             if !message.text.isEmpty {
                                 Text(message.text)
@@ -1416,8 +1494,12 @@ struct DockPopover: View {
     private var composer: some View {
         // Evaluate submission capabilities based on draft text, images, and steering state
         let draftIsEmpty = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasComposerContent = !draftIsEmpty || !model.pendingImages.isEmpty
+        let isResponding = model.status == .working || model.isSending
         let isSteeringTurn = model.status == .working && model.isSending && model.sessionID != nil
         let canSubmit = isSteeringTurn ? !draftIsEmpty : (!draftIsEmpty || !model.pendingImages.isEmpty)
+        let showStop = isResponding && !hasComposerContent && !speechInput.isRecording
+        let effectiveComposerHeight = draftIsEmpty ? ComposerLayout.minHeight : composerHeight
         // TextEditor adds a small native leading inset on macOS. Keep that
         // correction in one place so the editor, placeholder, and measurement
         // text all share the same content origin.
@@ -1433,14 +1515,33 @@ struct DockPopover: View {
                 TextEditor(text: $model.draft)
                     .font(.system(size: 14))
                     .focused($isComposerFocused)
+                    .onChange(of: isComposerFocused) { _, focused in
+                        model.isComposerEditing = focused
+                    }
                     .onKeyPress(phases: .down) { press in
-                        guard press.key == .return,
-                              !press.modifiers.contains(.shift) else {
-                            return .ignored
+                        if press.key == .upArrow,
+                           !press.modifiers.contains(.shift),
+                           !press.modifiers.contains(.command),
+                           !press.modifiers.contains(.option),
+                           !press.modifiers.contains(.control),
+                           model.navigateComposerHistory(direction: -1) {
+                            return .handled
                         }
-                        // Submit on Return without Shift
-                        model.submitComposerInput()
-                        return .handled
+                        if press.key == .downArrow,
+                           !press.modifiers.contains(.shift),
+                           !press.modifiers.contains(.command),
+                           !press.modifiers.contains(.option),
+                           !press.modifiers.contains(.control),
+                           model.navigateComposerHistory(direction: 1) {
+                            return .handled
+                        }
+                        if press.key == .return,
+                           !press.modifiers.contains(.shift) {
+                            // Submit on Return without Shift
+                            model.submitComposerInput()
+                            return .handled
+                        }
+                        return .ignored
                     }
                     .scrollContentBackground(.hidden)
                     .scrollIndicators(.automatic)
@@ -1457,19 +1558,26 @@ struct DockPopover: View {
                 if model.draft.isEmpty {
                     Text(model.isRestoringSession ? "Restoring conversation…" : "Do anything")
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.scifiMuted.opacity(0.6))
-                        .padding(.horizontal, textInset)
+                        .foregroundStyle(Color.scifiMuted)
+                        // TextEditor already supplies the leading content inset
+                        // used by the caret. Do not add another inset here.
+                        .padding(.leading, 3)
                         .padding(.vertical, 7)
+                        // macOS TextEditor places its insertion caret above the
+                        // SwiftUI text overlay; lift the placeholder to share
+                        // the caret's vertical text origin.
+                        .offset(y: -7)
                         .allowsHitTesting(false)
                 }
 
                 // Invisible measurement overlay — same font/padding as real text —
                 // so the ZStack grows to the correct height for dynamic sizing.
-                    Text(model.draft.isEmpty ? " " : model.draft)
+                    Text(model.draft.isEmpty ? "" : model.draft)
                         .font(.system(size: 14))
                         .padding(.horizontal, textInset)
                         .padding(.vertical, 7)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .opacity(0)
                     .background {
                         GeometryReader { proxy in
@@ -1480,10 +1588,11 @@ struct DockPopover: View {
             // Add back the horizontal inset we removed from TextEditor so the
             // whole block still respects the composer's visual gutter.
             .padding(.horizontal, textInset)
-            .frame(maxWidth: .infinity, minHeight: composerHeight, maxHeight: composerHeight)
+            .frame(maxWidth: .infinity, minHeight: effectiveComposerHeight, maxHeight: effectiveComposerHeight)
+            .clipped()
             .onPreferenceChange(ComposerContentHeightKey.self) { contentHeight in
                 // Cap composer height between 40px and 140px
-                composerHeight = min(max(contentHeight, 40), 140)
+                composerHeight = ComposerLayout.height(for: contentHeight)
             }
 
             // Image Attachment Previews (if any images are pending)
@@ -1495,13 +1604,8 @@ struct DockPopover: View {
                                 Image(nsImage: image.image)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(width: 32, height: 32)
+                                    .frame(width: 40, height: 40)
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                                Text(image.fileName)
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                    .foregroundStyle(Color.scifiFg)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
                                 Button(action: { model.removePendingImage(image) }) {
                                     Image(systemName: "xmark")
                                         .font(.system(size: 10, weight: .bold))
@@ -1618,6 +1722,8 @@ struct DockPopover: View {
                         if speechInput.isRecording {
                             speechInput.stop()
                             model.send()
+                        } else if showStop {
+                            stopCurrentRequest()
                         } else {
                             model.submitComposerInput()
                         }
@@ -1632,8 +1738,10 @@ struct DockPopover: View {
                                 Image(systemName: "stop.fill")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(Color.scifiFg)
-                            } else if model.isSending && !isSteeringTurn {
-                                ProgressView().controlSize(.small).tint(Color.scifiFg)
+                            } else if showStop {
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(Color.scifiDestructive)
                             } else {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 12, weight: .semibold))
@@ -1643,9 +1751,15 @@ struct DockPopover: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .disabled(model.isRestoringSession || (!speechInput.isRecording && (!canSubmit || (isSteeringTurn ? model.isSteering : model.isSending))))
+                    .disabled(model.isRestoringSession || (!speechInput.isRecording && !showStop && (!canSubmit || (isSteeringTurn ? model.isSteering : model.isSending))))
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .help(speechInput.isRecording ? "Send voice prompt" : (isSteeringTurn ? "Steer active turn (↩; ⇧↩ for newline)" : "Send message (↩; ⇧↩ for newline)"))
+                    .help(
+                        speechInput.isRecording
+                            ? "Send voice prompt"
+                            : (showStop
+                                ? "Stop Hermes response"
+                                : (isSteeringTurn ? "Steer active turn (↩; ⇧↩ for newline)" : "Send message (↩; ⇧↩ for newline)"))
+                    )
                 }
             }
             .padding(.top, 4)
@@ -1696,6 +1810,24 @@ struct DockPopover: View {
             if pasteMonitor == nil {
                 let dockModel = model
                 pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+                    let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
+                    // History navigation must not swallow Up/Down in other text fields.
+                    if event.modifierFlags.intersection(editingModifiers).isEmpty,
+                       dockModel.isComposerEditing,
+                       let firstResponder = event.window?.firstResponder as? NSTextView {
+                        let direction: Int?
+                        switch event.keyCode {
+                        case 126: direction = -1 // Up arrow
+                        case 125: direction = 1 // Down arrow
+                        default: direction = nil
+                        }
+                        if let direction,
+                           firstResponder.isEditable,
+                           MainActor.assumeIsolated({ dockModel.navigateComposerHistory(direction: direction) }) {
+                            return nil
+                        }
+                    }
+
                     guard event.modifierFlags.contains(.command),
                           event.charactersIgnoringModifiers?.lowercased() == "v" else {
                         return event
@@ -1760,6 +1892,52 @@ struct DockPopover: View {
             return "This Hermes capability is unavailable. Open Core and refresh capabilities."
         }
         return capability.recovery ?? capability.detail
+    }
+}
+
+private struct ChatImagePreview: Identifiable {
+    let id = UUID()
+    let image: NSImage
+}
+
+private struct ChatImagePreviewModal: View {
+    @Environment(\.dismiss) private var dismiss
+    let image: NSImage
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.opacity(0.96)
+
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 900, maxHeight: 700)
+                .padding(28)
+
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Color.white.opacity(0.14)))
+            }
+            .buttonStyle(.plain)
+            .help("Close image preview")
+            .padding(16)
+        }
+        .frame(minWidth: 520, minHeight: 420)
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+enum ConversationScrollMetrics {
+    // Streaming rows grow while the viewport is parked at the bottom; the
+    // sticky-bottom check must tolerate that transient growth so auto-scroll
+    // is not suppressed before the settle re-assertion runs.
+    static let atBottomTolerance: CGFloat = 96
+
+    static func isAtBottom(bottomMaxY: CGFloat, viewportHeight: CGFloat) -> Bool {
+        bottomMaxY <= viewportHeight + atBottomTolerance
     }
 }
 

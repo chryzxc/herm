@@ -8,7 +8,13 @@ final class DockModel: ObservableObject {
     @Published var status: HermesStatus = .idle
     @Published private(set) var isHermesConnected = false
     @Published var messages: [ChatMessage] = []
-    @Published var draft = ""
+    @Published var draft = "" {
+        didSet {
+            guard !isUpdatingComposerHistory else { return }
+            composerHistoryIndex = nil
+            composerHistoryDraft = ""
+        }
+    }
     @Published var pendingImages: [ImageAttachment] = []
     @Published var isSending = false
     @Published private(set) var isSteering = false
@@ -16,6 +22,9 @@ final class DockModel: ObservableObject {
     @Published private(set) var steeringNotice: String?
     @Published var approvalTitle: String?
     @Published var approvalText: String?
+    @Published private(set) var clarificationQuestion: String?
+    @Published private(set) var clarificationChoices: [String] = []
+    @Published private(set) var isRespondingToClarification = false
     @Published private(set) var isRespondingToApproval = false
     @Published var debugLines: [String] = []
     @Published var sessions: [HermesSession] = []
@@ -24,6 +33,7 @@ final class DockModel: ObservableObject {
     @Published private(set) var deletingSessionID: String?
     @Published private(set) var sessionDeletionError: String?
     @Published private(set) var isRestoringSession = false
+    @Published private(set) var isCreatingSession = false
     @Published var currentSessionTitle: String?
     @Published var reasoningState: ReasoningState?
     @Published private(set) var conversationActivityPhase: ConversationActivityPhase = .idle
@@ -52,6 +62,7 @@ final class DockModel: ObservableObject {
     @Published private(set) var voiceState: HermesVoiceState = .inactive
     @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
     @Published private(set) var composerFocusRequest = 0
+    @Published var isComposerEditing = false
     @Published private(set) var controlInboxRequest = 0
     @Published private(set) var requestedAttentionID: String?
     @Published private(set) var scrollToLatestMessageRequest = 0
@@ -60,6 +71,9 @@ final class DockModel: ObservableObject {
     let eventRouter = HermesEventRouter()
     @Published private(set) var sessionID: String?
     private var sessionStorageID: String?
+    var kanbanSessionID: String? {
+        Self.sessionAttributionID(runtimeID: sessionID, storageID: sessionStorageID)
+    }
     private var streamingMessageID: UUID?
     private var streamingMessageSessionID: String?
     private var streamingMessageChunks: [String] = []
@@ -67,7 +81,15 @@ final class DockModel: ObservableObject {
     private var streamingMessageFlushTask: Task<Void, Never>?
     private var streamingMessageGeneration = 0
     private var streamingMessageIsVisionNotice = false
+    private var steeringNoticeTask: Task<Void, Never>?
+    private var composerHistoryIndex: Int?
+    private var composerHistoryDraft = ""
+    private var isUpdatingComposerHistory = false
     private var didRestoreLatestSession = false
+    /// A backend session may only be created after the user explicitly starts
+    /// a new chat. Resuming an existing session never grants this permission.
+    private var newSessionCreationAuthorized = false
+    private var newSessionProjectPath: String?
     private var currentModelName: String?
     private var isPopoverVisible = false
     private var isRefreshingDelegationStatus = false
@@ -83,6 +105,7 @@ final class DockModel: ObservableObject {
     private let agentStateWriter: SessionAgentStateWriter
     private var sessionResumeGeneration = 0
     private var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
+    private var voiceConversationGeneration = 0
     private var hasShutDown = false
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
     private let lastSessionIDKey = "hermes.session.last-active.v1"
@@ -93,6 +116,11 @@ final class DockModel: ObservableObject {
     /// `delegation.status.active` owns liveness; cached agents are retained as
     /// completed history so a finished delegation remains inspectable without
     /// falsely animating as current work.
+    var currentSessionBackgroundTasks: [HermesBackgroundTask] {
+        guard let sessionID, !sessionID.isEmpty else { return [] }
+        return backgroundTasks.filter { $0.parentSessionID == sessionID }
+    }
+
     var displayedSubagents: [HermesSubagent] {
         let liveIDs = Set(activeSubagents.map(\.id))
         let historical = sessionAgents
@@ -143,7 +171,8 @@ final class DockModel: ObservableObject {
     init(
         sessionAgentStateFileURL: URL? = nil,
         defaults: UserDefaults = .standard,
-        approvalSoundPlayer: @escaping () -> Void = { NSSound.beep() }
+        approvalSoundPlayer: @escaping () -> Void = { NSSound.beep() },
+        initialSessionID: String? = nil
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
         self.agentStateStore = agentStateStore
@@ -151,6 +180,8 @@ final class DockModel: ObservableObject {
         self.agentStateBySessionID = agentStateStore.load()
         self.defaults = defaults
         self.playApprovalSound = approvalSoundPlayer
+        self.sessionID = initialSessionID
+        self.sessionStorageID = initialSessionID
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.onLine = { [weak self] line in
             guard let self else { return }
@@ -178,6 +209,7 @@ final class DockModel: ObservableObject {
         guard !hasShutDown else { return }
         hasShutDown = true
         streamingMessageFlushTask?.cancel()
+        steeringNoticeTask?.cancel()
         delegationRefreshTask?.cancel()
         nativeVoiceCapture.reset()
         gateway.close()
@@ -188,11 +220,13 @@ final class DockModel: ObservableObject {
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImages = pendingImages
-        guard (!prompt.isEmpty || !attachedImages.isEmpty), !isSending, !isRestoringSession else { return }
+        guard (!prompt.isEmpty || !attachedImages.isEmpty),
+              !isSending,
+              !isRestoringSession,
+              sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
 
         let text = (prompt.isEmpty && !attachedImages.isEmpty) ? "What do you see in these images?" : prompt
         draft = ""
-        pendingImages = []
         messages.append(ChatMessage(role: .user, text: text, images: attachedImages.map(\.image)))
         status = .working
         isSending = true
@@ -202,19 +236,7 @@ final class DockModel: ObservableObject {
             do {
                 try await gateway.connect()
                 if sessionID == nil {
-                    let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock"])
-                    sessionID = result["session_id"] as? String
-                    sessionStorageID = Self.stableSessionID(from: result) ?? sessionID
-                    persistActiveSessionID(sessionID)
-                    let model = (result["model"] as? String) ?? (result["model_name"] as? String)
-                if let model {
-                    currentModelName = model
-                    sessionModelValue = model
-                }
-                refreshSessionModelOptions()
-                refreshSessionReasoningVariant()
-                refreshDelegationStatus()
-                DebugLog.write("model: session created (id present: \(sessionID != nil))")
+                    _ = try await createAuthorizedSession(source: "hermes-agent-dock")
                 }
                 guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
                 // Keep this operation bound to the session selected above. A
@@ -245,10 +267,16 @@ final class DockModel: ObservableObject {
                 }
 
                 _ = try await gateway.request("prompt.submit", params: ["session_id": promptSessionID, "text": text])
+                pendingImages.removeAll { attachedImage in
+                    attachedImages.contains { $0.id == attachedImage.id }
+                }
                 DebugLog.write("model: prompt submitted")
             } catch {
                 DebugLog.write("model: send failed: \(error.localizedDescription)")
                 cleanupImageAttachments(attachedImages)
+                pendingImages.removeAll { pendingImage in
+                    attachedImages.contains { $0.id == pendingImage.id }
+                }
                 let transportFailure: Bool
                 if let gatewayError = error as? HermesGateway.GatewayError {
                     switch gatewayError {
@@ -294,13 +322,7 @@ final class DockModel: ObservableObject {
                     return
                 }
                 draft = ""
-                messages.append(ChatMessage(
-                    role: .user,
-                    text: text,
-                    isSteering: true,
-                    steeringStatus: "QUEUED"
-                ))
-                steeringNotice = nil
+                showSteeringNotice("Steering queued")
                 DebugLog.write("model: steering guidance queued")
             } catch {
                 steeringError = error.localizedDescription
@@ -309,12 +331,65 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private func showSteeringNotice(_ notice: String) {
+        steeringNoticeTask?.cancel()
+        steeringNotice = notice
+        steeringNoticeTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            self?.steeringNotice = nil
+            self?.steeringNoticeTask = nil
+        }
+    }
+
     func submitComposerInput() {
-        if status == .working && isSending {
+        if status == .needsClarification {
+            respondToClarification(draft)
+        } else if status == .working && isSending {
             steerDraft()
         } else {
             send()
         }
+    }
+
+    /// Moves through the user prompts already present in the active session.
+    /// Down past the newest prompt restores the draft that was present before
+    /// history navigation began.
+    func navigateComposerHistory(direction: Int) -> Bool {
+        let history = messages
+            .filter { $0.role == .user }
+            .map(\.text)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard !history.isEmpty, direction != 0 else { return false }
+
+        let nextIndex: Int?
+        if direction < 0 {
+            if let composerHistoryIndex {
+                nextIndex = max(0, composerHistoryIndex - 1)
+            } else {
+                composerHistoryDraft = draft
+                nextIndex = history.count - 1
+            }
+        } else {
+            guard let composerHistoryIndex else { return false }
+            if composerHistoryIndex + 1 < history.count {
+                nextIndex = composerHistoryIndex + 1
+            } else {
+                isUpdatingComposerHistory = true
+                draft = composerHistoryDraft
+                isUpdatingComposerHistory = false
+                self.composerHistoryIndex = nil
+                composerHistoryDraft = ""
+                return true
+            }
+        }
+
+        guard let nextIndex else { return false }
+        composerHistoryIndex = nextIndex
+        isUpdatingComposerHistory = true
+        draft = history[nextIndex]
+        isUpdatingComposerHistory = false
+        return true
     }
 
     @discardableResult
@@ -391,6 +466,18 @@ final class DockModel: ObservableObject {
     func toggleSessions() {
         isShowingSessions.toggle()
         if isShowingSessions { loadSessions() }
+    }
+
+    func updateCurrentSessionTitle(_ title: String) {
+        guard sessionID != nil else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = trimmed.lowercased()
+        guard !trimmed.isEmpty,
+              normalized != "untitled",
+              normalized != "untitled chat",
+              normalized != "untitled session",
+              normalized != "hermes session" else { return }
+        currentSessionTitle = trimmed
     }
 
     func loadSessions() {
@@ -477,6 +564,9 @@ final class DockModel: ObservableObject {
         sessionResumeGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
         sessionID = session.id
+        newSessionCreationAuthorized = false
+        clarificationQuestion = nil
+        clarificationChoices = []
         sessionModelOptionID = nil
         sessionModelValue = nil
         sessionReasoningVariant = nil
@@ -525,7 +615,7 @@ final class DockModel: ObservableObject {
         }
     }
 
-    func newChat() {
+    func newChat(projectPath: String? = nil) {
         flushStreamingMessage()
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
@@ -536,6 +626,10 @@ final class DockModel: ObservableObject {
         sessionResumeGeneration &+= 1
         sessionID = nil
         sessionStorageID = nil
+        newSessionCreationAuthorized = true
+        newSessionProjectPath = projectPath
+        clarificationQuestion = nil
+        clarificationChoices = []
         defaults.removeObject(forKey: lastSessionIDKey)
         currentSessionTitle = nil
         currentModelName = nil
@@ -559,6 +653,19 @@ final class DockModel: ObservableObject {
         sessionAgents = []
         agentActivities = []
         synthesizedSubagentIDs = []
+    }
+
+    /// Creates the project-scoped session immediately after a directory is
+    /// selected, so the Projects action has an observable result before the
+    /// first prompt is typed.
+    func startNewChat(in projectPath: String) async {
+        newChat(projectPath: projectPath)
+        do {
+            try await gateway.connect()
+            _ = try await createAuthorizedSession(source: "hermes-agent-dock")
+        } catch {
+            DebugLog.write("model: project chat creation failed: \(error.localizedDescription)")
+        }
     }
 
     func cacheAgentState(for sessionID: String) {
@@ -659,6 +766,11 @@ final class DockModel: ObservableObject {
         if let sessionID { Task { _ = try? await gateway.request("session.interrupt", params: ["session_id": sessionID]) } }
         status = .idle
         isSending = false
+        isSteering = false
+        steeringError = nil
+        steeringNoticeTask?.cancel()
+        steeringNoticeTask = nil
+        steeringNotice = nil
     }
 
     /// Control-center actions share the user-facing Hermes gateway so they do
@@ -685,10 +797,7 @@ final class DockModel: ObservableObject {
         }
         try await gateway.connect()
         if sessionID == nil {
-            let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock-control"])
-            sessionID = result["session_id"] as? String
-            sessionStorageID = Self.stableSessionID(from: result) ?? sessionID
-            persistActiveSessionID(sessionID)
+            _ = try await createAuthorizedSession(source: "hermes-agent-dock-control")
         }
         guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
         _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
@@ -700,27 +809,29 @@ final class DockModel: ObservableObject {
     /// Dock keeps its existing Apple speech-recognition flow as a clear fallback.
     func startVoiceConversation() {
         guard !isRestoringSession else { return }
+        guard sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
         guard voiceState == .inactive || {
             if case .localFallback = voiceState { return true }
             return false
         }() else { return }
         guard !voiceState.isNativeConversationActive else { return }
+        voiceConversationGeneration &+= 1
+        let generation = voiceConversationGeneration
         nativeVoiceCapture.reset()
         voiceState = .preparing
 
         Task {
             do {
                 try await gateway.connect()
+                guard voiceConversationGeneration == generation else { return }
                 if sessionID == nil {
-                    let result = try await gateway.request("session.create", params: ["source": "hermes-agent-dock"])
-                    sessionID = result["session_id"] as? String
-                    sessionStorageID = Self.stableSessionID(from: result) ?? sessionID
-                    persistActiveSessionID(sessionID)
-                    currentModelName = (result["model"] as? String) ?? (result["model_name"] as? String)
+                    _ = try await createAuthorizedSession(source: "hermes-agent-dock")
                 }
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
+                guard voiceConversationGeneration == generation else { return }
 
                 let requirements = try await gateway.request("voice.toggle", params: ["action": "status"])
+                guard voiceConversationGeneration == generation else { return }
                 guard (requirements["available"] as? Bool) != false,
                       (requirements["stt_available"] as? Bool) != false else {
                     let detail = (requirements["details"] as? String) ?? "Hermes voice dependencies are unavailable."
@@ -729,20 +840,73 @@ final class DockModel: ObservableObject {
                 }
 
                 let enabled = try await gateway.request("voice.toggle", params: ["action": "on"])
+                guard voiceConversationGeneration == generation else { return }
                 if (enabled["tts"] as? Bool) != true {
                     _ = try await gateway.request("voice.toggle", params: ["action": "tts"])
                 }
+                guard voiceConversationGeneration == generation else { return }
                 voiceTelemetry.beginListening()
                 voiceState = .listening
                 armNativeVoiceCapture()
             } catch {
+                guard voiceConversationGeneration == generation else { return }
                 DebugLog.write("voice: Hermes native voice unavailable: \(error.localizedDescription)")
                 voiceState = .localFallback(error.localizedDescription)
             }
         }
     }
 
+    /// Creates a backend session only for a New Chat that the user explicitly
+    /// requested. Keeping this transition centralized prevents commands such
+    /// as send, control prompts, and voice startup from silently creating chats
+    /// after startup restoration or a failed resume.
+    private func createAuthorizedSession(source: String) async throws -> String {
+        if let sessionID { return sessionID }
+        guard newSessionCreationAuthorized else {
+            throw NSError(
+                domain: "HermesAgentDock",
+                code: 409,
+                userInfo: [NSLocalizedDescriptionKey: "Start a new chat before sending a message."]
+            )
+        }
+        guard !isCreatingSession else {
+            throw NSError(
+                domain: "HermesAgentDock",
+                code: 409,
+                userInfo: [NSLocalizedDescriptionKey: "The new chat is still starting."]
+            )
+        }
+
+        isCreatingSession = true
+        defer { isCreatingSession = false }
+        var createParams: [String: Any] = ["source": source]
+        if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
+            createParams["cwd"] = newSessionProjectPath
+        }
+        let result = try await gateway.request("session.create", params: createParams)
+        guard let createdSessionID = result["session_id"] as? String,
+              !createdSessionID.isEmpty else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        sessionID = createdSessionID
+        sessionStorageID = Self.stableSessionID(from: result) ?? createdSessionID
+        persistActiveSessionID(sessionID)
+        let model = (result["model"] as? String) ?? (result["model_name"] as? String)
+        if let model {
+            currentModelName = model
+            sessionModelValue = model
+        }
+        newSessionCreationAuthorized = false
+        newSessionProjectPath = nil
+        refreshSessionModelOptions()
+        refreshSessionReasoningVariant()
+        refreshDelegationStatus()
+        DebugLog.write("model: session created (id present: true)")
+        return createdSessionID
+    }
+
     func stopVoiceConversation() {
+        voiceConversationGeneration &+= 1
         let wasNative = voiceState.isNativeConversationActive
         nativeVoiceCapture.reset()
         voiceState = .inactive
@@ -770,6 +934,33 @@ final class DockModel: ObservableObject {
         }
     }
 
+    func respondToClarification(_ response: String) {
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let sessionID, !isRespondingToClarification else { return }
+        draft = ""
+        messages.append(ChatMessage(role: .user, text: trimmed))
+        isRespondingToClarification = true
+        status = .working
+        isSending = true
+        conversationActivityPhase = .thinking
+        Task {
+            defer { isRespondingToClarification = false }
+            do {
+                _ = try await gateway.request("clarify.respond", params: [
+                    "session_id": sessionID,
+                    "response": trimmed
+                ])
+                clarificationQuestion = nil
+                clarificationChoices = []
+            } catch {
+                status = .needsClarification
+                isSending = false
+                conversationActivityPhase = .idle
+                DebugLog.write("model: clarification response failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// Reconciles an approval answered through another surface, such as Inbox.
     /// The model only presents the current session, so responses for other
     /// sessions must not alter the visible conversation.
@@ -784,7 +975,33 @@ final class DockModel: ObservableObject {
 
     private func handleEvent(_ type: String, params: [String: Any]) {
         let rawPayload = params["payload"] as? [String: Any] ?? [:]
-        let eventSessionID = (params["session_id"] as? String) ?? (rawPayload["session_id"] as? String)
+        let envelopeSessionID = params["session_id"] as? String
+        let payloadSessionID = rawPayload["session_id"] as? String
+        let eventSessionID = envelopeSessionID ?? payloadSessionID
+        // Hermes uses one gateway stream for every session. Once a session is
+        // selected, reject events that do not prove ownership by that session
+        // before projecting activities, tool calls, or conversation state. The
+        // previous code projected first and filtered later, which let a known
+        // agent (or an event with a missing session ID) mutate the current
+        // session before the later guard ran.
+        guard let currentSessionID = sessionID,
+              Self.eventBelongsToSession(
+                type: type,
+                envelopeSessionID: envelopeSessionID,
+                eventSessionID: eventSessionID,
+                payload: rawPayload,
+                currentSessionID: currentSessionID,
+                agents: sessionAgents + activeSubagents
+              ) else {
+            if ActivityAttributionTrace.enabled { ActivityAttributionTrace.append("gateway_event.ignored_other_session", fields: [
+                "type": type,
+                "current_session_id": sessionID ?? "",
+                "event_session_id": eventSessionID ?? "",
+                "raw_payload": rawPayload
+            ]) }
+            if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: ignoring event \(type) without current-session ownership") }
+            return
+        }
         let activityProjection = Self.isHighFrequencyEvent(type) ? nil : Self.agentActivityProjection(
             type: type,
             params: params,
@@ -963,6 +1180,19 @@ final class DockModel: ObservableObject {
                 ?? (payload["message"] as? String)
                 ?? (payload["description"] as? String)
                 ?? "Hermes needs more information."
+            let choices = ((payload["choices"] as? [String]) ?? (payload["options"] as? [String]) ?? [])
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let messageText = choices.isEmpty
+                ? question
+                : "\(question)\n\nSuggested responses:\n" + choices.map { "- \($0)" }.joined(separator: "\n")
+            if messages.last?.role != .hermes || messages.last?.text != messageText {
+                messages.append(ChatMessage(role: .hermes, text: messageText, modelName: currentModelName))
+            }
+            clarificationQuestion = question
+            clarificationChoices = choices
+            isSending = false
+            status = .needsClarification
+            conversationActivityPhase = .idle
             notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")")
         case "error":
             flushStreamingMessage()
@@ -1156,6 +1386,15 @@ final class DockModel: ObservableObject {
         for key in ["session_key", "stored_session_id", "resumed"] {
             if let value = result[key] as? String,
                !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    static func sessionAttributionID(runtimeID: String?, storageID: String?) -> String? {
+        for candidate in [storageID, runtimeID] {
+            if let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
                 return value
             }
         }
@@ -1386,6 +1625,57 @@ final class DockModel: ObservableObject {
         if normalized.contains("queue") || normalized.contains("pending") || normalized.contains("wait") { return "queued" }
         if normalized.contains("run") || normalized.contains("work") || normalized.contains("active") || normalized.contains("start") { return "running" }
         return normalized
+    }
+
+    static func eventBelongsToSession(
+        type: String,
+        envelopeSessionID: String?,
+        eventSessionID: String?,
+        payload: [String: Any],
+        currentSessionID: String,
+        agents: [HermesSubagent]
+    ) -> Bool {
+        guard !currentSessionID.isEmpty else { return false }
+        let payloadSessionID = payload["session_id"] as? String
+
+        // If both the event envelope and payload claim a session, they must
+        // agree. Treat conflicting attribution as untrusted rather than
+        // silently preferring either source.
+        if let envelopeSessionID, !envelopeSessionID.isEmpty,
+           let payloadSessionID, !payloadSessionID.isEmpty,
+           envelopeSessionID != payloadSessionID {
+            return false
+        }
+
+        if eventSessionID == currentSessionID {
+            // A parent-session event may declare its parent explicitly, but it
+            // may not smuggle in a different parent identity.
+            if let parentSessionID = payload["parent_session_id"] as? String,
+               parentSessionID != currentSessionID {
+                return false
+            }
+            return true
+        }
+
+        // A delegated worker has its own child session, but its activity still
+        // belongs to the parent session currently shown by the Dock. Require
+        // the envelope child identity itself to match a current child agent,
+        // and reject every contradictory supplied identifier.
+        guard type.hasPrefix("subagent."),
+              let envelopeSessionID, !envelopeSessionID.isEmpty,
+              let eventSessionID, eventSessionID == envelopeSessionID else {
+            return false
+        }
+        if let parentSessionID = payload["parent_session_id"] as? String,
+           parentSessionID != currentSessionID {
+            return false
+        }
+        if let childSessionID = payload["child_session_id"] as? String,
+           !childSessionID.isEmpty,
+           childSessionID != envelopeSessionID {
+            return false
+        }
+        return agents.contains { $0.childSessionID == envelopeSessionID }
     }
 
     /// Resolves both native subagent IDs and the child session IDs used by
