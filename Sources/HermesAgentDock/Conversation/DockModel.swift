@@ -534,6 +534,7 @@ final class DockModel: ObservableObject {
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
+        resetComposerForSessionChange()
         sessionResumeGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
         sessionID = session.id
@@ -588,6 +589,11 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private func resetComposerForSessionChange() {
+        composer.reset()
+        clearPendingImages()
+    }
+
     func newChat(projectPath: String? = nil) {
         flushStreamingMessage()
         streamingMessageFlushTask?.cancel()
@@ -596,6 +602,7 @@ final class DockModel: ObservableObject {
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
+        resetComposerForSessionChange()
         sessionResumeGeneration &+= 1
         sessionID = nil
         sessionStorageID = nil

@@ -36,6 +36,26 @@ struct ComposerTextTests {
         #expect(composer.navigate(direction: 1, history: Array(history)) == false)
     }
 
+    @Test func staleHistoryIndexIsRecoveredWhenHistoryShrinks() {
+        let composer = ComposerText()
+        composer.text = "draft"
+        composer.navigate(direction: -1, history: Array(history))
+
+        #expect(composer.navigate(direction: -1, history: ["replacement"]))
+        #expect(composer.text == "replacement")
+    }
+
+    @Test func resetClearsDraftAndHistoryNavigation() {
+        let composer = ComposerText()
+        composer.text = "draft"
+        composer.navigate(direction: -1, history: Array(history))
+
+        composer.reset()
+
+        #expect(composer.text.isEmpty)
+        #expect(composer.navigate(direction: 1, history: Array(history)) == false)
+    }
+
     @Test func navigationRequiresHistoryAndDirection() {
         let composer = ComposerText()
 
