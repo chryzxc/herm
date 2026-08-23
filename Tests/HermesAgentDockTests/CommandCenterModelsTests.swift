@@ -52,6 +52,43 @@ struct CommandCenterModelsTests {
         #expect(ready.readiness.state == .ready)
     }
 
+    @Test func workspaceOverviewCountsActiveSessionsAsRunningWork() {
+        let sessions = [
+            SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
+            SessionSummary(id: "session-2", title: "Second", state: "active", preview: nil)
+        ]
+        let agents = [AgentSummary(id: "agent-1", name: "Researcher", state: "running", sessionID: "session-1")]
+        let processes = [ProcessSummary(id: "process-1", name: "Worker", state: "running", detail: nil)]
+        let backgroundTasks = [
+            HermesBackgroundTask(id: "task-1", parentSessionID: "session-1", prompt: "Run checks", kind: .verification, status: .running, output: nil, startedAt: .now, completedAt: nil),
+            HermesBackgroundTask(id: "task-2", parentSessionID: "session-2", prompt: "Finished", kind: .verification, status: .completed, output: nil, startedAt: .now, completedAt: .now)
+        ]
+
+        #expect(WorkspaceOverviewMetrics.runningCount(activeSessions: sessions, agents: agents, processes: processes, backgroundTasks: backgroundTasks) == 5)
+    }
+
+    @Test func latestActivityDropsIdleSessionsAndBoundsTheList() {
+        let sessions = (1...12).map { index in
+            SessionSummary(id: "session-\(index)", title: "Session \(index)", state: index.isMultiple(of: 3) ? "idle" : "active", preview: nil)
+        }
+
+        let latest = SessionActivityPresentation.latestActivity(sessions)
+
+        #expect(latest.count == 8)
+        #expect(latest.allSatisfy { $0.state == "active" })
+        #expect(latest.first?.id == "session-1")
+    }
+
+    @Test func idleDetectionIsCaseAndWhitespaceInsensitive() {
+        #expect(SessionActivityPresentation.isIdle("idle"))
+        #expect(SessionActivityPresentation.isIdle("  IDLE "))
+        #expect(!SessionActivityPresentation.isIdle("active"))
+        #expect(!SessionActivityPresentation.isIdle("done"))
+        #expect(SessionActivityPresentation.latestActivity([
+            SessionSummary(id: "only", title: "Only", state: "Idle", preview: nil)
+        ]).isEmpty)
+    }
+
     @Test func paletteRanksAvailablePrefixMatchAndRetainsUnavailableActions() {
         let descriptors = DockActionRegistry.make(repositoryAvailable: false, isWorking: false)
         let results = DockActionRegistry.search("preflight", descriptors: descriptors, recentIDs: [])

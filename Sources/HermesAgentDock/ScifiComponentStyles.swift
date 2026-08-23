@@ -21,13 +21,15 @@ extension Color {
     static let scifiAccent = Color(red: 0, green: 0.65, blue: 0.95)
     static let scifiAccentMuted = Color(red: 0, green: 0.67, blue: 1).opacity(0.08)
     static let scifiAccentGlow = Color(red: 0, green: 0.67, blue: 1).opacity(0.25)
-    /// Primary text token — soft slate off-white (75% luminance, #BCC3CE).
-    /// Prevents high-contrast white glare and halation for comfortable long reading sessions.
-    static let scifiFg = Color(red: 0.74, green: 0.78, blue: 0.84)
-    /// Secondary metadata text token — soft slate gray (#858F9E) for calm visual hierarchy.
-    static let scifiMuted = Color(red: 0.52, green: 0.56, blue: 0.62)
-    /// Tertiary text token — subdued dark slate (#596170) for subtle operational details.
-    static let scifiTertiary = Color(red: 0.35, green: 0.38, blue: 0.44)
+    /// Canonical primary text token — readable soft slate off-white.
+    static let scifiFg = Color(red: 0.70, green: 0.74, blue: 0.81)
+    /// Canonical secondary text token — readable slate for metadata and labels.
+    static let scifiMuted = Color(red: 0.60, green: 0.64, blue: 0.71)
+    /// Canonical tertiary text token — subdued, but still legible at small sizes.
+    static let scifiTertiary = Color(red: 0.46, green: 0.50, blue: 0.58)
+    // Kanban lifecycle accents shared by board and session-kanban surfaces.
+    static let scifiKanbanRunning = Color(red: 0.55, green: 0.55, blue: 1)
+    static let scifiKanbanReview = Color(red: 0.72, green: 0.48, blue: 1)
     static let scifiSuccess = Color(red: 0.16, green: 0.78, blue: 0.25)
     static let scifiWarning = Color(red: 1, green: 0.74, blue: 0.18)
     static let scifiFolder = Color(red: 1, green: 0.70, blue: 0.30)
@@ -93,6 +95,42 @@ struct ScifiPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Compact toggle treatment for labeled presentation controls. This keeps
+/// native macOS switch chrome out of the sci-fi glass system while retaining
+/// a clear on/off state through the label, track, and thumb position.
+struct ScifiToggleStyle: ToggleStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                configuration.label
+                ZStack {
+                    Capsule()
+                        .fill(configuration.isOn ? Color.scifiAccent.opacity(0.24) : Color.scifiSurface6)
+                        .overlay {
+                            Capsule()
+                                .stroke(configuration.isOn ? Color.scifiAccent.opacity(0.72) : Color.scifiBorderStrong, lineWidth: 0.7)
+                        }
+                    Circle()
+                        .fill(configuration.isOn ? Color.scifiAccent : Color.scifiMuted)
+                        .frame(width: 16, height: 16)
+                        .shadow(color: configuration.isOn ? Color.scifiAccentGlow : .clear, radius: 5)
+                        .offset(x: configuration.isOn ? 9 : -9)
+                }
+                .frame(width: 38, height: 22)
+            }
+            .foregroundStyle(Color.scifiMuted)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.scifiPress)
+        .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
+        .animation(reduceMotion ? nil : .scifiEase(duration: 0.16), value: configuration.isOn)
+    }
+}
+
 struct ScifiGlassTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
@@ -144,6 +182,10 @@ extension ButtonStyle where Self == ScifiPrimaryButtonStyle {
 
 extension TextFieldStyle where Self == ScifiGlassTextFieldStyle {
     static var scifiGlass: Self { Self() }
+}
+
+extension ToggleStyle where Self == ScifiToggleStyle {
+    static var scifiSwitch: Self { Self() }
 }
 
 extension View {

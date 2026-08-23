@@ -5,13 +5,14 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 enum HermesStatus: Equatable {
-    case idle, working, needsApproval, offline
+    case idle, working, needsApproval, needsClarification, offline
 
     var title: String {
         switch self {
         case .idle: "Ready"
         case .working: "Working"
         case .needsApproval: "Needs your approval"
+        case .needsClarification: "Needs your clarification"
         case .offline: "Hermes is offline"
         }
     }
@@ -21,6 +22,7 @@ enum HermesStatus: Equatable {
         case .idle: "sparkles"
         case .working: "bolt.horizontal.circle"
         case .needsApproval: "exclamationmark.circle"
+        case .needsClarification: "questionmark.circle"
         case .offline: "wifi.slash"
         }
     }

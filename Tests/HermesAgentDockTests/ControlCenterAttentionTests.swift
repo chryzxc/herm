@@ -22,6 +22,27 @@ struct ControlCenterAttentionTests {
         #expect(reminder.sourceID == "reminder-1")
     }
 
+    @Test func sessionAttentionProjectionExcludesOtherSessions() {
+        let model = ControlCenterModel()
+        model.ingestEvent("approval.request", params: [
+            "session_id": "session-a",
+            "payload": ["command": "echo A"]
+        ])
+        model.ingestEvent("approval.request", params: [
+            "session_id": "session-b",
+            "payload": ["command": "echo B"]
+        ])
+
+        #expect(model.attention(for: "session-a").count == 1)
+        #expect(model.attention(for: "session-a").first?.detail == "echo A")
+        #expect(model.attention(for: "session-b").count == 1)
+        #expect(model.attention(for: "session-b").first?.detail == "echo B")
+        #expect(model.attention(for: "session-missing").isEmpty)
+        #expect(model.openAttention(for: "session-a").map(\.detail) == ["echo A"])
+        #expect(model.openAttention(for: "session-b").map(\.detail) == ["echo B"])
+        #expect(model.openAttention(for: "session-missing").isEmpty)
+    }
+
     @Test func approvalEventsExposeActionTitleAndDetails() {
         let model = ControlCenterModel()
 
@@ -53,6 +74,17 @@ struct ControlCenterAttentionTests {
         let item = model.attention.first
         #expect(item?.title == "Run command")
         #expect(item?.detail == "rm -rf -- .omo")
+    }
+
+    @Test func completedResponsesDoNotAppearAsNeedsMeAttention() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("message.complete", params: [
+            "session_id": "session-complete",
+            "payload": [:]
+        ])
+
+        #expect(model.openAttention(for: "session-complete").isEmpty)
     }
 
     @Test func clarificationEventsExposeAResponseAction() {

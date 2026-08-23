@@ -189,7 +189,13 @@ struct MarkdownMessageView: View {
 
   private func renderedText(_ value: String) -> some View {
     // Explicitly apply soft scifiFg text color to eliminate pure white glare
-    Text(inlineMarkdown(value)).foregroundStyle(Color.scifiFg).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+    Text(inlineMarkdown(value))
+      .foregroundStyle(Color.scifiFg)
+      // Keep Markdown links native so AppKit/SwiftUI can provide the link
+      // cursor and hover underline without breaking paragraph wrapping.
+      .tint(Color.scifiAccent)
+      .textSelection(.enabled)
+      .fixedSize(horizontal: false, vertical: true)
   }
   private func codeBlock(_ code: String, language: String?) -> some View {
     VStack(alignment: .leading, spacing: 2) {

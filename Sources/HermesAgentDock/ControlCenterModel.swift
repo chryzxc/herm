@@ -20,6 +20,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var searchResults: [ControlSearchResult] = []
     @Published private(set) var isSearching = false
     @Published private(set) var kanbanTasks: [KanbanTaskSummary] = []
+    @Published private(set) var sessionKanbanTasks: [KanbanTaskSummary] = []
+    @Published private(set) var sessionKanbanSessionID: String?
     @Published private(set) var kanbanDetail: KanbanTaskDetail?
     @Published private(set) var kanbanStats: KanbanStatsSummary?
     @Published private(set) var kanbanAssignees: [String] = []
@@ -31,6 +33,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var memoryHealthStatus: HermesReadOnlyStatus?
     @Published private(set) var sessionUsage: SessionUsageSummary?
     @Published private(set) var sessionContext: SessionContextSummary?
+    @Published private(set) var providerQuota: ProviderQuotaSnapshot?
+    @Published private(set) var providerQuotas: [ProviderQuotaSnapshot] = []
     @Published private(set) var kanbanDiagnostics: [KanbanDiagnosticSummary] = []
     @Published private(set) var kanbanAttachments: [KanbanAttachmentSummary] = []
     @Published private(set) var promptBudget: PromptBudgetSummary?
@@ -58,6 +62,10 @@ final class ControlCenterModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var searchGeneration = UUID()
     private var kanbanRefreshGeneration = UUID()
+    private var kanbanProjectionBoardSlug: String?
+    private var sessionKanbanRefreshGeneration = UUID()
+    private var sessionKanbanTask: Task<Void, Never>?
+    private var sessionKanbanBoardSlug: String?
     private var kanbanBoardsGeneration = UUID()
     private var kanbanStatsGeneration = UUID()
     private var kanbanAssigneesGeneration = UUID()
@@ -73,6 +81,7 @@ final class ControlCenterModel: ObservableObject {
     private var mcpInventoryGeneration = UUID()
     private var journeyGeneration = UUID()
     private var sessionCockpitGeneration = UUID()
+    private var providerQuotaGeneration = UUID()
     private var sessionCockpitSessionID: String?
     private var sessionProcessesGeneration = UUID()
     private var knownAttention: [String: AttentionItem] = [:]
@@ -83,6 +92,10 @@ final class ControlCenterModel: ObservableObject {
     private let presentationDefaults = UserDefaults.standard
     private let presentationKey = "hermes.control.attention.presentation.v1"
     private let snoozeKey = "hermes.control.attention.snooze.v1"
+    private struct QuotaReadResult: @unchecked Sendable {
+        let value: [String: Any]?
+        let error: String?
+    }
 
     var todaySnapshot: TodaySnapshot {
         TodaySnapshot(
@@ -213,6 +226,15 @@ final class ControlCenterModel: ObservableObject {
         default:
             return ControlReference(source: .hermesSession, sourceID: sourceID, sessionID: sourceID)
         }
+    }
+
+    func attention(for sessionID: String?) -> [AttentionItem] {
+        guard let sessionID, !sessionID.isEmpty else { return [] }
+        return attention.filter { $0.reference.sessionID == sessionID }
+    }
+
+    func openAttention(for sessionID: String?) -> [AttentionItem] {
+        attention(for: sessionID).filter { $0.state == .open }
     }
 
     func bind(to model: DockModel) {
@@ -362,11 +384,52 @@ final class ControlCenterModel: ObservableObject {
                     refreshReadOnlyHealth()
                 }
                 refreshSessionCockpit(for: dockModel.sessionID)
+                refreshProviderQuota()
                 refreshPromptBudget()
                 refreshVerification()
                 recordProjectionSuccess("core")
             }
         }
+    }
+
+    /// Loads the stored Codex account quota through Codex's authenticated usage endpoint,
+    /// independently of the active Hermes provider/model.
+    func refreshProviderQuota() {
+        let generation = UUID()
+        providerQuotaGeneration = generation
+        guard dockModel != nil else {
+            providerQuota = nil
+            providerQuotas = []
+            return
+        }
+        beginProjectionRefresh("provider.quota")
+        Task { @MainActor in
+            async let codexResult = Self.readQuota(CodexQuotaService.read)
+            async let openCodeResult = Self.readQuota(OpenCodeQuotaService.read)
+            async let glmResult = Self.readQuota(GLMQuotaService.read)
+            async let claudeResult = Self.readQuota(ClaudeQuotaService.read)
+            let results = await [codexResult, openCodeResult, glmResult, claudeResult]
+            guard generation == providerQuotaGeneration else { return }
+            let snapshots = results.compactMap { result -> ProviderQuotaSnapshot? in
+                guard let raw = result.value else { return nil }
+                return Self.parseProviderQuota(raw)
+            }
+            if !snapshots.isEmpty {
+                providerQuotas = snapshots
+                providerQuota = snapshots.first(where: { $0.provider == "codex" })
+                recordProjectionSuccess("provider.quota")
+            } else {
+                providerQuota = nil
+                providerQuotas = []
+                let errors = results.compactMap(\.error)
+                recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")
+            }
+        }
+    }
+
+    private nonisolated static func readQuota(_ read: @Sendable () async throws -> [String: Any]) async -> QuotaReadResult {
+        do { return QuotaReadResult(value: try await read(), error: nil) }
+        catch { return QuotaReadResult(value: nil, error: error.localizedDescription) }
     }
 
     func completeReminder(_ reminder: ReminderSummary) {
@@ -707,9 +770,14 @@ final class ControlCenterModel: ObservableObject {
         guard let cli, capabilityAvailable("kanban") else { return }
         guard beginAction(refreshKanbanActionID) else { return }
         beginProjectionRefresh("kanban.board")
+        let requestedFilter = filter ?? kanbanFilter
+        let requestedBoardSlug = selectedKanbanBoardSlug
+        let projectionChanged = requestedFilter != kanbanFilter || requestedBoardSlug != kanbanProjectionBoardSlug
+        if projectionChanged {
+            kanbanTasks = []
+        }
         if let filter { kanbanFilter = filter }
         let activeFilter = kanbanFilter
-        let requestedBoardSlug = selectedKanbanBoardSlug
         let generation = UUID()
         kanbanRefreshGeneration = generation
         Task {
@@ -726,6 +794,7 @@ final class ControlCenterModel: ObservableObject {
                 }
                 guard generation == kanbanRefreshGeneration,
                       requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                kanbanProjectionBoardSlug = requestedBoardSlug
                 kanbanTasks = Self.parseKanbanTasks(result.stdout, boardSlug: requestedBoardSlug)
                 recordProjectionSuccess("kanban.board")
                 refreshKanbanStats()
@@ -737,6 +806,63 @@ final class ControlCenterModel: ObservableObject {
                 let message = error.localizedDescription
                 recordProjectionFailure("kanban.board", error: message)
                 lastError = message
+            }
+        }
+    }
+
+    /// Refreshes the Kanban projection for the currently focused session without
+    /// mutating the global board projection used by the Kanban tab.
+    func refreshSessionKanban(for sessionID: String? = nil) {
+        let candidateSessionID = sessionID ?? dockModel?.sessionID
+        let requestedSessionID = candidateSessionID == dockModel?.sessionID
+            ? dockModel?.kanbanSessionID
+            : candidateSessionID
+        let requestedBoardSlug = selectedKanbanBoardSlug
+        let generation = UUID()
+        let isNewProjection = sessionKanbanSessionID != requestedSessionID || sessionKanbanBoardSlug != requestedBoardSlug
+        sessionKanbanTask?.cancel()
+        sessionKanbanRefreshGeneration = generation
+        if isNewProjection {
+            sessionKanbanTasks = []
+        }
+        sessionKanbanSessionID = requestedSessionID
+        sessionKanbanBoardSlug = requestedBoardSlug
+        beginProjectionRefresh("kanban.session")
+
+        guard let requestedSessionID,
+              !requestedSessionID.isEmpty,
+              let cli,
+              capabilityAvailable("kanban") else {
+            recordProjectionFailure("kanban.session", error: "Kanban is unavailable for the current session.")
+            return
+        }
+
+        sessionKanbanTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await cli.kanbanList(
+                    boardSlug: requestedBoardSlug,
+                    filter: KanbanListFilter(sessionID: requestedSessionID, sort: "updated")
+                )
+                guard generation == self.sessionKanbanRefreshGeneration,
+                      self.sessionKanbanSessionID == requestedSessionID,
+                      requestedBoardSlug == self.selectedKanbanBoardSlug else { return }
+                guard result.succeeded else {
+                    self.recordProjectionFailure(
+                        "kanban.session",
+                        error: result.stderr.isEmpty ? "Hermes Kanban is unavailable." : result.stderr
+                    )
+                    self.sessionKanbanTask = nil
+                    return
+                }
+                self.sessionKanbanTasks = Self.parseKanbanTasks(result.stdout, boardSlug: requestedBoardSlug)
+                self.sessionKanbanTask = nil
+                self.recordProjectionSuccess("kanban.session")
+            } catch {
+                guard generation == self.sessionKanbanRefreshGeneration,
+                      self.sessionKanbanSessionID == requestedSessionID else { return }
+                self.sessionKanbanTask = nil
+                self.recordProjectionFailure("kanban.session", error: error.localizedDescription)
             }
         }
     }
@@ -769,6 +895,9 @@ final class ControlCenterModel: ObservableObject {
                 if previousSelection != selectedKanbanBoardSlug,
                    selectedKanbanBoardSlug != nil {
                     refreshKanban()
+                    if let sessionID = currentFocus?.sessionID {
+                        refreshSessionKanban(for: sessionID)
+                    }
                 }
             } catch {
                 guard generation == kanbanBoardsGeneration else { return }
@@ -794,6 +923,9 @@ final class ControlCenterModel: ObservableObject {
         kanbanAttachments = []
         isLoadingKanbanDetail = false
         refreshKanban()
+        if let sessionID = currentFocus?.sessionID {
+            refreshSessionKanban(for: sessionID)
+        }
         refreshKanbanDiagnostics()
     }
 
@@ -1354,6 +1486,23 @@ final class ControlCenterModel: ObservableObject {
         dockModel.requestComposerFocus()
     }
 
+    /// Active-session projections are live Hermes sessions, not necessarily
+    /// persisted sessions accepted by `session.resume`. Activate them through
+    /// the same RPC path used by the other live-work controls.
+    func openLatestActivitySession(_ session: SessionSummary) {
+        guard let dockModel else { return }
+        Task {
+            do {
+                _ = try await dockModel.requestControl("session.activate", params: ["session_id": session.id])
+                focus(sessionID: session.id)
+                dockModel.updateCurrentSessionTitle(session.title)
+                dockModel.requestComposerFocus()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
     func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
         guard let dockModel else { return }
         let reference = item.reference
@@ -1496,16 +1645,6 @@ final class ControlCenterModel: ObservableObject {
                 resolved.state = .resolved
                 knownAttention[resolved.id] = resolved
             }
-            upsertAttention(AttentionItem(
-                id: "completed:\(sessionID)",
-                reference: ControlReference(source: .hermesSession, sourceID: sessionID, sessionID: sessionID),
-                kind: .completed,
-                title: "Hermes completed work",
-                detail: "Review the latest response and decide what to do next.",
-                createdAt: Date(),
-                state: .open,
-                actions: [.open, .dismiss]
-            ))
         default:
             break
         }
@@ -1555,6 +1694,10 @@ final class ControlCenterModel: ObservableObject {
 
     func rebuildAttention() {
         var next: [AttentionItem] = []
+        // A completed response is already visible in the conversation and is
+        // not an action item. Keep NEEDS ME reserved for work that requires a
+        // decision, response, recovery, or explicit completion.
+        knownAttention = knownAttention.filter { $0.value.kind != .completed }
         if let dockModel {
             if dockModel.status != .offline {
                 knownAttention.removeValue(forKey: "failure:hermes")
@@ -1611,7 +1754,14 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func focus(sessionID: String?) {
-        guard let sessionID, !sessionID.isEmpty else { return }
+        guard let sessionID, !sessionID.isEmpty else {
+            sessionKanbanTask?.cancel()
+            sessionKanbanRefreshGeneration = UUID()
+            sessionKanbanSessionID = nil
+            sessionKanbanBoardSlug = nil
+            sessionKanbanTasks = []
+            return
+        }
         if currentFocus?.sessionID != sessionID {
             // Repository context is scoped to a Hermes session. Clear the
             // previous projection before the sidebar asynchronously inspects
@@ -1631,6 +1781,7 @@ final class ControlCenterModel: ObservableObject {
         let generation = UUID()
         sessionProcessesGeneration = generation
         processes = []
+        refreshSessionKanban(for: sessionID)
         refreshSessionCockpit(for: sessionID)
         refreshVerification(for: sessionID)
 
@@ -1657,7 +1808,28 @@ final class ControlCenterModel: ObservableObject {
             return project
         }
         guard let projectID = projectIDBySessionID[sessionID] else { return nil }
-        return projects.first(where: { $0.id == projectID })
+        if let project = projects.first(where: { $0.id == projectID }) {
+            return project
+        }
+
+        // The Projects tab gets its authoritative membership from the
+        // selected project's session projection. The compact project list can
+        // lag behind that projection and may not yet contain the session ID.
+        // Reuse the selected project in that case instead of making the
+        // session inspector resolve membership through a second path.
+        if selectedProject?.id == projectID {
+            return selectedProject
+        }
+        return nil
+    }
+
+    /// Returns the freshest session metadata available from the project or
+    /// active-session projections. Project sessions often have a newer title
+    /// than the generic session list, so consumers should prefer this when a
+    /// session is already attached to a project.
+    func sessionSummary(for sessionID: String) -> SessionSummary? {
+        projectSessions.first(where: { $0.id == sessionID })
+            ?? activeSessions.first(where: { $0.id == sessionID })
     }
 
     /// The project tree sometimes reports counts without embedding session
@@ -1917,6 +2089,51 @@ final class ControlCenterModel: ObservableObject {
             estimatedTotal: intValue(result["estimated_total"]),
             model: result["model"] as? String
         )
+    }
+
+    static func parseProviderQuota(_ result: [String: Any]) -> ProviderQuotaSnapshot? {
+        guard let provider = (result["provider"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !provider.isEmpty,
+              let updatedString = result["updated_at"] as? String,
+              let updatedAt = QuotaJSON.iso8601Date(updatedString) else { return nil }
+        let displayName = ((result["display_name"] as? String) ?? provider).trimmingCharacters(in: .whitespacesAndNewlines)
+        let rows = (result["windows"] as? [[String: Any]] ?? []).prefix(5).compactMap { row -> ProviderQuotaWindow? in
+            guard let id = (row["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !id.isEmpty,
+                  let label = (row["label"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !label.isEmpty else { return nil }
+            let rawPercent = doubleValue(row["remaining_percent"])
+            if row["remaining_percent"] != nil && (rawPercent == nil || !(0...100).contains(rawPercent!)) { return nil }
+            let percent = rawPercent
+            let resetsAt = (row["resets_at"] as? String).flatMap(QuotaJSON.iso8601Date)
+            return ProviderQuotaWindow(
+                id: id,
+                label: label,
+                remainingPercent: percent,
+                remainingDisplay: boundedQuotaText(row["remaining_display"]),
+                limitDisplay: boundedQuotaText(row["limit_display"]),
+                resetsAt: resetsAt,
+                resetsDisplay: boundedQuotaText(row["resets_display"])
+            )
+        }
+        var unique: [ProviderQuotaWindow] = []
+        var seen = Set<String>()
+        for row in rows where seen.insert(row.id).inserted { unique.append(row) }
+        return ProviderQuotaSnapshot(
+            provider: provider,
+            displayName: displayName,
+            model: boundedQuotaText(result["model"]),
+            updatedAt: updatedAt,
+            windows: unique,
+            safeDetail: boundedQuotaText(result["safe_detail"])
+        )
+    }
+
+    private static func boundedQuotaText(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean.count <= 160 else { return nil }
+        return clean
     }
 
     private static func intValue(_ value: Any?) -> Int {

@@ -35,49 +35,43 @@ struct SessionFilesView: View {
         .task(id: projectPath) {
             guard let projectPath else { entries = []; return }
             isLoading = true
-            expandedDirectories = []
             selectedPath = nil
-            entries = await RepositoryService.projectFiles(path: projectPath)
+            let loadedEntries = await RepositoryService.projectFiles(path: projectPath)
+            entries = loadedEntries
+            // Show the complete project tree on first load. Users can still
+            // collapse individual folders, but a newly opened project should
+            // not look empty while its files are hidden behind collapsed rows.
+            expandedDirectories = Set(loadedEntries.filter(\.isDirectory).map(\.path))
             isLoading = false
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Keep the files surface anchored to the inspector's top edge. Without
+        // an explicit alignment, the empty state is centered inside the
+        // full-height session inspector.
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var explorer: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("EXPLORER")
-                Spacer()
-                Text(projectName.uppercased())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .tracking(1.1)
-            .foregroundStyle(Color.scifiMuted)
-            .padding(.horizontal, 12)
-            .padding(.top, 2)
-            .padding(.bottom, 12)
-
             TextField("Filter files…", text: $filterText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Color.scifiFg)
                 .padding(.horizontal, 12)
-                .frame(height: 38)
+                .frame(height: 34)
                 .background(Color.scifiCanvas)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(.horizontal, 8)
-                .padding(.bottom, 18)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+                }
+                .padding(.bottom, 8)
 
             if isLoading {
                 ProgressView("Loading files…")
                     .font(.system(size: 12))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
             } else if entries.isEmpty {
                 empty("folder", "No readable files", "The selected project folder has no readable files.")
-                    .padding(.horizontal, 8)
             } else {
                 Button { } label: {
                     explorerRow(
@@ -97,7 +91,6 @@ struct SessionFilesView: View {
                     Text(error)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(Color.scifiWarning)
-                        .padding(.horizontal, 12)
                         .padding(.bottom, 6)
                 }
 
@@ -136,11 +129,14 @@ struct SessionFilesView: View {
                     Text("No matching files")
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(Color.scifiTertiary)
-                        .padding(.horizontal, 28)
                         .padding(.vertical, 12)
                 }
             }
         }
+        // The inspector already provides the scrolling container. Keep the
+        // tree at its intrinsic height so collapsed rows cannot absorb the
+        // remaining inspector height and appear hundreds of points apart.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func explorerRow(icon: String, title: String, path: String?, depth: Int, isDirectory: Bool, isExpanded: Bool, color: Color) -> some View {
@@ -167,10 +163,9 @@ struct SessionFilesView: View {
         }
         .padding(.leading, CGFloat(depth) * 14 + 8)
         .padding(.trailing, 8)
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
         .background(selectedPath == path && !isDirectory ? Color.scifiAccent.opacity(0.13) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .padding(.horizontal, 2)
     }
 
     private var projectName: String {
@@ -290,6 +285,7 @@ struct SessionTerminalView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            terminalTabBar
             HStack {
                 Text("SHELL")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -303,9 +299,8 @@ struct SessionTerminalView: View {
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(statusColor)
             }
-            .padding(.horizontal, 28)
-            .padding(.top, 30)
-            .padding(.bottom, 14)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
 
             // Scrollable Output Window
             ScrollViewReader { proxy in
@@ -316,7 +311,6 @@ struct SessionTerminalView: View {
                         .lineSpacing(4)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 28)
                         .padding(.bottom, 20)
                         .id("terminal-output")
                 }
@@ -342,8 +336,7 @@ struct SessionTerminalView: View {
                     .focused($commandFocused)
                     .onSubmit { submit() }
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 16)
+            .padding(.vertical, 10)
             .background(Color.scifiSurface2)
             .overlay(alignment: .top) { Color.scifiBorderLight.frame(height: 0.5) }
         }
@@ -360,5 +353,49 @@ struct SessionTerminalView: View {
         guard !command.isEmpty else { return }
         terminal.send(command + "\n")
         command = ""
+    }
+
+    private var terminalTabBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 9) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.scifiMuted)
+                Text("\(NSUserName())@\(Host.current().localizedName ?? "hermes")")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.scifiFg)
+                    .lineLimit(1)
+                Button {
+                    terminal.close()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.scifiTertiary)
+                }
+                .buttonStyle(.scifiPress)
+                .help("Close terminal")
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.scifiSurface6))
+
+            Spacer(minLength: 0)
+
+            Button {
+                terminal.start(directory: projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path)
+                commandFocused = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.scifiMuted)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.scifiPress)
+            .help("New terminal session")
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
+        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
     }
 }

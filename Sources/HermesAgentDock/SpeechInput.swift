@@ -18,6 +18,7 @@ final class SpeechInput: ObservableObject {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var isStopping = false
+    private var startGeneration = 0
     private var silenceTask: Task<Void, Never>?
     func toggle() {
         if isRecording {
@@ -31,12 +32,14 @@ final class SpeechInput: ObservableObject {
     /// continue a hands-free conversation.
     func startListening() {
         guard !isRecording, !isStarting else { return }
+        startGeneration &+= 1
         isUnavailable = false
         errorMessage = nil
-        requestPermissionsAndStart()
+        requestPermissionsAndStart(generation: startGeneration)
     }
 
     func stop() {
+        startGeneration &+= 1
         isStopping = true
         silenceTask?.cancel()
         silenceTask = nil
@@ -64,7 +67,7 @@ final class SpeechInput: ObservableObject {
         stop()
     }
 
-    private func requestPermissionsAndStart() {
+    private func requestPermissionsAndStart(generation: Int) {
         isStarting = true
         guard Bundle.main.bundleURL.pathExtension == "app" else {
             isStarting = false
@@ -81,18 +84,21 @@ final class SpeechInput: ObservableObject {
         }
         Task { [weak self] in
             guard await Self.requestSpeechAuthorization() == .authorized else {
-                self?.isStarting = false
-                self?.isUnavailable = true
-                self?.errorMessage = "Speech recognition permission is required."
+                guard let self, self.startGeneration == generation, !self.isStopping else { return }
+                self.isStarting = false
+                self.isUnavailable = true
+                self.errorMessage = "Speech recognition permission is required."
                 return
             }
             guard await Self.requestMicrophoneAuthorization() else {
-                self?.isStarting = false
-                self?.isUnavailable = true
-                self?.errorMessage = "Microphone permission is required."
+                guard let self, self.startGeneration == generation, !self.isStopping else { return }
+                self.isStarting = false
+                self.isUnavailable = true
+                self.errorMessage = "Microphone permission is required."
                 return
             }
-            self?.start()
+            guard let self, self.startGeneration == generation, !self.isStopping else { return }
+            self.start(generation: generation)
         }
     }
 
@@ -140,7 +146,8 @@ final class SpeechInput: ObservableObject {
         return CGFloat(min(1, max(0, (decibels + 55) / 45)))
     }
 
-    private func start() {
+    private func start(generation: Int) {
+        guard startGeneration == generation, !isStopping else { return }
         guard let recognizer, recognizer.isAvailable else {
             isStarting = false
             isUnavailable = true

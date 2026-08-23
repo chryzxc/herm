@@ -8,7 +8,8 @@ struct ControlTabBadgeStateTests {
         #expect(ControlTab.sessionNavigation == [.session, .activity, .changes, .verification])
         #expect(ControlTab.workspaceNavigation == [.projects])
         #expect(ControlTab.toolsNavigation == [.automations, .search, .core])
-        #expect(Set(ControlTab.primaryNavigation + ControlTab.workspaceNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
+        #expect(ControlTab.globalNavigation == [.today, .inbox, .kanban, .projects, .quota])
+        #expect(Set(ControlTab.globalNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
     }
 
     @Test func surfacesUrgentAttentionSeparatelyFromTheFullInbox() {

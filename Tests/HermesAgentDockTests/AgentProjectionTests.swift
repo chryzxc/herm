@@ -74,6 +74,75 @@ struct AgentProjectionTests {
         #expect(layout.rootPosition.x == AgentMapTreeLayout.horizontalInset + AgentMapTreeLayout.nodeWidth / 2)
     }
 
+    @Test func eventsMustProveCurrentSessionOwnershipBeforeProjection() {
+        let currentAgent = HermesSubagent(
+            id: "agent-current",
+            childSessionID: "child-current",
+            goal: "Current work",
+            status: "running"
+        )
+
+        #expect(DockModel.eventBelongsToSession(
+            type: "tool.result",
+            envelopeSessionID: "other-session",
+            eventSessionID: "other-session",
+            payload: ["subagent_id": currentAgent.id],
+            currentSessionID: "current-session",
+            agents: [currentAgent]
+        ) == false)
+        #expect(DockModel.eventBelongsToSession(
+            type: "message.delta",
+            envelopeSessionID: nil,
+            eventSessionID: nil,
+            payload: ["delta": "unattributed"],
+            currentSessionID: "current-session",
+            agents: [currentAgent]
+        ) == false)
+        #expect(DockModel.eventBelongsToSession(
+            type: "subagent.tool",
+            envelopeSessionID: "other-child",
+            eventSessionID: "other-child",
+            payload: [
+                "child_session_id": "child-current",
+                "parent_session_id": "current-session"
+            ],
+            currentSessionID: "current-session",
+            agents: [currentAgent]
+        ) == false)
+        #expect(DockModel.eventBelongsToSession(
+            type: "subagent.tool",
+            envelopeSessionID: "child-current",
+            eventSessionID: "child-current",
+            payload: ["child_session_id": "child-current"],
+            currentSessionID: "current-session",
+            agents: [currentAgent]
+        ))
+        #expect(DockModel.eventBelongsToSession(
+            type: "message.complete",
+            envelopeSessionID: "current-session",
+            eventSessionID: "current-session",
+            payload: [:],
+            currentSessionID: "current-session",
+            agents: [currentAgent]
+        ))
+        #expect(DockModel.eventBelongsToSession(
+            type: "message.complete",
+            envelopeSessionID: "current-session",
+            eventSessionID: "current-session",
+            payload: ["session_id": "other-session"],
+            currentSessionID: "current-session",
+            agents: [currentAgent]
+        ) == false)
+        #expect(DockModel.eventBelongsToSession(
+            type: "subagent.tool",
+            envelopeSessionID: "child-current",
+            eventSessionID: "child-current",
+            payload: ["child_session_id": "other-child"],
+            currentSessionID: "current-session",
+            agents: [currentAgent]
+        ) == false)
+    }
+
     @Test func switchingSessionsRestoresEachSessionsAgentStateWithoutLeakage() {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("session-agent-state-\(UUID().uuidString).json")
@@ -275,6 +344,8 @@ struct AgentProjectionTests {
             "session_id": "live-5678",
             "session_key": "stored-resumed"
         ]) == "stored-resumed")
+        #expect(DockModel.sessionAttributionID(runtimeID: "live-5678", storageID: "stored-resumed") == "stored-resumed")
+        #expect(DockModel.sessionAttributionID(runtimeID: "live-5678", storageID: nil) == "live-5678")
     }
 
     @Test func realHermesSubagentEnvelopeSequenceProjectsEveryTaskToOneAgent() {

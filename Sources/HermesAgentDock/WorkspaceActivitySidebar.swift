@@ -1,5 +1,4 @@
 import AppKit
-import KeyboardShortcuts
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
@@ -9,6 +8,7 @@ struct WorkspaceActivitySidebar: View {
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
     var onClose: () -> Void = {}
+    var onOpenArtifacts: () -> Void = {}
     var showsHeader = true
     @State private var selectedMode: ControlTab = .today
     @State private var selectedAttentionID: String?
@@ -131,6 +131,7 @@ struct WorkspaceActivitySidebar: View {
                      case .search: searchContent
                      case .kanban: kanbanContent
                      case .core: coreContent
+                     case .quota: quotaContent
                      }
                 }
                 .padding(16)
@@ -194,6 +195,9 @@ struct WorkspaceActivitySidebar: View {
         .onChange(of: model.sessionID) { _, sessionID in
             sessionSteerFeedback = nil
             control.focus(sessionID: sessionID)
+            if sessionID != nil {
+                control.refresh()
+            }
         }
         .onChange(of: control.projectSessions) { _, sessions in
             guard let path = selectedProjectFolderPath, !sessions.isEmpty else { return }
@@ -202,6 +206,22 @@ struct WorkspaceActivitySidebar: View {
         .onChange(of: control.capabilities) { _, _ in
             guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
             control.refreshKanban()
+        }
+        .onChange(of: selectedMode) { _, mode in
+            guard mode == .quota else { return }
+            control.refreshProviderQuota()
+        }
+        .onChange(of: model.runtimeConfiguration) { _, _ in
+            guard selectedMode == .quota else { return }
+            control.refreshProviderQuota()
+        }
+        .task(id: selectedMode == .quota) {
+            guard selectedMode == .quota else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled, selectedMode == .quota else { return }
+                control.refreshProviderQuota()
+            }
         }
         .onChange(of: model.controlInboxRequest) { _, _ in
             selectedMode = .inbox
@@ -439,23 +459,9 @@ struct WorkspaceActivitySidebar: View {
 
     private var modePicker: some View {
         HStack(spacing: 0) {
-            ForEach(ControlTab.primaryNavigation) { mode in
+            ForEach(ControlTab.globalNavigation) { mode in
                 modeButton(mode)
             }
-            Button { select(.projects) } label: {
-                Text("Projects")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(selectedMode == .projects ? Color.scifiFg : Color.scifiMuted)
-                    .frame(maxWidth: .infinity, minHeight: 34)
-                    .overlay(alignment: .bottom) {
-                        if selectedMode == .projects {
-                            Color.scifiAccent.frame(height: 2)
-                        }
-                    }
-            }
-            .buttonStyle(.scifiPress)
-            .frame(maxWidth: .infinity)
-            .help("Projects")
 
             Menu {
                 Section("Tools") {
@@ -594,6 +600,7 @@ struct WorkspaceActivitySidebar: View {
         case .refresh:
             control.refresh(forceCapabilities: true)
             Task { await refreshRepository() }
+        case .artifacts: onOpenArtifacts()
         case .workflow(let recipe):
             guard !recipe.requiresRepository || activeRepositoryPath != nil else { return }
             let repositoryContext = activeRepositoryPath.map { " Repository: \($0)." } ?? ""
@@ -620,7 +627,7 @@ struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.scifiAccent)
                     .disabled(isStartingBackgroundTask || backgroundTaskPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                ForEach(model.backgroundTasks.reversed()) { task in
+                ForEach(model.currentSessionBackgroundTasks.reversed()) { task in
                     DisclosureGroup {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("PROMPT").foregroundStyle(Color.scifiTertiary)
@@ -655,12 +662,41 @@ struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.scifiAccent)
                 }
             }
+            SessionKanbanActivityView(
+                control: control,
+                sessionID: model.kanbanSessionID,
+                onOpenBoard: openSessionKanban,
+                onOpenTask: openSessionKanbanTask
+            )
             AgentBoardView(model: model, embedded: true)
         }
     }
 
+    private func openSessionKanban() {
+        kanbanCurrentSessionOnly = true
+        withAnimation(.scifiEase(duration: 0.2)) { selectedMode = .kanban }
+        control.refreshKanban(filter: KanbanListFilter(
+            status: nil,
+            assignee: nil,
+            mine: false,
+            sessionID: model.kanbanSessionID,
+            includeArchived: false,
+            sort: kanbanSort
+        ))
+    }
+
+    private func openSessionKanbanTask(_ taskID: String) {
+        guard let task = control.sessionKanbanTasks.first(where: { $0.id == taskID }) else {
+            openSessionKanban()
+            return
+        }
+        openSessionKanban()
+        selectedKanbanTask = task
+        control.loadKanbanTask(task)
+    }
+
     private var changesContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             sectionLabel("CHANGE REVIEW")
             if let codeWorkspaceError {
                 Text(codeWorkspaceError)
@@ -708,7 +744,12 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiAccent)
             }
-            if workflow.repository.path == workflow.repository.path {
+            // The repository browser owns the unloaded/loading state. Once
+            // the workflow snapshot matches the session's resolved project,
+            // render the browser; otherwise let the branches below explain
+            // the repository or loading state instead of treating every
+            // snapshot as a match.
+            if workflow.repository.path == activeRepositoryPath {
                 RepositoryChangesBrowser(
                     model: model,
                     workflow: workflow,
@@ -924,6 +965,12 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if let verification = control.verification {
+                let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
+                diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .scifiSuccess : .scifiWarning)
+                Text(deliveryEvidence.nextAction)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
                 let color: Color = verification.state == .passed ? .scifiSuccess : verification.state == .failed ? .scifiDestructive : .scifiWarning
                 diagnosticRow(label: "STATUS", value: verification.state.rawValue.uppercased(), color: color)
                 if let evidence = verification.evidence {
@@ -1080,6 +1127,10 @@ struct WorkspaceActivitySidebar: View {
                             Text(job.enabled ? "ENABLED" : "PAUSED")
                                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
+                            let health = AutomationHealthPresentation.make(job: job, runs: control.cronRuns, capabilityAvailable: control.capabilityAvailable("rpc-scheduling"), mcpErrorObserved: false)
+                            Text(health.state.rawValue.uppercased())
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(health.state == .healthy ? Color.scifiSuccess : health.state == .degraded ? Color.scifiWarning : Color.scifiMuted)
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(CronScheduleFormatting.humanReadable(job.schedule))
@@ -1420,6 +1471,18 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.scifiAccent)
                     Spacer()
+                    if let path = selectedProjectFolderPath {
+                        Button {
+                            startNewChat(in: path)
+                        } label: {
+                            Label("NEW CHAT", systemImage: "plus.bubble")
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        }
+                        .buttonStyle(.scifiPress)
+                        .foregroundStyle(Color.scifiAccent)
+                        .disabled(model.isRestoringSession || model.isCreatingSession)
+                        .help("Start a new chat in this project")
+                    }
                 }
                 selectedProjectSummary(project)
                 if control.projectSessions.isEmpty {
@@ -1470,10 +1533,18 @@ struct WorkspaceActivitySidebar: View {
                     projectChangesContent
                 }
             } else if control.projects.isEmpty {
-                sectionLabel("PROJECTS  ·  0")
+                HStack {
+                    sectionLabel("PROJECTS  ·  0")
+                    Spacer()
+                    addProjectDirectoryButton
+                }
                 emptyState(icon: "folder", title: "No projects", detail: "Projects will appear here when project contexts are available.")
             } else {
-                sectionLabel("PROJECTS  ·  \(control.projects.count)")
+                HStack {
+                    sectionLabel("PROJECTS  ·  \(control.projects.count)")
+                    Spacer()
+                    addProjectDirectoryButton
+                }
                 ForEach(control.projects) { project in
                     Button {
                         openProject(project)
@@ -1513,6 +1584,49 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
         }
+    }
+
+    private var addProjectDirectoryButton: some View {
+        Button {
+            chooseProjectDirectory()
+        } label: {
+            Label("ADD DIRECTORY", systemImage: "folder.badge.plus")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .tracking(0.4)
+        }
+        .buttonStyle(.scifiPress)
+        .foregroundStyle(Color.scifiAccent)
+        .help("Start a new chat in a directory")
+    }
+
+    private func startNewChat(in path: String) {
+        store.attachProject(at: path)
+        control.closeProject()
+        selectedMode = .today
+        Task { @MainActor in
+            await model.startNewChat(in: path)
+            model.requestComposerFocus()
+        }
+    }
+
+    private func chooseProjectDirectory() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a project directory"
+        panel.message = "Select the folder to use as the working directory for a new Hermes chat."
+        panel.prompt = "Use Directory"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        // Hermes itself is a status-bar-level panel. Match that level and
+        // explicitly order the picker above it without collapsing Hermes.
+        panel.level = .statusBar
+        panel.hidesOnDeactivate = false
+        NSApp.activate(ignoringOtherApps: true)
+        panel.orderFrontRegardless()
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        startNewChat(in: url.standardizedFileURL.path)
     }
 
     private func selectedProjectSummary(_ project: ProjectSummary) -> some View {
@@ -1659,8 +1773,13 @@ struct WorkspaceActivitySidebar: View {
                 .foregroundStyle(Color.scifiAccent)
                 .disabled(control.isActionPending(control.refreshKanbanActionID))
             }
-            if control.capabilityAvailable("kanban.create") {
+            if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly {
                 createKanbanTaskForm
+            } else if kanbanCurrentSessionOnly {
+                Label("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", systemImage: "link.badge.plus")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if control.capabilityAvailable("kanban.filters") {
@@ -1725,8 +1844,20 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
-            if control.kanbanTasks.isEmpty {
-                emptyState(icon: "rectangle.3.group", title: "No Kanban tasks", detail: "Create the first task above, or refresh if you expected an existing Hermes board.")
+            if let state = control.refreshState(for: "kanban.board"), state.error != nil, !state.isRefreshing, control.kanbanTasks.isEmpty {
+                emptyState(
+                    icon: "exclamationmark.triangle",
+                    title: kanbanCurrentSessionOnly ? "Session Kanban unavailable" : "Kanban unavailable",
+                    detail: "The current board query failed. Retry before treating this board as empty."
+                )
+            } else if control.kanbanTasks.isEmpty {
+                emptyState(
+                    icon: "rectangle.3.group",
+                    title: kanbanCurrentSessionOnly ? "No session Kanban tasks" : "No Kanban tasks",
+                    detail: kanbanCurrentSessionOnly
+                        ? "No cards are attributed to this session. Global cards remain available when SESSION is disabled."
+                        : "Create the first task above, or refresh if you expected an existing Hermes board."
+                )
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 10) {
@@ -1776,7 +1907,7 @@ struct WorkspaceActivitySidebar: View {
             Toggle("MINE", isOn: $kanbanMineOnly)
                 .toggleStyle(.button)
                 .onChange(of: kanbanMineOnly) { _, _ in applyKanbanFilters() }
-            if model.sessionID != nil {
+            if model.kanbanSessionID != nil {
                 Toggle("SESSION", isOn: $kanbanCurrentSessionOnly)
                     .toggleStyle(.button)
                     .onChange(of: kanbanCurrentSessionOnly) { _, _ in applyKanbanFilters() }
@@ -1798,7 +1929,7 @@ struct WorkspaceActivitySidebar: View {
             status: kanbanStatusFilter == "All" ? nil : kanbanStatusFilter.lowercased(),
             assignee: kanbanAssigneeFilter == "All" ? nil : kanbanAssigneeFilter,
             mine: kanbanMineOnly,
-            sessionID: kanbanCurrentSessionOnly ? model.sessionID : nil,
+            sessionID: kanbanCurrentSessionOnly ? model.kanbanSessionID : nil,
             sort: kanbanSort
         ))
     }
@@ -2295,10 +2426,12 @@ struct WorkspaceActivitySidebar: View {
         // Collect cross-session metrics and states
         let openAttention = control.attention.filter { $0.state == .open }
         let activeSessions = control.activeSessions
-        let runningAgentsCount = control.activeAgents.count
-        let runningProcessesCount = control.processes.count
-        let runningBgTasksCount = model.backgroundTasks.filter { $0.status == .running }.count
-        let totalRunningCount = runningAgentsCount + runningProcessesCount + runningBgTasksCount
+        let totalRunningCount = WorkspaceOverviewMetrics.runningCount(
+            activeSessions: activeSessions,
+            agents: control.activeAgents,
+            processes: control.processes,
+            backgroundTasks: model.backgroundTasks
+        )
         let setupCapabilities = unavailableSetupCapabilities
 
         return VStack(alignment: .leading, spacing: 14) {
@@ -2356,6 +2489,58 @@ struct WorkspaceActivitySidebar: View {
                 }
             } else {
                 attentionRow(icon: "checkmark.circle", title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .scifiSuccess)
+            }
+
+            // The session projection is already ordered by Hermes from newest
+            // activity to oldest. Keep this deliberately bounded for the
+            // Global overview and open the authoritative session on selection.
+            let latestActivitySessions = SessionActivityPresentation.latestActivity(activeSessions)
+            if !latestActivitySessions.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "waveform.path.ecg")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.scifiAccent)
+                        Text("LATEST ACTIVITY  ·  \(latestActivitySessions.count)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.scifiAccent)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
+                    ForEach(latestActivitySessions) { session in
+                        Button {
+                            control.openLatestActivitySession(session)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(session.id == model.sessionID ? Color.scifiAccent : sessionStateColor(session.state))
+                                    .frame(width: 5, height: 5)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(session.title)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(Color.scifiFg)
+                                        .lineLimit(1)
+                                    Text(session.displayPreview ?? session.state.uppercased())
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundStyle(Color.scifiTertiary)
+                                        .lineLimit(1)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Color.scifiAccent)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .scifiListRow()
+                        }
+                        .buttonStyle(.scifiPress)
+                    }
+                }
+                .scifiGlassPane()
             }
 
             // Cross-session active agents, processes, and running background tasks
@@ -2600,43 +2785,6 @@ struct WorkspaceActivitySidebar: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.scifiPress)
-                        }
-                    }
-                }
-                .scifiGlassPane()
-            }
-
-            // Recent workspace tasks
-            if !store.tasks.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "list.bullet.rectangle")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
-                        Text("RECENT TASKS  ·  \(store.tasks.count)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(store.tasks.prefix(4)) { task in
-                            HStack(spacing: 8) {
-                                Circle().fill(taskColor(task.status)).frame(width: 5, height: 5)
-                                Text(task.title)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiFg)
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text(task.status.rawValue.uppercased())
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(taskColor(task.status))
-                            }
-                            .scifiListRow()
                         }
                     }
                 }
@@ -2980,42 +3128,6 @@ struct WorkspaceActivitySidebar: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.scifiPress)
-            }
-
-            if !store.tasks.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "list.bullet.rectangle")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
-                        Text("RECENT TASKS  ·  \(store.tasks.count)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(store.tasks.prefix(4)) { task in
-                            HStack(spacing: 8) {
-                                Circle().fill(taskColor(task.status)).frame(width: 5, height: 5)
-                                Text(task.title)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiFg)
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text(task.status.rawValue.uppercased())
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(taskColor(task.status))
-                            }
-                            .scifiListRow()
-                        }
-                    }
-                }
-                .scifiGlassPane()
             }
 
             if activeRepositoryPath != nil {
@@ -3412,6 +3524,7 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+
     private var agentRoster: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -3793,13 +3906,14 @@ struct WorkspaceActivitySidebar: View {
                     Text("Open Hermes Control")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.scifiFg)
-                    Text("Global shortcut focuses Ask from any app.")
+                    Text("Double-press Command to focus Ask from any app.")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.scifiTertiary)
                 }
                 Spacer()
-                KeyboardShortcuts.Recorder("", name: .toggleHermesControl)
-                    .frame(width: 120)
+                Text("⌘  ⌘")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.scifiAccent)
             }
             Divider().overlay(Color.scifiBorderLight)
             HStack {
@@ -3997,6 +4111,182 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private var quotaContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                sectionLabel("PROVIDER QUOTA")
+                Spacer()
+                if let lastSuccess = control.refreshState(for: "provider.quota")?.lastSuccess {
+                    Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Color.scifiMuted)
+                }
+                Button { control.refreshProviderQuota() } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.scifiPress)
+                .foregroundStyle(Color.scifiAccent)
+                .help("Refresh Codex quota")
+                .accessibilityLabel("Refresh Codex quota")
+            }
+
+            if let state = control.refreshState(for: "provider.quota"), state.isRefreshing {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text("REFRESHING PROVIDER QUOTA…")
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color.scifiFg)
+            }
+
+            if !control.providerQuotas.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(control.providerQuotas, id: \.provider) { snapshot in
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Circle()
+                                    .fill(Color.scifiAccent)
+                                    .frame(width: 6, height: 6)
+                                Text(snapshot.displayName)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(Color.scifiFg)
+                                if let modelName = snapshot.model {
+                                    Text(modelName)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(Color.scifiMuted)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                if let detail = snapshot.safeDetail {
+                                    Text(detail.uppercased())
+                                        .font(.caption.monospaced().weight(.semibold))
+                                        .foregroundStyle(Color.scifiMuted)
+                                }
+                            }
+                            if snapshot.windows.isEmpty {
+                                Text("No quota windows were reported.")
+                                    .font(.body)
+                                    .foregroundStyle(Color.scifiFg)
+                            } else {
+                                ForEach(snapshot.windows) { window in quotaWindow(window) }
+                            }
+                        }
+                        .padding(10)
+                        .scifiGlassPane()
+                        .textSelection(.enabled)
+                    }
+                }
+            } else {
+                quotaUnavailable(message: "Provider quota is unavailable. Confirm the provider is installed and logged in, then refresh.")
+            }
+
+            if let state = control.refreshState(for: "provider.quota"), let error = state.error {
+                Text(state.isStale ? "Showing last successful data. (error)" : error)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.scifiWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func quotaUnavailable(message: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("QUOTA UNAVAILABLE", systemImage: "gauge.with.dots.needle.50percent")
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.scifiWarning)
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.scifiMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func quotaWindow(_ window: ProviderQuotaWindow) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(window.label)
+                                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.scifiFg)
+                Spacer()
+                Text(window.remainingDisplay ?? (window.remainingPercent.map { String(format: "%.0f%% left", $0) } ?? "Availability reported without a percentage"))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(quotaColor(window.threshold))
+                    .multilineTextAlignment(.trailing)
+            }
+            if let percent = window.remainingPercent {
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Color.scifiSurface4)
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(quotaColor(window.threshold))
+                            .frame(width: max(3, geometry.size.width * percent / 100))
+                    }
+                }
+                .frame(height: 4)
+                .overlay(alignment: .leading) {
+                    if let daily = QuotaForecasting.dailyAllowance(for: window) {
+                        GeometryReader { geometry in
+                            let marker = QuotaForecasting.expectedRemainingMarker(for: window) ?? Double(daily)
+                            Rectangle()
+                                .fill(Color.scifiWarning)
+                                .frame(width: 2, height: 12)
+                                .offset(
+                                    // The marker shows the expected remaining
+                                    // balance at this point in the quota cycle.
+                                    x: min(max(0, geometry.size.width * CGFloat(marker) / 100), geometry.size.width - 2),
+                                    y: -4
+                                )
+                                .accessibilityLabel("Expected remaining balance: \(Int(marker)) percent")
+                        }
+                    }
+                }
+                .accessibilityLabel("\(window.label), \(Int(percent)) percent remaining")
+            }
+            if let forecast = QuotaForecasting.limitForecast(for: window) {
+                HStack(spacing: 4) {
+                    Spacer()
+                    Image(systemName: "flame.fill")
+                    Text("Limit forecast: \(RelativeDateTimeFormatter().localizedString(for: forecast, relativeTo: Date()))")
+                }
+                .font(.caption.monospaced().weight(.semibold))
+                .foregroundStyle(Color.scifiWarning.opacity(0.82))
+                .help("Estimated from the current average consumption rate; the provider does not report a depletion date.")
+            }
+            HStack {
+                if let limit = window.limitDisplay {
+                    Text(limit).foregroundStyle(Color.scifiMuted)
+                } else if let daily = QuotaForecasting.dailyAllowance(for: window) {
+                    Text("Suggested daily limit: \(daily)%")
+                        .foregroundStyle(Color.scifiMuted)
+                        .help("Suggested maximum to stay within this quota until it resets.")
+                }
+                Spacer()
+                if let reset = window.resetsAt {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(RelativeDateTimeFormatter().localizedString(for: reset, relativeTo: Date()) + " · " + reset.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
+                            .foregroundStyle(Color.scifiMuted)
+                    }
+                    .multilineTextAlignment(.trailing)
+                } else if let reset = window.resetsDisplay {
+                    Text(reset).foregroundStyle(Color.scifiFg)
+                }
+            }
+            .font(.caption.monospaced())
+        }
+        .accessibilityElement(children: .combine)
+        .padding(.vertical, 2)
+    }
+
+    private func quotaColor(_ threshold: ProviderQuotaThreshold) -> Color {
+        switch threshold {
+        case .healthy: .scifiAccent
+        case .warning: .scifiWarning.opacity(0.78)
+        case .critical: .scifiDestructive
+        case .unknown: .scifiFg
+        }
+    }
+
     private func sectionLabel(_ title: String) -> some View {
         Text(title).font(.system(.body, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(Color.scifiMuted)
     }
@@ -4007,7 +4297,7 @@ struct WorkspaceActivitySidebar: View {
             if state.isRefreshing {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text(state.isStale ? "Refreshing — showing last successful data" : "Refreshing Hermes data…")
+                    Text(state.isStale ? "Refreshing — showing last successful data" : "Refreshing…")
                 }
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(Color.scifiTertiary)
@@ -4016,10 +4306,6 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.scifiWarning)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if let lastSuccess = state.lastSuccess {
-                Text("Updated \(HumanDateFormatting.timeOnly(lastSuccess))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
             }
         }
     }
@@ -4165,6 +4451,7 @@ struct WorkspaceActivitySidebar: View {
         case .idle: .scifiSuccess
         case .working: .scifiAccent
         case .needsApproval: .scifiWarning
+        case .needsClarification: .scifiWarning
         case .offline: .scifiDestructive
         }
     }

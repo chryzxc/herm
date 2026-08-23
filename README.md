@@ -19,6 +19,19 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   publication to keep long responses responsive, and session restoration shows
   an explicit loading state that prevents prompts from being sent while a
   conversation is being rehydrated.
+- **Explicit session lifecycle.** Restoring or selecting an existing session
+  never creates a replacement session implicitly. A backend session is created
+  only after the user chooses New Chat, and the new-chat transition is guarded
+  while creation is in progress so prompts, voice, and control actions cannot
+  race session setup.
+- **Interactive clarification requests.** When Hermes pauses for clarification,
+  the conversation shows the question as an action-needed state, presents any
+  suggested choices, and lets the user edit and submit a response through
+  `clarify.respond`. The Dock preserves the clarification state until Hermes
+  accepts the response and resumes the turn.
+- **Native Markdown links.** Links in assistant Markdown retain native
+  SwiftUI/AppKit interaction, including link tinting, hover behavior, and text
+  selection without breaking paragraph wrapping.
 - **General control center.** Today summarizes current focus, approvals,
   failures, due Apple Reminders, active Hermes work, and scheduled jobs. Inbox
   groups actionable approvals, clarifications, failures, and completed work.
@@ -160,6 +173,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   Selecting a node discloses that agent's canonical in-memory
   activity beneath the map. Parent-session tool calls are labelled Orchestrator
   so they remain distinct from explicitly attributed delegated-agent activity.
+- **Session inspector activity summary.** The session inspector surfaces the
+  latest bounded pipeline activity first, with task-oriented labels and details;
+  when no pipeline activity is available, it falls back to the newest session
+  events rather than relying on insertion order.
 - **Session Cockpit.** Core shows the active session's Hermes-reported token
   usage and context breakdown when available. It also shows Hermes prompt
   budget, verification evidence, and a compact steering control while a turn is

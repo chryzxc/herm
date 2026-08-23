@@ -59,6 +59,23 @@ struct MissionControlSnapshot: Equatable {
     let readiness: ReadinessSummary
 }
 
+enum WorkspaceOverviewMetrics {
+    /// Counts all currently active work represented by the global overview.
+    /// `activeSessions` comes from Hermes' active-session projection; agents,
+    /// processes, and background tasks are additional running work items.
+    static func runningCount(
+        activeSessions: [SessionSummary],
+        agents: [AgentSummary],
+        processes: [ProcessSummary],
+        backgroundTasks: [HermesBackgroundTask]
+    ) -> Int {
+        activeSessions.count
+            + agents.count
+            + processes.count
+            + backgroundTasks.filter { $0.status == .running }.count
+    }
+}
+
 enum MissionControlSnapshotBuilder {
     static func make(
         sessionTitle: String?,
@@ -167,7 +184,7 @@ enum WorkflowRecipe: String, CaseIterable, Identifiable {
 
 enum DockAction: Hashable, Identifiable {
     case tab(ControlTab)
-    case newChat, focusComposer, stop, voice, refresh
+    case newChat, focusComposer, stop, voice, refresh, artifacts
     case workflow(WorkflowRecipe)
 
     var id: String {
@@ -178,6 +195,7 @@ enum DockAction: Hashable, Identifiable {
         case .stop: "stop"
         case .voice: "voice"
         case .refresh: "refresh"
+        case .artifacts: "artifacts"
         case .workflow(let recipe): "workflow.\(recipe.rawValue)"
         }
     }
@@ -206,7 +224,8 @@ enum DockActionRegistry {
             DockActionDescriptor(action: .focusComposer, title: "Focus composer", subtitle: "Return to Ask", icon: "text.cursor", category: "Session", keywords: ["ask", "prompt"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .stop, title: "Stop active request", subtitle: "Interrupt the active Hermes turn", icon: "stop.circle", category: "Session", keywords: ["interrupt", "cancel"], isAvailable: isWorking, unavailableReason: isWorking ? nil : "No active request", requiresConfirmation: false),
             DockActionDescriptor(action: .voice, title: "Start voice", subtitle: "Start a voice conversation", icon: "mic", category: "Session", keywords: ["talk", "microphone"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
-            DockActionDescriptor(action: .refresh, title: "Refresh command center", subtitle: "Refresh live Hermes projections", icon: "arrow.clockwise", category: "Control", keywords: ["reload", "update"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
+            DockActionDescriptor(action: .refresh, title: "Refresh command center", subtitle: "Refresh live Hermes projections", icon: "arrow.clockwise", category: "Control", keywords: ["reload", "update"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
+            DockActionDescriptor(action: .artifacts, title: "Open plan artifacts", subtitle: "Browse .hermes/plans in the inspector", icon: "doc.text.magnifyingglass", category: "Navigation", keywords: ["plans", "markdown", "comments", "revisions"], isAvailable: repositoryAvailable, unavailableReason: repositoryAvailable ? nil : "Select a local repository first", requiresConfirmation: false)
         ]
         let workflows = WorkflowRecipe.allCases.map { recipe in
             DockActionDescriptor(action: .workflow(recipe), title: recipe.title, subtitle: recipe.explanation, icon: "wand.and.stars", category: "Workflow", keywords: ["recipe", "review", "verification"], isAvailable: !recipe.requiresRepository || repositoryAvailable, unavailableReason: recipe.requiresRepository && !repositoryAvailable ? "Select a local folder for the active project session first" : nil, requiresConfirmation: false)
