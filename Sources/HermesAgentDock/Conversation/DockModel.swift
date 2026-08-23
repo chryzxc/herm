@@ -8,18 +8,19 @@ final class DockModel: ObservableObject {
     @Published var status: HermesStatus = .idle
     @Published private(set) var isHermesConnected = false
     @Published var messages: [ChatMessage] = []
-    @Published var draft = "" {
-        didSet {
-            guard !isUpdatingComposerHistory else { return }
-            composerHistoryIndex = nil
-            composerHistoryDraft = ""
-        }
+    let composer = ComposerText()
+
+    /// Compatibility accessor over the composer's draft so send, steering,
+    /// clarification, and external writers (voice transcripts, quick prompts)
+    /// read and clear the same text the composer edits.
+    var draft: String {
+        get { composer.text }
+        set { composer.text = newValue }
     }
     @Published var pendingImages: [ImageAttachment] = []
     @Published var isSending = false
     @Published private(set) var isSteering = false
     @Published private(set) var steeringError: String?
-    @Published private(set) var steeringNotice: String?
     @Published var approvalTitle: String?
     @Published var approvalText: String?
     @Published private(set) var clarificationQuestion: String?
@@ -81,10 +82,6 @@ final class DockModel: ObservableObject {
     private var streamingMessageFlushTask: Task<Void, Never>?
     private var streamingMessageGeneration = 0
     private var streamingMessageIsVisionNotice = false
-    private var steeringNoticeTask: Task<Void, Never>?
-    private var composerHistoryIndex: Int?
-    private var composerHistoryDraft = ""
-    private var isUpdatingComposerHistory = false
     private var didRestoreLatestSession = false
     /// A backend session may only be created after the user explicitly starts
     /// a new chat. Resuming an existing session never grants this permission.
@@ -209,7 +206,6 @@ final class DockModel: ObservableObject {
         guard !hasShutDown else { return }
         hasShutDown = true
         streamingMessageFlushTask?.cancel()
-        steeringNoticeTask?.cancel()
         delegationRefreshTask?.cancel()
         nativeVoiceCapture.reset()
         gateway.close()
@@ -307,38 +303,41 @@ final class DockModel: ObservableObject {
             return
         }
 
+        let steeringSessionID = sessionID
+        let steeringGeneration = sessionResumeGeneration
         isSteering = true
         steeringError = nil
-        steeringNotice = nil
         Task {
-            defer { isSteering = false }
+            defer {
+                if self.sessionResumeGeneration == steeringGeneration,
+                   self.sessionID == steeringSessionID {
+                    self.isSteering = false
+                }
+            }
             do {
                 let result = try await gateway.request(
                     "session.steer",
-                    params: ["session_id": sessionID, "text": text]
+                    params: ["session_id": steeringSessionID, "text": text]
                 )
+                guard self.sessionResumeGeneration == steeringGeneration,
+                      self.sessionID == steeringSessionID else { return }
                 guard (result["status"] as? String)?.lowercased() == "queued" else {
                     steeringError = "Hermes rejected the steering guidance."
                     return
                 }
                 draft = ""
-                showSteeringNotice("Steering queued")
+                // A queued steer is user-sent text: show it in the transcript, not a transient toast.
+                messages.append(ChatMessage(
+                    role: .user,
+                    text: text,
+                    isSteering: true,
+                    steeringStatus: "QUEUED"
+                ))
                 DebugLog.write("model: steering guidance queued")
             } catch {
                 steeringError = error.localizedDescription
                 DebugLog.write("model: steering failed: \(error.localizedDescription)")
             }
-        }
-    }
-
-    private func showSteeringNotice(_ notice: String) {
-        steeringNoticeTask?.cancel()
-        steeringNotice = notice
-        steeringNoticeTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled else { return }
-            self?.steeringNotice = nil
-            self?.steeringNoticeTask = nil
         }
     }
 
@@ -356,40 +355,14 @@ final class DockModel: ObservableObject {
     /// Down past the newest prompt restores the draft that was present before
     /// history navigation began.
     func navigateComposerHistory(direction: Int) -> Bool {
-        let history = messages
+        composer.navigate(direction: direction, history: userPromptHistory)
+    }
+
+    private var userPromptHistory: [String] {
+        messages
             .filter { $0.role == .user }
             .map(\.text)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        guard !history.isEmpty, direction != 0 else { return false }
-
-        let nextIndex: Int?
-        if direction < 0 {
-            if let composerHistoryIndex {
-                nextIndex = max(0, composerHistoryIndex - 1)
-            } else {
-                composerHistoryDraft = draft
-                nextIndex = history.count - 1
-            }
-        } else {
-            guard let composerHistoryIndex else { return false }
-            if composerHistoryIndex + 1 < history.count {
-                nextIndex = composerHistoryIndex + 1
-            } else {
-                isUpdatingComposerHistory = true
-                draft = composerHistoryDraft
-                isUpdatingComposerHistory = false
-                self.composerHistoryIndex = nil
-                composerHistoryDraft = ""
-                return true
-            }
-        }
-
-        guard let nextIndex else { return false }
-        composerHistoryIndex = nextIndex
-        isUpdatingComposerHistory = true
-        draft = history[nextIndex]
-        isUpdatingComposerHistory = false
-        return true
     }
 
     @discardableResult
@@ -768,9 +741,30 @@ final class DockModel: ObservableObject {
         isSending = false
         isSteering = false
         steeringError = nil
-        steeringNoticeTask?.cancel()
-        steeringNoticeTask = nil
-        steeringNotice = nil
+        // Interrupting also releases a pending clarification so the composer
+        // returns to normal prompting instead of staying stuck on the question.
+        clarificationQuestion = nil
+        clarificationChoices = []
+        conversationActivityPhase = .idle
+    }
+
+    /// The turn ended after Hermes accepted the guidance, so the queued steer
+    /// was consumed at a tool-result boundary.
+    private func markQueuedSteeringMessagesApplied() {
+        for index in messages.indices
+        where messages[index].isSteering && messages[index].steeringStatus == "QUEUED" {
+            let queued = messages[index]
+            messages[index] = ChatMessage(
+                id: queued.id,
+                role: queued.role,
+                text: queued.text,
+                images: queued.images,
+                timestamp: queued.timestamp,
+                modelName: queued.modelName,
+                isSteering: true,
+                steeringStatus: "APPLIED"
+            )
+        }
     }
 
     /// Control-center actions share the user-facing Hermes gateway so they do
@@ -1146,6 +1140,7 @@ final class DockModel: ObservableObject {
                 activeToolCalls[index].isComplete = true
                 activeToolCalls[index].completedAt = Date()
             }
+            markQueuedSteeringMessagesApplied()
             status = .idle
             conversationActivityPhase = .idle
             isSending = false

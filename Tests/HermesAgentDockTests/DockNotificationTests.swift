@@ -24,6 +24,44 @@ struct DockNotificationTests {
         #expect(model.messages.last?.text.contains("- Work") == true)
     }
 
+    @Test func interruptReleasesPendingClarificationForNormalPrompting() {
+        let model = DockModel(initialSessionID: "session-clarify")
+        model.receiveGatewayEvent("clarify.request", params: [
+            "session_id": "session-clarify",
+            "payload": ["question": "Which task list?"]
+        ])
+        #expect(model.status == .needsClarification)
+
+        model.stop()
+
+        #expect(model.status == .idle)
+        #expect(model.clarificationQuestion == nil)
+        #expect(model.clarificationChoices.isEmpty)
+    }
+
+    @Test func completedTurnMarksQueuedSteeringMessagesApplied() {
+        let model = DockModel(initialSessionID: "session-steer")
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "session-steer",
+            "payload": [:]
+        ])
+        let steerMessage = ChatMessage(
+            role: .user,
+            text: "Prefer the second option",
+            isSteering: true,
+            steeringStatus: "QUEUED"
+        )
+        model.messages.append(steerMessage)
+
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "session-steer",
+            "payload": [:]
+        ])
+
+        #expect(model.messages.last?.isSteering == true)
+        #expect(model.messages.last?.steeringStatus == "APPLIED")
+    }
+
     @Test func unselectedSessionCannotProjectGatewayActivity() {
         let model = DockModel()
 
