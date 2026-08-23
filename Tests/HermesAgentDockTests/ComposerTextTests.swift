@@ -1,0 +1,46 @@
+import Testing
+@testable import HermesAgentDock
+
+@MainActor
+struct ComposerTextTests {
+    private let history = ["first prompt", "second prompt", "third prompt"]
+
+    @Test func upArrowEntersHistoryAtNewestPrompt() {
+        let composer = ComposerText()
+        composer.text = "fresh draft"
+
+        #expect(composer.navigate(direction: -1, history: Array(history)))
+        #expect(composer.text == "third prompt")
+        #expect(composer.navigate(direction: -1, history: Array(history)))
+        #expect(composer.text == "second prompt")
+    }
+
+    @Test func downArrowPastNewestRestoresTheDraftBeingComposed() {
+        let composer = ComposerText()
+        composer.text = "work in progress"
+        composer.navigate(direction: -1, history: Array(history))
+
+        #expect(composer.navigate(direction: 1, history: Array(history)))
+        #expect(composer.text == "work in progress")
+        #expect(composer.navigate(direction: 1, history: Array(history)) == false)
+    }
+
+    @Test func typingAfterHistoryNavigationExitsHistoryMode() {
+        let composer = ComposerText()
+        composer.text = "start"
+        composer.navigate(direction: -1, history: Array(history))
+
+        composer.text += " more"
+
+        #expect(composer.text == "third prompt more")
+        #expect(composer.navigate(direction: 1, history: Array(history)) == false)
+    }
+
+    @Test func navigationRequiresHistoryAndDirection() {
+        let composer = ComposerText()
+
+        #expect(composer.navigate(direction: -1, history: []) == false)
+        #expect(composer.navigate(direction: 0, history: Array(history)) == false)
+        #expect(composer.navigate(direction: 1, history: Array(history)) == false)
+    }
+}
