@@ -18,11 +18,25 @@ final class ComposerText: ObservableObject {
     private var restoreDraft = ""
     private var isUpdatingFromHistory = false
 
+    /// Clears draft-local state when the active conversation changes so
+    /// history, text, and temporary image files cannot cross session boundaries.
+    func reset() {
+        isUpdatingFromHistory = true
+        text = ""
+        isUpdatingFromHistory = false
+        historyIndex = nil
+        restoreDraft = ""
+    }
+
     /// Moves through the user prompts already present in the active session.
     /// Down past the newest prompt restores the draft that was present before
     /// history navigation began.
     func navigate(direction: Int, history: [String]) -> Bool {
         guard !history.isEmpty, direction != 0 else { return false }
+        if let index = historyIndex, index >= history.count {
+            historyIndex = nil
+            restoreDraft = text
+        }
 
         let nextIndex: Int?
         if direction < 0 {
