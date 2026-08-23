@@ -29,6 +29,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve and validate version
         id: version
@@ -94,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            if ! gh release create "$TAG" --title "$TAG" --generate-notes; then
+            if ! gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes; then
               # Another tag/manual run may have created it concurrently.
               gh release view "$TAG" >/dev/null
             fi
