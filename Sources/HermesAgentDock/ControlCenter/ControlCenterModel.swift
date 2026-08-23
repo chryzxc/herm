@@ -11,6 +11,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var mcpTestResults: [String: String] = [:]
     @Published private(set) var mcpInventoryAvailable = false
     @Published private(set) var activeSessions: [SessionSummary] = []
+    @Published private(set) var latestActivities: [LatestActivityItem] = []
     @Published private(set) var currentFocus: ControlReference?
     @Published private(set) var activeAgents: [AgentSummary] = []
     @Published private(set) var delegationPaused = false
@@ -262,7 +263,7 @@ final class ControlCenterModel: ObservableObject {
         lastError = nil
         rebuildAttention()
         if remindersAdapter != nil { beginProjectionRefresh("reminders") }
-        if rpc != nil { ["cron.jobs", "sessions", "agents", "processes", "projects"].forEach(beginProjectionRefresh) }
+        if rpc != nil { ["cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects"].forEach(beginProjectionRefresh) }
         if dockModel != nil { beginProjectionRefresh("core") }
 
         Task { [weak self] in
@@ -306,6 +307,15 @@ final class ControlCenterModel: ObservableObject {
                 } catch {
                     let message = error.localizedDescription
                     recordProjectionFailure("sessions", error: message)
+                    lastError = message
+                }
+
+                do {
+                    try await refreshLatestActivities()
+                    recordProjectionSuccess("latest.activity")
+                } catch {
+                    let message = error.localizedDescription
+                    recordProjectionFailure("latest.activity", error: message)
                     lastError = message
                 }
 
@@ -1503,6 +1513,15 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    func openLatestActivitySession(_ activity: LatestActivityItem) {
+        openLatestActivitySession(SessionSummary(
+            id: activity.sessionID,
+            title: activity.sessionTitle,
+            state: activity.state,
+            preview: nil
+        ))
+    }
+
     func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
         guard let dockModel else { return }
         let reference = item.reference
@@ -1961,8 +1980,109 @@ final class ControlCenterModel: ObservableObject {
         return ""
     }
 
+    private func refreshLatestActivities() async throws {
+        guard let rpc else { return }
+        var sessionRows: [[String: Any]] = []
+        var offset = 0
+        repeat {
+            let page = try await rpc.sessionPages(limit: 200, offset: offset)
+            let rows = (page["data"] as? [[String: Any]]) ?? []
+            sessionRows.append(contentsOf: rows)
+            offset += rows.count
+            if rows.isEmpty || page["has_more"] as? Bool != true { break }
+        } while true
+
+        let sessions = Self.parseSessions(["data": sessionRows])
+        var stepsBySessionID: [String: [SessionActivityStep]] = [:]
+        var failedSessionCount = 0
+
+        for start in stride(from: 0, to: sessions.count, by: 8) {
+            let end = min(start + 8, sessions.count)
+            let batch = Array(sessions[start..<end])
+            let fetched = await withTaskGroup(of: (String, [SessionActivityStep], Bool).self, returning: [(String, [SessionActivityStep], Bool)].self) { group in
+                for session in batch {
+                    group.addTask { [weak self] in
+                        guard let self else { return (session.id, [], false) }
+                        let result = await self.fetchActivitySteps(sessionID: session.id)
+                        return (session.id, result.steps, result.succeeded)
+                    }
+                }
+
+                var values: [(String, [SessionActivityStep], Bool)] = []
+                for await value in group {
+                    values.append(value)
+                }
+                return values
+            }
+            for (sessionID, steps, succeeded) in fetched {
+                stepsBySessionID[sessionID] = steps
+                if !succeeded { failedSessionCount += 1 }
+            }
+        }
+
+        let projectedActivities = SessionActivityPresentation.latestActivity(
+            sessions,
+            stepsBySessionID: stepsBySessionID
+        )
+        if failedSessionCount > 0 {
+            throw NSError(
+                domain: "HermesControl",
+                code: 206,
+                userInfo: [NSLocalizedDescriptionKey: "Latest activity is partial: unable to read activity from \(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s")."]
+            )
+        }
+        latestActivities = projectedActivities
+    }
+
+    private func fetchActivitySteps(sessionID: String) async -> (steps: [SessionActivityStep], succeeded: Bool) {
+        guard let rpc else { return ([], false) }
+        do {
+            let result = try await rpc.sessionMessages(sessionID: sessionID)
+            return (Self.parseActivitySteps(result), true)
+        } catch {
+            return ([], false)
+        }
+    }
+
+    private static func parseActivitySteps(_ result: [String: Any]) -> [SessionActivityStep] {
+        let rows = (result["data"] as? [[String: Any]]) ?? (result["messages"] as? [[String: Any]]) ?? []
+        return rows.enumerated().flatMap { index, row in
+            let timestamp = activityDate(row["timestamp"])
+            var names: [String] = []
+
+            if let toolCalls = row["tool_calls"] as? [[String: Any]] {
+                for call in toolCalls {
+                    let function = call["function"] as? [String: Any]
+                    if let name = (function?["name"] as? String) ?? (call["name"] as? String) {
+                        names.append(name)
+                    }
+                }
+            }
+            if let toolName = row["tool_name"] as? String, !toolName.isEmpty {
+                names.append(toolName)
+            }
+            if names.isEmpty, (row["role"] as? String) == "assistant" {
+                names = ["Response"]
+            }
+
+            return names.enumerated().map { nameIndex, name in
+                let id = (row["id"] as? String) ?? "message-\(index)-\(nameIndex)"
+                return SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp)
+            }
+        }
+    }
+
+    private static func activityDate(_ value: Any?) -> Date {
+        if let number = value as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
+        if let string = value as? String,
+           let date = ISO8601DateFormatter().date(from: string) {
+            return date
+        }
+        return .distantPast
+    }
+
     private static func parseSessions(_ result: [String: Any]) -> [SessionSummary] {
-        let rows = (result["sessions"] as? [[String: Any]]) ?? (result["active"] as? [[String: Any]]) ?? []
+        let rows = (result["sessions"] as? [[String: Any]]) ?? (result["active"] as? [[String: Any]]) ?? (result["data"] as? [[String: Any]]) ?? []
         return rows.compactMap { row in
             guard let id = row["id"] as? String else { return nil }
             return SessionSummary(

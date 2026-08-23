@@ -289,16 +289,46 @@ enum SessionPreviewPresentation {
     }
 }
 
-/// The Global overview's LATEST ACTIVITY strip shows recent work, not session
-/// inventory. Idle sessions have no activity to surface, so they are dropped
-/// before the list is bounded.
-enum SessionActivityPresentation {
-    static func isIdle(_ state: String) -> Bool {
-        state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "idle"
-    }
+struct SessionActivityStep: Equatable {
+    let id: String
+    let name: String
+    let timestamp: Date
+}
 
-    static func latestActivity(_ sessions: [SessionSummary], limit: Int = 10) -> [SessionSummary] {
-        Array(sessions.filter { !isIdle($0.state) }.prefix(limit))
+struct LatestActivityItem: Identifiable, Equatable {
+    let id: String
+    let sessionID: String
+    let sessionTitle: String
+    let state: String
+    let activityName: String
+    let timestamp: Date
+}
+
+/// The Global overview's LATEST ACTIVITY strip is a cross-session activity
+/// feed. A session may contribute multiple rows when several of its steps are
+/// newer than the latest step from other sessions.
+enum SessionActivityPresentation {
+    static func latestActivity(
+        _ sessions: [SessionSummary],
+        stepsBySessionID: [String: [SessionActivityStep]],
+        limit: Int = 10
+    ) -> [LatestActivityItem] {
+        let items = sessions.flatMap { session in
+            (stepsBySessionID[session.id] ?? []).map { step in
+                LatestActivityItem(
+                    id: "\(session.id)|\(step.id)",
+                    sessionID: session.id,
+                    sessionTitle: session.title,
+                    state: session.state,
+                    activityName: step.name,
+                    timestamp: step.timestamp
+                )
+            }
+        }
+        return Array(items.sorted { lhs, rhs in
+            if lhs.timestamp != rhs.timestamp { return lhs.timestamp > rhs.timestamp }
+            return lhs.id > rhs.id
+        }.prefix(max(0, limit)))
     }
 }
 
