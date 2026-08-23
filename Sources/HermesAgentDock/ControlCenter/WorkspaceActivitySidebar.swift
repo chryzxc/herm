@@ -2520,14 +2520,27 @@ struct WorkspaceActivitySidebar: View {
                                     .fill(session.id == model.sessionID ? Color.scifiAccent : sessionStateColor(session.state))
                                     .frame(width: 5, height: 5)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(session.title)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.scifiFg)
-                                        .lineLimit(1)
+                                    if let project = control.project(forSessionID: session.id),
+                                       !project.name.isEmpty,
+                                       project.name != "__no_project__" {
+                                        Text(projectDisplayName(project))
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(Color.scifiFg)
+                                            .lineLimit(1)
+                                        Text(session.title)
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundStyle(Color.scifiTertiary)
+                                            .lineLimit(1)
+                                    } else {
+                                        Text(session.title)
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(Color.scifiFg)
+                                            .lineLimit(1)
+                                    }
                                     Text(session.displayPreview ?? session.state.uppercased())
                                         .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(Color.scifiTertiary)
-                                        .lineLimit(1)
+                                        .lineLimit(2)
                                 }
                                 Spacer(minLength: 0)
                                 Image(systemName: "chevron.right")
