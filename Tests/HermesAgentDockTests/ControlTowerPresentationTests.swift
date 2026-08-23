@@ -42,6 +42,21 @@ struct ControlTowerPresentationTests {
         #expect(row.model == "unverified")
     }
 
+    @Test func operationsDisplayCanonicalLifecycleAndTruthfulFallbackStatuses() {
+        let agents = [
+            HermesSubagent(id: "complete", goal: "done", status: "complete"),
+            HermesSubagent(id: "queued", goal: "waiting", status: "queued"),
+            HermesSubagent(id: "unverified", goal: "unknown", status: "not-reported")
+        ]
+
+        let rows = AgentOperationsPresentation.rows(agents: agents)
+        #expect(rows.first(where: { $0.id == "complete" })?.state == .completed)
+        #expect(rows.first(where: { $0.id == "queued" })?.state == .pending)
+        #expect(rows.first(where: { $0.id == "unverified" })?.state == .unverified)
+        #expect(AgentOperationsState.unknown.displayLabel == "UNVERIFIED")
+        #expect(AgentOperationsState.unverified.displayLabel == "UNVERIFIED")
+    }
+
     @Test func capacityClassifiesOnlyKnownQuotaData() {
         #expect(CapacityRunwayPresentation.make(usedPercent: nil, hasQuotaData: false).state == .unknown)
         #expect(CapacityRunwayPresentation.make(usedPercent: 85, hasQuotaData: true).state == .constrained)

@@ -115,7 +115,20 @@ struct AutomationHealthPresentation: Identifiable, Equatable {
 
 // MARK: - P6 Agent Operations
 
-enum AgentOperationsState: String, Equatable { case running, stalled, completed, failed, unknown, unverified }
+enum AgentOperationsState: String, Equatable {
+    case running, pending, stalled, completed, failed, unknown, unverified
+
+    var displayLabel: String {
+        switch self {
+        case .running: return "RUNNING"
+        case .pending: return "PENDING"
+        case .stalled: return "STALLED"
+        case .completed: return "COMPLETED"
+        case .failed: return "FAILED"
+        case .unknown, .unverified: return "UNVERIFIED"
+        }
+    }
+}
 struct AgentOperationsRow: Identifiable, Equatable {
     let id: String
     let name: String
@@ -130,11 +143,12 @@ enum AgentOperationsPresentation {
         agents.map { agent in
             let normalized = agent.status.lowercased()
             let state: AgentOperationsState
-            if ["completed", "done", "success", "succeeded"].contains(normalized) { state = .completed }
+            if ["completed", "complete", "done", "success", "succeeded"].contains(normalized) { state = .completed }
             else if ["failed", "error"].contains(normalized) { state = .failed }
+            else if ["queued", "queue", "pending", "starting", "waiting"].contains(normalized) { state = .pending }
             else if ["running", "working", "active"].contains(normalized) {
                 if let startedAt = agent.startedAt, now.timeIntervalSince(startedAt) > stallAfter, agent.latestActivity == nil { state = .stalled } else { state = .running }
-            } else { state = .unknown }
+            } else { state = .unverified }
             return AgentOperationsRow(id: agent.id, name: agent.name ?? agent.role ?? agent.id, state: state, model: agent.model ?? "unverified", latestActivity: agent.latestActivity, parentID: agent.parentID)
         }.sorted { $0.id < $1.id }
     }
