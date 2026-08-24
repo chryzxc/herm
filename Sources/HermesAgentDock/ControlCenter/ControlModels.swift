@@ -108,6 +108,33 @@ enum CapabilitySource: String, Codable, Equatable {
     case external
 }
 
+enum CapabilityCategory: String, Codable, CaseIterable, Hashable {
+    case core
+    case integration
+    case review
+    case security
+}
+
+enum CapabilityProvenance: String, Codable, Equatable {
+    case hermesGateway
+    case hermesCLI
+    case localTool
+    case external
+}
+
+enum CapabilityProbeState: String, Codable, Equatable {
+    case verified
+    case unverified
+    case missing
+    case unsupported
+}
+
+enum CapabilityAccessClassification: String, Codable, Equatable {
+    case safeReadOnly
+    case confirmedMutation
+    case externalSetup
+}
+
 enum CapabilityAccess: String, Codable, Equatable {
     case readOnly
     case confirmedMutation
@@ -726,6 +753,10 @@ struct CapabilityState: Identifiable, Equatable {
     let source: CapabilitySource
     let access: CapabilityAccess
     let availability: CapabilityAvailability
+    let category: CapabilityCategory
+    let provenance: CapabilityProvenance
+    let probeState: CapabilityProbeState
+    let accessClassification: CapabilityAccessClassification
 
     init(
         id: String,
@@ -736,7 +767,11 @@ struct CapabilityState: Identifiable, Equatable {
         recoveryCommand: String? = nil,
         source: CapabilitySource = .gateway,
         access: CapabilityAccess = .readOnly,
-        availability: CapabilityAvailability? = nil
+        availability: CapabilityAvailability? = nil,
+        category: CapabilityCategory = .core,
+        provenance: CapabilityProvenance? = nil,
+        probeState: CapabilityProbeState? = nil,
+        accessClassification: CapabilityAccessClassification? = nil
     ) {
         self.id = id
         self.title = title
@@ -746,13 +781,49 @@ struct CapabilityState: Identifiable, Equatable {
         self.recoveryCommand = recoveryCommand
         self.source = source
         self.access = access
-        self.availability = availability ?? (isAvailable ? .available : .unsupported)
+        let resolvedAvailability = availability ?? (isAvailable ? .available : .unsupported)
+        self.availability = resolvedAvailability
+        self.category = category
+        self.provenance = provenance ?? CapabilityProvenance(source: source)
+        self.probeState = probeState ?? (isAvailable ? .unverified : .unsupported)
+        self.accessClassification = accessClassification ?? CapabilityAccessClassification(access: access)
+    }
+}
+
+extension CapabilityProvenance {
+    init(source: CapabilitySource) {
+        switch source {
+        case .gateway: self = .hermesGateway
+        case .cli: self = .hermesCLI
+        case .local: self = .localTool
+        case .external: self = .external
+        }
+    }
+}
+
+extension CapabilityAccessClassification {
+    init(access: CapabilityAccess) {
+        switch access {
+        case .readOnly: self = .safeReadOnly
+        case .confirmedMutation: self = .confirmedMutation
+        case .externalSetup: self = .externalSetup
+        }
     }
 }
 
 struct CapabilitySnapshot: Equatable {
     let states: [CapabilityState]
     let generatedAt: Date
+
+    var sortedStates: [CapabilityState] {
+        states.sorted {
+            ($0.category.rawValue, $0.title, $0.id) < ($1.category.rawValue, $1.title, $1.id)
+        }
+    }
+
+    var statesByCategory: [CapabilityCategory: [CapabilityState]] {
+        Dictionary(grouping: sortedStates, by: \.category)
+    }
 
     func state(for id: String) -> CapabilityState? {
         states.first { $0.id == id }
