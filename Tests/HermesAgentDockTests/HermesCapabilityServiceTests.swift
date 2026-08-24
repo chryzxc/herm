@@ -74,6 +74,25 @@ struct HermesCapabilityServiceTests {
         #expect(byID["tools"]?.isAvailable == false)
     }
 
+    @Test func supersededProbeReturnsImmediatelyWhenNoNewerSnapshotIsPublished() async {
+        let client = OverlappingCapabilityProbeClient()
+        let service = HermesCapabilityService()
+
+        let first = Task { await service.probe(client: client, remindersAvailable: false) }
+        await client.waitUntilFirstProbeSuspends()
+        let second = Task { await service.probe(client: client, remindersAvailable: true, forceRefresh: true) }
+        await client.waitUntilSecondProbeSuspends()
+        client.releaseFirstProbe()
+
+        let firstStates = await first.value
+        #expect(firstStates.isEmpty)
+
+        client.releaseProbes()
+        _ = await second.value
+        let cached = await service.probe(client: client, remindersAvailable: true)
+        #expect(cached.first(where: { $0.id == "reminders" })?.availability == .available)
+    }
+
     @Test func supersededProbeCannotOverwriteNewerCache() async {
         let client = OverlappingCapabilityProbeClient()
         let service = HermesCapabilityService()
@@ -84,11 +103,10 @@ struct HermesCapabilityServiceTests {
         await client.waitUntilSecondProbeSuspends()
         client.releaseProbes()
 
-        let firstStates = await first.value
+        _ = await first.value
         _ = await second.value
         let cached = await service.probe(client: client, remindersAvailable: true)
 
-        #expect(firstStates.first(where: { $0.id == "reminders" })?.availability == .available)
         #expect(cached.first(where: { $0.id == "reminders" })?.availability == .available)
     }
 
@@ -198,6 +216,11 @@ private final class OverlappingCapabilityProbeClient: CapabilityProbeClient {
         await withCheckedContinuation { continuation in
             suspensionWaiters[number] = continuation
         }
+    }
+
+    func releaseFirstProbe() {
+        guard !releaseContinuations.isEmpty else { return }
+        releaseContinuations.removeFirst().resume()
     }
 
     func releaseProbes() {

@@ -379,11 +379,6 @@ final class HermesCapabilityService {
             let cachedSnapshot = CachedSnapshot(client: client, snapshot: snapshot)
             cachedSnapshots[cacheKey] = cachedSnapshot
             latestPublishedSnapshots[ObjectIdentifier(client)] = cachedSnapshot
-        } else {
-            while latestPublishedSnapshots[ObjectIdentifier(client)]?.client !== client,
-                  activeProbeGenerations.contains(where: { $0 > generation }) {
-                await Task.yield()
-            }
         }
         activeProbeGenerations.remove(generation)
         if generation == probeGeneration {
@@ -391,7 +386,7 @@ final class HermesCapabilityService {
         }
         return latestPublishedSnapshots[ObjectIdentifier(client)]?.client === client
             ? latestPublishedSnapshots[ObjectIdentifier(client)]!.snapshot.states
-            : states
+            : []
     }
 
     private func cliCapability(
