@@ -51,6 +51,7 @@ final class ControlCenterModel: ObservableObject {
     /// `projects.tree` response, but that must not dismiss the user's detail.
     @Published private(set) var selectedProject: ProjectSummary?
     @Published private(set) var capabilities: [CapabilityState] = []
+    private var capabilitySnapshotGeneratedAt: Date = .distantPast
     @Published private(set) var diagnostics: [HermesDiagnostic] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var pendingActionIDs: Set<String> = []
@@ -113,7 +114,7 @@ final class ControlCenterModel: ObservableObject {
     /// Read-only presentation projection of the latest capability probe.
     /// The probe remains the sole source of capability state.
     var capabilitySnapshot: CapabilitySnapshot {
-        CapabilitySnapshot(states: capabilities, generatedAt: .now)
+        CapabilitySnapshot(states: capabilities, generatedAt: capabilitySnapshotGeneratedAt)
     }
 
     func capabilityAvailable(_ id: String) -> Bool {
@@ -187,6 +188,9 @@ final class ControlCenterModel: ObservableObject {
         self.rpc = rpc
         self.cli = rpc.map(HermesCLIAdapter.init)
         self.capabilities = capabilities
+        if !capabilities.isEmpty {
+            capabilitySnapshotGeneratedAt = .now
+        }
         let stored = presentationDefaults.dictionary(forKey: presentationKey) as? [String: String] ?? [:]
         let storedSnoozes = presentationDefaults.dictionary(forKey: snoozeKey) as? [String: Double] ?? [:]
         for (id, rawState) in stored {
@@ -393,6 +397,7 @@ final class ControlCenterModel: ObservableObject {
                     sessionID: dockModel.sessionID,
                     forceRefresh: forceCapabilities
                 )
+                capabilitySnapshotGeneratedAt = .now
                 if forceCapabilities || diagnostics.isEmpty {
                     diagnostics = await diagnosticsService.read(client: dockModel.controlRPCClient)
                 }

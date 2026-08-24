@@ -3722,12 +3722,20 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Color.scifiMuted)
             capabilityInventorySummary
-            ForEach(CapabilityCategory.allCases, id: \.self) { category in
-                let states = capabilityStates(for: category)
-                if !states.isEmpty {
-                    sectionLabel(category.rawValue.uppercased())
-                    ForEach(states) { capability in
-                        capabilityStatusRow(capability)
+            if capabilityInventorySnapshot.states.isEmpty {
+                emptyState(
+                    icon: "arrow.triangle.2.circlepath",
+                    title: "Core capabilities not yet available",
+                    detail: "Capability readiness has not been returned. Refresh Core or reconnect Hermes, then try again."
+                )
+            } else {
+                ForEach(CapabilityCategory.allCases, id: \.self) { category in
+                    let states = capabilityStates(for: category)
+                    if !states.isEmpty {
+                        sectionLabel(category.rawValue.uppercased())
+                        ForEach(states) { capability in
+                            capabilityStatusRow(capability)
+                        }
                     }
                 }
             }
