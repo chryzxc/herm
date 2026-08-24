@@ -27,6 +27,15 @@ struct ControlTowerPresentationTests {
         #expect(VerificationEvidencePresentation.make(verification: passed, currentFingerprint: "a", evidenceFingerprint: "a", openFailureCount: 1, repositoryDirty: false).state == .blocked)
     }
 
+    @Test func verificationClassifiesCommitAndDiffMismatchesAsStaleAndPreservesReason() {
+        let evidence = VerificationEvidenceSummary(command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: 0, outputSummary: nil, adapter: "swiftpm", capturedAt: nil, repositoryIdentity: "repo", commitFingerprint: "old-commit", targetFingerprint: "target", diffFingerprint: "old-diff", rulesScopeDetail: "all tests", staleReason: "superseded")
+        let result = VerificationEvidencePresentation.make(verification: VerificationSummary(state: .passed, evidence: evidence), currentFingerprint: nil, evidenceFingerprint: nil, currentRepositoryIdentity: "repo", currentCommitFingerprint: "new-commit", currentTargetFingerprint: "target", currentDiffFingerprint: "new-diff", openFailureCount: 0, repositoryDirty: false)
+        #expect(result.state == .stale)
+        #expect(result.staleReason == "superseded")
+        #expect(result.adapter == "swiftpm")
+        #expect(result.rulesScopeDetail == "all tests")
+    }
+
     @Test func automationHealthNeverInfersSuccessFromMissingHistory() {
         let job = CronSummary(id: "job", name: "Nightly", schedule: "0 0 * * *", enabled: true, nextRun: "tomorrow")
         let unknown = AutomationHealthPresentation.make(job: job, runs: [], capabilityAvailable: true, mcpErrorObserved: false)

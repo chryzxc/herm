@@ -965,7 +965,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if let verification = control.verification {
-                let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
+                let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
                 diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .scifiSuccess : .scifiWarning)
                 Text(deliveryEvidence.nextAction)
                     .font(.system(size: 11))
@@ -976,6 +976,14 @@ struct WorkspaceActivitySidebar: View {
                 if let evidence = verification.evidence {
                     diagnosticRow(label: "SCOPE", value: evidence.scope?.uppercased() ?? "UNKNOWN", color: evidence.scope?.lowercased() == "targeted" ? .scifiWarning : .scifiMuted)
                     if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: .scifiTertiary) }
+                    if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: .scifiTertiary) }
+                    if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: .scifiTertiary) }
+                    if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: .scifiTertiary) }
+                    if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: .scifiTertiary) }
+                    if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: .scifiTertiary) }
+                    if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: .scifiTertiary) }
+                    if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: .scifiTertiary) }
+                    if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: .scifiWarning) }
                 }
             } else if control.projectFacts == nil {
                 emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Core to request verification facts.")
@@ -3769,12 +3777,22 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 if let verification = control.verification {
+                    let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
                     let stateColor: Color = verification.state == .passed ? .scifiSuccess : (verification.state == .failed ? .scifiDestructive : .scifiWarning)
+                    diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .scifiSuccess : .scifiWarning)
                     diagnosticRow(label: "STATUS", value: verification.state.rawValue.uppercased(), color: stateColor)
                     if let evidence = verification.evidence {
                         if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: Color.scifiTertiary) }
                         if let scope = evidence.scope { diagnosticRow(label: "SCOPE", value: scope.uppercased(), color: scope == "targeted" ? Color.scifiWarning : Color.scifiTertiary) }
                         if let exitCode = evidence.exitCode { diagnosticRow(label: "EXIT", value: String(exitCode), color: exitCode == 0 ? Color.scifiSuccess : Color.scifiDestructive) }
+                        if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: Color.scifiTertiary) }
+                        if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: Color.scifiTertiary) }
+                        if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: Color.scifiTertiary) }
+                        if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: Color.scifiTertiary) }
+                        if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: Color.scifiTertiary) }
+                        if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: Color.scifiTertiary) }
+                        if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: Color.scifiTertiary) }
+                        if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: Color.scifiWarning) }
                     }
                 }
             }

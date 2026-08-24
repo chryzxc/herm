@@ -184,6 +184,42 @@ struct ControlCenterProjectTests {
         #expect(verification.evidence?.scope == "targeted")
     }
 
+    @Test func parsesOptionalQualityGateMetadataWithoutInferringMalformedValues() {
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": [
+                    "adapter": "swiftpm",
+                    "captured_at": "2026-08-24T12:00:00Z",
+                    "repository_identity": "repo-1",
+                    "commit_fingerprint": "abc123",
+                    "target_fingerprint": "target-1",
+                    "diff_fingerprint": "diff-1",
+                    "rules_scope_detail": "Package.swift tests",
+                    "stale_reason": "superseded by commit",
+                    "exit_code": "not-an-int",
+                    "capturedAt": 42
+                ]
+            ]
+        ])
+
+        #expect(verification.evidence?.adapter == "swiftpm")
+        #expect(verification.evidence?.capturedAt == ISO8601DateFormatter().date(from: "2026-08-24T12:00:00Z"))
+        #expect(verification.evidence?.repositoryIdentity == "repo-1")
+        #expect(verification.evidence?.commitFingerprint == "abc123")
+        #expect(verification.evidence?.targetFingerprint == "target-1")
+        #expect(verification.evidence?.diffFingerprint == "diff-1")
+        #expect(verification.evidence?.rulesScopeDetail == "Package.swift tests")
+        #expect(verification.evidence?.staleReason == "superseded by commit")
+        #expect(verification.evidence?.exitCode == 0)
+    }
+
+    @Test func verificationEvidenceInitializersRemainBackwardCompatible() {
+        let evidence = VerificationEvidenceSummary(command: "swift test", canonicalCommand: nil, kind: "test", scope: "targeted", status: "passed", exitCode: 0, outputSummary: "ok")
+        #expect(evidence.adapter == nil)
+        #expect(evidence.capturedAt == nil)
+    }
+
     @Test func kanbanChangeRequestsHaveStableActionIdentity() {
         let task = KanbanTaskSummary(id: "k1", title: "Task", status: "ready", detail: nil, priority: nil, assignee: nil)
 

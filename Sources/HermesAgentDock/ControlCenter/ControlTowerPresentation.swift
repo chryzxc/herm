@@ -77,17 +77,35 @@ struct VerificationEvidencePresentation: Equatable {
     let scope: String?
     let command: String?
     let fingerprint: String?
+    let adapter: String?
+    let capturedAt: Date?
+    let repositoryIdentity: String?
+    let commitFingerprint: String?
+    let targetFingerprint: String?
+    let diffFingerprint: String?
+    let rulesScopeDetail: String?
+    let staleReason: String?
 
-    static func make(verification: VerificationSummary?, currentFingerprint: String?, evidenceFingerprint: String?, openFailureCount: Int, repositoryDirty: Bool) -> Self {
-        guard let verification else { return Self(state: .unavailable, title: "Evidence unavailable", nextAction: "Run an observed verification through Hermes.", scope: nil, command: nil, fingerprint: currentFingerprint) }
+    static func make(verification: VerificationSummary?, currentFingerprint: String?, evidenceFingerprint: String?, currentRepositoryIdentity: String? = nil, currentCommitFingerprint: String? = nil, currentTargetFingerprint: String? = nil, currentDiffFingerprint: String? = nil, openFailureCount: Int, repositoryDirty: Bool) -> Self {
+        guard let verification else { return Self(state: .unavailable, title: "Evidence unavailable", nextAction: "Run an observed verification through Hermes.", scope: nil, command: nil, fingerprint: currentFingerprint, adapter: nil, capturedAt: nil, repositoryIdentity: nil, commitFingerprint: nil, targetFingerprint: nil, diffFingerprint: nil, rulesScopeDetail: nil, staleReason: nil) }
         let evidence = verification.evidence
-        if openFailureCount > 0 || verification.state == .failed { return Self(state: .blocked, title: "Verification blocked", nextAction: "Resolve the reported failure, then run verification again.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint) }
-        if let currentFingerprint, let evidenceFingerprint, currentFingerprint != evidenceFingerprint { return Self(state: .stale, title: "Evidence is stale", nextAction: "Refresh verification against the current repository state.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint) }
+        let metadata = Self.metadata(evidence: evidence, fingerprint: evidenceFingerprint)
+        let staleBySnapshot = (evidence?.repositoryIdentity != nil && currentRepositoryIdentity != nil && evidence?.repositoryIdentity != currentRepositoryIdentity)
+            || (evidence?.commitFingerprint != nil && currentCommitFingerprint != nil && evidence?.commitFingerprint != currentCommitFingerprint)
+            || (evidence?.targetFingerprint != nil && currentTargetFingerprint != nil && evidence?.targetFingerprint != currentTargetFingerprint)
+            || (evidence?.diffFingerprint != nil && currentDiffFingerprint != nil && evidence?.diffFingerprint != currentDiffFingerprint)
+        if openFailureCount > 0 || verification.state == .failed { return Self(state: .blocked, title: "Verification blocked", nextAction: "Resolve the reported failure, then run verification again.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: metadata.adapter, capturedAt: metadata.capturedAt, repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint, targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint, rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason) }
+        if evidence?.staleReason != nil || staleBySnapshot || (currentFingerprint != nil && evidenceFingerprint != nil && currentFingerprint != evidenceFingerprint) { return Self(state: .stale, title: "Evidence is stale", nextAction: evidence?.staleReason ?? "Refresh verification against the current repository state.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: metadata.adapter, capturedAt: metadata.capturedAt, repositoryIdentity: metadata.repositoryIdentity, commitFingerprint: metadata.commitFingerprint, targetFingerprint: metadata.targetFingerprint, diffFingerprint: metadata.diffFingerprint, rulesScopeDetail: metadata.rulesScopeDetail, staleReason: metadata.staleReason) }
         let scope = evidence?.scope?.lowercased() ?? ""
-        if scope.contains("target") || scope.contains("file") { return Self(state: .targetedOnly, title: "Targeted evidence only", nextAction: "Run the repository-wide checks before claiming readiness.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint) }
-        if verification.state == .passed && repositoryDirty { return Self(state: .partial, title: "Passed, but repository changed", nextAction: "Re-run verification after the latest changes.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint) }
-        guard verification.state == .passed else { return Self(state: .unavailable, title: "Evidence unavailable", nextAction: "Obtain a fresh observed verification result.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint) }
-        return Self(state: .current, title: "Evidence current", nextAction: "Review the exact command and scope before delivery.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint)
+        let common = (metadata.adapter, metadata.capturedAt, metadata.repositoryIdentity, metadata.commitFingerprint, metadata.targetFingerprint, metadata.diffFingerprint, metadata.rulesScopeDetail, metadata.staleReason)
+        if scope.contains("target") || scope.contains("file") { return Self(state: .targetedOnly, title: "Targeted evidence only", nextAction: "Run the repository-wide checks before claiming readiness.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7) }
+        if verification.state == .passed && repositoryDirty { return Self(state: .partial, title: "Passed, but repository changed", nextAction: "Re-run verification after the latest changes.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7) }
+        guard verification.state == .passed else { return Self(state: .unavailable, title: "Evidence unavailable", nextAction: "Obtain a fresh observed verification result.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7) }
+        return Self(state: .current, title: "Evidence current", nextAction: "Review the exact command and scope before delivery.", scope: evidence?.scope, command: evidence?.canonicalCommand ?? evidence?.command, fingerprint: evidenceFingerprint, adapter: common.0, capturedAt: common.1, repositoryIdentity: common.2, commitFingerprint: common.3, targetFingerprint: common.4, diffFingerprint: common.5, rulesScopeDetail: common.6, staleReason: common.7)
+    }
+
+    private static func metadata(evidence: VerificationEvidenceSummary?, fingerprint: String?) -> (adapter: String?, capturedAt: Date?, repositoryIdentity: String?, commitFingerprint: String?, targetFingerprint: String?, diffFingerprint: String?, rulesScopeDetail: String?, staleReason: String?) {
+        (evidence?.adapter, evidence?.capturedAt, evidence?.repositoryIdentity, evidence?.commitFingerprint, evidence?.targetFingerprint, evidence?.diffFingerprint, evidence?.rulesScopeDetail, evidence?.staleReason)
     }
 }
 

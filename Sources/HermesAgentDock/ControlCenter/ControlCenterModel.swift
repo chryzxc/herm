@@ -2443,10 +2443,23 @@ final class ControlCenterModel: ObservableObject {
                 scope: $0["scope"] as? String,
                 status: $0["status"] as? String,
                 exitCode: Self.optionalIntValue($0["exit_code"] ?? $0["exitCode"]),
-                outputSummary: $0["output_summary"] as? String ?? $0["outputSummary"] as? String
+                outputSummary: $0["output_summary"] as? String ?? $0["outputSummary"] as? String,
+                adapter: $0["adapter"] as? String ?? $0["tool_identifier"] as? String ?? $0["toolIdentifier"] as? String,
+                capturedAt: Self.optionalISO8601Date($0["captured_at"] ?? $0["capturedAt"]),
+                repositoryIdentity: $0["repository_identity"] as? String ?? $0["repositoryIdentity"] as? String,
+                commitFingerprint: $0["commit_fingerprint"] as? String ?? $0["commitFingerprint"] as? String,
+                targetFingerprint: $0["target_fingerprint"] as? String ?? $0["targetFingerprint"] as? String,
+                diffFingerprint: $0["diff_fingerprint"] as? String ?? $0["diffFingerprint"] as? String,
+                rulesScopeDetail: $0["rules_scope_detail"] as? String ?? $0["rulesScopeDetail"] as? String ?? $0["rules"] as? String,
+                staleReason: $0["stale_reason"] as? String ?? $0["staleReason"] as? String
             )
         }
         return VerificationSummary(state: state, evidence: evidence)
+    }
+
+    private static func optionalISO8601Date(_ value: Any?) -> Date? {
+        guard let value = value as? String else { return nil }
+        return ISO8601DateFormatter().date(from: value)
     }
 
     static func parseKanbanAttachments(_ value: Any, boardSlug: String?, taskID: String) -> [KanbanAttachmentSummary] {

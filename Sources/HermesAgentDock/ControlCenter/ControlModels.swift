@@ -919,6 +919,35 @@ struct VerificationEvidenceSummary: Equatable {
     let status: String?
     let exitCode: Int?
     let outputSummary: String?
+
+    // Optional provenance is preserved when the verification adapter provides it.
+    // These fields deliberately do not imply that a missing value was observed.
+    let adapter: String?
+    let capturedAt: Date?
+    let repositoryIdentity: String?
+    let commitFingerprint: String?
+    let targetFingerprint: String?
+    let diffFingerprint: String?
+    let rulesScopeDetail: String?
+    let staleReason: String?
+
+    init(command: String?, canonicalCommand: String?, kind: String?, scope: String?, status: String?, exitCode: Int?, outputSummary: String?, adapter: String? = nil, capturedAt: Date? = nil, repositoryIdentity: String? = nil, commitFingerprint: String? = nil, targetFingerprint: String? = nil, diffFingerprint: String? = nil, rulesScopeDetail: String? = nil, staleReason: String? = nil) {
+        self.command = command
+        self.canonicalCommand = canonicalCommand
+        self.kind = kind
+        self.scope = scope
+        self.status = status
+        self.exitCode = exitCode
+        self.outputSummary = outputSummary
+        self.adapter = adapter
+        self.capturedAt = capturedAt
+        self.repositoryIdentity = repositoryIdentity
+        self.commitFingerprint = commitFingerprint
+        self.targetFingerprint = targetFingerprint
+        self.diffFingerprint = diffFingerprint
+        self.rulesScopeDetail = rulesScopeDetail
+        self.staleReason = staleReason
+    }
 }
 
 struct VerificationSummary: Equatable {
