@@ -2,14 +2,18 @@ import Foundation
 
 @MainActor
 final class HermesCapabilityService {
-    private var cachedSnapshot: CapabilitySnapshot?
-    private var cachedRemindersAvailability: Bool?
-    private var cachedSessionID: String?
+    private struct CacheKey: Hashable {
+        let clientID: ObjectIdentifier
+        let remindersAvailable: Bool
+        let sessionID: String?
+    }
+
+    private var cachedSnapshots: [CacheKey: CapabilitySnapshot] = [:]
+    private var probeGeneration = 0
 
     func invalidate() {
-        cachedSnapshot = nil
-        cachedRemindersAvailability = nil
-        cachedSessionID = nil
+        cachedSnapshots.removeAll()
+        probeGeneration += 1
     }
 
     func probe(
@@ -20,12 +24,13 @@ final class HermesCapabilityService {
     ) async -> [CapabilityState] {
         let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let activeSessionID = normalizedSessionID?.isEmpty == false ? normalizedSessionID : nil
+        let cacheKey = CacheKey(clientID: ObjectIdentifier(client), remindersAvailable: remindersAvailable, sessionID: activeSessionID)
         if !forceRefresh,
-           let cachedSnapshot,
-           cachedRemindersAvailability == remindersAvailable,
-           cachedSessionID == activeSessionID {
+           let cachedSnapshot = cachedSnapshots[cacheKey] {
             return cachedSnapshot.states
         }
+        probeGeneration += 1
+        let generation = probeGeneration
 
         let sessionRPC = await request(client, method: "session.active_list")
         let schedulingRPC = await request(client, method: "cron.manage", params: ["action": "list"])
@@ -360,9 +365,9 @@ final class HermesCapabilityService {
 
         let states = rawStates.map(Self.productionMetadata)
         let snapshot = CapabilitySnapshot(states: states, generatedAt: Date())
-        cachedSnapshot = snapshot
-        cachedRemindersAvailability = remindersAvailable
-        cachedSessionID = activeSessionID
+        if generation == probeGeneration {
+            cachedSnapshots[cacheKey] = snapshot
+        }
         return states
     }
 
@@ -390,7 +395,8 @@ final class HermesCapabilityService {
     }
 
     private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async -> [String: Any]? {
-        try? await client.request(method, params: params)
+        guard let result = try? await client.request(method, params: params), !result.isEmpty else { return nil }
+        return result
     }
 
     private static func productionMetadata(_ state: CapabilityState) -> CapabilityState {

@@ -48,6 +48,7 @@ struct CapabilityStateTests {
             detail: "Not installed",
             isAvailable: false,
             recovery: nil,
+            availability: .unavailable,
             category: .security,
             provenance: .localTool,
             probeState: .missing,
@@ -110,6 +111,24 @@ struct CapabilityStateTests {
         #expect(state.availability != .available)
         #expect(state.probeState != .verified)
         #expect(!state.isAvailable)
+    }
+
+    @Test func unsupportedAvailabilityAlwaysNormalizesProbeStateToUnsupported() {
+        let state = CapabilityState(id: "unsupported", title: "Unsupported", detail: "", isAvailable: false, recovery: nil, availability: .unsupported, probeState: .missing)
+        #expect(state.availability == .unsupported)
+        #expect(state.probeState == .unsupported)
+    }
+
+    @Test func unavailableAvailabilityAlwaysNormalizesProbeStateToMissing() {
+        let state = CapabilityState(id: "unavailable", title: "Unavailable", detail: "", isAvailable: false, recovery: nil, availability: .unavailable, probeState: .unsupported)
+        #expect(state.availability == .unavailable)
+        #expect(state.probeState == .missing)
+    }
+
+    @Test func sourceAndAccessAreAuthoritativeForCompatibilityMetadata() {
+        let state = CapabilityState(id: "metadata", title: "Metadata", detail: "", isAvailable: true, recovery: nil, source: .cli, access: .confirmedMutation, provenance: .localTool, accessClassification: .safeReadOnly)
+        #expect(state.provenance == .hermesCLI)
+        #expect(state.accessClassification == .confirmedMutation)
     }
 
     @Test func omittedCategoryUsesDeterministicReadinessTaxonomy() {

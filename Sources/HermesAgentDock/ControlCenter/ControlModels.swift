@@ -790,10 +790,13 @@ struct CapabilityState: Identifiable, Equatable {
         }
         self.category = category ?? CapabilityCategory(readinessID: id)
         self.provenance = CapabilityProvenance(source: source)
-        if isAvailable {
+        switch self.availability {
+        case .available:
             self.probeState = probeState == .missing || probeState == .unsupported ? .unverified : (probeState ?? .unverified)
-        } else {
-            self.probeState = probeState == .missing || (probeState == nil && availability == .unavailable) ? .missing : .unsupported
+        case .unavailable:
+            self.probeState = .missing
+        case .unsupported:
+            self.probeState = .unsupported
         }
         self.accessClassification = CapabilityAccessClassification(access: access)
     }

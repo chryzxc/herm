@@ -52,6 +52,43 @@ struct HermesCapabilityServiceTests {
         #expect(client.requestCount > firstSessionRequestCount)
     }
 
+    @Test func capabilityCacheIsScopedToTheRPCClientInstance() async {
+        let firstClient = CapabilityProbeClient()
+        let secondClient = CapabilityProbeClient()
+        let service = HermesCapabilityService()
+
+        _ = await service.probe(client: firstClient, remindersAvailable: false)
+        _ = await service.probe(client: secondClient, remindersAvailable: false)
+
+        #expect(secondClient.requestCount > 0)
+    }
+
+    @Test func thrownAndMalformedRPCResponsesAreClassifiedAsUnavailable() async {
+        let client = FailingCapabilityProbeClient()
+        let capabilities = await HermesCapabilityService().probe(client: client, remindersAvailable: false)
+        let byID = Dictionary(uniqueKeysWithValues: capabilities.map { ($0.id, $0) })
+
+        #expect(byID["rpc-sessions"]?.isAvailable == false)
+        #expect(byID["rpc-sessions"]?.availability == .unsupported)
+        #expect(byID["gateway"]?.isAvailable == false)
+    }
+
+    @Test func supersededProbeCannotOverwriteNewerCache() async {
+        let client = OverlappingCapabilityProbeClient()
+        let service = HermesCapabilityService()
+
+        let first = Task { await service.probe(client: client, remindersAvailable: false) }
+        await client.waitUntilFirstProbeSuspends()
+        let second = Task { await service.probe(client: client, remindersAvailable: true, forceRefresh: true) }
+        client.releaseFirstProbe()
+
+        _ = await first.value
+        _ = await second.value
+        let cached = await service.probe(client: client, remindersAvailable: true)
+
+        #expect(cached.first(where: { $0.id == "reminders" })?.availability == .available)
+    }
+
     @Test func classifiesCapabilitiesBySourceAndAccess() async {
         let client = CapabilityProbeClient()
         let capabilities = await HermesCapabilityService().probe(client: client, remindersAvailable: true)
@@ -97,7 +134,7 @@ struct HermesCapabilityServiceTests {
 }
 
 @MainActor
-private final class CapabilityProbeClient: HermesRPCClientProtocol {
+private class CapabilityProbeClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var requestCount = 0
 
@@ -105,7 +142,7 @@ private final class CapabilityProbeClient: HermesRPCClientProtocol {
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requestCount += 1
-        guard method == "shell.exec" else { return [:] }
+        guard method == "shell.exec" else { return ["ok": true] }
         let command = params["command"] as? String ?? ""
         switch command {
         case "memo --version", "himalaya --version", "imsg --version":
@@ -125,3 +162,37 @@ private final class CapabilityProbeClient: HermesRPCClientProtocol {
 
     func close() {}
 }
+
+@MainActor
+private final class FailingCapabilityProbeClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    func connect() async throws {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "session.active_list" { throw TestRPCError.failed }
+        return [:]
+    }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
+    func close() {}
+}
+
+@MainActor
+private final class OverlappingCapabilityProbeClient: CapabilityProbeClient {
+    private var firstProbeSuspended = false
+    private var release = false
+
+    func waitUntilFirstProbeSuspends() async {
+        while !firstProbeSuspended { await Task.yield() }
+    }
+
+    func releaseFirstProbe() { release = true }
+
+    override func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if !firstProbeSuspended {
+            firstProbeSuspended = true
+            while !release { await Task.yield() }
+        }
+        return try await super.request(method, params: params)
+    }
+}
+
+private enum TestRPCError: Error { case failed }
