@@ -945,8 +945,11 @@ struct VerificationEvidenceSummary: Equatable {
     let diffFingerprint: String?
     let rulesScopeDetail: String?
     let staleReason: String?
+    /// Preserves stale precedence when an untrusted raw reason is rejected.
+    /// The rejected value is never retained or rendered.
+    let hasInvalidStaleReason: Bool
 
-    init(command: String?, canonicalCommand: String?, kind: String?, scope: String?, status: String?, exitCode: Int?, outputSummary: String?, adapter: String? = nil, capturedAt: Date? = nil, repositoryIdentity: String? = nil, commitFingerprint: String? = nil, targetFingerprint: String? = nil, diffFingerprint: String? = nil, rulesScopeDetail: String? = nil, staleReason: String? = nil) {
+    init(command: String?, canonicalCommand: String?, kind: String?, scope: String?, status: String?, exitCode: Int?, outputSummary: String?, adapter: String? = nil, capturedAt: Date? = nil, repositoryIdentity: String? = nil, commitFingerprint: String? = nil, targetFingerprint: String? = nil, diffFingerprint: String? = nil, rulesScopeDetail: String? = nil, staleReason: String? = nil, hasInvalidStaleReason: Bool = false) {
         self.command = command
         self.canonicalCommand = canonicalCommand
         self.kind = kind
@@ -962,6 +965,7 @@ struct VerificationEvidenceSummary: Equatable {
         self.diffFingerprint = diffFingerprint
         self.rulesScopeDetail = rulesScopeDetail
         self.staleReason = staleReason
+        self.hasInvalidStaleReason = hasInvalidStaleReason
     }
 }
 

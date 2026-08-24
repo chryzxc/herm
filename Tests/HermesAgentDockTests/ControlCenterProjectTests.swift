@@ -239,6 +239,23 @@ struct ControlCenterProjectTests {
         #expect(verification.evidence?.staleReason == nil)
     }
 
+    @Test func preservesInvalidStaleReasonAsAnUnrenderedStaleSignal() {
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": [
+                    "scope": "repository",
+                    "exit_code": 0,
+                    "stale_reason": "\u{0000}do not expose"
+                ]
+            ]
+        ])
+
+        #expect(verification.evidence?.staleReason == nil)
+        #expect(verification.evidence?.hasInvalidStaleReason == true)
+        #expect(!String(describing: verification).contains("do not expose"))
+    }
+
     @Test func verificationEvidenceInitializersRemainBackwardCompatible() {
         let evidence = VerificationEvidenceSummary(command: "swift test", canonicalCommand: nil, kind: "test", scope: "targeted", status: "passed", exitCode: 0, outputSummary: "ok")
         #expect(evidence.adapter == nil)

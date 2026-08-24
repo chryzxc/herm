@@ -2448,22 +2448,29 @@ final class ControlCenterModel: ObservableObject {
         let state = VerificationState(rawValue: (verification["status"] as? String ?? "unknown")) ?? .unknown
         let evidenceRow = verification["evidence"] as? [String: Any]
         let evidence = evidenceRow.map {
-            VerificationEvidenceSummary(
-                command: $0["command"] as? String,
-                canonicalCommand: $0["canonical_command"] as? String ?? $0["canonicalCommand"] as? String,
-                kind: $0["kind"] as? String,
-                scope: $0["scope"] as? String,
-                status: $0["status"] as? String,
-                exitCode: Self.optionalVerificationExitCode($0["exit_code"] ?? $0["exitCode"]),
-                outputSummary: $0["output_summary"] as? String ?? $0["outputSummary"] as? String,
-                adapter: VerificationEvidenceText.bounded($0["adapter"] as? String ?? $0["tool_identifier"] as? String ?? $0["toolIdentifier"] as? String),
-                capturedAt: Self.optionalISO8601Date($0["captured_at"] ?? $0["capturedAt"]),
-                repositoryIdentity: VerificationEvidenceText.bounded($0["repository_identity"] as? String ?? $0["repositoryIdentity"] as? String),
-                commitFingerprint: VerificationEvidenceText.bounded($0["commit_fingerprint"] as? String ?? $0["commitFingerprint"] as? String),
-                targetFingerprint: VerificationEvidenceText.bounded($0["target_fingerprint"] as? String ?? $0["targetFingerprint"] as? String),
-                diffFingerprint: VerificationEvidenceText.bounded($0["diff_fingerprint"] as? String ?? $0["diffFingerprint"] as? String),
-                rulesScopeDetail: VerificationEvidenceText.bounded($0["rules_scope_detail"] as? String ?? $0["rulesScopeDetail"] as? String ?? $0["rules"] as? String),
-                staleReason: VerificationEvidenceText.bounded($0["stale_reason"] as? String ?? $0["staleReason"] as? String)
+            let row = $0
+            let staleReasonValue = row["stale_reason"] as? String ?? row["staleReason"] as? String
+            let hasInvalidStaleReason = ["stale_reason", "staleReason"].contains { key in
+                guard let rawValue = row[key] as? String else { return false }
+                return VerificationEvidenceText.bounded(rawValue) == nil
+            }
+            return VerificationEvidenceSummary(
+                command: row["command"] as? String,
+                canonicalCommand: row["canonical_command"] as? String ?? row["canonicalCommand"] as? String,
+                kind: row["kind"] as? String,
+                scope: row["scope"] as? String,
+                status: row["status"] as? String,
+                exitCode: Self.optionalVerificationExitCode(row["exit_code"] ?? row["exitCode"]),
+                outputSummary: row["output_summary"] as? String ?? row["outputSummary"] as? String,
+                adapter: VerificationEvidenceText.bounded(row["adapter"] as? String ?? row["tool_identifier"] as? String ?? row["toolIdentifier"] as? String),
+                capturedAt: Self.optionalISO8601Date(row["captured_at"] ?? row["capturedAt"]),
+                repositoryIdentity: VerificationEvidenceText.bounded(row["repository_identity"] as? String ?? row["repositoryIdentity"] as? String),
+                commitFingerprint: VerificationEvidenceText.bounded(row["commit_fingerprint"] as? String ?? row["commitFingerprint"] as? String),
+                targetFingerprint: VerificationEvidenceText.bounded(row["target_fingerprint"] as? String ?? row["targetFingerprint"] as? String),
+                diffFingerprint: VerificationEvidenceText.bounded(row["diff_fingerprint"] as? String ?? row["diffFingerprint"] as? String),
+                rulesScopeDetail: VerificationEvidenceText.bounded(row["rules_scope_detail"] as? String ?? row["rulesScopeDetail"] as? String ?? row["rules"] as? String),
+                staleReason: VerificationEvidenceText.bounded(staleReasonValue),
+                hasInvalidStaleReason: hasInvalidStaleReason
             )
         }
         return VerificationSummary(state: state, evidence: evidence)
