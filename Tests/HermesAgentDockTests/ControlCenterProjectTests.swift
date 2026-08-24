@@ -211,7 +211,32 @@ struct ControlCenterProjectTests {
         #expect(verification.evidence?.diffFingerprint == "diff-1")
         #expect(verification.evidence?.rulesScopeDetail == "Package.swift tests")
         #expect(verification.evidence?.staleReason == "superseded by commit")
-        #expect(verification.evidence?.exitCode == 0)
+        #expect(verification.evidence?.exitCode == nil)
+    }
+
+    @Test func boundsAndRedactsVerificationEvidenceMetadataAtTheEvidenceBoundary() {
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": [
+                    "adapter": String(repeating: "adapter-", count: 40),
+                    "repository_identity": "/Users/christian/private/repo",
+                    "commit_fingerprint": String(repeating: "a", count: 161),
+                    "target_fingerprint": "target-1",
+                    "diff_fingerprint": "diff-1",
+                    "rules_scope_detail": "  Package.swift tests  ",
+                    "stale_reason": "\u{0000}invalid"
+                ]
+            ]
+        ])
+
+        #expect(verification.evidence?.adapter == nil)
+        #expect(verification.evidence?.repositoryIdentity == "••••/private/repo")
+        #expect(verification.evidence?.commitFingerprint == nil)
+        #expect(verification.evidence?.targetFingerprint == "target-1")
+        #expect(verification.evidence?.diffFingerprint == "diff-1")
+        #expect(verification.evidence?.rulesScopeDetail == "Package.swift tests")
+        #expect(verification.evidence?.staleReason == nil)
     }
 
     @Test func verificationEvidenceInitializersRemainBackwardCompatible() {

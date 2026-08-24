@@ -911,6 +911,21 @@ enum VerificationState: String, Equatable {
     case notApplicable
 }
 
+enum VerificationEvidenceText {
+    static let maxLength = 160
+
+    static func bounded(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxLength,
+              trimmed.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        let safe = HermesDiagnosticsService.safeSummary(trimmed)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !safe.isEmpty, safe.count <= maxLength else { return nil }
+        return safe
+    }
+}
+
 struct VerificationEvidenceSummary: Equatable {
     let command: String?
     let canonicalCommand: String?

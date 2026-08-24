@@ -36,6 +36,25 @@ struct ControlTowerPresentationTests {
         #expect(result.rulesScopeDetail == "all tests")
     }
 
+    @Test func stalePresentationBoundsMetadataAndUsesSafeFallbackAction() {
+        let evidence = VerificationEvidenceSummary(
+            command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: 0, outputSummary: nil,
+            adapter: String(repeating: "x", count: 161), capturedAt: nil, repositoryIdentity: nil,
+            commitFingerprint: nil, targetFingerprint: nil, diffFingerprint: nil, rulesScopeDetail: nil,
+            staleReason: String(repeating: "unsafe stale reason ", count: 20)
+        )
+        let result = VerificationEvidencePresentation.make(
+            verification: VerificationSummary(state: .passed, evidence: evidence),
+            currentFingerprint: "new", evidenceFingerprint: "old", openFailureCount: 0, repositoryDirty: false
+        )
+
+        #expect(result.state == .stale)
+        #expect(result.adapter == nil)
+        #expect(result.staleReason == nil)
+        #expect(result.nextAction == "Refresh verification against the current repository state.")
+        #expect(result.nextAction.count <= 160)
+    }
+
     @Test func automationHealthNeverInfersSuccessFromMissingHistory() {
         let job = CronSummary(id: "job", name: "Nightly", schedule: "0 0 * * *", enabled: true, nextRun: "tomorrow")
         let unknown = AutomationHealthPresentation.make(job: job, runs: [], capabilityAvailable: true, mcpErrorObserved: false)

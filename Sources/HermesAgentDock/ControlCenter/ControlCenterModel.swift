@@ -2279,6 +2279,18 @@ final class ControlCenterModel: ObservableObject {
         return intValue(value)
     }
 
+    private static func optionalVerificationExitCode(_ value: Any?) -> Int? {
+        guard let value else { return nil }
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber {
+            let type = String(cString: value.objCType)
+            guard type != "c" && type != "B", value.doubleValue.rounded() == value.doubleValue else { return nil }
+            return value.intValue
+        }
+        if let value = value as? String { return Int(value) }
+        return nil
+    }
+
     private static func doubleValue(_ value: Any?) -> Double? {
         if let value = value as? Double { return value }
         if let value = value as? NSNumber { return value.doubleValue }
@@ -2442,16 +2454,16 @@ final class ControlCenterModel: ObservableObject {
                 kind: $0["kind"] as? String,
                 scope: $0["scope"] as? String,
                 status: $0["status"] as? String,
-                exitCode: Self.optionalIntValue($0["exit_code"] ?? $0["exitCode"]),
+                exitCode: Self.optionalVerificationExitCode($0["exit_code"] ?? $0["exitCode"]),
                 outputSummary: $0["output_summary"] as? String ?? $0["outputSummary"] as? String,
-                adapter: $0["adapter"] as? String ?? $0["tool_identifier"] as? String ?? $0["toolIdentifier"] as? String,
+                adapter: VerificationEvidenceText.bounded($0["adapter"] as? String ?? $0["tool_identifier"] as? String ?? $0["toolIdentifier"] as? String),
                 capturedAt: Self.optionalISO8601Date($0["captured_at"] ?? $0["capturedAt"]),
-                repositoryIdentity: $0["repository_identity"] as? String ?? $0["repositoryIdentity"] as? String,
-                commitFingerprint: $0["commit_fingerprint"] as? String ?? $0["commitFingerprint"] as? String,
-                targetFingerprint: $0["target_fingerprint"] as? String ?? $0["targetFingerprint"] as? String,
-                diffFingerprint: $0["diff_fingerprint"] as? String ?? $0["diffFingerprint"] as? String,
-                rulesScopeDetail: $0["rules_scope_detail"] as? String ?? $0["rulesScopeDetail"] as? String ?? $0["rules"] as? String,
-                staleReason: $0["stale_reason"] as? String ?? $0["staleReason"] as? String
+                repositoryIdentity: VerificationEvidenceText.bounded($0["repository_identity"] as? String ?? $0["repositoryIdentity"] as? String),
+                commitFingerprint: VerificationEvidenceText.bounded($0["commit_fingerprint"] as? String ?? $0["commitFingerprint"] as? String),
+                targetFingerprint: VerificationEvidenceText.bounded($0["target_fingerprint"] as? String ?? $0["targetFingerprint"] as? String),
+                diffFingerprint: VerificationEvidenceText.bounded($0["diff_fingerprint"] as? String ?? $0["diffFingerprint"] as? String),
+                rulesScopeDetail: VerificationEvidenceText.bounded($0["rules_scope_detail"] as? String ?? $0["rulesScopeDetail"] as? String ?? $0["rules"] as? String),
+                staleReason: VerificationEvidenceText.bounded($0["stale_reason"] as? String ?? $0["staleReason"] as? String)
             )
         }
         return VerificationSummary(state: state, evidence: evidence)
