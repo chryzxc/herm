@@ -71,6 +71,7 @@ struct HermesCapabilityServiceTests {
         #expect(byID["rpc-sessions"]?.isAvailable == false)
         #expect(byID["rpc-sessions"]?.availability == .unsupported)
         #expect(byID["gateway"]?.isAvailable == false)
+        #expect(byID["tools"]?.isAvailable == false)
     }
 
     @Test func supersededProbeCannotOverwriteNewerCache() async {
@@ -80,12 +81,14 @@ struct HermesCapabilityServiceTests {
         let first = Task { await service.probe(client: client, remindersAvailable: false) }
         await client.waitUntilFirstProbeSuspends()
         let second = Task { await service.probe(client: client, remindersAvailable: true, forceRefresh: true) }
-        client.releaseFirstProbe()
+        await client.waitUntilSecondProbeSuspends()
+        client.releaseProbes()
 
-        _ = await first.value
+        let firstStates = await first.value
         _ = await second.value
         let cached = await service.probe(client: client, remindersAvailable: true)
 
+        #expect(firstStates.first(where: { $0.id == "reminders" })?.availability == .available)
         #expect(cached.first(where: { $0.id == "reminders" })?.availability == .available)
     }
 
@@ -169,6 +172,7 @@ private final class FailingCapabilityProbeClient: HermesRPCClientProtocol {
     func connect() async throws {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         if method == "session.active_list" { throw TestRPCError.failed }
+        if method == "tools.list" { return ["error": "bad response"] }
         return [:]
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
@@ -177,19 +181,38 @@ private final class FailingCapabilityProbeClient: HermesRPCClientProtocol {
 
 @MainActor
 private final class OverlappingCapabilityProbeClient: CapabilityProbeClient {
-    private var firstProbeSuspended = false
-    private var release = false
+    private var suspensionCount = 0
+    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private var suspensionWaiters: [Int: CheckedContinuation<Void, Never>] = [:]
 
     func waitUntilFirstProbeSuspends() async {
-        while !firstProbeSuspended { await Task.yield() }
+        await waitForSuspension(number: 1)
     }
 
-    func releaseFirstProbe() { release = true }
+    func waitUntilSecondProbeSuspends() async {
+        await waitForSuspension(number: 2)
+    }
+
+    private func waitForSuspension(number: Int) async {
+        guard suspensionCount < number else { return }
+        await withCheckedContinuation { continuation in
+            suspensionWaiters[number] = continuation
+        }
+    }
+
+    func releaseProbes() {
+        let continuations = releaseContinuations
+        releaseContinuations.removeAll()
+        continuations.forEach { $0.resume() }
+    }
 
     override func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
-        if !firstProbeSuspended {
-            firstProbeSuspended = true
-            while !release { await Task.yield() }
+        if suspensionCount < 2 {
+            suspensionCount += 1
+            suspensionWaiters.removeValue(forKey: suspensionCount)?.resume()
+            await withCheckedContinuation { continuation in
+                releaseContinuations.append(continuation)
+            }
         }
         return try await super.request(method, params: params)
     }

@@ -8,11 +8,19 @@ final class HermesCapabilityService {
         let sessionID: String?
     }
 
-    private var cachedSnapshots: [CacheKey: CapabilitySnapshot] = [:]
+    private struct CachedSnapshot {
+        let client: HermesRPCClientProtocol
+        let snapshot: CapabilitySnapshot
+    }
+
+    private var cachedSnapshots: [CacheKey: CachedSnapshot] = [:]
+    private var latestPublishedSnapshots: [ObjectIdentifier: CachedSnapshot] = [:]
     private var probeGeneration = 0
+    private var activeProbeGenerations: Set<Int> = []
 
     func invalidate() {
         cachedSnapshots.removeAll()
+        latestPublishedSnapshots.removeAll()
         probeGeneration += 1
     }
 
@@ -26,11 +34,13 @@ final class HermesCapabilityService {
         let activeSessionID = normalizedSessionID?.isEmpty == false ? normalizedSessionID : nil
         let cacheKey = CacheKey(clientID: ObjectIdentifier(client), remindersAvailable: remindersAvailable, sessionID: activeSessionID)
         if !forceRefresh,
-           let cachedSnapshot = cachedSnapshots[cacheKey] {
-            return cachedSnapshot.states
+           let cachedSnapshot = cachedSnapshots[cacheKey],
+           cachedSnapshot.client === client {
+            return cachedSnapshot.snapshot.states
         }
         probeGeneration += 1
         let generation = probeGeneration
+        activeProbeGenerations.insert(generation)
 
         let sessionRPC = await request(client, method: "session.active_list")
         let schedulingRPC = await request(client, method: "cron.manage", params: ["action": "list"])
@@ -366,9 +376,22 @@ final class HermesCapabilityService {
         let states = rawStates.map(Self.productionMetadata)
         let snapshot = CapabilitySnapshot(states: states, generatedAt: Date())
         if generation == probeGeneration {
-            cachedSnapshots[cacheKey] = snapshot
+            let cachedSnapshot = CachedSnapshot(client: client, snapshot: snapshot)
+            cachedSnapshots[cacheKey] = cachedSnapshot
+            latestPublishedSnapshots[ObjectIdentifier(client)] = cachedSnapshot
+        } else {
+            while latestPublishedSnapshots[ObjectIdentifier(client)]?.client !== client,
+                  activeProbeGenerations.contains(where: { $0 > generation }) {
+                await Task.yield()
+            }
         }
-        return states
+        activeProbeGenerations.remove(generation)
+        if generation == probeGeneration {
+            return states
+        }
+        return latestPublishedSnapshots[ObjectIdentifier(client)]?.client === client
+            ? latestPublishedSnapshots[ObjectIdentifier(client)]!.snapshot.states
+            : states
     }
 
     private func cliCapability(
@@ -395,7 +418,9 @@ final class HermesCapabilityService {
     }
 
     private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async -> [String: Any]? {
-        guard let result = try? await client.request(method, params: params), !result.isEmpty else { return nil }
+        guard let result = try? await client.request(method, params: params),
+              !result.isEmpty,
+              result["error"] == nil else { return nil }
         return result
     }
 
