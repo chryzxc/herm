@@ -3628,9 +3628,17 @@ struct WorkspaceActivitySidebar: View {
 
     private func capabilityStatusRow(_ capability: CapabilityState) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Circle().fill(capability.isAvailable ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6).padding(.top, 4)
+            Circle().fill(capabilityReadinessColor(capability)).frame(width: 6, height: 6).padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
-                Text(capability.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
+                HStack(spacing: 6) {
+                    Text(capability.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
+                    Text(capabilityReadinessLabel(capability).uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(capabilityReadinessColor(capability))
+                    Text(capabilityAccessLabel(capability).uppercased())
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                }
                 Text(capability.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
                 if let recovery = capability.recovery {
                     Text(recovery).font(.system(size: 12)).foregroundStyle(Color.scifiWarning).lineLimit(2)
@@ -3651,6 +3659,53 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private func capabilityReadinessLabel(_ capability: CapabilityState) -> String {
+        switch capability.probeState {
+        case .verified: "Verified"
+        case .unverified: "Needs review"
+        case .missing: "Missing"
+        case .unsupported: "Unsupported"
+        }
+    }
+
+    private func capabilityReadinessColor(_ capability: CapabilityState) -> Color {
+        switch capability.probeState {
+        case .verified: Color.scifiSuccess
+        case .unverified: Color.scifiAccent
+        case .missing, .unsupported: Color.scifiWarning
+        }
+    }
+
+    private func capabilityAccessLabel(_ capability: CapabilityState) -> String {
+        switch capability.accessClassification {
+        case .safeReadOnly: "Read-only"
+        case .confirmedMutation: "Confirmed mutation"
+        case .externalSetup: "External setup"
+        }
+    }
+
+    private var capabilityInventorySnapshot: CapabilitySnapshot {
+        control.capabilitySnapshot
+    }
+
+    private func capabilityStates(for category: CapabilityCategory) -> [CapabilityState] {
+        (capabilityInventorySnapshot.statesByCategory[category] ?? []).filter { !unavailableSetupCapabilities.contains($0) }
+    }
+
+    private var capabilityInventorySummary: some View {
+        HStack(spacing: 8) {
+            Text("\(capabilityInventorySnapshot.totalCount) TOTAL")
+            Text("\(capabilityInventorySnapshot.verifiedCount) READY").foregroundStyle(Color.scifiSuccess)
+            Text("\(capabilityInventorySnapshot.unverifiedCount) REVIEW").foregroundStyle(Color.scifiAccent)
+            Text("\(capabilityInventorySnapshot.missingCount + capabilityInventorySnapshot.unsupportedCount) MISSING/UNSUPPORTED")
+                .foregroundStyle(Color.scifiWarning)
+        }
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .foregroundStyle(Color.scifiMuted)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+    }
+
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
             if !unavailableSetupCapabilities.isEmpty {
@@ -3666,8 +3721,15 @@ struct WorkspaceActivitySidebar: View {
             Toggle("Repository watch notifications", isOn: Binding(get: { commandCenterPreferences.repositoryNotificationsEnabled }, set: { enabled in commandCenterPreferences.setRepositoryNotificationsEnabled(enabled); workflow.setRepositoryNotificationsEnabled(enabled) }))
                 .font(.system(size: 12))
                 .foregroundStyle(Color.scifiMuted)
-            ForEach(control.capabilities.filter { !unavailableSetupCapabilities.contains($0) }) { capability in
-                capabilityStatusRow(capability)
+            capabilityInventorySummary
+            ForEach(CapabilityCategory.allCases, id: \.self) { category in
+                let states = capabilityStates(for: category)
+                if !states.isEmpty {
+                    sectionLabel(category.rawValue.uppercased())
+                    ForEach(states) { capability in
+                        capabilityStatusRow(capability)
+                    }
+                }
             }
             if control.projectFacts != nil || control.verification != nil {
                 Divider().overlay(Color.scifiBorderLight)

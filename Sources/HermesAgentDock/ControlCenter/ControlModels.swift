@@ -842,9 +842,18 @@ struct CapabilitySnapshot: Equatable {
     let states: [CapabilityState]
     let generatedAt: Date
 
+    var totalCount: Int { states.count }
+    var availableCount: Int { states.filter { $0.availability == .available }.count }
+    var verifiedCount: Int { states.filter { $0.probeState == .verified }.count }
+    var unverifiedCount: Int { states.filter { $0.probeState == .unverified }.count }
+    var missingCount: Int { states.filter { $0.probeState == .missing }.count }
+    var unsupportedCount: Int { states.filter { $0.probeState == .unsupported }.count }
+
     var sortedStates: [CapabilityState] {
         states.sorted {
-            ($0.category.rawValue, $0.title, $0.id) < ($1.category.rawValue, $1.title, $1.id)
+            let leftCategory = CapabilityCategory.allCases.firstIndex(of: $0.category) ?? .max
+            let rightCategory = CapabilityCategory.allCases.firstIndex(of: $1.category) ?? .max
+            return (leftCategory, $0.title, $0.id) < (rightCategory, $1.title, $1.id)
         }
     }
 

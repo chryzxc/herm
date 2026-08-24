@@ -110,6 +110,12 @@ final class ControlCenterModel: ObservableObject {
         )
     }
 
+    /// Read-only presentation projection of the latest capability probe.
+    /// The probe remains the sole source of capability state.
+    var capabilitySnapshot: CapabilitySnapshot {
+        CapabilitySnapshot(states: capabilities, generatedAt: .now)
+    }
+
     func capabilityAvailable(_ id: String) -> Bool {
         capabilities.first(where: { $0.id == id })?.isAvailable == true
     }
