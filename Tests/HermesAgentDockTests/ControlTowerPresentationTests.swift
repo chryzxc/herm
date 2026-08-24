@@ -80,6 +80,26 @@ struct ControlTowerPresentationTests {
         #expect(result.nextAction.count <= 160)
     }
 
+    @Test func directUnsafeStaleReasonIsNormalizedAndWinsWithMatchingFingerprints() {
+        let evidence = VerificationEvidenceSummary(
+            command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: 0, outputSummary: nil,
+            targetFingerprint: "target", diffFingerprint: "diff",
+            staleReason: String(repeating: "unsafe stale reason ", count: 20)
+        )
+        let result = VerificationEvidencePresentation.make(
+            verification: VerificationSummary(state: .passed, evidence: evidence),
+            currentFingerprint: "same", evidenceFingerprint: "same",
+            currentTargetFingerprint: "target", currentDiffFingerprint: "diff",
+            openFailureCount: 0, repositoryDirty: false
+        )
+
+        #expect(evidence.staleReason == nil)
+        #expect(evidence.hasInvalidStaleReason == true)
+        #expect(result.state == .stale)
+        #expect(result.staleReason == nil)
+        #expect(result.nextAction == "Refresh verification against the current repository state.")
+    }
+
     @Test func automationHealthNeverInfersSuccessFromMissingHistory() {
         let job = CronSummary(id: "job", name: "Nightly", schedule: "0 0 * * *", enabled: true, nextRun: "tomorrow")
         let unknown = AutomationHealthPresentation.make(job: job, runs: [], capabilityAvailable: true, mcpErrorObserved: false)

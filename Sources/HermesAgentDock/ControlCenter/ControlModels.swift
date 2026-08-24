@@ -964,8 +964,8 @@ struct VerificationEvidenceSummary: Equatable {
         self.targetFingerprint = targetFingerprint
         self.diffFingerprint = diffFingerprint
         self.rulesScopeDetail = rulesScopeDetail
-        self.staleReason = staleReason
-        self.hasInvalidStaleReason = hasInvalidStaleReason
+        self.staleReason = VerificationEvidenceText.bounded(staleReason)
+        self.hasInvalidStaleReason = hasInvalidStaleReason || (staleReason != nil && self.staleReason == nil)
     }
 }
 

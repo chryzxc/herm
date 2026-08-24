@@ -2451,8 +2451,9 @@ final class ControlCenterModel: ObservableObject {
             let row = $0
             let staleReasonValue = row["stale_reason"] as? String ?? row["staleReason"] as? String
             let hasInvalidStaleReason = ["stale_reason", "staleReason"].contains { key in
-                guard let rawValue = row[key] as? String else { return false }
-                return VerificationEvidenceText.bounded(rawValue) == nil
+                guard let rawValue = row[key] else { return false }
+                guard let stringValue = rawValue as? String else { return true }
+                return VerificationEvidenceText.bounded(stringValue) == nil
             }
             return VerificationEvidenceSummary(
                 command: row["command"] as? String,
