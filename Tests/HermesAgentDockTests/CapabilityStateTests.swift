@@ -27,6 +27,7 @@ struct CapabilityStateTests {
             detail: "Configured locally",
             isAvailable: true,
             recovery: nil,
+            source: .local,
             category: .review,
             provenance: .localTool,
             probeState: .unverified,
@@ -68,6 +69,53 @@ struct CapabilityStateTests {
         #expect(unsupported.probeState == .unsupported)
         #expect(!missing.isAvailable)
         #expect(!unsupported.isAvailable)
+    }
+
+    @Test func contradictoryMetadataIsNormalizedToTheLegacyAuthoritativeFields() {
+        let state = CapabilityState(
+            id: "external-review",
+            title: "External review",
+            detail: "Available",
+            isAvailable: true,
+            recovery: nil,
+            source: .external,
+            access: .externalSetup,
+            availability: .unsupported,
+            category: .core,
+            provenance: .hermesGateway,
+            probeState: .missing,
+            accessClassification: .safeReadOnly
+        )
+
+        #expect(state.availability == .available)
+        #expect(state.provenance == .external)
+        #expect(state.accessClassification == .externalSetup)
+        #expect(state.probeState == .unverified)
+        #expect(state.isAvailable)
+    }
+
+    @Test func unavailableCapabilityCannotRemainVerifiedOrAvailable() {
+        let state = CapabilityState(
+            id: "security-check",
+            title: "Security check",
+            detail: "Missing",
+            isAvailable: false,
+            recovery: nil,
+            source: .local,
+            access: .readOnly,
+            availability: .available,
+            probeState: .verified
+        )
+
+        #expect(state.availability != .available)
+        #expect(state.probeState != .verified)
+        #expect(!state.isAvailable)
+    }
+
+    @Test func omittedCategoryUsesDeterministicReadinessTaxonomy() {
+        #expect(CapabilityState(id: "kanban.create", title: "Create", detail: "", isAvailable: true, recovery: nil).category == .integration)
+        #expect(CapabilityState(id: "security.gitleaks", title: "Gitleaks", detail: "", isAvailable: false, recovery: nil).category == .security)
+        #expect(CapabilityState(id: "code-review.ocr", title: "OCR", detail: "", isAvailable: true, recovery: nil).category == .review)
     }
 
     @Test func capabilityReadinessSortsAndGroupsDeterministically() {

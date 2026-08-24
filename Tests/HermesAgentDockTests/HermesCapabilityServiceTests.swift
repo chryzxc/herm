@@ -65,6 +65,24 @@ struct HermesCapabilityServiceTests {
         #expect(byID["reminders"]?.availability == .available)
     }
 
+    @Test func productionProbesExposeReadinessMetadataForRealCapabilities() async {
+        let client = CapabilityProbeClient()
+        let capabilities = await HermesCapabilityService().probe(client: client, remindersAvailable: true)
+        let byID = Dictionary(uniqueKeysWithValues: capabilities.map { ($0.id, $0) })
+
+        #expect(byID["gateway"]?.category == .core)
+        #expect(byID["gateway"]?.provenance == .hermesGateway)
+        #expect(byID["gateway"]?.probeState == .verified)
+        #expect(byID["rpc-sessions"]?.category == .core)
+        #expect(byID["kanban"]?.category == .integration)
+        #expect(byID["kanban"]?.provenance == .hermesCLI)
+        #expect(byID["kanban"]?.probeState == .verified)
+        #expect(byID["mcp"]?.category == .integration)
+        #expect(byID["mcp"]?.probeState != .verified)
+        #expect(byID["tools"]?.category == .core)
+        #expect(byID["notes"]?.probeState == .missing)
+    }
+
     @Test func mutationCapabilitiesRequireTheirDocumentedHelpTerms() async {
         let client = CapabilityProbeClient()
         let capabilities = await HermesCapabilityService().probe(client: client, remindersAvailable: false)
@@ -94,6 +112,8 @@ private final class CapabilityProbeClient: HermesRPCClientProtocol {
             return ["code": 127, "stderr": "command not found"]
         case "hermes mcp list":
             return ["code": 0, "stdout": "No MCP servers configured"]
+        case "hermes kanban list --help":
+            return ["code": 0, "stdout": "list --json"]
         case "hermes kanban boards list --help":
             return ["code": 0, "stdout": "List all boards\n--json\n--all"]
         case "hermes kanban boards switch --help":

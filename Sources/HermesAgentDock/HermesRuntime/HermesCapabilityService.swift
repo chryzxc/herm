@@ -86,7 +86,7 @@ final class HermesCapabilityService {
             ?? (configResult?["hermes_version"] as? String)
             ?? (Self.shellResultSucceeded(versionResult) ? versionOutput : nil)
 
-        let states: [CapabilityState] = [
+        let rawStates: [CapabilityState] = [
             CapabilityState(
                 id: "gateway",
                 title: "Hermes gateway",
@@ -358,6 +358,7 @@ final class HermesCapabilityService {
             )
         ]
 
+        let states = rawStates.map(Self.productionMetadata)
         let snapshot = CapabilitySnapshot(states: states, generatedAt: Date())
         cachedSnapshot = snapshot
         cachedRemindersAvailability = remindersAvailable
@@ -390,6 +391,22 @@ final class HermesCapabilityService {
 
     private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async -> [String: Any]? {
         try? await client.request(method, params: params)
+    }
+
+    private static func productionMetadata(_ state: CapabilityState) -> CapabilityState {
+        CapabilityState(
+            id: state.id,
+            title: state.title,
+            detail: state.detail,
+            isAvailable: state.isAvailable,
+            recovery: state.recovery,
+            recoveryCommand: state.recoveryCommand,
+            source: state.source,
+            access: state.access,
+            availability: state.availability,
+            category: state.category,
+            probeState: state.isAvailable ? .verified : state.probeState
+        )
     }
 
     static func shellResultSucceeded(_ result: [String: Any]?) -> Bool {

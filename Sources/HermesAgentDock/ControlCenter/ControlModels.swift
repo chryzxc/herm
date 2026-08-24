@@ -768,7 +768,7 @@ struct CapabilityState: Identifiable, Equatable {
         source: CapabilitySource = .gateway,
         access: CapabilityAccess = .readOnly,
         availability: CapabilityAvailability? = nil,
-        category: CapabilityCategory = .core,
+        category: CapabilityCategory? = nil,
         provenance: CapabilityProvenance? = nil,
         probeState: CapabilityProbeState? = nil,
         accessClassification: CapabilityAccessClassification? = nil
@@ -781,12 +781,36 @@ struct CapabilityState: Identifiable, Equatable {
         self.recoveryCommand = recoveryCommand
         self.source = source
         self.access = access
-        let resolvedAvailability = availability ?? (isAvailable ? .available : .unsupported)
-        self.availability = resolvedAvailability
-        self.category = category
-        self.provenance = provenance ?? CapabilityProvenance(source: source)
-        self.probeState = probeState ?? (isAvailable ? .unverified : .unsupported)
-        self.accessClassification = accessClassification ?? CapabilityAccessClassification(access: access)
+        if isAvailable {
+            self.availability = .available
+        } else if availability == .unavailable {
+            self.availability = .unavailable
+        } else {
+            self.availability = .unsupported
+        }
+        self.category = category ?? CapabilityCategory(readinessID: id)
+        self.provenance = CapabilityProvenance(source: source)
+        if isAvailable {
+            self.probeState = probeState == .missing || probeState == .unsupported ? .unverified : (probeState ?? .unverified)
+        } else {
+            self.probeState = probeState == .missing || (probeState == nil && availability == .unavailable) ? .missing : .unsupported
+        }
+        self.accessClassification = CapabilityAccessClassification(access: access)
+    }
+}
+
+extension CapabilityCategory {
+    init(readinessID: String) {
+        let id = readinessID.lowercased()
+        if ["security", "gitleaks", "semgrep", "trivy", "snyk", "yara"].contains(where: id.contains) {
+            self = .security
+        } else if ["review", "ocr", "opencode"].contains(where: id.contains) {
+            self = .review
+        } else if ["integration", "reminder", "note", "calendar", "messaging", "email", "mcp", "kanban", "cron"].contains(where: id.contains) {
+            self = .integration
+        } else {
+            self = .core
+        }
     }
 }
 
