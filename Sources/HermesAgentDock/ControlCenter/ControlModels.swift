@@ -108,6 +108,33 @@ enum CapabilitySource: String, Codable, Equatable {
     case external
 }
 
+enum CapabilityCategory: String, Codable, CaseIterable, Hashable {
+    case core
+    case integration
+    case review
+    case security
+}
+
+enum CapabilityProvenance: String, Codable, Equatable {
+    case hermesGateway
+    case hermesCLI
+    case localTool
+    case external
+}
+
+enum CapabilityProbeState: String, Codable, Equatable {
+    case verified
+    case unverified
+    case missing
+    case unsupported
+}
+
+enum CapabilityAccessClassification: String, Codable, Equatable {
+    case safeReadOnly
+    case confirmedMutation
+    case externalSetup
+}
+
 enum CapabilityAccess: String, Codable, Equatable {
     case readOnly
     case confirmedMutation
@@ -726,6 +753,10 @@ struct CapabilityState: Identifiable, Equatable {
     let source: CapabilitySource
     let access: CapabilityAccess
     let availability: CapabilityAvailability
+    let category: CapabilityCategory
+    let provenance: CapabilityProvenance
+    let probeState: CapabilityProbeState
+    let accessClassification: CapabilityAccessClassification
 
     init(
         id: String,
@@ -736,7 +767,11 @@ struct CapabilityState: Identifiable, Equatable {
         recoveryCommand: String? = nil,
         source: CapabilitySource = .gateway,
         access: CapabilityAccess = .readOnly,
-        availability: CapabilityAvailability? = nil
+        availability: CapabilityAvailability? = nil,
+        category: CapabilityCategory? = nil,
+        provenance: CapabilityProvenance? = nil,
+        probeState: CapabilityProbeState? = nil,
+        accessClassification: CapabilityAccessClassification? = nil
     ) {
         self.id = id
         self.title = title
@@ -746,13 +781,85 @@ struct CapabilityState: Identifiable, Equatable {
         self.recoveryCommand = recoveryCommand
         self.source = source
         self.access = access
-        self.availability = availability ?? (isAvailable ? .available : .unsupported)
+        if isAvailable {
+            self.availability = .available
+        } else if availability == .unavailable {
+            self.availability = .unavailable
+        } else {
+            self.availability = .unsupported
+        }
+        self.category = category ?? CapabilityCategory(readinessID: id)
+        self.provenance = CapabilityProvenance(source: source)
+        switch self.availability {
+        case .available:
+            self.probeState = probeState == .missing || probeState == .unsupported ? .unverified : (probeState ?? .unverified)
+        case .unavailable:
+            self.probeState = .missing
+        case .unsupported:
+            self.probeState = .unsupported
+        }
+        self.accessClassification = CapabilityAccessClassification(access: access)
+    }
+}
+
+extension CapabilityCategory {
+    init(readinessID: String) {
+        let id = readinessID.lowercased()
+        if ["security", "gitleaks", "semgrep", "trivy", "snyk", "yara"].contains(where: id.contains) {
+            self = .security
+        } else if ["review", "ocr", "opencode"].contains(where: id.contains) {
+            self = .review
+        } else if ["integration", "reminder", "note", "calendar", "messaging", "email", "mcp", "kanban", "cron"].contains(where: id.contains) {
+            self = .integration
+        } else {
+            self = .core
+        }
+    }
+}
+
+extension CapabilityProvenance {
+    init(source: CapabilitySource) {
+        switch source {
+        case .gateway: self = .hermesGateway
+        case .cli: self = .hermesCLI
+        case .local: self = .localTool
+        case .external: self = .external
+        }
+    }
+}
+
+extension CapabilityAccessClassification {
+    init(access: CapabilityAccess) {
+        switch access {
+        case .readOnly: self = .safeReadOnly
+        case .confirmedMutation: self = .confirmedMutation
+        case .externalSetup: self = .externalSetup
+        }
     }
 }
 
 struct CapabilitySnapshot: Equatable {
     let states: [CapabilityState]
     let generatedAt: Date
+
+    var totalCount: Int { states.count }
+    var availableCount: Int { states.filter { $0.availability == .available }.count }
+    var verifiedCount: Int { states.filter { $0.probeState == .verified }.count }
+    var unverifiedCount: Int { states.filter { $0.probeState == .unverified }.count }
+    var missingCount: Int { states.filter { $0.probeState == .missing }.count }
+    var unsupportedCount: Int { states.filter { $0.probeState == .unsupported }.count }
+
+    var sortedStates: [CapabilityState] {
+        states.sorted {
+            let leftCategory = CapabilityCategory.allCases.firstIndex(of: $0.category) ?? .max
+            let rightCategory = CapabilityCategory.allCases.firstIndex(of: $1.category) ?? .max
+            return (leftCategory, $0.title, $0.id) < (rightCategory, $1.title, $1.id)
+        }
+    }
+
+    var statesByCategory: [CapabilityCategory: [CapabilityState]] {
+        Dictionary(grouping: sortedStates, by: \.category)
+    }
 
     func state(for id: String) -> CapabilityState? {
         states.first { $0.id == id }
@@ -804,6 +911,21 @@ enum VerificationState: String, Equatable {
     case notApplicable
 }
 
+enum VerificationEvidenceText {
+    static let maxLength = 160
+
+    static func bounded(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxLength,
+              trimmed.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
+        let safe = HermesDiagnosticsService.safeSummary(trimmed)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !safe.isEmpty, safe.count <= maxLength else { return nil }
+        return safe
+    }
+}
+
 struct VerificationEvidenceSummary: Equatable {
     let command: String?
     let canonicalCommand: String?
@@ -812,6 +934,39 @@ struct VerificationEvidenceSummary: Equatable {
     let status: String?
     let exitCode: Int?
     let outputSummary: String?
+
+    // Optional provenance is preserved when the verification adapter provides it.
+    // These fields deliberately do not imply that a missing value was observed.
+    let adapter: String?
+    let capturedAt: Date?
+    let repositoryIdentity: String?
+    let commitFingerprint: String?
+    let targetFingerprint: String?
+    let diffFingerprint: String?
+    let rulesScopeDetail: String?
+    let staleReason: String?
+    /// Preserves stale precedence when an untrusted raw reason is rejected.
+    /// The rejected value is never retained or rendered.
+    let hasInvalidStaleReason: Bool
+
+    init(command: String?, canonicalCommand: String?, kind: String?, scope: String?, status: String?, exitCode: Int?, outputSummary: String?, adapter: String? = nil, capturedAt: Date? = nil, repositoryIdentity: String? = nil, commitFingerprint: String? = nil, targetFingerprint: String? = nil, diffFingerprint: String? = nil, rulesScopeDetail: String? = nil, staleReason: String? = nil, hasInvalidStaleReason: Bool = false) {
+        self.command = command
+        self.canonicalCommand = canonicalCommand
+        self.kind = kind
+        self.scope = scope
+        self.status = status
+        self.exitCode = exitCode
+        self.outputSummary = outputSummary
+        self.adapter = adapter
+        self.capturedAt = capturedAt
+        self.repositoryIdentity = repositoryIdentity
+        self.commitFingerprint = commitFingerprint
+        self.targetFingerprint = targetFingerprint
+        self.diffFingerprint = diffFingerprint
+        self.rulesScopeDetail = rulesScopeDetail
+        self.staleReason = VerificationEvidenceText.bounded(staleReason)
+        self.hasInvalidStaleReason = hasInvalidStaleReason || (staleReason != nil && self.staleReason == nil)
+    }
 }
 
 struct VerificationSummary: Equatable {

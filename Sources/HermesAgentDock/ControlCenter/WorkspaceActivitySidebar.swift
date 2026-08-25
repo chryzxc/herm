@@ -965,7 +965,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if let verification = control.verification {
-                let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
+                let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
                 diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .scifiSuccess : .scifiWarning)
                 Text(deliveryEvidence.nextAction)
                     .font(.system(size: 11))
@@ -976,6 +976,14 @@ struct WorkspaceActivitySidebar: View {
                 if let evidence = verification.evidence {
                     diagnosticRow(label: "SCOPE", value: evidence.scope?.uppercased() ?? "UNKNOWN", color: evidence.scope?.lowercased() == "targeted" ? .scifiWarning : .scifiMuted)
                     if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: .scifiTertiary) }
+                    if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: .scifiTertiary) }
+                    if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: .scifiTertiary) }
+                    if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: .scifiTertiary) }
+                    if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: .scifiTertiary) }
+                    if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: .scifiTertiary) }
+                    if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: .scifiTertiary) }
+                    if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: .scifiTertiary) }
+                    if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: .scifiWarning) }
                 }
             } else if control.projectFacts == nil {
                 emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Core to request verification facts.")
@@ -3628,9 +3636,17 @@ struct WorkspaceActivitySidebar: View {
 
     private func capabilityStatusRow(_ capability: CapabilityState) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Circle().fill(capability.isAvailable ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6).padding(.top, 4)
+            Circle().fill(capabilityReadinessColor(capability)).frame(width: 6, height: 6).padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
-                Text(capability.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
+                HStack(spacing: 6) {
+                    Text(capability.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
+                    Text(capabilityReadinessLabel(capability).uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(capabilityReadinessColor(capability))
+                    Text(capabilityAccessLabel(capability).uppercased())
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                }
                 Text(capability.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
                 if let recovery = capability.recovery {
                     Text(recovery).font(.system(size: 12)).foregroundStyle(Color.scifiWarning).lineLimit(2)
@@ -3651,6 +3667,53 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private func capabilityReadinessLabel(_ capability: CapabilityState) -> String {
+        switch capability.probeState {
+        case .verified: "Verified"
+        case .unverified: "Needs review"
+        case .missing: "Missing"
+        case .unsupported: "Unsupported"
+        }
+    }
+
+    private func capabilityReadinessColor(_ capability: CapabilityState) -> Color {
+        switch capability.probeState {
+        case .verified: Color.scifiSuccess
+        case .unverified: Color.scifiAccent
+        case .missing, .unsupported: Color.scifiWarning
+        }
+    }
+
+    private func capabilityAccessLabel(_ capability: CapabilityState) -> String {
+        switch capability.accessClassification {
+        case .safeReadOnly: "Read-only"
+        case .confirmedMutation: "Confirmed mutation"
+        case .externalSetup: "External setup"
+        }
+    }
+
+    private var capabilityInventorySnapshot: CapabilitySnapshot {
+        control.capabilitySnapshot
+    }
+
+    private func capabilityStates(for category: CapabilityCategory) -> [CapabilityState] {
+        (capabilityInventorySnapshot.statesByCategory[category] ?? []).filter { !unavailableSetupCapabilities.contains($0) }
+    }
+
+    private var capabilityInventorySummary: some View {
+        HStack(spacing: 8) {
+            Text("\(capabilityInventorySnapshot.totalCount) TOTAL")
+            Text("\(capabilityInventorySnapshot.verifiedCount) READY").foregroundStyle(Color.scifiSuccess)
+            Text("\(capabilityInventorySnapshot.unverifiedCount) REVIEW").foregroundStyle(Color.scifiAccent)
+            Text("\(capabilityInventorySnapshot.missingCount + capabilityInventorySnapshot.unsupportedCount) MISSING/UNSUPPORTED")
+                .foregroundStyle(Color.scifiWarning)
+        }
+        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        .foregroundStyle(Color.scifiMuted)
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+    }
+
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
             if !unavailableSetupCapabilities.isEmpty {
@@ -3666,8 +3729,23 @@ struct WorkspaceActivitySidebar: View {
             Toggle("Repository watch notifications", isOn: Binding(get: { commandCenterPreferences.repositoryNotificationsEnabled }, set: { enabled in commandCenterPreferences.setRepositoryNotificationsEnabled(enabled); workflow.setRepositoryNotificationsEnabled(enabled) }))
                 .font(.system(size: 12))
                 .foregroundStyle(Color.scifiMuted)
-            ForEach(control.capabilities.filter { !unavailableSetupCapabilities.contains($0) }) { capability in
-                capabilityStatusRow(capability)
+            capabilityInventorySummary
+            if capabilityInventorySnapshot.states.isEmpty {
+                emptyState(
+                    icon: "arrow.triangle.2.circlepath",
+                    title: "Core capabilities not yet available",
+                    detail: "Capability readiness has not been returned. Refresh Core or reconnect Hermes, then try again."
+                )
+            } else {
+                ForEach(CapabilityCategory.allCases, id: \.self) { category in
+                    let states = capabilityStates(for: category)
+                    if !states.isEmpty {
+                        sectionLabel(category.rawValue.uppercased())
+                        ForEach(states) { capability in
+                            capabilityStatusRow(capability)
+                        }
+                    }
+                }
             }
             if control.projectFacts != nil || control.verification != nil {
                 Divider().overlay(Color.scifiBorderLight)
@@ -3699,12 +3777,22 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 if let verification = control.verification {
+                    let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
                     let stateColor: Color = verification.state == .passed ? .scifiSuccess : (verification.state == .failed ? .scifiDestructive : .scifiWarning)
+                    diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .scifiSuccess : .scifiWarning)
                     diagnosticRow(label: "STATUS", value: verification.state.rawValue.uppercased(), color: stateColor)
                     if let evidence = verification.evidence {
                         if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: Color.scifiTertiary) }
                         if let scope = evidence.scope { diagnosticRow(label: "SCOPE", value: scope.uppercased(), color: scope == "targeted" ? Color.scifiWarning : Color.scifiTertiary) }
                         if let exitCode = evidence.exitCode { diagnosticRow(label: "EXIT", value: String(exitCode), color: exitCode == 0 ? Color.scifiSuccess : Color.scifiDestructive) }
+                        if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: Color.scifiTertiary) }
+                        if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: Color.scifiTertiary) }
+                        if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: Color.scifiTertiary) }
+                        if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: Color.scifiTertiary) }
+                        if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: Color.scifiTertiary) }
+                        if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: Color.scifiTertiary) }
+                        if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: Color.scifiTertiary) }
+                        if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: Color.scifiWarning) }
                     }
                 }
             }

@@ -184,6 +184,101 @@ struct ControlCenterProjectTests {
         #expect(verification.evidence?.scope == "targeted")
     }
 
+    @Test func parsesOptionalQualityGateMetadataWithoutInferringMalformedValues() {
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": [
+                    "adapter": "swiftpm",
+                    "captured_at": "2026-08-24T12:00:00Z",
+                    "repository_identity": "repo-1",
+                    "commit_fingerprint": "abc123",
+                    "target_fingerprint": "target-1",
+                    "diff_fingerprint": "diff-1",
+                    "rules_scope_detail": "Package.swift tests",
+                    "stale_reason": "superseded by commit",
+                    "exit_code": "not-an-int",
+                    "capturedAt": 42
+                ]
+            ]
+        ])
+
+        #expect(verification.evidence?.adapter == "swiftpm")
+        #expect(verification.evidence?.capturedAt == ISO8601DateFormatter().date(from: "2026-08-24T12:00:00Z"))
+        #expect(verification.evidence?.repositoryIdentity == "repo-1")
+        #expect(verification.evidence?.commitFingerprint == "abc123")
+        #expect(verification.evidence?.targetFingerprint == "target-1")
+        #expect(verification.evidence?.diffFingerprint == "diff-1")
+        #expect(verification.evidence?.rulesScopeDetail == "Package.swift tests")
+        #expect(verification.evidence?.staleReason == "superseded by commit")
+        #expect(verification.evidence?.exitCode == nil)
+    }
+
+    @Test func boundsAndRedactsVerificationEvidenceMetadataAtTheEvidenceBoundary() {
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": [
+                    "adapter": String(repeating: "adapter-", count: 40),
+                    "repository_identity": "/Users/christian/private/repo",
+                    "commit_fingerprint": String(repeating: "a", count: 161),
+                    "target_fingerprint": "target-1",
+                    "diff_fingerprint": "diff-1",
+                    "rules_scope_detail": "  Package.swift tests  ",
+                    "stale_reason": "\u{0000}invalid"
+                ]
+            ]
+        ])
+
+        #expect(verification.evidence?.adapter == nil)
+        #expect(verification.evidence?.repositoryIdentity == "••••/private/repo")
+        #expect(verification.evidence?.commitFingerprint == nil)
+        #expect(verification.evidence?.targetFingerprint == "target-1")
+        #expect(verification.evidence?.diffFingerprint == "diff-1")
+        #expect(verification.evidence?.rulesScopeDetail == "Package.swift tests")
+        #expect(verification.evidence?.staleReason == nil)
+    }
+
+    @Test func preservesInvalidStaleReasonAsAnUnrenderedStaleSignal() {
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": [
+                    "scope": "repository",
+                    "exit_code": 0,
+                    "stale_reason": "\u{0000}do not expose"
+                ]
+            ]
+        ])
+
+        #expect(verification.evidence?.staleReason == nil)
+        #expect(verification.evidence?.hasInvalidStaleReason == true)
+        #expect(!String(describing: verification).contains("do not expose"))
+    }
+
+    @Test func preservesNonStringStaleReasonAsAnUnrenderedStaleSignal() {
+        let verification = ControlCenterModel.parseVerification([
+            "verification": [
+                "status": "passed",
+                "evidence": [
+                    "scope": "repository",
+                    "exit_code": 0,
+                    "stale_reason": ["unsafe": true]
+                ]
+            ]
+        ])
+
+        #expect(verification.evidence?.staleReason == nil)
+        #expect(verification.evidence?.hasInvalidStaleReason == true)
+        #expect(!String(describing: verification).contains("unsafe"))
+    }
+
+    @Test func verificationEvidenceInitializersRemainBackwardCompatible() {
+        let evidence = VerificationEvidenceSummary(command: "swift test", canonicalCommand: nil, kind: "test", scope: "targeted", status: "passed", exitCode: 0, outputSummary: "ok")
+        #expect(evidence.adapter == nil)
+        #expect(evidence.capturedAt == nil)
+    }
+
     @Test func kanbanChangeRequestsHaveStableActionIdentity() {
         let task = KanbanTaskSummary(id: "k1", title: "Task", status: "ready", detail: nil, priority: nil, assignee: nil)
 

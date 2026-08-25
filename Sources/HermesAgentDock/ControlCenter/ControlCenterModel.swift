@@ -51,6 +51,7 @@ final class ControlCenterModel: ObservableObject {
     /// `projects.tree` response, but that must not dismiss the user's detail.
     @Published private(set) var selectedProject: ProjectSummary?
     @Published private(set) var capabilities: [CapabilityState] = []
+    private var capabilitySnapshotGeneratedAt: Date = .distantPast
     @Published private(set) var diagnostics: [HermesDiagnostic] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var pendingActionIDs: Set<String> = []
@@ -108,6 +109,12 @@ final class ControlCenterModel: ObservableObject {
             scheduledJobs: cronJobs,
             developmentContext: developmentContext
         )
+    }
+
+    /// Read-only presentation projection of the latest capability probe.
+    /// The probe remains the sole source of capability state.
+    var capabilitySnapshot: CapabilitySnapshot {
+        CapabilitySnapshot(states: capabilities, generatedAt: capabilitySnapshotGeneratedAt)
     }
 
     func capabilityAvailable(_ id: String) -> Bool {
@@ -181,6 +188,9 @@ final class ControlCenterModel: ObservableObject {
         self.rpc = rpc
         self.cli = rpc.map(HermesCLIAdapter.init)
         self.capabilities = capabilities
+        if !capabilities.isEmpty {
+            capabilitySnapshotGeneratedAt = .now
+        }
         let stored = presentationDefaults.dictionary(forKey: presentationKey) as? [String: String] ?? [:]
         let storedSnoozes = presentationDefaults.dictionary(forKey: snoozeKey) as? [String: Double] ?? [:]
         for (id, rawState) in stored {
@@ -387,6 +397,7 @@ final class ControlCenterModel: ObservableObject {
                     sessionID: dockModel.sessionID,
                     forceRefresh: forceCapabilities
                 )
+                capabilitySnapshotGeneratedAt = .now
                 if forceCapabilities || diagnostics.isEmpty {
                     diagnostics = await diagnosticsService.read(client: dockModel.controlRPCClient)
                 }
@@ -2268,6 +2279,18 @@ final class ControlCenterModel: ObservableObject {
         return intValue(value)
     }
 
+    private static func optionalVerificationExitCode(_ value: Any?) -> Int? {
+        guard let value else { return nil }
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber {
+            let type = String(cString: value.objCType)
+            guard type != "c" && type != "B", value.doubleValue.rounded() == value.doubleValue else { return nil }
+            return value.intValue
+        }
+        if let value = value as? String { return Int(value) }
+        return nil
+    }
+
     private static func doubleValue(_ value: Any?) -> Double? {
         if let value = value as? Double { return value }
         if let value = value as? NSNumber { return value.doubleValue }
@@ -2425,17 +2448,38 @@ final class ControlCenterModel: ObservableObject {
         let state = VerificationState(rawValue: (verification["status"] as? String ?? "unknown")) ?? .unknown
         let evidenceRow = verification["evidence"] as? [String: Any]
         let evidence = evidenceRow.map {
-            VerificationEvidenceSummary(
-                command: $0["command"] as? String,
-                canonicalCommand: $0["canonical_command"] as? String ?? $0["canonicalCommand"] as? String,
-                kind: $0["kind"] as? String,
-                scope: $0["scope"] as? String,
-                status: $0["status"] as? String,
-                exitCode: Self.optionalIntValue($0["exit_code"] ?? $0["exitCode"]),
-                outputSummary: $0["output_summary"] as? String ?? $0["outputSummary"] as? String
+            let row = $0
+            let staleReasonValue = row["stale_reason"] as? String ?? row["staleReason"] as? String
+            let hasInvalidStaleReason = ["stale_reason", "staleReason"].contains { key in
+                guard let rawValue = row[key] else { return false }
+                guard let stringValue = rawValue as? String else { return true }
+                return VerificationEvidenceText.bounded(stringValue) == nil
+            }
+            return VerificationEvidenceSummary(
+                command: row["command"] as? String,
+                canonicalCommand: row["canonical_command"] as? String ?? row["canonicalCommand"] as? String,
+                kind: row["kind"] as? String,
+                scope: row["scope"] as? String,
+                status: row["status"] as? String,
+                exitCode: Self.optionalVerificationExitCode(row["exit_code"] ?? row["exitCode"]),
+                outputSummary: row["output_summary"] as? String ?? row["outputSummary"] as? String,
+                adapter: VerificationEvidenceText.bounded(row["adapter"] as? String ?? row["tool_identifier"] as? String ?? row["toolIdentifier"] as? String),
+                capturedAt: Self.optionalISO8601Date(row["captured_at"] ?? row["capturedAt"]),
+                repositoryIdentity: VerificationEvidenceText.bounded(row["repository_identity"] as? String ?? row["repositoryIdentity"] as? String),
+                commitFingerprint: VerificationEvidenceText.bounded(row["commit_fingerprint"] as? String ?? row["commitFingerprint"] as? String),
+                targetFingerprint: VerificationEvidenceText.bounded(row["target_fingerprint"] as? String ?? row["targetFingerprint"] as? String),
+                diffFingerprint: VerificationEvidenceText.bounded(row["diff_fingerprint"] as? String ?? row["diffFingerprint"] as? String),
+                rulesScopeDetail: VerificationEvidenceText.bounded(row["rules_scope_detail"] as? String ?? row["rulesScopeDetail"] as? String ?? row["rules"] as? String),
+                staleReason: VerificationEvidenceText.bounded(staleReasonValue),
+                hasInvalidStaleReason: hasInvalidStaleReason
             )
         }
         return VerificationSummary(state: state, evidence: evidence)
+    }
+
+    private static func optionalISO8601Date(_ value: Any?) -> Date? {
+        guard let value = value as? String else { return nil }
+        return ISO8601DateFormatter().date(from: value)
     }
 
     static func parseKanbanAttachments(_ value: Any, boardSlug: String?, taskID: String) -> [KanbanAttachmentSummary] {

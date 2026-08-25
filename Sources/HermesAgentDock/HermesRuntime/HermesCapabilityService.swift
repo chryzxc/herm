@@ -2,14 +2,26 @@ import Foundation
 
 @MainActor
 final class HermesCapabilityService {
-    private var cachedSnapshot: CapabilitySnapshot?
-    private var cachedRemindersAvailability: Bool?
-    private var cachedSessionID: String?
+    private struct CacheKey: Hashable {
+        let clientID: ObjectIdentifier
+        let remindersAvailable: Bool
+        let sessionID: String?
+    }
+
+    private struct CachedSnapshot {
+        let client: HermesRPCClientProtocol
+        let snapshot: CapabilitySnapshot
+    }
+
+    private var cachedSnapshots: [CacheKey: CachedSnapshot] = [:]
+    private var latestPublishedSnapshots: [ObjectIdentifier: CachedSnapshot] = [:]
+    private var probeGeneration = 0
+    private var activeProbeGenerations: Set<Int> = []
 
     func invalidate() {
-        cachedSnapshot = nil
-        cachedRemindersAvailability = nil
-        cachedSessionID = nil
+        cachedSnapshots.removeAll()
+        latestPublishedSnapshots.removeAll()
+        probeGeneration += 1
     }
 
     func probe(
@@ -20,12 +32,15 @@ final class HermesCapabilityService {
     ) async -> [CapabilityState] {
         let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let activeSessionID = normalizedSessionID?.isEmpty == false ? normalizedSessionID : nil
+        let cacheKey = CacheKey(clientID: ObjectIdentifier(client), remindersAvailable: remindersAvailable, sessionID: activeSessionID)
         if !forceRefresh,
-           let cachedSnapshot,
-           cachedRemindersAvailability == remindersAvailable,
-           cachedSessionID == activeSessionID {
-            return cachedSnapshot.states
+           let cachedSnapshot = cachedSnapshots[cacheKey],
+           cachedSnapshot.client === client {
+            return cachedSnapshot.snapshot.states
         }
+        probeGeneration += 1
+        let generation = probeGeneration
+        activeProbeGenerations.insert(generation)
 
         let sessionRPC = await request(client, method: "session.active_list")
         let schedulingRPC = await request(client, method: "cron.manage", params: ["action": "list"])
@@ -86,7 +101,7 @@ final class HermesCapabilityService {
             ?? (configResult?["hermes_version"] as? String)
             ?? (Self.shellResultSucceeded(versionResult) ? versionOutput : nil)
 
-        let states: [CapabilityState] = [
+        let rawStates: [CapabilityState] = [
             CapabilityState(
                 id: "gateway",
                 title: "Hermes gateway",
@@ -358,11 +373,20 @@ final class HermesCapabilityService {
             )
         ]
 
+        let states = rawStates.map(Self.productionMetadata)
         let snapshot = CapabilitySnapshot(states: states, generatedAt: Date())
-        cachedSnapshot = snapshot
-        cachedRemindersAvailability = remindersAvailable
-        cachedSessionID = activeSessionID
-        return states
+        if generation == probeGeneration {
+            let cachedSnapshot = CachedSnapshot(client: client, snapshot: snapshot)
+            cachedSnapshots[cacheKey] = cachedSnapshot
+            latestPublishedSnapshots[ObjectIdentifier(client)] = cachedSnapshot
+        }
+        activeProbeGenerations.remove(generation)
+        if generation == probeGeneration {
+            return states
+        }
+        return latestPublishedSnapshots[ObjectIdentifier(client)]?.client === client
+            ? latestPublishedSnapshots[ObjectIdentifier(client)]!.snapshot.states
+            : []
     }
 
     private func cliCapability(
@@ -389,7 +413,26 @@ final class HermesCapabilityService {
     }
 
     private func request(_ client: HermesRPCClientProtocol, method: String, params: [String: Any] = [:]) async -> [String: Any]? {
-        try? await client.request(method, params: params)
+        guard let result = try? await client.request(method, params: params),
+              !result.isEmpty,
+              result["error"] == nil else { return nil }
+        return result
+    }
+
+    private static func productionMetadata(_ state: CapabilityState) -> CapabilityState {
+        CapabilityState(
+            id: state.id,
+            title: state.title,
+            detail: state.detail,
+            isAvailable: state.isAvailable,
+            recovery: state.recovery,
+            recoveryCommand: state.recoveryCommand,
+            source: state.source,
+            access: state.access,
+            availability: state.availability,
+            category: state.category,
+            probeState: state.isAvailable ? .verified : state.probeState
+        )
     }
 
     static func shellResultSucceeded(_ result: [String: Any]?) -> Bool {

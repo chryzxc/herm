@@ -27,6 +27,79 @@ struct ControlTowerPresentationTests {
         #expect(VerificationEvidencePresentation.make(verification: passed, currentFingerprint: "a", evidenceFingerprint: "a", openFailureCount: 1, repositoryDirty: false).state == .blocked)
     }
 
+    @Test func passedEvidenceRequiresObservedZeroExitCodeBeforeCurrent() {
+        for exitCode in [Int?(nil), 1] {
+            let evidence = VerificationEvidenceSummary(command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: exitCode, outputSummary: nil)
+            let result = VerificationEvidencePresentation.make(
+                verification: VerificationSummary(state: .passed, evidence: evidence),
+                currentFingerprint: "same", evidenceFingerprint: "same", openFailureCount: 0, repositoryDirty: false
+            )
+
+            #expect(result.state == .unavailable)
+            #expect(result.nextAction == "Obtain a fresh observed verification result.")
+        }
+    }
+
+    @Test func invalidParsedStaleReasonWinsWithSafeFallbackAction() {
+        let evidence = VerificationEvidenceSummary(command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: 0, outputSummary: nil, hasInvalidStaleReason: true)
+        let result = VerificationEvidencePresentation.make(
+            verification: VerificationSummary(state: .passed, evidence: evidence),
+            currentFingerprint: "same", evidenceFingerprint: "same", openFailureCount: 0, repositoryDirty: false
+        )
+
+        #expect(result.state == .stale)
+        #expect(result.staleReason == nil)
+        #expect(result.nextAction == "Refresh verification against the current repository state.")
+    }
+
+    @Test func verificationClassifiesCommitAndDiffMismatchesAsStaleAndPreservesReason() {
+        let evidence = VerificationEvidenceSummary(command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: 0, outputSummary: nil, adapter: "swiftpm", capturedAt: nil, repositoryIdentity: "repo", commitFingerprint: "old-commit", targetFingerprint: "target", diffFingerprint: "old-diff", rulesScopeDetail: "all tests", staleReason: "superseded")
+        let result = VerificationEvidencePresentation.make(verification: VerificationSummary(state: .passed, evidence: evidence), currentFingerprint: nil, evidenceFingerprint: nil, currentRepositoryIdentity: "repo", currentCommitFingerprint: "new-commit", currentTargetFingerprint: "target", currentDiffFingerprint: "new-diff", openFailureCount: 0, repositoryDirty: false)
+        #expect(result.state == .stale)
+        #expect(result.staleReason == "superseded")
+        #expect(result.adapter == "swiftpm")
+        #expect(result.rulesScopeDetail == "all tests")
+    }
+
+    @Test func stalePresentationBoundsMetadataAndUsesSafeFallbackAction() {
+        let evidence = VerificationEvidenceSummary(
+            command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: 0, outputSummary: nil,
+            adapter: String(repeating: "x", count: 161), capturedAt: nil, repositoryIdentity: nil,
+            commitFingerprint: nil, targetFingerprint: nil, diffFingerprint: nil, rulesScopeDetail: nil,
+            staleReason: String(repeating: "unsafe stale reason ", count: 20)
+        )
+        let result = VerificationEvidencePresentation.make(
+            verification: VerificationSummary(state: .passed, evidence: evidence),
+            currentFingerprint: "new", evidenceFingerprint: "old", openFailureCount: 0, repositoryDirty: false
+        )
+
+        #expect(result.state == .stale)
+        #expect(result.adapter == nil)
+        #expect(result.staleReason == nil)
+        #expect(result.nextAction == "Refresh verification against the current repository state.")
+        #expect(result.nextAction.count <= 160)
+    }
+
+    @Test func directUnsafeStaleReasonIsNormalizedAndWinsWithMatchingFingerprints() {
+        let evidence = VerificationEvidenceSummary(
+            command: "swift test", canonicalCommand: "swift test", kind: "test", scope: "repository", status: "passed", exitCode: 0, outputSummary: nil,
+            targetFingerprint: "target", diffFingerprint: "diff",
+            staleReason: String(repeating: "unsafe stale reason ", count: 20)
+        )
+        let result = VerificationEvidencePresentation.make(
+            verification: VerificationSummary(state: .passed, evidence: evidence),
+            currentFingerprint: "same", evidenceFingerprint: "same",
+            currentTargetFingerprint: "target", currentDiffFingerprint: "diff",
+            openFailureCount: 0, repositoryDirty: false
+        )
+
+        #expect(evidence.staleReason == nil)
+        #expect(evidence.hasInvalidStaleReason == true)
+        #expect(result.state == .stale)
+        #expect(result.staleReason == nil)
+        #expect(result.nextAction == "Refresh verification against the current repository state.")
+    }
+
     @Test func automationHealthNeverInfersSuccessFromMissingHistory() {
         let job = CronSummary(id: "job", name: "Nightly", schedule: "0 0 * * *", enabled: true, nextRun: "tomorrow")
         let unknown = AutomationHealthPresentation.make(job: job, runs: [], capabilityAvailable: true, mcpErrorObserved: false)
