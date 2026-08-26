@@ -176,13 +176,10 @@ struct SessionInspector: View {
     }
 
     private var latestSessionActivities: [AgentActivityPresentation.PipelineActivity] {
-        Array(
-            AgentActivityPresentation.pipeline(
-                activities: model.agentActivities,
-                toolCalls: model.activeToolCalls,
-                subagents: model.sessionAgents
-            ).prefix(3)
-        )
+        // Reuse DockModel's cached projection: calling pipeline() directly here
+        // rebuilt the full history on every inspector render and stalled the
+        // UI while streaming events kept invalidating the body.
+        Array(model.agentPresentationSnapshot.pipeline.prefix(3))
     }
 
     private var latestSessionEvents: [AgentEvent] {

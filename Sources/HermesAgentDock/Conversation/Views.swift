@@ -1255,7 +1255,14 @@ struct DockPopover: View {
 
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
-        if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && message.images.isEmpty {
+        if message.id == model.streamingMessageIDForPresentation {
+            StreamingAssistantMessageRow(
+                streaming: model.streamingText,
+                timestamp: message.timestamp,
+                modelName: message.modelName,
+                responseDuration: message.responseDuration
+            )
+        } else if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && message.images.isEmpty {
             EmptyView()
         } else {
             HStack(alignment: .top, spacing: 0) {
@@ -1308,14 +1315,10 @@ struct DockPopover: View {
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
-                        if !message.text.isEmpty {
+                        if !message.text.isEmpty || message.id == model.streamingMessageIDForPresentation {
                             Group {
                                 if message.id == model.streamingMessageIDForPresentation {
-                                    Text(message.text)
-                                        .font(.system(size: 14))
-                                        .lineSpacing(3)
-                                        .textSelection(.enabled)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    StreamingMessageText(streaming: model.streamingText)
                                 } else {
                                     MarkdownMessageView(markdown: message.text)
                                 }
@@ -1336,6 +1339,9 @@ struct DockPopover: View {
 
                         HStack(spacing: 6) {
                             Text(HumanDateFormatting.timeOnly(message.timestamp))
+                            if let responseDuration = message.responseDuration {
+                                ResponseDurationLabel(startedAt: message.timestamp, finishedDuration: responseDuration)
+                            }
                             if let modelName = message.modelName {
                                 Text("· \(modelName)")
                             }

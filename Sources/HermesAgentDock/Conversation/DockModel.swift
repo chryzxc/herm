@@ -9,6 +9,7 @@ final class DockModel: ObservableObject {
     @Published private(set) var isHermesConnected = false
     @Published var messages: [ChatMessage] = []
     let composer = ComposerText()
+    let streamingText = StreamingText()
 
     /// Compatibility accessor over the composer's draft so send, steering,
     /// clarification, and external writers (voice transcripts, quick prompts)
@@ -76,12 +77,17 @@ final class DockModel: ObservableObject {
         Self.sessionAttributionID(runtimeID: sessionID, storageID: sessionStorageID)
     }
     private var streamingMessageID: UUID?
+    private(set) var streamingResponseStartedAt: Date?
     private var streamingMessageSessionID: String?
     private var streamingMessageChunks: [String] = []
     private var streamingMessagePublishedText = ""
     private var streamingMessageFlushTask: Task<Void, Never>?
     private var streamingMessageGeneration = 0
     private var streamingMessageIsVisionNotice = false
+    private var streamingReasoningBuffer = ""
+    private var reasoningFlushTask: Task<Void, Never>?
+    private var lastAgentStateCacheAt: Date?
+    private var agentStateCacheTrailingTask: Task<Void, Never>?
     private var didRestoreLatestSession = false
     /// A backend session may only be created after the user explicitly starts
     /// a new chat. Resuming an existing session never grants this permission.
@@ -530,7 +536,7 @@ final class DockModel: ObservableObject {
 
     @discardableResult
     private func resumeSession(_ session: HermesSession, reportFailure: Bool) async -> Bool {
-        flushStreamingMessage()
+        commitStreamingMessage()
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
@@ -550,6 +556,9 @@ final class DockModel: ObservableObject {
         isSending = false
         status = .working
         reasoningState = nil
+        reasoningFlushTask?.cancel()
+        reasoningFlushTask = nil
+        streamingReasoningBuffer = ""
         streamingMessageID = nil
         streamingMessageIsVisionNotice = false
         currentSessionTitle = session.displayTitle
@@ -595,7 +604,7 @@ final class DockModel: ObservableObject {
     }
 
     func newChat(projectPath: String? = nil) {
-        flushStreamingMessage()
+        commitStreamingMessage()
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
         streamingMessageGeneration &+= 1
@@ -619,10 +628,14 @@ final class DockModel: ObservableObject {
         messages = []
         activeToolCalls = []
         reasoningState = nil
+        reasoningFlushTask?.cancel()
+        reasoningFlushTask = nil
+        streamingReasoningBuffer = ""
         recentEvents = []
         streamingMessageID = nil
         streamingMessageSessionID = nil
-            streamingMessageChunks = []
+        streamingResponseStartedAt = nil
+        streamingMessageChunks = []
         streamingMessagePublishedText = ""
         conversationActivityPhase = .idle
         streamingMessageIsVisionNotice = false
@@ -744,6 +757,10 @@ final class DockModel: ObservableObject {
 
     func stop() {
         if let sessionID { Task { _ = try? await gateway.request("session.interrupt", params: ["session_id": sessionID]) } }
+        commitStreamingMessage()
+        streamingMessageID = nil
+        streamingMessageSessionID = nil
+        streamingResponseStartedAt = nil
         status = .idle
         isSending = false
         isSteering = false
@@ -1113,15 +1130,21 @@ final class DockModel: ObservableObject {
             if let model {
                 currentModelName = model
             }
-            messages.append(ChatMessage(role: .hermes, text: "", modelName: currentModelName))
+            let responseStartedAt = Date()
+            messages.append(ChatMessage(role: .hermes, text: "", timestamp: responseStartedAt, modelName: currentModelName))
             streamingMessageID = messages.last?.id
             streamingMessageSessionID = sessionID
+            streamingResponseStartedAt = responseStartedAt
         streamingMessageChunks = []
             streamingMessagePublishedText = ""
+            streamingText.text = ""
             streamingMessageGeneration &+= 1
             conversationActivityPhase = .responding
             streamingMessageIsVisionNotice = false
             reasoningState = nil
+        reasoningFlushTask?.cancel()
+        reasoningFlushTask = nil
+        streamingReasoningBuffer = ""
             isShowingReasoning = false
             activeToolCalls = []
         case "message.delta":
@@ -1133,13 +1156,7 @@ final class DockModel: ObservableObject {
             streamingMessageChunks.append(delta)
             scheduleStreamingMessageFlush()
         case "message.complete":
-            flushStreamingMessage()
-            if let id = streamingMessageID,
-               let index = messages.firstIndex(where: { $0.id == id }),
-               Self.isVisionUnsupportedError(messages[index].text) {
-                messages[index] = ChatMessage(id: id, role: .hermes, text: Self.visionUnsupportedNotice, timestamp: messages[index].timestamp, modelName: messages[index].modelName)
-                activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
-            }
+            commitStreamingMessage()
             // A few Hermes adapters omit the final tool-result identifier. The
             // response boundary is authoritative, so do not leave those calls
             // displayed as running after the assistant has completed.
@@ -1152,6 +1169,7 @@ final class DockModel: ObservableObject {
             conversationActivityPhase = .idle
             isSending = false
             streamingMessageID = nil
+            streamingResponseStartedAt = nil
             if completionNotificationsEnabled {
                 let response = messages.last(where: { $0.role == .hermes })?.text ?? "Hermes completed the active request."
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
@@ -1197,7 +1215,7 @@ final class DockModel: ObservableObject {
             conversationActivityPhase = .idle
             notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")")
         case "error":
-            flushStreamingMessage()
+            commitStreamingMessage()
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
             let text = Self.isVisionUnsupportedError(raw) ? Self.visionUnsupportedNotice : raw
             messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
@@ -1218,13 +1236,21 @@ final class DockModel: ObservableObject {
             reasoningState = ReasoningState(text: "", isComplete: false)
             isShowingReasoning = false
         case "reasoning.delta", "thinking.delta":
-            guard var state = reasoningState else { return }
+            guard reasoningState != nil else { return }
             let delta = (payload["delta"] as? String) ?? (payload["text"] as? String) ?? ""
-            state.text += delta
-            reasoningState = state
+            guard !delta.isEmpty else { return }
+            // Reasoning deltas arrive faster than any UI needs: publishing
+            // reasoningState per delta re-rendered the whole popover at the
+            // delta rate. Coalesce at the same cadence as message streaming.
+            streamingReasoningBuffer += delta
+            scheduleReasoningFlush()
             conversationActivityPhase = .thinking
         case "reasoning.complete", "thinking.stop", "thinking.complete":
             guard var state = reasoningState else { return }
+            reasoningFlushTask?.cancel()
+            reasoningFlushTask = nil
+            state.text = streamingReasoningBuffer
+            streamingReasoningBuffer = ""
             state.isComplete = true
             reasoningState = state
             conversationActivityPhase = .responding
@@ -1268,6 +1294,10 @@ final class DockModel: ObservableObject {
                 ?? (params["tool_call_id"] as? String)
                 ?? (params["tool_use_id"] as? String)
                 ?? UUID().uuidString
+            // A retried or duplicated tool.call event must not create a second
+            // row with the same identity: ForEach diffing and the expand toggle
+            // key on this id, and duplicates crash the activity list.
+            guard !activeToolCalls.contains(where: { $0.id == id }) else { break }
             activeToolCalls.append(ActiveToolCall(
                 id: id,
                 name: name,
@@ -1348,25 +1378,95 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private func scheduleReasoningFlush() {
+        guard reasoningFlushTask == nil else { return }
+        reasoningFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled, let self else { return }
+            self.reasoningFlushTask = nil
+            guard var state = self.reasoningState else { return }
+            state.text = self.streamingReasoningBuffer
+            self.reasoningState = state
+        }
+    }
+
     private func flushStreamingMessage() {
+        streamingMessageFlushTask?.cancel()
+        streamingMessageFlushTask = nil
+        guard streamingMessageID != nil,
+              streamingMessageSessionID == sessionID,
+              let newText = pendingStreamingText(),
+              newText != streamingMessagePublishedText else { return }
+        applyVisionNoticeDetectionIfNeeded(to: newText)
+        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
+        // Publish only to the streaming row: writing messages[index] here would
+        // re-render the whole popover at the 33ms flush cadence.
+        streamingText.text = publishedText
+        streamingMessagePublishedText = publishedText
+    }
+
+    /// Commits the buffered stream into the transcript. Callers are response
+    /// boundaries (complete, error, stop, chat switch) — the one place the
+    /// messages array should change for the streamed response.
+    private func commitStreamingMessage() {
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
         guard let id = streamingMessageID,
               streamingMessageSessionID == sessionID,
-              let index = messages.firstIndex(where: { $0.id == id }),
-              streamingMessagePublishedText != (streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()) else { return }
-        let newText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()
-        if !streamingMessageIsVisionNotice && Self.isVisionUnsupportedError(newText) {
+              let index = messages.firstIndex(where: { $0.id == id }) else {
+            streamingText.text = ""
+            streamingResponseStartedAt = nil
+            return
+        }
+        applyVisionNoticeDetectionIfNeeded(to: streamingMessageChunks.joined())
+        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()
+        let message = messages[index]
+        messages[index] = ChatMessage(
+            id: id,
+            role: .hermes,
+            text: publishedText,
+            image: message.image,
+            timestamp: message.timestamp,
+            modelName: message.modelName,
+            responseDuration: Date().timeIntervalSince(message.timestamp)
+        )
+        streamingText.text = ""
+        streamingResponseStartedAt = nil
+    }
+
+    private func pendingStreamingText() -> String? {
+        streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()
+    }
+
+    private func applyVisionNoticeDetectionIfNeeded(to text: String) {
+        if !streamingMessageIsVisionNotice, Self.isVisionUnsupportedError(text) {
             streamingMessageIsVisionNotice = true
             activeToolCalls.removeAll { $0.name.lowercased().contains("vision") }
         }
-        let message = messages[index]
-        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
-        messages[index] = ChatMessage(id: id, role: .hermes, text: publishedText, image: message.image, timestamp: message.timestamp, modelName: message.modelName)
-        streamingMessagePublishedText = publishedText
     }
 
     private func cacheCurrentAgentState() {
+        // Subagent event storms called this per event; each call copies every
+        // projection array and enqueues an encode/write. Coalesce to one
+        // snapshot per interval with a trailing write for the last event.
+        let now = Date()
+        if let last = lastAgentStateCacheAt, now.timeIntervalSince(last) < 0.5 {
+            if agentStateCacheTrailingTask == nil {
+                agentStateCacheTrailingTask = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled, let self else { return }
+                    self.agentStateCacheTrailingTask = nil
+                    self.writeAgentStateSnapshot()
+                }
+            }
+            return
+        }
+        lastAgentStateCacheAt = now
+        writeAgentStateSnapshot()
+    }
+
+    private func writeAgentStateSnapshot() {
+        lastAgentStateCacheAt = Date()
         guard let sessionStorageID else { return }
         let snapshot = agentStateBySessionID.merging([sessionStorageID: SessionAgentState(
             activeToolCalls: activeToolCalls,
@@ -2455,8 +2555,11 @@ final class DockModel: ObservableObject {
     }
 
     private func recordEvent(_ type: String, params: [String: Any]) {
+        // Tool results can embed very large payloads; serializing the whole
+        // params dict on the main thread caused lag spikes during tool storms.
+        // Bound the input before serializing.
         let detail: String
-        if let data = try? JSONSerialization.data(withJSONObject: params, options: [.sortedKeys]),
+        if let data = try? JSONSerialization.data(withJSONObject: Self.boundedEventPayload(params), options: [.sortedKeys]),
            let json = String(data: data, encoding: .utf8) {
             detail = String(json.prefix(500))
         } else {
@@ -2472,6 +2575,29 @@ final class DockModel: ObservableObject {
         if recentEvents.count > 40 {
             recentEvents.removeFirst(recentEvents.count - 40)
         }
+    }
+
+    private static func boundedEventPayload(_ params: [String: Any], depth: Int = 0) -> [String: Any] {
+        var bounded: [String: Any] = [:]
+        for (key, value) in params {
+            bounded[key] = boundedEventValue(value, depth: depth)
+        }
+        return bounded
+    }
+
+    private static func boundedEventValue(_ value: Any, depth: Int) -> Any {
+        if let string = value as? String {
+            return string.count > 240 ? String(string.prefix(240)) + "…" : string
+        }
+        if let array = value as? [Any] {
+            guard depth < 3 else { return "\(array.count) items" }
+            return array.prefix(8).map { boundedEventValue($0, depth: depth + 1) }
+        }
+        if let dict = value as? [String: Any] {
+            guard depth < 3 else { return "\(dict.count) keys" }
+            return boundedEventPayload(dict, depth: depth + 1)
+        }
+        return value
     }
 
     private static let visionUnsupportedNotice = "This model can't read images. Use a vision-capable model in Hermes to analyze images."

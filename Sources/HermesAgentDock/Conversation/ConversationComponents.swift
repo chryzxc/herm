@@ -350,6 +350,13 @@ struct ConversationActivityRow: View {
       ThinkingDots()
       Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiMuted)
         .lineLimit(1).truncationMode(.tail)
+      if let startedAt = model.streamingResponseStartedAt {
+        Spacer(minLength: 8)
+        ResponseDurationLabel(startedAt: startedAt, finishedDuration: nil)
+          .font(.system(size: 12, design: .monospaced))
+          .foregroundStyle(Color.scifiTertiary)
+          .accessibilityLabel("Response duration")
+      }
     }.padding(.horizontal, horizontalInset).padding(.vertical, 8).frame(
       maxWidth: .infinity, alignment: .leading)
   }

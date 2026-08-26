@@ -70,7 +70,9 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingHandoffConfirmation = false
     @State private var pendingProcess: ProcessSummary?
     @State private var pendingAgentID: String?
+    @State private var isShowingAgentUpdateConfirmation = false
     @StateObject private var commandCenterPreferences = CommandCenterPreferencesStore()
+    @StateObject private var agentUpdateService = HermesUpdateService()
 
     private enum KanbanLane: String, CaseIterable, Identifiable {
         case triage = "Triage"
@@ -3714,8 +3716,239 @@ struct WorkspaceActivitySidebar: View {
         .minimumScaleFactor(0.7)
     }
 
+    private var agentUpdateSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                sectionLabel("HERMES AGENT UPDATE")
+                Spacer()
+                if agentUpdateService.phase == .checking {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("CHECKING…")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color.scifiMuted)
+                    }
+                } else {
+                    Button("CHECK") { agentUpdateService.checkForUpdates() }
+                        .buttonStyle(.scifiPress)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiAccent)
+                        .disabled(!agentUpdateService.canCheck)
+                }
+            }
+            .task {
+                if agentUpdateService.phase == .idle {
+                    agentUpdateService.checkForUpdates()
+                }
+            }
+
+            switch agentUpdateService.phase {
+            case .idle: agentUpdateIdleContent
+            case .checking: agentUpdateIdleContent
+            case .upToDate: agentUpdateCheckedContent(statusText: "UP TO DATE", statusColor: .scifiSuccess, showsUpdateButton: false)
+            case .updateAvailable: agentUpdateCheckedContent(statusText: "UPDATE AVAILABLE", statusColor: .scifiWarning, showsUpdateButton: true)
+            case .checkFailed(let reason): agentUpdateCheckFailedContent(reason)
+            case .updating: agentUpdateProgressContent
+            case .updateSucceeded: agentUpdateSucceededContent
+            case .updateFailed(let reason): agentUpdateFailedContent(reason)
+            }
+        }
+        .confirmationDialog("Update Hermes Agent?", isPresented: $isShowingAgentUpdateConfirmation) {
+            Button("Update Hermes Agent") { agentUpdateService.performUpdate() }
+                .disabled(agentUpdateService.isBusy)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(verbatim: "The Dock will run the allow-listed command `\(HermesUpdateService.updateCommandDisplay)`. It pulls the latest code from NousResearch/hermes-agent, reinstalls dependencies, and may migrate new configuration options. Running Hermes sessions keep the current version until Hermes restarts.")
+        }
+    }
+
+    private var agentUpdateIdleContent: some View {
+        Text("Compares the installed Hermes agent with the latest release from NousResearch/hermes-agent.")
+            .font(.system(size: 12))
+            .foregroundStyle(Color.scifiTertiary)
+    }
+
+    private func agentUpdateCheckedContent(statusText: String, statusColor: Color, showsUpdateButton: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let installed = agentUpdateService.installed {
+                HStack(spacing: 8) {
+                    Text("INSTALLED")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(Color.scifiTertiary)
+                    Text(installed.displayVersion)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(0.35)
+                        .foregroundStyle(Color.scifiFg)
+                    if let method = agentUpdateService.installMethod {
+                        Text("·  \(method)")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color.scifiMuted)
+                    }
+                }
+                .lineLimit(1)
+            }
+            if let latest = agentUpdateService.latest {
+                HStack(spacing: 8) {
+                    Text("UPSTREAM")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(Color.scifiTertiary)
+                    Text(latest.displayVersion + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(0.35)
+                        .foregroundStyle(Color.scifiFg)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if let page = latest.pageURL, let url = URL(string: page) {
+                        Button("RELEASE") { NSWorkspace.shared.open(url) }
+                            .buttonStyle(.scifiPress)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.scifiAccent)
+                    }
+                }
+            }
+            HStack(spacing: 8) {
+                Circle().fill(statusColor).frame(width: 6, height: 6)
+                Text(statusText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(statusColor)
+                if showsUpdateButton,
+                   let installed = agentUpdateService.installed,
+                   let latest = agentUpdateService.latest {
+                    Text("\(installed.displayVersion) → \(latest.displayVersion)")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 0)
+                if showsUpdateButton {
+                    Button("UPDATE HERMES") { isShowingAgentUpdateConfirmation = true }
+                        .buttonStyle(.scifiPress)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.scifiWarning)
+                        .disabled(!agentUpdateService.canStartUpdate)
+                }
+            }
+            Text("SOURCE  ·  NousResearch/hermes-agent" + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
+                .font(.system(size: 12))
+                .foregroundStyle(Color.scifiMuted)
+        }
+    }
+
+    private func agentUpdateCheckFailedContent(_ reason: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let installed = agentUpdateService.installed {
+                diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.scifiTertiary)
+            }
+            HStack(alignment: .top, spacing: 8) {
+                Circle().fill(Color.scifiWarning).frame(width: 6, height: 6).padding(.top, 5)
+                Text(reason)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var agentUpdateProgressContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("UPDATING HERMES AGENT")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .tracking(0.6)
+                    .foregroundStyle(Color.scifiAccent)
+                Spacer()
+                TimelineView(.periodic(from: agentUpdateService.updateStartedAt ?? Date(), by: 1)) { context in
+                    Text(agentUpdateElapsedText(until: context.date))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                }
+            }
+            ProgressView()
+                .progressViewStyle(.linear)
+                .tint(Color.scifiAccent)
+            if let latestLine = agentUpdateService.logLines.last {
+                Text(latestLine)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .lineLimit(2)
+            }
+            agentUpdateLogTail
+        }
+    }
+
+    private var agentUpdateSucceededContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiSuccess)
+                Text("HERMES AGENT UPDATED")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.scifiSuccess)
+                Spacer()
+            }
+            if let installed = agentUpdateService.installed {
+                diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.scifiSuccess)
+            }
+            Text("Quit and reopen the Dock (or restart the Hermes backend) so new sessions run the updated agent.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.scifiTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            agentUpdateLogTail
+        }
+    }
+
+    private func agentUpdateFailedContent(_ reason: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiDestructive)
+                Text(reason)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.scifiTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("The Dock never retries an update automatically. Review the output below and run CHECK before trying again.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.scifiMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            agentUpdateLogTail
+        }
+    }
+
+    private var agentUpdateLogTail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(Array(agentUpdateService.logLines.suffix(120).reversed().enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.scifiMuted)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .frame(maxHeight: 110)
+    }
+
+    private func agentUpdateElapsedText(until now: Date) -> String {
+        guard let started = agentUpdateService.updateStartedAt else { return "" }
+        let seconds = max(0, Int(now.timeIntervalSince(started)))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
+            agentUpdateSection
+            Divider().overlay(Color.scifiBorderLight)
+
             if !unavailableSetupCapabilities.isEmpty {
                 sectionLabel("SETUP NEEDED  ·  \(unavailableSetupCapabilities.count)")
                 ForEach(unavailableSetupCapabilities) { capability in

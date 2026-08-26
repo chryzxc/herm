@@ -10,7 +10,7 @@ enum AgentActivityPhase: String, Equatable {
 
 enum AgentActivityPresentation {
     struct PipelineActivity: Identifiable, Equatable {
-        let id: String
+        var id: String
         let timestamp: Date
         let status: String
         let task: String
@@ -115,7 +115,12 @@ enum AgentActivityPresentation {
         toolCalls: [ActiveToolCall],
         subagents: [HermesSubagent]
     ) -> [PipelineActivity] {
-        let agentByID = Dictionary(uniqueKeysWithValues: subagents.map { ($0.id, $0) })
+        // Restored or reconciled agent lists can briefly carry the same id
+        // twice; uniqueKeysWithValues would fatally crash on that.
+        var agentByID: [String: HermesSubagent] = [:]
+        for agent in subagents where agentByID[agent.id] == nil {
+            agentByID[agent.id] = agent
+        }
         var rows = activities.map { activity in
             let activityPhase = phase(for: activity.kind)
             let currentAgentStatus = activity.agentID.flatMap { agentByID[$0]?.status }
@@ -170,10 +175,30 @@ enum AgentActivityPresentation {
         })
 
         if !rows.isEmpty {
-            return rows.sorted { $0.timestamp > $1.timestamp }
+            // ForEach and the expand toggles key on row id; duplicate ids crash
+            // SwiftUI diffing, so later duplicates get a disambiguated id.
+            var seen = Set<String>()
+            return rows
+                .map { row -> PipelineActivity in
+                    guard !seen.insert(row.id).inserted else { return row }
+                    var occurrence = 2
+                    var candidate = "\(row.id)#\(occurrence)"
+                    while seen.contains(candidate) {
+                        occurrence += 1
+                        candidate = "\(row.id)#\(occurrence)"
+                    }
+                    seen.insert(candidate)
+                    var unique = row
+                    unique.id = candidate
+                    return unique
+                }
+                .sorted { $0.timestamp > $1.timestamp }
         }
 
-        return subagents.map { agent in
+        var seenAgents = Set<String>()
+        return subagents
+            .filter { seenAgents.insert($0.id).inserted }
+            .map { agent in
             PipelineActivity(
                 id: "agent:\(agent.id)",
                 timestamp: agent.startedAt ?? .distantPast,

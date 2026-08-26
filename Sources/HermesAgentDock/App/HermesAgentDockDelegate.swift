@@ -137,6 +137,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private let unreadBadge = UnreadBadgeView(frame: .zero)
     private let panel: DockPanel
     private var cancellables = Set<AnyCancellable>()
+    private var outsideClickMonitors: [Any] = []
     private var desiredWidth = Metrics.workspaceWidth
     private var isFullscreen = false
 
@@ -153,6 +154,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
         configureStatusItem()
         configurePanel()
+        installOutsideClickMonitors()
         observeModel()
     }
 
@@ -187,6 +189,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
+        // Dismissal is handled by the explicit outside-click monitors below.
+        // Keeping this false is important for status-item activation: AppKit
+        // can deactivate the agent while processing the click that opens it.
         panel.hidesOnDeactivate = false
         panel.onCancel = { [weak self] in self?.hide() }
         let hostingView = NSHostingView(
@@ -213,6 +218,42 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 self?.updateStatusIcon(hasUnreadResponse: hasUnreadResponse)
             }
             .store(in: &cancellables)
+    }
+
+    private func installOutsideClickMonitors() {
+        let handler: (NSEvent) -> NSEvent? = { [weak self] event in
+            self?.dismissIfOutside(event)
+            return event
+        }
+
+        if let localMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown],
+            handler: handler
+        ) {
+            outsideClickMonitors.append(localMonitor)
+        }
+
+        if let globalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown],
+            handler: { [weak self] event in
+                self?.dismissIfOutside(event)
+            }
+        ) {
+            outsideClickMonitors.append(globalMonitor)
+        }
+    }
+
+    private func dismissIfOutside(_ event: NSEvent) {
+        guard panel.isVisible, !isFullscreen else { return }
+        let point = NSEvent.mouseLocation
+        guard !panel.frame.contains(point), !statusItemFrame.contains(point) else { return }
+        hide()
+    }
+
+    private var statusItemFrame: NSRect {
+        guard let button = statusItem.button,
+              let window = button.window else { return .zero }
+        return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
     private func updateStatusIcon(hasUnreadResponse: Bool) {

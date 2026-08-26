@@ -48,6 +48,55 @@ struct StreamingPerformanceTests {
         #expect(model.messages.isEmpty)
     }
 
+    @Test func streamedDeltasDoNotMutateTheTranscriptArrayBeforeCompletion() async {
+        let sessionID = "stream-isolated"
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("stream-(UUID().uuidString).json"),
+            initialSessionID: sessionID
+        )
+        model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
+        let placeholderMessage = model.messages.last
+
+        for part in ["Hel", "lo ", "stream", "ing"] {
+            model.receiveGatewayEvent("message.delta", params: ["session_id": sessionID, "payload": ["delta": part]])
+        }
+
+        // The transcript array must stay untouched per delta so DockModel
+        // observers are not re-rendered at the streaming cadence.
+        #expect(model.messages.last?.text == "")
+        #expect(model.messages.last?.id == placeholderMessage?.id)
+        for _ in 0..<50 where !model.streamingText.text.contains("streaming") {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(model.streamingText.text == "Hello streaming")
+
+        model.receiveGatewayEvent("message.complete", params: ["session_id": sessionID, "payload": [:]])
+        #expect(model.messages.last?.text == "Hello streaming")
+        #expect(model.streamingText.text.isEmpty)
+    }
+
+    @Test func reasoningDeltasCoalesceIntoTheReasoningState() async {
+        let sessionID = "reason-session"
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("reason-(UUID().uuidString).json"),
+            initialSessionID: sessionID
+        )
+        model.receiveGatewayEvent("reasoning.start", params: ["session_id": sessionID, "payload": [:]])
+        for part in ["plan", " ", "step"] {
+            model.receiveGatewayEvent("reasoning.delta", params: ["session_id": sessionID, "payload": ["delta": part]])
+        }
+        #expect(model.reasoningState?.text.isEmpty == true)
+
+        for _ in 0..<50 where model.reasoningState?.text != "plan step" {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(model.reasoningState?.text == "plan step")
+
+        model.receiveGatewayEvent("reasoning.complete", params: ["session_id": sessionID, "payload": [:]])
+        #expect(model.reasoningState?.isComplete == true)
+        #expect(model.reasoningState?.text == "plan step")
+    }
+
     @Test func agentPresentationSnapshotIsSharedAndStableAcrossConsumers() {
         let model = DockModel(sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("agents-\(UUID().uuidString).json"))
         model.activeSubagents = (0..<8).map { index in

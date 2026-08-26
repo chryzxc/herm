@@ -711,6 +711,49 @@ struct AgentProjectionTests {
         ))
     }
 
+    @Test func duplicatedSubagentIDsDoNotCrashThePipelineProjection() {
+        let agent = HermesSubagent(id: "dupe-agent", goal: "Same worker", status: "running")
+
+        let pipeline = AgentActivityPresentation.pipeline(
+            activities: [],
+            toolCalls: [],
+            subagents: [agent, agent]
+        )
+
+        #expect(pipeline.count == 1)
+    }
+
+    @Test func pipelineRowIDsRemainUniqueWhenSourcesCollide() {
+        let agent = HermesSubagent(id: "agent-1", goal: "Worker", status: "running")
+        let tool = ActiveToolCall(
+            id: "same",
+            name: "patch",
+            input: "",
+            context: "",
+            startedAt: Date(timeIntervalSince1970: 10),
+            result: nil,
+            isComplete: false
+        )
+        let activity = AgentActivity(
+            id: UUID(),
+            timestamp: Date(timeIntervalSince1970: 5),
+            agentID: "agent-1",
+            kind: "tool.start",
+            text: "patch",
+            toolName: "patch",
+            handoffTarget: nil
+        )
+
+        let pipeline = AgentActivityPresentation.pipeline(
+            activities: [activity, activity, activity, activity],
+            toolCalls: [tool],
+            subagents: [agent]
+        )
+
+        #expect(pipeline.count == 5)
+        #expect(Set(pipeline.map(\.id)).count == pipeline.count)
+    }
+
     @Test func activeToolOrSubagentKeepsConversationActivityVisible() {
         let runningAgent = HermesSubagent(
             id: "qa-agent",
