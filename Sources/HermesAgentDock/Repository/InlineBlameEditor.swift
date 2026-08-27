@@ -93,12 +93,16 @@ final class InlineBlameEditorContainerView: NSView {
         }
 
         changeObserver = NotificationCenter.default.addObserver(forName: NSText.didChangeNotification, object: textView, queue: .main) { [weak self] _ in
-            guard let self else { return }
-            self.onTextChanged(self.textView.string)
-            self.blameView.needsDisplay = true
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.onTextChanged(self.textView.string)
+                self.blameView.needsDisplay = true
+            }
         }
         scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scrollView.contentView, queue: .main) { [weak self] _ in
-            self?.blameView.needsDisplay = true
+            Task { @MainActor [weak self] in
+                self?.blameView.needsDisplay = true
+            }
         }
     }
 

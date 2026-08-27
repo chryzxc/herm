@@ -63,6 +63,39 @@ struct HermesCapabilityServiceTests {
         #expect(secondClient.requestCount > 0)
     }
 
+    @Test func capabilityProbeHonorsTotalDeadline() async {
+        let client = HangingCapabilityProbeClient()
+        let service = HermesCapabilityService(probeTimeout: .milliseconds(20))
+        let started = ContinuousClock.now
+        let states = await service.probe(client: client, remindersAvailable: false)
+        let elapsed = started.duration(to: .now)
+
+        #expect(states.isEmpty)
+        #expect(elapsed < .seconds(1))
+        client.release()
+    }
+
+    @Test func completedProbeTimeoutCannotInvalidateLaterCache() async throws {
+        let client = CapabilityProbeClient()
+        let service = HermesCapabilityService(probeTimeout: .milliseconds(10))
+        _ = await service.probe(client: client, remindersAvailable: false)
+        let count = client.requestCount
+        try await Task.sleep(for: .milliseconds(30))
+        _ = await service.probe(client: client, remindersAvailable: false)
+        #expect(client.requestCount == count)
+    }
+
+    @Test func timedOutSessionProbeCannotReuseAnotherSessionSnapshot() async {
+        let client = ToggleHangingCapabilityProbeClient()
+        let service = HermesCapabilityService(probeTimeout: .milliseconds(10))
+        let sessionA = await service.probe(client: client, remindersAvailable: false, sessionID: "session-a")
+        #expect(!sessionA.isEmpty)
+        client.isHanging = true
+        let sessionB = await service.probe(client: client, remindersAvailable: false, sessionID: "session-b")
+        #expect(sessionB.isEmpty)
+        client.release()
+    }
+
     @Test func thrownAndMalformedRPCResponsesAreClassifiedAsUnavailable() async {
         let client = FailingCapabilityProbeClient()
         let capabilities = await HermesCapabilityService().probe(client: client, remindersAvailable: false)
@@ -242,3 +275,38 @@ private final class OverlappingCapabilityProbeClient: CapabilityProbeClient {
 }
 
 private enum TestRPCError: Error { case failed }
+
+@MainActor
+private final class HangingCapabilityProbeClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private var continuation: CheckedContinuation<Void, Never>?
+    func connect() async throws {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+        return [:]
+    }
+    func release() { continuation?.resume(); continuation = nil }
+    func close() {}
+}
+
+@MainActor
+private final class ToggleHangingCapabilityProbeClient: CapabilityProbeClient {
+    var isHanging = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    override func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if isHanging {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+            }
+        }
+        return try await super.request(method, params: params)
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}

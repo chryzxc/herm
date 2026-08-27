@@ -190,11 +190,6 @@ final class DockModel: ObservableObject {
             guard let self else { return }
             debugLines = Array((debugLines + [line]).suffix(80))
         }
-        ActivityAttributionTrace.reset()
-        ActivityAttributionTrace.append("trace_started", fields: [
-            "trace_path": ActivityAttributionTrace.fileURL.path,
-            "note": "Raw Hermes activity diagnostics; includes tool payloads and ownership decisions."
-        ])
         DebugLog.write("model: initialized")
         gateway.onEvent = { [weak self] type, params in
             self?.receiveGatewayEvent(type, params: params)
@@ -1011,12 +1006,6 @@ final class DockModel: ObservableObject {
                 currentSessionID: currentSessionID,
                 agents: sessionAgents + activeSubagents
               ) else {
-            if ActivityAttributionTrace.enabled { ActivityAttributionTrace.append("gateway_event.ignored_other_session", fields: [
-                "type": type,
-                "current_session_id": sessionID ?? "",
-                "event_session_id": eventSessionID ?? "",
-                "raw_payload": rawPayload
-            ]) }
             if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: ignoring event \(type) without current-session ownership") }
             return
         }
@@ -1026,31 +1015,9 @@ final class DockModel: ObservableObject {
             currentSessionID: sessionID,
             agents: sessionAgents + activeSubagents
         )
-        if ActivityAttributionTrace.enabled {
-            let receivedTrace: [String: Any] = [
-                "type": type,
-                "current_session_id": sessionID ?? "",
-                "event_session_id": eventSessionID ?? "",
-                "raw_params": params,
-                "raw_payload": rawPayload,
-                "known_agents": (sessionAgents + activeSubagents).map(Self.activityTraceAgent),
-                "activity_projection": Self.activityTraceProjection(activityProjection)
-            ]
-            ActivityAttributionTrace.append("gateway_event.received", fields: receivedTrace)
-        }
         if let activityProjection {
             recordAgentActivity(activityProjection.kind, params: params, payload: activityProjection.payload)
             mergeAgentEvent(activityProjection.kind, payload: activityProjection.payload)
-            let appliedTrace: [String: Any] = [
-                "type": type,
-                "recorded_kind": activityProjection.kind,
-                "recorded_agent_id": activityProjection.payload["subagent_id"] as? String ?? "",
-                "active_agents_after_merge": activeSubagents.map(Self.activityTraceAgent),
-                "activity_count": agentActivities.count
-            ]
-            if ActivityAttributionTrace.enabled {
-                ActivityAttributionTrace.append("gateway_event.applied", fields: appliedTrace)
-            }
             cacheCurrentAgentState()
             if activityProjection.consumesParentEvent { return }
         }
@@ -1060,12 +1027,6 @@ final class DockModel: ObservableObject {
            !eventSessionID.isEmpty,
            let sessionID, sessionID != eventSessionID,
            !isRelevantSubagentEvent {
-            if ActivityAttributionTrace.enabled { ActivityAttributionTrace.append("gateway_event.ignored_other_session", fields: [
-                "type": type,
-                "current_session_id": sessionID,
-                "event_session_id": eventSessionID,
-                "raw_payload": rawPayload
-            ]) }
             if !Self.isHighFrequencyEvent(type) { DebugLog.write("model: ignoring event \(type) for other session \(eventSessionID)") }
             return
         }
@@ -1630,13 +1591,6 @@ final class DockModel: ObservableObject {
                 let result = try await gateway.request("delegation.status", params: [:])
                 guard sessionID == expectedSessionID else { return }
                 let rows = result["active"] as? [[String: Any]] ?? []
-                let statusTrace: [String: Any] = [
-                    "current_session_id": expectedSessionID ?? "",
-                    "raw_response": result,
-                    "active_rows": rows,
-                    "agents_before_refresh": activeSubagents.map(Self.activityTraceAgent)
-                ]
-                ActivityAttributionTrace.append("delegation_status.received", fields: statusTrace)
                 let projections = rows.compactMap { row -> (row: [String: Any], agent: HermesSubagent)? in
                     guard row["subagent_id"] is String,
                           let agent = self.telemetry(from: row, fallbackStatus: "running") else { return nil }
@@ -1659,12 +1613,6 @@ final class DockModel: ObservableObject {
                     current: activeSubagents,
                     synthesizedIDs: synthesizedSubagentIDs
                 )
-                ActivityAttributionTrace.append("delegation_status.applied", fields: [
-                    "current_session_id": expectedSessionID ?? "",
-                    "agent_ids_from_status": rpcAgents.map(\.id),
-                    "active_agents_after_refresh": activeSubagents.map(Self.activityTraceAgent),
-                    "activity_count": agentActivities.count
-                ])
                 cacheCurrentAgentState()
             } catch {
                 DebugLog.write("workspace: delegation status failed: \(error.localizedDescription)")
@@ -2249,15 +2197,6 @@ final class DockModel: ObservableObject {
             childSessionID: payload["child_session_id"] as? String
         ))
         if agentActivities.count > 250 { agentActivities.removeFirst(agentActivities.count - 250) }
-        ActivityAttributionTrace.append("agent_activity.recorded", fields: [
-            "kind": type,
-            "agent_id": agentID ?? "",
-            "tool_name": toolName ?? "",
-            "parent_agent_id": (payload["parent_id"] as? String) ?? (payload["parent_subagent_id"] as? String) ?? "",
-            "child_session_id": payload["child_session_id"] as? String ?? "",
-            "raw_payload": payload,
-            "activity_count": agentActivities.count
-        ])
     }
 
     static func agentActivityText(type: String, payload: [String: Any], toolName: String?) -> String {
@@ -2283,41 +2222,9 @@ final class DockModel: ObservableObject {
             agent: agent,
             previous: previousAgent
         ) else {
-            ActivityAttributionTrace.append("delegation_status.activity_skipped", fields: [
-                "raw_row": row,
-                "candidate_agent": Self.activityTraceAgent(agent),
-                "previous_agent": previousAgent.map(Self.activityTraceAgent) ?? [:]
-            ])
             return
         }
-        ActivityAttributionTrace.append("delegation_status.activity_projected", fields: [
-            "raw_row": row,
-            "candidate_agent": Self.activityTraceAgent(agent),
-            "previous_agent": previousAgent.map(Self.activityTraceAgent) ?? [:],
-            "projection": ["kind": projection.kind, "payload": projection.payload]
-        ])
         recordAgentActivity(projection.kind, params: [:], payload: projection.payload)
-    }
-
-    static func activityTraceAgent(_ agent: HermesSubagent) -> [String: Any] {
-        [
-            "id": agent.id,
-            "parent_id": agent.parentID ?? "",
-            "child_session_id": agent.childSessionID ?? "",
-            "goal": agent.goal,
-            "status": agent.status,
-            "tool_count": agent.toolCount,
-            "latest_activity": agent.latestActivity ?? ""
-        ]
-    }
-
-    static func activityTraceProjection(_ projection: AgentActivityEnvelopeProjection?) -> [String: Any] {
-        guard let projection else { return [:] }
-        return [
-            "kind": projection.kind,
-            "consumes_parent_event": projection.consumesParentEvent,
-            "payload": projection.payload
-        ]
     }
 
     /// `delegation.status` exposes the latest child action as `last_tool`, not

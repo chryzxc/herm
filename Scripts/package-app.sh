@@ -28,6 +28,10 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$ROOT_DIR/Sources/HermesAgentDock/Info.plist" "$APP_DIR/Contents/Info.plist"
 
+echo "==> Validating bundle metadata…"
+plutil -lint "$APP_DIR/Contents/Info.plist"
+test -x "$APP_DIR/Contents/MacOS/$APP_NAME"
+
 # Stamp version metadata into the bundle when provided.
 if [ -n "$VERSION" ]; then
     PLIST="$APP_DIR/Contents/Info.plist"
@@ -41,6 +45,7 @@ fi
 codesign --force --deep --sign - "$APP_DIR"
 echo "==> Verifying code signature…"
 codesign --verify --strict --verbose=2 "$APP_DIR"
+codesign -dv --verbose=2 "$APP_DIR" >/dev/null 2>&1
 
 # Stage a DMG source folder with an /Applications symlink for drag-to-install.
 STAGING="$OUTPUT_DIR/staging"

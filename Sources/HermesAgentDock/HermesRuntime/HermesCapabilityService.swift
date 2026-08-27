@@ -1,7 +1,31 @@
 import Foundation
 
 @MainActor
+private final class CapabilityProbeResultBox {
+    private var continuation: CheckedContinuation<[CapabilityState], Never>?
+    private var result: [CapabilityState]?
+
+    func wait() async -> [CapabilityState] {
+        if let result { return result }
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    @discardableResult
+    func finish(_ result: [CapabilityState]) -> Bool {
+        guard self.result == nil else { return false }
+        self.result = result
+        continuation?.resume(returning: result)
+        continuation = nil
+        return true
+    }
+}
+
+@MainActor
 final class HermesCapabilityService {
+    private let probeTimeout: Duration
+
     private struct CacheKey: Hashable {
         let clientID: ObjectIdentifier
         let remindersAvailable: Bool
@@ -18,6 +42,10 @@ final class HermesCapabilityService {
     private var probeGeneration = 0
     private var activeProbeGenerations: Set<Int> = []
 
+    init(probeTimeout: Duration = .seconds(10)) {
+        self.probeTimeout = probeTimeout
+    }
+
     func invalidate() {
         cachedSnapshots.removeAll()
         latestPublishedSnapshots.removeAll()
@@ -25,6 +53,41 @@ final class HermesCapabilityService {
     }
 
     func probe(
+        client: HermesRPCClientProtocol,
+        remindersAvailable: Bool,
+        sessionID: String? = nil,
+        forceRefresh: Bool = false
+    ) async -> [CapabilityState] {
+        let clientID = ObjectIdentifier(client)
+        let normalizedSessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeSessionID = normalizedSessionID?.isEmpty == false ? normalizedSessionID : nil
+        let cacheKey = CacheKey(clientID: clientID, remindersAvailable: remindersAvailable, sessionID: activeSessionID)
+        let fallback = cachedSnapshots[cacheKey]?.client === client
+            ? cachedSnapshots[cacheKey]?.snapshot.states ?? []
+            : []
+        let box = CapabilityProbeResultBox()
+        let timeout = probeTimeout
+        Task { @MainActor [weak self, weak box] in
+            guard let self else { return }
+            let result = await self.probeUnbounded(
+                client: client,
+                remindersAvailable: remindersAvailable,
+                sessionID: sessionID,
+                forceRefresh: forceRefresh
+            )
+            box?.finish(result)
+        }
+        Task { @MainActor [weak self, weak box] in
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            if box?.finish(fallback) == true {
+                self?.probeGeneration += 1
+            }
+        }
+        return await box.wait()
+    }
+
+    private func probeUnbounded(
         client: HermesRPCClientProtocol,
         remindersAvailable: Bool,
         sessionID: String? = nil,

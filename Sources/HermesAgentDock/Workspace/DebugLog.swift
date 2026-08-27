@@ -23,14 +23,15 @@ enum DebugLog {
         writer.append(line, to: fileURL)
     }
 
-    /// Temporary state-transition diagnostics. These are intentionally
-    /// separate from the bounded event log so debugging can show the actual
-    /// session/repository decision without changing normal telemetry events.
+    /// Temporary state-transition diagnostics. The full message is available
+    /// only to the in-memory debug panel; durable output is metadata-only.
     static func writeDiagnostic(_ message: String) {
-        let line = "[\(ISO8601DateFormatter().string(from: Date()))] diagnostic=\(message)\n"
-        print(line, terminator: "")
-        onLine?(line.trimmingCharacters(in: .newlines))
-        writer.append(line, to: fileURL)
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let inMemoryLine = "[\(timestamp)] diagnostic=\(message)"
+        print(inMemoryLine)
+        onLine?(inMemoryLine)
+        let persistentLine = "[\(timestamp)] event=diagnostic\n"
+        writer.append(persistentLine, to: fileURL)
     }
 
     /// Persistent diagnostics deliberately retain only a bounded event category.
@@ -86,69 +87,5 @@ private final class DebugLogWriter {
         } catch {
             print("[HermesAgentDock] Could not write log file: \(error.localizedDescription)")
         }
-    }
-}
-
-/// Short-lived, raw activity diagnostics used to reconcile Hermes event
-/// ownership. Unlike `DebugLog`, this intentionally retains event payloads;
-/// it is owner-only, reset for every app launch, and never shown in the app.
-/// Send it only when you are comfortable sharing the tool inputs and outputs
-/// that Hermes emitted during the captured run.
-enum ActivityAttributionTrace {
-    static let fileURL: URL = {
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        return root
-            .appendingPathComponent("HermesAgentDock", isDirectory: true)
-            .appendingPathComponent("activity-attribution-trace.jsonl")
-    }()
-
-    private static let queue = DispatchQueue(label: "com.hermes-agent-dock.activity-attribution-trace", qos: .utility)
-    private static let maximumFileSize: UInt64 = 5 * 1_024 * 1_024
-
-    static func reset() {
-        guard enabled else { return }
-        queue.sync {
-            do {
-                try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try Data().write(to: fileURL, options: .atomic)
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
-            } catch {
-                print("[HermesAgentDock] Could not reset activity trace: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    static func append(_ stage: String, fields: [String: Any]) {
-        guard enabled else { return }
-        var entry = fields
-        entry["timestamp"] = ISO8601DateFormatter().string(from: Date())
-        entry["stage"] = stage
-        guard JSONSerialization.isValidJSONObject(entry),
-              let encoded = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]) else {
-            print("[HermesAgentDock] Could not encode activity trace entry for \(stage)")
-            return
-        }
-        let line = encoded + Data("\n".utf8)
-        queue.async {
-            do {
-                if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-                   let size = attributes[.size] as? NSNumber,
-                   size.uint64Value + UInt64(line.count) >= maximumFileSize {
-                    try Data().write(to: fileURL, options: .atomic)
-                }
-                let handle = try FileHandle(forWritingTo: fileURL)
-                try handle.seekToEnd()
-                try handle.write(contentsOf: line)
-                try handle.close()
-                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
-            } catch {
-                print("[HermesAgentDock] Could not write activity trace: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    static var enabled: Bool {
-        ProcessInfo.processInfo.environment["HERMES_AGENT_DOCK_ACTIVITY_TRACE"] == "1"
     }
 }

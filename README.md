@@ -371,6 +371,11 @@ swift build
 swift test
 ```
 
-At the current documented baseline, `swift test` runs 71 tests across 15 suites.
+The test suite and release build are also run on every pull request and on pushes
+to the default branch. Test counts are intentionally not hard-coded here because
+they change as coverage evolves.
+
+Packaged DMGs are local developer artifacts. They use ad-hoc signing and are not
+notarized for external distribution.
 
 Keep transport and process-launch concerns in the gateway/runtime services, persistent workspace state in `WorkspaceStore`, and presentation state in `DockModel`. New parsing or state-transition behavior should be extracted into testable helpers instead of expanding view types.
