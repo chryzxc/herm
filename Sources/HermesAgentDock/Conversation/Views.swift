@@ -107,7 +107,7 @@ struct DockPopover: View {
                     } else {
                         header
                         conversation
-                        Divider().overlay(Color.scifiBorderLight)
+                        Divider().overlay(Color.dockBorderLight)
                         ChatComposerView(
                             model: model,
                             composer: model.composer,
@@ -120,32 +120,20 @@ struct DockPopover: View {
             }
 
             if isWorkspaceVisibleForLayout {
-                Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5)
+                Rectangle().fill(Color.dockBorderLight).frame(width: 0.5)
                 contextPanel
                     .frame(width: isFullscreen ? .infinity : (isNarrowLayout ? 500 : 480), height: isFullscreen ? .infinity : 720)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(width: isFullscreen ? nil : popupWidth, height: isFullscreen ? nil : 720)
-        .background {
-            ZStack {
-                Color(red: 0.055, green: 0.065, blue: 0.115)
-                RadialGradient(
-                    colors: [Color.scifiAccent.opacity(0.09), .clear],
-                    center: UnitPoint(x: 0.15, y: 0),
-                    startRadius: 0,
-                    endRadius: 360
-                )
-            }
-            .background(.ultraThinMaterial)
-        }
+        .background(Color.dockCanvas)
         .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 22, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: isFullscreen ? 0 : 22, style: .continuous)
-                .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+                .stroke(Color(nsColor: .separatorColor).opacity(0.65), lineWidth: 0.5)
         }
-        .animation(.scifiEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
-        .environment(\.colorScheme, .dark)
+        .animation(.dockEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
         .sheet(item: $selectedChatImage) { preview in
             ChatImagePreviewModal(image: preview.image)
         }
@@ -340,9 +328,9 @@ struct DockPopover: View {
                 }
             }
             .transition(.opacity)
-            .animation(.scifiEase(duration: 0.2), value: inspectorScope)
+            .animation(.dockEase(duration: 0.2), value: inspectorScope)
         }
-        .background(Color.scifiCanvas)
+        .background(Color.clear)
         // This task belongs to the shared context panel, not the Global
         // sidebar. The sidebar is removed in Session scope, but the session
         // inspector still needs the same repository projection loaded.
@@ -374,8 +362,8 @@ struct DockPopover: View {
             // even when browsing the Global tab.
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.currentSessionTitle ?? "Untitled session")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
 
                 // Use cachedProjectName instead of the live computed value so that transient
@@ -392,22 +380,17 @@ struct DockPopover: View {
                         if inspectorScope == .session {
                             Button(action: newChatForContextProject) {
                                 Label("NEW SESSION", systemImage: "plus.bubble")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .tracking(0.35)
-                                    .padding(.horizontal, 7)
-                                    .frame(height: 22)
-                                    .background(Color.scifiAccent.opacity(0.12))
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .font(.system(size: 13, weight: .medium))
                             }
-                            .buttonStyle(.scifiPress)
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.dockAccent)
                             .disabled(model.isRestoringSession || model.isCreatingSession)
                             .help("Start a new chat in \(activeSessionProjectName)")
                             .accessibilityLabel("Start a new chat in \(activeSessionProjectName)")
                         }
                     }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Color.dockMetadataText)
                 }
             }
 
@@ -416,9 +399,9 @@ struct DockPopover: View {
             scopePicker
         }
         .padding(.horizontal, 16)
-        .frame(height: 58)
-        .background(Color.scifiSurface2)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+        .frame(height: 70)
+        .background(Color.dockSurface2)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private var contextProjectPath: String? {
@@ -487,28 +470,30 @@ struct DockPopover: View {
     }
 
     private var scopePicker: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(InspectorScope.allCases) { scope in
                 Button {
-                    withAnimation(.scifiEase(duration: 0.18)) {
+                    withAnimation(.dockEase(duration: 0.18)) {
                         inspectorScope = scope
                     }
                 } label: {
-                    Text(scope.rawValue.uppercased())
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(0.6)
-                        .foregroundStyle(inspectorScope == scope ? Color.scifiFg : Color.scifiTertiary)
-                        .frame(width: 70, height: 28)
-                        .background(inspectorScope == scope ? Color.scifiAccent.opacity(0.16) : .clear)
+                        Text(scope.rawValue)
+                        .font(.system(size: 13, weight: inspectorScope == scope ? .semibold : .regular))
+                        .foregroundStyle(inspectorScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
+                        .frame(width: 78, height: 34)
+                        .background(Color.clear)
+                        .overlay(alignment: .bottom) {
+                            if inspectorScope == scope {
+                                Color.dockAccent.frame(height: 2)
+                            }
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Show \(scope.rawValue) inspector")
             }
         }
-        .padding(3)
-        .background(Color.scifiSurface4)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 4)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Inspector scope")
     }
@@ -544,25 +529,23 @@ struct DockPopover: View {
                         Circle()
                             .fill(statusColor)
                             .frame(width: 7, height: 7)
-                            .shadow(color: statusColor.opacity(0.7), radius: 3)
                         Text(model.currentSessionTitle ?? "Untitled chat")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.scifiFg)
+                            .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
                         Image(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
                 .help("Session status: \(model.status.title)")
                 .accessibilityLabel("\(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
                 .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
                     sessionPicker
                         .frame(width: 390, height: 310)
                         .padding(.vertical, 4)
-                        .background(Color.scifiCanvas)
-                        .environment(\.colorScheme, .dark)
+                        .background(Color.dockCanvas)
                 }
 
                 Spacer(minLength: 8)
@@ -575,11 +558,10 @@ struct DockPopover: View {
                     }) {
                         Image(systemName: "waveform")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.scifiSurface4))
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .help("Talk mode")
 
                     Button(action: {
@@ -591,21 +573,19 @@ struct DockPopover: View {
                     }) {
                         Image(systemName: isWorkspaceVisibleForLayout ? "rectangle.compress.vertical" : "rectangle.split.2x1")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(isWorkspaceVisibleForLayout ? Color.scifiAccent : Color.scifiMuted)
+                            .foregroundStyle(isWorkspaceVisibleForLayout ? Color.dockAccent : Color.dockSecondaryText)
                             .frame(width: 28, height: 28)
-                            .background(Circle().fill(isWorkspaceVisibleForLayout ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
 
                     Button(action: { model.newChat() }) {
                         Image(systemName: "square.and.pencil")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 28, height: 28)
-                            .background(Circle().fill(Color.scifiSurface4))
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .disabled(model.isRestoringSession || model.isCreatingSession)
                     .help("New chat")
 
@@ -615,11 +595,10 @@ struct DockPopover: View {
                     }) {
                         Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(isFullscreen ? Color.scifiAccent : Color.scifiMuted)
+                            .foregroundStyle(isFullscreen ? Color.dockAccent : Color.dockSecondaryText)
                             .frame(width: 28, height: 28)
-                            .background(Circle().fill(isFullscreen ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4))
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .help(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")
                 }
             }
@@ -627,20 +606,20 @@ struct DockPopover: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
         }
-        .background(Color.scifiSurface2)
+        .background(Color.dockSurface2)
         .overlay(alignment: .bottom) {
-            Color.scifiBorderLight.frame(height: 0.5)
+            Color.dockBorderLight.frame(height: 0.5)
         }
-        .animation(.scifiEase(duration: 0.2), value: model.status)
+        .animation(.dockEase(duration: 0.2), value: model.status)
     }
 
     private var statusColor: Color {
         switch model.status {
-        case .idle: .scifiSuccess
-        case .working: .scifiAccent
-        case .needsApproval: .scifiWarning
-        case .needsClarification: .scifiWarning
-        case .offline: .scifiDestructive
+        case .idle: .dockSuccess
+        case .working: .dockAccent
+        case .needsApproval: .dockWarning
+        case .needsClarification: .dockWarning
+        case .offline: .dockDestructive
         }
     }
 
@@ -716,12 +695,12 @@ struct DockPopover: View {
                 )
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
             .help("Change the model for \(configurationScopeLabel)")
             .accessibilityLabel("Model for \(configurationScopeLabel): \(sessionModelDisplayName)")
 
-            Color.scifiBorderLight
+            Color.dockBorderLight
                 .frame(width: 0.5, height: 24)
 
             Menu {
@@ -749,17 +728,17 @@ struct DockPopover: View {
                 )
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
             .help("Change thinking depth for \(configurationScopeLabel)")
             .accessibilityLabel("Thinking depth for \(configurationScopeLabel): \(sessionReasoningDisplayName)")
         }
-        .foregroundStyle(Color.scifiFg)
-        .background(Color.scifiSurface4)
+        .foregroundStyle(Color.dockPrimaryText)
+        .background(Color.dockSurface4)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.scifiBorder, lineWidth: 0.5)
+                .stroke(Color.dockBorder, lineWidth: 0.5)
         }
     }
 
@@ -772,22 +751,22 @@ struct DockPopover: View {
         HStack(spacing: 7) {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.scifiAccent)
+                .foregroundStyle(Color.dockAccent)
 
             Text(title)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold))
                 .tracking(0.6)
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
 
             Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(truncatesValue ? .middle : .tail)
                 .layoutPriority(1)
 
             Image(systemName: "chevron.down")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(.horizontal, 10)
         .frame(minHeight: 44)
@@ -798,9 +777,9 @@ struct DockPopover: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("CONVERSATIONS")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(1.1)
-                    .foregroundStyle(Color.scifiAccent.opacity(0.8))
+                    .foregroundStyle(Color.dockAccent.opacity(0.8))
                 Spacer()
                 if model.isLoadingSessions {
                     ProgressView()
@@ -810,20 +789,20 @@ struct DockPopover: View {
                     Button(action: { model.loadSessions() }) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .help("Refresh")
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color.scifiSurface2)
+            .background(Color.dockSurface2)
 
             if model.sessions.isEmpty && !model.isLoadingSessions {
                 Text("No saved conversations")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             } else {
@@ -835,40 +814,40 @@ struct DockPopover: View {
                                     Text(session.displayTitle)
                                         .font(.system(size: 12))
                                         .lineLimit(1)
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                     if let preview = session.displayPreview {
                                         Text(preview)
-                                            .font(.system(size: 12, design: .monospaced))
-                                            .foregroundStyle(Color.scifiMuted)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockSecondaryText)
                                             .lineLimit(1)
                                     }
                                     if let projectName = conversationProjectName(for: session) {
                                         Label(projectName, systemImage: "folder")
-                                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundStyle(Color.dockMetadataText)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
                                     }
                                     if let date = session.startedAt {
                                         Text(date, style: .relative)
-                                            .font(.system(size: 12, design: .monospaced))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockMetadataText)
                                     }
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.scifiPress)
+                            .buttonStyle(.borderless)
 
                             Button {
                                 sessionPendingDeletion = session
                             } label: {
                                 Image(systemName: "trash")
                                     .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(Color.scifiWarning)
+                                    .foregroundStyle(Color.dockWarning)
                                     .frame(width: 28, height: 28)
                             }
-                            .buttonStyle(.scifiPress)
+                            .buttonStyle(.borderless)
                             .disabled(session.id == model.sessionID || model.deletingSessionID != nil)
                             .help(session.id == model.sessionID ? "The active session cannot be deleted" : "Delete session")
                             .accessibilityLabel("Delete \(session.displayTitle)")
@@ -883,7 +862,7 @@ struct DockPopover: View {
                 .scrollContentBackground(.hidden)
             }
         }
-        .background(Color.scifiCanvas)
+        .background(Color.dockCanvas)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .confirmationDialog(
             "Delete Session?",
@@ -970,14 +949,14 @@ struct DockPopover: View {
                 )
                     .frame(width: 320, height: 320)
             }
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .help(model.voiceState.isNativeConversationActive || speechInput.isRecording ? "End voice conversation" : "Resume listening")
             .overlay(alignment: .bottom) {
                 if let detail = model.voiceState.fallbackDetail {
                     Text("LOCAL FALLBACK · \(detail)")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(.system(size: 12, weight: .medium))
                         .tracking(0.35)
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 270)
@@ -985,14 +964,14 @@ struct DockPopover: View {
                 } else if model.voiceState.isNativeConversationActive {
                     VStack(spacing: 5) {
                         Text(model.voiceState.label)
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 12, weight: .semibold))
                             .tracking(0.75)
-                            .foregroundStyle(model.voiceState == .listening ? Color.scifiSuccess : Color.scifiAccent)
+                            .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : Color.dockAccent)
                         if let timing = model.voiceTelemetry.summary {
                             Text(timing)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .font(.system(size: 12, weight: .medium))
                                 .tracking(0.45)
-                                .foregroundStyle(Color.scifiTertiary)
+                                .foregroundStyle(Color.dockMetadataText)
                         }
                     }
                     .offset(y: 42)
@@ -1006,7 +985,7 @@ struct DockPopover: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .animation(.scifiEase(duration: 0.25), value: model.status)
+        .animation(.dockEase(duration: 0.25), value: model.status)
         .onAppear { beginVoiceConversation() }
     }
 
@@ -1050,15 +1029,15 @@ struct DockPopover: View {
         HStack(spacing: 8) {
             ThinkingDots()
             Text(voiceActivityText)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold))
                 .tracking(0.6)
                 .lineLimit(1)
         }
-        .foregroundStyle(Color.scifiAccent)
+        .foregroundStyle(Color.dockAccent)
         .padding(.horizontal, 13)
         .frame(height: 32)
-        .background(Capsule().fill(Color.scifiSurface6).stroke(Color.scifiAccent.opacity(0.25), lineWidth: 0.5))
-        .shadow(color: Color.scifiAccent.opacity(0.12), radius: 10)
+        .background(Capsule().fill(Color.dockSurface6).stroke(Color.dockAccent.opacity(0.25), lineWidth: 0.5))
+        .shadow(color: Color.dockAccent.opacity(0.12), radius: 10)
     }
 
     private var voiceActivityText: String {
@@ -1127,7 +1106,7 @@ struct DockPopover: View {
                         isConversationAtBottom = isAtBottom
                         if isAtBottom { unseenMessageCount = 0 }
                     }
-                    .animation(Animation.scifiEase(duration: 0.4), value: model.messages.count)
+                    .animation(Animation.dockEase(duration: 0.4), value: model.messages.count)
                     .onChange(of: model.scrollToLatestMessageRequest) { _, _ in
                         unseenMessageCount = 0
                         isConversationAtBottom = true
@@ -1173,15 +1152,15 @@ struct DockPopover: View {
                                 Image(systemName: "arrow.down")
                                     .font(.system(size: 11, weight: .bold))
                                 Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .font(.system(size: 12, weight: .semibold))
                             }
-                            .foregroundStyle(Color.scifiBg)
+                            .foregroundStyle(Color.dockOnAccentText)
                             .padding(.horizontal, 14)
                             .frame(height: 34)
-                            .background(Capsule().fill(Color.scifiAccent))
-                            .shadow(color: Color.scifiAccent.opacity(0.3), radius: 10, y: 3)
+                            .background(Capsule().fill(Color.dockAccent))
+                            .shadow(color: Color.dockAccent.opacity(0.3), radius: 10, y: 3)
                         }
-                        .buttonStyle(.scifiPress)
+                        .buttonStyle(.borderless)
                         .padding(.bottom, 12)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
@@ -1243,7 +1222,7 @@ struct DockPopover: View {
                     guard !Task.isCancelled else { return }
                 }
                 if animated {
-                    withAnimation(.scifiEase(duration: duration)) {
+                    withAnimation(.dockEase(duration: duration)) {
                         proxy.scrollTo("conversationBottom", anchor: .bottom)
                     }
                 } else {
@@ -1272,8 +1251,8 @@ struct DockPopover: View {
                         VStack(alignment: .trailing, spacing: 6) {
                             if message.isSteering {
                                 Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color.scifiAccent)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Color.dockAccent)
                             }
                             ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
                                 Button {
@@ -1296,21 +1275,21 @@ struct DockPopover: View {
                             }
                         }
                         .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                         // Use opaque slate-navy user message bubble background to eliminate eye strain
-                        .background(Color.scifiUserMessageBubble)
+                        .background(Color.dockUserMessageBubble)
                         .clipShape(MessageBubbleShape(isUser: true))
                         .overlay(
                             MessageBubbleShape(isUser: true)
-                                .stroke(Color.scifiBorderStrong, lineWidth: 0.5)
+                                .stroke(Color.dockBorderStrong, lineWidth: 0.5)
                         )
                         .shadow(color: Color.black.opacity(0.12), radius: 4)
 
                         Text(HumanDateFormatting.timeOnly(message.timestamp))
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Color.scifiTertiary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockMetadataText)
                             .padding(.horizontal, 4)
                     }
                 } else {
@@ -1326,14 +1305,14 @@ struct DockPopover: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
-                                .foregroundStyle(Color.scifiFg)
+                                .foregroundStyle(Color.dockPrimaryText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 // Use opaque charcoal-indigo AI message bubble (DESIGN.md) to eliminate high-contrast glare
-                                .background(Color.scifiMessageBubble)
+                                .background(Color.dockMessageBubble)
                                 .clipShape(MessageBubbleShape(isUser: false))
                                 .overlay(
                                     MessageBubbleShape(isUser: false)
-                                        .stroke(Color.scifiBorder, lineWidth: 0.5)
+                                        .stroke(Color.dockBorder, lineWidth: 0.5)
                                 )
                         }
 
@@ -1346,8 +1325,8 @@ struct DockPopover: View {
                                 Text("· \(modelName)")
                             }
                         }
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                         .padding(.horizontal, 4)
                     }
                 }
@@ -1360,9 +1339,9 @@ struct DockPopover: View {
     private func reasoningBlock(_ reasoning: ReasoningState) -> some View {
         DisclosureGroup(isExpanded: $model.isShowingReasoning) {
             Text(reasoning.text.isEmpty ? "…" : reasoning.text)
-                .font(.system(size: 12, design: .monospaced))
+                .font(.system(size: 12))
                 .textSelection(.enabled)
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
         } label: {
@@ -1377,14 +1356,14 @@ struct DockPopover: View {
                         .scaleEffect(0.6)
                 }
             }
-            .foregroundStyle(Color.scifiMuted)
+            .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.scifiSurface)
-                .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+                .fill(Color.dockSurface)
+                .stroke(Color.dockBorderLight, lineWidth: 0.5)
         )
     }
 
@@ -1397,29 +1376,29 @@ struct DockPopover: View {
                     .frame(width: 28, height: 28)
                     .background(
                         Circle()
-                            .fill(Color.scifiWarning)
+                            .fill(Color.dockWarning)
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Approval required")
                         .font(.system(size: 14, weight: .semibold))
                     Text(title)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                         .lineLimit(2)
                 }
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 Text("ACTION NEEDED")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(0.8)
-                    .foregroundStyle(Color.scifiWarning)
+                    .foregroundStyle(Color.dockWarning)
             }
 
             ScrollView(.vertical) {
                 Text(detail)
-                    .font(.system(size: 12.5, design: .monospaced))
+                    .font(.system(size: 12.5))
                     .textSelection(.enabled)
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1430,43 +1409,43 @@ struct DockPopover: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color.black.opacity(0.16))
-                        .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+                        .stroke(Color.dockBorderLight, lineWidth: 0.5)
                 )
 
             HStack(spacing: 6) {
                 Button { model.respondToApproval("deny") } label: {
-                    ScifiActionLabel(
+                    DockActionLabel(
                         title: "Deny",
                         pendingTitle: "Working…",
                         isPending: model.isRespondingToApproval,
-                        tint: Color.scifiWarning
+                        tint: Color.dockWarning
                     )
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiWarning)
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockWarning)
                 .frame(minWidth: 88, minHeight: 36)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.scifiWarning.opacity(0.08))
-                        .stroke(Color.scifiWarning.opacity(0.34), lineWidth: 0.5)
+                        .fill(Color.dockWarning.opacity(0.08))
+                        .stroke(Color.dockWarning.opacity(0.34), lineWidth: 0.5)
                 )
                 .disabled(model.isRespondingToApproval)
                 Button { model.respondToApproval("once") } label: {
-                    ScifiActionLabel(
+                    DockActionLabel(
                         title: "Allow once",
                         pendingTitle: "Allowing…",
                         isPending: model.isRespondingToApproval,
-                        tint: Color.scifiBg
+                        tint: Color.dockOnAccentText
                     )
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiBg)
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockOnAccentText)
                 .frame(minWidth: 112, minHeight: 36)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.scifiAccent)
+                        .fill(Color.dockAccent)
                 )
                 .disabled(model.isRespondingToApproval)
             }
@@ -1474,15 +1453,15 @@ struct DockPopover: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.scifiSurface)
+                .fill(Color.dockSurface)
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.scifiWarning.opacity(0.035))
+                        .fill(Color.dockWarning.opacity(0.035))
                 }
         )
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.scifiWarning.opacity(0.22), lineWidth: 0.6)
+                .stroke(Color.dockWarning.opacity(0.22), lineWidth: 0.6)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1494,13 +1473,13 @@ struct DockPopover: View {
         return Button(quickPrompt.label) {
             selectQuickPrompt(quickPrompt)
         }
-        .buttonStyle(.scifiPress)
+        .buttonStyle(.borderless)
         .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(isAvailable ? Color.scifiMuted : Color.scifiTertiary)
+        .foregroundStyle(isAvailable ? Color.dockSecondaryText : Color.dockMetadataText)
         .padding(.horizontal, 9)
         .frame(minHeight: 26)
         .fixedSize(horizontal: true, vertical: false)
-        .background(Capsule().fill(Color.scifiSurface4).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+        .background(Capsule().fill(Color.dockSurface4).stroke(Color.dockBorderLight, lineWidth: 0.5))
         .disabled(!isAvailable)
         .help(isAvailable ? quickPrompt.label : unavailableCapabilityDetail(requiredCapability))
     }
@@ -1516,10 +1495,10 @@ struct DockPopover: View {
         } label: {
             Label("More", systemImage: "ellipsis")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
                 .padding(.horizontal, 9)
                 .frame(minHeight: 26)
-                .background(Capsule().fill(Color.scifiSurface4).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+                .background(Capsule().fill(Color.dockSurface4).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
         .menuStyle(.borderlessButton)
         .fixedSize(horizontal: true, vertical: false)
@@ -1569,7 +1548,6 @@ private struct ChatImagePreviewModal: View {
             .padding(16)
         }
         .frame(minWidth: 520, minHeight: 420)
-        .environment(\.colorScheme, .dark)
     }
 }
 

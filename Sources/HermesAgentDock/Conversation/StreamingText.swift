@@ -78,13 +78,13 @@ struct StreamingAssistantMessageRow: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.scifiMessageBubble)
+                        .background(Color.dockMessageBubble)
                         .clipShape(MessageBubbleShape(isUser: false))
                         .overlay(
                             MessageBubbleShape(isUser: false)
-                                .stroke(Color.scifiBorder, lineWidth: 0.5)
+                                .stroke(Color.dockBorder, lineWidth: 0.5)
                         )
 
                     HStack(spacing: 6) {
@@ -95,7 +95,7 @@ struct StreamingAssistantMessageRow: View {
                         }
                     }
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
                     .padding(.horizontal, 4)
                 }
             }

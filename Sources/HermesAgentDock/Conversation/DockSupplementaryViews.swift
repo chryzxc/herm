@@ -37,13 +37,13 @@ struct StartupAssistantView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 7) {
                     Circle()
-                        .fill(Color.scifiSuccess)
+                        .fill(Color.dockSuccess)
                         .frame(width: 5, height: 5)
-                        .shadow(color: Color.scifiSuccess.opacity(0.8), radius: 5)
+                        .shadow(color: Color.dockSuccess.opacity(0.8), radius: 5)
                     Text("HERMES // ONLINE")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(1.5)
-                        .foregroundStyle(Color.scifiAccent.opacity(0.85))
+                        .foregroundStyle(Color.dockAccent.opacity(0.85))
                 }
                 .padding(.top, 24)
 
@@ -57,20 +57,20 @@ struct StartupAssistantView: View {
                 VStack(spacing: 5) {
                     Text("Good to see you.")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                     Text("All systems nominal. How may I assist you?")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
                 .multilineTextAlignment(.center)
 
                 HStack(spacing: 6) {
-                    Capsule().fill(Color.scifiAccent.opacity(0.35)).frame(width: 18, height: 1)
+                    Capsule().fill(Color.dockAccent.opacity(0.35)).frame(width: 18, height: 1)
                     Text("AWAITING COMMAND")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(.system(size: 12, weight: .medium))
                         .tracking(1.25)
-                        .foregroundStyle(Color.scifiTertiary)
-                    Capsule().fill(Color.scifiAccent.opacity(0.35)).frame(width: 18, height: 1)
+                        .foregroundStyle(Color.dockMetadataText)
+                    Capsule().fill(Color.dockAccent.opacity(0.35)).frame(width: 18, height: 1)
                 }
                 .padding(.top, 15)
                 .padding(.bottom, 22)
@@ -86,7 +86,7 @@ struct StartupAssistantView: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Color.scifiAccent.opacity(0.12), Color.scifiAccent.opacity(0.025), .clear],
+                        colors: [Color.dockAccent.opacity(0.12), Color.dockAccent.opacity(0.025), .clear],
                         center: .center,
                         startRadius: 15,
                         endRadius: 122
@@ -99,7 +99,7 @@ struct StartupAssistantView: View {
                 let scale = 0.94 + 0.045 * sin(phase)
                 Circle()
                     .stroke(
-                        Color.scifiAccent.opacity(index == 1 ? 0.2 : 0.12),
+                        Color.dockAccent.opacity(index == 1 ? 0.2 : 0.12),
                         style: StrokeStyle(lineWidth: index == 1 ? 0.7 : 0.5, dash: index == 1 ? [2, 5] : [])
                     )
                     .frame(width: CGFloat(158 + index * 35), height: CGFloat(158 + index * 35))
@@ -109,19 +109,19 @@ struct StartupAssistantView: View {
 
             Circle()
                 .trim(from: 0.05, to: 0.28)
-                .stroke(Color.scifiAccent.opacity(0.75), style: StrokeStyle(lineWidth: 1.25, lineCap: .round))
+                .stroke(Color.dockAccent.opacity(0.75), style: StrokeStyle(lineWidth: 1.25, lineCap: .round))
                 .frame(width: 212, height: 212)
                 .rotationEffect(.degrees(t * 18))
             Circle()
                 .trim(from: 0.57, to: 0.78)
-                .stroke(Color.scifiAccent.opacity(0.4), style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
+                .stroke(Color.dockAccent.opacity(0.4), style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
                 .frame(width: 212, height: 212)
                 .rotationEffect(.degrees(-t * 12))
 
             ForEach(0..<18) { index in
                 let angle = Double(index) / 18 * .pi * 2 + t * 0.18
                 Circle()
-                    .fill(Color.scifiAccent.opacity(index.isMultiple(of: 3) ? 0.75 : 0.28))
+                    .fill(Color.dockAccent.opacity(index.isMultiple(of: 3) ? 0.75 : 0.28))
                     .frame(width: index.isMultiple(of: 3) ? 2.5 : 1.5, height: index.isMultiple(of: 3) ? 2.5 : 1.5)
                     .offset(x: cos(angle) * 98, y: sin(angle) * 98)
             }
@@ -129,15 +129,15 @@ struct StartupAssistantView: View {
             Circle()
                 .fill(
                     RadialGradient(
-                        colors: [Color.white.opacity(0.26), Color.scifiAccent.opacity(0.32), Color.scifiAccent.opacity(0.07)],
+                        colors: [Color.white.opacity(0.26), Color.dockAccent.opacity(0.32), Color.dockAccent.opacity(0.07)],
                         center: UnitPoint(x: 0.35, y: 0.28),
                         startRadius: 1,
                         endRadius: 62
                     )
                 )
                 .frame(width: 116, height: 116)
-                .overlay(Circle().stroke(Color.scifiAccent.opacity(0.35), lineWidth: 0.7))
-                .shadow(color: Color.scifiAccent.opacity(0.24), radius: 20)
+                .overlay(Circle().stroke(Color.dockAccent.opacity(0.35), lineWidth: 0.7))
+                .shadow(color: Color.dockAccent.opacity(0.24), radius: 20)
                 .scaleEffect(1 + 0.025 * sin(t * 1.7))
 
             Circle()
@@ -148,11 +148,11 @@ struct StartupAssistantView: View {
 
             Image(systemName: "mic.fill")
                 .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(Color.scifiAccent.opacity(0.9))
-                .shadow(color: Color.scifiAccent.opacity(0.7), radius: 8)
+                .foregroundStyle(Color.dockAccent.opacity(0.9))
+                .shadow(color: Color.dockAccent.opacity(0.7), radius: 8)
 
             Capsule()
-                .fill(Color.scifiAccent.opacity(0.55))
+                .fill(Color.dockAccent.opacity(0.55))
                 .frame(width: 58, height: 0.8)
                 .offset(y: 42)
                 .scaleEffect(x: 0.7 + 0.3 * (sin(t * 2.2) + 1) / 2, y: 1)
@@ -186,7 +186,7 @@ struct VoiceOrbView: View {
                     let size = 140.0 + Double(i) * 60
                     Circle()
                         .stroke(
-                            Color.scifiAccent.opacity(i % 2 == 0 ? 0.08 : 0.05),
+                            Color.dockAccent.opacity(i % 2 == 0 ? 0.08 : 0.05),
                             style: StrokeStyle(lineWidth: i % 2 == 0 ? 1 : 0.5, dash: i % 2 == 0 ? [] : [3, 4])
                     )
                     .frame(width: size, height: size)
@@ -200,7 +200,7 @@ struct VoiceOrbView: View {
                         ? 4 + waveAmplitude * phase
                         : (isListening ? 3 + waveAmplitude * (0.2 + 0.8 * phase) : 2)
                     Capsule()
-                        .fill(Color.scifiAccent)
+                        .fill(Color.dockAccent)
                         .frame(width: 2, height: barH)
                         .offset(y: -92)
                         .rotationEffect(.degrees(Double(i) / 48 * 360))
@@ -208,21 +208,21 @@ struct VoiceOrbView: View {
                 }
 
                 VoiceWavePath(t: animationTime, amplitude: waveAmplitude)
-                    .stroke(Color.scifiAccent.opacity(isActive ? (isResponding ? 0.8 : 0.5) : 0.16), lineWidth: isResponding ? 2 : 1.5)
+                    .stroke(Color.dockAccent.opacity(isActive ? (isResponding ? 0.8 : 0.5) : 0.16), lineWidth: isResponding ? 2 : 1.5)
                     .frame(width: 200, height: 200)
 
                 Circle()
                     .fill(
                         RadialGradient(
-                            colors: [Color.scifiAccent.opacity(0.3), Color.scifiAccent.opacity(0.12), Color.scifiAccent.opacity(0.04)],
+                            colors: [Color.dockAccent.opacity(0.3), Color.dockAccent.opacity(0.12), Color.dockAccent.opacity(0.04)],
                             center: UnitPoint(x: 0.35, y: 0.35),
                             startRadius: 0,
                             endRadius: 55
                         )
                     )
                     .frame(width: 90, height: 90)
-                    .overlay(Circle().stroke(Color.scifiAccent.opacity(0.2), lineWidth: 0.5))
-                    .shadow(color: Color.scifiAccent.opacity(0.25), radius: 30)
+                    .overlay(Circle().stroke(Color.dockAccent.opacity(0.2), lineWidth: 0.5))
+                    .shadow(color: Color.dockAccent.opacity(0.25), radius: 30)
                     .scaleEffect(
                         1 + (isResponding
                              ? 0.12 * sin(animationTime * .pi)
@@ -231,7 +231,7 @@ struct VoiceOrbView: View {
                     .overlay {
                         Image(systemName: isResponding ? "waveform" : "mic.fill")
                             .font(.system(size: 32))
-                            .foregroundStyle(Color.scifiAccent)
+                            .foregroundStyle(Color.dockAccent)
                             .scaleEffect(1 - 0.12 * (1 + sin(animationTime * .pi * 1.6)) / 2)
                     }
         }
@@ -259,7 +259,7 @@ struct MicWaveform: View {
                     .frame(width: 2, height: isActive ? 5 + CGFloat(abs(sin(phase)) * 13) : 3)
             }
         }
-        .foregroundStyle(Color.scifiAccent)
+        .foregroundStyle(Color.dockAccent)
         .frame(width: 28, height: 28)
     }
 }
@@ -286,41 +286,40 @@ struct KanbanMutationEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(request.kind.title)
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             Text(request.task.title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
             TextField(placeholder, text: $value, axis: .vertical)
                 .lineLimit(2...5)
-                .textFieldStyle(.scifiGlass)
+                .textFieldStyle(.roundedBorder)
             if (request.kind == .assign || request.kind == .reassign), !assignees.isEmpty {
                 Menu("Choose Hermes profile") {
                     ForEach(assignees, id: \.self) { assignee in
                         Button(assignee) { value = assignee }
                     }
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             }
             if request.kind == .reassign {
                 Toggle("Reclaim active worker first", isOn: $reclaimFirst)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
             }
             HStack {
                 Button("Cancel") { dismiss() }
                 Spacer()
                 Button(request.kind.title) { confirming = true }
-                    .buttonStyle(.scifiPrimary)
+                    .buttonStyle(.borderedProminent)
                     .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending)
             }
         }
         .padding(20)
         .frame(width: 420)
-        .background(Color.scifiBg)
-        .environment(\.colorScheme, .dark)
+        .background(Color.dockCanvas)
         .confirmationDialog("Confirm Kanban change?", isPresented: $confirming) {
             Button(request.kind.title) {
                 submit(KanbanMutationRequest(task: request.task, kind: request.kind, value: value, reclaimFirst: reclaimFirst))
@@ -350,34 +349,33 @@ struct CronEditEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("EDIT SCHEDULED JOB")
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             if job.editableFields.contains(.name) {
-                TextField("Name", text: $draft.name).textFieldStyle(.scifiGlass)
+                TextField("Name", text: $draft.name).textFieldStyle(.roundedBorder)
             }
             if job.editableFields.contains(.schedule) {
-                TextField("Schedule", text: $draft.schedule).textFieldStyle(.scifiGlass)
+                TextField("Schedule", text: $draft.schedule).textFieldStyle(.roundedBorder)
             }
             if job.editableFields.contains(.prompt), job.prompt != nil {
                 TextField("Prompt", text: $draft.prompt, axis: .vertical)
                     .lineLimit(3...6)
-                    .textFieldStyle(.scifiGlass)
+                    .textFieldStyle(.roundedBorder)
             }
             Text("Only values supplied by Hermes are editable. Unchanged values are not sent.")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
             HStack {
                 Button("Cancel") { dismiss() }
                 Spacer()
                 Button("Save Changes") { confirming = true }
-                    .buttonStyle(.scifiPrimary)
+                    .buttonStyle(.borderedProminent)
                     .disabled(draft.changes(comparedTo: job).filter { job.editableFields.contains($0.key) }.isEmpty || isPending)
             }
         }
         .padding(20)
         .frame(width: 440)
-        .background(Color.scifiBg)
-        .environment(\.colorScheme, .dark)
+        .background(Color.dockCanvas)
         .confirmationDialog("Save scheduled-job changes?", isPresented: $confirming) {
             Button("Save Changes") { submit(draft) }
             Button("Cancel", role: .cancel) {}
@@ -403,15 +401,15 @@ struct CronReportDetailSheet: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("CRON REPORT")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.6)
-                        .foregroundStyle(Color.scifiAccent)
+                        .foregroundStyle(Color.dockAccent)
                     Text(job.name)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                     Text("\(CronScheduleFormatting.humanReadable(job.schedule))  ·  \(job.id)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer(minLength: 12)
                 if let report {
@@ -419,26 +417,26 @@ struct CronReportDetailSheet: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(report.markdown, forType: .string)
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
                 Button("DONE") { dismiss() }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockSecondaryText)
             }
             .padding(18)
 
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
 
             Group {
                 if isLoading {
                     VStack(spacing: 10) {
                         ProgressView()
                         Text("LOADING REPORT")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiTertiary)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockMetadataText)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let report {
@@ -451,15 +449,15 @@ struct CronReportDetailSheet: View {
                     VStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 22))
-                            .foregroundStyle(Color.scifiWarning)
+                            .foregroundStyle(Color.dockWarning)
                         Text(loadError ?? "The report could not be loaded.")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                             .multilineTextAlignment(.center)
                         Button("TRY AGAIN") { load() }
-                            .buttonStyle(.scifiPress)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
                     }
                     .padding(30)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -467,8 +465,7 @@ struct CronReportDetailSheet: View {
             }
         }
         .frame(minWidth: 620, idealWidth: 720, minHeight: 480, idealHeight: 620)
-        .background(Color.scifiBg)
-        .environment(\.colorScheme, .dark)
+        .background(Color.dockCanvas)
         .task(id: request.sessionID) { await loadReport() }
     }
 
@@ -501,31 +498,31 @@ struct RepositoryFleetRow: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 Image(systemName: snapshot?.isGitRepository == true ? "arrow.triangle.branch" : "folder")
-                    .foregroundStyle(snapshot?.isGitRepository == true ? Color.scifiSuccess : Color.scifiMuted)
+                    .foregroundStyle(snapshot?.isGitRepository == true ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(URL(fileURLWithPath: path).lastPathComponent)
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.scifiFg)
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
                     Text(snapshot?.branch ?? "Inspecting…")
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer()
                 if isRefreshing { ProgressView().controlSize(.small) }
-                if path == activePath { Text("ACTIVE").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent) }
+                if path == activePath { Text("ACTIVE").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent) }
             }
             if let snapshot, snapshot.isGitRepository {
                 Text("\(snapshot.changedFiles) changed · \(snapshot.aheadCount.map(String.init) ?? "—") ahead · \(snapshot.behindCount.map(String.init) ?? "—") behind")
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
-                if let operation = snapshot.operation { Text(operation.uppercased()).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiWarning) }
+                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                if let operation = snapshot.operation { Text(operation.uppercased()).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockWarning) }
             }
             HStack(spacing: 12) {
                 Button("SELECT") { select(path) }
                 Button("REFRESH") { Task { await refresh() } }
             }
-            .buttonStyle(.scifiPress)
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Color.scifiAccent)
+            .buttonStyle(.borderless)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.dockAccent)
         }
-        .scifiListRow()
+        .dockListRow()
         .task { await refresh() }
     }
 
@@ -593,15 +590,15 @@ struct DockCommandPalette: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("COMMAND PALETTE")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 Spacer()
                 Text("⌘K")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
             }
             TextField("Search actions", text: $query)
-                .textFieldStyle(.scifiGlass)
+                .textFieldStyle(.roundedBorder)
             ForEach(commands) { command in
                 Button {
                     select(command)
@@ -609,17 +606,16 @@ struct DockCommandPalette: View {
                 } label: {
                     Label(command.title, systemImage: command.icon)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 5)
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
             }
         }
         .padding(20)
         .frame(width: 380)
-        .background(Color.scifiBg)
-        .environment(\.colorScheme, .dark)
+        .background(Color.dockCanvas)
     }
 }
 
@@ -640,13 +636,13 @@ struct DockActionPalette: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("COMMAND CENTER")
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 Spacer()
-                Text("⌘K").font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiMuted)
+                Text("⌘K").font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
             }
             TextField("Search actions", text: $query)
-                .textFieldStyle(.scifiGlass)
+                .textFieldStyle(.roundedBorder)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(commands) { command in
@@ -661,16 +657,16 @@ struct DockActionPalette: View {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(command.title).font(.system(size: 13, weight: .medium))
                                     Text(command.isAvailable ? command.subtitle : (command.unavailableReason ?? command.subtitle))
-                                        .font(.system(size: 11, design: .monospaced)).lineLimit(1)
+                                        .font(.system(size: 11)).lineLimit(1)
                                 }
                                 Spacer()
-                                Text(command.category.uppercased()).font(.system(size: 10, design: .monospaced))
+                                Text(command.category.uppercased()).font(.system(size: 10))
                             }
-                            .foregroundStyle(command.isAvailable ? Color.scifiFg : Color.scifiTertiary)
+                            .foregroundStyle(command.isAvailable ? Color.dockPrimaryText : Color.dockMetadataText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 5)
                         }
-                        .buttonStyle(.scifiPress)
+                        .buttonStyle(.borderless)
                         .disabled(!command.isAvailable)
                     }
                 }
@@ -679,7 +675,6 @@ struct DockActionPalette: View {
         }
         .padding(20)
         .frame(width: 460)
-        .background(Color.scifiBg)
-        .environment(\.colorScheme, .dark)
+        .background(Color.dockCanvas)
     }
 }

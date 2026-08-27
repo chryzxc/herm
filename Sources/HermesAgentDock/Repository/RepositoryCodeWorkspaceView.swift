@@ -38,20 +38,20 @@ struct RepositoryCodeWorkspaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
             editor
             if let saveError {
                 Text(saveError)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.scifiWarning.opacity(0.08))
+                    .background(Color.dockWarning.opacity(0.08))
             }
         }
-        .background(Color.scifiCanvas)
+        .background(Color.dockCanvas)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiBorderStrong, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 0.5))
         // Keep a finite viewport so the embedded AppKit scroll view owns
         // scrolling for long files instead of expanding with the inspector's
         // outer ScrollView.
@@ -71,24 +71,24 @@ struct RepositoryCodeWorkspaceView: View {
                         .font(.system(size: 11, weight: .bold))
                     .frame(width: 32, height: 32)
             }
-            .buttonStyle(.scifiPress)
-            .foregroundStyle(Color.scifiMuted)
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.dockSecondaryText)
             .frame(width: 32, height: 32)
             .help("Back to files")
 
             Image(systemName: "doc.text")
-                .foregroundStyle(Color.scifiAccent)
+                .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 0) {
                 Text(document.path)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
             if hasUnsavedChanges {
                 Circle()
-                    .fill(Color.scifiWarning)
+                    .fill(Color.dockWarning)
                     .frame(width: 6, height: 6)
                     .help("Unsaved changes")
             }
@@ -97,8 +97,8 @@ struct RepositoryCodeWorkspaceView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .frame(width: 28, height: 28)
             }
-            .buttonStyle(.scifiPress)
-            .foregroundStyle(hasUnsavedChanges ? Color.scifiAccent : Color.scifiTertiary)
+            .buttonStyle(.borderless)
+            .foregroundStyle(hasUnsavedChanges ? Color.dockAccent : Color.dockMetadataText)
             .disabled(!hasUnsavedChanges || isSaving)
             .help(isSaving ? "Saving…" : "Save")
         }
@@ -177,37 +177,35 @@ struct RepositoryCodeWorkspaceView: View {
     private func blameDetail(_ line: RepositoryBlameLine) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("LINE \(line.lineNumber)", systemImage: "number")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             Text(line.commit.author)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
             if let authoredAt = line.commit.authoredAt {
                 Text(authoredAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
             }
             Text(line.commit.isUncommitted ? "NOT COMMITTED YET" : line.commit.hash)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(line.commit.isUncommitted ? Color.scifiWarning : Color.scifiTertiary)
+                .font(.system(size: 10))
+                .foregroundStyle(line.commit.isUncommitted ? Color.dockWarning : Color.dockMetadataText)
                 .textSelection(.enabled)
             Text(line.commit.summary)
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(12)
         .frame(width: 260, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.scifiCanvas)
+                .fill(Color.dockCanvas)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.scifiBorderStrong, lineWidth: 0.5)
+                .stroke(Color.dockBorderStrong, lineWidth: 0.5)
         )
-        .shadow(color: Color.black.opacity(0.35), radius: 12, y: 5)
-        .environment(\.colorScheme, .dark)
     }
 
 }

@@ -56,8 +56,7 @@ struct AgentBoardView: View {
         ZStack {
             // Embedded mode belongs to the Control pane and must inherit its
             // dark glass surface instead of introducing a separate black block.
-            embedded ? Color.clear : Color.black
-            if !embedded { ambientLight }
+            embedded ? Color.clear : Color.dockCanvas
 
             VStack(spacing: 0) {
                 if !embedded { titlebar }
@@ -80,7 +79,7 @@ struct AgentBoardView: View {
         .overlay {
             if !embedded {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.scifiBorderStrong, lineWidth: 0.5)
+                    .stroke(Color.dockBorderStrong, lineWidth: 0.5)
                     .overlay(alignment: .top) {
                         LinearGradient(
                             colors: [Color.white.opacity(0.28), Color.white.opacity(0.04), .clear],
@@ -91,14 +90,13 @@ struct AgentBoardView: View {
                     }
             }
         }
-        .shadow(color: .black.opacity(embedded ? 0 : 0.5), radius: 32, y: 18)
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 8)
         .onAppear {
             if reduceMotion {
                 appeared = true
             } else {
-                withAnimation(.scifiEase(duration: 0.32)) { appeared = true }
+                withAnimation(.dockEase(duration: 0.32)) { appeared = true }
             }
         }
     }
@@ -106,7 +104,7 @@ struct AgentBoardView: View {
     private var ambientLight: some View {
         ZStack {
             Circle()
-                .fill(Color.scifiAccent.opacity(embedded ? 0.045 : 0.12))
+                .fill(Color.dockAccent.opacity(embedded ? 0.045 : 0.12))
                 .frame(width: 260, height: 260)
                 .blur(radius: 80)
                 .offset(x: -230, y: -220)
@@ -138,7 +136,7 @@ struct AgentBoardView: View {
             if showsAgentNodes, let selectedAgent = agents.first(where: { $0.id == expandedAgentID }) {
                 expandedActivity(for: selectedAgent)
                     .padding(12)
-                    .background(Color.scifiSurface4)
+                    .background(Color.dockSurface4)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -148,36 +146,34 @@ struct AgentBoardView: View {
     private var activeAgentsHeading: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("ACTIVE AGENTS")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.scifiMuted)
+                Text("Active Agents")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
                 Spacer(minLength: 0)
                 Text(agentSummary)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
                 Toggle(isOn: $showsAgentNodes) {
-                    Text(showsAgentNodes ? "NODES" : "LIST")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .tracking(0.7)
-                        .foregroundStyle(Color.scifiMuted)
+                        Text(showsAgentNodes ? "Nodes" : "List")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
-                .toggleStyle(.scifiSwitch)
+                .toggleStyle(.switch)
                 .accessibilityLabel("Show agents as \(showsAgentNodes ? "nodes" : "list")")
             }
             HStack(spacing: 2) {
                 ForEach(AgentScope.allCases) { scope in
                     Button {
-                        withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.16)) {
+                        withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
                             agentScope = scope
                         }
                     } label: {
                         Text(scope.rawValue.uppercased())
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(agentScope == scope ? Color.scifiFg : Color.scifiMuted)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(agentScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
                             .frame(width: 50, height: 30)
-                            .background(agentScope == scope ? Color.scifiAccentMuted : Color.clear)
+                            .background(agentScope == scope ? Color.dockAccentMuted : Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                     .buttonStyle(.plain)
@@ -185,9 +181,9 @@ struct AgentBoardView: View {
                 }
             }
             .padding(2)
-            .background(Color.scifiSurface4)
+            .background(Color.dockSurface4)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Active agents scope")
         }
@@ -199,7 +195,7 @@ struct AgentBoardView: View {
                 let agent = agents.first(where: { $0.id == subagent.id })
                 VStack(alignment: .leading, spacing: 0) {
                     Button {
-                        withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.18)) {
+                        withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
                             expandedAgentID = expandedAgentID == subagent.id ? nil : subagent.id
                         }
                     } label: {
@@ -215,10 +211,10 @@ struct AgentBoardView: View {
                             .padding(.bottom, 12)
                     }
                 }
-                .background(Color.scifiSurface4.opacity(expandedAgentID == subagent.id ? 1 : 0.72))
+                .background(Color.dockSurface4.opacity(expandedAgentID == subagent.id ? 1 : 0.72))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(expandedAgentID == subagent.id ? Color.scifiAccent.opacity(0.55) : Color.scifiBorderLight, lineWidth: 0.5)
+                        .stroke(expandedAgentID == subagent.id ? Color.dockAccent.opacity(0.55) : Color.dockBorderLight, lineWidth: 0.5)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -238,34 +234,34 @@ struct AgentBoardView: View {
                 .overlay {
                     Circle().stroke(agent?.agentColor ?? agentColor(for: subagent.id), lineWidth: 1.2)
                     Text(String(name.prefix(1)).uppercased())
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.scifiFg)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.dockPrimaryText)
                 }
                 .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(name)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Text(detail)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 8)
 
             Text("\(eventCount) \(eventCount == 1 ? "EVENT" : "EVENTS")")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(color(for: subagent.status))
             Text(subagent.status.uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(color(for: subagent.status))
                 .frame(minWidth: 62, alignment: .trailing)
             Image(systemName: isSelected ? "chevron.up" : "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -285,57 +281,55 @@ struct AgentBoardView: View {
     private var titlebar: some View {
         HStack(spacing: 8) {
             HStack(spacing: 7) {
-                trafficLight(.scifiDestructive, label: "Close")
-                trafficLight(.scifiWarning, label: "Minimize")
-                trafficLight(.scifiSuccess, label: "Zoom")
+                trafficLight(.dockDestructive, label: "Close")
+                trafficLight(.dockWarning, label: "Minimize")
+                trafficLight(.dockSuccess, label: "Zoom")
             }
             .frame(width: 62, alignment: .leading)
 
             Spacer()
             Text("HERMES AGENT BOARD")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .font(.system(size: 12, weight: .semibold))
                 .tracking(1.15)
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
             Spacer()
 
             Button(action: onClose) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 36, height: 36)
-                    .background(Color.scifiSurface4)
+                    .background(Color.dockSurface4)
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .frame(minWidth: 44, minHeight: 44)
             .help("Return to chat")
             .frame(width: 62, alignment: .trailing)
         }
         .padding(.horizontal, 16)
         .frame(height: 40)
-        .background(Color.scifiSurface2)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+        .background(Color.dockSurface2)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private func trafficLight(_ color: Color, label: String) -> some View {
         Circle()
             .fill(color)
             .frame(width: 12, height: 12)
-            .overlay(Circle().stroke(Color.black.opacity(0.2), lineWidth: 0.5))
-            .shadow(color: color.opacity(0.25), radius: 2)
+            .overlay(Circle().stroke(Color.dockBorderLight, lineWidth: 0.5))
             .help(label)
     }
 
     private func sectionHeading(_ title: String, detail: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .tracking(0.8)
-                .foregroundStyle(Color.scifiMuted)
+            Text(title.lowercased().capitalized)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.dockSecondaryText)
             Spacer()
             Text(detail)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockMetadataText)
         }
     }
 
@@ -343,13 +337,13 @@ struct AgentBoardView: View {
         VStack(alignment: .leading, spacing: 5) {
             Image(systemName: "person.2.slash")
                 .font(.system(size: 13))
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
             Text(title)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.scifiMuted)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.vertical, 4)
@@ -368,23 +362,22 @@ struct AgentBoardView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("ACTIVITY HISTORY")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(0.8)
+                Text("Activity History")
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(agent.agentColor)
                 Spacer()
                 Text("\(activities.count) EVENTS")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.dockMetadataText)
             }
             if activities.isEmpty {
                 Text("No Hermes activity has been received for this agent yet.")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
             } else {
-                activityGroup("PENDING", items: pending, color: Color.scifiMuted, agentColor: agent.agentColor)
+                activityGroup("PENDING", items: pending, color: Color.dockSecondaryText, agentColor: agent.agentColor)
                 activityGroup("RUNNING", items: running, color: agent.agentColor, agentColor: agent.agentColor)
-                activityGroup("COMPLETED", items: completed, color: Color.scifiSuccess, agentColor: agent.agentColor)
+                activityGroup("COMPLETED", items: completed, color: Color.dockSuccess, agentColor: agent.agentColor)
             }
         }
         .padding(.top, 2)
@@ -395,11 +388,11 @@ struct AgentBoardView: View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(title)  ·  \(items.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(color)
                 ForEach(items) { activity in
                     Button {
-                        withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.18)) {
+                        withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
                             expandedActivityID = expandedActivityID == activity.id ? nil : activity.id
                         }
                     } label: {
@@ -409,30 +402,30 @@ struct AgentBoardView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
                                         Text(activity.status.uppercased())
-                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                            .font(.system(size: 10, weight: .semibold))
                                             .foregroundStyle(agentColor)
                                         if !activity.agent.isEmpty {
                                             Text("·")
-                                                .foregroundStyle(Color.scifiTertiary)
+                                                .foregroundStyle(Color.dockMetadataText)
                                             Text(activity.agent)
-                                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                                .font(.system(size: 10, weight: .semibold))
                                                 .foregroundStyle(agentColor)
                                                 .lineLimit(1)
                                         }
                                         Text(HumanDateFormatting.timeOnly(activity.timestamp))
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Color.dockMetadataText)
                                     }
                                     Text(activity.task)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.scifiMuted)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.dockSecondaryText)
                                         .lineLimit(2)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
                                 Image(systemName: expandedActivityID == activity.id ? "chevron.up" : "chevron.down")
                                     .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(Color.scifiTertiary)
+                                    .foregroundStyle(Color.dockMetadataText)
                             }
                             if expandedActivityID == activity.id {
                                 pipelineContent(activity)
@@ -465,7 +458,7 @@ struct AgentBoardView: View {
             ForEach(items) { item in
                 VStack(alignment: .leading, spacing: 7) {
                     Button {
-                        withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.18)) {
+                        withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
                             expandedPipelineItemID = expandedPipelineItemID == item.id ? nil : item.id
                         }
                     } label: {
@@ -476,9 +469,9 @@ struct AgentBoardView: View {
                             }
                             .frame(width: 76, alignment: .leading)
                             Text(item.task).frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
-                            Text(item.agent).foregroundStyle(Color.scifiAccent).frame(width: 88, alignment: .leading).lineLimit(1)
+                            Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading).lineLimit(1)
                             Text(item.time)
-                                .foregroundStyle(Color.scifiMuted)
+                                .foregroundStyle(Color.dockSecondaryText)
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
                                 .frame(width: timeColumnWidth, alignment: .trailing)
@@ -486,7 +479,7 @@ struct AgentBoardView: View {
                                 .frame(width: durationColumnWidth, alignment: .trailing)
                             Image(systemName: expandedPipelineItemID == item.id ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(Color.scifiTertiary)
+                                .foregroundStyle(Color.dockMetadataText)
                         }
                     }
                     .buttonStyle(.plain)
@@ -495,11 +488,11 @@ struct AgentBoardView: View {
                         pipelineContent(item)
                     }
                 }
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.scifiFg)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 10)
-                .overlay(alignment: .top) { Color.scifiBorderLight.frame(height: 0.5) }
+                .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
             }
         }
     }
@@ -515,7 +508,7 @@ struct AgentBoardView: View {
                 if let toolName = activity.toolName, !toolName.isEmpty {
                     contentField("TOOL", toolName, accent: accent)
                 }
-                contentField("TIME", HumanDateFormatting.timeOnly(activity.timestamp), accent: Color.scifiTertiary)
+                contentField("TIME", HumanDateFormatting.timeOnly(activity.timestamp), accent: Color.dockMetadataText)
             }
 
             if let handoffTarget = activity.handoffTarget, !handoffTarget.isEmpty {
@@ -529,8 +522,8 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.scifiSurface4))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockSurface4))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
     @ViewBuilder
@@ -542,17 +535,17 @@ struct AgentBoardView: View {
                     contentField("TASK NAME", item.task, accent: item.color)
                 }
                 if !item.agent.isEmpty {
-                    contentField("AGENT", item.agent, accent: Color.scifiAccent)
+                    contentField("AGENT", item.agent, accent: Color.dockAccent)
                 }
                 let durationStr = elapsedDuration(for: item, at: Date()).map(Self.formatDuration) ?? (item.isActive ? "RUNNING" : "—")
-                contentField("DURATION", durationStr, accent: Color.scifiFg)
+                contentField("DURATION", durationStr, accent: Color.dockPrimaryText)
                 contentField("STATUS", item.status.uppercased(), accent: item.color)
             }
 
             if let startedAt = item.startedAt {
                 let startStr = HumanDateFormatting.timeOnly(startedAt)
                 let endStr = item.completedAt.map(HumanDateFormatting.timeOnly) ?? (item.isActive ? "Now" : "—")
-                contentField("TIMESTAMPS", "Started: \(startStr)  ·  Ended: \(endStr)", accent: Color.scifiTertiary)
+                contentField("TIMESTAMPS", "Started: \(startStr)  ·  Ended: \(endStr)", accent: Color.dockMetadataText)
             }
 
             if let detail = item.detail, !detail.isEmpty {
@@ -565,19 +558,19 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.scifiSurface4))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockSurface4))
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
     private func contentField(_ label: String, _ value: String, accent: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .font(.system(size: 9, weight: .semibold))
                 .tracking(0.7)
                 .foregroundStyle(accent)
             Text(value)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color.scifiMuted)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockSecondaryText)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -589,12 +582,12 @@ struct AgentBoardView: View {
 
         return VStack(alignment: .leading, spacing: 2) {
             Text(allLines.count > lines.count ? "DIFF PREVIEW · \(lines.count)/\(allLines.count) LINES" : "DIFF PREVIEW")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold))
                 .tracking(0.7)
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line.isEmpty ? " " : line)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: 10))
                     .foregroundStyle(diffLineColor(line))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -602,19 +595,19 @@ struct AgentBoardView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color.scifiSurface4)
-        .overlay(alignment: .leading) { Color.scifiAccent.opacity(0.55).frame(width: 1) }
+        .background(Color.dockSurface4)
+        .overlay(alignment: .leading) { Color.dockAccent.opacity(0.55).frame(width: 1) }
         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Diff preview: \(lines.joined(separator: ", "))")
     }
 
     private func diffLineColor(_ line: String) -> Color {
-        if line.hasPrefix("+++") || line.hasPrefix("---") { return .scifiTertiary }
-        if line.hasPrefix("+") { return .scifiSuccess }
-        if line.hasPrefix("-") { return .scifiDestructive }
-        if line.hasPrefix("@@") { return .scifiAccent }
-        return .scifiMuted
+        if line.hasPrefix("+++") || line.hasPrefix("---") { return .dockMetadataText }
+        if line.hasPrefix("+") { return .dockSuccess }
+        if line.hasPrefix("-") { return .dockDestructive }
+        if line.hasPrefix("@@") { return .dockAccent }
+        return .dockSecondaryText
     }
 
     @ViewBuilder
@@ -624,9 +617,9 @@ struct AgentBoardView: View {
         alignment: Alignment = .leading
     ) -> some View {
         let label = Text(title)
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .font(.system(size: 12, weight: .semibold))
             .tracking(1.1)
-            .foregroundStyle(Color.scifiMuted)
+            .foregroundStyle(Color.dockSecondaryText)
 
         if let width {
             label.frame(width: width, alignment: alignment)
@@ -650,7 +643,7 @@ struct AgentBoardView: View {
         let duration = elapsedDuration(for: item, at: date)
         let text = duration.map(Self.formatDuration) ?? "—"
         return Text(text)
-            .foregroundStyle(duration == nil ? Color.scifiTertiary : Color.scifiMuted)
+            .foregroundStyle(duration == nil ? Color.dockMetadataText : Color.dockSecondaryText)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .monospacedDigit()
@@ -770,16 +763,16 @@ struct AgentBoardView: View {
 
     private func color(for status: String) -> Color {
         let lower = status.lowercased()
-        if lower.contains("complete") || lower.contains("done") || lower.contains("finish") { return .scifiSuccess }
-        if lower.contains("error") || lower.contains("fail") { return .scifiDestructive }
-        if lower.contains("block") || lower.contains("approval") || lower.contains("interrupt") { return .scifiWarning }
-        if lower.contains("queue") { return .scifiMuted }
-        return .scifiAccent
+        if lower.contains("complete") || lower.contains("done") || lower.contains("finish") { return .dockSuccess }
+        if lower.contains("error") || lower.contains("fail") { return .dockDestructive }
+        if lower.contains("block") || lower.contains("approval") || lower.contains("interrupt") { return .dockWarning }
+        if lower.contains("queue") { return .dockSecondaryText }
+        return .dockAccent
     }
 
     private func agentColor(for id: String) -> Color {
         let palette: [Color] = [
-            .scifiAccent,
+            .dockAccent,
             Color(red: 0.78, green: 0.38, blue: 1.0),
             Color(red: 1.0, green: 0.48, blue: 0.36),
             Color(red: 0.25, green: 0.86, blue: 0.72),

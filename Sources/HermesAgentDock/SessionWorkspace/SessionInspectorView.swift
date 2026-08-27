@@ -56,18 +56,18 @@ struct SessionInspector: View {
             if let workflowError = workflow.error {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                     Text(workflowError)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.scifiWarning)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockWarning)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Color.scifiWarning.opacity(0.08))
+                .background(Color.dockWarning.opacity(0.08))
                 .overlay(alignment: .bottom) {
-                    Color.scifiWarning.opacity(0.25).frame(height: 0.5)
+                    Color.dockWarning.opacity(0.25).frame(height: 0.5)
                 }
             }
 
@@ -79,8 +79,7 @@ struct SessionInspector: View {
                 }
             }
         }
-        .background(Color.scifiCanvas)
-        .environment(\.colorScheme, .dark)
+        .background(Color.dockCanvas)
     }
 
     private var sessionModePicker: some View {
@@ -91,7 +90,7 @@ struct SessionInspector: View {
             Menu {
                 ForEach([Section.verification]) { section in
                     Button {
-                        withAnimation(.scifiEase(duration: 0.2)) { selectedSection = section }
+                        withAnimation(.dockEase(duration: 0.2)) { selectedSection = section }
                     } label: {
                         Label(section.rawValue, systemImage: section.icon)
                     }
@@ -99,43 +98,43 @@ struct SessionInspector: View {
             } label: {
                 Text("More")
                     .font(sessionTabFont)
-                    .foregroundStyle(selectedSection == .verification ? Color.scifiFg : Color.scifiMuted)
+                    .foregroundStyle(selectedSection == .verification ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .frame(maxWidth: .infinity, minHeight: 34)
                 .overlay(alignment: .bottom) {
                     if selectedSection == .verification {
-                        Color.scifiAccent.frame(height: 2)
+                        Color.dockAccent.frame(height: 2)
                     }
                 }
                 .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 0)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private func sectionButton(_ section: Section) -> some View {
         Button {
-            withAnimation(.scifiEase(duration: 0.2)) {
+            withAnimation(.dockEase(duration: 0.2)) {
                 selectedSection = section
             }
         } label: {
             Text(section.navigationTitle)
                 .font(sessionTabFont)
-                .foregroundStyle(selectedSection == section ? Color.scifiFg : Color.scifiMuted)
+                .foregroundStyle(selectedSection == section ? Color.dockPrimaryText : Color.dockSecondaryText)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, minHeight: 34)
                 .overlay(alignment: .bottom) {
                     if selectedSection == section {
-                        Color.scifiAccent.frame(height: 2)
+                        Color.dockAccent.frame(height: 2)
                     }
                 }
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.scifiPress)
+        .buttonStyle(.borderless)
         .frame(maxWidth: .infinity)
         .accessibilityLabel("Show \(section.rawValue)")
     }
@@ -144,27 +143,27 @@ struct SessionInspector: View {
         HStack(alignment: .center, spacing: 9) {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.scifiAccent)
+                .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.currentSessionTitle ?? "Untitled session")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if let sessionProjectName {
                     Label(sessionProjectName, systemImage: "folder")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
             Text(model.status.title.uppercased())
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(model.status == .working ? Color.scifiAccent : Color.scifiMuted)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(model.status == .working ? Color.dockAccent : Color.dockSecondaryText)
         }
         .padding(.horizontal, 16)
         .frame(height: sessionProjectName == nil ? 50 : 58)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private var sessionProjectName: String? {
@@ -226,9 +225,9 @@ struct SessionInspector: View {
 
                 // Interactive Metrics Bar
                 HStack(spacing: 8) {
-                    inspectorMetric("AGENTS", value: sessionActiveAgents.count, color: .scifiAccent)
-                    inspectorMetric("RUNNING", value: activeSubagentCount, color: activeSubagentCount > 0 ? .scifiAccent : .scifiMuted)
-                    inspectorMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .scifiSuccess : .scifiWarning)
+                    inspectorMetric("AGENTS", value: sessionActiveAgents.count, color: .dockAccent)
+                    inspectorMetric("RUNNING", value: activeSubagentCount, color: activeSubagentCount > 0 ? .dockAccent : .dockSecondaryText)
+                    inspectorMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .dockSuccess : .dockWarning)
                 }
 
                 // Pre-flight Readiness & Health Card
@@ -250,28 +249,28 @@ struct SessionInspector: View {
                         ForEach(latestSessionActivities, id: \.id) { (activity: AgentActivityPresentation.PipelineActivity) in
                             HStack(alignment: .top, spacing: 10) {
                                 Circle()
-                                    .fill(Color.scifiAccent)
+                                    .fill(Color.dockAccent)
                                     .frame(width: 6, height: 6)
                                     .padding(.top, 4)
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
                                         Text(activity.task)
-                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                            .foregroundStyle(Color.scifiFg)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(Color.dockPrimaryText)
                                         Spacer()
                                         Text(HumanDateFormatting.timeOnly(activity.timestamp))
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Color.dockMetadataText)
                                     }
                                     Text(activity.detail ?? "")
                                         .font(.system(size: 11))
-                                        .foregroundStyle(Color.scifiMuted)
+                                        .foregroundStyle(Color.dockSecondaryText)
                                         .lineLimit(2)
                                 }
                             }
                             .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.scifiSurface4))
-                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface4))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                         }
                     }
                 } else if !latestSessionEvents.isEmpty {
@@ -279,28 +278,28 @@ struct SessionInspector: View {
                         ForEach(latestSessionEvents, id: \.id) { (event: AgentEvent) in
                             HStack(alignment: .top, spacing: 10) {
                                 Circle()
-                                    .fill(Color.scifiAccent)
+                                    .fill(Color.dockAccent)
                                     .frame(width: 6, height: 6)
                                     .padding(.top, 4)
                                 VStack(alignment: .leading, spacing: 3) {
                                     HStack(spacing: 6) {
                                         Text(event.type.uppercased())
-                                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                            .foregroundStyle(Color.scifiFg)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(Color.dockPrimaryText)
                                         Spacer()
                                         Text(HumanDateFormatting.timeOnly(event.timestamp))
-                                            .font(.system(size: 10, design: .monospaced))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(Color.dockMetadataText)
                                     }
                                     Text(event.detail)
                                         .font(.system(size: 11))
-                                        .foregroundStyle(Color.scifiMuted)
+                                        .foregroundStyle(Color.dockSecondaryText)
                                         .lineLimit(2)
                                 }
                             }
                             .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.scifiSurface4))
-                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface4))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                         }
                     }
                 } else {
@@ -310,7 +309,7 @@ struct SessionInspector: View {
                 // Verification Summary Card
                 if let verification = control.verification {
                     inspectorLabel("VERIFICATION")
-                    let color: Color = verification.state == .passed ? .scifiSuccess : verification.state == .failed ? .scifiDestructive : .scifiWarning
+                    let color: Color = verification.state == .passed ? .dockSuccess : verification.state == .failed ? .dockDestructive : .dockWarning
                     inspectorCard(
                         title: "STATUS  ·  \(verification.state.rawValue.uppercased())",
                         value: verification.evidence?.canonicalCommand ?? verification.evidence?.command ?? "Verification reported for active session.",
@@ -345,7 +344,7 @@ struct SessionInspector: View {
             VStack(alignment: .leading, spacing: 14) {
                 inspectorLabel("VERIFICATION")
                 if let verification = control.verification {
-                    let color: Color = verification.state == .passed ? .scifiSuccess : verification.state == .failed ? .scifiDestructive : .scifiWarning
+                    let color: Color = verification.state == .passed ? .dockSuccess : verification.state == .failed ? .dockDestructive : .dockWarning
                     inspectorCard(title: "STATUS", value: verification.state.rawValue.uppercased(), accent: color)
                     if let evidence = verification.evidence,
                        let command = evidence.canonicalCommand ?? evidence.command {
@@ -365,42 +364,42 @@ struct SessionInspector: View {
 
     private func inspectorLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .font(.system(size: 11, weight: .semibold))
             .tracking(0.8)
-            .foregroundStyle(Color.scifiMuted)
+            .foregroundStyle(Color.dockSecondaryText)
     }
 
     /// Renders a metric card matching the DESIGN.md glass pane specifications.
     private func inspectorMetric(_ label: String, value: Int, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(color)
             Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold))
                 .tracking(0.55)
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     /// Renders a glass card pane matching DESIGN.md rules.
-    private func inspectorCard(title: String, value: String, accent: Color = .scifiFg) -> some View {
+    private func inspectorCard(title: String, value: String, accent: Color = .dockPrimaryText) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold))
                 .tracking(0.75)
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
             Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(accent)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     /// Renders repository telemetry without duplicating the model selector from the composer.
@@ -453,20 +452,20 @@ struct SessionInspector: View {
                                             Image(systemName: "chevron.down")
                                                 .font(.system(size: 8, weight: .bold))
                                         }
-                                        .foregroundStyle(Color.scifiAccent)
+                                        .foregroundStyle(Color.dockAccent)
                                         VStack(alignment: .leading, spacing: 2) {
                                             if item.id == "branch" {
                                                 Text(item.value)
-                                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                                    .foregroundStyle(Color.scifiFg)
+                                                    .font(.system(size: 12, weight: .medium))
+                                                    .foregroundStyle(Color.dockPrimaryText)
                                                     .fixedSize(horizontal: false, vertical: true)
                                             } else {
                                                 Text(item.label)
-                                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                                    .foregroundStyle(Color.scifiMuted)
+                                                    .font(.system(size: 10, weight: .semibold))
+                                                    .foregroundStyle(Color.dockSecondaryText)
                                                 Text(item.value)
-                                                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                                    .foregroundStyle(Color.scifiFg)
+                                                    .font(.system(size: 12, weight: .medium))
+                                                    .foregroundStyle(Color.dockPrimaryText)
                                                     .fixedSize(horizontal: false, vertical: true)
                                             }
                                         }
@@ -475,40 +474,40 @@ struct SessionInspector: View {
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 8)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.scifiSurface2)
+                                    .background(Color.dockSurface2)
                                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
                                 }
                                 .menuStyle(.borderlessButton)
-                                .buttonStyle(.scifiPress)
+                                .buttonStyle(.borderless)
                                 .disabled(isSwitchingBranch || workflow.branches.isEmpty)
                             } else {
                                 HStack(spacing: 6) {
                                     Image(systemName: item.icon)
                                         .font(.system(size: 11))
-                                        .foregroundStyle(Color.scifiAccent)
+                                        .foregroundStyle(Color.dockAccent)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(item.label)
-                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                            .foregroundStyle(Color.scifiMuted)
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(Color.dockSecondaryText)
                                         Text(item.value)
-                                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                            .foregroundStyle(Color.scifiFg)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Color.dockPrimaryText)
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                     Spacer(minLength: 0)
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
-                                .background(Color.scifiSurface2)
+                                .background(Color.dockSurface2)
                                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
                             }
                         }
                     }
                 }
                 .padding(10)
-                .scifiGlassPane()
+                .dockGlassPane()
             }
         }
     }
@@ -516,10 +515,10 @@ struct SessionInspector: View {
     /// Renders pre-flight readiness checks for repository cleanliness and model configuration.
     private func sessionReadinessCard(readiness: ReadinessSummary) -> some View {
         let color: Color = switch readiness.state {
-        case .ready: .scifiSuccess
-        case .needsReview: .scifiWarning
-        case .blocked: .scifiDestructive
-        case .notApplicable: .scifiMuted
+        case .ready: .dockSuccess
+        case .needsReview: .dockWarning
+        case .blocked: .dockDestructive
+        case .notApplicable: .dockSecondaryText
         }
 
         return VStack(alignment: .leading, spacing: 6) {
@@ -528,28 +527,28 @@ struct SessionInspector: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(color)
                 Text("PRE-FLIGHT READINESS")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold))
                     .tracking(0.75)
                     .foregroundStyle(color)
                 Spacer(minLength: 0)
                 Text(readiness.state.rawValue.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(color)
             }
 
             Text(readiness.detail)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.scifiFg)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockPrimaryText)
 
             if let scope = readiness.verificationScope {
                 Text("Scope: \(scope)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     /// Renders an individual attention item requiring user action or response.
@@ -558,24 +557,24 @@ struct SessionInspector: View {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.scifiWarning)
+                    .foregroundStyle(Color.dockWarning)
                 Text(attention.title)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Text(attention.kind.rawValue.uppercased())
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.dockWarning)
             }
             if !attention.detail.isEmpty {
                 Text(attention.detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 }

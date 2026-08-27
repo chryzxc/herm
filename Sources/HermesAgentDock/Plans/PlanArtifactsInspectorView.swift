@@ -18,7 +18,7 @@ struct PlanArtifactsInspectorView: View {
         Group {
             content
         }
-        .background(Color.scifiCanvas)
+        .background(Color.dockCanvas)
         .task(id: plansRoot.path) { await refresh() }
         .onDisappear { refreshGeneration = UUID() }
     }
@@ -31,7 +31,7 @@ struct PlanArtifactsInspectorView: View {
             HStack(spacing: 0) {
                 artifactList
                     .frame(width: 190)
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 detail
             }
         }
@@ -48,32 +48,32 @@ struct PlanArtifactsInspectorView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(artifact.title)
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.scifiFg)
+                                .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(2)
                             Text(artifact.relativePath)
                                 .font(.system(size: 9, design: .monospaced))
-                                .foregroundStyle(Color.scifiMuted)
+                                .foregroundStyle(Color.dockSecondaryText)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             HStack(spacing: 5) {
-                                Circle().fill(artifact.state == .available ? Color.scifiAccent : Color.scifiWarning).frame(width: 5, height: 5)
+                                Circle().fill(artifact.state == .available ? Color.dockAccent : Color.dockWarning).frame(width: 5, height: 5)
                                 Text(artifact.sha256.map { String($0.prefix(8)) } ?? "UNAVAILABLE")
                                     .font(.system(size: 8, design: .monospaced))
-                                    .foregroundStyle(Color.scifiTertiary)
+                                    .foregroundStyle(Color.dockMetadataText)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
-                        .background(selectedPath == artifact.relativePath ? Color.scifiAccent.opacity(0.12) : Color.clear)
+                        .background(selectedPath == artifact.relativePath ? Color.dockAccent.opacity(0.12) : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .accessibilityLabel("Plan artifact \(artifact.title)")
                 }
             }
             .padding(10)
         }
-        .background(Color.scifiSurface2.opacity(0.45))
+        .background(Color.dockSurface2.opacity(0.45))
     }
 
     @ViewBuilder
@@ -83,7 +83,7 @@ struct PlanArtifactsInspectorView: View {
         } else if let document, let presentation {
             VStack(alignment: .leading, spacing: 0) {
                 header(document: document)
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         outline(presentation)
@@ -98,7 +98,7 @@ struct PlanArtifactsInspectorView: View {
                     .padding(16)
                 }
             }
-            .background(Color.scifiCanvas)
+            .background(Color.dockCanvas)
         } else {
             emptyState(title: "Select a plan", detail: "Choose a plan artifact to inspect its outline and review history.")
         }
@@ -109,22 +109,22 @@ struct PlanArtifactsInspectorView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(document.summary.title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Text("CANONICAL · \(document.relativePath)")
                     .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text("SHA-256 \(document.sha256.map { String($0.prefix(16)) } ?? "UNAVAILABLE")")
                     .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
             }
             Spacer(minLength: 6)
             Button("NEW REVISION") { revisionDraft = PlanArtifactService(plansRoot: plansRoot).revisionDraft(for: document) }
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .buttonStyle(.scifiPress)
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockAccent)
                 .accessibilityLabel("Create revision without overwriting canonical plan")
         }
         .padding(12)
@@ -132,97 +132,91 @@ struct PlanArtifactsInspectorView: View {
 
     private func outline(_ presentation: PlanArtifactPresentation) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label("OUTLINE", systemImage: "list.bullet.indent")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+            Label("Outline", systemImage: "list.bullet.indent")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockAccent)
             ForEach(presentation.headings.prefix(12)) { heading in
                 Text(heading.title)
                     .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(heading.level <= 2 ? Color.scifiFg : Color.scifiMuted)
+                    .foregroundStyle(heading.level <= 2 ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .padding(.leading, CGFloat(max(0, heading.level - 1) * 8))
                     .lineLimit(1)
             }
             if !presentation.acceptanceIDs.isEmpty {
                 Text("ACCEPTANCE · \(presentation.acceptanceIDs.joined(separator: ", "))")
                     .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
             }
         }
-        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.scifiSurface2)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .dockCard(padding: 10)
     }
 
     private func reviewPanel(document: PlanArtifactDocument) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("REVIEW COMMENTS", systemImage: "text.bubble")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+            Label("Review Comments", systemImage: "text.bubble")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockAccent)
                 Spacer()
                 if let presentation, presentation.staleCommentCount > 0 {
                     Text("\(presentation.staleCommentCount) STALE")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.scifiWarning)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.dockWarning)
                 }
             }
             ForEach(comments) { comment in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(comment.body)
                         .font(.system(size: 11))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                     Text(comment.anchor.map { "ANCHOR · \($0)" } ?? "GENERAL COMMENT")
                         .font(.system(size: 8, design: .monospaced))
-                        .foregroundStyle(comment.isStale(comparedWith: document.sha256) ? Color.scifiWarning : Color.scifiTertiary)
+                        .foregroundStyle(comment.isStale(comparedWith: document.sha256) ? Color.dockWarning : Color.dockMetadataText)
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.scifiCanvas)
+                .background(Color.dockCanvas)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
             TextField("Add a review comment…", text: $commentDraft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(2...5)
                 .padding(8)
-                .background(Color.scifiCanvas)
+                .background(Color.dockCanvas)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             HStack {
                 Spacer()
-                Button(isSaving ? "SAVING…" : "SAVE COMMENT") { saveComment(document) }
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .buttonStyle(.scifiPress)
-                    .foregroundStyle(Color.scifiAccent)
+                Button(isSaving ? "Saving…" : "Save Comment") { saveComment(document) }
+                    .font(.system(size: 11, weight: .medium))
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockAccent)
                     .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
             }
         }
-        .padding(10)
-        .background(Color.scifiSurface2)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .dockCard(padding: 10)
     }
 
     private func revisionPanel(_ draft: PlanRevisionDraft) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("REVISION DRAFT · \(draft.relativePath)", systemImage: "doc.badge.gearshape")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+            Label("Revision Draft · \(draft.relativePath)", systemImage: "doc.badge.gearshape")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockAccent)
             Text("Saving creates a new plan and preserves the canonical source.")
                 .font(.system(size: 10))
-                .foregroundStyle(Color.scifiMuted)
-            Button("SAVE NEW REVISION") { saveRevision(draft) }
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .buttonStyle(.scifiPress)
-                .foregroundStyle(Color.scifiAccent)
+                .foregroundStyle(Color.dockSecondaryText)
+            Button("Save New Revision") { saveRevision(draft) }
+                .font(.system(size: 11, weight: .medium))
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockAccent)
         }
-        .padding(10)
-        .background(Color.scifiSurface2)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .dockCard(padding: 10)
     }
 
     private func emptyState(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.scifiFg)
-            Text(detail).font(.system(size: 10)).foregroundStyle(Color.scifiMuted)
+            Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+            Text(detail).font(.system(size: 10)).foregroundStyle(Color.dockSecondaryText)
         }
         .padding(18)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

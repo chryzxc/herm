@@ -99,14 +99,14 @@ struct WorkspaceActivitySidebar: View {
         }
         var color: Color {
             switch self {
-            case .triage: Color.scifiWarning
-            case .todo: Color.scifiMuted
-            case .ready: Color.scifiAccent
-            case .running: Color(red: 0.55, green: 0.55, blue: 1)
-            case .review: Color(red: 0.72, green: 0.48, blue: 1)
-            case .scheduled: Color(red: 0.32, green: 0.78, blue: 0.82)
-            case .blocked: Color.scifiWarning
-            case .done: Color.scifiSuccess
+            case .triage: Color.dockWarning
+            case .todo: Color.dockSecondaryText
+            case .ready: Color.dockAccent
+            case .running: Color.dockAccent
+            case .review: Color.dockSecondaryText
+            case .scheduled: Color.dockAccent
+            case .blocked: Color.dockWarning
+            case .done: Color.dockSuccess
             }
         }
     }
@@ -139,6 +139,7 @@ struct WorkspaceActivitySidebar: View {
                 .padding(16)
             }
         }
+        .font(.system(size: 13))
     }
 
     private var sidebarHeader: some View {
@@ -147,42 +148,41 @@ struct WorkspaceActivitySidebar: View {
                 Button { isShowingCommandPalette = true } label: {
                     Image(systemName: "command")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.scifiAccent)
+                        .foregroundStyle(Color.dockAccent)
                         .frame(width: 32, height: 32)
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
                 .help("Command palette")
                 .keyboardShortcut("k", modifiers: [.command])
                 Button(action: onClose) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 36, height: 36)
-                        .background(Circle().fill(Color.scifiSurface4))
+                        .background(Circle().fill(Color.dockSurface4))
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
                 .dockHitTarget()
                 .help("Return to chat")
             }
             .padding(.horizontal, 16)
             .frame(height: 50)
-            .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private var observedSidebar: some View {
         sidebarContent
         .background {
             ZStack {
-                Color.scifiCanvas
+                Color.dockCanvas
                 RadialGradient(
-                    colors: [Color.scifiAccent.opacity(0.055), .clear],
+                    colors: [Color.dockAccent.opacity(0.055), .clear],
                     center: UnitPoint(x: 0.9, y: 0),
                     startRadius: 0,
                     endRadius: 300
                 )
             }
         }
-        .environment(\.colorScheme, .dark)
         .fileImporter(isPresented: $showingRepositoryPicker, allowedContentTypes: [.folder], onCompletion: handleRepositoryImport)
         // Repository loading is owned by DockPopover's shared context-panel
         // task so switching Global/Session cannot let this view clear or race
@@ -401,17 +401,17 @@ struct WorkspaceActivitySidebar: View {
         .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
             VStack(alignment: .leading, spacing: 14) {
                 Text("CLARIFICATION REQUIRED")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 Text(item.detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if let choices = item.choices, !choices.isEmpty {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("SUGGESTED RESPONSES")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiMuted)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.dockSecondaryText)
                         ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
                             Button {
                                 clarificationResponse = choice
@@ -424,14 +424,14 @@ struct WorkspaceActivitySidebar: View {
                                         .multilineTextAlignment(.leading)
                                     Spacer(minLength: 0)
                                 }
-                                .foregroundStyle(clarificationResponse == choice ? Color.scifiAccent : Color.scifiFg)
+                                .foregroundStyle(clarificationResponse == choice ? Color.dockAccent : Color.dockPrimaryText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
                                 .background(
                                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                        .fill(clarificationResponse == choice ? Color.scifiAccent.opacity(0.12) : Color.scifiControlSurface)
-                                        .stroke(clarificationResponse == choice ? Color.scifiAccent.opacity(0.65) : Color.scifiBorder, lineWidth: 0.5)
+                                        .fill(clarificationResponse == choice ? Color.dockAccent.opacity(0.12) : Color.dockControlSurface)
+                                        .stroke(clarificationResponse == choice ? Color.dockAccent.opacity(0.65) : Color.dockBorder, lineWidth: 0.5)
                                 )
                             }
                             .buttonStyle(.plain)
@@ -439,7 +439,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 TextField("Your response", text: $clarificationResponse, axis: .vertical)
-                    .textFieldStyle(.scifiGlass)
+                    .textFieldStyle(.roundedBorder)
                     .lineLimit(3...6)
                 HStack {
                     Spacer()
@@ -454,8 +454,7 @@ struct WorkspaceActivitySidebar: View {
             }
             .padding(20)
             .frame(width: 390)
-            .background(Color.scifiBg)
-            .environment(\.colorScheme, .dark)
+            .background(Color.dockCanvas)
         }
     }
 
@@ -481,13 +480,13 @@ struct WorkspaceActivitySidebar: View {
                 )
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .frame(maxWidth: .infinity)
             .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 0)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private var isToolsModeSelected: Bool {
@@ -517,11 +516,11 @@ struct WorkspaceActivitySidebar: View {
             }
         }
         .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(isSelected ? Color.scifiFg : Color.scifiMuted)
+        .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
         .frame(maxWidth: .infinity, minHeight: 34)
         .overlay(alignment: .bottom) {
             if isSelected {
-                Color.scifiAccent.frame(height: 2)
+                Color.dockAccent.frame(height: 2)
             }
         }
         .contentShape(Rectangle())
@@ -551,32 +550,32 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(selectedMode == mode ? Color.scifiFg : Color.scifiMuted)
+            .foregroundStyle(selectedMode == mode ? Color.dockPrimaryText : Color.dockSecondaryText)
             .frame(maxWidth: .infinity, minHeight: 34)
             .overlay(alignment: .bottom) {
                 if selectedMode == mode {
-                    Color.scifiAccent.frame(height: 2)
+                    Color.dockAccent.frame(height: 2)
                 }
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.scifiPress)
+        .buttonStyle(.borderless)
         .frame(maxWidth: .infinity)
     }
 
     private func badgeView(count: Int, isUrgent: Bool) -> some View {
         Text(count > 99 ? "99+" : "\(count)")
-            .font(.system(size: 12, weight: .bold, design: .monospaced))
+            .font(.system(size: 12, weight: .bold))
             .monospacedDigit()
             .tracking(0)
-            .foregroundStyle(isUrgent ? Color.scifiBg : Color.scifiFg)
+            .foregroundStyle(isUrgent ? Color.dockOnAccentText : Color.dockPrimaryText)
             .frame(minWidth: 18, minHeight: 18)
             .padding(.horizontal, 4)
-            .background(Capsule().fill(isUrgent ? Color.scifiWarning : Color.scifiAccent.opacity(0.85)))
+            .background(Capsule().fill(isUrgent ? Color.dockWarning : Color.dockAccent.opacity(0.85)))
     }
 
     private func select(_ mode: ControlTab) {
-        withAnimation(.scifiEase(duration: 0.2)) { selectedMode = mode }
+        withAnimation(.dockEase(duration: 0.2)) { selectedMode = mode }
         if mode == .core {
             model.refreshRuntimeConfiguration()
             control.refresh(forceCapabilities: true)
@@ -616,7 +615,7 @@ struct WorkspaceActivitySidebar: View {
                 sectionLabel("BACKGROUND TASKS")
                 HStack(spacing: 8) {
                     TextField("Run a task in the background…", text: $backgroundTaskPrompt)
-                        .textFieldStyle(.scifiGlass)
+                        .textFieldStyle(.roundedBorder)
                     Button(isStartingBackgroundTask ? "STARTING…" : "RUN") {
                         let prompt = backgroundTaskPrompt
                         isStartingBackgroundTask = true
@@ -625,43 +624,43 @@ struct WorkspaceActivitySidebar: View {
                             isStartingBackgroundTask = false
                         }
                     }
-                    .buttonStyle(.scifiPress)
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockAccent)
                     .disabled(isStartingBackgroundTask || backgroundTaskPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 ForEach(model.currentSessionBackgroundTasks.reversed()) { task in
                     DisclosureGroup {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("PROMPT").foregroundStyle(Color.scifiTertiary)
-                            Text(task.prompt).foregroundStyle(Color.scifiMuted)
+                            Text("PROMPT").foregroundStyle(Color.dockMetadataText)
+                            Text(task.prompt).foregroundStyle(Color.dockSecondaryText)
                             if let output = task.output {
-                                Text("OUTPUT").foregroundStyle(Color.scifiTertiary).padding(.top, 3)
-                                Text(output).foregroundStyle(Color.scifiFg).textSelection(.enabled)
+                                Text("OUTPUT").foregroundStyle(Color.dockMetadataText).padding(.top, 3)
+                                Text(output).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                                 if task.kind == .handoff {
                                     Button("OPEN KANBAN DRAFT") {
                                         kanbanTitle = "Handoff follow-up"
                                         kanbanBody = output
                                         select(.kanban)
                                     }
-                                    .buttonStyle(.scifiPress)
-                                    .foregroundStyle(Color.scifiAccent)
+                                    .buttonStyle(.borderless)
+                                    .foregroundStyle(Color.dockAccent)
                                 }
                             }
                         }
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 11))
                         .padding(.top, 5)
                     } label: {
                         HStack {
-                            Circle().fill(task.status == .completed ? Color.scifiSuccess : Color.scifiAccent).frame(width: 6, height: 6)
+                            Circle().fill(task.status == .completed ? Color.dockSuccess : Color.dockAccent).frame(width: 6, height: 6)
                             Text(task.status == .completed ? "COMPLETE" : "RUNNING")
                             if task.kind != .general { Text(task.kind.rawValue.uppercased()) }
-                            Text(task.prompt).lineLimit(1).foregroundStyle(Color.scifiMuted)
+                            Text(task.prompt).lineLimit(1).foregroundStyle(Color.dockSecondaryText)
                             Spacer()
-                            Text(HumanDateFormatting.timeOnly(task.startedAt)).foregroundStyle(Color.scifiTertiary)
+                            Text(HumanDateFormatting.timeOnly(task.startedAt)).foregroundStyle(Color.dockMetadataText)
                         }
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 11))
                     }
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                 }
             }
             SessionKanbanActivityView(
@@ -676,7 +675,7 @@ struct WorkspaceActivitySidebar: View {
 
     private func openSessionKanban() {
         kanbanCurrentSessionOnly = true
-        withAnimation(.scifiEase(duration: 0.2)) { selectedMode = .kanban }
+        withAnimation(.dockEase(duration: 0.2)) { selectedMode = .kanban }
         control.refreshKanban(filter: KanbanListFilter(
             status: nil,
             assignee: nil,
@@ -702,21 +701,21 @@ struct WorkspaceActivitySidebar: View {
             sectionLabel("CHANGE REVIEW")
             if let codeWorkspaceError {
                 Text(codeWorkspaceError)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.scifiWarning.opacity(0.08))
+                    .background(Color.dockWarning.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             if let review = workflow.review {
                 HStack(spacing: 8) {
-                    todayMetric("BLOCKERS", value: review.blockerCount, color: review.blockerCount > 0 ? .scifiDestructive : .scifiSuccess)
-                    todayMetric("WARNINGS", value: review.warningCount, color: review.warningCount > 0 ? .scifiWarning : .scifiSuccess)
-                    todayMetric("NOTES", value: review.noteCount, color: .scifiMuted)
+                    todayMetric("BLOCKERS", value: review.blockerCount, color: review.blockerCount > 0 ? .dockDestructive : .dockSuccess)
+                    todayMetric("WARNINGS", value: review.warningCount, color: review.warningCount > 0 ? .dockWarning : .dockSuccess)
+                    todayMetric("NOTES", value: review.noteCount, color: .dockSecondaryText)
                     Text(review.completeness == .complete ? "COMPLETE" : "PARTIAL")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(review.completeness == .complete ? Color.scifiSuccess : Color.scifiWarning)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(review.completeness == .complete ? Color.dockSuccess : Color.dockWarning)
                 }
                 HStack(spacing: 10) {
                     Button("RUN LOCAL REVIEW") { Task { await workflow.runReview(preferences: commandCenterPreferences) } }
@@ -727,24 +726,24 @@ struct WorkspaceActivitySidebar: View {
                         Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
                     }
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
                 switch workflow.baselineStatus {
                 case .current(let date):
-                    Text("BASELINE CURRENT · \(HumanDateFormatting.dateAndTime(date))").foregroundStyle(Color.scifiSuccess)
+                    Text("BASELINE CURRENT · \(HumanDateFormatting.dateAndTime(date))").foregroundStyle(Color.dockSuccess)
                 case .stale(let date):
-                    Text("BASELINE STALE · \(HumanDateFormatting.dateAndTime(date))").foregroundStyle(Color.scifiWarning)
+                    Text("BASELINE STALE · \(HumanDateFormatting.dateAndTime(date))").foregroundStyle(Color.dockWarning)
                 case .partial(let date):
-                    Text("PARTIAL BASELINE · \(HumanDateFormatting.dateAndTime(date))").foregroundStyle(Color.scifiWarning)
+                    Text("PARTIAL BASELINE · \(HumanDateFormatting.dateAndTime(date))").foregroundStyle(Color.dockWarning)
                 case .none:
                     EmptyView()
                 }
             } else {
                 Button("RUN LOCAL REVIEW") { Task { await workflow.runReview(preferences: commandCenterPreferences) } }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
             }
             // The repository browser owns the unloaded/loading state. Once
             // the workflow snapshot matches the session's resolved project,
@@ -780,10 +779,10 @@ struct WorkspaceActivitySidebar: View {
                     )
                 } else {
                 HStack(spacing: 8) {
-                    todayMetric("STAGED", value: changes.stagedCount, color: .scifiAccent)
-                    todayMetric("UNSTAGED", value: changes.unstagedCount, color: .scifiWarning)
-                    todayMetric("UNTRACKED", value: changes.untrackedCount, color: .scifiMuted)
-                    todayMetric("CONFLICTS", value: changes.conflictedCount, color: changes.conflictedCount > 0 ? .scifiDestructive : .scifiSuccess)
+                    todayMetric("STAGED", value: changes.stagedCount, color: .dockAccent)
+                    todayMetric("UNSTAGED", value: changes.unstagedCount, color: .dockWarning)
+                    todayMetric("UNTRACKED", value: changes.untrackedCount, color: .dockSecondaryText)
+                    todayMetric("CONFLICTS", value: changes.conflictedCount, color: changes.conflictedCount > 0 ? .dockDestructive : .dockSuccess)
                 }
                 if changes.files.isEmpty {
                     emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
@@ -803,9 +802,9 @@ struct WorkspaceActivitySidebar: View {
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             }
         }
     }
@@ -815,9 +814,9 @@ struct WorkspaceActivitySidebar: View {
         let staged = changes.files.filter(\.isStaged)
         let unstaged = changes.files.filter { !$0.isStaged && $0.status != .untracked }
         let untracked = changes.files.filter { $0.status == .untracked }
-        changeSection("STAGED", files: staged, color: .scifiAccent)
-        changeSection("UNSTAGED", files: unstaged, color: .scifiWarning)
-        changeSection("UNTRACKED", files: untracked, color: .scifiMuted)
+        changeSection("STAGED", files: staged, color: .dockAccent)
+        changeSection("UNSTAGED", files: unstaged, color: .dockWarning)
+        changeSection("UNTRACKED", files: untracked, color: .dockSecondaryText)
     }
 
     @ViewBuilder
@@ -838,47 +837,47 @@ struct WorkspaceActivitySidebar: View {
             VStack(alignment: .leading, spacing: 8) {
                 if let diff = selectedRepositoryDiff, diff.path == file.path, diff.isStaged == file.isStaged {
                     Text(diff.text.isEmpty ? "No textual diff is available for this file." : diff.text)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.scifiFg)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
-                    if diff.isTruncated { Text("Diff truncated for safe display.").font(.system(size: 12)).foregroundStyle(Color.scifiWarning) }
+                    if diff.isTruncated { Text("Diff truncated for safe display.").font(.system(size: 12)).foregroundStyle(Color.dockWarning) }
                     diffAuditSummary(diff)
                 } else {
                     Button(isLoadingRepositoryDiff ? "LOADING DIFF…" : "LOAD DIFF") { loadRepositoryDiff(for: file) }
-                        .buttonStyle(.scifiPress)
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.dockAccent)
                         .disabled(isLoadingRepositoryDiff)
                 }
                 let writers = model.activeSubagents.filter { $0.filesWritten.contains(file.path) }
                 Button("OPEN CODE WORKSPACE") { openCodeWorkspace(for: file) }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                     .disabled(isLoadingRepositoryDiff)
                 if workflow.isReviewCovered(file) {
                     Button(workflow.isReviewed(file) ? "REVIEWED" : "MARK REVIEWED") { workflow.toggleReviewed(file) }
-                        .buttonStyle(.scifiPress)
-                        .foregroundStyle(workflow.isReviewed(file) ? Color.scifiSuccess : Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(workflow.isReviewed(file) ? Color.dockSuccess : Color.dockAccent)
                 }
                 Text(writers.isEmpty
                     ? "UNATTRIBUTED LOCAL CHANGE"
                     : "HERMES REPORTED WRITE · " + writers.map { $0.name ?? $0.role ?? $0.id }.joined(separator: ", "))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(writers.isEmpty ? Color.scifiTertiary : Color.scifiAccent)
+                    .font(.system(size: 11))
+                    .foregroundStyle(writers.isEmpty ? Color.dockMetadataText : Color.dockAccent)
             }
             .padding(.top, 5)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: file.status == .conflicted ? "exclamationmark.octagon" : "doc")
-                    .foregroundStyle(file.status == .conflicted ? Color.scifiDestructive : file.isStaged ? Color.scifiAccent : Color.scifiMuted)
-                Text(file.path).lineLimit(1).foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(file.status == .conflicted ? Color.dockDestructive : file.isStaged ? Color.dockAccent : Color.dockSecondaryText)
+                Text(file.path).lineLimit(1).foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 Text(file.isStaged ? "STAGED" : file.status.rawValue.uppercased())
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
             }
             .font(.system(size: 12))
         }
-        .scifiListRow()
+        .dockListRow()
     }
 
     private func loadRepositoryDiff(for file: RepositoryFileChange) {
@@ -916,76 +915,76 @@ struct WorkspaceActivitySidebar: View {
                 Image(systemName: findings.isEmpty ? "checkmark.shield" : "exclamationmark.shield")
                 Text(findings.isEmpty ? "LOCAL AUDIT · NO OBVIOUS SIGNALS" : "LOCAL AUDIT · \(findings.count) SIGNAL\(findings.count == 1 ? "" : "S")")
             }
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(findings.contains(where: { $0.severity == .blocker }) ? Color.scifiDestructive : findings.isEmpty ? Color.scifiSuccess : Color.scifiWarning)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(findings.contains(where: { $0.severity == .blocker }) ? Color.dockDestructive : findings.isEmpty ? Color.dockSuccess : Color.dockWarning)
 
             Text("Checks added lines only. It does not replace repository verification or review.")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
 
             ForEach(findings) { finding in
                 HStack(alignment: .top, spacing: 7) {
                     Circle()
-                        .fill(finding.severity == .blocker ? Color.scifiDestructive : finding.severity == .warning ? Color.scifiWarning : Color.scifiAccent)
+                        .fill(finding.severity == .blocker ? Color.dockDestructive : finding.severity == .warning ? Color.dockWarning : Color.dockAccent)
                         .frame(width: 6, height: 6)
                         .padding(.top, 5)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("\(finding.title)\(finding.line.map { " · LINE \($0)" } ?? "")")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiFg)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
                         Text(finding.detail)
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
             }
         }
         .padding(.top, 8)
-        .overlay(alignment: .top) { Color.scifiBorderLight.frame(height: 0.5) }
+        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private var verificationContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("VERIFICATION")
             if let facts = control.projectFacts {
-                diagnosticRow(label: "MANIFESTS", value: facts.manifests.isEmpty ? "NONE REPORTED" : facts.manifests.joined(separator: " · "), color: Color.scifiMuted)
-                diagnosticRow(label: "PACKAGE MANAGERS", value: facts.packageManagers.isEmpty ? "NONE REPORTED" : facts.packageManagers.joined(separator: " · "), color: Color.scifiMuted)
+                diagnosticRow(label: "MANIFESTS", value: facts.manifests.isEmpty ? "NONE REPORTED" : facts.manifests.joined(separator: " · "), color: Color.dockSecondaryText)
+                diagnosticRow(label: "PACKAGE MANAGERS", value: facts.packageManagers.isEmpty ? "NONE REPORTED" : facts.packageManagers.joined(separator: " · "), color: Color.dockSecondaryText)
                 if !facts.verifyCommands.isEmpty {
                     sectionLabel("HERMES-PROVIDED COMMANDS")
                     ForEach(facts.verifyCommands, id: \.self) { command in
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(command).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiFg).textSelection(.enabled)
+                            Text(command).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                             Button("RUN IN BACKGROUND") {
                                 guard let path = activeRepositoryPath else { return }
                                 let prompt = "Run this exact verification command in " + path + ": " + command + ". Do not edit files. Report the result, evidence scope, and exit code."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
                             }
-                            .buttonStyle(.scifiPress).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockAccent)
                         }
-                        .scifiListRow()
+                        .dockListRow()
                     }
                 }
             }
             if let verification = control.verification {
                 let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
-                diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .scifiSuccess : .scifiWarning)
+                diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .dockSuccess : .dockWarning)
                 Text(deliveryEvidence.nextAction)
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
-                let color: Color = verification.state == .passed ? .scifiSuccess : verification.state == .failed ? .scifiDestructive : .scifiWarning
+                let color: Color = verification.state == .passed ? .dockSuccess : verification.state == .failed ? .dockDestructive : .dockWarning
                 diagnosticRow(label: "STATUS", value: verification.state.rawValue.uppercased(), color: color)
                 if let evidence = verification.evidence {
-                    diagnosticRow(label: "SCOPE", value: evidence.scope?.uppercased() ?? "UNKNOWN", color: evidence.scope?.lowercased() == "targeted" ? .scifiWarning : .scifiMuted)
-                    if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: .scifiTertiary) }
-                    if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: .scifiTertiary) }
-                    if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: .scifiTertiary) }
-                    if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: .scifiTertiary) }
-                    if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: .scifiTertiary) }
-                    if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: .scifiTertiary) }
-                    if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: .scifiTertiary) }
-                    if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: .scifiTertiary) }
-                    if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: .scifiWarning) }
+                    diagnosticRow(label: "SCOPE", value: evidence.scope?.uppercased() ?? "UNKNOWN", color: evidence.scope?.lowercased() == "targeted" ? .dockWarning : .dockSecondaryText)
+                    if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: .dockMetadataText) }
+                    if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: .dockMetadataText) }
+                    if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: .dockMetadataText) }
+                    if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: .dockMetadataText) }
+                    if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: .dockMetadataText) }
+                    if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: .dockMetadataText) }
+                    if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: .dockMetadataText) }
+                    if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: .dockMetadataText) }
+                    if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: .dockWarning) }
                 }
             } else if control.projectFacts == nil {
                 emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Core to request verification facts.")
@@ -998,7 +997,7 @@ struct WorkspaceActivitySidebar: View {
         return VStack(alignment: .leading, spacing: 14) {
             sectionLabel("REPOSITORY FLEET  ·  \(paths.count)")
             Text("Repositories are local read-only references attached to Hermes sessions. No remotes are fetched automatically.")
-                .font(.system(size: 12)).foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
             if workflow.repository.isGitRepository {
                 HStack(spacing: 10) {
                     Button(commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID) ? "STOP WATCHING" : "WATCH REPOSITORY") {
@@ -1006,22 +1005,22 @@ struct WorkspaceActivitySidebar: View {
                     }
                     Button("REFRESH FLEET") { Task { await workflow.refresh(preferences: commandCenterPreferences, control: control) } }
                     if case .watching = workflow.watchState {
-                        Text("WATCHING").foregroundStyle(Color.scifiSuccess)
+                        Text("WATCHING").foregroundStyle(Color.dockSuccess)
                     } else if case .stale(let detail) = workflow.watchState {
-                        Text(detail).lineLimit(1).foregroundStyle(Color.scifiWarning)
+                        Text(detail).lineLimit(1).foregroundStyle(Color.dockWarning)
                     }
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             }
             if !workflow.notices.isEmpty {
                 sectionLabel("RECENT REPOSITORY CHANGES")
                 ForEach(workflow.notices) { notice in
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(notice.displayName).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.scifiFg)
+                        Text(notice.displayName).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
                         Text("\(notice.changedFiles) changed file\(notice.changedFiles == 1 ? "" : "s") · \(HumanDateFormatting.dateAndTime(notice.createdAt))")
-                            .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 10) {
                             Button("OPEN CHANGES") { select(.changes) }
                             Button("REVIEW WITH HERMES") {
@@ -1030,11 +1029,11 @@ struct WorkspaceActivitySidebar: View {
                             }
                             Button("OPEN VERIFICATION") { select(.verification) }
                         }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                     }
-                    .scifiListRow()
+                    .dockListRow()
                 }
             }
             if paths.isEmpty {
@@ -1045,21 +1044,21 @@ struct WorkspaceActivitySidebar: View {
                         ForEach(workflow.worktrees) { worktree in
                             HStack(spacing: 8) {
                                 Image(systemName: worktree.snapshot?.conflictedFiles ?? 0 > 0 ? "exclamationmark.octagon" : "arrow.triangle.branch")
-                                    .foregroundStyle(worktree.snapshot?.conflictedFiles ?? 0 > 0 ? Color.scifiDestructive : Color.scifiAccent)
+                                    .foregroundStyle(worktree.snapshot?.conflictedFiles ?? 0 > 0 ? Color.dockDestructive : Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(worktree.displayName).foregroundStyle(Color.scifiFg)
-                                    Text(worktree.branch ?? "DETACHED HEAD").font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                                    Text(worktree.displayName).foregroundStyle(Color.dockPrimaryText)
+                                    Text(worktree.branch ?? "DETACHED HEAD").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                                 }
                                 Spacer()
-                                Text("\(worktree.snapshot?.changedFiles ?? 0) CHANGED").font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.scifiMuted)
+                                Text("\(worktree.snapshot?.changedFiles ?? 0) CHANGED").font(.system(size: 10)).foregroundStyle(Color.dockSecondaryText)
                                 Button("USE") { store.attachProject(at: worktree.path, toSessionID: model.sessionID) }
                             }
                             .font(.system(size: 12))
-                            .scifiListRow()
+                            .dockListRow()
                         }
                     }
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
                 ForEach(paths, id: \.self) { path in
                     RepositoryFleetRow(path: path, activePath: activeRepositoryPath) { selected in
@@ -1076,31 +1075,31 @@ struct WorkspaceActivitySidebar: View {
             sectionLabel("CREATE AUTOMATION")
             VStack(alignment: .leading, spacing: 10) {
                 controlFieldLabel("NAME")
-                scifiTextField("Morning review", text: $automationName)
+                dockTextField("Morning review", text: $automationName)
 
                 HStack(alignment: .firstTextBaseline) {
                     controlFieldLabel("SCHEDULE")
                     Spacer()
                     Text("EVERY 2H  ·  0 9 * * *")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(.system(size: 12, weight: .medium))
                         .tracking(0.4)
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                 }
-                scifiTextField("When should Hermes run this?", text: $automationSchedule)
+                dockTextField("When should Hermes run this?", text: $automationSchedule)
 
                 controlFieldLabel("REQUEST")
                 TextField("What should Hermes do?", text: $automationPrompt, axis: .vertical)
                     .lineLimit(2...3)
                     .textFieldStyle(.plain)
-                    .font(.body)
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.dockPrimaryText)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .frame(minHeight: 36)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.scifiSurface)
-                            .stroke(Color.scifiBorder, lineWidth: 0.5)
+                            .fill(Color.dockSurface)
+                            .stroke(Color.dockBorder, lineWidth: 0.5)
                     )
 
                 Button {
@@ -1111,7 +1110,7 @@ struct WorkspaceActivitySidebar: View {
                         Image(systemName: "arrow.right")
                     }
                 }
-                .buttonStyle(.scifiPrimary)
+                .buttonStyle(.borderedProminent)
                 .opacity(canCreateAutomation && control.capabilityAvailable("rpc-scheduling") ? 1 : 0.42)
                 .disabled(!canCreateAutomation || !control.capabilityAvailable("rpc-scheduling"))
             }
@@ -1131,24 +1130,24 @@ struct WorkspaceActivitySidebar: View {
                 ForEach(control.cronJobs) { job in
                     VStack(alignment: .leading, spacing: 7) {
                         HStack {
-                            Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary).frame(width: 6, height: 6)
-                            Text(job.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.scifiFg)
+                            Circle().fill(job.enabled ? Color.dockAccent : Color.dockMetadataText).frame(width: 6, height: 6)
+                            Text(job.name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
                             Spacer()
                             Text(job.enabled ? "ENABLED" : "PAUSED")
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
                             let health = AutomationHealthPresentation.make(job: job, runs: control.cronRuns, capabilityAvailable: control.capabilityAvailable("rpc-scheduling"), mcpErrorObserved: false)
                             Text(health.state.rawValue.uppercased())
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundStyle(health.state == .healthy ? Color.scifiSuccess : health.state == .degraded ? Color.scifiWarning : Color.scifiMuted)
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockSecondaryText)
                         }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(CronScheduleFormatting.humanReadable(job.schedule))
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Color.scifiFg)
+                                .foregroundStyle(Color.dockPrimaryText)
                             Text(job.schedule)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(Color.scifiTertiary)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.dockMetadataText)
                         }
                         if let nextRun = job.nextRun {
                             HStack(spacing: 5) {
@@ -1156,8 +1155,8 @@ struct WorkspaceActivitySidebar: View {
                                 Text("NEXT RUN")
                                 Text(HumanDateFormatting.dateAndTime(nextRun))
                             }
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockAccent)
                         }
                         HStack(spacing: 12) {
                             if control.capabilityAvailable("cron.runNow") {
@@ -1165,7 +1164,7 @@ struct WorkspaceActivitySidebar: View {
                                     cronRunRequest = job
                                     isShowingCronRunConfirmation = true
                                 } label: {
-                                    ScifiActionLabel(
+                                    DockActionLabel(
                                         title: "RUN NOW",
                                         pendingTitle: "RUNNING…",
                                         isPending: control.isActionPending(control.cronActionID("run", job: job))
@@ -1175,7 +1174,7 @@ struct WorkspaceActivitySidebar: View {
                             }
                             if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
                                 Button { cronEditJob = job } label: {
-                                    ScifiActionLabel(
+                                    DockActionLabel(
                                         title: "EDIT",
                                         pendingTitle: "SAVING…",
                                         isPending: control.isActionPending(control.cronActionID("edit", job: job))
@@ -1188,42 +1187,42 @@ struct WorkspaceActivitySidebar: View {
                                     cronRemovalRequest = job
                                     isShowingCronRemovalConfirmation = true
                                 } label: {
-                                    ScifiActionLabel(
+                                    DockActionLabel(
                                         title: "REMOVE",
                                         pendingTitle: "REMOVING…",
                                         isPending: control.isActionPending(control.cronActionID("remove", job: job)),
-                                        tint: Color.scifiWarning
+                                        tint: Color.dockWarning
                                     )
                                 }
-                                .foregroundStyle(Color.scifiWarning)
+                                .foregroundStyle(Color.dockWarning)
                                 .disabled(control.isActionPending(control.cronActionID("remove", job: job)))
                             }
                             Spacer()
                         }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                     }
                     .padding(12)
-                    .scifiGlassPane()
+                    .dockGlassPane()
                 }
             }
             sectionLabel("RUN HISTORY  ·  \(control.cronRuns.count)")
             if let state = control.refreshState(for: "cron.history"), state.isStale {
                 Text("Showing the last successful history while Hermes reconnects. \(state.error ?? "")")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !control.cronHistoryAvailable && control.cronRuns.isEmpty {
                 Text("Hermes cron history is unavailable through the installed CLI.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             } else if control.cronRuns.isEmpty {
                 Text("No cron execution attempts recorded.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
             } else {
                 ForEach(control.cronRuns) { run in
                     if let request = control.cronReportRequest(for: run) {
@@ -1248,21 +1247,21 @@ struct WorkspaceActivitySidebar: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: job.enabled ? "clock.badge.checkmark" : "clock.badge.xmark")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
+                    .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(job.name)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(2)
                     Text(job.enabled ? "ENABLED AND SCHEDULED" : "PAUSED")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold))
                         .tracking(0.45)
-                        .foregroundStyle(job.enabled ? Color.scifiSuccess : Color.scifiWarning)
+                        .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
                 }
                 Spacer(minLength: 0)
             }
 
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
 
             reportRow("SCHEDULE", value: CronScheduleFormatting.humanReadable(job.schedule))
             reportRow("CRON", value: job.schedule)
@@ -1277,25 +1276,25 @@ struct WorkspaceActivitySidebar: View {
             if let latestRun {
                 reportRow("LAST RUN", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
                 HStack(spacing: 6) {
-                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.scifiSuccess : Color.scifiWarning).frame(width: 5, height: 5)
+                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning).frame(width: 5, height: 5)
                     Text("LAST STATUS")
                     Text(latestRun.status.uppercased())
                 }
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(cronRunIsSuccessful(latestRun) ? Color.scifiSuccess : Color.scifiWarning)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning)
                 if let error = latestRun.error, !error.isEmpty {
                     Text(error)
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                         .lineLimit(3)
                 }
             } else {
                 reportRow("LAST RUN", value: "No execution recorded")
             }
             if let report = job.report, !report.isEmpty {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 Button {
-                    withAnimation(.scifiEase(duration: 0.2)) {
+                    withAnimation(.dockEase(duration: 0.2)) {
                         if expandedCronReportIDs.contains(job.id) {
                             expandedCronReportIDs.remove(job.id)
                         } else {
@@ -1307,11 +1306,11 @@ struct WorkspaceActivitySidebar: View {
                         Image(systemName: expandedCronReportIDs.contains(job.id) ? "chevron.down" : "chevron.right")
                             .font(.system(size: 10, weight: .bold))
                         Text(expandedCronReportIDs.contains(job.id) ? "HIDE REPORT" : "VIEW LATEST REPORT")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 11, weight: .semibold))
                     }
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
                 if expandedCronReportIDs.contains(job.id) {
                     MarkdownMessageView(markdown: report)
                         .padding(10)
@@ -1320,58 +1319,58 @@ struct WorkspaceActivitySidebar: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             } else if job.sessionID != nil {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("REPORT AVAILABLE")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiSuccess)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockSuccess)
                     Text("Hermes saved the full output in this job's latest run session.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("OPEN LATEST REPORT") {
                         if let sessionID = job.sessionID {
                             cronReportRequest = CronReportRequest(job: job, sessionID: sessionID)
                         }
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
             } else {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("REPORT BODY UNAVAILABLE")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockMetadataText)
                     Text("Hermes recorded this run, but the installed CLI only provides execution status and delivery metadata—not the response body. " + (job.delivery?.lowercased() == "origin" ? "This job delivers its result to its origin chat." : ""))
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                     Button("RETURN TO CHAT") {
                         onClose()
                         model.requestComposerFocus()
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
             }
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     private func reportRow(_ label: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(label)
+            Text(label == label.uppercased() ? label.lowercased().capitalized : label)
                 .frame(width: 70, alignment: .leading)
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
             Text(value)
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(2)
         }
-        .font(.system(size: 11, design: .monospaced))
+        .font(.system(size: 11))
     }
 
     private func cronRunIsSuccessful(_ run: CronRunSummary) -> Bool {
@@ -1382,51 +1381,51 @@ struct WorkspaceActivitySidebar: View {
     private func cronRunRow(_ run: CronRunSummary, canViewReport: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Circle().fill(cronRunIsSuccessful(run) ? Color.scifiSuccess : Color.scifiWarning).frame(width: 6, height: 6)
+                Circle().fill(cronRunIsSuccessful(run) ? Color.dockSuccess : Color.dockWarning).frame(width: 6, height: 6)
                 Text(run.status.uppercased())
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 if canViewReport {
                     Text("VIEW REPORT")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color.scifiAccent)
+                        .foregroundStyle(Color.dockAccent)
                 } else {
                     Text(run.jobID ?? run.id)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                 }
             }
             if let claimedAt = run.claimedAt {
                 Text(HumanDateFormatting.dateAndTime(claimedAt))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
             }
             if let error = run.error {
-                Text(error).font(.system(size: 12)).foregroundStyle(Color.scifiWarning).lineLimit(3)
+                Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning).lineLimit(3)
             }
         }
         .padding(12)
         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
-    private func scifiTextField(_ placeholder: String, text: Binding<String>) -> some View {
+    private func dockTextField(_ placeholder: String, text: Binding<String>) -> some View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain)
-            .font(.body)
-            .foregroundStyle(Color.scifiFg)
+            .font(.system(size: 13))
+            .foregroundStyle(Color.dockPrimaryText)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.scifiSurface)
-                    .stroke(Color.scifiBorder, lineWidth: 0.5)
+                    .fill(Color.dockSurface)
+                    .stroke(Color.dockBorder, lineWidth: 0.5)
             )
     }
 
@@ -1438,9 +1437,9 @@ struct WorkspaceActivitySidebar: View {
 
     private func controlFieldLabel(_ title: String) -> some View {
         Text(title)
-            .font(.system(.body, design: .monospaced).weight(.semibold))
+            .font(.system(.body).weight(.semibold))
             .tracking(0.9)
-            .foregroundStyle(Color.scifiMuted)
+            .foregroundStyle(Color.dockSecondaryText)
     }
 
     private var tabBadges: ControlTabBadgeState {
@@ -1477,19 +1476,19 @@ struct WorkspaceActivitySidebar: View {
                     } label: {
                         Label("PROJECTS", systemImage: "chevron.left")
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                     Spacer()
                     if let path = selectedProjectFolderPath {
                         Button {
                             startNewChat(in: path)
                         } label: {
                             Label("NEW CHAT", systemImage: "plus.bubble")
-                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 10, weight: .semibold))
                         }
-                        .buttonStyle(.scifiPress)
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.dockAccent)
                         .disabled(model.isRestoringSession || model.isCreatingSession)
                         .help("Start a new chat in this project")
                     }
@@ -1502,8 +1501,8 @@ struct WorkspaceActivitySidebar: View {
                         sectionLabel("SESSIONS")
                         Spacer()
                         Text("\(control.projectSessions.count)")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
                     }
                     ForEach(control.projectSessions) { session in
                         Button {
@@ -1512,31 +1511,31 @@ struct WorkspaceActivitySidebar: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack {
-                                    Circle().fill(Color.scifiAccent).frame(width: 6, height: 6)
+                                    Circle().fill(Color.dockAccent).frame(width: 6, height: 6)
                                     Text(session.title)
                                         .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(2)
                                     Spacer()
                                     Text(session.state.uppercased())
-                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(Color.scifiMuted)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.dockSecondaryText)
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(Color.scifiAccent)
+                                        .foregroundStyle(Color.dockAccent)
                                 }
                                 if let preview = session.displayPreview {
                                     Text(preview)
                                         .font(.system(size: 12))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(2)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .scifiListRow()
+                            .dockListRow()
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.scifiPress)
+                        .buttonStyle(.borderless)
                     }
                 }
                 if selectedProjectSessionID != nil {
@@ -1562,35 +1561,35 @@ struct WorkspaceActivitySidebar: View {
                         HStack(spacing: 10) {
                             Image(systemName: project.isActive ? "folder.fill" : "folder")
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(project.isActive ? Color.scifiAccent : Color.scifiMuted)
+                                .foregroundStyle(project.isActive ? Color.dockAccent : Color.dockSecondaryText)
                                 .frame(width: 16)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(projectDisplayName(project))
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.scifiFg)
+                                    .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                 Text(projectMetadata(project))
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(Color.scifiTertiary)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.dockMetadataText)
                                     .lineLimit(1)
                             }
                             Spacer()
                             if project.isActive {
                                 Text("ACTIVE")
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .tracking(0.5)
-                                    .foregroundStyle(Color.scifiSuccess)
+                                    .foregroundStyle(Color.dockSuccess)
                             }
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.scifiAccent)
+                                .foregroundStyle(Color.dockAccent)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 10)
-                        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+                        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                 }
             }
         }
@@ -1601,11 +1600,11 @@ struct WorkspaceActivitySidebar: View {
             chooseProjectDirectory()
         } label: {
             Label("ADD DIRECTORY", systemImage: "folder.badge.plus")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: 10, weight: .semibold))
                 .tracking(0.4)
         }
-        .buttonStyle(.scifiPress)
-        .foregroundStyle(Color.scifiAccent)
+        .buttonStyle(.borderless)
+        .foregroundStyle(Color.dockAccent)
         .help("Start a new chat in a directory")
     }
 
@@ -1644,16 +1643,16 @@ struct WorkspaceActivitySidebar: View {
             HStack(spacing: 8) {
                 Image(systemName: project.isActive ? "folder.fill" : "folder")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(project.isActive ? Color.scifiAccent : Color.scifiMuted)
+                    .foregroundStyle(project.isActive ? Color.dockAccent : Color.dockSecondaryText)
                 Text(projectDisplayName(project))
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
             }
             if project.name != "__no_project__" {
                 Text(project.name)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -1704,14 +1703,14 @@ struct WorkspaceActivitySidebar: View {
             sectionLabel("LOCAL CHANGES")
             if workflow.repository.isGitRepository {
                 HStack(spacing: 8) {
-                    todayMetric("STAGED", value: workflow.changes?.stagedCount ?? 0, color: .scifiAccent)
-                    todayMetric("UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: .scifiWarning)
-                    todayMetric("UNTRACKED", value: workflow.changes?.untrackedCount ?? 0, color: .scifiMuted)
-                    todayMetric("CONFLICTS", value: workflow.changes?.conflictedCount ?? 0, color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .scifiDestructive : .scifiSuccess)
+                    todayMetric("STAGED", value: workflow.changes?.stagedCount ?? 0, color: .dockAccent)
+                    todayMetric("UNSTAGED", value: workflow.changes?.unstagedCount ?? 0, color: .dockWarning)
+                    todayMetric("UNTRACKED", value: workflow.changes?.untrackedCount ?? 0, color: .dockSecondaryText)
+                    todayMetric("CONFLICTS", value: workflow.changes?.conflictedCount ?? 0, color: (workflow.changes?.conflictedCount ?? 0) > 0 ? .dockDestructive : .dockSuccess)
                 }
                 Text(workflow.repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S") · \(workflow.repository.branch)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.scifiSuccess : Color.scifiWarning)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : Color.dockWarning)
                 HStack(spacing: 10) {
                     Button("OPEN CHANGES") { select(.changes) }
                     Button(commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID) ? "STOP WATCHING" : "WATCH REPOSITORY") {
@@ -1719,23 +1718,23 @@ struct WorkspaceActivitySidebar: View {
                     }
                     Button("REFRESH") { Task { await refreshRepository() } }
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             } else {
                 Text("No local project folder is attached to the active session.")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             }
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     private var kanbanContent: some View {
@@ -1744,8 +1743,8 @@ struct WorkspaceActivitySidebar: View {
                 VStack(alignment: .leading, spacing: 4) {
                     sectionLabel("HERMES KANBAN")
                     Text("\(control.kanbanTasks.count) tasks across \(KanbanLane.allCases.count) lanes")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer()
                 if control.capabilityAvailable("kanban.boards") {
@@ -1768,27 +1767,27 @@ struct WorkspaceActivitySidebar: View {
                     } label: {
                         Label(control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name ?? "BOARD", systemImage: "rectangle.3.group")
                     }
-                    .buttonStyle(.scifiPress)
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockAccent)
                 }
                 Button { control.refreshKanban() } label: {
                     if control.isActionPending(control.refreshKanbanActionID) {
-                        ProgressView().controlSize(.small).tint(Color.scifiAccent)
+                        ProgressView().controlSize(.small).tint(Color.dockAccent)
                     } else {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12, weight: .semibold))
                     }
                 }
-                .buttonStyle(.scifiPress)
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockAccent)
                 .disabled(control.isActionPending(control.refreshKanbanActionID))
             }
             if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly {
                 createKanbanTaskForm
             } else if kanbanCurrentSessionOnly {
                 Label("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", systemImage: "link.badge.plus")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1799,8 +1798,8 @@ struct WorkspaceActivitySidebar: View {
                 HStack(spacing: 8) {
                     ForEach(stats.counts.keys.sorted(), id: \.self) { status in
                         Text("\(status.uppercased()) \(stats.counts[status] ?? 0)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiTertiary)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockMetadataText)
                     }
                 }
             }
@@ -1817,14 +1816,14 @@ struct WorkspaceActivitySidebar: View {
                                 }
                             }
                         }
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: 10))
                         Button {
                             control.refreshKanbanDiagnostics(severity: kanbanDiagnosticSeverity == "ALL" ? nil : kanbanDiagnosticSeverity.lowercased())
                         } label: {
                             Image(systemName: "arrow.clockwise")
                         }
-                        .buttonStyle(.scifiPress)
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.dockAccent)
                     }
                     ForEach(control.kanbanDiagnostics) { diagnostic in
                         Button {
@@ -1837,16 +1836,16 @@ struct WorkspaceActivitySidebar: View {
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack {
                                     Text(diagnostic.severity.uppercased())
-                                        .foregroundStyle(diagnostic.severity.lowercased() == "error" ? Color.scifiDestructive : Color.scifiWarning)
-                                    Text(diagnostic.title).foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(diagnostic.severity.lowercased() == "error" ? Color.dockDestructive : Color.dockWarning)
+                                    Text(diagnostic.title).foregroundStyle(Color.dockPrimaryText)
                                     Spacer()
                                     if diagnostic.taskID != nil { Image(systemName: "chevron.right") }
                                 }
-                                Text(diagnostic.detail).foregroundStyle(Color.scifiMuted).lineLimit(2)
+                                Text(diagnostic.detail).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
                             }
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: 11))
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .scifiListRow()
+                            .dockListRow()
                         }
                         .buttonStyle(.plain)
                         .disabled(diagnostic.taskID == nil)
@@ -1879,22 +1878,22 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             Text("Hermes owns this board. The Dock only reads and submits confirmed CLI actions.")
-                .font(.body)
-                .foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
             if let state = control.refreshState(for: "kanban.board"), let error = state.error {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 12, weight: .medium))
                     Text(state.isStale ? "Showing the last successful board. \(error)" : error)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(.body))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(Color.scifiWarning)
+                .foregroundStyle(Color.dockWarning)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
-                .background(Color.scifiWarning.opacity(0.07))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiWarning.opacity(0.34), lineWidth: 0.5))
+                .background(Color.dockWarning.opacity(0.07))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockWarning.opacity(0.34), lineWidth: 0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
@@ -1928,9 +1927,9 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
         }
-        .buttonStyle(.scifiPress)
-        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-        .foregroundStyle(Color.scifiAccent)
+        .buttonStyle(.borderless)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(Color.dockAccent)
         .disabled(control.isActionPending(control.refreshKanbanActionID))
     }
 
@@ -1949,20 +1948,20 @@ struct WorkspaceActivitySidebar: View {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                 Text("ADD TASK")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(1.1)
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
             }
             HStack(spacing: 8) {
-                scifiTextField("What needs to be done?", text: $kanbanTitle)
+                dockTextField("What needs to be done?", text: $kanbanTitle)
                 Button {
                     isShowingKanbanConfirmation = true
                 } label: {
                     Group {
                         if control.isCreatingKanbanTask {
-                            ProgressView().controlSize(.small).tint(Color.scifiBg)
+                            ProgressView().controlSize(.small).tint(Color.dockOnAccentText)
                         } else {
                             Image(systemName: "arrow.up.right")
                                 .font(.system(size: 13, weight: .bold))
@@ -1970,7 +1969,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     .frame(width: 36, height: 36)
                 }
-                .buttonStyle(.scifiPrimary)
+                .buttonStyle(.borderedProminent)
                 .opacity(canCreateKanbanTask && !control.isCreatingKanbanTask ? 1 : 0.42)
                 .disabled(!canCreateKanbanTask || control.isCreatingKanbanTask)
                 .help("Create task")
@@ -1979,16 +1978,16 @@ struct WorkspaceActivitySidebar: View {
                 .lineLimit(1...3)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
-                .background(Color.scifiSurface)
+                .background(Color.dockSurface)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .padding(12)
-        .background(Color.scifiSurface2)
+        .background(Color.dockSurface2)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
     private func kanbanLane(_ lane: KanbanLane) -> some View {
@@ -1999,12 +1998,12 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(lane.color)
                 Text(lane.rawValue.uppercased())
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold))
                     .tracking(0.8)
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                 Spacer()
                 Text("\(laneTasks.count)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(lane.color)
             }
             .padding(.horizontal, 3)
@@ -2012,10 +2011,10 @@ struct WorkspaceActivitySidebar: View {
 
             if laneTasks.isEmpty {
                 Text("No tasks")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
                     .frame(maxWidth: .infinity, minHeight: 72)
-                    .background(Color.scifiSurface2)
+                    .background(Color.dockSurface2)
                     .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             } else {
                 ForEach(laneTasks) { task in
@@ -2027,25 +2026,25 @@ struct WorkspaceActivitySidebar: View {
         .frame(width: 220, alignment: .topLeading)
         .background(Color.black.opacity(0.14))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
     private func kanbanTaskCard(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(task.title)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(3)
             if let detail = task.detail, !detail.isEmpty {
                 Text(detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(3)
             }
             HStack(spacing: 6) {
                 if let priority = task.priority, !priority.isEmpty {
                     Text("P\(priority)")
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                 }
                 if let assignee = task.assignee, !assignee.isEmpty {
                     Text(assignee)
@@ -2055,8 +2054,8 @@ struct WorkspaceActivitySidebar: View {
                 Text(task.id)
                     .lineLimit(1)
             }
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundStyle(Color.scifiTertiary)
+            .font(.system(size: 10))
+            .foregroundStyle(Color.dockMetadataText)
 
             HStack(spacing: 10) {
                 if control.capabilityAvailable("kanban.taskDetails") {
@@ -2064,15 +2063,15 @@ struct WorkspaceActivitySidebar: View {
                         selectedKanbanTask = task
                         control.loadKanbanTask(task)
                     } label: {
-                        ScifiActionLabel(
+                        DockActionLabel(
                             title: "DETAILS",
                             pendingTitle: "LOADING…",
                             isPending: control.isLoadingKanbanDetail,
-                            tint: Color.scifiAccent
+                            tint: Color.dockAccent
                         )
                     }
-                    .buttonStyle(.scifiPress)
-                    .foregroundStyle(Color.scifiMuted)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .disabled(control.isLoadingKanbanDetail)
                 }
                 if lane == .done, control.capabilityAvailable("kanban.archive") {
@@ -2090,49 +2089,49 @@ struct WorkspaceActivitySidebar: View {
             }
         }
         .padding(10)
-        .background(Color.scifiSurface)
+        .background(Color.dockSurface)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2).fill(lane.color).frame(width: 2)
         }
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 
     private func kanbanDetailSheet(_ task: KanbanTaskSummary) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("KANBAN TASK")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(1.1)
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                 Spacer()
                 Button("DONE") { selectedKanbanTask = nil }
-                    .buttonStyle(.scifiPress)
-                    .foregroundStyle(Color.scifiMuted)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockSecondaryText)
             }
 
             if control.isLoadingKanbanDetail {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("LOADING HERMES TASK…")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
             } else if let detail = control.kanbanDetail {
                 Text(detail.title)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
                 HStack(spacing: 10) {
                     Text(detail.status.uppercased())
                     if let priority = detail.priority { Text("P\(priority)") }
                     if let assignee = detail.assignee { Text(assignee) }
                 }
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
                 if let body = detail.body, !body.isEmpty {
                     Text(body)
                         .font(.system(size: 13))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2148,13 +2147,13 @@ struct WorkspaceActivitySidebar: View {
                                     Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
                                 }
                             }
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.scifiMuted)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockSecondaryText)
                             .padding(.vertical, 4)
                         }
                     }
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
                 Menu {
                     ForEach(KanbanMutationKind.allCases) { kind in
@@ -2166,18 +2165,18 @@ struct WorkspaceActivitySidebar: View {
                     }
                 } label: {
                     Label("TASK ACTIONS", systemImage: "ellipsis.circle")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                 }
                 .menuStyle(.borderlessButton)
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 Text("RUN HISTORY  ·  \(detail.runs.count)")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockSecondaryText)
                 if detail.runs.isEmpty {
                     Text("No run history returned by Hermes.")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                 } else {
                     ForEach(detail.runs) { run in
                         VStack(alignment: .leading, spacing: 3) {
@@ -2187,28 +2186,27 @@ struct WorkspaceActivitySidebar: View {
                                 Spacer()
                                 if let elapsed = run.elapsed { Text(elapsed) }
                             }
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
                             if let summary = run.summary {
                                 Text(summary)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiMuted)
+                                    .foregroundStyle(Color.dockSecondaryText)
                             }
                         }
                         .padding(.vertical, 5)
-                        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+                        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                     }
                 }
             } else {
                 Text("Hermes did not return structured details for this task.")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockWarning)
             }
         }
         .padding(20)
         .frame(width: 430, height: 500, alignment: .topLeading)
-        .background(Color.scifiBg)
-        .environment(\.colorScheme, .dark)
+        .background(Color.dockCanvas)
     }
 
     private func kanbanLane(for task: KanbanTaskSummary) -> KanbanLane {
@@ -2236,16 +2234,16 @@ struct WorkspaceActivitySidebar: View {
             kanbanChangeRequest = KanbanChangeRequest(task: task, action: action)
             isShowingKanbanChangeConfirmation = true
         } label: {
-            ScifiActionLabel(
+            DockActionLabel(
                 title: label,
                 pendingTitle: "UPDATING…",
                 isPending: isPending,
-                tint: action == .block || action == .archive ? Color.scifiWarning : Color.scifiAccent
+                tint: action == .block || action == .archive ? Color.dockWarning : Color.dockAccent
             )
         }
-        .buttonStyle(.scifiPress)
-        .font(.system(.body, design: .monospaced).weight(.semibold))
-        .foregroundStyle(action == .block || action == .archive ? Color.scifiWarning : Color.scifiAccent)
+        .buttonStyle(.borderless)
+        .font(.system(.body).weight(.semibold))
+        .foregroundStyle(action == .block || action == .archive ? Color.dockWarning : Color.dockAccent)
         .disabled(isPending)
     }
 
@@ -2255,21 +2253,21 @@ struct WorkspaceActivitySidebar: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                     .frame(width: 16)
                 TextField("Sessions, projects, Inbox, reminders", text: $searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                 if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Button {
                         searchQuery = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.scifiTertiary)
+                            .foregroundStyle(Color.dockMetadataText)
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .help("Clear search")
                 }
             }
@@ -2277,25 +2275,25 @@ struct WorkspaceActivitySidebar: View {
             .frame(minHeight: 36)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.scifiControlSurface)
-                    .stroke(Color.scifiBorder, lineWidth: 0.5)
+                    .fill(Color.dockControlSurface)
+                    .stroke(Color.dockBorder, lineWidth: 0.5)
             )
             if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Search across the sources already connected to Hermes.")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                     Text("Sessions  ·  projects  ·  Inbox  ·  Apple Reminders")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.top, 2)
             } else if control.isSearching {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("SEARCHING HERMES SOURCES…")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
             } else if control.searchResults.isEmpty {
                 emptyState(icon: "questionmark.circle", title: "No matches", detail: "Try a session title, project name, reminder, or Inbox detail.")
@@ -2307,7 +2305,7 @@ struct WorkspaceActivitySidebar: View {
                         Button { control.openSearchResult(result) } label: {
                             searchResultRow(result)
                         }
-                        .buttonStyle(.scifiPress)
+                        .buttonStyle(.borderless)
                     } else {
                         searchResultRow(result)
                     }
@@ -2320,32 +2318,32 @@ struct WorkspaceActivitySidebar: View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: result.reference.source == .appleReminder ? "checklist" : "circle.dotted")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiAccent)
+                .foregroundStyle(Color.dockAccent)
                 .frame(width: 15)
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(result.title)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(2)
                     Spacer(minLength: 4)
                     Text(result.sourceLabel)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
                 Text(result.detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }
             if result.reference.source != .appleReminder && result.reference.source != .hermesCronJob {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .scifiListRow()
+        .dockListRow()
         .contentShape(Rectangle())
     }
 
@@ -2359,7 +2357,7 @@ struct WorkspaceActivitySidebar: View {
                     ForEach(InboxFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
                 }
                 .labelsHidden()
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: 11))
             }
             if visibleItems.isEmpty {
                 emptyState(icon: "checkmark.circle", title: "Nothing needs your attention", detail: "Approvals, failures, clarifications, and due reminders will appear here.")
@@ -2369,7 +2367,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if let error = control.lastError {
-                Text(error).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiWarning)
+                Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning)
             }
         }
     }
@@ -2378,11 +2376,11 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top, spacing: 9) {
                 Image(systemName: item.kind == .approval ? "exclamationmark.triangle" : "circle.dotted")
-                    .font(.system(size: 12)).foregroundStyle(item.kind == .approval ? Color.scifiWarning : Color.scifiAccent)
+                    .font(.system(size: 12)).foregroundStyle(item.kind == .approval ? Color.dockWarning : Color.dockAccent)
                     .frame(width: 15)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.scifiFg)
-                    Text(item.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(4)
+                    Text(item.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+                    Text(item.detail).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(4)
                 }
                 Spacer(minLength: 0)
             }
@@ -2399,31 +2397,31 @@ struct WorkspaceActivitySidebar: View {
                             control.respond(to: item, action: action)
                         }
                     } label: {
-                        ScifiActionLabel(
+                        DockActionLabel(
                             title: action.rawValue.uppercased(),
                             pendingTitle: action == .stop ? "STOPPING…" : "WORKING…",
                             isPending: isPending,
-                            tint: action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent
+                            tint: action == .deny || action == .stop ? Color.dockWarning : Color.dockAccent
                         )
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(action == .deny || action == .stop ? Color.scifiWarning : Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(action == .deny || action == .stop ? Color.dockWarning : Color.dockAccent)
                     .disabled(isPending)
                 }
                 Button("DISMISS") { control.dismiss(item.id) }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
                 Button("SNOOZE") { control.snooze(item.id) }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
             }
         }
         .padding(12)
-        .scifiGlassPane()
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? Color.scifiAccent : .clear, lineWidth: 0.5))
+        .dockGlassPane()
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? Color.dockAccent : .clear, lineWidth: 0.5))
     }
 
     /// Global operations overview. It deliberately excludes the active chat's
@@ -2450,39 +2448,39 @@ struct WorkspaceActivitySidebar: View {
                 HStack(spacing: 8) {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("DELEGATION PAUSED")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiWarning)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockWarning)
                         Text("Subagent auto-dispatch is currently paused globally.")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color.scifiTertiary)
+                            .foregroundStyle(Color.dockMetadataText)
                     }
                     Spacer(minLength: 0)
                     Button("RESUME") {
                         Task { _ = await control.pauseDelegation(false) }
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
                 .padding(10)
-                .scifiGlassPane()
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
+                .dockGlassPane()
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
             }
 
             // Interactive Workspace Metrics Strip
             sectionLabel("WORKSPACE OVERVIEW")
             HStack(spacing: 8) {
-                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .scifiSuccess : .scifiWarning) {
+                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .dockSuccess : .dockWarning) {
                     select(.inbox)
                 }
-                todayMetric("RUNNING", value: totalRunningCount, color: .scifiAccent)
-                todayMetric("SESSIONS", value: activeSessions.count, color: .scifiAccent) {
+                todayMetric("RUNNING", value: totalRunningCount, color: .dockAccent)
+                todayMetric("SESSIONS", value: activeSessions.count, color: .dockAccent) {
                     select(.projects)
                 }
-                todayMetric("SCHEDULED", value: control.cronJobs.count, color: .scifiSuccess) {
+                todayMetric("SCHEDULED", value: control.cronJobs.count, color: .dockSuccess) {
                     select(.automations)
                 }
             }
@@ -2493,12 +2491,12 @@ struct WorkspaceActivitySidebar: View {
                 attentionItemRow(attention)
                 if openAttention.count > 1 {
                     Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                 }
             } else {
-                attentionRow(icon: "checkmark.circle", title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .scifiSuccess)
+                attentionRow(icon: "checkmark.circle", title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .dockSuccess)
             }
 
             // The feed is flattened across every persisted session, then sorted
@@ -2508,22 +2506,21 @@ struct WorkspaceActivitySidebar: View {
                let state = control.refreshState(for: "latest.activity"),
                state.isStale {
                 Text("Latest activity is unavailable. \(state.error ?? "Retry when Hermes reconnects.")")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(12)
-                    .scifiGlassPane()
+                    .dockGlassPane()
             }
             if !latestActivities.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
                         Image(systemName: "waveform.path.ecg")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiAccent)
-                        Text("LATEST ACTIVITY  ·  \(latestActivities.count)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiAccent)
+                            .foregroundStyle(Color.dockAccent)
+                        Text("Latest Activity  ·  \(latestActivities.count)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockAccent)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 12)
@@ -2532,8 +2529,8 @@ struct WorkspaceActivitySidebar: View {
 
                     if let state = control.refreshState(for: "latest.activity"), state.isStale {
                         Text("Showing the last successful activity snapshot. \(state.error ?? "Retry when Hermes reconnects.")")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.scifiWarning)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockWarning)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 12)
                             .padding(.bottom, 6)
@@ -2545,7 +2542,7 @@ struct WorkspaceActivitySidebar: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Circle()
-                                    .fill(activity.sessionID == model.sessionID ? Color.scifiAccent : sessionStateColor(activity.state))
+                                    .fill(activity.sessionID == model.sessionID ? Color.dockAccent : sessionStateColor(activity.state))
                                     .frame(width: 5, height: 5)
                                 VStack(alignment: .leading, spacing: 2) {
                                     if let project = control.project(forSessionID: activity.sessionID),
@@ -2553,35 +2550,35 @@ struct WorkspaceActivitySidebar: View {
                                        project.name != "__no_project__" {
                                         Text(projectDisplayName(project))
                                             .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(Color.scifiFg)
+                                            .foregroundStyle(Color.dockPrimaryText)
                                             .lineLimit(1)
                                         Text(activity.sessionTitle)
-                                            .font(.system(size: 11, weight: .medium))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(Color.dockMetadataText)
                                             .lineLimit(1)
                                     } else {
                                         Text(activity.sessionTitle)
                                             .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(Color.scifiFg)
+                                            .foregroundStyle(Color.dockPrimaryText)
                                             .lineLimit(1)
                                     }
                                     Text(activity.activityName)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(2)
                                 }
                                 Spacer(minLength: 0)
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Color.scifiAccent)
+                                    .foregroundStyle(Color.dockAccent)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .scifiListRow()
+                            .dockListRow()
                         }
-                        .buttonStyle(.scifiPress)
+                        .buttonStyle(.borderless)
                     }
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             // Cross-session active agents, processes, and running background tasks
@@ -2591,11 +2588,10 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiAccent)
-                        Text("RUNNING NOW")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiAccent)
+                            .foregroundStyle(Color.dockAccent)
+                        Text("Running Now")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockAccent)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -2608,20 +2604,20 @@ struct WorkspaceActivitySidebar: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "person.2.fill")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiAccent)
+                                    .foregroundStyle(Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(agent.name)
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(1)
                                     Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }
-                            .scifiListRow()
+                            .dockListRow()
                         }
 
                         // Display active processes
@@ -2629,17 +2625,17 @@ struct WorkspaceActivitySidebar: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "gearshape.2")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiMuted)
+                                    .foregroundStyle(Color.dockSecondaryText)
                                 Text(process.name)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiFg)
+                                    .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
                                 Text(process.state.uppercased())
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color.scifiTertiary)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.dockMetadataText)
                             }
-                            .scifiListRow()
+                            .dockListRow()
                         }
 
                         // Display running background tasks
@@ -2647,26 +2643,26 @@ struct WorkspaceActivitySidebar: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "terminal.fill")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiAccent)
+                                    .foregroundStyle(Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(bgTask.prompt)
                                         .font(.system(size: 12))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(1)
                                     Text(bgTask.id)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.dockMetadataText)
                                 }
                                 Spacer(minLength: 0)
                                 Text("RUNNING")
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color.scifiAccent)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.dockAccent)
                             }
-                            .scifiListRow()
+                            .dockListRow()
                         }
                     }
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             // List of active sessions with state indicator badges
@@ -2679,29 +2675,29 @@ struct WorkspaceActivitySidebar: View {
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Circle().fill(session.id == model.sessionID ? Color.scifiAccent : sessionStateColor(session.state)).frame(width: 5, height: 5)
+                            Circle().fill(session.id == model.sessionID ? Color.dockAccent : sessionStateColor(session.state)).frame(width: 5, height: 5)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                                Text(session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                                 HStack(spacing: 6) {
                                     if let projectID = control.projectIDBySessionID[session.id] {
                                         Text(projectID.uppercased())
-                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                            .foregroundStyle(Color.scifiAccent)
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundStyle(Color.dockAccent)
                                     }
-                                    Text(session.displayPreview ?? session.state.uppercased()).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                                    Text(session.displayPreview ?? session.state.uppercased()).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                                 }
                             }
                             Spacer(minLength: 0)
                             if session.id == model.sessionID {
-                                Text("CURRENT").font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
+                                Text("CURRENT").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
                             } else {
-                                Text(session.state.uppercased()).font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(sessionStateColor(session.state))
+                                Text(session.state.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(sessionStateColor(session.state))
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .scifiListRow()
+                        .dockListRow()
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                 }
             }
 
@@ -2711,11 +2707,10 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
-                        Text("RECENT CRON RUNS")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
+                        Text("Recent Cron Runs")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockSecondaryText)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -2728,12 +2723,12 @@ struct WorkspaceActivitySidebar: View {
                                 timestamp: run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Recent",
                                 label: "CRON  ·  \(run.status.uppercased())",
                                 detail: run.jobID ?? "Scheduled job execution",
-                                color: cronRunIsSuccessful(run) ? Color.scifiSuccess : Color.scifiWarning
+                                color: cronRunIsSuccessful(run) ? Color.dockSuccess : Color.dockWarning
                             )
                         }
                     }
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             // Scheduled automations
@@ -2742,11 +2737,10 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar.badge.clock")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
-                        Text("SCHEDULED WORK  ·  \(control.cronJobs.count)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
+                        Text("Scheduled Work  ·  \(control.cronJobs.count)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockSecondaryText)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -2756,36 +2750,36 @@ struct WorkspaceActivitySidebar: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(control.cronJobs.prefix(3)) { job in
                             HStack(spacing: 8) {
-                                Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary)
+                                Circle().fill(job.enabled ? Color.dockAccent : Color.dockMetadataText)
                                     .frame(width: 5, height: 5)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(job.name)
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                     Text(CronScheduleFormatting.humanReadable(job.schedule))
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.dockMetadataText)
                                 }
                                 Spacer(minLength: 0)
                                 if job.sessionID != nil {
                                     Button("OPEN") { control.openCronSession(job) }
-                                        .buttonStyle(.scifiPress)
-                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(Color.scifiAccent)
+                                        .buttonStyle(.borderless)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(Color.dockAccent)
                                 }
                             }
-                            .scifiListRow()
+                            .dockListRow()
                         }
                     }
 
                     Button("VIEW ALL AUTOMATIONS") { select(.automations) }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             // Reminders section
@@ -2794,11 +2788,11 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checklist")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                         Text("REMINDERS  ·  \(control.reminders.count)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 11, weight: .semibold))
                             .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -2814,22 +2808,22 @@ struct WorkspaceActivitySidebar: View {
                                 HStack(spacing: 8) {
                                     Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
                                         .font(.system(size: 12))
-                                        .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
+                                        .foregroundStyle(reminder.isOverdue ? Color.dockWarning : Color.dockAccent)
                                     Text(reminder.title)
                                         .font(.system(size: 12))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(1)
                                     Spacer(minLength: 0)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .scifiListRow()
+                                .dockListRow()
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.scifiPress)
+                            .buttonStyle(.borderless)
                         }
                     }
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             // Integration & capability setup warning banner
@@ -2838,28 +2832,28 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 9) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.scifiWarning)
+                            .foregroundStyle(Color.dockWarning)
                             .frame(width: 15)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("SETUP  ·  \(setupCapabilities.count)")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 11, weight: .semibold))
                                 .tracking(0.7)
-                                .foregroundStyle(Color.scifiFg)
+                                .foregroundStyle(Color.dockPrimaryText)
                             Text("Review integrations and required permissions in Core.")
                                 .font(.system(size: 11))
-                                .foregroundStyle(Color.scifiTertiary)
+                                .foregroundStyle(Color.dockMetadataText)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.scifiAccent)
+                            .foregroundStyle(Color.dockAccent)
                     }
                     .padding(12)
-                    .scifiGlassPane()
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
+                    .dockGlassPane()
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
             }
         }
     }
@@ -2891,9 +2885,9 @@ struct WorkspaceActivitySidebar: View {
             sessionHandoffCard(mission: mission)
 
             HStack(spacing: 8) {
-                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? Color.scifiSuccess : Color.scifiWarning)
-                todayMetric("RUNNING", value: control.activeAgents.count + control.processes.count, color: Color.scifiAccent)
-                todayMetric("SCHEDULED", value: control.cronJobs.count, color: Color.scifiSuccess)
+                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? Color.dockSuccess : Color.dockWarning)
+                todayMetric("RUNNING", value: control.activeAgents.count + control.processes.count, color: Color.dockAccent)
+                todayMetric("SCHEDULED", value: control.cronJobs.count, color: Color.dockSuccess)
             }
 
             sectionLabel("NEEDS ME")
@@ -2901,9 +2895,9 @@ struct WorkspaceActivitySidebar: View {
                 attentionItemRow(openAttention.first!, isSelected: false)
                 if openAttention.count > 1 {
                     Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                         .padding(.top, 2)
                 }
             } else {
@@ -2911,7 +2905,7 @@ struct WorkspaceActivitySidebar: View {
                     icon: "checkmark.circle",
                     title: "All clear",
                     detail: "No approvals, clarifications, or failures need a response.",
-                    color: .scifiSuccess
+                    color: .dockSuccess
                 )
             }
 
@@ -2922,11 +2916,10 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiAccent)
-                        Text("RUNNING NOW")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiAccent)
+                            .foregroundStyle(Color.dockAccent)
+                        Text("Running Now")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockAccent)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -2938,20 +2931,20 @@ struct WorkspaceActivitySidebar: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "person.2.fill")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiAccent)
+                                    .foregroundStyle(Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(agent.name)
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(1)
                                     Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
-                                        .font(.system(size: 12, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }
-                            .scifiListRow()
+                            .dockListRow()
                         }
 
                         ForEach(backgroundSessions) { session in
@@ -2962,48 +2955,48 @@ struct WorkspaceActivitySidebar: View {
                                 }
                             } label: {
                                 HStack(spacing: 8) {
-                                    Circle().fill(Color.scifiAccent).frame(width: 5, height: 5)
+                                    Circle().fill(Color.dockAccent).frame(width: 5, height: 5)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(session.title)
                                             .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(Color.scifiFg)
+                                            .foregroundStyle(Color.dockPrimaryText)
                                             .lineLimit(1)
                                         Text(session.displayPreview ?? session.state.uppercased())
-                                            .font(.system(size: 12, design: .monospaced))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockMetadataText)
                                             .lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.scifiAccent)
+                                        .foregroundStyle(Color.dockAccent)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .scifiListRow()
+                                .dockListRow()
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.scifiPress)
+                            .buttonStyle(.borderless)
                         }
 
                         ForEach(control.processes) { process in
                             HStack(spacing: 8) {
                                 Image(systemName: "gearshape.2")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiMuted)
+                                    .foregroundStyle(Color.dockSecondaryText)
                                 Text(process.name)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.scifiFg)
+                                    .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                 Spacer(minLength: 0)
                                 Text(process.state.uppercased())
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color.scifiTertiary)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.dockMetadataText)
                             }
-                            .scifiListRow()
+                            .dockListRow()
                         }
                     }
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             if !model.agentActivities.isEmpty || !control.cronRuns.isEmpty {
@@ -3011,11 +3004,11 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                         Text("CHANGED · CURRENT RUNTIME WINDOW")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 11, weight: .semibold))
                             .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -3028,7 +3021,7 @@ struct WorkspaceActivitySidebar: View {
                                 timestamp: HumanDateFormatting.timeOnly(activity.timestamp),
                                 label: activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased(),
                                 detail: activity.text,
-                                color: Color.scifiAccent
+                                color: Color.dockAccent
                             )
                         }
                         ForEach(control.cronRuns.prefix(3)) { run in
@@ -3036,12 +3029,12 @@ struct WorkspaceActivitySidebar: View {
                                 timestamp: run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Recent",
                                 label: "CRON  ·  \(run.status.uppercased())",
                                 detail: run.jobID ?? "Scheduled job execution",
-                                color: cronRunIsSuccessful(run) ? Color.scifiSuccess : Color.scifiWarning
+                                color: cronRunIsSuccessful(run) ? Color.dockSuccess : Color.dockWarning
                             )
                         }
                     }
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             if !control.cronJobs.isEmpty {
@@ -3049,11 +3042,10 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar.badge.clock")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
-                        Text("SCHEDULED WORK  ·  \(control.cronJobs.count)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
+                        Text("Scheduled Work  ·  \(control.cronJobs.count)")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockSecondaryText)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -3063,39 +3055,39 @@ struct WorkspaceActivitySidebar: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(control.cronJobs.prefix(3)) { job in
                             HStack(spacing: 8) {
-                                Circle().fill(job.enabled ? Color.scifiAccent : Color.scifiTertiary)
+                                Circle().fill(job.enabled ? Color.dockAccent : Color.dockMetadataText)
                                     .frame(width: 5, height: 5)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(job.name)
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                     Text(CronScheduleFormatting.humanReadable(job.schedule))
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                     Text(job.schedule)
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.dockMetadataText)
                                 }
                                 Spacer(minLength: 0)
                                 if job.sessionID != nil {
                                     Button("OPEN") { control.openCronSession(job) }
-                                        .buttonStyle(.scifiPress)
-                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                        .foregroundStyle(Color.scifiAccent)
+                                        .buttonStyle(.borderless)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.dockAccent)
                                 }
                             }
-                            .scifiListRow()
+                            .dockListRow()
                         }
                     }
 
                     Button("VIEW ALL AUTOMATIONS") { select(.automations) }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             if !control.reminders.isEmpty {
@@ -3103,11 +3095,11 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         Image(systemName: "checklist")
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                         Text("REMINDERS  ·  \(control.reminders.count)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 11, weight: .semibold))
                             .tracking(0.8)
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                         Spacer()
                     }
                     .padding(.horizontal, 12)
@@ -3123,22 +3115,22 @@ struct WorkspaceActivitySidebar: View {
                                 HStack(spacing: 8) {
                                     Image(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
                                         .font(.system(size: 12))
-                                        .foregroundStyle(reminder.isOverdue ? Color.scifiWarning : Color.scifiAccent)
+                                        .foregroundStyle(reminder.isOverdue ? Color.dockWarning : Color.dockAccent)
                                     Text(reminder.title)
                                         .font(.system(size: 12))
-                                        .foregroundStyle(Color.scifiFg)
+                                        .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(1)
                                     Spacer(minLength: 0)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .scifiListRow()
+                                .dockListRow()
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.scifiPress)
+                            .buttonStyle(.borderless)
                         }
                     }
                 }
-                .scifiGlassPane()
+                .dockGlassPane()
             }
 
             let setupCapabilities = unavailableSetupCapabilities
@@ -3147,28 +3139,28 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 9) {
                         Image(systemName: "exclamationmark.triangle")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.scifiWarning)
+                            .foregroundStyle(Color.dockWarning)
                             .frame(width: 15)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("SETUP  ·  \(setupCapabilities.count)")
-                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .font(.system(size: 12, weight: .semibold))
                                 .tracking(0.7)
-                                .foregroundStyle(Color.scifiFg)
+                                .foregroundStyle(Color.dockPrimaryText)
                             Text("Review integrations and required permissions in Core.")
                                 .font(.system(size: 12))
-                                .foregroundStyle(Color.scifiTertiary)
+                                .foregroundStyle(Color.dockMetadataText)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.scifiAccent)
+                            .foregroundStyle(Color.dockAccent)
                     }
                     .padding(12)
-                    .scifiGlassPane()
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
+                    .dockGlassPane()
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
             }
 
             if activeRepositoryPath != nil {
@@ -3184,16 +3176,16 @@ struct WorkspaceActivitySidebar: View {
             } label: {
                 Label("WORKSPACE", systemImage: "chevron.left")
             }
-            .buttonStyle(.scifiPress)
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Color.scifiAccent)
+            .buttonStyle(.borderless)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.dockAccent)
 
-            Rectangle().fill(Color.scifiBorderLight).frame(width: 0.5, height: 18)
+            Rectangle().fill(Color.dockBorderLight).frame(width: 0.5, height: 18)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.currentSessionTitle ?? "Untitled session")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
             }
 
@@ -3210,12 +3202,12 @@ struct WorkspaceActivitySidebar: View {
                         badgeView(count: badgeCount(for: selectedMode), isUrgent: badgeIsUrgent(for: selectedMode))
                     }
                 }
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: 11, weight: .semibold))
                 .tracking(0.65)
-                .foregroundStyle(Color.scifiAccent)
+                .foregroundStyle(Color.dockAccent)
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .help("Session view")
         }
         .padding(.bottom, 2)
@@ -3224,10 +3216,10 @@ struct WorkspaceActivitySidebar: View {
     /// Returns the color indicator matching a session's current operational state.
     private func sessionStateColor(_ state: String) -> Color {
         switch state.lowercased() {
-        case "running", "active": Color.scifiAccent
-        case "blocked", "error", "failed": Color.scifiWarning
-        case "completed", "idle", "done": Color.scifiSuccess
-        default: Color.scifiMuted
+        case "running", "active": Color.dockAccent
+        case "blocked", "error", "failed": Color.dockWarning
+        case "completed", "idle", "done": Color.dockSuccess
+        default: Color.dockSecondaryText
         }
     }
 
@@ -3235,23 +3227,29 @@ struct WorkspaceActivitySidebar: View {
     private func todayMetric(_ label: String, value: Int, color: Color, action: (() -> Void)? = nil) -> some View {
         let cardContent = VStack(alignment: .leading, spacing: 4) {
             Text("\(value)")
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                .foregroundStyle(color)
-            Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(0.55)
-                .foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(color == Color.dockWarning || color == Color.dockDestructive ? color : Color.dockPrimaryText)
+            Text(label == label.uppercased() ? label.lowercased().capitalized : label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .scifiGlassPane()
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.dockSurface.opacity(0.34))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.dockBorderLight, lineWidth: 0.5)
+        }
 
         return Group {
             if let action {
                 Button(action: action) {
                     cardContent
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
             } else {
                 cardContent
             }
@@ -3261,16 +3259,16 @@ struct WorkspaceActivitySidebar: View {
     private func missionFocusStrip(_ focus: MissionControlFocus) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
-                Image(systemName: "scope").foregroundStyle(Color.scifiAccent)
+                Image(systemName: "scope").foregroundStyle(Color.dockAccent)
                 Text("MISSION CONTROL")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .tracking(0.8).foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.8).foregroundStyle(Color.dockAccent)
                 Spacer()
-                if focus.runningCount > 0 { Text("\(focus.runningCount) RUNNING").font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent) }
+                if focus.runningCount > 0 { Text("\(focus.runningCount) RUNNING").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent) }
             }
             Text([focus.sessionTitle, focus.branch, focus.model].compactMap { $0 }.joined(separator: "  ·  "))
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.scifiFg)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
             let telemetry = [
                 focus.contextPercent.map { "Context \(Int($0.rounded()))%" },
@@ -3278,34 +3276,34 @@ struct WorkspaceActivitySidebar: View {
             ].compactMap { $0 }
             if !telemetry.isEmpty {
                 Text(telemetry.joined(separator: "  ·  "))
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
             }
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     private func readinessCard(_ readiness: ReadinessSummary) -> some View {
         let color: Color
         switch readiness.state {
-        case .ready: color = .scifiSuccess
-        case .blocked: color = .scifiDestructive
-        case .needsReview: color = .scifiWarning
-        case .notApplicable: color = .scifiMuted
+        case .ready: color = .dockSuccess
+        case .blocked: color = .dockDestructive
+        case .needsReview: color = .dockWarning
+        case .notApplicable: color = .dockSecondaryText
         }
         return HStack(alignment: .top, spacing: 9) {
             Image(systemName: readiness.state == .ready ? "checkmark.seal" : readiness.state == .blocked ? "xmark.octagon" : "exclamationmark.circle")
                 .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("READINESS · \(readiness.state.rawValue.uppercased())")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(color)
-                Text(readiness.detail).font(.system(size: 12)).foregroundStyle(Color.scifiTertiary)
-                if let scope = readiness.verificationScope { Text("EVIDENCE · \(scope.uppercased())").font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiMuted) }
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
+                Text(readiness.detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                if let scope = readiness.verificationScope { Text("EVIDENCE · \(scope.uppercased())").font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText) }
             }
             Spacer(minLength: 0)
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     private func sessionHandoffCard(mission: MissionControlSnapshot) -> some View {
@@ -3313,30 +3311,30 @@ struct WorkspaceActivitySidebar: View {
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("SESSION HANDOFF")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .tracking(0.7).foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.7).foregroundStyle(Color.dockAccent)
                 Spacer()
                 if let sessionID, commandCenterPreferences.isPinnedReference(sessionID) {
-                    Text("PINNED").font(.system(size: 10, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
+                    Text("PINNED").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
                 }
                 if let sessionID {
                     Button(commandCenterPreferences.isPinnedReference(sessionID) ? "UNPIN" : "PIN") { commandCenterPreferences.togglePinnedReference(sessionID) }
-                        .buttonStyle(.scifiPress).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent)
                 }
             }
-            if let title = mission.focus.sessionTitle { Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg).lineLimit(1) }
+            if let title = mission.focus.sessionTitle { Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1) }
             if let activity = model.agentActivities.last {
                 Text("LAST ACTIVITY · " + activity.text)
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
             } else {
                 Text("No Hermes activity in the current runtime window.")
-                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
             }
             let files = Array(Set(model.activeSubagents.flatMap(\.filesWritten))).sorted()
-            if !files.isEmpty { Text("FILES WRITTEN · " + files.prefix(3).joined(separator: " · ")).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiMuted).lineLimit(1) }
+            if !files.isEmpty { Text("FILES WRITTEN · " + files.prefix(3).joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).lineLimit(1) }
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
         .onAppear { if let sessionID { commandCenterPreferences.markSeen("session:\(sessionID)") } }
     }
 
@@ -3346,38 +3344,38 @@ struct WorkspaceActivitySidebar: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 7) {
                     Text(label)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(color)
                     Text(timestamp)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
                 }
                 Text(detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .scifiListRow()
+        .dockListRow()
     }
 
     private var repositoryContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 9) {
                 Image(systemName: workflow.repository.isGitRepository ? "arrow.triangle.branch" : "folder")
-                    .foregroundStyle(workflow.repository.isGitRepository ? Color.scifiSuccess : Color.scifiMuted)
+                    .foregroundStyle(workflow.repository.isGitRepository ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(workflow.repository.isGitRepository ? workflow.repository.branch : "No project folder selected")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.scifiFg)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     if workflow.repository.isGitRepository {
                         Text(workflow.repository.changedFiles == 0 ? "CLEAN WORKING TREE" : "\(workflow.repository.changedFiles) CHANGED FILE\(workflow.repository.changedFiles == 1 ? "" : "S")")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.scifiSuccess : Color.scifiWarning)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : Color.dockWarning)
                     } else if let path = activeRepositoryPath {
-                        Text(path).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                        Text(path).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -3411,15 +3409,15 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 .menuStyle(.borderlessButton)
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
                 .disabled(isRefreshingRepository || workflow.isRefreshing)
             }
             if workflow.repository.isGitRepository, !workflow.repository.latestCommit.isEmpty {
                 Text(workflow.repository.latestCommit)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }
             HStack(spacing: 14) {
@@ -3429,7 +3427,7 @@ struct WorkspaceActivitySidebar: View {
                 Button {
                     Task { await refreshRepository() }
                 } label: {
-                    ScifiActionLabel(
+                    DockActionLabel(
                         title: "REFRESH",
                         pendingTitle: "REFRESHING…",
                         isPending: isRefreshingRepository
@@ -3437,32 +3435,32 @@ struct WorkspaceActivitySidebar: View {
                 }
                 .disabled(isRefreshingRepository)
             }
-            .buttonStyle(.scifiPress)
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Color.scifiAccent)
+            .buttonStyle(.borderless)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Color.dockAccent)
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     private func providerSetupCard(_ capability: CapabilityState) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiWarning)
+                .foregroundStyle(Color.dockWarning)
                 .frame(width: 15)
             VStack(alignment: .leading, spacing: 3) {
                 Text(capability.title)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                 Text(capability.detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
                 if let recovery = capability.recovery {
                     Text(recovery)
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                         .lineLimit(2)
                 }
                 if let command = capability.recoveryCommand {
@@ -3470,16 +3468,16 @@ struct WorkspaceActivitySidebar: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
             }
             Spacer(minLength: 0)
         }
         .padding(12)
-        .scifiGlassPane()
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiWarning.opacity(0.55), lineWidth: 0.5))
+        .dockGlassPane()
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
     }
 
     private var unavailableSetupCapabilities: [CapabilityState] {
@@ -3492,12 +3490,12 @@ struct WorkspaceActivitySidebar: View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
-                Text(detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+                Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
             }
             Spacer(minLength: 0)
         }
-        .scifiListRow()
+        .dockListRow()
     }
 
     private var currentTask: WorkspaceTask? {
@@ -3524,11 +3522,11 @@ struct WorkspaceActivitySidebar: View {
 
     private func taskColor(_ status: WorkspaceTaskStatus) -> Color {
         switch status {
-        case .todo: .scifiMuted
-        case .inProgress: .scifiAccent
-        case .awaitingApproval: .scifiWarning
-        case .readyForReview: .scifiSuccess
-        case .done: .scifiTertiary
+        case .todo: .dockSecondaryText
+        case .inProgress: .dockAccent
+        case .awaitingApproval: .dockWarning
+        case .readyForReview: .dockSuccess
+        case .done: .dockMetadataText
         }
     }
 
@@ -3588,39 +3586,39 @@ struct WorkspaceActivitySidebar: View {
                     Circle().fill(color).frame(width: 5, height: 5)
                 }
                 Text(title.uppercased())
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(0.5)
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Text(subtitle)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
             }
             .frame(width: 82, alignment: .leading)
             .padding(8)
-            .background(selectedAgentID == id ? color.opacity(0.12) : Color.scifiSurface4)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.scifiBorder, lineWidth: 0.5))
+            .background(selectedAgentID == id ? color.opacity(0.12) : Color.dockSurface4)
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.dockBorder, lineWidth: 0.5))
             .clipShape(RoundedRectangle(cornerRadius: 9))
         }
-        .buttonStyle(.scifiPress)
+        .buttonStyle(.borderless)
         .help(status)
     }
 
     private func activityRow(_ activity: AgentActivity) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text(HumanDateFormatting.timeOnly(activity.timestamp))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockMetadataText)
                 .frame(width: 34, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 Text(activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased())
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(0.5)
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                 Text(activity.text)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(2)
             }
         }
@@ -3641,17 +3639,17 @@ struct WorkspaceActivitySidebar: View {
             Circle().fill(capabilityReadinessColor(capability)).frame(width: 6, height: 6).padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(capability.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
+                    Text(capability.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
                     Text(capabilityReadinessLabel(capability).uppercased())
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(capabilityReadinessColor(capability))
                     Text(capabilityAccessLabel(capability).uppercased())
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
-                Text(capability.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                Text(capability.detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
                 if let recovery = capability.recovery {
-                    Text(recovery).font(.system(size: 12)).foregroundStyle(Color.scifiWarning).lineLimit(2)
+                    Text(recovery).font(.system(size: 12)).foregroundStyle(Color.dockWarning).lineLimit(2)
                 }
                 if let command = capability.recoveryCommand {
                     Button {
@@ -3660,9 +3658,9 @@ struct WorkspaceActivitySidebar: View {
                     } label: {
                         Label("COPY \(command)", systemImage: "doc.on.doc")
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 }
             }
             Spacer(minLength: 0)
@@ -3680,9 +3678,9 @@ struct WorkspaceActivitySidebar: View {
 
     private func capabilityReadinessColor(_ capability: CapabilityState) -> Color {
         switch capability.probeState {
-        case .verified: Color.scifiSuccess
-        case .unverified: Color.scifiAccent
-        case .missing, .unsupported: Color.scifiWarning
+        case .verified: Color.dockSuccess
+        case .unverified: Color.dockAccent
+        case .missing, .unsupported: Color.dockWarning
         }
     }
 
@@ -3705,13 +3703,13 @@ struct WorkspaceActivitySidebar: View {
     private var capabilityInventorySummary: some View {
         HStack(spacing: 8) {
             Text("\(capabilityInventorySnapshot.totalCount) TOTAL")
-            Text("\(capabilityInventorySnapshot.verifiedCount) READY").foregroundStyle(Color.scifiSuccess)
-            Text("\(capabilityInventorySnapshot.unverifiedCount) REVIEW").foregroundStyle(Color.scifiAccent)
+            Text("\(capabilityInventorySnapshot.verifiedCount) READY").foregroundStyle(Color.dockSuccess)
+            Text("\(capabilityInventorySnapshot.unverifiedCount) REVIEW").foregroundStyle(Color.dockAccent)
             Text("\(capabilityInventorySnapshot.missingCount + capabilityInventorySnapshot.unsupportedCount) MISSING/UNSUPPORTED")
-                .foregroundStyle(Color.scifiWarning)
+                .foregroundStyle(Color.dockWarning)
         }
-        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-        .foregroundStyle(Color.scifiMuted)
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(Color.dockSecondaryText)
         .lineLimit(1)
         .minimumScaleFactor(0.7)
     }
@@ -3725,14 +3723,14 @@ struct WorkspaceActivitySidebar: View {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("CHECKING…")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Color.scifiMuted)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
                 } else {
                     Button("CHECK") { agentUpdateService.checkForUpdates() }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                         .disabled(!agentUpdateService.canCheck)
                 }
             }
@@ -3745,8 +3743,8 @@ struct WorkspaceActivitySidebar: View {
             switch agentUpdateService.phase {
             case .idle: agentUpdateIdleContent
             case .checking: agentUpdateIdleContent
-            case .upToDate: agentUpdateCheckedContent(statusText: "UP TO DATE", statusColor: .scifiSuccess, showsUpdateButton: false)
-            case .updateAvailable: agentUpdateCheckedContent(statusText: "UPDATE AVAILABLE", statusColor: .scifiWarning, showsUpdateButton: true)
+            case .upToDate: agentUpdateCheckedContent(statusText: "UP TO DATE", statusColor: .dockSuccess, showsUpdateButton: false)
+            case .updateAvailable: agentUpdateCheckedContent(statusText: "UPDATE AVAILABLE", statusColor: .dockWarning, showsUpdateButton: true)
             case .checkFailed(let reason): agentUpdateCheckFailedContent(reason)
             case .updating: agentUpdateProgressContent
             case .updateSucceeded: agentUpdateSucceededContent
@@ -3765,7 +3763,7 @@ struct WorkspaceActivitySidebar: View {
     private var agentUpdateIdleContent: some View {
         Text("Compares the installed Hermes agent with the latest release from NousResearch/hermes-agent.")
             .font(.system(size: 12))
-            .foregroundStyle(Color.scifiTertiary)
+            .foregroundStyle(Color.dockMetadataText)
     }
 
     private func agentUpdateCheckedContent(statusText: String, statusColor: Color, showsUpdateButton: Bool) -> some View {
@@ -3773,17 +3771,17 @@ struct WorkspaceActivitySidebar: View {
             if let installed = agentUpdateService.installed {
                 HStack(spacing: 8) {
                     Text("INSTALLED")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.8)
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                     Text(installed.displayVersion)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.35)
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                     if let method = agentUpdateService.installMethod {
                         Text("·  \(method)")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Color.scifiMuted)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
                 .lineLimit(1)
@@ -3791,20 +3789,20 @@ struct WorkspaceActivitySidebar: View {
             if let latest = agentUpdateService.latest {
                 HStack(spacing: 8) {
                     Text("UPSTREAM")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.8)
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                     Text(latest.displayVersion + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.35)
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let page = latest.pageURL, let url = URL(string: page) {
                         Button("RELEASE") { NSWorkspace.shared.open(url) }
-                            .buttonStyle(.scifiPress)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
                     }
                 }
             }
@@ -3817,36 +3815,36 @@ struct WorkspaceActivitySidebar: View {
                    let installed = agentUpdateService.installed,
                    let latest = agentUpdateService.latest {
                     Text("\(installed.displayVersion) → \(latest.displayVersion)")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 0)
                 if showsUpdateButton {
                     Button("UPDATE HERMES") { isShowingAgentUpdateConfirmation = true }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiWarning)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.dockWarning)
                         .disabled(!agentUpdateService.canStartUpdate)
                 }
             }
             Text("SOURCE  ·  NousResearch/hermes-agent" + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
         }
     }
 
     private func agentUpdateCheckFailedContent(_ reason: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let installed = agentUpdateService.installed {
-                diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.scifiTertiary)
+                diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.dockMetadataText)
             }
             HStack(alignment: .top, spacing: 8) {
-                Circle().fill(Color.scifiWarning).frame(width: 6, height: 6).padding(.top, 5)
+                Circle().fill(Color.dockWarning).frame(width: 6, height: 6).padding(.top, 5)
                 Text(reason)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -3857,23 +3855,23 @@ struct WorkspaceActivitySidebar: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("UPDATING HERMES AGENT")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(0.6)
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                 Spacer()
                 TimelineView(.periodic(from: agentUpdateService.updateStartedAt ?? Date(), by: 1)) { context in
                     Text(agentUpdateElapsedText(until: context.date))
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
             }
             ProgressView()
                 .progressViewStyle(.linear)
-                .tint(Color.scifiAccent)
+                .tint(Color.dockAccent)
             if let latestLine = agentUpdateService.logLines.last {
                 Text(latestLine)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(2)
             }
             agentUpdateLogTail
@@ -3885,18 +3883,18 @@ struct WorkspaceActivitySidebar: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiSuccess)
+                    .foregroundStyle(Color.dockSuccess)
                 Text("HERMES AGENT UPDATED")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiSuccess)
+                    .foregroundStyle(Color.dockSuccess)
                 Spacer()
             }
             if let installed = agentUpdateService.installed {
-                diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.scifiSuccess)
+                diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.dockSuccess)
             }
             Text("Quit and reopen the Dock (or restart the Hermes backend) so new sessions run the updated agent.")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
             agentUpdateLogTail
         }
@@ -3907,15 +3905,15 @@ struct WorkspaceActivitySidebar: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiDestructive)
+                    .foregroundStyle(Color.dockDestructive)
                 Text(reason)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text("The Dock never retries an update automatically. Review the output below and run CHECK before trying again.")
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             agentUpdateLogTail
         }
@@ -3926,8 +3924,8 @@ struct WorkspaceActivitySidebar: View {
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(Array(agentUpdateService.logLines.suffix(120).reversed().enumerated()), id: \.offset) { _, line in
                     Text(line)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.scifiMuted)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3947,21 +3945,21 @@ struct WorkspaceActivitySidebar: View {
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
             agentUpdateSection
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
 
             if !unavailableSetupCapabilities.isEmpty {
                 sectionLabel("SETUP NEEDED  ·  \(unavailableSetupCapabilities.count)")
                 ForEach(unavailableSetupCapabilities) { capability in
                     providerSetupCard(capability)
                 }
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
             }
 
             sectionLabel("SYSTEM STATUS")
             projectionRefreshNotice("core")
             Toggle("Repository watch notifications", isOn: Binding(get: { commandCenterPreferences.repositoryNotificationsEnabled }, set: { enabled in commandCenterPreferences.setRepositoryNotificationsEnabled(enabled); workflow.setRepositoryNotificationsEnabled(enabled) }))
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
             capabilityInventorySummary
             if capabilityInventorySnapshot.states.isEmpty {
                 emptyState(
@@ -3981,93 +3979,93 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if control.projectFacts != nil || control.verification != nil {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("VERIFICATION CENTER")
                 if let facts = control.projectFacts {
-                    diagnosticRow(label: "PROJECT", value: facts.manifests.joined(separator: ", ").isEmpty ? "Code workspace" : facts.manifests.joined(separator: ", "), color: Color.scifiAccent)
-                    if !facts.packageManagers.isEmpty { diagnosticRow(label: "TOOLS", value: facts.packageManagers.joined(separator: ", "), color: Color.scifiTertiary) }
-                    if !facts.contextFiles.isEmpty { diagnosticRow(label: "CONTEXT", value: facts.contextFiles.joined(separator: ", "), color: Color.scifiTertiary) }
+                    diagnosticRow(label: "PROJECT", value: facts.manifests.joined(separator: ", ").isEmpty ? "Code workspace" : facts.manifests.joined(separator: ", "), color: Color.dockAccent)
+                    if !facts.packageManagers.isEmpty { diagnosticRow(label: "TOOLS", value: facts.packageManagers.joined(separator: ", "), color: Color.dockMetadataText) }
+                    if !facts.contextFiles.isEmpty { diagnosticRow(label: "CONTEXT", value: facts.contextFiles.joined(separator: ", "), color: Color.dockMetadataText) }
                     ForEach(facts.verifyCommands, id: \.self) { command in
                         HStack(spacing: 8) {
-                            Text(command).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                            Text(command).font(.system(size: 11)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                             Spacer()
                             Button("COPY") {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(command, forType: .string)
                             }
-                            .buttonStyle(.scifiPress)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
                             Button("ASK HERMES") {
                                 let repoPath = control.developmentContext?.path ?? "the selected repository"
                                 let prompt = "Run this exact verification command in " + repoPath + ": " + command + ". Do not edit files. Report the result and exit code."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
                             }
-                            .buttonStyle(.scifiPress)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
                         }
                     }
                 }
                 if let verification = control.verification {
                     let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
-                    let stateColor: Color = verification.state == .passed ? .scifiSuccess : (verification.state == .failed ? .scifiDestructive : .scifiWarning)
-                    diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .scifiSuccess : .scifiWarning)
+                    let stateColor: Color = verification.state == .passed ? .dockSuccess : (verification.state == .failed ? .dockDestructive : .dockWarning)
+                    diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .dockSuccess : .dockWarning)
                     diagnosticRow(label: "STATUS", value: verification.state.rawValue.uppercased(), color: stateColor)
                     if let evidence = verification.evidence {
-                        if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: Color.scifiTertiary) }
-                        if let scope = evidence.scope { diagnosticRow(label: "SCOPE", value: scope.uppercased(), color: scope == "targeted" ? Color.scifiWarning : Color.scifiTertiary) }
-                        if let exitCode = evidence.exitCode { diagnosticRow(label: "EXIT", value: String(exitCode), color: exitCode == 0 ? Color.scifiSuccess : Color.scifiDestructive) }
-                        if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: Color.scifiTertiary) }
-                        if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: Color.scifiTertiary) }
-                        if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: Color.scifiTertiary) }
-                        if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: Color.scifiTertiary) }
-                        if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: Color.scifiTertiary) }
-                        if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: Color.scifiTertiary) }
-                        if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: Color.scifiTertiary) }
-                        if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: Color.scifiWarning) }
+                        if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: Color.dockMetadataText) }
+                        if let scope = evidence.scope { diagnosticRow(label: "SCOPE", value: scope.uppercased(), color: scope == "targeted" ? Color.dockWarning : Color.dockMetadataText) }
+                        if let exitCode = evidence.exitCode { diagnosticRow(label: "EXIT", value: String(exitCode), color: exitCode == 0 ? Color.dockSuccess : Color.dockDestructive) }
+                        if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: Color.dockMetadataText) }
+                        if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: Color.dockMetadataText) }
+                        if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: Color.dockMetadataText) }
+                        if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: Color.dockMetadataText) }
+                        if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: Color.dockMetadataText) }
+                        if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: Color.dockMetadataText) }
+                        if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: Color.dockMetadataText) }
+                        if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: Color.dockWarning) }
                     }
                 }
             }
             let canSteerSession = model.status == .working && model.sessionID != nil
             if control.sessionUsage != nil || control.sessionContext != nil || canSteerSession {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("SESSION COCKPIT")
                 if let usage = control.sessionUsage {
-                    diagnosticRow(label: "TOKENS", value: "\(usage.totalTokens) total  ·  \(usage.inputTokens) in  ·  \(usage.outputTokens) out", color: Color.scifiAccent)
-                    if let model = usage.model { diagnosticRow(label: "MODEL", value: model, color: Color.scifiTertiary) }
+                    diagnosticRow(label: "TOKENS", value: "\(usage.totalTokens) total  ·  \(usage.inputTokens) in  ·  \(usage.outputTokens) out", color: Color.dockAccent)
+                    if let model = usage.model { diagnosticRow(label: "MODEL", value: model, color: Color.dockMetadataText) }
                 }
                 if let context = control.sessionContext {
                     if let percent = context.contextPercent {
-                        diagnosticRow(label: "CONTEXT", value: String(format: "%.1f%%", percent), color: percent >= 90 ? Color.scifiDestructive : percent >= 80 ? Color.scifiWarning : Color.scifiSuccess)
+                        diagnosticRow(label: "CONTEXT", value: String(format: "%.1f%%", percent), color: percent >= 90 ? Color.dockDestructive : percent >= 80 ? Color.dockWarning : Color.dockSuccess)
                     }
                     if !context.categories.isEmpty {
                         ForEach(context.categories.prefix(6)) { category in
-                            diagnosticRow(label: category.label.uppercased(), value: "\(category.tokens) tokens", color: Color.scifiTertiary)
+                            diagnosticRow(label: category.label.uppercased(), value: "\(category.tokens) tokens", color: Color.dockMetadataText)
                         }
                     }
                 }
                 let pressure = SessionContextPressure.make(percent: control.sessionContext?.contextPercent)
                 if pressure != .unavailable {
-                    let color: Color = pressure == .critical ? .scifiDestructive : pressure == .warning ? .scifiWarning : .scifiSuccess
+                    let color: Color = pressure == .critical ? .dockDestructive : pressure == .warning ? .dockWarning : .dockSuccess
                     diagnosticRow(label: "CONTEXT PRESSURE", value: pressure.rawValue.uppercased(), color: color)
                     if pressure == .warning || pressure == .critical {
                         Text("Create a handoff or branch before context pressure grows. Compression remains an explicit confirmed action.")
-                            .font(.system(size: 11)).foregroundStyle(Color.scifiTertiary)
+                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 8) {
-                            TextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.scifiGlass)
+                            TextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.roundedBorder)
                             Button("HANDOFF") { isShowingHandoffConfirmation = true }
-                                .buttonStyle(.scifiPress).foregroundStyle(Color.scifiAccent)
+                                .buttonStyle(.borderless).foregroundStyle(Color.dockAccent)
                                 .disabled(!control.capabilityAvailable("gateway"))
                         }
                     }
                 }
                 if canSteerSession, let sessionID = model.sessionID {
                     Text("Hermes will apply this guidance after the next tool-result boundary without restarting the turn.")
-                        .font(.system(size: 11)).foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                     HStack(spacing: 8) {
                     TextField("Steer the active turn…", text: $sessionSteerText)
-                        .textFieldStyle(.scifiGlass)
+                        .textFieldStyle(.roundedBorder)
                     Button("STEER") {
                         let text = sessionSteerText
                         Task {
@@ -4080,127 +4078,127 @@ struct WorkspaceActivitySidebar: View {
                             }
                         }
                     }
-                    .buttonStyle(.scifiPress)
-                    .foregroundStyle(Color.scifiAccent)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockAccent)
                     .disabled(sessionSteerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                               || control.isActionPending(control.sessionSteerActionID(sessionID)))
                     }
                     if let sessionSteerFeedback {
                         Text(sessionSteerFeedback)
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(sessionSteerFeedback.contains("REJECTED") ? Color.scifiWarning : Color.scifiSuccess)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(sessionSteerFeedback.contains("REJECTED") ? Color.dockWarning : Color.dockSuccess)
                     }
                 }
             }
             if let budget = control.promptBudget {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("PROMPT BUDGET")
                 let percent = budget.percent ?? 0
-                let color: Color = percent >= 95 ? .scifiDestructive : (percent >= 85 ? .scifiWarning : .scifiAccent)
+                let color: Color = percent >= 95 ? .dockDestructive : (percent >= 85 ? .dockWarning : .dockAccent)
                 diagnosticRow(label: "TOKENS", value: "\(budget.totalTokens)" + (budget.tokenLimit.map { " / \($0)" } ?? ""), color: color)
                 if budget.percent != nil { diagnosticRow(label: "USED", value: String(format: "%.1f%%", percent), color: color) }
-                if let model = budget.model { diagnosticRow(label: "MODEL", value: model, color: Color.scifiTertiary) }
+                if let model = budget.model { diagnosticRow(label: "MODEL", value: model, color: Color.dockMetadataText) }
             }
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
             DisclosureGroup("SESSION ACTIONS") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         TextField("New session title", text: $sessionRenameText)
-                            .textFieldStyle(.scifiGlass)
+                            .textFieldStyle(.roundedBorder)
                         Button("RENAME") {
                             Task { if await control.renameActiveSession(sessionRenameText) { sessionRenameText = "" } }
                         }
-                        .buttonStyle(.scifiPress)
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.dockAccent)
                         .disabled(sessionRenameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     HStack(spacing: 8) {
                         TextField("Redirect the active turn…", text: $sessionRedirectText)
-                            .textFieldStyle(.scifiGlass)
+                            .textFieldStyle(.roundedBorder)
                         Button("REDIRECT") {
                             let text = sessionRedirectText
                             Task {
                                 if let result = await control.redirectActiveSession(text), result.wasAccepted { sessionRedirectText = "" }
                             }
                         }
-                        .buttonStyle(.scifiPress)
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.dockAccent)
                         .disabled(sessionRedirectText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     HStack(spacing: 8) {
                         TextField("Optional branch name", text: $sessionBranchName)
-                            .textFieldStyle(.scifiGlass)
+                            .textFieldStyle(.roundedBorder)
                         Button("BRANCH") { isShowingBranchConfirmation = true }
-                            .buttonStyle(.scifiPress)
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.dockAccent)
                             .disabled(!control.capabilityAvailable("rpc-sessions"))
                         TextField("Compression focus (optional)", text: $sessionCompressTopic)
-                            .textFieldStyle(.scifiGlass)
+                            .textFieldStyle(.roundedBorder)
                         Button("COMPRESS") { isShowingCompressConfirmation = true }
-                            .buttonStyle(.scifiPress)
-                            .foregroundStyle(Color.scifiAccent)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.dockAccent)
                             .disabled(!control.capabilityAvailable("rpc-sessions"))
                     }
                     HStack(spacing: 8) {
                         Button("UNDO LAST TURN") { isShowingUndoConfirmation = true }
-                            .buttonStyle(.scifiPress)
-                            .foregroundStyle(Color.scifiWarning)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.dockWarning)
                         Button(control.delegationPaused ? "RESUME DELEGATION" : "PAUSE DELEGATION") { isShowingDelegationConfirmation = true }
-                            .buttonStyle(.scifiPress)
-                            .foregroundStyle(Color.scifiWarning)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.dockWarning)
                     }
                 }
                 .padding(.top, 6)
             }
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Color.scifiAccent)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Color.dockAccent)
             if !control.activeAgents.isEmpty || !control.processes.isEmpty {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("RUNTIME CONTROLS")
                 ForEach(control.activeAgents) { agent in
                     HStack {
-                        Image(systemName: "person.2.fill").foregroundStyle(Color.scifiAccent)
+                        Image(systemName: "person.2.fill").foregroundStyle(Color.dockAccent)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(agent.name).foregroundStyle(Color.scifiFg)
-                            Text(agent.state.uppercased()).foregroundStyle(Color.scifiTertiary)
+                            Text(agent.name).foregroundStyle(Color.dockPrimaryText)
+                            Text(agent.state.uppercased()).foregroundStyle(Color.dockMetadataText)
                         }
                         Spacer()
                         if let native = model.activeSubagents.first(where: { $0.id == agent.id }), !model.isSyntheticSubagent(native.id) {
                             Button("INTERRUPT") { pendingAgentID = native.id }
-                                .buttonStyle(.scifiPress)
-                                .foregroundStyle(Color.scifiWarning)
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(Color.dockWarning)
                         }
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 11))
                 }
                 ForEach(control.processes) { process in
                     HStack {
-                        Image(systemName: "gearshape.2").foregroundStyle(Color.scifiMuted)
-                        Text(process.name).foregroundStyle(Color.scifiFg)
+                        Image(systemName: "gearshape.2").foregroundStyle(Color.dockSecondaryText)
+                        Text(process.name).foregroundStyle(Color.dockPrimaryText)
                         Spacer()
                         Button("STOP") { pendingProcess = process }
-                            .buttonStyle(.scifiPress)
-                            .foregroundStyle(Color.scifiWarning)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(Color.dockWarning)
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: 11))
                 }
             }
             if !control.diagnostics.isEmpty {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("READ-ONLY DIAGNOSTICS")
                 ForEach(control.diagnostics) { diagnostic in
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
-                            .fill(diagnostic.isAvailable ? Color.scifiSuccess : Color.scifiWarning)
+                            .fill(diagnostic.isAvailable ? Color.dockSuccess : Color.dockWarning)
                             .frame(width: 6, height: 6)
                             .padding(.top, 4)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(diagnostic.title)
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.scifiFg)
+                                .foregroundStyle(Color.dockPrimaryText)
                             Text(diagnostic.detail)
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(Color.scifiTertiary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.dockMetadataText)
                                 .lineLimit(3)
                         }
                         Spacer(minLength: 0)
@@ -4208,37 +4206,37 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if !control.journeyNodes.isEmpty || control.sessionStoreStatus != nil || control.memoryHealthStatus != nil {
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("HERMES LEARNING & STORAGE")
                 ForEach([control.sessionStoreStatus, control.memoryHealthStatus].compactMap { $0 }) { status in
-                    diagnosticRow(label: status.title.uppercased(), value: status.detail, color: status.isAvailable ? Color.scifiSuccess : Color.scifiWarning)
+                    diagnosticRow(label: status.title.uppercased(), value: status.detail, color: status.isAvailable ? Color.dockSuccess : Color.dockWarning)
                 }
                 if !control.journeyNodes.isEmpty {
                     Text("JOURNEY  ·  \(control.journeyNodes.count) NODES")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockMetadataText)
                     ForEach(control.journeyNodes.prefix(8)) { node in
                         HStack(spacing: 7) {
-                            Circle().fill(node.state == "active" ? Color.scifiSuccess : Color.scifiMuted).frame(width: 5, height: 5)
-                            Text(node.label).font(.system(size: 12)).foregroundStyle(Color.scifiFg).lineLimit(1)
+                            Circle().fill(node.state == "active" ? Color.dockSuccess : Color.dockSecondaryText).frame(width: 5, height: 5)
+                            Text(node.label).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                             Spacer()
                             Text([node.kind, node.useCount.map { "\($0)x" }].compactMap { $0 }.joined(separator: " · "))
-                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
+                                .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                         }
                     }
                 }
             }
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
             sectionLabel("NOTIFICATIONS")
             // Notifications toggle row with space-between layout so the switch is placed at the far right end
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Completion alerts")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                     Text("Notify when Hermes finishes a request while the Dock is hidden.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 16)
@@ -4248,54 +4246,54 @@ struct WorkspaceActivitySidebar: View {
                 ))
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .tint(Color.scifiAccent)
+                .tint(Color.dockAccent)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
             sectionLabel("QUICK CAPTURE")
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Open Hermes Control")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                     Text("Double-press Command to focus Ask from any app.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                 }
                 Spacer()
                 Text("⌘  ⌘")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockAccent)
             }
-            Divider().overlay(Color.scifiBorderLight)
+            Divider().overlay(Color.dockBorderLight)
             HStack {
                 sectionLabel("HERMES CONFIGURATION")
                 Spacer()
                 Button(action: { model.refreshRuntimeConfiguration() }) {
                     if model.isLoadingRuntimeConfiguration {
-                        ProgressView().controlSize(.small).tint(Color.scifiAccent)
+                        ProgressView().controlSize(.small).tint(Color.dockAccent)
                     } else {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.scifiAccent)
+                            .foregroundStyle(Color.dockAccent)
                     }
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
                 .disabled(model.isLoadingRuntimeConfiguration)
             }
 
             if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
-                    Text("READING HERMES RUNTIME…").font(.system(size: 12, design: .monospaced)).tracking(0.6).foregroundStyle(Color.scifiMuted)
+                    Text("READING HERMES RUNTIME…").font(.system(size: 12)).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
                 }
             } else if let configuration = model.runtimeConfiguration {
-                diagnosticRow(label: "MODEL", value: configuration.model ?? "NOT CONFIGURED", color: configuration.model == nil ? Color.scifiWarning : Color.scifiSuccess)
-                diagnosticRow(label: "PROVIDER", value: configuration.provider ?? "NOT CONFIGURED", color: configuration.provider == nil ? Color.scifiWarning : Color.scifiSuccess)
+                diagnosticRow(label: "MODEL", value: configuration.model ?? "NOT CONFIGURED", color: configuration.model == nil ? Color.dockWarning : Color.dockSuccess)
+                diagnosticRow(label: "PROVIDER", value: configuration.provider ?? "NOT CONFIGURED", color: configuration.provider == nil ? Color.dockWarning : Color.dockSuccess)
                 if model.runtimeModelOptions.isEmpty {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
-                        Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 12, design: .monospaced)).tracking(0.5).foregroundStyle(Color.scifiMuted)
+                        Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 12)).tracking(0.5).foregroundStyle(Color.dockSecondaryText)
                     }
                 } else {
                     Menu {
@@ -4314,24 +4312,24 @@ struct WorkspaceActivitySidebar: View {
                     } label: {
                         HStack(spacing: 8) {
                             Text(selectedModelDisplayName)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color.scifiFg)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer(minLength: 4)
                             Image(systemName: "chevron.up.chevron.down")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.scifiMuted)
+                                .foregroundStyle(Color.dockSecondaryText)
                         }
                         .padding(.horizontal, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .frame(height: 36)
-                        .background(Color.scifiControlSurface)
-                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+                        .background(Color.dockControlSurface)
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .menuStyle(.borderlessButton)
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .disabled(model.isLoadingRuntimeConfiguration)
                     .onChange(of: selectedModelID) { _, id in
@@ -4341,83 +4339,83 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 Text("Selection updates the saved default for new sessions. Use the session model picker in the chat header to override one conversation. During a running turn, Hermes applies changes to the next turn.")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
                 if let error = model.runtimeConfigurationError {
                     Text(error)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiWarning)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockWarning)
                 }
                 if let path = configuration.configPath {
                     Text(path)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
 
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("EXECUTION")
                 if let turns = configuration.maxTurns {
-                    diagnosticRow(label: "MAX TURNS", value: turns, color: Color.scifiMuted)
+                    diagnosticRow(label: "MAX TURNS", value: turns, color: Color.dockSecondaryText)
                 }
                 if let timeout = configuration.terminalTimeout {
-                    diagnosticRow(label: "TERMINAL TIMEOUT", value: "\(timeout)S", color: Color.scifiMuted)
+                    diagnosticRow(label: "TERMINAL TIMEOUT", value: "\(timeout)S", color: Color.dockSecondaryText)
                 }
 
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("INSTALLED SKILLS  ·  \(configuration.skills.count)")
                 configurationList(configuration.skills, empty: "No enabled skills reported by Hermes.")
 
-                Divider().overlay(Color.scifiBorderLight)
+                Divider().overlay(Color.dockBorderLight)
                 sectionLabel("MCP SERVERS  ·  \(configuration.mcpServers.count)")
                 configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
                 if control.mcpInventoryAvailable {
                     if control.mcpServers.isEmpty {
                         Text("Hermes reports no configured MCP connections.")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.scifiTertiary)
+                            .foregroundStyle(Color.dockMetadataText)
                     } else {
                         VStack(alignment: .leading, spacing: 7) {
                             ForEach(control.mcpServers) { server in
                                 HStack(alignment: .top, spacing: 8) {
                                     Circle()
-                                        .fill(server.isEnabled ? Color.scifiSuccess : Color.scifiMuted)
+                                        .fill(server.isEnabled ? Color.dockSuccess : Color.dockSecondaryText)
                                         .frame(width: 6, height: 6)
                                         .padding(.top, 5)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(server.name)
                                             .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(Color.scifiFg)
+                                            .foregroundStyle(Color.dockPrimaryText)
                                         Text("\(server.transport)  ·  \(server.tools)")
-                                            .font(.system(size: 12, design: .monospaced))
-                                            .foregroundStyle(Color.scifiTertiary)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockMetadataText)
                                             .lineLimit(2)
                                     }
                                     Spacer(minLength: 0)
                                     VStack(alignment: .trailing, spacing: 4) {
                                         Text(server.isEnabled ? "ENABLED" : "DISABLED")
-                                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                            .foregroundStyle(server.isEnabled ? Color.scifiSuccess : Color.scifiMuted)
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(server.isEnabled ? Color.dockSuccess : Color.dockSecondaryText)
                                         if control.capabilityAvailable("mcp.test") {
                                             Button { control.testMCP(server) } label: {
-                                                ScifiActionLabel(
+                                                DockActionLabel(
                                                     title: "TEST",
                                                     pendingTitle: "TESTING…",
                                                     isPending: control.isActionPending(control.mcpTestActionID(server))
                                                 )
                                             }
-                                                .buttonStyle(.scifiPress)
-                                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                                .foregroundStyle(Color.scifiAccent)
+                                                .buttonStyle(.borderless)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundStyle(Color.dockAccent)
                                                 .disabled(control.isActionPending(control.mcpTestActionID(server)))
                                         }
                                     }
                                 }
                                 if let result = control.mcpTestResults[server.id] {
                                     Text(result)
-                                        .font(.system(size: 12, design: .monospaced))
-                                        .foregroundStyle(Color.scifiTertiary)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(2)
                                 }
                             }
@@ -4426,20 +4424,20 @@ struct WorkspaceActivitySidebar: View {
                 }
                 if model.sessionID != nil {
                     Button { isShowingMCPReloadConfirmation = true } label: {
-                        ScifiActionLabel(
+                        DockActionLabel(
                             title: "RELOAD MCP TOOLS",
                             pendingTitle: "RELOADING…",
                             isPending: control.isActionPending(control.reloadMCPActionID)
                         )
                     }
-                        .buttonStyle(.scifiPress)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                         .disabled(control.isActionPending(control.reloadMCPActionID))
                 }
 
                 if !configuration.plugins.isEmpty {
-                    Divider().overlay(Color.scifiBorderLight)
+                    Divider().overlay(Color.dockBorderLight)
                     sectionLabel("ENABLED PLUGINS  ·  \(configuration.plugins.count)")
                     configurationList(configuration.plugins, empty: "")
                 }
@@ -4471,13 +4469,13 @@ struct WorkspaceActivitySidebar: View {
                 if let lastSuccess = control.refreshState(for: "provider.quota")?.lastSuccess {
                     Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
                         .font(.caption.monospaced())
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockMetadataText)
                 }
                 Button { control.refreshProviderQuota() } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .buttonStyle(.scifiPress)
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockAccent)
                 .help("Refresh Codex quota")
                 .accessibilityLabel("Refresh Codex quota")
             }
@@ -4487,8 +4485,8 @@ struct WorkspaceActivitySidebar: View {
                     ProgressView().controlSize(.small)
                     Text("REFRESHING PROVIDER QUOTA…")
                 }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color.scifiFg)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockSecondaryText)
             }
 
             if !control.providerQuotas.isEmpty {
@@ -4497,34 +4495,34 @@ struct WorkspaceActivitySidebar: View {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
                                 Circle()
-                                    .fill(Color.scifiAccent)
+                                    .fill(Color.dockAccent)
                                     .frame(width: 6, height: 6)
                                 Text(snapshot.displayName)
-                                    .font(.body.weight(.semibold))
-                                    .foregroundStyle(Color.scifiFg)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Color.dockPrimaryText)
                                 if let modelName = snapshot.model {
                                     Text(modelName)
                                         .font(.caption.monospaced())
-                                        .foregroundStyle(Color.scifiMuted)
+                                        .foregroundStyle(Color.dockMetadataText)
                                         .lineLimit(1)
                                 }
                                 Spacer()
                                 if let detail = snapshot.safeDetail {
                                     Text(detail.uppercased())
                                         .font(.caption.monospaced().weight(.semibold))
-                                        .foregroundStyle(Color.scifiMuted)
+                                        .foregroundStyle(Color.dockMetadataText)
                                 }
                             }
                             if snapshot.windows.isEmpty {
                                 Text("No quota windows were reported.")
-                                    .font(.body)
-                                    .foregroundStyle(Color.scifiFg)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.dockSecondaryText)
                             } else {
                                 ForEach(snapshot.windows) { window in quotaWindow(window) }
                             }
                         }
                         .padding(10)
-                        .scifiGlassPane()
+                        .dockGlassPane()
                         .textSelection(.enabled)
                     }
                 }
@@ -4534,8 +4532,8 @@ struct WorkspaceActivitySidebar: View {
 
             if let state = control.refreshState(for: "provider.quota"), let error = state.error {
                 Text(state.isStale ? "Showing last successful data. (error)" : error)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -4544,11 +4542,11 @@ struct WorkspaceActivitySidebar: View {
     private func quotaUnavailable(message: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("QUOTA UNAVAILABLE", systemImage: "gauge.with.dots.needle.50percent")
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiWarning)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockWarning)
             Text(message)
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -4558,8 +4556,8 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.label)
-                                    .font(.body.weight(.semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
                 Spacer()
                 Text(window.remainingDisplay ?? (window.remainingPercent.map { String(format: "%.0f%% left", $0) } ?? "Availability reported without a percentage"))
                     .font(.caption.monospaced())
@@ -4569,7 +4567,7 @@ struct WorkspaceActivitySidebar: View {
             if let percent = window.remainingPercent {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Color.scifiSurface4)
+                        RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Color.dockSurface4)
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(quotaColor(window.threshold))
                             .frame(width: max(3, geometry.size.width * percent / 100))
@@ -4581,7 +4579,7 @@ struct WorkspaceActivitySidebar: View {
                         GeometryReader { geometry in
                             let marker = QuotaForecasting.expectedRemainingMarker(for: window) ?? Double(daily)
                             Rectangle()
-                                .fill(Color.scifiWarning)
+                                .fill(Color.dockWarning)
                                 .frame(width: 2, height: 12)
                                 .offset(
                                     // The marker shows the expected remaining
@@ -4602,26 +4600,26 @@ struct WorkspaceActivitySidebar: View {
                     Text("Limit forecast: \(RelativeDateTimeFormatter().localizedString(for: forecast, relativeTo: Date()))")
                 }
                 .font(.caption.monospaced().weight(.semibold))
-                .foregroundStyle(Color.scifiWarning.opacity(0.82))
+                .foregroundStyle(Color.dockWarning.opacity(0.82))
                 .help("Estimated from the current average consumption rate; the provider does not report a depletion date.")
             }
             HStack {
                 if let limit = window.limitDisplay {
-                    Text(limit).foregroundStyle(Color.scifiMuted)
+                    Text(limit).foregroundStyle(Color.dockSecondaryText)
                 } else if let daily = QuotaForecasting.dailyAllowance(for: window) {
                     Text("Suggested daily limit: \(daily)%")
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockSecondaryText)
                         .help("Suggested maximum to stay within this quota until it resets.")
                 }
                 Spacer()
                 if let reset = window.resetsAt {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(RelativeDateTimeFormatter().localizedString(for: reset, relativeTo: Date()) + " · " + reset.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
                     .multilineTextAlignment(.trailing)
                 } else if let reset = window.resetsDisplay {
-                    Text(reset).foregroundStyle(Color.scifiFg)
+                    Text(reset).foregroundStyle(Color.dockSecondaryText)
                 }
             }
             .font(.caption.monospaced())
@@ -4632,15 +4630,23 @@ struct WorkspaceActivitySidebar: View {
 
     private func quotaColor(_ threshold: ProviderQuotaThreshold) -> Color {
         switch threshold {
-        case .healthy: .scifiAccent
-        case .warning: .scifiWarning.opacity(0.78)
-        case .critical: .scifiDestructive
-        case .unknown: .scifiFg
+        case .healthy: .dockAccent
+        case .warning: .dockWarning.opacity(0.78)
+        case .critical: .dockDestructive
+        case .unknown: .dockMetadataText
         }
     }
 
     private func sectionLabel(_ title: String) -> some View {
-        Text(title).font(.system(.body, design: .monospaced).weight(.semibold)).tracking(1.1).foregroundStyle(Color.scifiMuted)
+        Text(title == title.uppercased() ? title.lowercased().capitalized : title)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Color.dockSectionText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
+            .overlay(alignment: .bottom) {
+                Color.dockBorderLight.frame(height: 0.5)
+            }
     }
 
     @ViewBuilder
@@ -4651,12 +4657,12 @@ struct WorkspaceActivitySidebar: View {
                     ProgressView().controlSize(.mini)
                     Text(state.isStale ? "Refreshing — showing last successful data" : "Refreshing…")
                 }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
             } else if let error = state.error {
                 Text(state.isStale ? "Showing last successful data. \(error)" : error)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -4667,56 +4673,55 @@ struct WorkspaceActivitySidebar: View {
             Circle()
                 .fill(nativeAgentColor(agent.status))
                 .frame(width: 7, height: 7)
-                .shadow(color: nativeAgentColor(agent.status).opacity(0.7), radius: 4)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 Text(agent.goal)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(expanded ? 4 : 2)
                 if let role = agent.role {
                     Text("ROLE  \(role.uppercased())\(agent.sourceSkill.map { "  ·  \($0)" } ?? "")")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.35)
-                        .foregroundStyle(Color.scifiAccent)
+                        .foregroundStyle(Color.dockAccent)
                 }
                 Text("\(agent.status.uppercased())  ·  \(agent.toolCount) TOOLS\(agent.model.map { "  ·  \($0.uppercased())" } ?? "")")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .tracking(0.4)
                     .foregroundStyle(nativeAgentColor(agent.status))
                 if expanded, let latest = agent.latestActivity {
                     Text(latest)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(2)
                 }
             }
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.opacity(0.7).frame(height: 0.5) }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.opacity(0.7).frame(height: 0.5) }
     }
 
     private func eventRow(_ event: AgentEvent) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("•")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent.opacity(0.75))
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.dockAccent.opacity(0.75))
                 .frame(width: 13)
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.type.uppercased()).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiMuted)
-                Text(event.detail).font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(2)
+                Text(event.type.uppercased()).font(.system(size: 12, weight: .semibold)).tracking(0.35).foregroundStyle(Color.dockSecondaryText)
+                Text(event.detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
             }
         }
     }
 
     private func diagnosticRow(label: String, value: String, color: Color) -> some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(label).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.8).foregroundStyle(Color.scifiTertiary)
+            Text(label).font(.system(size: 12, weight: .semibold)).tracking(0.8).foregroundStyle(Color.dockMetadataText)
             Spacer()
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 5, height: 5)
-                Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.35).foregroundStyle(Color.scifiFg).lineLimit(1)
+                Text(value).font(.system(size: 12, weight: .semibold)).tracking(0.35).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
             }
         }
     }
@@ -4731,8 +4736,8 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 6) {
             if values.isEmpty {
                 Text(empty)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
             } else {
                 LazyVGrid(
                     columns: [
@@ -4744,10 +4749,10 @@ struct WorkspaceActivitySidebar: View {
                 ) {
                     ForEach(Array(values.prefix(8).enumerated()), id: \.offset) { _, value in
                         HStack(spacing: 7) {
-                            Circle().fill(Color.scifiAccent.opacity(0.65)).frame(width: 4, height: 4)
+                            Circle().fill(Color.dockAccent.opacity(0.65)).frame(width: 4, height: 4)
                             Text(value)
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color.scifiFg)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.dockPrimaryText)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer(minLength: 0)
@@ -4757,9 +4762,9 @@ struct WorkspaceActivitySidebar: View {
                 }
                 if values.count > 8 {
                     Text("+ \(values.count - 8) MORE")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 12, weight: .semibold))
                         .tracking(0.65)
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                 }
             }
         }
@@ -4769,11 +4774,11 @@ struct WorkspaceActivitySidebar: View {
         HStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
-                Text(detail).font(.system(size: 12)).foregroundStyle(Color.scifiTertiary)
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+                Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
             }
             Spacer(minLength: 3)
-            Text(state).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.45).foregroundStyle(color)
+            Text(state).font(.system(size: 12, weight: .semibold)).tracking(0.45).foregroundStyle(color)
         }
     }
 
@@ -4783,28 +4788,28 @@ struct WorkspaceActivitySidebar: View {
 
     private func emptyState(icon: String, title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: icon).foregroundStyle(Color.scifiTertiary)
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiFg)
-            Text(detail).font(.system(size: 12)).foregroundStyle(Color.scifiMuted).fixedSize(horizontal: false, vertical: true)
+            Image(systemName: icon).foregroundStyle(Color.dockMetadataText)
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+            Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func nativeAgentColor(_ status: String) -> Color {
         switch status.lowercased() {
-        case "running", "finalizing": .scifiAccent
-        case "complete", "completed": .scifiSuccess
-        case "blocked", "stalled", "error": .scifiWarning
-        default: .scifiMuted
+        case "running", "finalizing": .dockAccent
+        case "complete", "completed": .dockSuccess
+        case "blocked", "stalled", "error": .dockWarning
+        default: .dockSecondaryText
         }
     }
 
     private var statusColor: Color {
         switch model.status {
-        case .idle: .scifiSuccess
-        case .working: .scifiAccent
-        case .needsApproval: .scifiWarning
-        case .needsClarification: .scifiWarning
-        case .offline: .scifiDestructive
+        case .idle: .dockSuccess
+        case .working: .dockAccent
+        case .needsApproval: .dockWarning
+        case .needsClarification: .dockWarning
+        case .offline: .dockDestructive
         }
     }
 }

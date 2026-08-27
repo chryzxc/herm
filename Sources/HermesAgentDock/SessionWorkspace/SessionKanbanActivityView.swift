@@ -47,30 +47,30 @@ struct SessionKanbanActivityView: View {
             if snapshot.activeRows.isEmpty, snapshot.completedCount == 0 {
                 if refreshState?.isRefreshing == true {
                     HStack(spacing: 8) {
-                        ProgressView().controlSize(.small).tint(Color.scifiAccent)
+                        ProgressView().controlSize(.small).tint(Color.dockAccent)
                         Text("LOADING SESSION KANBAN")
                     }
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else if refreshState?.error != nil {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("SESSION KANBAN UNAVAILABLE")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiWarning)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockWarning)
                         Text("The attribution query did not complete successfully. Retry before treating this session as empty.")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("NO SESSION-ATTRIBUTED CARDS")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.scifiTertiary)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockMetadataText)
                         Text("Global or manually created cards remain on the full board and are not shown here.")
                             .font(.system(size: 10))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -80,7 +80,7 @@ struct SessionKanbanActivityView: View {
                 }
                 if snapshot.completedCount > 0 {
                     Button {
-                        withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.16)) {
+                        withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
                             showsCompleted.toggle()
                         }
                     } label: {
@@ -90,9 +90,9 @@ struct SessionKanbanActivityView: View {
                             Spacer()
                         }
                     }
-                    .buttonStyle(.scifiPress)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
                     if showsCompleted {
                         ForEach(snapshot.completedRows) { row in
                             taskRow(row)
@@ -110,10 +110,10 @@ struct SessionKanbanActivityView: View {
                     Button("RETRY") {
                         if let sessionID { control.refreshSessionKanban(for: sessionID) }
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                 }
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color.scifiWarning)
+                .font(.system(size: 10))
+                .foregroundStyle(Color.dockWarning)
             }
 
             if let onOpenBoard {
@@ -126,13 +126,13 @@ struct SessionKanbanActivityView: View {
                         Image(systemName: "arrow.up.right")
                     }
                 }
-                .buttonStyle(.scifiPress)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiAccent)
+                .buttonStyle(.borderless)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
             }
         }
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 
     private var header: some View {
@@ -141,16 +141,16 @@ struct SessionKanbanActivityView: View {
             Spacer(minLength: 0)
             if snapshot.activeCount > 0 {
                 Text("\(snapshot.activeCount) ACTIVE")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
             }
             Button {
                 if let sessionID { control.refreshSessionKanban(for: sessionID) }
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.scifiPress)
-            .foregroundStyle(Color.scifiAccent)
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.dockAccent)
             .accessibilityLabel("Refresh session Kanban")
         }
     }
@@ -171,7 +171,7 @@ struct SessionKanbanActivityView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(row.title)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.scifiFg)
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: 7) {
@@ -179,26 +179,26 @@ struct SessionKanbanActivityView: View {
                         if let assignee = row.assignee { Text("· \(assignee)") }
                         if let boardSlug = row.boardSlug { Text("· \(boardSlug)") }
                     }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(statusColor(row.status))
                     if let detail = row.detail, row.status == .blocked {
                         Text(detail)
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(Color.scifiMuted)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(2)
                     }
                 }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.scifiTertiary)
+                    .foregroundStyle(Color.dockMetadataText)
                     .padding(.top, 3)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .background(Color.scifiSurface4.opacity(0.68))
+            .background(Color.dockSurface4.opacity(0.68))
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.scifiBorderLight, lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .disabled(onOpenTask == nil && onOpenBoard == nil)
@@ -207,19 +207,19 @@ struct SessionKanbanActivityView: View {
 
     private func statusColor(_ status: SessionKanbanActivityPresentation.Status) -> Color {
         switch status {
-        case .running: .scifiKanbanRunning
-        case .blocked: .scifiWarning
-        case .ready: .scifiAccent
-        case .review: .scifiKanbanReview
-        case .done: .scifiSuccess
-        case .unknown: .scifiMuted
+        case .running: .dockKanbanRunning
+        case .blocked: .dockWarning
+        case .ready: .dockAccent
+        case .review: .dockKanbanReview
+        case .done: .dockSuccess
+        case .unknown: .dockSecondaryText
         }
     }
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .font(.system(size: 11, weight: .semibold))
             .tracking(0.8)
-            .foregroundStyle(Color.scifiMuted)
+            .foregroundStyle(Color.dockSecondaryText)
     }
 }

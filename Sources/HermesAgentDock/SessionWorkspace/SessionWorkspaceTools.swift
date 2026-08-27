@@ -55,14 +55,14 @@ struct SessionFilesView: View {
             TextField("Filter files…", text: $filterText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
                 .padding(.horizontal, 12)
                 .frame(height: 34)
-                .background(Color.scifiCanvas)
+                .background(Color.dockCanvas)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.scifiBorderLight, lineWidth: 0.5)
+                        .stroke(Color.dockBorderLight, lineWidth: 0.5)
                 }
                 .padding(.bottom, 8)
 
@@ -81,7 +81,7 @@ struct SessionFilesView: View {
                         depth: 0,
                         isDirectory: true,
                         isExpanded: true,
-                        color: Color.scifiFolder
+                        color: Color.dockFolder
                     )
                 }
                 .buttonStyle(.plain)
@@ -90,7 +90,7 @@ struct SessionFilesView: View {
                 if let error {
                     Text(error)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.scifiWarning)
+                        .foregroundStyle(Color.dockWarning)
                         .padding(.bottom, 6)
                 }
 
@@ -104,7 +104,7 @@ struct SessionFilesView: View {
                                 depth: entry.depth + 1,
                                 isDirectory: true,
                                 isExpanded: expandedDirectories.contains(entry.path),
-                                color: Color.scifiFolder
+                                color: Color.dockFolder
                             )
                         }
                         .buttonStyle(.plain)
@@ -128,7 +128,7 @@ struct SessionFilesView: View {
                 if visibleEntries.isEmpty {
                     Text("No matching files")
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                         .padding(.vertical, 12)
                 }
             }
@@ -144,7 +144,7 @@ struct SessionFilesView: View {
             if isDirectory {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 12)
             } else {
                 Color.clear.frame(width: 12)
@@ -156,7 +156,7 @@ struct SessionFilesView: View {
                 .frame(width: 20)
             Text(title)
                 .font(.system(size: 12))
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
             Spacer(minLength: 4)
             if isOpeningFile && selectedPath == path { ProgressView().controlSize(.mini) }
@@ -164,7 +164,7 @@ struct SessionFilesView: View {
         .padding(.leading, CGFloat(depth) * 14 + 8)
         .padding(.trailing, 8)
         .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
-        .background(selectedPath == path && !isDirectory ? Color.scifiAccent.opacity(0.13) : Color.clear)
+        .background(selectedPath == path && !isDirectory ? Color.dockAccent.opacity(0.13) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
@@ -239,21 +239,21 @@ struct SessionFilesView: View {
 
     private func fileColor(for entry: ProjectFileEntry) -> Color {
         switch entry.path.split(separator: ".").last.map(String.init)?.lowercased() {
-        case "json", "yaml", "yml", "toml": return .scifiWarning
-        case "md", "txt": return .scifiMuted
-        default: return .scifiAccent
+        case "json", "yaml", "yml", "toml": return .dockWarning
+        case "md", "txt": return .dockSecondaryText
+        default: return .dockAccent
         }
     }
 
     private func empty(_ icon: String, _ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold))
-            Text(detail).font(.system(size: 12)).foregroundStyle(Color.scifiTertiary)
+            Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
         }
-        .foregroundStyle(Color.scifiFg)
+        .foregroundStyle(Color.dockPrimaryText)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 }
 
@@ -266,10 +266,10 @@ struct SessionTerminalView: View {
 
     private var statusColor: Color {
         switch terminal.state {
-        case .running: Color.scifiSuccess
-        case .starting: Color.scifiWarning
-        case .closed, .idle: Color.scifiMuted
-        case .failed: Color.scifiDestructive
+        case .running: Color.dockSuccess
+        case .starting: Color.dockWarning
+        case .closed, .idle: Color.dockSecondaryText
+        case .failed: Color.dockDestructive
         }
     }
 
@@ -290,7 +290,7 @@ struct SessionTerminalView: View {
                 Text("SHELL")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .tracking(1.1)
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                 Spacer()
                 Circle()
                     .fill(statusColor)
@@ -307,7 +307,7 @@ struct SessionTerminalView: View {
                 ScrollView {
                     Text(terminal.output.isEmpty ? "Terminal session initialized. Ready for commands." : terminal.output)
                         .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(terminal.output.isEmpty ? Color.scifiMuted : Color.scifiFg)
+                        .foregroundStyle(terminal.output.isEmpty ? Color.dockSecondaryText : Color.dockPrimaryText)
                         .lineSpacing(4)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -315,7 +315,7 @@ struct SessionTerminalView: View {
                         .id("terminal-output")
                 }
                 .frame(minHeight: 260, maxHeight: .infinity)
-                .background(Color.scifiCanvas)
+                .background(Color.dockCanvas)
                 .onChange(of: terminal.output) { _, _ in
                     withAnimation(.easeOut(duration: 0.12)) {
                         proxy.scrollTo("terminal-output", anchor: .bottom)
@@ -327,20 +327,20 @@ struct SessionTerminalView: View {
             HStack(spacing: 8) {
                 Text("$")
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.scifiSuccess)
+                    .foregroundStyle(Color.dockSuccess)
 
                 TextField("", text: $command)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .focused($commandFocused)
                     .onSubmit { submit() }
             }
             .padding(.vertical, 10)
-            .background(Color.scifiSurface2)
-            .overlay(alignment: .top) { Color.scifiBorderLight.frame(height: 0.5) }
+            .background(Color.dockSurface2)
+            .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
         }
-        .background(Color.scifiCanvas)
+        .background(Color.dockCanvas)
         .task(id: projectPath) {
             guard let projectPath else { terminal.close(); return }
             terminal.start(directory: projectPath)
@@ -360,24 +360,24 @@ struct SessionTerminalView: View {
             HStack(spacing: 9) {
                 Image(systemName: "terminal")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                 Text("\(NSUserName())@\(Host.current().localizedName ?? "hermes")")
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 Button {
                     terminal.close()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.scifiTertiary)
+                        .foregroundStyle(Color.dockMetadataText)
                 }
-                .buttonStyle(.scifiPress)
+                .buttonStyle(.borderless)
                 .help("Close terminal")
             }
             .padding(.horizontal, 11)
             .frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.scifiSurface6))
+            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.dockSurface6))
 
             Spacer(minLength: 0)
 
@@ -387,15 +387,15 @@ struct SessionTerminalView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 30, height: 30)
             }
-            .buttonStyle(.scifiPress)
+            .buttonStyle(.borderless)
             .help("New terminal session")
         }
         .padding(.horizontal, 10)
         .padding(.top, 8)
         .padding(.bottom, 6)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 }

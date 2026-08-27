@@ -116,7 +116,6 @@ struct AgentHandoffMapView: View {
     var body: some View {
         mapSurface
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .environment(\.colorScheme, .dark)
         .onAppear {
             startHandoffFlowIfNeeded()
             model.refreshDelegationStatus()
@@ -164,7 +163,7 @@ struct AgentHandoffMapView: View {
         return ScrollView(.horizontal, showsIndicators: true) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(Color.scifiCanvas.opacity(0.86))
+                    .fill(Color.dockCanvas.opacity(0.86))
                     .overlay(alignment: .topLeading) { grid }
                 ambientLight
 
@@ -229,9 +228,9 @@ struct AgentHandoffMapView: View {
         }
         .frame(minWidth: min(layout.contentSize.width, 480))
         .frame(height: layout.contentSize.height)
-        .background(Color.scifiCanvas.opacity(0.86))
+        .background(Color.dockCanvas.opacity(0.86))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.scifiBorderStrong, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 0.5))
     }
 
     private var grid: some View {
@@ -255,22 +254,21 @@ struct AgentHandoffMapView: View {
         VStack(spacing: 6) {
             ZStack {
                 Circle()
-                    .stroke(Color.scifiAccent.opacity(0.18), lineWidth: 7)
+                    .stroke(Color.dockAccent.opacity(0.18), lineWidth: 7)
                     .frame(width: 68, height: 68)
-                Circle().fill(Color.scifiAccent.opacity(0.12))
-                Circle().stroke(Color.scifiAccent, lineWidth: 1.5)
+                Circle().fill(Color.dockAccent.opacity(0.12))
+                Circle().stroke(Color.dockAccent, lineWidth: 1.5)
                 Text("H")
-                    .font(.system(size: 20, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.scifiFg)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Color.dockPrimaryText)
             }
             .frame(width: 62, height: 62)
-            .shadow(color: Color.scifiAccentGlow, radius: 14)
             Text("HERMES")
                 .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color.scifiFg)
+            .foregroundStyle(Color.dockPrimaryText)
             Text("ORCHESTRATOR")
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(Color.scifiTertiary)
+                .font(.system(size: 10))
+                .foregroundStyle(Color.dockMetadataText)
         }
         .frame(width: 132, height: 116)
         .accessibilityElement(children: .combine)
@@ -279,7 +277,7 @@ struct AgentHandoffMapView: View {
 
     private func agentNode(_ node: MapNode) -> some View {
         Button {
-            withAnimation(reduceMotion ? nil : .scifiEase(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .dockEase(duration: 0.2)) {
                 selectedAgentID = selectedAgentID == node.id ? nil : node.id
             }
         } label: {
@@ -290,40 +288,39 @@ struct AgentHandoffMapView: View {
                     }
                     // The opaque base intentionally masks connectors beneath
                     // the circular identity mark so its glyph stays legible.
-                    Circle().fill(Color.scifiCanvas)
+                    Circle().fill(Color.dockCanvas)
                     Circle().fill(node.identityColor.opacity(0.18))
                     Circle().stroke(node.identityColor, lineWidth: selectedAgentID == node.id ? 2.5 : 1.5)
                     Text(node.initials)
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.scifiFg)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Color.dockPrimaryText)
                 }
                 .frame(width: 58, height: 58)
                 .overlay(alignment: .bottomTrailing) {
                     if node.activityCount > 0 {
                         Text("\(node.activityCount)")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(Color.scifiBg)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.dockOnAccentText)
                             .frame(minWidth: 17, minHeight: 17)
                             .background(Circle().fill(node.statusColor))
-                            .overlay(Circle().stroke(Color.scifiCanvas, lineWidth: 2))
+                            .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 2))
                             .offset(x: 4, y: 4)
                     }
                 }
-                .shadow(color: node.identityColor.opacity(selectedAgentID == node.id ? 0.42 : 0.16), radius: selectedAgentID == node.id ? 12 : 6)
                 Text(node.name)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(width: AgentMapTreeLayout.nodeWidth)
                 Text(node.role)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(width: AgentMapTreeLayout.nodeWidth)
                 Text("\(node.activityCount) \(node.activityCount == 1 ? "EVENT" : "EVENTS") · \(node.status.uppercased())")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(node.statusColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -338,8 +335,8 @@ struct AgentHandoffMapView: View {
 
     private var ambientLight: some View {
         ZStack {
-            Circle().fill(Color.scifiAccent.opacity(0.09)).frame(width: 300, height: 300).blur(radius: 100).offset(x: -120, y: -120)
-            Circle().fill(Color.scifiSuccess.opacity(0.04)).frame(width: 260, height: 260).blur(radius: 110).offset(x: 150, y: 140)
+            Circle().fill(Color.dockAccent.opacity(0.09)).frame(width: 300, height: 300).blur(radius: 100).offset(x: -120, y: -120)
+            Circle().fill(Color.dockSuccess.opacity(0.04)).frame(width: 260, height: 260).blur(radius: 110).offset(x: 150, y: 140)
         }
         .allowsHitTesting(false)
     }
@@ -404,7 +401,7 @@ struct AgentHandoffMapView: View {
                 id: "tree:\(node.id)",
                 sourceID: node.parentID.flatMap { canonicalIDByReference[$0] } ?? AgentMapTreeLayout.rootID,
                 targetID: node.id,
-                color: isActive(node.status) ? .scifiAccent : Color.scifiBorderLight,
+                color: isActive(node.status) ? .dockAccent : Color.dockBorderLight,
                 isHandoff: false,
                 isFlowing: flowingAgentIDs.contains(node.id)
             )
@@ -420,7 +417,7 @@ struct AgentHandoffMapView: View {
                 id: "handoff:\(activity.id.uuidString)",
                 sourceID: source.id,
                 targetID: target.id,
-                color: .scifiAccent,
+                color: .dockAccent,
                 isHandoff: true,
                 isFlowing: true
             )
@@ -460,7 +457,7 @@ struct AgentHandoffMapView: View {
 
     private func identityColor(for id: String) -> Color {
         let palette: [Color] = [
-            .scifiAccent,
+            .dockAccent,
             Color(red: 0.78, green: 0.38, blue: 1),
             Color(red: 1, green: 0.48, blue: 0.36),
             Color(red: 0.25, green: 0.86, blue: 0.72),
@@ -472,11 +469,11 @@ struct AgentHandoffMapView: View {
 
     private func statusColor(for status: String) -> Color {
         let value = status.lowercased()
-        if value.contains("complete") || value.contains("done") || value.contains("finish") { return .scifiSuccess }
-        if value.contains("fail") || value.contains("error") { return .scifiDestructive }
-        if value.contains("block") || value.contains("interrupt") || value.contains("approval") { return .scifiWarning }
-        if value.contains("queue") || value.contains("pending") { return .scifiMuted }
-        return .scifiAccent
+        if value.contains("complete") || value.contains("done") || value.contains("finish") { return .dockSuccess }
+        if value.contains("fail") || value.contains("error") { return .dockDestructive }
+        if value.contains("block") || value.contains("interrupt") || value.contains("approval") { return .dockWarning }
+        if value.contains("queue") || value.contains("pending") { return .dockSecondaryText }
+        return .dockAccent
     }
 
     private func isActive(_ status: String) -> Bool {

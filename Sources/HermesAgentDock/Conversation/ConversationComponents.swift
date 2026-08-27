@@ -23,7 +23,7 @@ struct ThinkingDots: View {
       ForEach(0..<3) { i in
         let p = (time + Double(i) * 0.2).truncatingRemainder(dividingBy: 1.4) / 1.4
         let s = 0.6 + 0.4 * max(0, sin(p * .pi * 2))
-        Circle().fill(Color.scifiAccent).frame(width: 6, height: 6).scaleEffect(s).opacity(s)
+        Circle().fill(Color.dockAccent).frame(width: 6, height: 6).scaleEffect(s).opacity(s)
       }
     }
   }
@@ -46,28 +46,28 @@ struct VoiceModeToolbar: View {
             systemName: isWorkspaceVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1"
           )
           .font(.system(size: 11, weight: .medium)).foregroundStyle(
-            isWorkspaceVisible ? Color.scifiAccent : Color.scifiMuted
+            isWorkspaceVisible ? Color.dockAccent : Color.dockSecondaryText
           ).frame(width: 28, height: 28)
           .background(
-            Circle().fill(isWorkspaceVisible ? Color.scifiAccent.opacity(0.1) : Color.scifiSurface4)
+            Circle().fill(isWorkspaceVisible ? Color.dockAccent.opacity(0.1) : Color.dockSurface4)
           )
         }
-        .buttonStyle(.scifiPress).help(
+        .buttonStyle(.borderless).help(
           isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
         if canStopRequest {
           Button(action: onStopRequest) {
             Image(systemName: "stop.fill").font(.system(size: 11, weight: .semibold))
-              .foregroundStyle(Color.scifiDestructive).frame(width: 28, height: 28).background(
-                Circle().fill(Color.scifiDestructive.opacity(0.1)))
+              .foregroundStyle(Color.dockDestructive).frame(width: 28, height: 28).background(
+                Circle().fill(Color.dockDestructive.opacity(0.1)))
           }
-          .buttonStyle(.scifiPress).help("Stop Hermes request")
+          .buttonStyle(.borderless).help("Stop Hermes request")
         }
         Button(action: onReturnToChat) {
           Image(systemName: "text.bubble").font(.system(size: 11, weight: .medium)).foregroundStyle(
-            Color.scifiMuted
-          ).frame(width: 28, height: 28).background(Circle().fill(Color.scifiSurface4))
+            Color.dockSecondaryText
+          ).frame(width: 28, height: 28).background(Circle().fill(Color.dockSurface4))
         }
-        .buttonStyle(.scifiPress).help("Return to chat")
+        .buttonStyle(.borderless).help("Return to chat")
       }
     }
   }
@@ -77,28 +77,25 @@ struct AgentAvatar: View {
   let identity: String
   let statusColor: Color
 
-  private var seed: Int { identity.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) } }
-
   var body: some View {
-    let rotation = Double(seed % 360)
-    let secondaryRotation = Double((seed / 7) % 360)
     ZStack {
-      Circle().fill(
-        RadialGradient(
-          colors: [Color.scifiAccent.opacity(0.3), Color.scifiAccent.opacity(0.08)],
-          center: UnitPoint(x: 0.32, y: 0.24), startRadius: 1, endRadius: 20))
-      Circle().stroke(Color.scifiAccent.opacity(0.36), lineWidth: 0.6)
-      Circle().trim(from: 0.08, to: 0.43).stroke(
-        Color.scifiAccent.opacity(0.8), style: StrokeStyle(lineWidth: 1, lineCap: .round)
-      ).rotationEffect(.degrees(rotation)).padding(4)
-      Circle().trim(from: 0.58, to: 0.77).stroke(
-        Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 0.6, lineCap: .round)
-      ).rotationEffect(.degrees(secondaryRotation)).padding(7)
-      Circle().fill(statusColor).frame(width: 4, height: 4).offset(x: 8, y: -7).shadow(
-        color: statusColor.opacity(0.8), radius: 3)
-      Circle().fill(Color.scifiAccent.opacity(0.9)).frame(width: 5, height: 5)
+      Circle()
+        .fill(statusColor.opacity(0.12))
+        .overlay {
+          Image(systemName: "person.fill")
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(statusColor)
+        }
+        .overlay {
+          Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        }
+      Circle()
+        .fill(statusColor)
+        .frame(width: 6, height: 6)
+        .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+        .offset(x: 8, y: -8)
     }
-    .shadow(color: Color.scifiAccent.opacity(0.18), radius: 6).accessibilityLabel("Agent avatar")
+    .accessibilityLabel("Agent avatar")
   }
 }
 
@@ -155,20 +152,20 @@ struct MarkdownMessageView: View {
       ForEach(Array(parsedBlocks.enumerated()), id: \.offset) { _, block in
         switch block {
         case .heading(let level, let text):
-          renderedText(text).font(.system(size: Self.headingSize(level), weight: .semibold)).foregroundStyle(Color.scifiFg).padding(
+          renderedText(text).font(.system(size: Self.headingSize(level), weight: .semibold)).foregroundStyle(Color.dockPrimaryText).padding(
             .top, 2)
         case .paragraph(let text): renderedText(text).font(.system(size: 14)).lineSpacing(3)
         case .listItem(let text, let marker):
           HStack(alignment: .top, spacing: 6) {
-            Text(marker).font(.system(size: 14, weight: .medium)).foregroundStyle(Color.scifiAccent)
+            Text(marker).font(.system(size: 14, weight: .medium)).foregroundStyle(Color.dockAccent)
               .frame(minWidth: 16, alignment: .trailing)
             renderedText(text).font(.system(size: 14)).lineSpacing(3)
           }
         case .code(let code, let language): codeBlock(code, language: language)
         case .quote(let text):
-          renderedText(text).font(.system(size: 14)).foregroundStyle(Color.scifiMuted).padding(
+          renderedText(text).font(.system(size: 14)).foregroundStyle(Color.dockSecondaryText).padding(
             .leading, 10
-          ).overlay(alignment: .leading) { Rectangle().fill(Color.scifiBorder).frame(width: 2) }
+          ).overlay(alignment: .leading) { Rectangle().fill(Color.dockBorder).frame(width: 2) }
         case .tableRow(let columns):
           // Render markdown table rows as clean structured cards to avoid eye strain from raw syntax
           HStack(spacing: 8) {
@@ -180,20 +177,20 @@ struct MarkdownMessageView: View {
           }
           .padding(.horizontal, 8)
           .padding(.vertical, 4)
-          .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.scifiSurface4))
-          .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.scifiBorder, lineWidth: 0.5))
+          .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockSurface4))
+          .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
         }
       }
     }
   }
 
   private func renderedText(_ value: String) -> some View {
-    // Explicitly apply soft scifiFg text color to eliminate pure white glare
+    // Explicitly apply soft dockPrimaryText text color to eliminate pure white glare
     Text(inlineMarkdown(value))
-      .foregroundStyle(Color.scifiFg)
+      .foregroundStyle(Color.dockPrimaryText)
       // Keep Markdown links native so AppKit/SwiftUI can provide the link
       // cursor and hover underline without breaking paragraph wrapping.
-      .tint(Color.scifiAccent)
+      .tint(Color.dockAccent)
       .textSelection(.enabled)
       .fixedSize(horizontal: false, vertical: true)
   }
@@ -201,17 +198,17 @@ struct MarkdownMessageView: View {
     VStack(alignment: .leading, spacing: 2) {
       if let language {
         Text(language).font(.system(size: 12, weight: .medium, design: .monospaced))
-          .foregroundStyle(Color.scifiMuted).textCase(.uppercase).padding(.horizontal, 8).padding(
+          .foregroundStyle(Color.dockSecondaryText).textCase(.uppercase).padding(.horizontal, 8).padding(
             .top, 6)
       }
       ScrollView(.horizontal, showsIndicators: false) {
-        Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.scifiFg).textSelection(.enabled).frame(
+        Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled).frame(
           maxWidth: .infinity, alignment: .leading
         ).padding(.horizontal, 8).padding(.vertical, 6)
       }
     }.background(
-      RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.scifiSurface4).stroke(
-        Color.scifiBorder, lineWidth: 0.5))
+      RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface4).stroke(
+        Color.dockBorder, lineWidth: 0.5))
   }
   private static func headingSize(_ level: Int) -> CGFloat {
     level == 1 ? 18 : level == 2 ? 16 : level == 3 ? 14.5 : 14
@@ -348,13 +345,13 @@ struct ConversationActivityRow: View {
   var body: some View {
     HStack(spacing: 6) {
       ThinkingDots()
-      Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.scifiMuted)
+      Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockSecondaryText)
         .lineLimit(1).truncationMode(.tail)
       if let startedAt = model.streamingResponseStartedAt {
         Spacer(minLength: 8)
         ResponseDurationLabel(startedAt: startedAt, finishedDuration: nil)
           .font(.system(size: 12, design: .monospaced))
-          .foregroundStyle(Color.scifiTertiary)
+          .foregroundStyle(Color.dockMetadataText)
           .accessibilityLabel("Response duration")
       }
     }.padding(.horizontal, horizontalInset).padding(.vertical, 8).frame(

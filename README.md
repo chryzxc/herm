@@ -68,14 +68,23 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   introduced until cross-source indexing requires one.
 - **Narrow-screen mode.** On displays too narrow for the split view, the Dock
   switches between Ask and Control as a single pane without horizontal clipping.
-- **Readable controls.** UI text uses a 12pt minimum for labels, metadata, and
-  status text so the compact menu-bar surface remains legible.
+- **Native macOS presentation.** The popover follows the visual language of
+  macOS menu-bar panels: an appearance-aware navy surface, system typography,
+  native controls, restrained system-blue selection, and divider-led sections.
+  Light and dark appearances use adaptive colors rather than a forced color
+  scheme. Status colors are reserved for meaning: blue for active work, green
+  for healthy or completed work, amber for warnings, and red for failures.
+- **Readable controls.** The compact Control surface uses a deliberate type
+  scale: 13pt body text, 11–12pt supporting metadata, 15pt section headings,
+  and 18pt overview metrics. Grouped metric tiles, padded list rows, stronger
+  section separators, and tuned secondary-label contrast make long activity
+  feeds easier to scan while reducing visual fatigue.
 - **Single-row session configuration.** The active model and thinking depth
   live in one divider-led control rail, keeping both settings visible and
   independently selectable without adding a second configuration row.
-- **Design-system interactions.** Primary icon controls retain their compact
-  36pt glass appearance while using 44pt hit targets, matching the interaction
-  guidance in `DESIGN.md`.
+- **Native interactions.** Secondary controls use macOS borderless buttons,
+  switches, menus, and rounded text fields with preserved hit targets. Primary
+  actions use the system prominent treatment instead of custom sci-fi chrome.
 - **Quick capture.** The composer offers transparent prompt shortcuts for
   reminders, Notes, research, summaries, recurring automation, review, email,
   messaging, connected-source search, and Kanban tasks. Provider availability is
@@ -206,8 +215,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Runtime core.** Exposes the active provider/model, execution limits,
   installed skills, configured MCP servers, and enabled plugins supplied by
   Hermes. Unavailable gateway/version states include copyable recovery commands;
-  the Dock never runs update or recovery commands automatically. When a session
-  is active, configured MCP tools can be explicitly reloaded after confirmation.
+  the Dock never runs recovery commands automatically. Core can explicitly and
+  manually check the NousResearch release feed and run the allow-listed
+  `hermes update --yes` command after confirmation, showing streamed progress.
+  When a session is active, configured MCP tools can be explicitly reloaded after confirmation.
   Core also shows a live, read-only MCP inventory with each server's transport,
   tool scope, and enabled state; third-party MCP browsing/actions remain
   dependent on future Hermes RPCs. When Hermes exposes `mcp test`, Core can run
@@ -239,6 +250,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   microphone loudness in local fallback mode, and the voice toolbar includes
   both the Control surface and request cancellation. Native voice also shows
   time to first streamed text and end-to-end turn duration.
+- **Hermes agent updates.** Core compares the installed Hermes version with the
+  latest NousResearch/hermes-agent GitHub release. A confirmed update runs
+  `hermes update --yes` and shows live output, elapsed time, and the resulting
+  version. Updates never start automatically.
 
 ## Voice behaviour today
 
@@ -309,10 +324,11 @@ swift run
 
 The app expects the `hermes` executable to be available on the user’s PATH. On launch it starts a loopback-only Hermes backend, connects over Hermes’s authenticated `/api/ws` WebSocket gateway, and speaks the TUI Gateway JSON-RPC protocol. It uses `session.create`, `prompt.submit`, `session.interrupt`, and `approval.respond`, streams assistant messages, and surfaces approval requests in the native UI.
 
-The Dock targets the locally installed Hermes Agent v0.19.1 contract. Optional
-controls fail closed when their Hermes RPC or CLI capability is unavailable.
-The Dock does not update Hermes, configure providers, invoke arbitrary shell
-commands, expose bulk destructive controls, or create a second Hermes runtime.
+The Dock targets the locally installed Hermes Agent contract. Optional controls
+fail closed when their Hermes RPC or CLI capability is unavailable. Core updates
+Hermes only through the explicit, confirmed `hermes update --yes` action; it does
+not configure providers, invoke arbitrary shell commands, expose bulk
+destructive controls, or create a second Hermes runtime.
 
 ## Documentation rule
 

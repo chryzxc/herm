@@ -49,9 +49,9 @@ struct RepositoryChangesBrowser: View {
                 emptyState(icon: "doc.text.magnifyingglass", title: "No project selected", detail: "Choose a project from Projects to inspect its local changes.")
                 if let onSelectProjectFolder {
                     Button("SELECT PROJECT FOLDER", action: onSelectProjectFolder)
-                        .buttonStyle(.scifiPress)
+                        .buttonStyle(.borderless)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.scifiAccent)
+                        .foregroundStyle(Color.dockAccent)
                 }
             }
         }
@@ -60,7 +60,7 @@ struct RepositoryChangesBrowser: View {
     private func browser(_ changes: RepositoryChangeSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let error {
-                Text(error).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiWarning)
+                Text(error).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockWarning)
             }
 
             sourceControlHeader(changes)
@@ -68,10 +68,10 @@ struct RepositoryChangesBrowser: View {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.scifiAccent)
+                    .foregroundStyle(Color.dockAccent)
                 Text(changes.branch)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
@@ -81,22 +81,22 @@ struct RepositoryChangesBrowser: View {
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 5)
-            .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                 Text("Changes")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(Color.scifiFg)
+                    .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 Text("\(changes.changedFiles)")
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.scifiMuted)
+                    .foregroundStyle(Color.dockSecondaryText)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.scifiSurface8))
+                    .background(Capsule().fill(Color.dockSurface8))
             }
             .padding(.top, 4)
             if changes.files.isEmpty {
@@ -111,15 +111,14 @@ struct RepositoryChangesBrowser: View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.triangle.branch")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.scifiAccent)
-            Text("SOURCE CONTROL")
-                .font(.system(size: 13, weight: .bold))
-                .tracking(0.9)
-                .foregroundStyle(Color.scifiFg)
+                .foregroundStyle(Color.dockAccent)
+            Text("Source Control")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.dockPrimaryText)
             Spacer()
             Text("\(changes.stagedCount) staged")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.scifiTertiary)
+                .foregroundStyle(Color.dockMetadataText)
         }
         .padding(.bottom, 4)
     }
@@ -128,11 +127,11 @@ struct RepositoryChangesBrowser: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.scifiMuted)
+                .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.scifiPress)
+        .buttonStyle(.borderless)
         .help(help)
     }
 
@@ -142,11 +141,11 @@ struct RepositoryChangesBrowser: View {
                 if let selectedDiff, selectedDiff.path == file.path, selectedDiff.isStaged == file.isStaged {
                     Text(selectedDiff.text.isEmpty ? "No textual diff is available for this file." : selectedDiff.text)
                         .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
-                    if selectedDiff.isTruncated { Text("Diff truncated for safe display.").foregroundStyle(Color.scifiWarning) }
+                    if selectedDiff.isTruncated { Text("Diff truncated for safe display.").foregroundStyle(Color.dockWarning) }
                 } else {
-                    Button(isLoading ? "Loading diff…" : "Load diff") { loadDiff(for: file) }.buttonStyle(.scifiPress).foregroundStyle(Color.scifiAccent).disabled(isLoading)
+                    Button(isLoading ? "Loading diff…" : "Load diff") { loadDiff(for: file) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent).disabled(isLoading)
                 }
-                Button("Open code workspace") { openWorkspace(file) }.buttonStyle(.scifiPress).foregroundStyle(Color.scifiAccent).disabled(isLoading)
+                Button("Open code workspace") { openWorkspace(file) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent).disabled(isLoading)
             }
             .font(.system(size: 12, design: .monospaced))
             .padding(.top, 5)
@@ -155,9 +154,9 @@ struct RepositoryChangesBrowser: View {
                 Image(systemName: file.status == .conflicted ? "exclamationmark.octagon" : "doc")
                     .foregroundStyle(statusColor(for: file))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(fileName(for: file)).lineLimit(1).foregroundStyle(Color.scifiFg)
+                    Text(fileName(for: file)).lineLimit(1).foregroundStyle(Color.dockPrimaryText)
                     if !fileDirectory(for: file).isEmpty {
-                        Text(fileDirectory(for: file)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.scifiTertiary).lineLimit(1)
+                        Text(fileDirectory(for: file)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                     }
                 }
                 Spacer()
@@ -166,7 +165,7 @@ struct RepositoryChangesBrowser: View {
             .font(.system(size: 12, weight: .medium))
         }
         .padding(.vertical, 4)
-        .overlay(alignment: .bottom) { Color.scifiBorderLight.frame(height: 0.5) }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private func fileName(for file: RepositoryFileChange) -> String {
@@ -190,10 +189,10 @@ struct RepositoryChangesBrowser: View {
     }
 
     private func statusColor(for file: RepositoryFileChange) -> Color {
-        if file.status == .conflicted { return .scifiDestructive }
-        if file.isStaged { return .scifiAccent }
-        if file.status == .untracked { return .scifiMuted }
-        return .scifiWarning
+        if file.status == .conflicted { return .dockDestructive }
+        if file.isStaged { return .dockAccent }
+        if file.status == .untracked { return .dockSecondaryText }
+        return .dockWarning
     }
 
     private func loadDiff(for file: RepositoryFileChange) {
@@ -210,23 +209,23 @@ struct RepositoryChangesBrowser: View {
     }
 
     private func label(_ value: String) -> some View {
-        Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.75).foregroundStyle(Color.scifiMuted)
+        Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.75).foregroundStyle(Color.dockSecondaryText)
     }
 
     private func metric(_ label: String, _ value: Int, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("\(value)").font(.system(size: 20, weight: .bold, design: .monospaced)).foregroundStyle(color)
-            Text(label).font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Color.scifiTertiary)
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(10).background(Color.scifiSurface4).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text("\(value)").font(.system(size: 18, weight: .semibold)).foregroundStyle(color)
+            Text(label.lowercased().capitalized).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.dockMetadataText)
+        }.frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 10)
     }
 
     private func emptyState(icon: String, title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.scifiFg)
-            Text(detail).font(.system(size: 12)).foregroundStyle(Color.scifiTertiary)
+            Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+            Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .scifiGlassPane()
+        .dockGlassPane()
     }
 }

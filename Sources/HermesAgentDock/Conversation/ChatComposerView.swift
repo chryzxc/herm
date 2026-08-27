@@ -136,8 +136,7 @@ struct ChatComposerView: View {
                     // at the same x position as the placeholder overlay.
                     .padding(.horizontal, -textInset)
                     .padding(.vertical, 0)
-                    .foregroundStyle(Color.scifiFg)
-                    .environment(\.colorScheme, .dark)
+                    .foregroundStyle(Color.dockPrimaryText)
                     .disabled(model.isRestoringSession)
 
                 // Placeholder text displayed when input draft is empty.
@@ -145,7 +144,7 @@ struct ChatComposerView: View {
                 if composer.text.isEmpty {
                     Text(placeholderText)
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockSecondaryText)
                         // TextEditor already supplies the leading content inset
                         // used by the caret. Do not add another inset here.
                         .padding(.leading, 3)
@@ -196,14 +195,14 @@ struct ChatComposerView: View {
                                 Button(action: { model.removePendingImage(image) }) {
                                     Image(systemName: "xmark")
                                         .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(Color.scifiMuted)
+                                        .foregroundStyle(Color.dockSecondaryText)
                                 }
-                                .buttonStyle(.scifiPress)
+                                .buttonStyle(.borderless)
                                 .help("Remove image")
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 4)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.scifiSurface))
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface))
                         }
                     }
                 }
@@ -217,11 +216,11 @@ struct ChatComposerView: View {
                     Button(action: { showingImagePicker = true }) {
                         Image(systemName: "paperclip")
                             .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.scifiMuted)
+                            .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 24, height: 24)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .help("Attach image or file")
 
                     // Model Selector Dropdown Menu
@@ -251,11 +250,11 @@ struct ChatComposerView: View {
                             Text(sessionModelDisplayName)
                                 .font(.system(size: 12, weight: .regular))
                                 .lineLimit(1)
-                                .foregroundStyle(Color.scifiMuted)
+                                .foregroundStyle(Color.dockSecondaryText)
                         }
                     }
                     .menuStyle(.borderlessButton)
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .frame(minHeight: 28, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
                     .help("Select model")
@@ -290,7 +289,7 @@ struct ChatComposerView: View {
                             Text(sessionReasoningDisplayName)
                                 .font(.system(size: 12, weight: .regular))
                         }
-                        .foregroundStyle(Color.scifiMuted)
+                        .foregroundStyle(Color.dockSecondaryText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(
@@ -299,7 +298,7 @@ struct ChatComposerView: View {
                         )
                     }
                     .menuStyle(.borderlessButton)
-                    .buttonStyle(.scifiPress)
+                    .buttonStyle(.borderless)
                     .frame(minHeight: 28, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
                     .help("Select thinking depth")
@@ -308,9 +307,9 @@ struct ChatComposerView: View {
                         Button(action: { onStop() }) {
                             Image(systemName: "stop.fill")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(Color.scifiDestructive)
+                                .foregroundStyle(Color.dockDestructive)
                                 .frame(width: 28, height: 28)
-                                .background(Circle().fill(Color.scifiDestructive.opacity(0.14)))
+                                .background(Circle().fill(Color.dockDestructive.opacity(0.14)))
                         }
                         .buttonStyle(.plain)
                         .help(model.status == .needsClarification
@@ -333,22 +332,22 @@ struct ChatComposerView: View {
                         ZStack {
                             Circle()
                                 // Soft translucent fill for submit circle
-                                .fill(canSubmit && !model.isSteering && !model.isRestoringSession ? Color.scifiFg.opacity(0.20) : Color.scifiSurface6)
+                                .fill(canSubmit && !model.isSteering && !model.isRestoringSession ? Color.dockPrimaryText.opacity(0.20) : Color.dockSurface6)
                                 .frame(width: 28, height: 28)
 
                             if speechInput.isRecording {
                                 Image(systemName: "stop.fill")
                                     .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(Color.scifiFg)
+                                    .foregroundStyle(Color.dockPrimaryText)
                             } else if showStop {
                                 Image(systemName: "stop.fill")
                                     .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(Color.scifiDestructive)
+                                    .foregroundStyle(Color.dockDestructive)
                             } else {
                                 Image(systemName: "arrow.up")
                                     .font(.system(size: 12, weight: .semibold))
-                                    // Use soft scifiFg instead of stark white to prevent eye strain
-                                    .foregroundStyle(canSubmit && !model.isSteering ? Color.scifiFg : Color.scifiMuted.opacity(0.5))
+                                    // Use soft dockPrimaryText instead of stark white to prevent eye strain
+                                    .foregroundStyle(canSubmit && !model.isSteering ? Color.dockPrimaryText : Color.dockSecondaryText.opacity(0.5))
                             }
                         }
                     }
@@ -369,40 +368,46 @@ struct ChatComposerView: View {
             // Voice Recording & Steering Status Messages
             if let error = speechInput.errorMessage {
                 Text(error)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
             if let steeringError = model.steeringError {
                 Text(steeringError)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiWarning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
                     .padding(.top, 2)
             }
             if model.status == .needsClarification {
                 Text("Hermes is waiting for your answer — the next message you send replies to the question above.")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.scifiAccent)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockAccent)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        // Outer composer background styled with square rectangular edges
+        // Native material keeps the composer attached to the popover while
+        // allowing the desktop behind it to softly show through.
         .background(
             Rectangle()
-                .fill(speechInput.isRecording ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.12 : 0.05) : Color(nsColor: NSColor(red: 0.09, green: 0.10, blue: 0.14, alpha: 1.0)))
+                .fill(Color.dockSurface2)
+                .overlay {
+                    if speechInput.isRecording {
+                        Color.dockDestructive.opacity(isComposerPulsing ? 0.12 : 0.05)
+                    }
+                }
         )
-        // Outer composer border styled with square rectangular stroke
+        // A subtle native separator replaces the sci-fi frame.
         .overlay(
             Rectangle()
                 .stroke(
                     speechInput.isRecording
-                    ? Color.scifiDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
-                    : Color.scifiBorderLight.opacity(0.3),
-                    lineWidth: 0.8
+                    ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
+                    : Color(nsColor: .separatorColor),
+                    lineWidth: 0.5
                 )
         )
     }

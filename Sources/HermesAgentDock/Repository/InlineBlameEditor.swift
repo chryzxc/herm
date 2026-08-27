@@ -40,7 +40,7 @@ final class InlineBlameEditorContainerView: NSView {
         self.blameView = InlineBlameAnnotationView(textView: editor, onSelectBlame: onSelectBlame)
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.scifiCanvas.cgColor
+        layer?.backgroundColor = NSColor.dockCanvas.cgColor
 
         textView.string = text
         textView.isEditable = true
@@ -48,9 +48,9 @@ final class InlineBlameEditorContainerView: NSView {
         textView.isRichText = true
         textView.allowsUndo = true
         textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        textView.textColor = .scifiForeground
-        textView.insertionPointColor = .scifiAccent
-        textView.backgroundColor = .scifiCanvas
+        textView.textColor = .dockForeground
+        textView.insertionPointColor = .dockAccent
+        textView.backgroundColor = .dockCanvas
         textView.drawsBackground = true
         textView.textContainerInset = NSSize(width: 10, height: 8)
         textView.isHorizontallyResizable = true
@@ -68,7 +68,7 @@ final class InlineBlameEditorContainerView: NSView {
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = .scifiCanvas
+        scrollView.backgroundColor = .dockCanvas
         scrollView.documentView = textView
         addSubview(scrollView)
 
@@ -236,11 +236,11 @@ final class InlineBlameTextView: NSTextView {
             let date = line.commit.authoredAt.map { RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: .now) } ?? "unknown date"
             let value = line.commit.isUncommitted ? "UNCOMMITTED · WORKING TREE" : "\(line.commit.author) · \(date) · \(line.commit.shortHash)"
             let backgroundRect = NSRect(x: x - 4, y: y, width: max(0, self.bounds.width - x + 4), height: lineHeight)
-            NSColor.scifiCanvas.withAlphaComponent(0.96).setFill()
+            NSColor.dockCanvas.withAlphaComponent(0.96).setFill()
             NSBezierPath(rect: backgroundRect).fill()
             NSString(string: value).draw(in: NSRect(x: x, y: y, width: max(0, self.bounds.width - x), height: lineHeight), withAttributes: [
                 .font: font,
-                .foregroundColor: line.commit.isUncommitted ? NSColor.scifiWarning : NSColor.scifiMuted
+                .foregroundColor: line.commit.isUncommitted ? NSColor.dockWarning : NSColor.dockSecondaryText
             ])
         }
     }
@@ -317,13 +317,13 @@ final class InlineBlameAnnotationView: NSView {
         let lineHeight = textView?.layoutManager?.defaultLineHeight(for: font) ?? 16
         NSString(string: value).draw(in: NSRect(x: 10, y: y, width: bounds.width - 18, height: lineHeight), withAttributes: [
             .font: font,
-            .foregroundColor: commit.isUncommitted ? NSColor.scifiWarning : NSColor.scifiMuted
+            .foregroundColor: commit.isUncommitted ? NSColor.dockWarning : NSColor.dockSecondaryText
         ])
     }
 
     private func drawStatus(_ value: String) {
         NSString(string: value).draw(in: NSRect(x: 10, y: 10, width: bounds.width - 18, height: 15), withAttributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .semibold), .foregroundColor: NSColor.scifiTertiary
+            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .semibold), .foregroundColor: NSColor.dockMetadataText
         ])
     }
 }
@@ -337,19 +337,19 @@ final class InlineBlameAnnotationView: NSView {
         let isMarkdown = filePath.lowercased().hasSuffix(".md") || filePath.lowercased().hasSuffix(".markdown")
 
         if isMarkdown {
-            color(#"(?m)^#{1,6} .*?$"#, in: storage, color: .scifiAccent, weight: .bold)
-            color(#"(?m)^```.*?$"#, in: storage, color: .scifiSuccess, weight: .bold)
-            color(#"`[^`\n]+`"#, in: storage, color: .scifiFolder)
-            color(#"\[[^\]]+\]\([^\)]+\)"#, in: storage, color: .scifiAccent)
-            color(#"(?m)^\s*(?:[-*+] |\d+\. )"#, in: storage, color: .scifiAccent, weight: .bold)
-            color(#"\*\*[^*]+\*\*|__[^_]+__"#, in: storage, color: .scifiFg, weight: .bold)
-            color(#"(?m)^> .*?$"#, in: storage, color: .scifiMuted)
+            color(#"(?m)^#{1,6} .*?$"#, in: storage, color: .dockAccent, weight: .bold)
+            color(#"(?m)^```.*?$"#, in: storage, color: .dockSuccess, weight: .bold)
+            color(#"`[^`\n]+`"#, in: storage, color: .dockFolder)
+            color(#"\[[^\]]+\]\([^\)]+\)"#, in: storage, color: .dockAccent)
+            color(#"(?m)^\s*(?:[-*+] |\d+\. )"#, in: storage, color: .dockAccent, weight: .bold)
+            color(#"\*\*[^*]+\*\*|__[^_]+__"#, in: storage, color: .dockPrimaryText, weight: .bold)
+            color(#"(?m)^> .*?$"#, in: storage, color: .dockSecondaryText)
         } else {
-            color(#"(?m)//.*$|/\*[\s\S]*?\*/|#.*$"#, in: storage, color: .scifiTertiary)
-            color(#"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#, in: storage, color: .scifiSuccess)
-            color(#"\b(?:true|false|nil|null|None)\b"#, in: storage, color: .scifiFolder)
-            color(#"\b(?:class|struct|enum|func|let|var|if|else|for|while|return|import|from|in|public|private|internal|final|async|await|throw|throws|try|guard|switch|case|new|const|function|interface|type)\b"#, in: storage, color: .scifiAccent, weight: .bold)
-            color(#"\b\d+(?:\.\d+)?\b"#, in: storage, color: .scifiFolder)
+            color(#"(?m)//.*$|/\*[\s\S]*?\*/|#.*$"#, in: storage, color: .dockMetadataText)
+            color(#"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'"#, in: storage, color: .dockSuccess)
+            color(#"\b(?:true|false|nil|null|None)\b"#, in: storage, color: .dockFolder)
+            color(#"\b(?:class|struct|enum|func|let|var|if|else|for|while|return|import|from|in|public|private|internal|final|async|await|throw|throws|try|guard|switch|case|new|const|function|interface|type)\b"#, in: storage, color: .dockAccent, weight: .bold)
+            color(#"\b\d+(?:\.\d+)?\b"#, in: storage, color: .dockFolder)
         }
 
         textView.textStorage?.setAttributedString(storage)
@@ -368,13 +368,13 @@ final class InlineBlameAnnotationView: NSView {
 }
 
 private extension NSColor {
-    static let scifiCanvas = NSColor(calibratedRed: 0.055, green: 0.065, blue: 0.115, alpha: 1)
-    static let scifiForeground = NSColor(calibratedRed: 0.76, green: 0.80, blue: 0.88, alpha: 1)
-    static let scifiAccent = NSColor(calibratedRed: 0.02, green: 0.65, blue: 0.95, alpha: 1)
-    static let scifiMuted = NSColor(calibratedRed: 0.60, green: 0.64, blue: 0.71, alpha: 1)
-    static let scifiTertiary = NSColor(calibratedRed: 0.46, green: 0.50, blue: 0.58, alpha: 1)
-    static let scifiFg = NSColor(calibratedRed: 0.70, green: 0.74, blue: 0.81, alpha: 1)
-    static let scifiSuccess = NSColor(calibratedRed: 0.16, green: 0.78, blue: 0.25, alpha: 1)
-    static let scifiFolder = NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.30, alpha: 1)
-    static let scifiWarning = NSColor(calibratedRed: 1.0, green: 0.67, blue: 0.12, alpha: 1)
+    static let dockCanvas = NSColor(calibratedRed: 0.055, green: 0.065, blue: 0.115, alpha: 1)
+    static let dockForeground = NSColor(calibratedRed: 0.76, green: 0.80, blue: 0.88, alpha: 1)
+    static let dockAccent = NSColor(calibratedRed: 0.02, green: 0.65, blue: 0.95, alpha: 1)
+    static let dockSecondaryText = NSColor(calibratedRed: 0.60, green: 0.64, blue: 0.71, alpha: 1)
+    static let dockMetadataText = NSColor(calibratedRed: 0.46, green: 0.50, blue: 0.58, alpha: 1)
+    static let dockPrimaryText = NSColor(calibratedRed: 0.70, green: 0.74, blue: 0.81, alpha: 1)
+    static let dockSuccess = NSColor(calibratedRed: 0.16, green: 0.78, blue: 0.25, alpha: 1)
+    static let dockFolder = NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.30, alpha: 1)
+    static let dockWarning = NSColor(calibratedRed: 1.0, green: 0.67, blue: 0.12, alpha: 1)
 }
