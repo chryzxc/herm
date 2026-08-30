@@ -52,4 +52,12 @@ struct LocalTerminalSessionTests {
         #expect(LocalTerminalSession.maxOutputBytes == 256_000)
         #expect(LocalTerminalSession.maxOutputLines == 2_000)
     }
+
+    @Test func arbitraryTerminalCommandsAreRejectedBeforeDispatch() {
+        let allowed = VerificationRecipe(id: "test:swift test", title: "Run tests", command: "swift test", kind: .test, workingDirectory: "/tmp", source: "Hermes project facts")
+        let arbitrary = VerificationRecipe(id: "arbitrary", title: "No", command: "rm -rf .", kind: .custom, workingDirectory: "/tmp", source: "user input")
+
+        #expect(LocalTerminalSession.acceptedVerificationRecipe(allowed) == allowed)
+        #expect(LocalTerminalSession.acceptedVerificationRecipe(arbitrary) == nil)
+    }
 }

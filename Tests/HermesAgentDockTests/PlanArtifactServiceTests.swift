@@ -75,6 +75,32 @@ struct PlanArtifactServiceTests {
         #expect(try service.load(relativePath: document.relativePath).contents == original)
     }
 
+    @Test func rejectsRevisionWriteThroughSymlinkedDirectory() throws {
+        let fixture = try Fixture()
+        let outside = fixture.root.deletingLastPathComponent().appendingPathComponent("revision-escape-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: fixture.plans.appendingPathComponent("revisions", isDirectory: true), withDestinationURL: outside)
+        let draft = PlanRevisionDraft(relativePath: "revisions/escaped.md", parentPlan: "plan.md", parentSHA256: "hash", contents: "escaped")
+
+        #expect(throws: PlanArtifactError.outsidePlansDirectory) {
+            try PlanArtifactService(projectRoot: fixture.root).saveRevision(draft)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outside.appendingPathComponent("escaped.md").path))
+    }
+
+    @Test func rejectsCommentWriteThroughSymlinkedReviewsDirectory() throws {
+        let fixture = try Fixture()
+        let outside = fixture.root.deletingLastPathComponent().appendingPathComponent("reviews-escape-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: fixture.plans.appendingPathComponent("reviews", isDirectory: true), withDestinationURL: outside)
+        let comment = PlanReviewComment(id: UUID(), planPath: "plan.md", planSHA256: "hash", anchor: nil, body: "comment", createdAt: .now)
+
+        #expect(throws: PlanArtifactError.outsidePlansDirectory) {
+            try PlanArtifactService(projectRoot: fixture.root).saveComment(comment)
+        }
+        #expect(!FileManager.default.fileExists(atPath: outside.appendingPathComponent("plan.md").path))
+    }
+
     private final class Fixture {
         let root: URL
         let plans: URL

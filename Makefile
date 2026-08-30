@@ -1,0 +1,36 @@
+SHELL := /bin/sh
+
+PROJECT_ROOT := $(CURDIR)
+SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
+
+.PHONY: test build build-release run lint format smoke-contract check package
+
+test:
+	swift test --disable-automatic-resolution
+
+build:
+	swift build --disable-automatic-resolution
+
+build-release:
+	swift build -c release --disable-automatic-resolution
+
+run:
+	Scripts/run-debug-app.sh
+
+lint:
+	@test -n "$(SWIFT_FORMAT)" || (echo "swift-format is required; install Xcode Command Line Tools or set SWIFT_FORMAT" >&2; exit 1)
+	"$(SWIFT_FORMAT)" lint --recursive Sources Tests
+
+format:
+	@test -n "$(SWIFT_FORMAT)" || (echo "swift-format is required; install Xcode Command Line Tools or set SWIFT_FORMAT" >&2; exit 1)
+	"$(SWIFT_FORMAT)" format --in-place --recursive Sources Tests
+
+smoke-contract:
+	sh -n Scripts/run-debug-app.sh Scripts/build-and-run-app.sh
+	swift test --disable-automatic-resolution --filter WorkflowAccessibilityIdentifierTests
+
+check: lint test smoke-contract build-release
+	git diff --check
+
+package:
+	Scripts/package-app.sh $(VERSION)

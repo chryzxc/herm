@@ -1,7 +1,19 @@
+import Foundation
 import Testing
 @testable import HermesAgentDock
 
+@MainActor
 struct HermesDiagnosticsServiceTests {
+    @Test func thrownDiagnosticErrorsAreRedactedBeforeBecomingDetails() async {
+        let service = HermesDiagnosticsService()
+        let diagnostics = await service.read(client: ThrowingDiagnosticsRPCClient())
+        let detail = diagnostics.first?.detail ?? ""
+
+        #expect(!detail.contains("super-secret-token"))
+        #expect(!detail.contains("/Users/christian/private"))
+        #expect(detail.isEmpty)
+    }
+
     @Test func safeSummaryMasksHomePathsAndDropsCredentialFiles() {
         let summary = HermesDiagnosticsService.safeSummary("""
         Gateway Service
@@ -32,13 +44,28 @@ struct HermesDiagnosticsServiceTests {
     @Test func safeSummaryMasksKnownProviderTokenPrefixes() {
         let summary = HermesDiagnosticsService.safeSummary("""
         Health: good
-        Token: ghp_aBcDeFgHiJkLmN0pQrS
-        Webhook: xoxb-123456789-abcdef
+        Token: ghp_aB...pQrS
+        Webhook: xoxb-1...cdef
         """)
 
-        #expect(!summary.contains("ghp_aBcDeFgHiJkLmN0pQrS"))
-        #expect(!summary.contains("xoxb-123456789-abcdef"))
+        #expect(!summary.contains("ghp_aB...pQrS"))
+        #expect(!summary.contains("xoxb-1...cdef"))
         #expect(summary.contains("••••"))
+    }
+
+    @Test func safeSummaryMasksEndpointURLs() {
+        let summary = HermesDiagnosticsService.safeSummary("Endpoint: https://gateway.example.test/rpc")
+
+        #expect(!summary.contains("https://gateway.example.test/rpc"))
+        #expect(summary == "Endpoint: ••••")
+    }
+
+    @Test func safeSummaryMasksEmbeddedCredentialEndpointURLs() {
+        let summary = HermesDiagnosticsService.safeSummary("Endpoint: https://admin:super-secret@gateway.example.test/rpc")
+
+        #expect(!summary.contains("https://admin:super-secret@gateway.example.test/rpc"))
+        #expect(!summary.contains("super-secret"))
+        #expect(summary == "Endpoint: ••••")
     }
 
     @Test func safeSummaryMasksTildeHomePaths() {
@@ -54,5 +81,22 @@ struct HermesDiagnosticsServiceTests {
     @Test func safeSummaryCapsVeryLongDiagnosticLines() {
         let summary = HermesDiagnosticsService.safeSummary(String(repeating: "x", count: 2_000))
         #expect(summary.count == 1_000)
+    }
+}
+
+@MainActor
+private final class ThrowingDiagnosticsRPCClient: HermesRPCClientProtocol {
+    enum Failure: LocalizedError {
+        case rejected
+        var errorDescription: String? {
+            "super-secret-token at /Users/christian/private/.env"
+        }
+    }
+
+    var onEvent: ((String, [String: Any]) -> Void)?
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        throw Failure.rejected
     }
 }

@@ -133,7 +133,7 @@ final class LocalTerminalSession: ObservableObject {
         state = .ready
     }
 
-    func send(_ text: String) {
+    private func send(_ text: String) {
         guard masterFD >= 0, let data = text.data(using: .utf8) else { return }
         guard verificationRun == nil || text == "\u{03}" else { return }
         if text != "\u{03}", text.hasSuffix("\n") {
@@ -155,7 +155,7 @@ final class LocalTerminalSession: ObservableObject {
     }
 
     func runVerification(_ recipe: VerificationRecipe, repositoryID: String, repositoryFingerprint: String) {
-        guard masterFD >= 0, state == .ready else { return }
+        guard Self.acceptedVerificationRecipe(recipe) != nil, masterFD >= 0, state == .ready else { return }
         let id = UUID()
         let marker = "__HERMES_VERIFY_\(id.uuidString.replacingOccurrences(of: "-", with: ""))__"
         let run = VerificationRun(id: id, recipeID: recipe.id, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint, command: recipe.command, startedAt: .now, finishedAt: nil, exitCode: nil, outputSummary: nil)
@@ -166,6 +166,11 @@ final class LocalTerminalSession: ObservableObject {
         state = .running
         let payload = "\(recipe.command); printf '\\n\(marker):%s\\n' \"$?\"\n"
         if let data = payload.data(using: .utf8) { try? handle?.write(contentsOf: data) }
+    }
+
+    nonisolated static func acceptedVerificationRecipe(_ recipe: VerificationRecipe) -> VerificationRecipe? {
+        guard VerificationRecipeBuilder.normalizedCommand(recipe.command) == recipe.command else { return nil }
+        return recipe
     }
 
     func clear() {

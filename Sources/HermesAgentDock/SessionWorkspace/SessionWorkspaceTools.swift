@@ -265,10 +265,7 @@ struct SessionTerminalView: View {
     let repositoryID: String?
     let repositoryFingerprint: String?
     @StateObject private var terminal = LocalTerminalSession()
-    @State private var command = ""
-    @State private var historyIndex: Int?
     @State private var followsOutput = true
-    @FocusState private var commandFocused: Bool
 
     private var canInterrupt: Bool {
         if case .running = terminal.state { return true }
@@ -355,6 +352,10 @@ struct SessionTerminalView: View {
                     .accessibilityLabel("Run verified repository check")
                     .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalRunVerification)
                     .disabled(terminal.state != .ready)
+                } else {
+                    Label("No verified repository recipes available", systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockWarning)
                 }
                 Circle()
                     .fill(statusColor)
@@ -411,44 +412,13 @@ struct SessionTerminalView: View {
                 }
             }
 
-            // Command Prompt Input Bar
             HStack(spacing: 8) {
-                Text("$")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                Image(systemName: "lock.shield")
                     .foregroundStyle(Color.dockSuccess)
-
-                TextField("", text: $command)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .focused($commandFocused)
-                    .lineLimit(1)
-                .accessibilityLabel("Terminal command")
-                .accessibilityHint("Press Return to run the command")
-                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalCommandInput)
-                    .onSubmit { submit() }
-                    .onKeyPress(.upArrow) {
-                        previousCommand()
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        nextCommand()
-                        return .handled
-                    }
-                Button { previousCommand() } label: {
-                    Image(systemName: "chevron.up")
-                }
-                .buttonStyle(.borderless)
-                .disabled(terminal.commandHistory.isEmpty)
-                .help("Previous command")
-                .accessibilityLabel("Previous command")
-                Button { nextCommand() } label: {
-                    Image(systemName: "chevron.down")
-                }
-                .buttonStyle(.borderless)
-                .disabled(terminal.commandHistory.isEmpty)
-                .help("Next command")
-                .accessibilityLabel("Next command")
+                Text("Verification recipes only · arbitrary terminal commands are unavailable")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+                Spacer()
                 Toggle("Follow output", isOn: $followsOutput)
                     .toggleStyle(.switch)
                     .labelsHidden()
@@ -463,39 +433,8 @@ struct SessionTerminalView: View {
         .task(id: projectPath) {
             guard let projectPath else { terminal.close(); return }
             terminal.start(directory: projectPath)
-            historyIndex = nil
-            commandFocused = true
         }
         .onDisappear { terminal.close() }
-    }
-
-    private func submit() {
-        guard !command.isEmpty else { return }
-        terminal.send(command + "\n")
-        command = ""
-        historyIndex = nil
-    }
-
-    private func previousCommand() {
-        guard !terminal.commandHistory.isEmpty else { return }
-        let next = min((historyIndex ?? terminal.commandHistory.count) - 1, terminal.commandHistory.count - 1)
-        guard next >= 0 else { return }
-        historyIndex = next
-        command = terminal.commandHistory[next]
-        commandFocused = true
-    }
-
-    private func nextCommand() {
-        guard let index = historyIndex else { return }
-        let next = index + 1
-        if next >= terminal.commandHistory.count {
-            historyIndex = nil
-            command = ""
-        } else {
-            historyIndex = next
-            command = terminal.commandHistory[next]
-        }
-        commandFocused = true
     }
 
     private var terminalTabBar: some View {
@@ -526,7 +465,6 @@ struct SessionTerminalView: View {
 
             Button {
                 terminal.start(directory: projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path)
-                commandFocused = true
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .medium))

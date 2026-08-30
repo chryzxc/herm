@@ -2,6 +2,34 @@ import Testing
 @testable import HermesAgentDock
 
 struct HermesRuntimeInspectorTests {
+    @Test func rejectsTruncatedHumanTableSkillNamesAsUnavailable() {
+        let output = "│ my-dev-team-orchest… │ enabled │"
+
+        #expect(HermesRuntimeInspector.parseEnabledSkills(output) == .unavailable(.unsupportedOutput))
+    }
+
+    @Test func rejectsUnrecognizedNonemptySkillOutputAsUnavailable() {
+        #expect(HermesRuntimeInspector.parseEnabledSkills("skills loaded successfully") == .unavailable(.unsupportedOutput))
+    }
+
+    @Test func rejectsCompleteLookingHumanTableSkillNamesAsUnavailable() {
+        let output = """
+        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+        ┃ Name                                 ┃ Status    ┃
+        ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╋━━━━━━━━━━━┫
+        ┃ my-dev-team-orchestrator             ┃ enabled   ┃
+        ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━┛
+        """
+
+        #expect(HermesRuntimeInspector.parseEnabledSkills(output) == .unavailable(.unsupportedOutput))
+    }
+
+    @Test func acceptsOnlyCompleteStableJSONSkillRecords() {
+        let output = #"[{"name":"my-dev-team-orchestrator","status":"enabled"}]"#
+
+        #expect(HermesRuntimeInspector.parseEnabledSkills(output) == .supported(["my-dev-team-orchestrator"]))
+    }
+
     @Test func reasoningVariantsMatchHermesSupportedLevels() {
         #expect(HermesReasoningVariant.allCases.map(\.rawValue) == [
             "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"

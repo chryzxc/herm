@@ -418,15 +418,23 @@ struct ControlCenterProjectTests {
 
         model.focus(sessionID: "session-1")
         model.refresh()
-        // The full suite schedules many MainActor projections concurrently;
-        // give this independently scheduled membership fetch time to finish.
-        try await Task.sleep(for: .seconds(1))
+        for _ in 0..<100_000 {
+            if model.project(forSessionID: "session-1")?.name == "/work/iboard-lokal" {
+                break
+            }
+            await Task.yield()
+        }
 
         #expect(model.project(forSessionID: "session-1")?.name == "/work/iboard-lokal")
 
         client.returnCompactTree = true
         model.refresh()
-        try await Task.sleep(for: .seconds(1))
+        for _ in 0..<100_000 {
+            if model.project(forSessionID: "session-1")?.name == "/work/iboard-lokal" {
+                break
+            }
+            await Task.yield()
+        }
 
         // A compact tree omits session rows; it is not evidence that an
         // already verified Hermes membership was removed.
@@ -445,7 +453,7 @@ struct ControlCenterProjectTests {
         #expect(journey == [HermesJourneyNode(id: "skill-1", label: "Planning", kind: "skill", category: "development", state: "active", useCount: 3)])
     }
 
-    @Test func cronCreationRetainsFailureAndSendsTrimmedSuccessfulInput() async {
+    @Test func cronCreationRetainsFailureAndPreservesHermesScheduleInput() async {
         let capability = CapabilityState(id: "rpc-scheduling", title: "Cron", detail: "Available", isAvailable: true, recovery: nil)
         let failingClient = CronCreationClient(shouldFail: true)
         let failingModel = ControlCenterModel(rpc: HermesControlRPC(client: failingClient), capabilities: [capability])
@@ -459,18 +467,18 @@ struct ControlCenterProjectTests {
 
         #expect(await succeedingModel.createCron(name: " Morning ", schedule: " 0 9 * * * ", prompt: " Review "))
         #expect(succeedingClient.createdParams?["name"] as? String == "Morning")
-        #expect(succeedingClient.createdParams?["schedule"] as? String == "0 9 * * *")
+        #expect(succeedingClient.createdParams?["schedule"] as? String == " 0 9 * * * ")
         #expect(succeedingClient.createdParams?["prompt"] as? String == "Review")
     }
 
-    @Test func cronCreationRejectsInvalidScheduleBeforeSending() async {
+    @Test func cronCreationDelegatesScheduleGrammarToHermes() async {
         let capability = CapabilityState(id: "rpc-scheduling", title: "Cron", detail: "Available", isAvailable: true, recovery: nil)
         let client = CronCreationClient(shouldFail: false)
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client), capabilities: [capability])
 
-        #expect(await model.createCron(name: "Bad", schedule: "not a schedule", prompt: "Review") == false)
-        #expect(client.createdParams == nil)
-        #expect(model.lastError?.contains("5-field") == true)
+        #expect(await model.createCron(name: "Bad", schedule: "not a schedule", prompt: "Review"))
+        #expect(client.createdParams?["schedule"] as? String == "not a schedule")
+        #expect(model.lastError == nil)
     }
 
     @Test func killProcessRequiresActivityCapabilityAndNeverCallsRPC() async {

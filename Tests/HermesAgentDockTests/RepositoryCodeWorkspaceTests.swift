@@ -3,6 +3,15 @@ import Testing
 @testable import HermesAgentDock
 
 struct RepositoryCodeWorkspaceTests {
+    @Test func changesBrowserDoesNotExposeAnEditorSaveCallback() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/HermesAgentDock/Repository/RepositoryChangesBrowser.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        #expect(!source.contains("onSave:"))
+        #expect(!source.contains("saveDocument"))
+    }
+
     @Test func parsesGitHubSSHAndHTTPSRemotes() {
         #expect(GitHubRemoteParser.parse("git@github.com:owner/repo.git")?.id == "owner/repo")
         #expect(GitHubRemoteParser.parse("https://github.com/owner/repo")?.webURL.absoluteString == "https://github.com/owner/repo")
@@ -16,6 +25,71 @@ struct RepositoryCodeWorkspaceTests {
         #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "Sources/App.swift")?.path == "/workspace/project/Sources/App.swift")
         #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "../outside.swift") == nil)
         #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "/outside.swift") == nil)
+    }
+
+    @Test func documentURLRejectsSymlinkEscapesOutsideRepository() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-root-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try "secret".write(to: outside.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+
+        #expect(RepositoryService.documentURL(repositoryPath: root.path, filePath: "linked/secret.txt") == nil)
+    }
+
+    @Test func documentURLRejectsInRepositorySymlinkComponents() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-in-repo-\(UUID().uuidString)")
+        let realDirectory = root.appendingPathComponent("real")
+        try FileManager.default.createDirectory(at: realDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "valid".write(to: realDirectory.appendingPathComponent("App.swift"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: realDirectory)
+
+        #expect(RepositoryService.documentURL(repositoryPath: root.path, filePath: "linked/App.swift") == nil)
+    }
+
+    @Test func projectExplorerDoesNotDescendIntoSymlinkedDirectories() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-project-root-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-project-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try "secret".write(to: outside.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
+        try "valid".write(to: root.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+
+        let entries = await RepositoryService.projectFiles(path: root.path)
+
+        #expect(!entries.contains { $0.path == "linked" })
+        #expect(!entries.contains { $0.path == "linked/secret.txt" })
+    }
+
+    @Test func loadAndSaveDocumentRejectSymlinkEscapes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-load-save-\(UUID().uuidString)")
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-load-save-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try "secret".write(to: outside.appendingPathComponent("secret.txt"), atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked"), withDestinationURL: outside)
+
+        let loaded = await RepositoryService.loadDocument(path: root.path, filePath: "linked/secret.txt")
+        let saved = await RepositoryService.saveDocument(path: root.path, filePath: "linked/secret.txt", contents: "overwritten")
+
+        #expect(loaded == nil)
+        #expect(saved == false)
+        #expect(try String(contentsOf: outside.appendingPathComponent("secret.txt"), encoding: .utf8) == "secret")
     }
 
     @Test func documentSizeLimitIsExplicit() {

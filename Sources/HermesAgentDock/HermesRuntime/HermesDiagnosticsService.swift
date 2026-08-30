@@ -13,7 +13,7 @@ final class HermesDiagnosticsService {
         var diagnostics: [HermesDiagnostic] = []
         for (id, command) in commands {
             do {
-                let result = try await client.request("shell.exec", params: ["command": command])
+                let result = try await client.request(HermesFeatureIDs.ID.shellExec.rawValue, params: ["command": command])
                 let succeeded = HermesCapabilityService.shellResultSucceeded(result)
                 let output = Self.safeSummary((result["stdout"] as? String) ?? (result["stderr"] as? String) ?? "")
                 diagnostics.append(HermesDiagnostic(
@@ -26,7 +26,7 @@ final class HermesDiagnosticsService {
                 diagnostics.append(HermesDiagnostic(
                     id: id,
                     title: Self.title(for: id),
-                    detail: error.localizedDescription,
+                    detail: Self.safeSummary(error.localizedDescription),
                     isAvailable: false
                 ))
             }
@@ -39,6 +39,7 @@ final class HermesDiagnosticsService {
         let lines = ansiFree
             .split(separator: "\n")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map { Self.scrubEndpointURL(in: $0) }
             .map { Self.scrubSecrets(in: $0) }
             .map { Self.scrubHomePath(in: $0) }
             .filter { line in
@@ -48,6 +49,13 @@ final class HermesDiagnosticsService {
             }
         let summary = lines.prefix(3).joined(separator: "  ·  ")
         return String(summary.prefix(1_000))
+    }
+
+    nonisolated private static func scrubEndpointURL(in line: String) -> String {
+        replace(in: line,
+                pattern: "\\b(?:https?|wss?)://[^\\s<>\\\"']+",
+                options: [.caseInsensitive],
+                template: "••••")
     }
 
     nonisolated private static func scrubSecrets(in line: String) -> String {

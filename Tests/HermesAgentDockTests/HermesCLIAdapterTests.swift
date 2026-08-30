@@ -67,6 +67,15 @@ struct HermesCLIAdapterTests {
         _ = try await adapter.kanbanAttachments(boardSlug: "client-board", taskID: "task-1")
         #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'attachments' '--json' 'task-1'")
     }
+
+    @Test func enabledSkillsUsesTheVerifiedDisplayOnlyContract() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.enabledSkillsList()
+
+        #expect(client.commands.last == "'hermes' 'skills' 'list' '--enabled-only'")
+    }
 }
 
 @MainActor

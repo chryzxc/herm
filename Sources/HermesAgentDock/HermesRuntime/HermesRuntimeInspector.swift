@@ -7,6 +7,7 @@ struct HermesRuntimeConfiguration: Sendable, Equatable {
     let maxTurns: String?
     let terminalTimeout: String?
     let skills: [String]
+    let skillsInventory: HermesSkillsInventory
     let mcpServers: [String]
     let plugins: [String]
 }
@@ -20,7 +21,7 @@ enum HermesRuntimeInspector {
         let configPath = output(arguments: ["config", "path"])
         let maxTurns = output(arguments: ["config", "get", "agent.max_turns"])
         let terminalTimeout = output(arguments: ["config", "get", "terminal.timeout"])
-        let skills = parseSkills(output(arguments: ["skills", "list", "--enabled-only"]) ?? "")
+        let skills = parseEnabledSkills(output(arguments: HermesFeatureContract.enabledSkillsCommand.words) ?? "")
         let mcpServers = parseMCPServers(output(arguments: ["mcp", "list"]) ?? "")
         let plugins = parsePlugins(output(arguments: ["plugins", "list", "--enabled", "--json"]) ?? "")
         return HermesRuntimeConfiguration(
@@ -29,7 +30,8 @@ enum HermesRuntimeInspector {
             configPath: nonEmpty(configPath),
             maxTurns: nonEmpty(maxTurns),
             terminalTimeout: nonEmpty(terminalTimeout),
-            skills: skills,
+            skills: skills.names,
+            skillsInventory: skills,
             mcpServers: mcpServers,
             plugins: plugins
         )
@@ -72,14 +74,46 @@ enum HermesRuntimeInspector {
         }
     }
 
-    private static func parseSkills(_ output: String) -> [String] {
-        output.split(separator: "\n").compactMap { line in
-            let columns = line.split(separator: "│", omittingEmptySubsequences: false)
-            guard columns.count >= 6 else { return nil }
-            let name = columns[1].trimmingCharacters(in: .whitespaces)
-            let status = columns[5].trimmingCharacters(in: .whitespaces).lowercased()
-            return !name.isEmpty && status == "enabled" ? name : nil
+    static func parseEnabledSkills(_ output: String) -> HermesSkillsInventory {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .unavailable(.emptyOutput) }
+        guard !trimmed.contains("…") && !trimmed.contains("...") else {
+            return .unavailable(.unsupportedOutput)
         }
+
+        // Keep compatibility with complete machine-readable records when a
+        // caller already has them, but do not infer a new CLI JSON contract.
+        if let data = trimmed.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) {
+            let rows: [[String: Any]]
+            let recognized: Bool
+            if let array = object as? [[String: Any]] {
+                rows = array
+                recognized = true
+            } else if let envelope = object as? [String: Any],
+                      let array = envelope["skills"] as? [[String: Any]] {
+                rows = array
+                recognized = true
+            } else {
+                rows = []
+                recognized = false
+            }
+            if recognized {
+                let names = rows.compactMap { row -> String? in
+                    guard let name = row["name"] as? String,
+                          let status = row["status"] as? String,
+                          status.lowercased() == "enabled",
+                          !name.isEmpty else { return nil }
+                    return name
+                }
+                return names.count == rows.count
+                    ? .supported(names)
+                    : .unavailable(.unsupportedOutput)
+            }
+        }
+
+        // Human-readable tables and other nonempty text are display-only.
+        return .unavailable(.unsupportedOutput)
     }
 
     private static func parseMCPServers(_ output: String) -> [String] {

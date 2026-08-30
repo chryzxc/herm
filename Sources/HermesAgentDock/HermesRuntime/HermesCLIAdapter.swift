@@ -121,6 +121,9 @@ final class HermesCLIAdapter {
     }
 
     func mcpList() async throws -> HermesCLIResult { try await run(["hermes", "mcp", "list"]) }
+    func enabledSkillsList() async throws -> HermesCLIResult {
+        try await run(HermesFeatureContract.enabledSkillsCommand.words)
+    }
     func mcpTest(name: String) async throws -> HermesCLIResult { try await run(["hermes", "mcp", "test", name]) }
     func journey() async throws -> HermesCLIResult { try await run(["hermes", "journey", "--json"]) }
     func sessionStats() async throws -> HermesCLIResult { try await run(["hermes", "sessions", "stats"]) }

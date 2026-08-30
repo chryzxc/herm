@@ -1280,44 +1280,52 @@ struct DockPopover: View {
                 if message.role == .user {
                     Spacer(minLength: 40)
                     VStack(alignment: .trailing, spacing: 4) {
-                        VStack(alignment: .trailing, spacing: 6) {
-                            if message.isSteering {
-                                Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Color.dockAccent)
-                            }
-                            ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
-                                Button {
-                                    selectedChatImage = ChatImagePreview(image: image)
-                                } label: {
-                                    Image(nsImage: image)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(maxWidth: 220, maxHeight: 220)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        // Attachments sit above the text surface instead of inside
+                        // the bubble, keeping media visually distinct from copy.
+                        if !message.images.isEmpty {
+                            VStack(alignment: .trailing, spacing: 6) {
+                                ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
+                                    Button {
+                                        selectedChatImage = ChatImagePreview(image: image)
+                                    } label: {
+                                        Image(nsImage: image)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(maxWidth: 220, maxHeight: 220)
+                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .help("Open image preview")
                                 }
-                                .buttonStyle(.plain)
-                                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .help("Open image preview")
-                            }
-                            if !message.text.isEmpty {
-                                Text(message.text)
-                                    .font(.system(size: 14))
-                                    .textSelection(.enabled)
                             }
                         }
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        // Use opaque slate-navy user message bubble background to eliminate eye strain
-                        .background(Color.dockUserMessageBubble)
-                        .clipShape(MessageBubbleShape(isUser: true))
-                        .overlay(
-                            MessageBubbleShape(isUser: true)
-                                .stroke(Color.dockBorderStrong, lineWidth: 0.5)
-                        )
-                        .shadow(color: Color.black.opacity(0.12), radius: 4)
+                        if message.isSteering || !message.text.isEmpty {
+                            VStack(alignment: .trailing, spacing: 6) {
+                                if message.isSteering {
+                                    Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(Color.dockAccent)
+                                }
+                                if !message.text.isEmpty {
+                                    Text(message.text)
+                                        .font(.system(size: 14))
+                                        .textSelection(.enabled)
+                                }
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            // Use opaque slate-navy user message bubble background to eliminate eye strain
+                            .background(Color.dockUserMessageBubble)
+                            .clipShape(MessageBubbleShape(isUser: true))
+                            .overlay(
+                                MessageBubbleShape(isUser: true)
+                                    .stroke(Color.dockBorderStrong, lineWidth: 0.5)
+                            )
+                            .shadow(color: Color.black.opacity(0.12), radius: 4)
+                        }
 
                         Text(HumanDateFormatting.timeOnly(message.timestamp))
                             .font(.system(size: 12))

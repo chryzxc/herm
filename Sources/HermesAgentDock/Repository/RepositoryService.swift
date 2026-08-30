@@ -402,6 +402,8 @@ enum RepositoryService {
                 for url in sortedChildren {
                     let name = url.lastPathComponent
                     if skippedTrees.contains(name) { continue }
+                    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                    if attributes?[.type] as? FileAttributeType == .typeSymbolicLink { continue }
                     let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
                     guard values?.isDirectory == true || values?.isRegularFile == true else { continue }
                     if !isRoot && entries.count >= maxProjectExplorerEntries { continue }
@@ -492,10 +494,13 @@ enum RepositoryService {
 
     static func documentURL(repositoryPath: String, filePath: String) -> URL? {
         guard isSafeRelativePath(filePath) else { return nil }
-        let root = URL(fileURLWithPath: repositoryPath).standardizedFileURL
+        let root = URL(fileURLWithPath: repositoryPath)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
         let file = root.appendingPathComponent(filePath).standardizedFileURL
+        let resolvedFile = file.resolvingSymlinksInPath().standardizedFileURL
         let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
-        guard file.path.hasPrefix(rootPath) else { return nil }
+        guard file.path.hasPrefix(rootPath), resolvedFile.path == file.path else { return nil }
         return file
     }
 

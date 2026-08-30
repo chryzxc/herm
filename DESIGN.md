@@ -178,6 +178,27 @@ events, and main-agent tool activity.
 - Change Review reads Git state only. It renders repository-relative paths and
   bounded diffs after explicit disclosure. Agent attribution requires an exact
   Hermes-reported written-file match; otherwise the change is unattributed.
+
+### Terminal and external workflow states
+
+- Session Terminal is a local, bounded PTY used only for repository-fact-derived
+  verification recipes, not a Hermes shell escape hatch. Show its current working
+  directory, lifecycle state, bounded output, and an explicit verification result
+  when available. Never render a free-form command field; show a clear unavailable
+  state when no valid recipe exists.
+- Verification recipes are presented only when repository facts produce an
+  allow-listed command. A missing project root or unsupported command is shown
+  as unavailable and cannot be executed.
+- Change Review is genuinely read-only: it renders repository-relative paths and
+  bounded diffs only. File editing and save callbacks belong exclusively to the
+  explicit Project Files editing surface.
+- GitHub is a read-mostly projection in the repository Changes context. Show
+  no remote, not loaded, unavailable, stale, and available states with text as
+  well as color. A stale refresh retains the last successful PR rows and
+  displays the local failure beside them.
+- PR rows show a deep link and at most the first normalized blocking reason;
+  provider payloads, credentials, terminal output, and source diffs are never
+  persisted as integration state.
 - Repository watchlists and last-seen state may persist only stable references
   and presentation preferences, never prompts, diffs, tool output, or copied
   Hermes records.
@@ -231,6 +252,30 @@ events, and main-agent tool activity.
 - Never optimistically mark an agent interrupted or a process stopped before
   Hermes confirms the transition.
 - Delegation pause is global and must be labelled as such.
+
+### Runtime parity and control authority
+
+- Hermes remains authoritative for the active model, reasoning settings, skills,
+  plugins, MCP configuration, sessions, and agent execution. Core may render
+  verified inventories and invoke only named, capability-gated controls.
+- Session model/reasoning changes are explicit Hermes mutations. Disable them
+  without an active session and while a prior change is pending; replace the
+  displayed configuration only from Hermes' response.
+- MCP reload is an explicit confirmed Hermes action when the installed runtime
+  advertises it. It affects subsequent runtime work, not the active transcript;
+  adding/removing/authenticating servers and third-party tool invocation remain
+  unavailable without upstream typed contracts.
+- Skills and plugins are inventory/readiness surfaces only in the current Dock.
+  Installation, enablement, disablement, removal, and configuration are
+  unavailable until Hermes supplies a verified contract. Do not imply that a
+  displayed inventory grants mutation authority.
+- `hermes update` is explicit and confirmed. It streams progress, never starts
+  automatically, and requires a Hermes restart before new sessions use the
+  updated agent. Recovery commands are copy-only unless a separately verified
+  action is exposed.
+- Any missing, malformed, denied, or unsupported capability is rendered as
+  unavailable; a previous valid projection may instead remain visible with a
+  stale marker. Never infer support from a Hermes version string alone.
 
 ## State ownership
 

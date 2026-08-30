@@ -88,6 +88,17 @@ enum ConversationActivityPhase: Equatable {
     case responding
 }
 
+enum InterruptState: Equatable {
+    case idle
+    case requesting
+    case failed(String)
+
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+}
+
 struct AgentEvent: Identifiable, Equatable, Codable {
     let id: UUID
     let type: String

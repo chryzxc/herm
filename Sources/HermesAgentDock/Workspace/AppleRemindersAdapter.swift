@@ -21,7 +21,7 @@ final class AppleRemindersAdapter {
     }
 
     func today() async throws -> [ReminderSummary] {
-        let result = try await client.request("shell.exec", params: [
+        let result = try await client.request(HermesFeatureIDs.ID.shellExec.rawValue, params: [
             "command": "remindctl today --json"
         ])
         guard Self.shellResultSucceeded(result) else {

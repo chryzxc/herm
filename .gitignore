@@ -5,3 +5,11 @@ DerivedData/
 dist/
 .DS_Store
 *.xcodeproj/xcshareddata/
+
+# Local agent/tool state. Promote individual fixtures explicitly if they need
+# to be versioned.
+.omo/
+.opencode/
+.hermes/*
+!.hermes/plans/
+!.hermes/plans/**

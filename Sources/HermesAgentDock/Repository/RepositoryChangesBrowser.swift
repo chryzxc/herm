@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Shared, popover-native source-control browser used by both global Changes
 /// and the session inspector. The repository remains the source of truth; this
-/// view only projects its current Git state and opens the inline editor.
+/// view only projects its current Git state and displays read-only diffs.
 struct RepositoryChangesBrowser: View {
     @ObservedObject var model: DockModel
     @ObservedObject var workflow: DeveloperWorkflowModel
@@ -12,32 +12,13 @@ struct RepositoryChangesBrowser: View {
 
     @State private var selectedDiff: RepositoryDiff?
     @State private var selectedFile: RepositoryFileChange?
-    @State private var document: RepositoryFileDocument?
+
     @State private var isLoading = false
     @State private var error: String?
 
     var body: some View {
         if let changes = workflow.changes, workflow.repository.isGitRepository {
-            if let document {
-                RepositoryCodeWorkspaceView(
-                    repositoryPath: workflow.repository.path,
-                    document: document,
-                    onClose: {
-                        self.document = nil
-                        selectedFile = nil
-                        selectedDiff = nil
-                    },
-                    onSave: { draft in
-                        guard await RepositoryService.saveDocument(path: workflow.repository.path, filePath: document.path, contents: draft) else { return false }
-                        await onRefresh()
-                        self.document = RepositoryFileDocument(path: document.path, contents: draft, byteCount: draft.lengthOfBytes(using: .utf8))
-                        if let selectedFile { loadDiff(for: selectedFile) }
-                        return true
-                    }
-                )
-            } else {
-                browser(changes)
-            }
+            browser(changes)
         } else if let projectPath {
             emptyState(
                 icon: workflow.isRefreshing ? "arrow.triangle.2.circlepath" : "folder",
@@ -233,7 +214,7 @@ struct RepositoryChangesBrowser: View {
                 } else {
                     Button(isLoading ? "Loading diff…" : "Load diff") { loadDiff(for: file) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent).disabled(isLoading)
                 }
-                Button("Open code workspace") { openWorkspace(file) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent).disabled(isLoading)
+
             }
             .font(.system(size: 12, design: .monospaced))
             .padding(.top, 5)
@@ -287,14 +268,6 @@ struct RepositoryChangesBrowser: View {
         Task { isLoading = true; selectedDiff = await RepositoryService.diff(path: workflow.repository.path, file: file); isLoading = false }
     }
 
-    private func openWorkspace(_ file: RepositoryFileChange) {
-        Task {
-            isLoading = true; error = nil
-            let resolvedDocument = await RepositoryService.loadDocument(path: workflow.repository.path, filePath: file.path)
-            guard let resolvedDocument else { isLoading = false; error = "This file cannot be opened inline. Only regular UTF-8 files up to 256 KB are supported."; return }
-            selectedFile = file; document = resolvedDocument; selectedDiff = nil; isLoading = false
-        }
-    }
 
     private func label(_ value: String) -> some View {
         Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.75).foregroundStyle(Color.dockSecondaryText)

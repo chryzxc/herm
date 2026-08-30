@@ -5,6 +5,10 @@ import UniformTypeIdentifiers
 import UserNotifications
 @MainActor
 final class DockModel: ObservableObject {
+    nonisolated static func safeUserDiagnostic(_ raw: String) -> String {
+        HermesDiagnosticsService.safeSummary(raw)
+    }
+
     @Published var status: HermesStatus = .idle
     @Published private(set) var isHermesConnected = false
     @Published var messages: [ChatMessage] = []
@@ -30,6 +34,7 @@ final class DockModel: ObservableObject {
     @Published private(set) var isRespondingToApproval = false
     @Published var debugLines: [String] = []
     @Published var sessions: [HermesSession] = []
+    @Published private(set) var sessionProjectionState: HermesProjectionState<[HermesSession]> = .empty
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
     @Published private(set) var deletingSessionID: String?
@@ -39,6 +44,7 @@ final class DockModel: ObservableObject {
     @Published var currentSessionTitle: String?
     @Published var reasoningState: ReasoningState?
     @Published private(set) var conversationActivityPhase: ConversationActivityPhase = .idle
+    @Published private(set) var interruptState: InterruptState = .idle
     @Published var isShowingReasoning = false
     @Published var activeToolCalls: [ActiveToolCall] = []
     @Published var hasUnreadResponse = false
@@ -51,6 +57,7 @@ final class DockModel: ObservableObject {
     @Published var runtimeConfiguration: HermesRuntimeConfiguration?
     @Published var isLoadingRuntimeConfiguration = false
     @Published var runtimeConfigurationError: String?
+    @Published private(set) var runtimeConfigurationProjectionState: HermesProjectionState<HermesRuntimeConfiguration> = .empty
     @Published var runtimeModelOptions: [HermesModelOption] = []
     @Published private(set) var sessionModelOptionID: String?
     /// The canonical session response can provide a model before the optional
@@ -70,6 +77,8 @@ final class DockModel: ObservableObject {
     @Published private(set) var scrollToLatestMessageRequest = 0
 
     private let gateway = HermesGateway()
+    private let sessionRPCClient: HermesRPCClientProtocol
+    private let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
     @Published private(set) var sessionID: String?
     private var sessionStorageID: String?
@@ -107,6 +116,8 @@ final class DockModel: ObservableObject {
     private let agentStateStore: SessionAgentStateStore
     private let agentStateWriter: SessionAgentStateWriter
     private var sessionResumeGeneration = 0
+    private var restoreGeneration = 0
+    private var interruptGeneration = 0
     private var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
     private var voiceConversationGeneration = 0
     private var hasShutDown = false
@@ -175,7 +186,8 @@ final class DockModel: ObservableObject {
         sessionAgentStateFileURL: URL? = nil,
         defaults: UserDefaults = .standard,
         approvalSoundPlayer: @escaping () -> Void = { NSSound.beep() },
-        initialSessionID: String? = nil
+        initialSessionID: String? = nil,
+        rpcClient: HermesRPCClientProtocol? = nil
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
         self.agentStateStore = agentStateStore
@@ -185,6 +197,8 @@ final class DockModel: ObservableObject {
         self.playApprovalSound = approvalSoundPlayer
         self.sessionID = initialSessionID
         self.sessionStorageID = initialSessionID
+        self.interruptRPC = HermesControlRPC(client: rpcClient ?? gateway)
+        self.sessionRPCClient = rpcClient ?? gateway
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
         DebugLog.onLine = { [weak self] line in
             guard let self else { return }
@@ -246,7 +260,7 @@ final class DockModel: ObservableObject {
                     let imageData = try Data(contentsOf: attachedImage.fileURL)
                     let base64 = imageData.base64EncodedString()
                     let attachResult = try await gateway.request(
-                        "image.attach_bytes",
+                        HermesFeatureIDs.ID.imageAttachBytes.rawValue,
                         params: [
                             "session_id": promptSessionID,
                             "content_base64": base64,
@@ -263,13 +277,13 @@ final class DockModel: ObservableObject {
                     cleanupImageAttachment(attachedImage)
                 }
 
-                _ = try await gateway.request("prompt.submit", params: ["session_id": promptSessionID, "text": text])
+                _ = try await gateway.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": promptSessionID, "text": text])
                 pendingImages.removeAll { attachedImage in
                     attachedImages.contains { $0.id == attachedImage.id }
                 }
                 DebugLog.write("model: prompt submitted")
             } catch {
-                DebugLog.write("model: send failed: \(error.localizedDescription)")
+                DebugLog.write("model: send failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 cleanupImageAttachments(attachedImages)
                 pendingImages.removeAll { pendingImage in
                     attachedImages.contains { $0.id == pendingImage.id }
@@ -287,8 +301,8 @@ final class DockModel: ObservableObject {
                     transportFailure = nsError.domain == NSURLErrorDomain || nsError.domain == NSPOSIXErrorDomain
                 }
                 let message = transportFailure
-                    ? "I couldn’t connect to Hermes: \(error.localizedDescription)"
-                    : "Hermes couldn’t process this request: \(error.localizedDescription)"
+                    ? "I couldn’t connect to Hermes: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                    : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
                 messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
                 status = transportFailure ? .offline : .idle
                 isSending = false
@@ -317,7 +331,7 @@ final class DockModel: ObservableObject {
             }
             do {
                 let result = try await gateway.request(
-                    "session.steer",
+                    HermesFeatureIDs.ID.sessionSteer.rawValue,
                     params: ["session_id": steeringSessionID, "text": text]
                 )
                 guard self.sessionResumeGeneration == steeringGeneration,
@@ -336,8 +350,8 @@ final class DockModel: ObservableObject {
                 ))
                 DebugLog.write("model: steering guidance queued")
             } catch {
-                steeringError = error.localizedDescription
-                DebugLog.write("model: steering failed: \(error.localizedDescription)")
+                steeringError = Self.safeUserDiagnostic(error.localizedDescription)
+                DebugLog.write("model: steering failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -418,7 +432,7 @@ final class DockModel: ObservableObject {
             try png.write(to: tempURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
         } catch {
-            DebugLog.write("model: failed to write image temp file: \(error.localizedDescription)")
+            DebugLog.write("model: failed to write image temp file: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
         pendingImages.append(ImageAttachment(image: nsImage, fileURL: tempURL))
@@ -454,19 +468,27 @@ final class DockModel: ObservableObject {
         currentSessionTitle = trimmed
     }
 
-    func loadSessions() {
-        guard !isLoadingSessions else { return }
+    @discardableResult
+    func loadSessions() -> Task<Void, Never>? {
+        guard !isLoadingSessions else { return nil }
         isLoadingSessions = true
-        Task {
+        let previousProjectionState = sessionProjectionState
+        sessionProjectionState = .loading
+        return Task {
             defer { isLoadingSessions = false }
             do {
-                try await gateway.connect()
-                let result = try await gateway.request("session.list", params: ["limit": 50])
-                let rows = result["sessions"] as? [[String: Any]] ?? []
-                sessions = rows.compactMap(Self.parseSession)
+                try await sessionRPCClient.connect()
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: ["limit": 50])
+                guard let rawSessions = result["sessions"] as? [[String: Any]] else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                let loaded = rawSessions.compactMap(Self.parseSession)
+                sessions = loaded
+                sessionProjectionState = loaded.isEmpty ? .empty : .ready(loaded)
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
             } catch {
-                DebugLog.write("model: session list failed: \(error.localizedDescription)")
+                sessionProjectionState = Self.failedOrStale(previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
+                DebugLog.write("model: session list failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -483,12 +505,12 @@ final class DockModel: ObservableObject {
             defer { deletingSessionID = nil }
             do {
                 try await gateway.connect()
-                _ = try await gateway.request("session.delete", params: ["session_id": session.id])
+                _ = try await gateway.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: ["session_id": session.id])
                 sessions.removeAll { $0.id == session.id }
                 DebugLog.write("model: deleted saved session \(session.id)")
             } catch {
-                sessionDeletionError = "Could not delete the session: \(error.localizedDescription)"
-                DebugLog.write("model: session delete failed: \(error.localizedDescription)")
+                sessionDeletionError = "Could not delete the session: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                DebugLog.write("model: session delete failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -497,30 +519,46 @@ final class DockModel: ObservableObject {
         sessionDeletionError = nil
     }
 
-    func restoreLatestSessionIfNeeded() {
-        guard !didRestoreLatestSession else { return }
+    @discardableResult
+    func restoreLatestSessionIfNeeded() -> Task<Void, Never>? {
+        guard !didRestoreLatestSession else { return nil }
         didRestoreLatestSession = true
+        restoreGeneration &+= 1
+        let generation = restoreGeneration
         isRestoringSession = true
-        Task {
+        let previousProjectionState = sessionProjectionState
+        sessionProjectionState = .loading
+        return Task {
             defer { isRestoringSession = false }
             do {
-                try await gateway.connect()
+                try await sessionRPCClient.connect()
                 if let savedSessionID = defaults.string(forKey: lastSessionIDKey),
                    !savedSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                    await resumeSession(HermesSession(id: savedSessionID, title: "", preview: "", startedAt: nil, messageCount: 0, source: ""), reportFailure: false) {
                     return
                 }
-                let result = try await gateway.request("session.list", params: ["limit": 1])
-                let latest = (result["sessions"] as? [[String: Any]] ?? []).compactMap(Self.parseSession).first
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: ["limit": 1])
+                guard generation == restoreGeneration else { return }
+                guard let rawSessions = result["sessions"] as? [[String: Any]] else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                let latest = rawSessions.compactMap(Self.parseSession).first
+                guard generation == restoreGeneration else { return }
                 guard let latest else {
+                    sessionProjectionState = .empty
                     defaults.removeObject(forKey: lastSessionIDKey)
                     DebugLog.write("model: no saved session to restore")
                     return
                 }
+                guard generation == restoreGeneration else { return }
                 sessions = [latest]
+                sessionProjectionState = .ready([latest])
+                guard generation == restoreGeneration else { return }
                 _ = await resumeSession(latest, reportFailure: true)
             } catch {
-                DebugLog.write("model: latest session restore failed: \(error.localizedDescription)")
+                guard generation == restoreGeneration else { return }
+                sessionProjectionState = Self.failedOrStale(previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
+                DebugLog.write("model: latest session restore failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -537,6 +575,7 @@ final class DockModel: ObservableObject {
         }
         resetComposerForSessionChange()
         sessionResumeGeneration &+= 1
+        interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
         sessionID = session.id
         newSessionCreationAuthorized = false
@@ -550,6 +589,7 @@ final class DockModel: ObservableObject {
         isShowingSessions = false
         isSending = false
         status = .working
+        interruptState = .idle
         reasoningState = nil
         reasoningFlushTask?.cancel()
         reasoningFlushTask = nil
@@ -558,8 +598,8 @@ final class DockModel: ObservableObject {
         streamingMessageIsVisionNotice = false
         currentSessionTitle = session.displayTitle
         do {
-            try await gateway.connect()
-            let result = try await gateway.request("session.resume", params: [
+            try await sessionRPCClient.connect()
+            let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: [
                 "session_id": session.id,
                 "source": "hermes-agent-dock"
             ])
@@ -583,12 +623,13 @@ final class DockModel: ObservableObject {
             return true
         } catch {
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+            sessionProjectionState = Self.failedOrStale(sessionProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
             if reportFailure {
                 status = .offline
-                messages = [ChatMessage(role: .hermes, text: "I couldn't load that conversation: \(error.localizedDescription)", modelName: currentModelName)]
+                messages = [ChatMessage(role: .hermes, text: "I couldn't load that conversation: \(Self.safeUserDiagnostic(error.localizedDescription))", modelName: currentModelName)]
                 scrollToLatestMessageRequest &+= 1
             }
-            DebugLog.write("model: session resume failed: \(error.localizedDescription)")
+            DebugLog.write("model: session resume failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
     }
@@ -608,6 +649,8 @@ final class DockModel: ObservableObject {
         }
         resetComposerForSessionChange()
         sessionResumeGeneration &+= 1
+        restoreGeneration &+= 1
+        interruptGeneration &+= 1
         sessionID = nil
         sessionStorageID = nil
         newSessionCreationAuthorized = true
@@ -636,6 +679,7 @@ final class DockModel: ObservableObject {
         streamingMessageIsVisionNotice = false
         isSending = false
         status = .idle
+        interruptState = .idle
         isShowingSessions = false
         activeSubagents = []
         sessionAgents = []
@@ -648,11 +692,20 @@ final class DockModel: ObservableObject {
     /// first prompt is typed.
     func startNewChat(in projectPath: String) async {
         newChat(projectPath: projectPath)
+        sessionProjectionState = .loading
         do {
-            try await gateway.connect()
+            try await sessionRPCClient.connect()
             _ = try await createAuthorizedSession(source: "hermes-agent-dock")
         } catch {
-            DebugLog.write("model: project chat creation failed: \(error.localizedDescription)")
+            sessionProjectionState = .failed(safeMessage: "Hermes could not start a new session. Try again.")
+            DebugLog.write("model: project chat creation failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+        }
+    }
+
+    static func failedOrStale<Value: Equatable & Sendable>(_ state: HermesProjectionState<Value>, safeMessage: String) -> HermesProjectionState<Value> {
+        switch state {
+        case .ready(let value), .stale(let value, _): return .stale(value, safeMessage: safeMessage)
+        default: return .failed(safeMessage: safeMessage)
         }
     }
 
@@ -750,21 +803,25 @@ final class DockModel: ObservableObject {
         isPopoverVisible = false
     }
 
-    func stop() {
-        if let sessionID { Task { _ = try? await gateway.request("session.interrupt", params: ["session_id": sessionID]) } }
-        commitStreamingMessage()
-        streamingMessageID = nil
-        streamingMessageSessionID = nil
-        streamingResponseStartedAt = nil
-        status = .idle
-        isSending = false
-        isSteering = false
-        steeringError = nil
-        // Interrupting also releases a pending clarification so the composer
-        // returns to normal prompting instead of staying stuck on the question.
-        clarificationQuestion = nil
-        clarificationChoices = []
-        conversationActivityPhase = .idle
+    @discardableResult
+    func stop() -> Task<Void, Never>? {
+        guard interruptState != .requesting, let sessionID else { return nil }
+        interruptGeneration &+= 1
+        let requestGeneration = interruptGeneration
+        interruptState = .requesting
+        return Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await interruptRPC.interrupt(sessionID: sessionID)
+                // Hermes' response only acknowledges the request. The local
+                // turn remains authoritative until a terminal lifecycle event.
+            } catch {
+                guard self.interruptGeneration == requestGeneration,
+                      self.sessionID == sessionID else { return }
+                interruptState = .failed("Hermes could not be interrupted. Try again.")
+                DebugLog.write("model: interrupt failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            }
+        }
     }
 
     /// The turn ended after Hermes accepted the guidance, so the queued steer
@@ -790,8 +847,8 @@ final class DockModel: ObservableObject {
     /// not create a second backend or bypass the normal approval/event stream.
     var controlRPCClient: HermesRPCClientProtocol { gateway }
 
-    func requestControl(_ method: String, params: [String: Any]) async throws -> [String: Any] {
-        try await gateway.request(method, params: params)
+    func requestControl(_ method: HermesFeatureIDs.ID, params: [String: Any]) async throws -> [String: Any] {
+        try await gateway.request(method.rawValue, params: params)
     }
 
     func registerBackgroundTask(id: String, prompt: String, parentSessionID: String, kind: HermesBackgroundTaskKind = .general) {
@@ -813,7 +870,7 @@ final class DockModel: ObservableObject {
             _ = try await createAuthorizedSession(source: "hermes-agent-dock-control")
         }
         guard let sessionID else { throw HermesGateway.GatewayError.malformedResponse }
-        _ = try await gateway.request("prompt.submit", params: ["session_id": sessionID, "text": text])
+        _ = try await gateway.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": sessionID, "text": text])
     }
 
     /// Starts Hermes' native VAD/TTS voice loop. Hermes owns the microphone,
@@ -843,19 +900,21 @@ final class DockModel: ObservableObject {
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
                 guard voiceConversationGeneration == generation else { return }
 
-                let requirements = try await gateway.request("voice.toggle", params: ["action": "status"])
+                let requirements = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "status"])
                 guard voiceConversationGeneration == generation else { return }
                 guard (requirements["available"] as? Bool) != false,
                       (requirements["stt_available"] as? Bool) != false else {
-                    let detail = (requirements["details"] as? String) ?? "Hermes voice dependencies are unavailable."
+                    let detail = Self.safeUserDiagnostic(
+                        (requirements["details"] as? String) ?? "Hermes voice dependencies are unavailable."
+                    )
                     voiceState = .localFallback(detail)
                     return
                 }
 
-                let enabled = try await gateway.request("voice.toggle", params: ["action": "on"])
+                let enabled = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "on"])
                 guard voiceConversationGeneration == generation else { return }
                 if (enabled["tts"] as? Bool) != true {
-                    _ = try await gateway.request("voice.toggle", params: ["action": "tts"])
+                    _ = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
                 }
                 guard voiceConversationGeneration == generation else { return }
                 voiceTelemetry.beginListening()
@@ -863,8 +922,8 @@ final class DockModel: ObservableObject {
                 armNativeVoiceCapture()
             } catch {
                 guard voiceConversationGeneration == generation else { return }
-                DebugLog.write("voice: Hermes native voice unavailable: \(error.localizedDescription)")
-                voiceState = .localFallback(error.localizedDescription)
+                DebugLog.write("voice: Hermes native voice unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                voiceState = .localFallback(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -896,7 +955,7 @@ final class DockModel: ObservableObject {
         if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
             createParams["cwd"] = newSessionProjectPath
         }
-        let result = try await gateway.request("session.create", params: createParams)
+        let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
         guard let createdSessionID = result["session_id"] as? String,
               !createdSessionID.isEmpty else {
             throw HermesGateway.GatewayError.malformedResponse
@@ -926,9 +985,9 @@ final class DockModel: ObservableObject {
         guard wasNative else { return }
         Task {
             if let sessionID {
-                _ = try? await gateway.request("voice.record", params: ["action": "stop", "session_id": sessionID])
+                _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
             }
-            _ = try? await gateway.request("voice.toggle", params: ["action": "off"])
+            _ = try? await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "off"])
         }
     }
 
@@ -939,10 +998,10 @@ final class DockModel: ObservableObject {
         Task {
             defer { isRespondingToApproval = false }
             do {
-                _ = try await gateway.request("approval.respond", params: ["session_id": sessionID, "choice": choice])
+                _ = try await gateway.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: ["session_id": sessionID, "choice": choice])
                 resolveApproval(for: sessionID)
             } catch {
-                DebugLog.write("model: approval response failed: \(error.localizedDescription)")
+                DebugLog.write("model: approval response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -959,7 +1018,7 @@ final class DockModel: ObservableObject {
         Task {
             defer { isRespondingToClarification = false }
             do {
-                _ = try await gateway.request("clarify.respond", params: [
+                _ = try await gateway.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
                     "session_id": sessionID,
                     "response": trimmed
                 ])
@@ -969,7 +1028,7 @@ final class DockModel: ObservableObject {
                 status = .needsClarification
                 isSending = false
                 conversationActivityPhase = .idle
-                DebugLog.write("model: clarification response failed: \(error.localizedDescription)")
+                DebugLog.write("model: clarification response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -1117,6 +1176,16 @@ final class DockModel: ObservableObject {
             streamingMessageChunks.append(delta)
             scheduleStreamingMessageFlush()
         case "message.complete":
+            let wasInterrupting = interruptState == .requesting
+            interruptState = .idle
+            if wasInterrupting {
+                approvalTitle = nil
+                approvalText = nil
+                clarificationQuestion = nil
+                clarificationChoices = []
+                isSteering = false
+                steeringError = nil
+            }
             commitStreamingMessage()
             // A few Hermes adapters omit the final tool-result identifier. The
             // response boundary is authoritative, so do not leave those calls
@@ -1178,7 +1247,9 @@ final class DockModel: ObservableObject {
         case "error":
             commitStreamingMessage()
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
-            let text = Self.isVisionUnsupportedError(raw) ? Self.visionUnsupportedNotice : raw
+            let text = Self.isVisionUnsupportedError(raw)
+                ? Self.visionUnsupportedNotice
+                : Self.safeUserDiagnostic(raw)
             messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
             status = .idle
             conversationActivityPhase = .idle
@@ -1476,7 +1547,7 @@ final class DockModel: ObservableObject {
 
         Task {
             do {
-                let recording = try await gateway.request("voice.record", params: ["action": "start", "session_id": sessionID])
+                let recording = try await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "start", "session_id": sessionID])
                 guard nativeVoiceCapture.isCurrent(generation: captureGeneration),
                       voiceState.isNativeConversationActive else { return }
                 if (recording["status"] as? String) == "busy" {
@@ -1499,7 +1570,7 @@ final class DockModel: ObservableObject {
                     try? await Task.sleep(for: .milliseconds(300))
                     armNativeVoiceCapture(generation: captureGeneration)
                 } else {
-                    voiceState = .localFallback("Hermes could not start the next voice capture: \(error.localizedDescription)")
+                    voiceState = .localFallback("Hermes could not start the next voice capture: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 }
             }
         }
@@ -1541,11 +1612,11 @@ final class DockModel: ObservableObject {
         Task {
             do {
                 _ = try await gateway.request(
-                    "prompt.submit",
+                    HermesFeatureIDs.ID.promptSubmit.rawValue,
                     params: ["session_id": sessionID, "text": text]
                 )
             } catch {
-                messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(error.localizedDescription)", modelName: currentModelName))
+                messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(Self.safeUserDiagnostic(error.localizedDescription))", modelName: currentModelName))
                 status = .offline
                 isSending = false
                 nativeVoiceCapture.reset()
@@ -1588,7 +1659,7 @@ final class DockModel: ObservableObject {
         isRefreshingDelegationStatus = true
         Task {
             do {
-                let result = try await gateway.request("delegation.status", params: [:])
+                let result = try await gateway.request(HermesFeatureIDs.ID.delegationStatus.rawValue, params: [:])
                 guard sessionID == expectedSessionID else { return }
                 let rows = result["active"] as? [[String: Any]] ?? []
                 let projections = rows.compactMap { row -> (row: [String: Any], agent: HermesSubagent)? in
@@ -1615,7 +1686,7 @@ final class DockModel: ObservableObject {
                 )
                 cacheCurrentAgentState()
             } catch {
-                DebugLog.write("workspace: delegation status failed: \(error.localizedDescription)")
+                DebugLog.write("workspace: delegation status failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
             self.isRefreshingDelegationStatus = false
             if self.delegationRefreshRequested {
@@ -2268,14 +2339,25 @@ final class DockModel: ObservableObject {
         guard !isLoadingRuntimeConfiguration else { return }
         isLoadingRuntimeConfiguration = true
         runtimeConfigurationError = nil
+        let previousProjectionState = runtimeConfigurationProjectionState
+        runtimeConfigurationProjectionState = .loading
         Task.detached { [weak self] in
             let configuration = HermesRuntimeInspector.read()
             await MainActor.run {
                 guard let self else { return }
-                self.runtimeConfiguration = configuration
+                if Self.hasRuntimeConfigurationData(configuration) {
+                    self.runtimeConfiguration = configuration
+                    self.runtimeConfigurationProjectionState = .ready(configuration)
+                } else {
+                    self.runtimeConfigurationProjectionState = Self.failedOrStale(previousProjectionState, safeMessage: "Hermes runtime inspection is unavailable. Try refreshing.")
+                }
                 self.isLoadingRuntimeConfiguration = false
             }
         }
+    }
+
+    private static func hasRuntimeConfigurationData(_ configuration: HermesRuntimeConfiguration) -> Bool {
+        configuration.model != nil || configuration.provider != nil || configuration.configPath != nil || configuration.maxTurns != nil || configuration.terminalTimeout != nil || !configuration.skills.isEmpty || !configuration.mcpServers.isEmpty || !configuration.plugins.isEmpty
     }
 
     func refreshRuntimeModelOptions(sessionID: String? = nil) {
@@ -2283,7 +2365,7 @@ final class DockModel: ObservableObject {
             do {
                 var params: [String: Any] = ["explicit_only": true]
                 if let sessionID, !sessionID.isEmpty { params["session_id"] = sessionID }
-                let result = try await gateway.request("model.options", params: params)
+                let result = try await gateway.request(HermesFeatureIDs.ID.modelOptions.rawValue, params: params)
                 guard sessionID == nil || sessionID == self.sessionID else { return }
                 let providers = result["providers"] as? [[String: Any]] ?? []
                 runtimeModelOptions = providers.flatMap { provider -> [HermesModelOption] in
@@ -2316,7 +2398,7 @@ final class DockModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await gateway.request("config.get", params: [
+                let result = try await gateway.request(HermesFeatureIDs.ID.configGet.rawValue, params: [
                     "key": "reasoning",
                     "session_id": sessionID
                 ])
@@ -2324,7 +2406,7 @@ final class DockModel: ObservableObject {
                       let value = result["value"] as? String else { return }
                 self.sessionReasoningVariant = HermesReasoningVariant(rawValue: value.lowercased())
             } catch {
-                DebugLog.write("model: session reasoning lookup failed: \(error.localizedDescription)")
+                DebugLog.write("model: session reasoning lookup failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -2335,11 +2417,11 @@ final class DockModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await gateway.request("config.get", params: ["key": "reasoning"])
+                let result = try await gateway.request(HermesFeatureIDs.ID.configGet.rawValue, params: ["key": "reasoning"])
                 guard let value = result["value"] as? String else { return }
                 defaultReasoningVariant = HermesReasoningVariant(rawValue: value.lowercased())
             } catch {
-                DebugLog.write("model: default reasoning lookup failed: \(error.localizedDescription)")
+                DebugLog.write("model: default reasoning lookup failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
     }
@@ -2354,12 +2436,12 @@ final class DockModel: ObservableObject {
             guard let self else { return }
             var updateError: String?
             do {
-                let result = try await gateway.request("config.set", params: request.parameters)
+                let result = try await gateway.request(HermesFeatureIDs.ID.configSet.rawValue, params: request.parameters)
                 if result["deferred"] as? Bool == true {
                     DebugLog.write("model: provider/model switch queued for the next turn")
                 }
             } catch {
-                updateError = "Hermes could not apply the provider/model change: \(error.localizedDescription)"
+                updateError = "Hermes could not apply the provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
 
             // The gateway is the sole writer. Re-read the persisted projection
@@ -2382,7 +2464,7 @@ final class DockModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await gateway.request("config.set", params: request.parameters)
+                let result = try await gateway.request(HermesFeatureIDs.ID.configSet.rawValue, params: request.parameters)
                 sessionModelOptionID = option.id
                 sessionModelValue = option.displayName
                 currentModelName = option.model
@@ -2390,7 +2472,7 @@ final class DockModel: ObservableObject {
                     DebugLog.write("model: session provider/model switch queued for the next turn")
                 }
             } catch {
-                runtimeConfigurationError = "Hermes could not apply the session provider/model change: \(error.localizedDescription)"
+                runtimeConfigurationError = "Hermes could not apply the session provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
             isUpdatingSessionModel = false
         }
@@ -2405,7 +2487,7 @@ final class DockModel: ObservableObject {
             guard let self else { return }
             defer { self.isUpdatingSessionReasoning = false }
             do {
-                _ = try await gateway.request("config.set", params: [
+                _ = try await gateway.request(HermesFeatureIDs.ID.configSet.rawValue, params: [
                     "key": "reasoning",
                     "value": variant.rawValue,
                     "session_id": sessionID
@@ -2414,7 +2496,7 @@ final class DockModel: ObservableObject {
                 self.sessionReasoningVariant = variant
                 DebugLog.write("model: session reasoning set to \(variant.rawValue)")
             } catch {
-                self.runtimeConfigurationError = "Hermes could not apply the session reasoning change: \(error.localizedDescription)"
+                self.runtimeConfigurationError = "Hermes could not apply the session reasoning change: \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
         }
     }
@@ -2430,14 +2512,14 @@ final class DockModel: ObservableObject {
             guard let self else { return }
             defer { self.isUpdatingDefaultReasoning = false }
             do {
-                _ = try await gateway.request("config.set", params: [
+                _ = try await gateway.request(HermesFeatureIDs.ID.configSet.rawValue, params: [
                     "key": "reasoning",
                     "value": variant.rawValue
                 ])
                 self.defaultReasoningVariant = variant
                 DebugLog.write("model: default reasoning set to \(variant.rawValue)")
             } catch {
-                self.runtimeConfigurationError = "Hermes could not apply the default thinking depth: \(error.localizedDescription)"
+                self.runtimeConfigurationError = "Hermes could not apply the default thinking depth: \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
         }
     }

@@ -91,7 +91,7 @@ struct PlanArtifactService {
     @discardableResult
     func saveRevision(_ draft: PlanRevisionDraft) throws -> URL {
         guard !draft.parentPlan.isEmpty, !draft.parentSHA256.isEmpty else { throw PlanArtifactError.writeFailed("Missing parent provenance") }
-        let target = try safeURL(for: draft.relativePath, allowReviews: false)
+        let target = try validatedWriteURL(try safeURL(for: draft.relativePath, allowReviews: false))
         guard target.pathExtension.lowercased() == "md" else { throw PlanArtifactError.unsupportedFile }
         guard !fileManager.fileExists(atPath: target.path) else { throw PlanArtifactError.writeFailed("Revision already exists") }
         do {
@@ -128,10 +128,47 @@ struct PlanArtifactService {
         guard let documentPath = try? safeURL(for: planPath, allowReviews: false) else { throw PlanArtifactError.invalidPath }
         let digest = planPath.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ".md", with: "")
         let review = plansRoot.appendingPathComponent("reviews/\(digest).md").standardizedFileURL
-        guard isContained(review) else { throw PlanArtifactError.outsidePlansDirectory }
-        if create { try fileManager.createDirectory(at: review.deletingLastPathComponent(), withIntermediateDirectories: true) }
+        let resolvedReview = create ? try validatedWriteURL(review) : review
+        if create { try fileManager.createDirectory(at: resolvedReview.deletingLastPathComponent(), withIntermediateDirectories: true) }
         _ = documentPath
-        return review
+        return resolvedReview
+    }
+
+    private func validatedWriteURL(_ url: URL) throws -> URL {
+        guard fileManager.fileExists(atPath: plansRoot.path) else {
+            throw PlanArtifactError.missingPlansDirectory
+        }
+
+        let lexicalURL = url.standardizedFileURL
+        guard isContained(lexicalURL) else { throw PlanArtifactError.outsidePlansDirectory }
+
+        let canonicalRoot = plansRoot.resolvingSymlinksInPath().standardizedFileURL
+        let canonicalURL = lexicalURL.resolvingSymlinksInPath().standardizedFileURL
+        guard isContained(canonicalURL, within: canonicalRoot), canonicalURL == lexicalURL,
+              !hasSymlinkInExistingPath(from: plansRoot, to: lexicalURL) else {
+            throw PlanArtifactError.outsidePlansDirectory
+        }
+        return lexicalURL
+    }
+
+    private func hasSymlinkInExistingPath(from root: URL, to destination: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let destinationPath = destination.standardizedFileURL.path
+        guard destinationPath == rootPath || destinationPath.hasPrefix(rootPath + "/") else { return true }
+
+        var currentPath = rootPath
+        let suffix = String(destinationPath.dropFirst(rootPath.count)).split(separator: "/", omittingEmptySubsequences: true)
+        for component in suffix {
+            currentPath += "/" + component
+            guard fileManager.fileExists(atPath: currentPath) else { break }
+            if (try? fileManager.destinationOfSymbolicLink(atPath: currentPath)) != nil { return true }
+        }
+        return false
+    }
+
+    private func isContained(_ url: URL, within root: URL) -> Bool {
+        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        return url.path == root.path || url.path.hasPrefix(rootPath)
     }
 
     private func isContained(_ url: URL) -> Bool {

@@ -106,7 +106,15 @@ final class HermesGateway: NSObject {
     }
 
     static func webSocketRequest(port: Int, token: String) -> URLRequest {
-        URLRequest(url: URL(string: "ws://127.0.0.1:\(port)/api/ws?token=\(token)")!)
+        // Hermes Agent authenticates the loopback WebSocket upgrade with its
+        // per-spawn session token in the URL query. Some Hermes versions also
+        // run HTTP middleware before the upgrade and require Bearer auth
+        // there, while the /api/ws handler itself rejects header-only auth.
+        // Supplying both forms is required for compatibility across those
+        // versions.
+        var request = URLRequest(url: URL(string: "ws://127.0.0.1:\(port)/api/ws?token=\(token)")!)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
     }
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {

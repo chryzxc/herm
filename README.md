@@ -118,6 +118,18 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   facts and evidence without inventing commands; Repositories lists local
   repositories explicitly attached to Hermes sessions. Command-K includes
   capability-aware navigation, refresh, and transparent built-in review recipes.
+- **Local verification terminal.** Session Terminal runs only repository-fact-
+  derived, allow-listed recipes through a bounded local PTY. It has no free-form
+  command input or shell escape hatch; when no valid recipe is available it shows
+  an explicit unavailable state. Verification results carry repository
+  identity/fingerprint metadata, and terminal/provider failures never create a
+  second task store.
+- **GitHub pull-request context.** Changes discovers GitHub SSH/HTTPS remotes
+  and can show open pull requests, check status, review state, actionable
+  blockers, and deep links. Missing remotes, unavailable access, and stale
+  refreshes are explicit. Draft creation and title/body updates use typed,
+  confirmation-gated requests; merge, commenting, force-push, and workflow
+  dispatch are intentionally unsupported.
 - **Repository review and watch.** Changes can run a bounded repository-wide
   local review over staged, unstaged, and untracked files, reporting only safe
   finding metadata and clearly marking truncated, binary, unreadable, or
@@ -203,7 +215,9 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   `verification.status` to show detected manifests, package managers, exact
   verification commands, and best-known evidence. Targeted evidence remains
   labelled targeted; the Dock never upgrades it into a repository-wide claim.
-  Commands can be copied or submitted to Hermes as explicit background tasks.
+  Commands can be copied or submitted to Hermes as explicit background tasks;
+  supported repository recipes can also be run explicitly in the local
+  Session Terminal with bounded output and exit-code evidence.
 - **Background tasks.** Activity can submit a prompt through Hermes
   `prompt.background`, track its task ID, and display the eventual
   `background.complete` output. Background rows are collapsed by default and
@@ -217,8 +231,13 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   Hermes. Unavailable gateway/version states include copyable recovery commands;
   the Dock never runs recovery commands automatically. Core can explicitly and
   manually check the NousResearch release feed and run the allow-listed
-  `hermes update --yes` command after confirmation, showing streamed progress.
-  When a session is active, configured MCP tools can be explicitly reloaded after confirmation.
+  `hermes update` command after confirmation, showing streamed progress.
+  When a session is active, configured MCP tools can be explicitly reloaded after
+  confirmation; the reload applies to the next session and does not rewrite the
+  active conversation. Model/reasoning selection is a session-scoped Hermes
+  mutation and remains disabled while no session exists or while a change is
+  pending. Missing structured runtime data is shown as unavailable/stale rather
+  than inferred from a version string.
   Core also shows a live, read-only MCP inventory with each server's transport,
   tool scope, and enabled state; third-party MCP browsing/actions remain
   dependent on future Hermes RPCs. When Hermes exposes `mcp test`, Core can run
@@ -252,8 +271,38 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   time to first streamed text and end-to-end turn duration.
 - **Hermes agent updates.** Core compares the installed Hermes version with the
   latest NousResearch/hermes-agent GitHub release. A confirmed update runs
-  `hermes update --yes` and shows live output, elapsed time, and the resulting
+  `hermes update` and shows live output, elapsed time, and the resulting
   version. Updates never start automatically.
+
+## Control authority and unavailable states
+
+The Dock is a projection and control surface, not a replacement Hermes runtime.
+Hermes owns sessions, agents, prompts, models, skills, plugins, MCP configuration,
+cron, and other agent state. Local Git, GitHub, Apple Reminders, and presentation
+preferences remain authoritative only for the data they own. A Dock action is
+enabled only after its typed Hermes RPC/CLI contract or local adapter has been
+verified; missing, malformed, denied, or unsupported capability data fails closed
+and remains visibly unavailable (or stale when a prior projection exists).
+
+- **Model and reasoning:** the active session's Hermes configuration is
+  authoritative. Changing it is an explicit user selection sent through Hermes;
+  no-session and in-flight states are unavailable, and the displayed value is
+  updated only after Hermes accepts the change. Default configuration changes
+  are separate Hermes mutations and are not implied by changing the active
+  session. A running turn applies an accepted change to the next turn.
+- **Skills and plugins:** Core may display Hermes-provided inventories. The Dock
+  does not install, remove, enable, disable, or configure them; those actions stay
+  unavailable until Hermes exposes a verified typed contract. No restart is
+  silently performed by the Dock.
+- **MCP:** configured-server inventory is read-only, and a verified reload may be
+  requested only from an active session after confirmation. The reload is a
+  Hermes/runtime operation for subsequent work; it does not mutate the current
+  transcript. Adding, removing, authenticating, browsing, or invoking
+  third-party tools remains unavailable pending the upstream contracts below.
+- **Updates and recovery:** `hermes update` is an explicit confirmed mutation and
+  reports its streamed result. The user must restart Hermes for new sessions to
+  use an updated agent. Recovery/setup guidance is copy-only unless a separately
+  verified action is listed; the Dock never runs recovery commands automatically.
 
 ## Voice behaviour today
 
@@ -326,7 +375,7 @@ The app expects the `hermes` executable to be available on the user’s PATH. On
 
 The Dock targets the locally installed Hermes Agent contract. Optional controls
 fail closed when their Hermes RPC or CLI capability is unavailable. Core updates
-Hermes only through the explicit, confirmed `hermes update --yes` action; it does
+Hermes only through the explicit, confirmed `hermes update` action; it does
 not configure providers, invoke arbitrary shell commands, expose bulk
 destructive controls, or create a second Hermes runtime.
 
@@ -358,8 +407,8 @@ stable, capability-advertised gateway RPC or JSON response:
   close operations plus model VAD/audio capability metadata.
 - Calendar access: explicit provider capability, authorization state, and
   stable event operations.
-- Durable activity feeds, fleet session usage, PR/CI/error projections, and
-  authoritative project repository enumeration: see
+- Durable activity feeds, fleet session usage, and authoritative project
+  repository enumeration: see
   `HERMES_COMMAND_CENTER_CONTRACTS.md` for the required fail-closed contracts.
 
 ## Quality checks

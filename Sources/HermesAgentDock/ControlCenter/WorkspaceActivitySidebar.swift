@@ -119,6 +119,7 @@ struct WorkspaceActivitySidebar: View {
             }
 
             modePicker
+            projectionNotice
 
             ScrollView {
                 Group {
@@ -141,6 +142,66 @@ struct WorkspaceActivitySidebar: View {
             }
         }
         .font(.system(size: 13))
+    }
+
+    @ViewBuilder
+    private var projectionNotice: some View {
+        switch selectedMode {
+        case .session:
+            projectionNotice(for: model.sessionProjectionState, retry: { model.loadSessions() })
+        case .core:
+            projectionNotice(for: model.runtimeConfigurationProjectionState, retry: { model.refreshRuntimeConfiguration() })
+        case .today:
+            if let state = control.projectionState(for: "sessions") {
+                projectionNotice(for: state, retry: { control.refresh() })
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func projectionNotice<Value: Equatable & Sendable>(
+        for state: HermesProjectionState<Value>,
+        retry: @escaping () -> Void
+    ) -> some View {
+        switch state {
+        case .loading:
+            Text("Loading Hermes projection…")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockMetadataText)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+        case .empty:
+            Text("No Hermes data is currently available.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockMetadataText)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+        case .stale(_, let message):
+            projectionNoticeWithRetry(message, retry: retry)
+        case .unavailable(let message):
+            projectionNoticeWithRetry(message, retry: retry)
+        case .failed(let message):
+            projectionNoticeWithRetry(message, retry: retry)
+        case .ready:
+            EmptyView()
+        }
+    }
+
+    private func projectionNoticeWithRetry(_ message: String, retry: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(message)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockWarning)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("RETRY", action: retry)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     private var sidebarHeader: some View {
@@ -760,25 +821,6 @@ struct WorkspaceActivitySidebar: View {
                     onSelectProjectFolder: { showingRepositoryPicker = true }
                 )
             } else if let changes = workflow.changes, workflow.repository.isGitRepository {
-                if let codeDocument {
-                    RepositoryCodeWorkspaceView(
-                        repositoryPath: workflow.repository.path,
-                        document: codeDocument,
-                        onClose: {
-                            self.codeDocument = nil
-                            selectedRepositoryFile = nil
-                            selectedRepositoryDiff = nil
-                        },
-                        onSave: { draft in
-                            let saved = await RepositoryService.saveDocument(path: workflow.repository.path, filePath: codeDocument.path, contents: draft)
-                            guard saved else { return false }
-                            await refreshRepository()
-                            self.codeDocument = RepositoryFileDocument(path: codeDocument.path, contents: draft, byteCount: draft.lengthOfBytes(using: .utf8))
-                            if let selectedRepositoryFile { loadRepositoryDiff(for: selectedRepositoryFile) }
-                            return true
-                        }
-                    )
-                } else {
                 HStack(spacing: 8) {
                     todayMetric("STAGED", value: changes.stagedCount, color: .dockAccent)
                     todayMetric("UNSTAGED", value: changes.unstagedCount, color: .dockWarning)
@@ -789,7 +831,6 @@ struct WorkspaceActivitySidebar: View {
                     emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
                 } else {
                     changeSections(changes)
-                }
                 }
             } else if let path = activeRepositoryPath {
                 let inspecting = isRefreshingRepository || workflow.isRefreshing
@@ -850,11 +891,7 @@ struct WorkspaceActivitySidebar: View {
                         .disabled(isLoadingRepositoryDiff)
                 }
                 let writers = model.activeSubagents.filter { $0.filesWritten.contains(file.path) }
-                Button("OPEN CODE WORKSPACE") { openCodeWorkspace(for: file) }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                    .disabled(isLoadingRepositoryDiff)
+
                 if workflow.isReviewCovered(file) {
                     Button(workflow.isReviewed(file) ? "REVIEWED" : "MARK REVIEWED") { workflow.toggleReviewed(file) }
                         .buttonStyle(.borderless)
@@ -889,24 +926,6 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private func openCodeWorkspace(for file: RepositoryFileChange) {
-        Task {
-            isLoadingRepositoryDiff = true
-            codeWorkspaceError = nil
-            async let document = RepositoryService.loadDocument(path: workflow.repository.path, filePath: file.path)
-            async let diff = RepositoryService.diff(path: workflow.repository.path, file: file)
-            let (loadedDocument, loadedDiff) = await (document, diff)
-            guard let loadedDocument else {
-                isLoadingRepositoryDiff = false
-                codeWorkspaceError = "This file cannot be opened inline. Only regular UTF-8 files up to 256 KB are supported."
-                return
-            }
-            selectedRepositoryFile = file
-            codeDocument = loadedDocument
-            selectedRepositoryDiff = loadedDiff
-            isLoadingRepositoryDiff = false
-        }
-    }
 
     @ViewBuilder
     private func diffAuditSummary(_ diff: RepositoryDiff) -> some View {
@@ -2369,9 +2388,6 @@ struct WorkspaceActivitySidebar: View {
                     attentionItemRow(item, isSelected: selectedAttentionID == item.id)
                 }
             }
-            if let error = control.lastError {
-                Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning)
-            }
         }
     }
 
@@ -2959,7 +2975,7 @@ struct WorkspaceActivitySidebar: View {
                         ForEach(backgroundSessions) { session in
                             Button {
                                 Task {
-                                    _ = try? await model.requestControl("session.activate", params: ["session_id": session.id])
+                                    _ = try? await model.requestControl(HermesFeatureIDs.ID.sessionActivate, params: ["session_id": session.id])
                                     model.requestComposerFocus()
                                 }
                             } label: {

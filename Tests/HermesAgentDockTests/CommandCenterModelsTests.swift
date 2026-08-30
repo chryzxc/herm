@@ -27,10 +27,8 @@ struct CommandCenterModelsTests {
 
     @Test func cronScheduleValidationRejectsMalformedInput() {
         #expect(!CronSchedule.isValid(""))
-        #expect(!CronSchedule.isValid("0 9 * *"))
-        #expect(!CronSchedule.isValid("0 9 * * * *"))
-        #expect(!CronSchedule.isValid("not a schedule"))
-        #expect(!CronSchedule.isValid("0 9 * * *; rm -rf /"))
+        #expect(!CronSchedule.isValid("\u{0000}"))
+        #expect(!CronSchedule.isValid("every\n2h"))
     }
 
     @Test func missionPrioritizesAttentionAndDoesNotUpgradeTargetedEvidence() {

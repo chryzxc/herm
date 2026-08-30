@@ -590,7 +590,9 @@ enum KanbanMutationKind: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var title: String { rawValue.replacingOccurrences(of: "_", with: " ").uppercased() }
-    var capabilityID: String { "kanban.\(rawValue)" }
+    var capabilityID: String {
+        HermesFeatureIDs.lookup("kanban.\(rawValue)")?.rawValue ?? rawValue
+    }
 }
 
 struct KanbanMutationRequest: Identifiable {
@@ -688,17 +690,11 @@ struct CronEditDraft: Equatable {
 }
 
 enum CronSchedule {
-    /// 5-field cron sanity check; Hermes remains the authoritative validator.
+    /// Local safety gate only; Hermes owns schedule grammar and validation.
     static func isValid(_ schedule: String) -> Bool {
         let trimmed = schedule.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fields = trimmed.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-        guard fields.count == 5 else { return false }
-        let allowed = CharacterSet(charactersIn: "0123456789*/,-").union(.letters)
-        return fields.allSatisfy { field in
-            !field.isEmpty
-                && field.count <= 20
-                && field.unicodeScalars.allSatisfy { allowed.contains($0) }
-        }
+        guard !trimmed.isEmpty else { return false }
+        return schedule.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) }
     }
 }
 
@@ -757,6 +753,7 @@ struct CapabilityState: Identifiable, Equatable {
     let provenance: CapabilityProvenance
     let probeState: CapabilityProbeState
     let accessClassification: CapabilityAccessClassification
+    let isStale: Bool
 
     init(
         id: String,
@@ -771,7 +768,8 @@ struct CapabilityState: Identifiable, Equatable {
         category: CapabilityCategory? = nil,
         provenance: CapabilityProvenance? = nil,
         probeState: CapabilityProbeState? = nil,
-        accessClassification: CapabilityAccessClassification? = nil
+        accessClassification: CapabilityAccessClassification? = nil,
+        isStale: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -799,6 +797,7 @@ struct CapabilityState: Identifiable, Equatable {
             self.probeState = .unsupported
         }
         self.accessClassification = CapabilityAccessClassification(access: access)
+        self.isStale = isStale
     }
 }
 

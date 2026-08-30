@@ -66,31 +66,76 @@ struct HermesCapabilityServiceTests {
     @Test func capabilityProbeHonorsTotalDeadline() async {
         let client = HangingCapabilityProbeClient()
         let service = HermesCapabilityService(probeTimeout: .milliseconds(20))
-        let started = ContinuousClock.now
         let states = await service.probe(client: client, remindersAvailable: false)
-        let elapsed = started.duration(to: .now)
+        let elapsed = client.firstRequestStarted.map { $0.duration(to: .now) }
 
         #expect(states.isEmpty)
-        // The probe timeout is 20 ms; allow scheduler/parallel-test jitter in
-        // the outer wall-clock assertion without weakening the empty result
-        // contract that proves the timeout path was taken.
-        #expect(elapsed < .seconds(2))
+        #expect(elapsed != nil)
+        #expect(elapsed! < .seconds(1))
         client.release()
     }
 
-    @Test func completedProbeTimeoutCannotInvalidateLaterCache() async throws {
-        let client = CapabilityProbeClient()
+    @Test func timedOutProbeDoesNotWaitForNonCooperativeTransport() async {
+        let client = HangingCapabilityProbeClient()
         let service = HermesCapabilityService(probeTimeout: .milliseconds(10))
-        _ = await service.probe(client: client, remindersAvailable: false)
+
+        let states = await service.probe(client: client, remindersAvailable: false)
+
+        #expect(states.isEmpty)
+        client.release()
+    }
+
+    @Test func concurrentTimedOutProbesDoNotStartUnboundedRequests() async {
+        let client = HangingCapabilityProbeClient(delay: .milliseconds(1))
+        let service = HermesCapabilityService(probeTimeout: .milliseconds(20))
+
+        let probes = (0..<8).map { index in
+            Task {
+                await service.probe(
+                    client: client,
+                    remindersAvailable: index.isMultiple(of: 2),
+                    sessionID: "session-\(index)",
+                    forceRefresh: true
+                )
+            }
+        }
+        for probe in probes {
+            _ = await probe.value
+        }
+
+        #expect(client.requestCount <= 16)
+        client.release()
+    }
+
+    @Test func completedProbeTimeoutCannotInvalidateLaterCache() async {
+        let client = CapabilityProbeClient()
+        let service = HermesCapabilityService(probeTimeout: .seconds(2))
+        let firstStates = await service.probe(client: client, remindersAvailable: false)
         let count = client.requestCount
-        try await Task.sleep(for: .milliseconds(30))
-        _ = await service.probe(client: client, remindersAvailable: false)
+        let cachedStates = await service.probe(client: client, remindersAvailable: false)
+
+        #expect(!firstStates.isEmpty)
+        #expect(cachedStates == firstStates)
         #expect(client.requestCount == count)
+    }
+
+    @Test func timedOutRefreshPreservesLastSnapshotAndMarksItStale() async {
+        let client = ToggleHangingCapabilityProbeClient()
+        let service = HermesCapabilityService(probeTimeout: .seconds(2))
+        let successful = await service.probe(client: client, remindersAvailable: false)
+        #expect(!successful.isEmpty)
+
+        client.isHanging = true
+        let timedOut = await service.probe(client: client, remindersAvailable: false, forceRefresh: true)
+
+        #expect(timedOut.count == successful.count)
+        #expect(timedOut.allSatisfy { $0.detail.localizedCaseInsensitiveContains("timed out") })
+        client.release()
     }
 
     @Test func timedOutSessionProbeCannotReuseAnotherSessionSnapshot() async {
         let client = ToggleHangingCapabilityProbeClient()
-        let service = HermesCapabilityService(probeTimeout: .milliseconds(10))
+        let service = HermesCapabilityService(probeTimeout: .seconds(2))
         let sessionA = await service.probe(client: client, remindersAvailable: false, sessionID: "session-a")
         #expect(!sessionA.isEmpty)
         client.isHanging = true
@@ -235,42 +280,64 @@ private final class FailingCapabilityProbeClient: HermesRPCClientProtocol {
 
 @MainActor
 private final class OverlappingCapabilityProbeClient: CapabilityProbeClient {
-    private var suspensionCount = 0
-    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
-    private var suspensionWaiters: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var firstProbeHasEntered = false
+    private var firstProbeIsReleased = false
+    private var secondProbeHasEntered = false
+    private var firstProbeEntryWaiter: CheckedContinuation<Void, Never>?
+    private var secondProbeEntryWaiter: CheckedContinuation<Void, Never>?
+    private var firstProbeRelease: CheckedContinuation<Void, Never>?
+    private var secondProbeRelease: CheckedContinuation<Void, Never>?
 
     func waitUntilFirstProbeSuspends() async {
-        await waitForSuspension(number: 1)
+        await waitUntilFirstProbeEnters()
     }
 
     func waitUntilSecondProbeSuspends() async {
-        await waitForSuspension(number: 2)
+        await waitUntilSecondProbeEnters()
     }
 
-    private func waitForSuspension(number: Int) async {
-        guard suspensionCount < number else { return }
+    private func waitUntilFirstProbeEnters() async {
+        guard !firstProbeHasEntered else { return }
         await withCheckedContinuation { continuation in
-            suspensionWaiters[number] = continuation
+            firstProbeEntryWaiter = continuation
+        }
+    }
+
+    private func waitUntilSecondProbeEnters() async {
+        guard !secondProbeHasEntered else { return }
+        await withCheckedContinuation { continuation in
+            secondProbeEntryWaiter = continuation
         }
     }
 
     func releaseFirstProbe() {
-        guard !releaseContinuations.isEmpty else { return }
-        releaseContinuations.removeFirst().resume()
+        firstProbeIsReleased = true
+        firstProbeRelease?.resume()
+        firstProbeRelease = nil
     }
 
     func releaseProbes() {
-        let continuations = releaseContinuations
-        releaseContinuations.removeAll()
-        continuations.forEach { $0.resume() }
+        releaseFirstProbe()
+        secondProbeRelease?.resume()
+        secondProbeRelease = nil
     }
 
     override func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
-        if suspensionCount < 2 {
-            suspensionCount += 1
-            suspensionWaiters.removeValue(forKey: suspensionCount)?.resume()
+        if !firstProbeHasEntered {
+            firstProbeHasEntered = true
+            firstProbeEntryWaiter?.resume()
+            firstProbeEntryWaiter = nil
+            if !firstProbeIsReleased {
+                await withCheckedContinuation { continuation in
+                    firstProbeRelease = continuation
+                }
+            }
+        } else if !secondProbeHasEntered {
+            secondProbeHasEntered = true
+            secondProbeEntryWaiter?.resume()
+            secondProbeEntryWaiter = nil
             await withCheckedContinuation { continuation in
-                releaseContinuations.append(continuation)
+                secondProbeRelease = continuation
             }
         }
         return try await super.request(method, params: params)
@@ -282,34 +349,53 @@ private enum TestRPCError: Error { case failed }
 @MainActor
 private final class HangingCapabilityProbeClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
-    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var requestCount = 0
+    private(set) var firstRequestStarted: ContinuousClock.Instant?
+    private let delay: Duration?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    init(delay: Duration? = nil) {
+        self.delay = delay
+    }
+
     func connect() async throws {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requestCount += 1
+        firstRequestStarted = firstRequestStarted ?? .now
+        if let delay {
+            try await Task.sleep(for: delay)
+            return ["ok": true]
+        }
         await withCheckedContinuation { continuation in
-            self.continuation = continuation
+            continuations.append(continuation)
         }
         return [:]
     }
-    func release() { continuation?.resume(); continuation = nil }
-    func close() {}
+    func release() {
+        let pending = continuations
+        continuations.removeAll()
+        pending.forEach { $0.resume() }
+    }
+    func close() { release() }
 }
 
 @MainActor
 private final class ToggleHangingCapabilityProbeClient: CapabilityProbeClient {
     var isHanging = false
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuations: [CheckedContinuation<Void, Never>] = []
 
     override func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         if isHanging {
             await withCheckedContinuation { continuation in
-                self.continuation = continuation
+                continuations.append(continuation)
             }
         }
         return try await super.request(method, params: params)
     }
 
     func release() {
-        continuation?.resume()
-        continuation = nil
+        let pending = continuations
+        continuations.removeAll()
+        pending.forEach { $0.resume() }
     }
 }

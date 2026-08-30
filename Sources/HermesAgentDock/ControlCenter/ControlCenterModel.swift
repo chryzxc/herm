@@ -2,6 +2,10 @@ import Foundation
 
 @MainActor
 final class ControlCenterModel: ObservableObject {
+    nonisolated static func safeUserDiagnostic(_ raw: String) -> String {
+        HermesDiagnosticsService.safeSummary(raw)
+    }
+
     @Published private(set) var attention: [AttentionItem] = []
     @Published private(set) var reminders: [ReminderSummary] = []
     @Published private(set) var cronJobs: [CronSummary] = []
@@ -57,10 +61,14 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var pendingActionIDs: Set<String> = []
     @Published private(set) var lastError: String?
     @Published private(set) var projectionRefreshStates: [String: ProjectionRefreshState] = [:]
+    @Published private(set) var projectionStates: [String: HermesProjectionState<Int>] = [:]
 
     private weak var dockModel: DockModel?
     private var rpc: HermesControlRPC?
     private var cli: HermesCLIAdapter?
+    private var refreshTask: Task<Void, Never>?
+    private var refreshGeneration: UInt64 = 0
+    private var clientBindingGeneration: UInt64 = 0
     private var searchTask: Task<Void, Never>?
     private var searchGeneration = UUID()
     private var kanbanRefreshGeneration = UUID()
@@ -140,6 +148,24 @@ final class ControlCenterModel: ObservableObject {
         projectionRefreshStates[projection]
     }
 
+    func projectionState(for projection: String) -> HermesProjectionState<Int>? {
+        projectionStates[projection]
+    }
+
+    private func isCurrentRefresh(_ generation: UInt64, clientIdentity: ObjectIdentifier?) -> Bool {
+        refreshGeneration == generation &&
+            dockModel.map { ObjectIdentifier($0.controlRPCClient) } == clientIdentity
+    }
+
+    private func isCurrentClient(_ identity: ObjectIdentifier?, bindingGeneration: UInt64? = nil) -> Bool {
+        if let identity {
+            guard dockModel.map({ ObjectIdentifier($0.controlRPCClient) }) == identity else { return false }
+        } else if dockModel != nil {
+            return false
+        }
+        return bindingGeneration.map { $0 == clientBindingGeneration } ?? true
+    }
+
     private func beginProjectionRefresh(_ projection: String) {
         let previous = projectionRefreshStates[projection]
         projectionRefreshStates[projection] = ProjectionRefreshState(
@@ -148,20 +174,72 @@ final class ControlCenterModel: ObservableObject {
             isStale: previous?.lastSuccess != nil,
             isRefreshing: true
         )
+        if let previousState = projectionStates[projection] {
+            switch previousState {
+            case .ready(let count), .stale(let count, _):
+                projectionStates[projection] = .stale(count, safeMessage: "Hermes projection is refreshing. Refresh to try again.")
+            default:
+                projectionStates[projection] = .loading
+            }
+        } else {
+            projectionStates[projection] = .loading
+        }
     }
 
-    private func recordProjectionSuccess(_ projection: String) {
+    func recordProjectionSuccess(_ projection: String, count: Int? = nil) {
+        let resolvedCount = count ?? projectionCount(projection)
         projectionRefreshStates[projection] = ProjectionRefreshState(lastSuccess: .now, error: nil, isStale: false, isRefreshing: false)
+        projectionStates[projection] = resolvedCount == 0 ? .empty : .ready(resolvedCount)
     }
 
-    private func recordProjectionFailure(_ projection: String, error: String) {
+    /// Publishes an explicit capability boundary when this model has no Hermes
+    /// gateway to query. This is distinct from a failed request and keeps the
+    /// UI from presenting an unsupported projection as an empty result.
+    func recordProjectionUnavailable(_ projection: String) {
+        projectionRefreshStates[projection] = ProjectionRefreshState(lastSuccess: nil, error: nil, isStale: false, isRefreshing: false)
+        projectionStates[projection] = .unavailable(safeMessage: "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry.")
+    }
+
+    func recordProjectionFailure(_ projection: String, error: String) {
         let previous = projectionRefreshStates[projection]
         projectionRefreshStates[projection] = ProjectionRefreshState(
             lastSuccess: previous?.lastSuccess,
-            error: error,
+            error: HermesDiagnosticsService.safeSummary(error),
             isStale: previous?.lastSuccess != nil,
             isRefreshing: false
         )
+        let safeMessage = "Hermes projection is unavailable. Refresh to try again."
+        let capabilityDenied = ["unsupported", "unauthorized", "forbidden", "denied"]
+            .contains { error.localizedCaseInsensitiveContains($0) }
+        if capabilityDenied {
+            projectionStates[projection] = .unavailable(safeMessage: "Hermes projection is unavailable because this capability is not supported or authorized. Reconnect Hermes and retry.")
+            return
+        }
+        if let previousState = projectionStates[projection] {
+            switch previousState {
+            case .ready(let count), .stale(let count, _):
+                projectionStates[projection] = .stale(count, safeMessage: safeMessage)
+            case .empty:
+                projectionStates[projection] = .stale(0, safeMessage: safeMessage)
+            default:
+                projectionStates[projection] = .failed(safeMessage: safeMessage)
+            }
+        } else {
+            projectionStates[projection] = .failed(safeMessage: safeMessage)
+        }
+    }
+
+    private func projectionCount(_ projection: String) -> Int {
+        switch projection {
+        case "sessions": return activeSessions.count
+        case "projects": return projects.count
+        case "agents": return activeAgents.count
+        case "processes": return processes.count
+        case "latest.activity": return latestActivities.count
+        case "cron.jobs": return cronJobs.count
+        case "reminders": return reminders.count
+        default: return 0
+        }
     }
 
     func cronActionID(_ action: String, job: CronSummary) -> String { "cron.\(action):\(job.id)" }
@@ -249,10 +327,92 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func bind(to model: DockModel) {
-        if dockModel !== model, let eventSubscription {
-            dockModel?.eventRouter.unsubscribe(eventSubscription)
-            self.eventSubscription = nil
-            capabilityService.invalidate()
+        if dockModel !== model {
+            refreshGeneration &+= 1
+            clientBindingGeneration &+= 1
+            refreshTask?.cancel()
+            refreshTask = nil
+            searchTask?.cancel()
+            searchTask = nil
+            sessionKanbanTask?.cancel()
+            sessionKanbanTask = nil
+            isRefreshing = false
+            attention = []
+            reminders = []
+            cronJobs = []
+            cronRuns = []
+            cronHistoryAvailable = false
+            mcpServers = []
+            mcpTestResults = [:]
+            mcpInventoryAvailable = false
+            activeSessions = []
+            latestActivities = []
+            currentFocus = nil
+            activeAgents = []
+            delegationPaused = false
+            processes = []
+            projects = []
+            projectIDBySessionID = [:]
+            searchResults = []
+            isSearching = false
+            kanbanTasks = []
+            sessionKanbanTasks = []
+            sessionKanbanSessionID = nil
+            kanbanDetail = nil
+            kanbanStats = nil
+            kanbanAssignees = []
+            kanbanBoards = []
+            selectedKanbanBoardSlug = nil
+            kanbanProjectionBoardSlug = nil
+            journeyNodes = []
+            sessionStoreStatus = nil
+            memoryHealthStatus = nil
+            sessionUsage = nil
+            sessionContext = nil
+            sessionCockpitSessionID = nil
+            providerQuota = nil
+            providerQuotas = []
+            kanbanDiagnostics = []
+            kanbanAttachments = []
+            promptBudget = nil
+            projectFacts = nil
+            verification = nil
+            developmentContext = nil
+            projectSessions = []
+            selectedProjectID = nil
+            selectedProject = nil
+            capabilities = []
+            capabilitySnapshotGeneratedAt = .distantPast
+            diagnostics = []
+            lastError = nil
+            pendingActionIDs = []
+            knownAttention = [:]
+            sessionCockpitGeneration = UUID()
+            providerQuotaGeneration = UUID()
+            journeyGeneration = UUID()
+            projectFactsGeneration = UUID()
+            verificationGeneration = UUID()
+            projectSessionsGeneration = UUID()
+            projectMembershipGeneration = UUID()
+            cronRunsGeneration = UUID()
+            mcpInventoryGeneration = UUID()
+            promptBudgetGeneration = UUID()
+            kanbanRefreshGeneration = UUID()
+            sessionKanbanRefreshGeneration = UUID()
+            kanbanBoardsGeneration = UUID()
+            kanbanStatsGeneration = UUID()
+            kanbanAssigneesGeneration = UUID()
+            kanbanDetailGeneration = UUID()
+            kanbanDiagnosticsGeneration = UUID()
+            kanbanAttachmentsGeneration = UUID()
+            sessionProcessesGeneration = UUID()
+            projectionRefreshStates.removeAll()
+            projectionStates.removeAll()
+            if let eventSubscription {
+                dockModel?.eventRouter.unsubscribe(eventSubscription)
+                self.eventSubscription = nil
+                capabilityService.invalidate()
+            }
         }
         dockModel = model
         rpc = HermesControlRPC(client: model.controlRPCClient)
@@ -269,25 +429,39 @@ final class ControlCenterModel: ObservableObject {
 
     func refresh(forceCapabilities: Bool = false) {
         guard !isRefreshing else { return }
+        let generation = refreshGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         isRefreshing = true
         lastError = nil
         rebuildAttention()
         if remindersAdapter != nil { beginProjectionRefresh("reminders") }
         if rpc != nil { ["cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects"].forEach(beginProjectionRefresh) }
         if dockModel != nil { beginProjectionRefresh("core") }
+        if rpc == nil {
+            ["cron.jobs", "sessions", "latest.activity", "agents", "projects"].forEach(recordProjectionUnavailable)
+        }
+        if dockModel == nil { recordProjectionUnavailable("core") }
 
-        Task { [weak self] in
+        refreshTask = Task { [weak self] in
             guard let self else { return }
-            defer { isRefreshing = false }
+            defer {
+                if self.isCurrentRefresh(generation, clientIdentity: clientIdentity) {
+                    self.isRefreshing = false
+                    self.refreshTask = nil
+                }
+            }
             var remindersAvailable = false
             if let remindersAdapter {
                 do {
-                    reminders = try await remindersAdapter.today()
+                    let fetchedReminders = try await remindersAdapter.today()
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    reminders = fetchedReminders
                     remindersAvailable = true
                     reconcileReminderAttention()
                     recordProjectionSuccess("reminders")
                 } catch {
-                    let message = error.localizedDescription
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("reminders", error: message)
                     lastError = message
                 }
@@ -301,41 +475,51 @@ final class ControlCenterModel: ObservableObject {
                     if let sessions = try? await rpc.sessions(limit: 200) {
                         jobs = Self.attachLatestCronSessions(to: jobs, from: sessions)
                     }
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     cronJobs = jobs
                     recordProjectionSuccess("cron.jobs")
                 } catch {
-                    let message = error.localizedDescription
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("cron.jobs", error: message)
                     lastError = message
                 }
 
                 do {
                     let result = try await rpc.activeSessions()
-                    activeSessions = Self.parseSessions(result)
+                    guard let parsedSessions = Self.parseSessions(result) else {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    activeSessions = parsedSessions
                     establishFocusIfNeeded()
                     recordProjectionSuccess("sessions")
                 } catch {
-                    let message = error.localizedDescription
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("sessions", error: message)
                     lastError = message
                 }
 
                 do {
-                    try await refreshLatestActivities()
+                    try await refreshLatestActivities(rpc: rpc, generation: generation, clientIdentity: clientIdentity)
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     recordProjectionSuccess("latest.activity")
                 } catch {
-                    let message = error.localizedDescription
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("latest.activity", error: message)
-                    lastError = message
                 }
 
                 do {
                     let result = try await rpc.delegationStatus()
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     activeAgents = Self.parseAgents(result)
                     delegationPaused = result["paused"] as? Bool ?? delegationPaused
                     recordProjectionSuccess("agents")
                 } catch {
-                    let message = error.localizedDescription
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("agents", error: message)
                     lastError = message
                 }
@@ -343,22 +527,25 @@ final class ControlCenterModel: ObservableObject {
                 if !sessionID.isEmpty {
                     do {
                         let result = try await rpc.processes(sessionID: sessionID)
+                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                         if dockModel?.sessionID == sessionID {
                             processes = Self.parseProcesses(result)
                             recordProjectionSuccess("processes")
                         }
                     } catch {
-                        let message = error.localizedDescription
+                        guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                        let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                         recordProjectionFailure("processes", error: message)
                         lastError = message
                     }
                 }
 
-                refreshMCPInventory()
+                refreshMCPInventory(refreshGeneration: generation, clientIdentity: clientIdentity)
 
                 do {
                     let result = try await rpc.projectsTree()
                     let refreshedProjects = Self.parseProjects(result)
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     projects = refreshedProjects
                     let validProjectIDs = Set(refreshedProjects.map(\.id))
                     // A compact tree response may provide only session counts.
@@ -383,23 +570,28 @@ final class ControlCenterModel: ObservableObject {
                     resolveProjectMembership(for: currentFocus?.sessionID)
                     recordProjectionSuccess("projects")
                 } catch {
-                    let message = error.localizedDescription
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("projects", error: message)
                     lastError = message
                 }
             }
-            refreshCronRuns()
+            refreshCronRuns(refreshGeneration: generation, clientIdentity: clientIdentity)
 
             if let dockModel {
-                capabilities = await capabilityService.probe(
+                let probedCapabilities = await capabilityService.probe(
                     client: dockModel.controlRPCClient,
                     remindersAvailable: remindersAvailable,
                     sessionID: dockModel.sessionID,
                     forceRefresh: forceCapabilities
                 )
+                guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                capabilities = probedCapabilities
                 capabilitySnapshotGeneratedAt = .now
                 if forceCapabilities || diagnostics.isEmpty {
-                    diagnostics = await diagnosticsService.read(client: dockModel.controlRPCClient)
+                    let refreshedDiagnostics = await diagnosticsService.read(client: dockModel.controlRPCClient)
+                    guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
+                    diagnostics = refreshedDiagnostics
                 }
                 if forceCapabilities || sessionStoreStatus == nil || memoryHealthStatus == nil {
                     refreshReadOnlyHealth()
@@ -417,8 +609,10 @@ final class ControlCenterModel: ObservableObject {
     /// independently of the active Hermes provider/model.
     func refreshProviderQuota() {
         let generation = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         providerQuotaGeneration = generation
-        guard dockModel != nil else {
+        guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else {
             providerQuota = nil
             providerQuotas = []
             return
@@ -430,7 +624,8 @@ final class ControlCenterModel: ObservableObject {
             async let glmResult = Self.readQuota(GLMQuotaService.read)
             async let claudeResult = Self.readQuota(ClaudeQuotaService.read)
             let results = await [codexResult, openCodeResult, glmResult, claudeResult]
-            guard generation == providerQuotaGeneration else { return }
+            guard generation == providerQuotaGeneration,
+                  self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
             let snapshots = results.compactMap { result -> ProviderQuotaSnapshot? in
                 guard let raw = result.value else { return nil }
                 return Self.parseProviderQuota(raw)
@@ -450,7 +645,7 @@ final class ControlCenterModel: ObservableObject {
 
     private nonisolated static func readQuota(_ read: @Sendable () async throws -> [String: Any]) async -> QuotaReadResult {
         do { return QuotaReadResult(value: try await read(), error: nil) }
-        catch { return QuotaReadResult(value: nil, error: error.localizedDescription) }
+        catch { return QuotaReadResult(value: nil, error: Self.safeUserDiagnostic(error.localizedDescription)) }
     }
 
     func completeReminder(_ reminder: ReminderSummary) {
@@ -464,7 +659,7 @@ final class ControlCenterModel: ObservableObject {
                 try? await Task.sleep(for: .milliseconds(600))
                 refresh()
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -499,29 +694,38 @@ final class ControlCenterModel: ObservableObject {
             do {
                 let result = try await cli.cronRun(jobID: job.id)
                 guard result.succeeded else {
-                    lastError = result.stderr.isEmpty ? "Hermes could not run the scheduled job." : result.stderr
+                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes could not run the scheduled job." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 refreshCronRuns()
                 refresh()
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
 
-    func refreshCronRuns() {
+    func refreshCronRuns(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {
         guard let cli else { return }
+        let resolvedClientIdentity = clientIdentity ?? dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let bindingGeneration = self.clientBindingGeneration
+        guard isCurrentClient(resolvedClientIdentity, bindingGeneration: bindingGeneration) else { return }
+        let isCurrent: () -> Bool = {
+            if let refreshGeneration {
+                return self.isCurrentRefresh(refreshGeneration, clientIdentity: resolvedClientIdentity)
+            }
+            return self.isCurrentClient(resolvedClientIdentity, bindingGeneration: bindingGeneration)
+        }
         beginProjectionRefresh("cron.history")
         let generation = UUID()
         cronRunsGeneration = generation
         Task {
             do {
                 let result = try await cli.cronRuns()
-                guard generation == cronRunsGeneration else { return }
+                guard generation == cronRunsGeneration, isCurrent() else { return }
                 cronHistoryAvailable = result.succeeded
                 guard cronHistoryAvailable else {
-                    let message = result.stderr.isEmpty ? "Hermes cron history is temporarily unavailable." : result.stderr
+                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes cron history is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("cron.history", error: message)
                     lastError = message
                     return
@@ -529,9 +733,9 @@ final class ControlCenterModel: ObservableObject {
                 cronRuns = Self.parseCronRuns(result.stdout)
                 recordProjectionSuccess("cron.history")
             } catch {
-                guard generation == cronRunsGeneration else { return }
+                guard generation == cronRunsGeneration, isCurrent() else { return }
                 cronHistoryAvailable = false
-                let message = error.localizedDescription
+                let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 recordProjectionFailure("cron.history", error: message)
                 lastError = message
             }
@@ -544,18 +748,27 @@ final class ControlCenterModel: ObservableObject {
         // Intentionally empty.
     }
 
-    func refreshMCPInventory() {
+    func refreshMCPInventory(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {
         guard let cli else { return }
+        let resolvedClientIdentity = clientIdentity ?? dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let bindingGeneration = self.clientBindingGeneration
+        guard isCurrentClient(resolvedClientIdentity, bindingGeneration: bindingGeneration) else { return }
+        let isCurrent: () -> Bool = {
+            if let refreshGeneration {
+                return self.isCurrentRefresh(refreshGeneration, clientIdentity: resolvedClientIdentity)
+            }
+            return self.isCurrentClient(resolvedClientIdentity, bindingGeneration: bindingGeneration)
+        }
         beginProjectionRefresh("mcp.inventory")
         let generation = UUID()
         mcpInventoryGeneration = generation
         Task {
             do {
                 let result = try await cli.mcpList()
-                guard generation == mcpInventoryGeneration else { return }
+                guard generation == mcpInventoryGeneration, isCurrent() else { return }
                 mcpInventoryAvailable = result.succeeded
                 guard mcpInventoryAvailable else {
-                    let message = result.stderr.isEmpty ? "Hermes MCP inventory is temporarily unavailable." : result.stderr
+                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes MCP inventory is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("mcp.inventory", error: message)
                     lastError = message
                     return
@@ -563,9 +776,9 @@ final class ControlCenterModel: ObservableObject {
                 mcpServers = Self.parseMCPServers(result.stdout)
                 recordProjectionSuccess("mcp.inventory")
             } catch {
-                guard generation == mcpInventoryGeneration else { return }
+                guard generation == mcpInventoryGeneration, isCurrent() else { return }
                 mcpInventoryAvailable = false
-                let message = error.localizedDescription
+                let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 recordProjectionFailure("mcp.inventory", error: message)
                 lastError = message
             }
@@ -584,12 +797,12 @@ final class ControlCenterModel: ObservableObject {
             defer { finishAction(actionID) }
             do {
                 let result = try await cli.mcpTest(name: server.name)
-                let output = HermesDiagnosticsService.safeSummary(result.succeeded ? result.stdout : result.stderr)
+                let output = HermesDiagnosticsService.safeSummary(result.succeeded ? result.stdout : Self.safeUserDiagnostic(result.stderr))
                 mcpTestResults[server.id] = result.succeeded
                     ? (output.isEmpty ? "Connection succeeded." : output)
                     : (output.isEmpty ? "Connection failed." : output)
             } catch {
-                mcpTestResults[server.id] = error.localizedDescription
+                mcpTestResults[server.id] = Self.safeUserDiagnostic(error.localizedDescription)
             }
         }
     }
@@ -600,14 +813,14 @@ final class ControlCenterModel: ObservableObject {
             return false
         }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanSchedule = schedule.trimmingCharacters(in: .whitespacesAndNewlines)
+        let originalSchedule = schedule
         let cleanPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanName.isEmpty, !cleanSchedule.isEmpty, !cleanPrompt.isEmpty else {
+        guard !cleanName.isEmpty, !originalSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !cleanPrompt.isEmpty else {
             lastError = "Name, schedule, and request are required to create an automation."
             return false
         }
-        guard CronSchedule.isValid(cleanSchedule) else {
-            lastError = "Schedule must be a 5-field cron expression (minute hour day month weekday)."
+        guard CronSchedule.isValid(originalSchedule) else {
+            lastError = "Schedule cannot be empty or contain control characters."
             return false
         }
         let actionID = "cron.create"
@@ -615,11 +828,11 @@ final class ControlCenterModel: ObservableObject {
         defer { finishAction(actionID) }
         do {
             guard let rpc else { return false }
-            _ = try await rpc.createCron(name: cleanName, schedule: cleanSchedule, prompt: cleanPrompt)
+            _ = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt)
             refresh()
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -638,7 +851,7 @@ final class ControlCenterModel: ObservableObject {
                 _ = try await rpc.removeCron(jobID: job.id)
                 refresh()
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -686,6 +899,8 @@ final class ControlCenterModel: ObservableObject {
     func openProject(_ project: ProjectSummary) {
         guard rpc != nil else { return }
         let generation = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         projectSessionsGeneration = generation
         currentFocus = ControlReference(source: .hermesProject, sourceID: project.id, projectID: project.id)
         selectedProjectID = project.id
@@ -695,14 +910,18 @@ final class ControlCenterModel: ObservableObject {
             do {
                 let result = try await rpc?.projectSessions(projectID: project.id)
                 guard let result else { throw HermesGateway.GatewayError.malformedResponse }
-                guard generation == projectSessionsGeneration, selectedProjectID == project.id else { return }
+                guard generation == projectSessionsGeneration,
+                      selectedProjectID == project.id,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 projectSessions = Self.parseProjectSessions(result)
                 for session in projectSessions {
                     projectIDBySessionID[session.id] = project.id
                 }
             } catch {
-                guard generation == projectSessionsGeneration, selectedProjectID == project.id else { return }
-                lastError = error.localizedDescription
+                guard generation == projectSessionsGeneration,
+                      selectedProjectID == project.id,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -733,8 +952,9 @@ final class ControlCenterModel: ObservableObject {
         searchTask = Task { [weak self] in
             guard let self else { return }
             var sessions = localSessions
-            if let rpc = self.rpc, let result = try? await rpc.sessions(limit: 100) {
-                sessions = Self.parseSessions(result)
+            if let rpc = self.rpc, let result = try? await rpc.sessions(limit: 100),
+               let parsedSessions = Self.parseSessions(result) {
+                sessions = parsedSessions
             }
             guard !Task.isCancelled, self.searchGeneration == generation else { return }
             self.searchResults = Self.makeSearchResults(
@@ -758,7 +978,7 @@ final class ControlCenterModel: ObservableObject {
                     currentFocus = result.reference
                     dockModel?.requestComposerFocus()
                 } catch {
-                    lastError = error.localizedDescription
+                    lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 }
             }
         case .hermesProject:
@@ -782,7 +1002,7 @@ final class ControlCenterModel: ObservableObject {
                 _ = try await rpc.reloadMCP(sessionID: sessionID)
                 dockModel?.refreshRuntimeConfiguration()
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -808,7 +1028,7 @@ final class ControlCenterModel: ObservableObject {
                 guard result.succeeded else {
                     guard generation == kanbanRefreshGeneration,
                           requestedBoardSlug == selectedKanbanBoardSlug else { return }
-                    let message = result.stderr.isEmpty ? "Hermes Kanban is unavailable." : result.stderr
+                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("kanban.board", error: message)
                     lastError = message
                     return
@@ -824,7 +1044,7 @@ final class ControlCenterModel: ObservableObject {
                 refreshKanbanDiagnostics()
             } catch {
                 guard generation == kanbanRefreshGeneration else { return }
-                let message = error.localizedDescription
+                let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 recordProjectionFailure("kanban.board", error: message)
                 lastError = message
             }
@@ -871,7 +1091,7 @@ final class ControlCenterModel: ObservableObject {
                 guard result.succeeded else {
                     self.recordProjectionFailure(
                         "kanban.session",
-                        error: result.stderr.isEmpty ? "Hermes Kanban is unavailable." : result.stderr
+                        error: Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
                     )
                     self.sessionKanbanTask = nil
                     return
@@ -883,7 +1103,7 @@ final class ControlCenterModel: ObservableObject {
                 guard generation == self.sessionKanbanRefreshGeneration,
                       self.sessionKanbanSessionID == requestedSessionID else { return }
                 self.sessionKanbanTask = nil
-                self.recordProjectionFailure("kanban.session", error: error.localizedDescription)
+                self.recordProjectionFailure("kanban.session", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -899,7 +1119,7 @@ final class ControlCenterModel: ObservableObject {
                 let result = try await cli.kanbanBoards()
                 guard generation == kanbanBoardsGeneration else { return }
                 guard result.succeeded else {
-                    lastError = result.stderr.isEmpty ? "Hermes Kanban boards are unavailable." : result.stderr
+                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban boards are unavailable." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 let boards = Self.parseKanbanBoards(result.stdout)
@@ -922,7 +1142,7 @@ final class ControlCenterModel: ObservableObject {
                 }
             } catch {
                 guard generation == kanbanBoardsGeneration else { return }
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -967,19 +1187,25 @@ final class ControlCenterModel: ObservableObject {
     func refreshReadOnlyHealth() {
         guard let cli else { return }
         let generation = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
         journeyGeneration = generation
         Task {
             if capabilityAvailable("journey.timeline"),
                let result = try? await cli.journey(), result.succeeded,
-               generation == journeyGeneration {
+               generation == journeyGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) {
                 journeyNodes = Self.parseJourneyNodes(result.stdout)
             }
             if capabilityAvailable("sessions.stats"),
-               let result = try? await cli.sessionStats(), generation == journeyGeneration {
+               let result = try? await cli.sessionStats(), generation == journeyGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) {
                 sessionStoreStatus = Self.readOnlyStatus(id: "sessions.stats", title: "Session store", result: result)
             }
             if capabilityAvailable("memory.status"),
-               let result = try? await cli.memoryStatus(), generation == journeyGeneration {
+               let result = try? await cli.memoryStatus(), generation == journeyGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) {
                 memoryHealthStatus = Self.readOnlyStatus(id: "memory.status", title: "Memory health", result: result)
             }
         }
@@ -987,6 +1213,8 @@ final class ControlCenterModel: ObservableObject {
 
     func refreshSessionCockpit(for requestedSessionID: String? = nil) {
         let generation = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         sessionCockpitGeneration = generation
         let sessionID = requestedSessionID ?? dockModel?.sessionID
         guard capabilityAvailable("rpc-sessions"), let rpc, let sessionID, !sessionID.isEmpty else {
@@ -1005,6 +1233,7 @@ final class ControlCenterModel: ObservableObject {
             let context = try? await rpc.sessionContextBreakdown(sessionID: sessionID)
             guard generation == sessionCockpitGeneration,
                   sessionCockpitSessionID == sessionID,
+                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
                   (requestedSessionID != nil || dockModel?.sessionID == sessionID) else { return }
             if let usage { sessionUsage = Self.parseSessionUsage(usage) }
             if let context { sessionContext = Self.parseSessionContext(context) }
@@ -1042,7 +1271,7 @@ final class ControlCenterModel: ObservableObject {
             if !action.wasAccepted { lastError = "Hermes rejected the steering correction." }
             return action
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return nil
         }
     }
@@ -1059,14 +1288,14 @@ final class ControlCenterModel: ObservableObject {
                 guard generation == kanbanDiagnosticsGeneration,
                       requestedBoardSlug == selectedKanbanBoardSlug else { return }
                 guard result.succeeded else {
-                    recordProjectionFailure("kanban.diagnostics", error: result.stderr)
+                    recordProjectionFailure("kanban.diagnostics", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
                 kanbanDiagnostics = Self.parseKanbanDiagnostics(result.stdout, boardSlug: requestedBoardSlug, severity: severity)
                 recordProjectionSuccess("kanban.diagnostics")
             } catch {
                 guard generation == kanbanDiagnosticsGeneration else { return }
-                recordProjectionFailure("kanban.diagnostics", error: error.localizedDescription)
+                recordProjectionFailure("kanban.diagnostics", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1085,14 +1314,14 @@ final class ControlCenterModel: ObservableObject {
                 guard result.succeeded,
                       let data = result.stdout.data(using: .utf8),
                       let value = try? JSONSerialization.jsonObject(with: data) else {
-                    recordProjectionFailure("kanban.attachments", error: result.stderr)
+                    recordProjectionFailure("kanban.attachments", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
                 kanbanAttachments = Self.parseKanbanAttachments(value, boardSlug: requestedBoardSlug, taskID: taskID)
                 recordProjectionSuccess("kanban.attachments")
             } catch {
                 guard generation == kanbanAttachmentsGeneration else { return }
-                recordProjectionFailure("kanban.attachments", error: error.localizedDescription)
+                recordProjectionFailure("kanban.attachments", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1109,14 +1338,14 @@ final class ControlCenterModel: ObservableObject {
                 guard result.succeeded,
                       let data = result.stdout.data(using: .utf8),
                       let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                    recordProjectionFailure("prompt.budget", error: result.stderr)
+                    recordProjectionFailure("prompt.budget", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
                 promptBudget = PromptBudgetSummary(totalTokens: Self.intValue(row["total_tokens"] ?? row["total"]), tokenLimit: Self.optionalIntValue(row["token_limit"] ?? row["context_max"]), percent: Self.doubleValue(row["percent"] ?? row["context_percent"]), model: row["model"] as? String)
                 recordProjectionSuccess("prompt.budget")
             } catch {
                 guard generation == promptBudgetGeneration else { return }
-                recordProjectionFailure("prompt.budget", error: error.localizedDescription)
+                recordProjectionFailure("prompt.budget", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1129,22 +1358,30 @@ final class ControlCenterModel: ObservableObject {
         }
         let factsGeneration = UUID()
         let verificationGeneration = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         projectFactsGeneration = factsGeneration
         self.verificationGeneration = verificationGeneration
         let sessionID = requestedSessionID ?? dockModel?.sessionID
         Task { @MainActor in
             do {
                 let factsResult = try await rpc.projectFacts(cwd: repository.path)
-                guard factsGeneration == self.projectFactsGeneration else { return }
+                guard factsGeneration == self.projectFactsGeneration,
+                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 projectFacts = Self.parseProjectFacts(factsResult)
             } catch {
+                guard factsGeneration == self.projectFactsGeneration,
+                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 projectFacts = nil
             }
             do {
                 let result = try await rpc.verificationStatus(sessionID: sessionID, cwd: repository.path)
-                guard verificationGeneration == self.verificationGeneration else { return }
+                guard verificationGeneration == self.verificationGeneration,
+                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 verification = Self.parseVerification(result)
             } catch {
+                guard verificationGeneration == self.verificationGeneration,
+                      self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 verification = VerificationSummary(state: .unknown, evidence: nil)
             }
         }
@@ -1168,7 +1405,7 @@ final class ControlCenterModel: ObservableObject {
             dockModel.registerBackgroundTask(id: taskID, prompt: cleanPrompt, parentSessionID: sessionID, kind: kind)
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1182,7 +1419,7 @@ final class ControlCenterModel: ObservableObject {
             refresh()
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1203,7 +1440,7 @@ final class ControlCenterModel: ObservableObject {
             if !response.wasAccepted { lastError = "Hermes rejected the redirect." }
             return response
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return nil
         }
     }
@@ -1216,7 +1453,7 @@ final class ControlCenterModel: ObservableObject {
             refresh()
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1231,7 +1468,7 @@ final class ControlCenterModel: ObservableObject {
             refreshSessionCockpit()
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1249,7 +1486,7 @@ final class ControlCenterModel: ObservableObject {
             refresh()
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1261,7 +1498,7 @@ final class ControlCenterModel: ObservableObject {
             delegationPaused = result["paused"] as? Bool ?? paused
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1276,7 +1513,7 @@ final class ControlCenterModel: ObservableObject {
             }
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1295,7 +1532,7 @@ final class ControlCenterModel: ObservableObject {
             refresh()
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1321,7 +1558,8 @@ final class ControlCenterModel: ObservableObject {
                 guard taskResult.succeeded,
                       var detail = Self.parseKanbanTaskDetail(taskResult.stdout, fallback: task, boardSlug: requestedBoardSlug) else {
                     guard generation == kanbanDetailGeneration else { return }
-                    lastError = taskResult.stderr.isEmpty ? "Hermes Kanban task details are unavailable." : taskResult.stderr
+                    let safeError = HermesDiagnosticsService.safeSummary(taskResult.stderr)
+                    lastError = safeError.isEmpty ? "Hermes Kanban task details are unavailable." : safeError
                     return
                 }
 
@@ -1344,7 +1582,7 @@ final class ControlCenterModel: ObservableObject {
             } catch {
                 guard generation == kanbanDetailGeneration,
                       requestedBoardSlug == selectedKanbanBoardSlug else { return }
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1380,13 +1618,13 @@ final class ControlCenterModel: ObservableObject {
         do {
             let result = try await cli.kanbanCreate(boardSlug: selectedKanbanBoardSlug, title: cleanTitle, body: cleanBody.isEmpty ? nil : cleanBody)
             guard result.succeeded else {
-                lastError = result.stderr.isEmpty ? "Hermes Kanban could not create the task." : result.stderr
+                lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr)
                 return false
             }
             refreshKanban()
             return true
         } catch {
-            lastError = error.localizedDescription
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
     }
@@ -1406,12 +1644,12 @@ final class ControlCenterModel: ObservableObject {
                 case .archive: result = try await cli.kanbanArchive(boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id)
                 }
                 guard result.succeeded else {
-                    lastError = result.stderr.isEmpty ? "Hermes Kanban could not update the task." : result.stderr
+                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 refreshKanban()
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1447,13 +1685,13 @@ final class ControlCenterModel: ObservableObject {
                     result = try await cli.kanbanReclaim(boardSlug: request.task.boardSlug ?? selectedKanbanBoardSlug, taskID: request.task.id, reason: value)
                 }
                 guard result.succeeded else {
-                    lastError = result.stderr.isEmpty ? "Hermes Kanban could not update the task." : result.stderr
+                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not update the task." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 refreshKanban()
                 loadKanbanTask(request.task)
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1483,12 +1721,12 @@ final class ControlCenterModel: ObservableObject {
             do {
                 let result = try await cli.cronEdit(jobID: job.id, changes: changes)
                 guard result.succeeded else {
-                    lastError = result.stderr.isEmpty ? "Hermes could not edit the scheduled job." : result.stderr
+                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes could not edit the scheduled job." : Self.safeUserDiagnostic(result.stderr)
                     return
                 }
                 refresh()
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1514,12 +1752,12 @@ final class ControlCenterModel: ObservableObject {
         guard let dockModel else { return }
         Task {
             do {
-                _ = try await dockModel.requestControl("session.activate", params: ["session_id": session.id])
+                _ = try await dockModel.requestControl(HermesFeatureIDs.ID.sessionActivate, params: ["session_id": session.id])
                 focus(sessionID: session.id)
                 dockModel.updateCurrentSessionTitle(session.title)
                 dockModel.requestComposerFocus()
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1571,7 +1809,7 @@ final class ControlCenterModel: ObservableObject {
                 }
                 markResolved(item.id)
             } catch {
-                lastError = error.localizedDescription
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1828,7 +2066,7 @@ final class ControlCenterModel: ObservableObject {
                 guard generation == self.sessionProcessesGeneration,
                       self.currentFocus?.sessionID == sessionID else { return }
                 self.processes = []
-                self.recordProjectionFailure("processes", error: error.localizedDescription)
+                self.recordProjectionFailure("processes", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -1870,14 +2108,18 @@ final class ControlCenterModel: ObservableObject {
               project(forSessionID: sessionID) == nil,
               let rpc, !projects.isEmpty else { return }
         let generation = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         projectMembershipGeneration = generation
         let candidates = projects
         Task { @MainActor [weak self] in
             guard let self else { return }
             for project in candidates {
-                guard generation == projectMembershipGeneration else { return }
+                guard generation == projectMembershipGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 guard let result = try? await rpc.projectSessions(projectID: project.id) else { continue }
-                guard generation == projectMembershipGeneration else { return }
+                guard generation == projectMembershipGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 if Self.parseProjectSessions(result).contains(where: { $0.id == sessionID }) {
                     projectIDBySessionID[sessionID] = project.id
                     return
@@ -1991,19 +2233,43 @@ final class ControlCenterModel: ObservableObject {
         return ""
     }
 
-    private func refreshLatestActivities() async throws {
-        guard let rpc else { return }
+    private func refreshLatestActivities(
+        rpc: HermesControlRPC,
+        generation: UInt64,
+        clientIdentity: ObjectIdentifier?
+    ) async throws {
         var sessionRows: [[String: Any]] = []
         var offset = 0
+        var pageCount = 0
+        var seenPageSignatures = Set<String>()
+        var seenSessionIDs = Set<String>()
+        let maximumPageCount = 1_000
         repeat {
-            let page = try await rpc.sessionPages(limit: 200, offset: offset)
-            let rows = (page["data"] as? [[String: Any]]) ?? []
+            guard pageCount < maximumPageCount else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            let page = try await rpc.sessionPages(limit: 100, offset: offset)
+            guard let rows = page["data"] as? [[String: Any]] else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            guard let hasMore = Self.parseHasMore(page) else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            if rows.isEmpty, hasMore {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            pageCount += 1
+            if !rows.isEmpty, Self.paginationPageIsRepeated(rows, seenSignatures: &seenPageSignatures, seenSessionIDs: &seenSessionIDs) {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
             sessionRows.append(contentsOf: rows)
             offset += rows.count
-            if rows.isEmpty || page["has_more"] as? Bool != true { break }
+            if rows.isEmpty || !hasMore { break }
         } while true
 
-        let sessions = Self.parseSessions(["data": sessionRows])
+        guard let sessions = Self.parseSessions(["data": sessionRows]) else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
         var stepsBySessionID: [String: [SessionActivityStep]] = [:]
         var failedSessionCount = 0
 
@@ -2014,7 +2280,7 @@ final class ControlCenterModel: ObservableObject {
                 for session in batch {
                     group.addTask { [weak self] in
                         guard let self else { return (session.id, [], false) }
-                        let result = await self.fetchActivitySteps(sessionID: session.id)
+                        let result = await self.fetchActivitySteps(rpc: rpc, sessionID: session.id)
                         return (session.id, result.steps, result.succeeded)
                     }
                 }
@@ -2042,27 +2308,58 @@ final class ControlCenterModel: ObservableObject {
                 userInfo: [NSLocalizedDescriptionKey: "Latest activity is partial: unable to read activity from \(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s")."]
             )
         }
+        guard isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
         latestActivities = projectedActivities
     }
 
-    private func fetchActivitySteps(sessionID: String) async -> (steps: [SessionActivityStep], succeeded: Bool) {
-        guard let rpc else { return ([], false) }
+    private func fetchActivitySteps(rpc: HermesControlRPC, sessionID: String) async -> (steps: [SessionActivityStep], succeeded: Bool) {
         do {
             let result = try await rpc.sessionMessages(sessionID: sessionID)
-            return (Self.parseActivitySteps(result), true)
+            guard let steps = Self.parseActivityStepsEnvelope(result) else {
+                return ([], false)
+            }
+            return (steps, true)
+        } catch HermesGateway.GatewayError.httpError(404) {
+            // A session can be pruned after its list page was read. Omit it
+            // from this optional activity timeline rather than failing Today
+            // or showing an unrelated Inbox warning.
+            return ([], true)
         } catch {
             return ([], false)
         }
     }
 
-    private static func parseActivitySteps(_ result: [String: Any]) -> [SessionActivityStep] {
-        let rows = (result["data"] as? [[String: Any]]) ?? (result["messages"] as? [[String: Any]]) ?? []
-        return rows.enumerated().flatMap { index, row in
-            let timestamp = activityDate(row["timestamp"])
-            var names: [String] = []
+    static func parseActivityStepsEnvelope(_ result: [String: Any]) -> [SessionActivityStep]? {
+        guard result["messages"] == nil,
+              let rows = result["data"] as? [[String: Any]] else {
+            return nil
+        }
+        var steps: [SessionActivityStep] = []
+        var seenActivityIDs = Set<String>()
+        for row in rows {
+            let id: String
+            if let stringID = row["id"] as? String {
+                id = stringID
+            } else if let numericID = row["id"] as? NSNumber, !(row["id"] is Bool) {
+                id = numericID.stringValue
+            } else {
+                return nil
+            }
+            guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  seenActivityIDs.insert(id).inserted else { return nil }
+            if let role = row["role"], !(role is String) { return nil }
+            if let timestamp = row["timestamp"], activityDate(timestamp) == nil { return nil }
+            if let toolName = row["tool_name"], !(toolName is String) { return nil }
 
-            if let toolCalls = row["tool_calls"] as? [[String: Any]] {
+            var names: [String] = []
+            if let rawToolCalls = row["tool_calls"] {
+                guard let toolCalls = rawToolCalls as? [[String: Any]] else { return nil }
                 for call in toolCalls {
+                    if let function = call["function"] {
+                        guard let function = function as? [String: Any] else { return nil }
+                        if let name = function["name"], !(name is String) { return nil }
+                    }
+                    if let name = call["name"], !(name is String) { return nil }
                     let function = call["function"] as? [String: Any]
                     if let name = (function?["name"] as? String) ?? (call["name"] as? String) {
                         names.append(name)
@@ -2076,33 +2373,94 @@ final class ControlCenterModel: ObservableObject {
                 names = ["Response"]
             }
 
-            return names.enumerated().map { nameIndex, name in
-                let id = (row["id"] as? String) ?? "message-\(index)-\(nameIndex)"
-                return SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp)
+            let timestamp = activityDate(row["timestamp"]) ?? .distantPast
+            steps.append(contentsOf: names.enumerated().map { nameIndex, name in
+                SessionActivityStep(id: "\(id)-\(nameIndex)", name: name, timestamp: timestamp)
+            })
+        }
+        return steps
+    }
+
+    static func parseHasMore(_ page: [String: Any]) -> Bool? {
+        guard let value = page["has_more"] else { return nil }
+        return value as? Bool
+    }
+
+    static func paginationPageIsRepeated(
+        _ rows: [[String: Any]],
+        seenSignatures: inout Set<String>
+    ) -> Bool {
+        var seenSessionIDs = Set<String>()
+        return paginationPageIsRepeated(rows, seenSignatures: &seenSignatures, seenSessionIDs: &seenSessionIDs)
+    }
+
+    static func paginationPageIsRepeated(
+        _ rows: [[String: Any]],
+        seenSignatures: inout Set<String>,
+        seenSessionIDs: inout Set<String>
+    ) -> Bool {
+        guard let signature = paginationPageSignature(rows) else { return false }
+        let repeatedPage = !seenSignatures.insert(signature).inserted
+        let ids = rows.compactMap { $0["id"] as? String }
+        let overlaps = ids.contains { seenSessionIDs.contains($0) }
+        seenSessionIDs.formUnion(ids)
+        return repeatedPage || overlaps
+    }
+
+    static func paginationPageSignature(_ rows: [[String: Any]]) -> String? {
+        guard rows.allSatisfy({ $0["id"] is String }) else { return nil }
+        return "\(rows.count):" + rows.compactMap { $0["id"] as? String }.joined(separator: "\u{1F}")
+    }
+
+    private static func activityDate(_ value: Any?) -> Date? {
+        if let value, !(value is Bool), let number = value as? NSNumber {
+            return Date(timeIntervalSince1970: number.doubleValue)
+        }
+        if let string = value as? String {
+            return ISO8601DateFormatter().date(from: string)
+        }
+        return nil
+    }
+
+    static func parseSessions(_ result: [String: Any]) -> [SessionSummary]? {
+        let rows: [[String: Any]]
+        if let value = result["sessions"] {
+            guard let parsed = value as? [[String: Any]] else { return nil }
+            rows = parsed
+        } else if let value = result["active"] {
+            guard let parsed = value as? [[String: Any]] else { return nil }
+            rows = parsed
+        } else if let value = result["data"] {
+            guard let parsed = value as? [[String: Any]] else { return nil }
+            rows = parsed
+        } else {
+            return nil
+        }
+
+        var sessions: [SessionSummary] = []
+        for row in rows {
+            guard let id = row["id"] as? String,
+                  !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  isOptionalString(row["title"]),
+                  isOptionalString(row["name"]),
+                  isOptionalString(row["state"]),
+                  isOptionalString(row["status"]),
+                  isOptionalString(row["preview"]),
+                  isOptionalString(row["last_message"]) else {
+                return nil
             }
-        }
-    }
-
-    private static func activityDate(_ value: Any?) -> Date {
-        if let number = value as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
-        if let string = value as? String,
-           let date = ISO8601DateFormatter().date(from: string) {
-            return date
-        }
-        return .distantPast
-    }
-
-    private static func parseSessions(_ result: [String: Any]) -> [SessionSummary] {
-        let rows = (result["sessions"] as? [[String: Any]]) ?? (result["active"] as? [[String: Any]]) ?? (result["data"] as? [[String: Any]]) ?? []
-        return rows.compactMap { row in
-            guard let id = row["id"] as? String else { return nil }
-            return SessionSummary(
+            sessions.append(SessionSummary(
                 id: id,
                 title: (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session",
                 state: (row["state"] as? String) ?? (row["status"] as? String) ?? "active",
                 preview: row["preview"] as? String ?? row["last_message"] as? String
-            )
+            ))
         }
+        return sessions
+    }
+
+    private static func isOptionalString(_ value: Any?) -> Bool {
+        value == nil || value is String
     }
 
     private static func parseProcesses(_ result: [String: Any]) -> [ProcessSummary] {
@@ -2514,7 +2872,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     static func readOnlyStatus(id: String, title: String, result: HermesCLIResult) -> HermesReadOnlyStatus {
-        let output = result.succeeded ? result.stdout : result.stderr
+        let output = result.succeeded ? result.stdout : Self.safeUserDiagnostic(result.stderr)
         let detail = HermesDiagnosticsService.safeSummary(output)
         return HermesReadOnlyStatus(
             id: id,

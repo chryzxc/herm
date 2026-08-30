@@ -2,7 +2,10 @@ import Foundation
 
 /// The small transport surface used by control-center services. Keeping this
 /// separate from the concrete gateway makes capability and projection logic
-/// testable without launching a Hermes process.
+/// testable without launching a Hermes process. Gateway administration is
+/// intentionally not represented here: Hermes 0.20.6 exposes human-oriented
+/// gateway/pairing/webhook commands, not a verified typed RPC contract, so Dock
+/// must not invent request methods for those mutations.
 @MainActor
 protocol HermesRPCClientProtocol: AnyObject {
     var onEvent: ((String, [String: Any]) -> Void)? { get set }
@@ -66,10 +69,23 @@ final class HermesControlRPC {
         self.client = client
     }
 
-    func activeSessions() async throws -> [String: Any] { try await client.request("session.active_list", params: [:]) }
-    func sessions(limit: Int = 50) async throws -> [String: Any] { try await client.request("session.list", params: ["limit": limit]) }
-    func sessionPages(limit: Int = 200, offset: Int = 0) async throws -> [String: Any] {
-        try await client.fetchHTTP("/api/sessions?limit=\(limit)&offset=\(offset)")
+    func activeSessions() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:]) }
+    func sessions(limit: Int = 50) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionList.rawValue, params: ["limit": limit]) }
+    func sessionPages(limit: Int = 100, offset: Int = 0) async throws -> [String: Any] {
+        let result = try await client.fetchHTTP("/api/sessions?limit=\(limit)&offset=\(offset)")
+        // Hermes Agent's REST endpoint uses `sessions`/`total`; the Dock's
+        // activity projection predates that endpoint and uses `data`/`has_more`.
+        // Adapt at the transport boundary so both forms remain supported.
+        guard result["data"] == nil else { return result }
+        guard let sessions = result["sessions"] as? [[String: Any]],
+              let total = result["total"] as? Int,
+              total >= offset + sessions.count else {
+            return result
+        }
+        var canonical = result
+        canonical["data"] = sessions
+        canonical["has_more"] = offset + sessions.count < total
+        return canonical
     }
     func sessionMessages(sessionID: String) async throws -> [String: Any] {
         let disallowed = CharacterSet(charactersIn: "/")
@@ -77,68 +93,77 @@ final class HermesControlRPC {
         guard let encoded = sessionID.addingPercentEncoding(withAllowedCharacters: allowed) else {
             throw NSError(domain: "HermesControl", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid session ID."])
         }
-        return try await client.fetchHTTP("/api/sessions/\(encoded)/messages?limit=500")
+        let result = try await client.fetchHTTP("/api/sessions/\(encoded)/messages?limit=500")
+        // The REST endpoint returns `messages`; normalize it to the envelope
+        // consumed by the activity projection without relaxing its validation.
+        guard result["data"] == nil, let messages = result["messages"] as? [[String: Any]] else {
+            return result
+        }
+        var canonical = result
+        canonical.removeValue(forKey: "messages")
+        canonical["data"] = messages
+        return canonical
     }
-    func activate(sessionID: String) async throws -> [String: Any] { try await client.request("session.activate", params: ["session_id": sessionID]) }
-    func resume(sessionID: String) async throws -> [String: Any] { try await client.request("session.resume", params: ["session_id": sessionID, "source": "hermes-agent-dock-control"]) }
-    func delete(sessionID: String) async throws -> [String: Any] { try await client.request("session.delete", params: ["session_id": sessionID]) }
-    func interrupt(sessionID: String) async throws -> [String: Any] { try await client.request("session.interrupt", params: ["session_id": sessionID]) }
-    func sessionUsage(sessionID: String) async throws -> [String: Any] { try await client.request("session.usage", params: ["session_id": sessionID]) }
-    func sessionContextBreakdown(sessionID: String) async throws -> [String: Any] { try await client.request("session.context_breakdown", params: ["session_id": sessionID]) }
+    func activate(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionActivate.rawValue, params: ["session_id": sessionID]) }
+    func resume(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: ["session_id": sessionID, "source": "hermes-agent-dock-control"]) }
+    func delete(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: ["session_id": sessionID]) }
+    func interrupt(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionInterrupt.rawValue, params: ["session_id": sessionID]) }
+    func sessionUsage(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionUsage.rawValue, params: ["session_id": sessionID]) }
+    func sessionContextBreakdown(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionContextBreakdown.rawValue, params: ["session_id": sessionID]) }
     func projectFacts(cwd: String) async throws -> [String: Any] {
-        try await client.request("project.facts", params: ["cwd": cwd])
+        try await client.request(HermesFeatureIDs.ID.projectFacts.rawValue, params: ["cwd": cwd])
     }
     func verificationStatus(sessionID: String?, cwd: String) async throws -> [String: Any] {
         var params: [String: Any] = ["cwd": cwd]
         if let sessionID, !sessionID.isEmpty { params["session_id"] = sessionID }
-        return try await client.request("verification.status", params: params)
+        return try await client.request(HermesFeatureIDs.ID.verificationStatus.rawValue, params: params)
     }
     func startBackgroundPrompt(sessionID: String, text: String) async throws -> [String: Any] {
-        try await client.request("prompt.background", params: ["session_id": sessionID, "text": text])
+        try await client.request(HermesFeatureIDs.ID.promptBackground.rawValue, params: ["session_id": sessionID, "text": text])
     }
-    func sessionTitle(sessionID: String) async throws -> [String: Any] { try await client.request("session.title", params: ["session_id": sessionID]) }
+    func sessionTitle(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionTitle.rawValue, params: ["session_id": sessionID]) }
     func setSessionTitle(sessionID: String, title: String) async throws -> [String: Any] {
-        try await client.request("session.title", params: ["session_id": sessionID, "title": title])
+        try await client.request(HermesFeatureIDs.ID.sessionTitle.rawValue, params: ["session_id": sessionID, "title": title])
     }
     func steer(sessionID: String, text: String) async throws -> [String: Any] {
-        try await client.request("session.steer", params: ["session_id": sessionID, "text": text])
+        try await client.request(HermesFeatureIDs.ID.sessionSteer.rawValue, params: ["session_id": sessionID, "text": text])
     }
     func branch(sessionID: String, name: String? = nil, count: Int? = nil) async throws -> [String: Any] {
         var params: [String: Any] = ["session_id": sessionID]
         if let name, !name.isEmpty { params["name"] = name }
         if let count, count > 0 { params["count"] = count }
-        return try await client.request("session.branch", params: params)
+        return try await client.request(HermesFeatureIDs.ID.sessionBranch.rawValue, params: params)
     }
     func compress(sessionID: String, focusTopic: String? = nil) async throws -> [String: Any] {
         var params: [String: Any] = ["session_id": sessionID]
         if let focusTopic, !focusTopic.isEmpty { params["focus_topic"] = focusTopic }
-        return try await client.request("session.compress", params: params)
+        return try await client.request(HermesFeatureIDs.ID.sessionCompress.rawValue, params: params)
     }
     func undo(sessionID: String) async throws -> [String: Any] {
-        try await client.request("session.undo", params: ["session_id": sessionID])
+        try await client.request(HermesFeatureIDs.ID.sessionUndo.rawValue, params: ["session_id": sessionID])
     }
     func redirect(sessionID: String, text: String) async throws -> [String: Any] {
-        try await client.request("session.redirect", params: ["session_id": sessionID, "text": text])
+        try await client.request(HermesFeatureIDs.ID.sessionRedirect.rawValue, params: ["session_id": sessionID, "text": text])
     }
     func pauseDelegation(_ paused: Bool) async throws -> [String: Any] {
-        try await client.request("delegation.pause", params: ["paused": paused])
+        try await client.request(HermesFeatureIDs.ID.delegationPause.rawValue, params: ["paused": paused])
     }
     func interruptSubagent(subagentID: String) async throws -> [String: Any] {
-        try await client.request("subagent.interrupt", params: ["subagent_id": subagentID])
+        try await client.request(HermesFeatureIDs.ID.subagentInterrupt.rawValue, params: ["subagent_id": subagentID])
     }
     func killProcess(sessionID: String, processID: String) async throws -> [String: Any] {
-        try await client.request("process.kill", params: ["session_id": sessionID, "process_id": processID])
+        try await client.request(HermesFeatureIDs.ID.processKill.rawValue, params: ["session_id": sessionID, "process_id": processID])
     }
-    func respondToApproval(sessionID: String, choice: String) async throws -> [String: Any] { try await client.request("approval.respond", params: ["session_id": sessionID, "choice": choice]) }
-    func respondToClarification(sessionID: String, response: String) async throws -> [String: Any] { try await client.request("clarify.respond", params: ["session_id": sessionID, "response": response]) }
-    func delegationStatus() async throws -> [String: Any] { try await client.request("delegation.status", params: [:]) }
+    func respondToApproval(sessionID: String, choice: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: ["session_id": sessionID, "choice": choice]) }
+    func respondToClarification(sessionID: String, response: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: ["session_id": sessionID, "response": response]) }
+    func delegationStatus() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.delegationStatus.rawValue, params: [:]) }
     func cron(action: String, jobID: String? = nil) async throws -> [String: Any] {
         var params: [String: Any] = ["action": action]
         if let jobID { params["name"] = jobID }
-        return try await client.request("cron.manage", params: params)
+        return try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: params)
     }
     func createCron(name: String, schedule: String, prompt: String) async throws -> [String: Any] {
-        try await client.request("cron.manage", params: [
+        try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: [
             "action": "add", "name": name, "schedule": schedule, "prompt": prompt
         ])
     }
@@ -146,21 +171,21 @@ final class HermesControlRPC {
         try await cron(action: "remove", jobID: jobID)
     }
     func reloadMCP(sessionID: String) async throws -> [String: Any] {
-        try await client.request("reload.mcp", params: ["session_id": sessionID, "confirm": true])
+        try await client.request(HermesFeatureIDs.ID.reloadMCP.rawValue, params: ["session_id": sessionID, "confirm": true])
     }
     func processes(sessionID: String) async throws -> [String: Any] {
-        try await client.request("process.list", params: ["session_id": sessionID])
+        try await client.request(HermesFeatureIDs.ID.processList.rawValue, params: ["session_id": sessionID])
     }
-    func tools() async throws -> [String: Any] { try await client.request("tools.list", params: [:]) }
-    func plugins() async throws -> [String: Any] { try await client.request("plugins.list", params: [:]) }
-    func configuration() async throws -> [String: Any] { try await client.request("config.show", params: [:]) }
-    func projectsTree() async throws -> [String: Any] { try await client.request("projects.tree", params: [:]) }
+    func tools() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.toolsList.rawValue, params: [:]) }
+    func plugins() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.pluginsList.rawValue, params: [:]) }
+    func configuration() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.configShow.rawValue, params: [:]) }
+    func projectsTree() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.projectsTree.rawValue, params: [:]) }
     func projectSessions(projectID: String) async throws -> [String: Any] {
-        try await client.request("projects.project_sessions", params: ["project_id": projectID])
+        try await client.request(HermesFeatureIDs.ID.projectsProjectSessions.rawValue, params: ["project_id": projectID])
     }
     /// Structured-command entry point; never accept an arbitrary shell string.
     func runCommand(_ command: HermesCLICommand) async throws -> [String: Any] {
         let rendered = try command.rendered()
-        return try await client.request("shell.exec", params: ["command": rendered])
+        return try await client.request(HermesFeatureIDs.ID.shellExec.rawValue, params: ["command": rendered])
     }
 }
