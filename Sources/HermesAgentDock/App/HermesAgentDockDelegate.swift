@@ -369,8 +369,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panel.styleMask.insert(.miniaturizable)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.level = .normal
-        panel.isMovable = true
-        panel.isMovableByWindowBackground = true
+        // The fullscreen surface owns horizontal drag gestures for its split
+        // view. Letting AppKit move the borderless window by its background
+        // would intercept those gestures before SwiftUI sees the divider.
+        panel.isMovable = false
+        panel.isMovableByWindowBackground = false
 
         if let hostingView = panel.contentView {
             hostingView.wantsLayer = true

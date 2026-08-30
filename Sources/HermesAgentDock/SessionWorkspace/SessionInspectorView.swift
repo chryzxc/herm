@@ -29,7 +29,7 @@ struct SessionInspector: View {
             case .files: "Explorer"
             case .terminal: "Terminal"
             case .activity: "Activity"
-            case .changes: "Source Control"
+            case .changes: "Changes"
             case .overview: "Overview"
             case .verification: "Verify"
             }
@@ -126,6 +126,8 @@ struct SessionInspector: View {
                 .font(sessionTabFont)
                 .foregroundStyle(selectedSection == section ? Color.dockPrimaryText : Color.dockSecondaryText)
                 .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .allowsTightening(true)
                 .frame(maxWidth: .infinity, minHeight: 34)
                 .overlay(alignment: .bottom) {
                     if selectedSection == section {
@@ -339,7 +341,12 @@ struct SessionInspector: View {
                 onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
             )
         case .terminal:
-            SessionTerminalView(projectPath: sessionRepositoryPath)
+            SessionTerminalView(
+                projectPath: sessionRepositoryPath,
+                recipes: VerificationRecipeBuilder.make(facts: control.projectFacts, repository: workflow.repository),
+                repositoryID: workflow.repository.isGitRepository ? workflow.repository.repositoryID : nil,
+                repositoryFingerprint: workflow.repositoryFingerprint
+            )
         case .verification:
             VStack(alignment: .leading, spacing: 14) {
                 inspectorLabel("VERIFICATION")

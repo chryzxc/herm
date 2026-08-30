@@ -48,6 +48,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var clarificationItem: AttentionItem?
     @State private var clarificationResponse = ""
     @State private var expandedCronReportIDs: Set<String> = []
+    @State private var isShowingAllSkills = false
     @State private var kanbanStatusFilter = "All"
     @State private var kanbanAssigneeFilter = "All"
     @State private var kanbanMineOnly = false
@@ -949,14 +950,16 @@ struct WorkspaceActivitySidebar: View {
             if let facts = control.projectFacts {
                 diagnosticRow(label: "MANIFESTS", value: facts.manifests.isEmpty ? "NONE REPORTED" : facts.manifests.joined(separator: " · "), color: Color.dockSecondaryText)
                 diagnosticRow(label: "PACKAGE MANAGERS", value: facts.packageManagers.isEmpty ? "NONE REPORTED" : facts.packageManagers.joined(separator: " · "), color: Color.dockSecondaryText)
-                if !facts.verifyCommands.isEmpty {
-                    sectionLabel("HERMES-PROVIDED COMMANDS")
-                    ForEach(facts.verifyCommands, id: \.self) { command in
+                let recipes = VerificationRecipeBuilder.make(facts: facts, repository: workflow.repository)
+                if !recipes.isEmpty {
+                    sectionLabel("VERIFIED RECIPES")
+                    ForEach(recipes) { recipe in
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(command).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
+                            Text(recipe.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+                            Text(recipe.command).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
                             Button("RUN IN BACKGROUND") {
                                 guard let path = activeRepositoryPath else { return }
-                                let prompt = "Run this exact verification command in " + path + ": " + command + ". Do not edit files. Report the result, evidence scope, and exit code."
+                                let prompt = "Run this exact verification command in " + path + ": " + recipe.command + ". Do not edit files. Report the result, evidence scope, and exit code."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
                             }
                             .buttonStyle(.borderless).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockAccent)
@@ -2470,9 +2473,11 @@ struct WorkspaceActivitySidebar: View {
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
             }
 
-            // Interactive Workspace Metrics Strip
+            // Keep operational density proportional to the available inspector
+            // width. The adaptive grid adds useful metrics on wider screens
+            // instead of stretching the original four cards into empty slabs.
             sectionLabel("WORKSPACE OVERVIEW")
-            HStack(spacing: 8) {
+            LazyVGrid(columns: workspaceOverviewMetricColumns, alignment: .leading, spacing: 8) {
                 todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .dockSuccess : .dockWarning) {
                     select(.inbox)
                 }
@@ -2480,6 +2485,10 @@ struct WorkspaceActivitySidebar: View {
                 todayMetric("SESSIONS", value: activeSessions.count, color: .dockAccent) {
                     select(.projects)
                 }
+                todayMetric("PROJECTS", value: control.projects.count, color: .dockSecondaryText) {
+                    select(.projects)
+                }
+                todayMetric("AGENTS", value: control.activeAgents.count, color: .dockAccent)
                 todayMetric("SCHEDULED", value: control.cronJobs.count, color: .dockSuccess) {
                     select(.automations)
                 }
@@ -3256,6 +3265,10 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private var workspaceOverviewMetricColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 150, maximum: 230), spacing: 8, alignment: .leading)]
+    }
+
     private func missionFocusStrip(_ focus: MissionControlFocus) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
@@ -3715,9 +3728,11 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var agentUpdateSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                sectionLabel("HERMES AGENT UPDATE")
+                Text("Hermes Agent Update")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 if agentUpdateService.phase == .checking {
                     HStack(spacing: 6) {
@@ -3751,6 +3766,15 @@ struct WorkspaceActivitySidebar: View {
             case .updateFailed(let reason): agentUpdateFailedContent(reason)
             }
         }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.dockSurface.opacity(0.34))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(Color.dockBorderLight, lineWidth: 0.5)
+        }
         .confirmationDialog("Update Hermes Agent?", isPresented: $isShowingAgentUpdateConfirmation) {
             Button("Update Hermes Agent") { agentUpdateService.performUpdate() }
                 .disabled(agentUpdateService.isBusy)
@@ -3770,46 +3794,44 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 8) {
             if let installed = agentUpdateService.installed {
                 HStack(spacing: 8) {
-                    Text("INSTALLED")
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(0.8)
-                        .foregroundStyle(Color.dockMetadataText)
+                    Text("Installed")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 76, alignment: .leading)
                     Text(installed.displayVersion)
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(0.35)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockPrimaryText)
                     if let method = agentUpdateService.installMethod {
                         Text("·  \(method)")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.dockSecondaryText)
+                            .foregroundStyle(Color.dockMetadataText)
                     }
                 }
                 .lineLimit(1)
             }
             if let latest = agentUpdateService.latest {
                 HStack(spacing: 8) {
-                    Text("UPSTREAM")
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(0.8)
-                        .foregroundStyle(Color.dockMetadataText)
+                    Text("Latest release")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 76, alignment: .leading)
                     Text(latest.displayVersion + (latest.publishedAt.map { "  ·  " + HumanDateFormatting.dateAndTime($0) } ?? ""))
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(0.35)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let page = latest.pageURL, let url = URL(string: page) {
                         Button("RELEASE") { NSWorkspace.shared.open(url) }
                             .buttonStyle(.borderless)
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
             }
             HStack(spacing: 8) {
-                Circle().fill(statusColor).frame(width: 6, height: 6)
-                Text(statusText)
-                    .font(.system(size: 12, weight: .semibold))
+                Circle().fill(statusColor).frame(width: 7, height: 7)
+                Text(statusText.lowercased().capitalized)
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(statusColor)
                 if showsUpdateButton,
                    let installed = agentUpdateService.installed,
@@ -3822,16 +3844,20 @@ struct WorkspaceActivitySidebar: View {
                 }
                 Spacer(minLength: 0)
                 if showsUpdateButton {
-                    Button("UPDATE HERMES") { isShowingAgentUpdateConfirmation = true }
+                    Button("Update Hermes") { isShowingAgentUpdateConfirmation = true }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.dockWarning)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.dockAccent)
                         .disabled(!agentUpdateService.canStartUpdate)
                 }
             }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(statusColor.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             Text("SOURCE  ·  NousResearch/hermes-agent" + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockSecondaryText)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
         }
     }
 
@@ -3944,6 +3970,7 @@ struct WorkspaceActivitySidebar: View {
 
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
+            coreOverview
             agentUpdateSection
             Divider().overlay(Color.dockBorderLight)
 
@@ -3985,20 +4012,23 @@ struct WorkspaceActivitySidebar: View {
                     diagnosticRow(label: "PROJECT", value: facts.manifests.joined(separator: ", ").isEmpty ? "Code workspace" : facts.manifests.joined(separator: ", "), color: Color.dockAccent)
                     if !facts.packageManagers.isEmpty { diagnosticRow(label: "TOOLS", value: facts.packageManagers.joined(separator: ", "), color: Color.dockMetadataText) }
                     if !facts.contextFiles.isEmpty { diagnosticRow(label: "CONTEXT", value: facts.contextFiles.joined(separator: ", "), color: Color.dockMetadataText) }
-                    ForEach(facts.verifyCommands, id: \.self) { command in
+                    ForEach(VerificationRecipeBuilder.make(facts: facts, repository: workflow.repository)) { recipe in
                         HStack(spacing: 8) {
-                            Text(command).font(.system(size: 11)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(recipe.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+                                Text(recipe.command).font(.system(size: 11)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                            }
                             Spacer()
                             Button("COPY") {
                                 NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(command, forType: .string)
+                                NSPasteboard.general.setString(recipe.command, forType: .string)
                             }
                             .buttonStyle(.borderless)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                             Button("ASK HERMES") {
                                 let repoPath = control.developmentContext?.path ?? "the selected repository"
-                                let prompt = "Run this exact verification command in " + repoPath + ": " + command + ". Do not edit files. Report the result and exit code."
+                                let prompt = "Run this exact verification command in " + repoPath + ": " + recipe.command + ". Do not edit files. Report the result and exit code."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
                             }
                             .buttonStyle(.borderless)
@@ -4365,7 +4395,12 @@ struct WorkspaceActivitySidebar: View {
 
                 Divider().overlay(Color.dockBorderLight)
                 sectionLabel("INSTALLED SKILLS  ·  \(configuration.skills.count)")
-                configurationList(configuration.skills, empty: "No enabled skills reported by Hermes.")
+                configurationList(
+                    configuration.skills,
+                    empty: "No enabled skills reported by Hermes.",
+                    isExpanded: isShowingAllSkills,
+                    onToggle: { isShowingAllSkills.toggle() }
+                )
 
                 Divider().overlay(Color.dockBorderLight)
                 sectionLabel("MCP SERVERS  ·  \(configuration.mcpServers.count)")
@@ -4459,6 +4494,58 @@ struct WorkspaceActivitySidebar: View {
                   let matching = options.first(where: { $0.model == configuration.model && $0.provider == configuration.provider }) else { return }
             selectedModelID = matching.id
         }
+    }
+
+    private var coreOverview: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Core")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                Text("Runtime health, permissions, and session tools")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+
+            HStack(spacing: 8) {
+                coreSummaryChip(
+                    title: "Capabilities",
+                    value: capabilityInventorySnapshot.states.isEmpty ? "—" : "\(capabilityInventorySnapshot.verifiedCount)/\(capabilityInventorySnapshot.totalCount)",
+                    color: capabilityInventorySnapshot.states.isEmpty ? .dockSecondaryText : .dockSuccess
+                )
+                coreSummaryChip(
+                    title: "Session",
+                    value: model.sessionID == nil ? "None" : "Active",
+                    color: model.sessionID == nil ? .dockSecondaryText : .dockAccent
+                )
+                coreSummaryChip(
+                    title: "Attention",
+                    value: "\(control.attention.filter { $0.state == .open }.count)",
+                    color: control.attention.contains(where: { $0.state == .open }) ? .dockWarning : .dockSuccess
+                )
+            }
+        }
+        .padding(.bottom, 2)
+    }
+
+    private func coreSummaryChip(title: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(color)
+            Text(title)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Color.dockSecondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(Color.dockSurface.opacity(0.32))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.dockBorderLight, lineWidth: 0.5)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private var quotaContent: some View {
@@ -4732,8 +4819,15 @@ struct WorkspaceActivitySidebar: View {
             ?? "Select Hermes model"
     }
 
-    private func configurationList(_ values: [String], empty: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func configurationList(
+        _ values: [String],
+        empty: String,
+        isExpanded: Bool = false,
+        onToggle: (() -> Void)? = nil
+    ) -> some View {
+        let visibleValues = isExpanded ? values : Array(values.prefix(8))
+
+        return VStack(alignment: .leading, spacing: 6) {
             if values.isEmpty {
                 Text(empty)
                     .font(.system(size: 12))
@@ -4747,7 +4841,7 @@ struct WorkspaceActivitySidebar: View {
                     alignment: .leading,
                     spacing: 8
                 ) {
-                    ForEach(Array(values.prefix(8).enumerated()), id: \.offset) { _, value in
+                    ForEach(Array(visibleValues.enumerated()), id: \.offset) { _, value in
                         HStack(spacing: 7) {
                             Circle().fill(Color.dockAccent.opacity(0.65)).frame(width: 4, height: 4)
                             Text(value)
@@ -4761,10 +4855,24 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 if values.count > 8 {
-                    Text("+ \(values.count - 8) MORE")
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(0.65)
-                        .foregroundStyle(Color.dockMetadataText)
+                    if let onToggle {
+                        Button(action: onToggle) {
+                            HStack(spacing: 4) {
+                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text(isExpanded ? "SHOW FEWER" : "SHOW ALL \(values.count) SKILLS")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockAccent)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(isExpanded ? "Show fewer skills" : "Show all \(values.count) skills")
+                    } else {
+                        Text("+ \(values.count - 8) MORE")
+                            .font(.system(size: 12, weight: .semibold))
+                            .tracking(0.65)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
                 }
             }
         }

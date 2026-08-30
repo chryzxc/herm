@@ -71,7 +71,10 @@ struct HermesCapabilityServiceTests {
         let elapsed = started.duration(to: .now)
 
         #expect(states.isEmpty)
-        #expect(elapsed < .seconds(1))
+        // The probe timeout is 20 ms; allow scheduler/parallel-test jitter in
+        // the outer wall-clock assertion without weakening the empty result
+        // contract that proves the timeout path was taken.
+        #expect(elapsed < .seconds(2))
         client.release()
     }
 

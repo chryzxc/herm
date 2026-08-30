@@ -108,19 +108,107 @@ struct RepositoryChangesBrowser: View {
     }
 
     private func sourceControlHeader(_ changes: RepositoryChangeSnapshot) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
-            Text("Source Control")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.dockPrimaryText)
-            Spacer()
-            Text("\(changes.stagedCount) staged")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.dockMetadataText)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
+                Text("Source Control")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.dockPrimaryText)
+                Spacer()
+                if let github = workflow.githubRepository {
+                    Link(destination: github.webURL) {
+                        Label(github.id, systemImage: "arrow.up.right.square")
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+                    .foregroundStyle(Color.dockAccent)
+                    .help("Open GitHub repository")
+                    Button {
+                        Task { await workflow.refreshGitHub() }
+                    } label: {
+                        Image(systemName: workflow.isRefreshingGitHub ? "ellipsis" : "arrow.clockwise")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .disabled(workflow.isRefreshingGitHub)
+                    .help("Refresh GitHub pull requests")
+                    .accessibilityLabel("Refresh GitHub pull requests")
+                    .accessibilityIdentifier(WorkflowAccessibilityIdentifier.changesRefreshGitHub)
+                }
+                Text("\(changes.stagedCount) staged")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .padding(.bottom, 4)
+            switch workflow.githubIntegrationState {
+            case .noRemote:
+                Text("No GitHub remote detected.")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+            case .notLoaded:
+                Text("GitHub pull requests not loaded. Refresh to check.")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+            case .unavailable(let error):
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("GitHub unavailable: \(String(describing: error))")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockWarning)
+                    if case .unauthorized = error {
+                        Button {
+                            workflow.authenticateGitHub()
+                        } label: {
+                            Label(workflow.isAuthenticatingGitHub ? "SIGN IN IN BROWSER" : "CONNECT GITHUB", systemImage: "person.badge.key")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.dockAccent)
+                        .disabled(workflow.isAuthenticatingGitHub)
+                        .help("Authenticate with GitHub in your browser")
+                        if let notice = workflow.githubAuthenticationNotice {
+                            Text(notice)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(Color.dockMetadataText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            case .stale(let error):
+                Text("GitHub refresh failed; showing last known results (\(String(describing: error))).")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.dockWarning)
+            case .available:
+                if workflow.githubPullRequests.isEmpty {
+                    Text("No open GitHub pull requests.")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                } else {
+                    ForEach(workflow.githubPullRequests) { pullRequest in
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let url = pullRequest.webURL {
+                                Link(destination: url) {
+                                    Text("PR #\(pullRequest.number) · \(pullRequest.title)")
+                                        .font(.system(size: 10))
+                                        .lineLimit(1)
+                                }
+                            }
+                            if let blocker = pullRequest.blockingReasons.first {
+                                Text(blocker)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(Color.dockWarning)
+                            }
+                            if let metadata = pullRequest.metadataLabel {
+                                Text(metadata)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
+                        }
+                    }
+                }
+            }
         }
-        .padding(.bottom, 4)
     }
 
     private func sourceControlIcon(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {

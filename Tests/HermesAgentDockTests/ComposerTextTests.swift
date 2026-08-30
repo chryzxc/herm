@@ -3,6 +3,10 @@ import Testing
 
 @MainActor
 struct ComposerTextTests {
+    @Test func markdownOrderedListsIncrementNumbers() {
+        #expect(MarkdownMessageView.orderedListMarkers(in: "1. First\n2. Second\n3. Third") == ["1.", "2.", "3."])
+    }
+
     private let history = ["first prompt", "second prompt", "third prompt"]
 
     @Test func upArrowEntersHistoryAtNewestPrompt() {

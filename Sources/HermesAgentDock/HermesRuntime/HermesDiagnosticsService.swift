@@ -46,7 +46,8 @@ final class HermesDiagnosticsService {
                     && !line.contains("Auth file:")
                     && !line.contains(".env")
             }
-        return lines.prefix(3).joined(separator: "  ·  ")
+        let summary = lines.prefix(3).joined(separator: "  ·  ")
+        return String(summary.prefix(1_000))
     }
 
     nonisolated private static func scrubSecrets(in line: String) -> String {

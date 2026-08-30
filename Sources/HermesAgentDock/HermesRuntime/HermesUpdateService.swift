@@ -221,7 +221,7 @@ private final class HermesUpdateOutputCollector: @unchecked Sendable {
 
 /// Checks the locally installed Hermes agent against the latest
 /// NousResearch/hermes-agent release and can run the allow-listed
-/// `hermes update --yes` command with streamed progress. The update only
+/// `hermes update` command with streamed progress. The update only
 /// ever starts from an explicit, confirmed user action.
 @MainActor
 final class HermesUpdateService: ObservableObject {
@@ -234,7 +234,8 @@ final class HermesUpdateService: ObservableObject {
     @Published private(set) var updateStartedAt: Date?
 
     nonisolated static let latestReleaseURLString = "https://api.github.com/repos/NousResearch/hermes-agent/releases/latest"
-    nonisolated static let updateCommandDisplay = "hermes update --yes"
+    nonisolated static let updateCommandArguments = ["hermes", "update"]
+    nonisolated static let updateCommandDisplay = "hermes update"
     private static let logLineLimit = 300
     private static let versionReadTimeout: TimeInterval = 10
 
@@ -287,7 +288,7 @@ final class HermesUpdateService: ObservableObject {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["hermes", "update", "--yes"]
+        process.arguments = Self.updateCommandArguments
         process.environment = HermesEnvironment.processEnvironment()
         let pipe = Pipe()
         process.standardOutput = pipe

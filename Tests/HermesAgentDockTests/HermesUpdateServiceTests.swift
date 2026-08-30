@@ -3,6 +3,12 @@ import Testing
 @testable import HermesAgentDock
 
 struct HermesUpdateServiceTests {
+    @Test func updateCommandIsExactlyTheAllowListedCommand() {
+        #expect(HermesUpdateService.updateCommandArguments == ["hermes", "update"])
+        #expect(HermesUpdateService.updateCommandDisplay == "hermes update")
+        #expect(HermesUpdateService.updateCommandArguments.contains(where: { $0.hasPrefix("-") }) == false)
+    }
+
     @Test func parsesInstalledVersionAndInstallMethod() {
         let output = """
         Hermes Agent v0.19.1 (2026.7.30) · upstream e3b5512b

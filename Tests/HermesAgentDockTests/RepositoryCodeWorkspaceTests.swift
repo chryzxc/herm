@@ -3,6 +3,15 @@ import Testing
 @testable import HermesAgentDock
 
 struct RepositoryCodeWorkspaceTests {
+    @Test func parsesGitHubSSHAndHTTPSRemotes() {
+        #expect(GitHubRemoteParser.parse("git@github.com:owner/repo.git")?.id == "owner/repo")
+        #expect(GitHubRemoteParser.parse("https://github.com/owner/repo")?.webURL.absoluteString == "https://github.com/owner/repo")
+        #expect(GitHubRemoteParser.parse("ssh://git@github.com/owner/repo.git")?.id == "owner/repo")
+        #expect(GitHubRemoteParser.parse("ssh://other@github.com/owner/repo.git") == nil)
+        #expect(GitHubRemoteParser.parse("https://token@github.com/owner/repo.git") == nil)
+        #expect(GitHubRemoteParser.parse("https://gitlab.com/owner/repo") == nil)
+        #expect(GitHubRemoteParser.parse("git@github.com:owner/../secrets.git") == nil)
+    }
     @Test func documentURLStaysWithinTheSelectedRepository() {
         #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "Sources/App.swift")?.path == "/workspace/project/Sources/App.swift")
         #expect(RepositoryService.documentURL(repositoryPath: "/workspace/project", filePath: "../outside.swift") == nil)

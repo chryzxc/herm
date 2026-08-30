@@ -99,31 +99,33 @@ struct DockPopover: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if !isNarrowLayout || !isNarrowControlVisible {
-                VStack(spacing: 0) {
-                    if inputMode == .talk {
-                        voiceMode
-                    } else {
-                        header
-                        conversation
-                        Divider().overlay(Color.dockBorderLight)
-                        ChatComposerView(
-                            model: model,
-                            composer: model.composer,
-                            speechInput: speechInput,
-                            onStop: stopCurrentRequest
+        Group {
+            if isFullscreen && !isNarrowLayout && isWorkspaceVisibleForLayout {
+                FullscreenPanelSplitView(
+                    leading: conversationColumn,
+                    trailing: contextPanel
+                )
+            } else {
+            HStack(spacing: 0) {
+                if !isNarrowLayout || !isNarrowControlVisible {
+                    conversationColumn
+                        .frame(
+                            width: isFullscreen ? .infinity : (showsDesktopContextPanel ? 480 : 500),
+                            height: isFullscreen ? .infinity : 720
                         )
-                    }
                 }
-                .frame(width: isFullscreen ? .infinity : (showsDesktopContextPanel ? 480 : 500), height: isFullscreen ? .infinity : 720)
-            }
 
-            if isWorkspaceVisibleForLayout {
-                Rectangle().fill(Color.dockBorderLight).frame(width: 0.5)
-                contextPanel
-                    .frame(width: isFullscreen ? .infinity : (isNarrowLayout ? 500 : 480), height: isFullscreen ? .infinity : 720)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                if isWorkspaceVisibleForLayout {
+                    Rectangle().fill(Color.dockBorderLight).frame(width: 0.5)
+
+                    contextPanel
+                        .frame(
+                            width: isFullscreen ? .infinity : (isNarrowLayout ? 500 : 480),
+                            height: isFullscreen ? .infinity : 720
+                        )
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
             }
         }
         .frame(width: isFullscreen ? nil : popupWidth, height: isFullscreen ? nil : 720)
@@ -298,6 +300,24 @@ struct DockPopover: View {
 
     private var desktopRequiredWidth: CGFloat { 960.5 }
 
+    private var conversationColumn: some View {
+        VStack(spacing: 0) {
+            if inputMode == .talk {
+                voiceMode
+            } else {
+                header
+                conversation
+                Divider().overlay(Color.dockBorderLight)
+                ChatComposerView(
+                    model: model,
+                    composer: model.composer,
+                    speechInput: speechInput,
+                    onStop: stopCurrentRequest
+                )
+            }
+        }
+    }
+
     private var contextPanel: some View {
         VStack(spacing: 0) {
             contextPanelHeader
@@ -374,16 +394,20 @@ struct DockPopover: View {
                     HStack(spacing: 6) {
                         Label(activeSessionProjectName, systemImage: "folder")
                             .lineLimit(1)
+                            .truncationMode(.middle)
                             .layoutPriority(1)
 
                         // Only show the "NEW SESSION" button when in session scope to avoid clutter
                         if inspectorScope == .session {
                             Button(action: newChatForContextProject) {
-                                Label("NEW SESSION", systemImage: "plus.bubble")
-                                    .font(.system(size: 13, weight: .medium))
+                                Image(systemName: "plus.bubble")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .frame(width: 28, height: 28)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.borderless)
                             .foregroundStyle(Color.dockAccent)
+                            .fixedSize()
                             .disabled(model.isRestoringSession || model.isCreatingSession)
                             .help("Start a new chat in \(activeSessionProjectName)")
                             .accessibilityLabel("Start a new chat in \(activeSessionProjectName)")
@@ -399,7 +423,7 @@ struct DockPopover: View {
             scopePicker
         }
         .padding(.horizontal, 16)
-        .frame(height: 70)
+        .frame(height: 64)
         .background(Color.dockSurface2)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -591,6 +615,14 @@ struct DockPopover: View {
 
                     Button(action: {
                         isFullscreen.toggle()
+                        // A compact display may have forced the popover into
+                        // its one-panel layout. Fullscreen always has room for
+                        // the split workspace and its resize handle.
+                        if isFullscreen {
+                            isNarrowLayout = false
+                        } else {
+                            synchronizePanelLayout()
+                        }
                         onFullscreenToggle()
                     }) {
                         Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
@@ -1548,6 +1580,66 @@ private struct ChatImagePreviewModal: View {
             .padding(16)
         }
         .frame(minWidth: 520, minHeight: 420)
+    }
+}
+
+/// AppKit owns the fullscreen divider so panel resizing stays responsive even
+/// while the conversation and inspector contain complex, frequently-updating
+/// SwiftUI content.
+private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresentable {
+    let leading: Leading
+    let trailing: Trailing
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSSplitView {
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        splitView.delegate = context.coordinator
+        splitView.addArrangedSubview(context.coordinator.leadingHost)
+        splitView.addArrangedSubview(context.coordinator.trailingHost)
+        context.coordinator.splitView = splitView
+        return splitView
+    }
+
+    func updateNSView(_ splitView: NSSplitView, context: Context) {
+        context.coordinator.leadingHost.rootView = AnyView(leading)
+        context.coordinator.trailingHost.rootView = AnyView(trailing)
+
+        guard !context.coordinator.hasSetInitialPosition else { return }
+        DispatchQueue.main.async {
+            guard !context.coordinator.hasSetInitialPosition,
+                  splitView.bounds.width > 0 else { return }
+            splitView.setPosition(splitView.bounds.width / 2, ofDividerAt: 0)
+            context.coordinator.hasSetInitialPosition = true
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSSplitViewDelegate {
+        let leadingHost = NSHostingView(rootView: AnyView(EmptyView()))
+        let trailingHost = NSHostingView(rootView: AnyView(EmptyView()))
+        weak var splitView: NSSplitView?
+        var hasSetInitialPosition = false
+
+        func splitView(
+            _ splitView: NSSplitView,
+            constrainMinCoordinate proposedMinimumPosition: CGFloat,
+            ofSubviewAt dividerIndex: Int
+        ) -> CGFloat {
+            min(320, splitView.bounds.width * 0.35)
+        }
+
+        func splitView(
+            _ splitView: NSSplitView,
+            constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+            ofSubviewAt dividerIndex: Int
+        ) -> CGFloat {
+            let minimumLeadingWidth = min(320, splitView.bounds.width * 0.35)
+            let minimumTrailingWidth = min(360, splitView.bounds.width * 0.35)
+            return max(minimumLeadingWidth, splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth)
+        }
     }
 }
 

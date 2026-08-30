@@ -71,6 +71,15 @@ enum HandoffWorkflowState: Equatable {
 @MainActor
 final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var repository: RepositorySnapshot = .empty
+    @Published private(set) var repositoryFingerprint: String?
+    @Published private(set) var githubRepository: GitHubRepositoryReference?
+    @Published private(set) var githubPullRequests: [GitHubPullRequestSummary] = []
+    @Published private(set) var githubError: GitHubCodeHostError?
+    @Published private(set) var hasLoadedGitHub = false
+    @Published private(set) var isRefreshingGitHub = false
+    @Published private(set) var isAuthenticatingGitHub = false
+    @Published private(set) var githubAuthenticationNotice: String?
+    private var githubAuthenticationProcess: Process?
     @Published private(set) var changes: RepositoryChangeSnapshot?
     @Published private(set) var review: RepositoryReviewSnapshot?
     @Published private(set) var worktrees: [RepositoryWorktreeSummary] = []
@@ -116,7 +125,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         branches = []
         guard path != nil else {
             DebugLog.writeDiagnostic("repository.workflow cleared")
-            repository = .empty; changes = nil; baselineStatus = .none; isRefreshing = false; control.setDevelopmentContextProjection(nil); syncWatchers(preferences: preferences, control: control); return
+            repository = .empty; repositoryFingerprint = nil; githubRepository = nil; githubPullRequests = []; githubError = nil; hasLoadedGitHub = false; changes = nil; baselineStatus = .none; isRefreshing = false; control.setDevelopmentContextProjection(nil); syncWatchers(preferences: preferences, control: control); return
         }
         await refresh(preferences: preferences, control: control)
         syncWatchers(preferences: preferences, control: control)
@@ -131,15 +140,104 @@ final class DeveloperWorkflowModel: ObservableObject {
         async let worktrees = RepositoryService.worktrees(path: path)
         async let branches = RepositoryService.branches(path: path)
         async let fingerprint = RepositoryService.fingerprint(path: path)
-        let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint) = await (snapshot, changes, worktrees, branches, fingerprint)
+        async let githubRemote = RepositoryService.githubRemote(path: path)
+        let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint, resolvedGitHubRemote) = await (snapshot, changes, worktrees, branches, fingerprint, githubRemote)
         guard token == generation, path == activePath else { return }
-        repository = resolvedSnapshot; self.changes = resolvedChanges; self.worktrees = resolvedWorktrees; self.branches = resolvedBranches
+        let githubRepositoryChanged = githubRepository != resolvedGitHubRemote
+        repository = resolvedSnapshot; repositoryFingerprint = resolvedFingerprint; githubRepository = resolvedGitHubRemote; self.changes = resolvedChanges; self.worktrees = resolvedWorktrees; self.branches = resolvedBranches
+        if githubRepositoryChanged {
+            githubPullRequests = []
+            githubError = nil
+            hasLoadedGitHub = false
+        }
         DebugLog.writeDiagnostic("repository.workflow refreshed path=\(resolvedSnapshot.path.isEmpty ? "empty" : URL(fileURLWithPath: resolvedSnapshot.path).lastPathComponent) branch=\(resolvedSnapshot.branch) changed=\(resolvedSnapshot.changedFiles) git=\(resolvedSnapshot.isGitRepository)")
         control.setDevelopmentContextProjection(resolvedSnapshot)
         if let resolvedFingerprint { watchedFingerprints[resolvedSnapshot.repositoryID] = resolvedFingerprint }
         isRefreshing = false
         updateBaselineStatus(preferences: preferences, repositoryID: resolvedSnapshot.repositoryID, fingerprint: resolvedFingerprint)
         updateWatchState(preferences: preferences)
+
+        // Load GitHub data as part of the repository refresh. Previously the
+        // Source Control view could resolve and display the remote while
+        // remaining permanently in `.notLoaded` until the user discovered the
+        // small refresh icon in the header. Keep the explicit refresh button,
+        // but make the first load automatic and surface auth/network errors in
+        // the same view.
+        if resolvedGitHubRemote != nil {
+            await refreshGitHub()
+        }
+    }
+
+    func refreshGitHub(client: GitHubCodeHostClient = GitHubCodeHostService()) async {
+        guard let githubRepository else { return }
+        let requestedRepository = githubRepository
+        let requestedGeneration = generation
+        isRefreshingGitHub = true
+        defer { isRefreshingGitHub = false }
+        let result = await client.pullRequests(for: requestedRepository)
+        guard Self.acceptsGitHubRefresh(requestedRepository: requestedRepository, currentRepository: githubRepository, requestedGeneration: requestedGeneration, currentGeneration: generation) else { return }
+        switch result {
+        case .success(let pullRequests): githubPullRequests = pullRequests; githubError = nil; hasLoadedGitHub = true
+        case .failure(let error): githubError = error
+        }
+    }
+
+    /// Starts GitHub CLI's device/browser login from the Dock. The CLI owns
+    /// OAuth and its secure credential storage; Dock only waits for completion
+    /// and then retries the read-only PR request.
+    func authenticateGitHub() {
+        guard !isAuthenticatingGitHub else { return }
+        isAuthenticatingGitHub = true
+        githubAuthenticationNotice = nil
+        let candidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
+        guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            isAuthenticatingGitHub = false
+            githubAuthenticationNotice = "GitHub CLI was not found."
+            return
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"]
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        environment["HOME"] = home
+        environment["GH_CONFIG_DIR"] = environment["GH_CONFIG_DIR"] ?? "\(home)/.config/gh"
+        process.environment = environment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] completed in
+            DispatchQueue.main.async {
+                guard let self, self.githubAuthenticationProcess === completed else { return }
+                self.githubAuthenticationProcess = nil
+                self.isAuthenticatingGitHub = false
+                if completed.terminationStatus == 0 {
+                    self.githubAuthenticationNotice = "GitHub connected. Refreshing pull requests…"
+                    Task { await self.refreshGitHub() }
+                } else {
+                    self.githubAuthenticationNotice = "GitHub sign-in was not completed. Try again when ready."
+                }
+            }
+        }
+        do {
+            try process.run()
+            githubAuthenticationProcess = process
+            // `gh auth login --web` waits for browser confirmation. The Dock
+            // must stay responsive while that happens; the completion handler
+            // performs the refresh once the CLI finishes.
+            githubAuthenticationNotice = "Finish signing in in your browser. This panel will refresh automatically."
+        } catch {
+            isAuthenticatingGitHub = false
+            githubAuthenticationNotice = "Could not open GitHub sign-in."
+        }
+    }
+
+    nonisolated static func acceptsGitHubRefresh(requestedRepository: GitHubRepositoryReference, currentRepository: GitHubRepositoryReference?, requestedGeneration: UUID, currentGeneration: UUID) -> Bool {
+        requestedGeneration == currentGeneration && requestedRepository == currentRepository
+    }
+
+    var githubIntegrationState: GitHubIntegrationState {
+        GitHubIntegrationPresentation.state(repository: githubRepository, hasLoaded: hasLoadedGitHub, error: githubError)
     }
 
     func switchBranch(_ branch: String, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async -> Bool {

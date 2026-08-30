@@ -329,6 +329,13 @@ enum RepositoryService {
             .filter { !$0.isEmpty }
     }
 
+    static func githubRemote(path: String) async -> GitHubRepositoryReference? {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        let result = await runGit(path: normalizedPath, arguments: ["remote", "get-url", "origin"])
+        guard result.exitCode == 0 else { return nil }
+        return GitHubRemoteParser.parse(result.output)
+    }
+
     /// Switches the working tree to an existing local branch.
     static func switchBranch(path: String, branch: String) async -> (success: Bool, error: String?) {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path

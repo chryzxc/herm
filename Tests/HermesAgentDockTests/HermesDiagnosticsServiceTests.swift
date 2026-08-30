@@ -50,4 +50,9 @@ struct HermesDiagnosticsServiceTests {
         #expect(!summary.contains("~/"))
         #expect(summary.contains("••••"))
     }
+
+    @Test func safeSummaryCapsVeryLongDiagnosticLines() {
+        let summary = HermesDiagnosticsService.safeSummary(String(repeating: "x", count: 2_000))
+        #expect(summary.count == 1_000)
+    }
 }

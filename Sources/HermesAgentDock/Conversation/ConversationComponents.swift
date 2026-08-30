@@ -223,7 +223,6 @@ struct MarkdownMessageView: View {
     func flushParagraph() {
       let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
       paragraph.removeAll()
-      orderedIndex = 0
       if !text.isEmpty { result.append(.paragraph(text)) }
     }
     func flushCode() {
@@ -234,6 +233,7 @@ struct MarkdownMessageView: View {
     for line in markdown.components(separatedBy: "\n") {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
       if trimmed.hasPrefix("```") {
+        orderedIndex = 0
         if inCode {
           flushCode()
         } else {
@@ -249,6 +249,7 @@ struct MarkdownMessageView: View {
         continue
       }
       if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+        orderedIndex = 0
         if trimmed.contains("---") {
           continue // skip table separator syntax lines cleanly
         }
@@ -260,6 +261,7 @@ struct MarkdownMessageView: View {
         }
       }
       if let level = Self.headingLevel(trimmed) {
+        orderedIndex = 0
         flushParagraph()
         result.append(
           .heading(
@@ -274,24 +276,34 @@ struct MarkdownMessageView: View {
         continue
       }
       if let item = Self.unorderedListItem(trimmed) {
+        orderedIndex = 0
         flushParagraph()
         result.append(.listItem(text: item, marker: "•"))
         continue
       }
       if trimmed.hasPrefix(">") {
+        orderedIndex = 0
         flushParagraph()
         let content = String(trimmed.dropFirst().trimmingCharacters(in: .whitespaces))
         if !content.isEmpty { result.append(.quote(content)) }
         continue
       }
       if trimmed.isEmpty {
+        orderedIndex = 0
         flushParagraph()
         continue
       }
+      orderedIndex = 0
       paragraph.append(line)
     }
     if inCode { flushCode() } else { flushParagraph() }
     return result
+  }
+  static func orderedListMarkers(in markdown: String) -> [String] {
+    parseBlocks(markdown).compactMap { block in
+      guard case .listItem(_, let marker) = block, marker != "•" else { return nil }
+      return marker
+    }
   }
   private static func headingLevel(_ line: String) -> Int? {
     let hashes = line.prefix(while: { $0 == "#" }).count

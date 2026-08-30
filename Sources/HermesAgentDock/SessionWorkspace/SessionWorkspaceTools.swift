@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SessionFilesView: View {
@@ -260,23 +261,38 @@ struct SessionFilesView: View {
 /// Real interactive terminal view following DESIGN.md glass pane & typography specifications.
 struct SessionTerminalView: View {
     let projectPath: String?
+    let recipes: [VerificationRecipe]
+    let repositoryID: String?
+    let repositoryFingerprint: String?
     @StateObject private var terminal = LocalTerminalSession()
     @State private var command = ""
+    @State private var historyIndex: Int?
+    @State private var followsOutput = true
     @FocusState private var commandFocused: Bool
+
+    private var canInterrupt: Bool {
+        if case .running = terminal.state { return true }
+        if case .interrupting = terminal.state { return true }
+        return false
+    }
 
     private var statusColor: Color {
         switch terminal.state {
-        case .running: Color.dockSuccess
+        case .ready, .running: Color.dockSuccess
+        case .interrupting: Color.dockWarning
         case .starting: Color.dockWarning
-        case .closed, .idle: Color.dockSecondaryText
+        case .exited, .closed, .idle: Color.dockSecondaryText
         case .failed: Color.dockDestructive
         }
     }
 
     private var statusText: String {
         switch terminal.state {
+        case .ready: "READY"
         case .running: "RUNNING"
+        case .interrupting: "INTERRUPTING"
         case .starting: "STARTING"
+        case .exited: "EXITED"
         case .closed: "CLOSED"
         case .idle: "IDLE"
         case .failed(let err): "FAILED (\(err))"
@@ -287,11 +303,59 @@ struct SessionTerminalView: View {
         VStack(alignment: .leading, spacing: 0) {
             terminalTabBar
             HStack {
-                Text("SHELL")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.dockSecondaryText)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("SHELL")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(1.1)
+                        .foregroundStyle(Color.dockSecondaryText)
+                    Text(terminal.workingDirectory.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No project directory")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                }
                 Spacer()
+                Button { terminal.clear() } label: {
+                    Image(systemName: "trash")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockSecondaryText)
+                .disabled(terminal.output.isEmpty)
+                .help("Clear terminal output")
+                .accessibilityLabel("Clear terminal output")
+                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalClearOutput)
+                Button { terminal.interrupt() } label: {
+                    Image(systemName: "stop.fill")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(canInterrupt ? Color.dockWarning : Color.dockMetadataText)
+                .disabled(!canInterrupt)
+                .help("Interrupt running command")
+                .accessibilityLabel("Interrupt running command")
+                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalInterrupt)
+                if !recipes.isEmpty {
+                    Menu {
+                        ForEach(recipes) { recipe in
+                            Button(recipe.title) {
+                                guard let repositoryID, let repositoryFingerprint else { return }
+                                terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
+                            }
+                            Button("Copy \(recipe.title.lowercased()) command") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(recipe.command, forType: .string)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "checkmark.seal")
+                            .frame(width: 28, height: 28)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help("Run verified repository check")
+                    .accessibilityLabel("Run verified repository check")
+                    .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalRunVerification)
+                    .disabled(terminal.state != .ready)
+                }
                 Circle()
                     .fill(statusColor)
                     .frame(width: 6, height: 6)
@@ -301,6 +365,26 @@ struct SessionTerminalView: View {
             }
             .padding(.top, 14)
             .padding(.bottom, 10)
+            if let run = terminal.lastVerificationRun {
+                HStack(spacing: 8) {
+                    Text(run.isComplete ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")" : "Running \(run.command)…")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
+                        .lineLimit(1)
+                    if let recipe = recipes.first(where: { $0.id == run.recipeID }), run.isComplete {
+                        Button("Rerun") {
+                            guard let repositoryID, let repositoryFingerprint else { return }
+                            terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.dockAccent)
+                        .accessibilityLabel("Rerun \(recipe.title)")
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 5)
+                .accessibilityLabel(run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
+            }
 
             // Scrollable Output Window
             ScrollViewReader { proxy in
@@ -316,7 +400,11 @@ struct SessionTerminalView: View {
                 }
                 .frame(minHeight: 260, maxHeight: .infinity)
                 .background(Color.dockCanvas)
+                .accessibilityLabel("Terminal output")
+                .accessibilityValue(terminal.output.isEmpty ? "No output" : "Output available")
+                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalOutput)
                 .onChange(of: terminal.output) { _, _ in
+                    guard followsOutput else { return }
                     withAnimation(.easeOut(duration: 0.12)) {
                         proxy.scrollTo("terminal-output", anchor: .bottom)
                     }
@@ -330,11 +418,42 @@ struct SessionTerminalView: View {
                     .foregroundStyle(Color.dockSuccess)
 
                 TextField("", text: $command)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .monospaced))
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color.dockPrimaryText)
                     .focused($commandFocused)
+                    .lineLimit(1)
+                .accessibilityLabel("Terminal command")
+                .accessibilityHint("Press Return to run the command")
+                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalCommandInput)
                     .onSubmit { submit() }
+                    .onKeyPress(.upArrow) {
+                        previousCommand()
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) {
+                        nextCommand()
+                        return .handled
+                    }
+                Button { previousCommand() } label: {
+                    Image(systemName: "chevron.up")
+                }
+                .buttonStyle(.borderless)
+                .disabled(terminal.commandHistory.isEmpty)
+                .help("Previous command")
+                .accessibilityLabel("Previous command")
+                Button { nextCommand() } label: {
+                    Image(systemName: "chevron.down")
+                }
+                .buttonStyle(.borderless)
+                .disabled(terminal.commandHistory.isEmpty)
+                .help("Next command")
+                .accessibilityLabel("Next command")
+                Toggle("Follow output", isOn: $followsOutput)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .help("Follow new terminal output")
+                    .accessibilityLabel("Follow new terminal output")
             }
             .padding(.vertical, 10)
             .background(Color.dockSurface2)
@@ -344,6 +463,7 @@ struct SessionTerminalView: View {
         .task(id: projectPath) {
             guard let projectPath else { terminal.close(); return }
             terminal.start(directory: projectPath)
+            historyIndex = nil
             commandFocused = true
         }
         .onDisappear { terminal.close() }
@@ -353,6 +473,29 @@ struct SessionTerminalView: View {
         guard !command.isEmpty else { return }
         terminal.send(command + "\n")
         command = ""
+        historyIndex = nil
+    }
+
+    private func previousCommand() {
+        guard !terminal.commandHistory.isEmpty else { return }
+        let next = min((historyIndex ?? terminal.commandHistory.count) - 1, terminal.commandHistory.count - 1)
+        guard next >= 0 else { return }
+        historyIndex = next
+        command = terminal.commandHistory[next]
+        commandFocused = true
+    }
+
+    private func nextCommand() {
+        guard let index = historyIndex else { return }
+        let next = index + 1
+        if next >= terminal.commandHistory.count {
+            historyIndex = nil
+            command = ""
+        } else {
+            historyIndex = next
+            command = terminal.commandHistory[next]
+        }
+        commandFocused = true
     }
 
     private var terminalTabBar: some View {
