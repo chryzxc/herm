@@ -991,8 +991,8 @@ enum ControlTab: String, CaseIterable, Identifiable {
     /// used to orient, triage, and act on work. Everything else remains one
     /// click away in a grouped menu instead of competing for horizontal space.
     static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban]
-    /// The Global strip has five directly visible destinations; secondary
-    /// operational views remain behind More.
+    /// Keep the high-frequency global destinations directly visible; supporting
+    /// operational views remain available through the scrollable More menu.
     static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota]
     static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
     static let workspaceNavigation: [ControlTab] = [.projects]
@@ -1006,7 +1006,18 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var tabLabel: String {
         switch self {
         case .session: "Overview"
+        case .changes: "Source Control"
         case .automations: "Automate"
+        default: rawValue
+        }
+    }
+
+    /// Terminology for the fullscreen navigation rail. “Cron” is the
+    /// operator-facing name for Hermes automations and is more scannable in a
+    /// compact navigation list.
+    var globalRailLabel: String {
+        switch self {
+        case .automations: "Cron"
         default: rawValue
         }
     }

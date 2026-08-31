@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import UserNotifications
 
@@ -78,8 +79,13 @@ final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var hasLoadedGitHub = false
     @Published private(set) var isRefreshingGitHub = false
     @Published private(set) var isAuthenticatingGitHub = false
+    @Published private(set) var isSigningOutGitHub = false
     @Published private(set) var githubAuthenticationNotice: String?
+    @Published private(set) var githubAuthenticationCode: String?
     private var githubAuthenticationProcess: Process?
+    private var githubSignOutProcess: Process?
+    private var authenticateAfterGitHubSignOut = false
+    private var githubAuthenticationOutput = ""
     @Published private(set) var changes: RepositoryChangeSnapshot?
     @Published private(set) var review: RepositoryReviewSnapshot?
     @Published private(set) var worktrees: [RepositoryWorktreeSummary] = []
@@ -177,8 +183,21 @@ final class DeveloperWorkflowModel: ObservableObject {
         let result = await client.pullRequests(for: requestedRepository)
         guard Self.acceptsGitHubRefresh(requestedRepository: requestedRepository, currentRepository: githubRepository, requestedGeneration: requestedGeneration, currentGeneration: generation) else { return }
         switch result {
-        case .success(let pullRequests): githubPullRequests = pullRequests; githubError = nil; hasLoadedGitHub = true
-        case .failure(let error): githubError = error
+        case .success(let pullRequests):
+            githubPullRequests = pullRequests
+            githubError = nil
+            hasLoadedGitHub = true
+            githubAuthenticationNotice = nil
+            githubAuthenticationCode = nil
+        case .failure(let error):
+            githubError = error
+            // A completed device login should never leave its transient
+            // notice/code rendered after the follow-up request fails. Keep
+            // the error state authoritative so the view can offer a retry.
+            if !isAuthenticatingGitHub {
+                githubAuthenticationNotice = nil
+                githubAuthenticationCode = nil
+            }
         }
     }
 
@@ -186,11 +205,12 @@ final class DeveloperWorkflowModel: ObservableObject {
     /// OAuth and its secure credential storage; Dock only waits for completion
     /// and then retries the read-only PR request.
     func authenticateGitHub() {
-        guard !isAuthenticatingGitHub else { return }
+        guard !isAuthenticatingGitHub, !isSigningOutGitHub else { return }
         isAuthenticatingGitHub = true
         githubAuthenticationNotice = nil
-        let candidates = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
-        guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+        githubAuthenticationCode = nil
+        githubAuthenticationOutput = ""
+        guard let executable = githubCLIExecutable else {
             isAuthenticatingGitHub = false
             githubAuthenticationNotice = "GitHub CLI was not found."
             return
@@ -204,14 +224,33 @@ final class DeveloperWorkflowModel: ObservableObject {
         environment["GH_CONFIG_DIR"] = environment["GH_CONFIG_DIR"] ?? "\(home)/.config/gh"
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+        outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            let output = String(decoding: data, as: UTF8.self)
+            DispatchQueue.main.async {
+                guard let self, self.githubAuthenticationProcess != nil else { return }
+                self.githubAuthenticationOutput.append(output)
+                self.openGitHubDevicePageIfPresent()
+            }
+        }
         process.terminationHandler = { [weak self] completed in
             DispatchQueue.main.async {
                 guard let self, self.githubAuthenticationProcess === completed else { return }
+                outputPipe.fileHandleForReading.readabilityHandler = nil
+                self.openGitHubDevicePageIfPresent()
                 self.githubAuthenticationProcess = nil
                 self.isAuthenticatingGitHub = false
                 if completed.terminationStatus == 0 {
+                    // Drop the pre-auth unauthorized state immediately. The
+                    // refresh below will replace it with either available PR
+                    // data or a precise network/API error.
+                    self.githubError = nil
+                    self.hasLoadedGitHub = false
+                    self.githubAuthenticationCode = nil
                     self.githubAuthenticationNotice = "GitHub connected. Refreshing pull requests…"
                     Task { await self.refreshGitHub() }
                 } else {
@@ -229,6 +268,120 @@ final class DeveloperWorkflowModel: ObservableObject {
         } catch {
             isAuthenticatingGitHub = false
             githubAuthenticationNotice = "Could not open GitHub sign-in."
+        }
+    }
+
+    /// Clears the account cached by GitHub CLI, then starts a clean device
+    /// login. This is intentionally explicit: it lets someone switch GitHub
+    /// accounts without leaving the Dock or hunting for a terminal command.
+    func resetGitHubAuthentication() {
+        signOutGitHub(thenAuthenticate: true)
+    }
+
+    /// Signs the current GitHub CLI account out while preserving local Git
+    /// repository state. The next sign-in can select a different account.
+    func signOutGitHub() {
+        signOutGitHub(thenAuthenticate: false)
+    }
+
+    private func signOutGitHub(thenAuthenticate: Bool) {
+        guard !isAuthenticatingGitHub, !isSigningOutGitHub else { return }
+        guard let executable = githubCLIExecutable else {
+            githubAuthenticationNotice = "GitHub CLI was not found."
+            return
+        }
+
+        isSigningOutGitHub = true
+        authenticateAfterGitHubSignOut = thenAuthenticate
+        githubAuthenticationNotice = thenAuthenticate ? "Signing out before a clean GitHub sign-in…" : "Signing out of GitHub…"
+        githubAuthenticationCode = nil
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["auth", "logout", "--hostname", "github.com"]
+        process.environment = githubCLIEnvironment
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] completed in
+            DispatchQueue.main.async {
+                guard let self, self.githubSignOutProcess === completed else { return }
+                let shouldAuthenticate = self.authenticateAfterGitHubSignOut
+                self.githubSignOutProcess = nil
+                self.authenticateAfterGitHubSignOut = false
+                self.isSigningOutGitHub = false
+                self.githubPullRequests = []
+                self.githubError = nil
+                self.hasLoadedGitHub = false
+                self.githubAuthenticationCode = nil
+                self.githubAuthenticationOutput = ""
+                if shouldAuthenticate {
+                    self.githubAuthenticationNotice = "Opening a clean GitHub sign-in…"
+                    self.authenticateGitHub()
+                } else {
+                    self.githubAuthenticationNotice = completed.terminationStatus == 0 ? "GitHub signed out." : "No GitHub session was stored."
+                }
+            }
+        }
+        do {
+            try process.run()
+            githubSignOutProcess = process
+        } catch {
+            isSigningOutGitHub = false
+            authenticateAfterGitHubSignOut = false
+            githubAuthenticationNotice = "Could not sign out of GitHub."
+        }
+    }
+
+    private var githubCLIExecutable: String? {
+        ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"].first(where: {
+            FileManager.default.isExecutableFile(atPath: $0)
+        })
+    }
+
+    private var githubCLIEnvironment: [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        environment["HOME"] = home
+        environment["GH_CONFIG_DIR"] = environment["GH_CONFIG_DIR"] ?? "\(home)/.config/gh"
+        return environment
+    }
+
+    private func openGitHubDevicePageIfPresent() {
+        let tokens = githubAuthenticationOutput
+            .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\r" || $0 == "\t" })
+            .map(String.init)
+
+        // gh can stream the label and value in separate chunks (and the
+        // label may be followed by words such as “in” or “browser”). Search
+        // every token for the device-code shape instead of assuming the next
+        // token is the value.
+        if let candidate = tokens
+            .map({ $0.trimmingCharacters(in: .punctuationCharacters) })
+            .first(where: {
+                let parts = $0.split(separator: "-", omittingEmptySubsequences: true)
+                // GitHub device codes are exactly four alphanumeric
+                // characters, a hyphen, then four more characters. This
+                // excludes prose such as “one-time” from being displayed as
+                // the code.
+                return parts.count == 2 && parts.allSatisfy { part in
+                    part.count == 4 && part.allSatisfy { $0.isLetter || $0.isNumber }
+                }
+            }) {
+            githubAuthenticationCode = candidate
+            githubAuthenticationNotice = "Enter this code in the GitHub browser window."
+        }
+
+        let candidates = githubAuthenticationOutput
+            .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\r" || $0 == "\t" })
+            .map(String.init)
+        guard let rawURL = candidates.first(where: {
+            ($0.hasPrefix("https://github.com/") || $0.hasPrefix("http://github.com/")) &&
+            ($0.contains("/login/device") || $0.contains("/login/oauth"))
+        }), let url = URL(string: rawURL.trimmingCharacters(in: .punctuationCharacters)) else { return }
+        NSWorkspace.shared.open(url)
+        if githubAuthenticationCode == nil {
+            githubAuthenticationNotice = "GitHub sign-in opened in your browser. Finish the device verification there."
         }
     }
 

@@ -15,6 +15,8 @@ struct RepositoryChangesBrowser: View {
 
     @State private var isLoading = false
     @State private var error: String?
+    @State private var isStagedExpanded = true
+    @State private var isChangesExpanded = true
 
     var body: some View {
         if let changes = workflow.changes, workflow.repository.isGitRepository {
@@ -39,20 +41,140 @@ struct RepositoryChangesBrowser: View {
     }
 
     private func browser(_ changes: RepositoryChangeSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
             if let error {
-                Text(error).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockWarning)
+                Text(error)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.dockWarning)
+                    .padding(.bottom, 8)
             }
 
             sourceControlHeader(changes)
 
-            HStack(spacing: 10) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                Text(changes.branch)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+            if case .available = workflow.githubIntegrationState {
+                pullRequestsSection
+            }
+
+            if changes.files.isEmpty {
+                emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
+            } else {
+                let stagedFiles = changes.files.filter(\.isStaged)
+                let worktreeFiles = changes.files.filter { !$0.isStaged }
+
+                if !stagedFiles.isEmpty {
+                    changeGroup(
+                        title: "STAGED CHANGES",
+                        files: stagedFiles,
+                        isExpanded: $isStagedExpanded
+                    )
+                }
+
+                if !worktreeFiles.isEmpty {
+                    changeGroup(
+                        title: "CHANGES",
+                        files: worktreeFiles,
+                        isExpanded: $isChangesExpanded
+                    )
+                }
+            }
+        }
+    }
+
+    private func changeGroup(
+        title: String,
+        files: [RepositoryFileChange],
+        isExpanded: Binding<Bool>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                isExpanded.wrappedValue.toggle()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 12)
+                    Text(title)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .tracking(1.05)
+                        .foregroundStyle(Color.dockSecondaryText)
+                    Spacer(minLength: 8)
+                    Text("\(files.count)")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(title == "STAGED CHANGES" ? Color.dockAccent : Color.dockMetadataText)
+                }
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .help(isExpanded.wrappedValue ? "Collapse \(title.lowercased())" : "Expand \(title.lowercased())")
+
+            if isExpanded.wrappedValue {
+                ForEach(files) { file in fileRow(file) }
+            }
+        }
+        .padding(.top, 12)
+    }
+
+    private var pullRequestsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Text("PULL REQUESTS")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(1.05)
                     .foregroundStyle(Color.dockSecondaryText)
+                Spacer(minLength: 8)
+                Text("\(workflow.githubPullRequests.count)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockAccent)
+            }
+            .frame(minHeight: 34)
+
+            if workflow.githubPullRequests.isEmpty {
+                Text("No open pull requests")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+            } else {
+                ForEach(workflow.githubPullRequests.prefix(5)) { pullRequest in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(pullRequest.isDraft ? Color.dockMetadataText : Color.dockSuccess)
+                            .frame(width: 7, height: 7)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("#\(pullRequest.number)  \(pullRequest.title)")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(1)
+                            if let metadata = pullRequest.metadataLabel {
+                                Text(metadata)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(Color.dockMetadataText)
+                                    .lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 6)
+                        if let url = pullRequest.webURL {
+                            Link("OPEN", destination: url)
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(Color.dockAccent)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                    .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+                }
+            }
+        }
+        .padding(.top, 12)
+    }
+
+    private func sourceControlHeader(_ changes: RepositoryChangeSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Text(changes.branch)
+                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
@@ -60,136 +182,162 @@ struct RepositoryChangesBrowser: View {
                     Task { await onRefresh() }
                 }
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 5)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Color.dockSecondaryText)
-                Text("Changes")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(Color.dockPrimaryText)
-                Spacer()
-                Text("\(changes.changedFiles)")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.dockSurface8))
+            HStack(spacing: 7) {
+                Text("\(changes.changedFiles) files")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+                if changes.stagedCount > 0 {
+                    Text("· \(changes.stagedCount) staged")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.dockAccent)
+                }
+                Spacer(minLength: 0)
             }
-            .padding(.top, 4)
-            if changes.files.isEmpty {
-                emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
+
+            githubConnectionRow
+        }
+            .padding(.bottom, 11)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    @ViewBuilder
+    private var githubConnectionRow: some View {
+        if workflow.isAuthenticatingGitHub || workflow.githubAuthenticationNotice?.hasPrefix("GitHub connected") == true {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 7) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSuccess)
+                    Text(workflow.githubAuthenticationNotice ?? "GitHub connected. Refreshing pull requests…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                    Spacer(minLength: 8)
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color.dockAccent)
+                }
+                if let code = workflow.githubAuthenticationCode {
+                    Text(code)
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .tracking(2.2)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .textSelection(.enabled)
+                        .accessibilityLabel("GitHub device code \(code)")
+                }
+            }
+            .padding(.vertical, 2)
+        } else if workflow.isSigningOutGitHub {
+            HStack(spacing: 7) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(Color.dockAccent)
+                Text(workflow.githubAuthenticationNotice ?? "Signing out of GitHub…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+            }
+            .frame(minHeight: 24)
+        } else {
+        switch workflow.githubIntegrationState {
+        case .noRemote:
+            EmptyView()
+        case .notLoaded:
+            githubStatusRow(icon: "arrow.clockwise", message: "GitHub status not loaded.", actionTitle: "Refresh") {
+                Task { await workflow.refreshGitHub() }
+            }
+        case .unavailable(let error):
+            if case .unauthorized = error {
+                HStack(spacing: 7) {
+                    Image(systemName: "person.badge.key")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockWarning)
+                    Text("GitHub sign-in required.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                    Spacer(minLength: 8)
+                    Button("SIGN OUT & SIGN IN") {
+                        workflow.resetGitHubAuthentication()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockAccent)
+                }
+                .frame(minHeight: 24)
+                if let notice = workflow.githubAuthenticationNotice {
+                    Text(notice)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let code = workflow.githubAuthenticationCode {
+                    Text(code)
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .tracking(2.2)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .textSelection(.enabled)
+                        .padding(.vertical, 2)
+                        .accessibilityLabel("GitHub device code \(code)")
+                }
             } else {
-                ForEach(changes.files) { file in fileRow(file) }
+                githubStatusRow(icon: "exclamationmark.triangle", message: "GitHub is unavailable.", actionTitle: "Retry") {
+                    Task { await workflow.refreshGitHub() }
+                }
             }
+        case .stale:
+            githubStatusRow(icon: "exclamationmark.triangle", message: "Using last known GitHub data.", actionTitle: "Retry") {
+                Task { await workflow.refreshGitHub() }
+            }
+        case .available:
+            if let github = workflow.githubRepository {
+                HStack(spacing: 7) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSuccess)
+                    Text("GitHub")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                    Link(github.id, destination: github.webURL)
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(1)
+                    Spacer()
+                    sourceControlIcon(workflow.isRefreshingGitHub ? "ellipsis" : "arrow.clockwise", help: "Refresh GitHub") {
+                        Task { await workflow.refreshGitHub() }
+                    }
+                    .disabled(workflow.isRefreshingGitHub)
+                    .accessibilityIdentifier(WorkflowAccessibilityIdentifier.changesRefreshGitHub)
+                    Button("SIGN OUT") {
+                        workflow.signOutGitHub()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockSecondaryText)
+                }
+            }
+        }
         }
     }
 
-    private func sourceControlHeader(_ changes: RepositoryChangeSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                Text("Source Control")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.dockPrimaryText)
-                Spacer()
-                if let github = workflow.githubRepository {
-                    Link(destination: github.webURL) {
-                        Label(github.id, systemImage: "arrow.up.right.square")
-                            .font(.system(size: 10, design: .monospaced))
-                    }
-                    .foregroundStyle(Color.dockAccent)
-                    .help("Open GitHub repository")
-                    Button {
-                        Task { await workflow.refreshGitHub() }
-                    } label: {
-                        Image(systemName: workflow.isRefreshingGitHub ? "ellipsis" : "arrow.clockwise")
-                            .frame(width: 24, height: 24)
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .disabled(workflow.isRefreshingGitHub)
-                    .help("Refresh GitHub pull requests")
-                    .accessibilityLabel("Refresh GitHub pull requests")
-                    .accessibilityIdentifier(WorkflowAccessibilityIdentifier.changesRefreshGitHub)
-                }
-                Text("\(changes.stagedCount) staged")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            .padding(.bottom, 4)
-            switch workflow.githubIntegrationState {
-            case .noRemote:
-                Text("No GitHub remote detected.")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-            case .notLoaded:
-                Text("GitHub pull requests not loaded. Refresh to check.")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-            case .unavailable(let error):
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("GitHub unavailable: \(String(describing: error))")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.dockWarning)
-                    if case .unauthorized = error {
-                        Button {
-                            workflow.authenticateGitHub()
-                        } label: {
-                            Label(workflow.isAuthenticatingGitHub ? "SIGN IN IN BROWSER" : "CONNECT GITHUB", systemImage: "person.badge.key")
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.dockAccent)
-                        .disabled(workflow.isAuthenticatingGitHub)
-                        .help("Authenticate with GitHub in your browser")
-                        if let notice = workflow.githubAuthenticationNotice {
-                            Text(notice)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(Color.dockMetadataText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-            case .stale(let error):
-                Text("GitHub refresh failed; showing last known results (\(String(describing: error))).")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.dockWarning)
-            case .available:
-                if workflow.githubPullRequests.isEmpty {
-                    Text("No open GitHub pull requests.")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.dockMetadataText)
-                } else {
-                    ForEach(workflow.githubPullRequests) { pullRequest in
-                        VStack(alignment: .leading, spacing: 2) {
-                            if let url = pullRequest.webURL {
-                                Link(destination: url) {
-                                    Text("PR #\(pullRequest.number) · \(pullRequest.title)")
-                                        .font(.system(size: 10))
-                                        .lineLimit(1)
-                                }
-                            }
-                            if let blocker = pullRequest.blockingReasons.first {
-                                Text(blocker)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(Color.dockWarning)
-                            }
-                            if let metadata = pullRequest.metadataLabel {
-                                Text(metadata)
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(Color.dockMetadataText)
-                            }
-                        }
-                    }
-                }
-            }
+    private func githubStatusRow(
+        icon: String,
+        message: String,
+        actionTitle: String = "Connect GitHub",
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockWarning)
+            Text(message)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockSecondaryText)
+            Spacer(minLength: 8)
+            Button(workflow.isAuthenticatingGitHub ? "Connecting…" : actionTitle, action: action)
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
+                .disabled(workflow.isAuthenticatingGitHub)
         }
+        .frame(minHeight: 24)
     }
 
     private func sourceControlIcon(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
@@ -217,23 +365,36 @@ struct RepositoryChangesBrowser: View {
 
             }
             .font(.system(size: 12, design: .monospaced))
-            .padding(.top, 5)
+            .padding(.leading, 26)
+            .padding(.top, 4)
+            .padding(.bottom, 10)
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: file.status == .conflicted ? "exclamationmark.octagon" : "doc")
+                Image(systemName: fileIcon(for: file))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(statusColor(for: file))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(fileName(for: file)).lineLimit(1).foregroundStyle(Color.dockPrimaryText)
+                    .frame(width: 17)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(fileName(for: file))
+                        .lineLimit(1)
+                        .foregroundStyle(Color.dockPrimaryText)
                     if !fileDirectory(for: file).isEmpty {
-                        Text(fileDirectory(for: file)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                        Text(fileDirectory(for: file))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1)
                     }
                 }
-                Spacer()
-                Text(statusMark(for: file)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(statusColor(for: file))
+                Spacer(minLength: 6)
+                Circle()
+                    .fill(statusColor(for: file))
+                    .frame(width: 7, height: 7)
+                    .help(fileStatusDescription(for: file))
+                    .accessibilityLabel(fileStatusDescription(for: file))
             }
             .font(.system(size: 12, weight: .medium))
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -245,16 +406,27 @@ struct RepositoryChangesBrowser: View {
         file.path.split(separator: "/").dropLast().joined(separator: "/")
     }
 
-    private func statusMark(for file: RepositoryFileChange) -> String {
-        switch file.status {
-        case .added: "A"
-        case .deleted: "D"
-        case .renamed: "R"
-        case .untracked: "U"
-        case .conflicted: "!"
-        case .modified: "M"
-        case .unknown: "?"
+    private func fileIcon(for file: RepositoryFileChange) -> String {
+        switch file.path.split(separator: ".").last?.lowercased() {
+        case "swift", "ts", "tsx", "js", "jsx", "py", "go", "rs": "doc.text"
+        case "json", "yaml", "yml", "toml": "doc.text"
+        case "md", "txt": "doc.plaintext"
+        default: "doc"
         }
+    }
+
+    private func fileStatusDescription(for file: RepositoryFileChange) -> String {
+        let action: String
+        switch file.status {
+        case .added: action = "Added"
+        case .deleted: action = "Deleted"
+        case .renamed: action = "Renamed"
+        case .untracked: action = "Untracked"
+        case .conflicted: action = "Conflicted"
+        case .modified: action = "Modified"
+        case .unknown: action = "Unknown status"
+        }
+        return file.isStaged ? "Staged, \(action.lowercased())" : action
     }
 
     private func statusColor(for file: RepositoryFileChange) -> Color {

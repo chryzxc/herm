@@ -386,7 +386,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             hostingView.invalidateIntrinsicContentSize()
         }
 
-        panel.setFrame(screenFrame, display: true, animate: true)
+        // Switching to the fullscreen split layout while AppKit animates a
+        // compact panel to screen width briefly gives SwiftUI an intermediate
+        // width. That stretches the conversation before the split settles.
+        // Resize atomically so the first fullscreen layout pass has its final
+        // dimensions.
+        panel.setFrame(screenFrame, display: true, animate: false)
         panel.orderFrontRegardless()
         panel.makeKey()
         panel.makeMain()

@@ -11,6 +11,7 @@ struct ChatComposerView: View {
     @ObservedObject var composer: ComposerText
     @ObservedObject var speechInput: SpeechInput
     var onStop: () -> Void
+    var isFullscreen = false
 
     @State private var composerHeight: CGFloat = 44
     @State private var isComposerPulsing = false
@@ -86,7 +87,8 @@ struct ChatComposerView: View {
         let showsInterruptControl = (isResponding || model.status == .needsClarification)
             && !speechInput.isRecording
             && !showStop
-        let effectiveComposerHeight = draftIsEmpty ? ComposerLayout.minHeight : composerHeight
+        let minimumComposerHeight = isFullscreen ? 64 : ComposerLayout.minHeight
+        let effectiveComposerHeight = max(minimumComposerHeight, draftIsEmpty ? ComposerLayout.minHeight : composerHeight)
         // TextEditor adds a small native leading inset on macOS. Keep that
         // correction in one place so the editor, placeholder, and measurement
         // text all share the same content origin.
@@ -176,6 +178,15 @@ struct ChatComposerView: View {
             .padding(.horizontal, textInset)
             .frame(maxWidth: .infinity, minHeight: effectiveComposerHeight, maxHeight: effectiveComposerHeight)
             .clipped()
+            .padding(.horizontal, 10)
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .fill(Color.dockCanvas.opacity(0.72))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                            .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                    }
+            )
             .onPreferenceChange(ComposerContentHeightKey.self) { contentHeight in
                 // Cap composer height between 40px and 140px
                 composerHeight = ComposerLayout.height(for: contentHeight)
@@ -255,7 +266,7 @@ struct ChatComposerView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .buttonStyle(.borderless)
-                    .frame(minHeight: 28, alignment: .center)
+                    .frame(minHeight: isFullscreen ? 34 : 28, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
                     .help("Select model")
                 }
@@ -299,7 +310,7 @@ struct ChatComposerView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .buttonStyle(.borderless)
-                    .frame(minHeight: 28, alignment: .center)
+                    .frame(minHeight: isFullscreen ? 34 : 28, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
                     .help("Select thinking depth")
 
@@ -308,7 +319,7 @@ struct ChatComposerView: View {
                             Image(systemName: "stop.fill")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(Color.dockDestructive)
-                                .frame(width: 28, height: 28)
+                                .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
                                 .background(Circle().fill(Color.dockDestructive.opacity(0.14)))
                         }
                         .buttonStyle(.plain)
@@ -333,7 +344,7 @@ struct ChatComposerView: View {
                             Circle()
                                 // Soft translucent fill for submit circle
                                 .fill(canSubmit && !model.isSteering && !model.isRestoringSession ? Color.dockPrimaryText.opacity(0.20) : Color.dockSurface6)
-                                .frame(width: 28, height: 28)
+                                .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
 
                             if speechInput.isRecording {
                                 Image(systemName: "stop.fill")
@@ -387,8 +398,12 @@ struct ChatComposerView: View {
                     .padding(.top, 2)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, isFullscreen ? 20 : DockLayout.compactInset)
+        // Keep a clear visual buffer below the transcript divider. A composer
+        // should feel anchored to the bottom of the workspace, not pressed
+        // directly against the last message.
+        .padding(.top, isFullscreen ? 22 : 16)
+        .padding(.bottom, isFullscreen ? 14 : 10)
         // Native material keeps the composer attached to the popover while
         // allowing the desktop behind it to softly show through.
         .background(
@@ -400,16 +415,15 @@ struct ChatComposerView: View {
                     }
                 }
         )
-        // A subtle native separator replaces the sci-fi frame.
-        .overlay(
-            Rectangle()
-                .stroke(
-                    speechInput.isRecording
-                    ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
-                    : Color(nsColor: .separatorColor),
-                    lineWidth: 0.5
-                )
-        )
+        // The composer joins the conversation with one top separator only.
+        // A full outline here doubled the chat boundary and made its side
+        // gutters look misaligned with the scrolling transcript.
+        .overlay(alignment: .top) {
+            (speechInput.isRecording
+                ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
+                : Color.dockBorderLight)
+                .frame(height: DockLayout.hairline)
+        }
     }
 
     private var placeholderText: String {

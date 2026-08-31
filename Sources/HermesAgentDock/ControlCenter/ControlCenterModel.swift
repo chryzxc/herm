@@ -22,6 +22,10 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var processes: [ProcessSummary] = []
     @Published private(set) var projects: [ProjectSummary] = []
     @Published private(set) var projectIDBySessionID: [String: String] = [:]
+    /// Memberships resolved from `projects.project_sessions`. The project tree
+    /// may omit these IDs on later refreshes, so retain them separately from
+    /// the transient tree projection.
+    private var resolvedProjectIDBySessionID: [String: String] = [:]
     @Published private(set) var searchResults: [ControlSearchResult] = []
     @Published private(set) var isSearching = false
     @Published private(set) var kanbanTasks: [KanbanTaskSummary] = []
@@ -49,6 +53,10 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var isLoadingKanbanDetail = false
     @Published private(set) var isCreatingKanbanTask = false
     @Published private(set) var projectSessions: [SessionSummary] = []
+    /// Authoritative session rows keyed by project. Unlike `projects.tree`,
+    /// this projection contains every session in a project, not just a count
+    /// or a short preview.
+    @Published private(set) var projectSessionsByProjectID: [String: [SessionSummary]] = [:]
     @Published private(set) var selectedProjectID: String?
     /// Keeps the Projects detail view stable while its background projection is
     /// refreshing. A selected project can briefly be absent from a partial
@@ -86,6 +94,7 @@ final class ControlCenterModel: ObservableObject {
     private var projectFactsGeneration = UUID()
     private var verificationGeneration = UUID()
     private var projectSessionsGeneration = UUID()
+    private var projectSessionRefreshGenerations: [String: UUID] = [:]
     private var projectMembershipGeneration = UUID()
     private var cronRunsGeneration = UUID()
     private var mcpInventoryGeneration = UUID()
@@ -353,6 +362,7 @@ final class ControlCenterModel: ObservableObject {
             processes = []
             projects = []
             projectIDBySessionID = [:]
+            resolvedProjectIDBySessionID = [:]
             searchResults = []
             isSearching = false
             kanbanTasks = []
@@ -379,6 +389,8 @@ final class ControlCenterModel: ObservableObject {
             verification = nil
             developmentContext = nil
             projectSessions = []
+            projectSessionsByProjectID = [:]
+            projectSessionRefreshGenerations = [:]
             selectedProjectID = nil
             selectedProject = nil
             capabilities = []
@@ -548,16 +560,18 @@ final class ControlCenterModel: ObservableObject {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     projects = refreshedProjects
                     let validProjectIDs = Set(refreshedProjects.map(\.id))
+                    projectSessionsByProjectID = projectSessionsByProjectID.filter { validProjectIDs.contains($0.key) }
                     // A compact tree response may provide only session counts.
                     // Keep memberships already verified through
                     // `projects.project_sessions` as long as their project is
                     // still present, then enrich them with inline rows.
-                    var memberships = projectIDBySessionID.filter { validProjectIDs.contains($0.value) }
+                    var memberships = resolvedProjectIDBySessionID.filter { validProjectIDs.contains($0.value) }
                     for project in refreshedProjects {
                         for sessionID in project.sessionIDs {
                             memberships[sessionID] = project.id
                         }
                     }
+                    resolvedProjectIDBySessionID = memberships
                     projectIDBySessionID = memberships
                     if let selectedProjectID,
                        let refreshedSelection = refreshedProjects.first(where: { $0.id == selectedProjectID }) {
@@ -914,14 +928,40 @@ final class ControlCenterModel: ObservableObject {
                       selectedProjectID == project.id,
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 projectSessions = Self.parseProjectSessions(result)
+                projectSessionsByProjectID[project.id] = projectSessions
                 for session in projectSessions {
                     projectIDBySessionID[session.id] = project.id
+                    resolvedProjectIDBySessionID[session.id] = project.id
                 }
             } catch {
                 guard generation == projectSessionsGeneration,
                       selectedProjectID == project.id,
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+        }
+    }
+
+    /// Loads a project's complete session projection without changing the
+    /// selected Projects screen. The navigation queue uses this when a group
+    /// becomes visible, so its rows can be populated independently.
+    func refreshProjectSessions(for project: ProjectSummary) {
+        guard let rpc else { return }
+        let generation = UUID()
+        projectSessionRefreshGenerations[project.id] = generation
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        Task { @MainActor [weak self] in
+            guard let self,
+                  self.projectSessionRefreshGenerations[project.id] == generation,
+                  self.isCurrentClient(clientIdentity, bindingGeneration: self.clientBindingGeneration),
+                  let result = try? await rpc.projectSessions(projectID: project.id),
+                  self.projectSessionRefreshGenerations[project.id] == generation,
+                  self.isCurrentClient(clientIdentity, bindingGeneration: self.clientBindingGeneration) else { return }
+            let sessions = Self.parseProjectSessions(result)
+            self.projectSessionsByProjectID[project.id] = sessions
+            for session in sessions {
+                self.resolvedProjectIDBySessionID[session.id] = project.id
+                self.projectIDBySessionID[session.id] = project.id
             }
         }
     }
@@ -2122,6 +2162,7 @@ final class ControlCenterModel: ObservableObject {
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 if Self.parseProjectSessions(result).contains(where: { $0.id == sessionID }) {
                     projectIDBySessionID[sessionID] = project.id
+                    resolvedProjectIDBySessionID[sessionID] = project.id
                     return
                 }
             }

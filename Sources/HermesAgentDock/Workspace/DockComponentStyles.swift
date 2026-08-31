@@ -96,6 +96,21 @@ extension Color {
     )
 }
 
+/// Layout values shared by the compact popover and its inspectors. Keeping
+/// these few measurements together prevents individual surfaces from slowly
+/// drifting into almost-the-same gutters and control heights.
+enum DockLayout {
+    static let hairline: CGFloat = 0.5
+    static let tight: CGFloat = 6
+    static let controlGap: CGFloat = 8
+    static let contentInset: CGFloat = 16
+    static let compactInset: CGFloat = 12
+    static let controlHeight: CGFloat = 36
+    static let iconControlSize: CGFloat = 28
+    static let controlRadius: CGFloat = 8
+    static let paneRadius: CGFloat = 10
+}
+
 extension Animation {
     static func dockEase(duration: TimeInterval = 0.3) -> Animation {
         .timingCurve(0.2, 0.8, 0.2, 1, duration: duration)
@@ -165,9 +180,9 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .font(.body.weight(.semibold))
             .foregroundStyle(Color.dockOnAccentText)
             .padding(.horizontal, 12)
-            .frame(minHeight: 36)
+            .frame(minHeight: DockLayout.controlHeight)
             .background(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .shadow(color: Color.dockAccent.opacity(configuration.isPressed ? 0 : 0.14), radius: 6)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
@@ -218,9 +233,9 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
             .foregroundStyle(Color.dockPrimaryText)
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .frame(minHeight: 36)
+            .frame(minHeight: DockLayout.controlHeight)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     // The shared canvas keeps inputs consistent across panes;
                     // the plain field style removes the warm native field fill.
                     .fill(Color.dockControlSurface)
@@ -283,14 +298,15 @@ extension View {
         self
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isHighlighted ? Color.dockAccent.opacity(0.10) : Color.dockSurface.opacity(0.26))
+                    .fill(isHighlighted ? Color.dockAccent.opacity(0.10) : Color.clear)
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(isHighlighted ? Color.dockAccent.opacity(0.28) : Color.dockBorderLight, lineWidth: 0.5)
+            .overlay(alignment: .bottom) {
+                Color.dockBorderLight
+                    .opacity(isHighlighted ? 0 : 1)
+                    .frame(height: DockLayout.hairline)
             }
             .contentShape(Rectangle())
     }
@@ -301,12 +317,12 @@ extension View {
         self
             .padding(padding)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.dockSurface.opacity(0.34))
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
+                    .fill(Color.dockSurface.opacity(0.26))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Color.dockBorderLight, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
+                    .stroke(Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.hairline)
             }
     }
 }

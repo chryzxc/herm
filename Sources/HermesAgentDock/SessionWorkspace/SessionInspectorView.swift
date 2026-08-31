@@ -13,7 +13,7 @@ struct SessionInspector: View {
     @State private var isSwitchingBranch = false
     @StateObject private var preferences = CommandCenterPreferencesStore()
 
-    private let sessionTabFont = Font.system(size: 12, weight: .medium)
+    private let sessionTabFont = Font.system(size: 12, weight: .semibold)
 
     private enum Section: String, CaseIterable, Identifiable {
         case overview = "Overview"
@@ -29,7 +29,7 @@ struct SessionInspector: View {
             case .files: "Explorer"
             case .terminal: "Terminal"
             case .activity: "Activity"
-            case .changes: "Changes"
+            case .changes: "Source Control"
             case .overview: "Overview"
             case .verification: "Verify"
             }
@@ -83,37 +83,20 @@ struct SessionInspector: View {
     }
 
     private var sessionModePicker: some View {
-        HStack(spacing: 0) {
-            ForEach([Section.overview, .files, .terminal, .activity, .changes]) { section in
-                sectionButton(section)
-            }
-            Menu {
-                ForEach([Section.verification]) { section in
-                    Button {
-                        withAnimation(.dockEase(duration: 0.2)) { selectedSection = section }
-                    } label: {
-                        Label(section.rawValue, systemImage: section.icon)
-                    }
+        // Keep every session destination in one horizontally scrollable strip.
+        // There is no overflow menu competing with the same navigation model.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                ForEach([Section.overview, .files, .terminal, .activity, .changes, .verification]) { section in
+                    sectionButton(section)
                 }
-            } label: {
-                Text("More")
-                    .font(sessionTabFont)
-                    .foregroundStyle(selectedSection == .verification ? Color.dockPrimaryText : Color.dockSecondaryText)
-                    .frame(maxWidth: .infinity, minHeight: 34)
-                .overlay(alignment: .bottom) {
-                    if selectedSection == .verification {
-                        Color.dockAccent.frame(height: 2)
-                    }
-                }
-                .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
-            .buttonStyle(.borderless)
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 10)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 0)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+        .padding(.vertical, 4)
+        .frame(height: 52)
+        .background(Color.dockSurface2.opacity(0.72))
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
     private func sectionButton(_ section: Section) -> some View {
@@ -122,13 +105,19 @@ struct SessionInspector: View {
                 selectedSection = section
             }
         } label: {
-            Text(section.navigationTitle)
+            HStack(spacing: 5) {
+                Image(systemName: section.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(section.navigationTitle)
+                    .lineLimit(1)
+            }
                 .font(sessionTabFont)
                 .foregroundStyle(selectedSection == section ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-                .allowsTightening(true)
-                .frame(maxWidth: .infinity, minHeight: 34)
+                .frame(minWidth: 88, minHeight: 36)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(selectedSection == section ? Color.dockAccent.opacity(0.10) : Color.clear)
+                }
                 .overlay(alignment: .bottom) {
                     if selectedSection == section {
                         Color.dockAccent.frame(height: 2)
@@ -137,7 +126,7 @@ struct SessionInspector: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityLabel("Show \(section.rawValue)")
     }
 
@@ -424,91 +413,71 @@ struct SessionInspector: View {
             focus.changedFiles.map { TelemetryItem(id: "files", icon: "doc.badge.gearshape", label: "CHANGED", value: "\($0) files") }
         ].compactMap { $0 }
 
-        let gridColumns = [
-            GridItem(.flexible(), spacing: 8),
-            GridItem(.flexible(), spacing: 8)
-        ]
-
         return Group {
             if !items.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    LazyVGrid(columns: gridColumns, spacing: 8) {
-                        ForEach(items) { item in
-                            if item.id == "branch", workflow.repository.isGitRepository {
-                                Menu {
-                                    ForEach(workflow.branches, id: \.self) { branch in
-                                        Button {
-                                            isSwitchingBranch = true
-                                            Task {
-                                                _ = await workflow.switchBranch(branch, preferences: preferences, control: control)
-                                                isSwitchingBranch = false
-                                            }
-                                        } label: {
-                                            if branch == workflow.repository.branch {
-                                                Label(branch, systemImage: "checkmark")
-                                            } else {
-                                                Text(branch)
-                                            }
-                                        }
+                HStack(spacing: 0) {
+                    if let branch = items.first(where: { $0.id == "branch" }), workflow.repository.isGitRepository {
+                        Menu {
+                            ForEach(workflow.branches, id: \.self) { branchName in
+                                Button {
+                                    isSwitchingBranch = true
+                                    Task {
+                                        _ = await workflow.switchBranch(branchName, preferences: preferences, control: control)
+                                        isSwitchingBranch = false
                                     }
                                 } label: {
-                                    HStack(spacing: 6) {
-                                        HStack(spacing: 5) {
-                                            Image(systemName: isSwitchingBranch ? "arrow.triangle.2.circlepath" : item.icon)
-                                                .font(.system(size: 11))
-                                            Image(systemName: "chevron.down")
-                                                .font(.system(size: 8, weight: .bold))
-                                        }
-                                        .foregroundStyle(Color.dockAccent)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            if item.id == "branch" {
-                                                Text(item.value)
-                                                    .font(.system(size: 12, weight: .medium))
-                                                    .foregroundStyle(Color.dockPrimaryText)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            } else {
-                                                Text(item.label)
-                                                    .font(.system(size: 10, weight: .semibold))
-                                                    .foregroundStyle(Color.dockSecondaryText)
-                                                Text(item.value)
-                                                    .font(.system(size: 12, weight: .medium))
-                                                    .foregroundStyle(Color.dockPrimaryText)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            }
-                                        }
-                                        Spacer(minLength: 0)
+                                    if branchName == workflow.repository.branch {
+                                        Label(branchName, systemImage: "checkmark")
+                                    } else {
+                                        Text(branchName)
                                     }
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 8)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.dockSurface2)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
                                 }
-                                .menuStyle(.borderlessButton)
-                                .buttonStyle(.borderless)
-                                .disabled(isSwitchingBranch || workflow.branches.isEmpty)
-                            } else {
-                                HStack(spacing: 6) {
-                                    Image(systemName: item.icon)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.dockAccent)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.label)
-                                            .font(.system(size: 10, weight: .semibold))
-                                            .foregroundStyle(Color.dockSecondaryText)
-                                        Text(item.value)
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: isSwitchingBranch ? "arrow.triangle.2.circlepath" : branch.icon)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.dockAccent)
+                                Text(branch.value)
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(Color.dockSecondaryText)
+                            }
+                        }
+                        .menuStyle(.borderlessButton)
+                        .buttonStyle(.borderless)
+                        .disabled(isSwitchingBranch || workflow.branches.isEmpty)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if items.contains(where: { $0.id != "branch" }) {
+                            Divider()
+                                .frame(height: 24)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(Color.dockSurface2)
-                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+                        }
+                    }
+
+                    ForEach(items.filter { $0.id != "branch" }) { item in
+                        HStack(spacing: 6) {
+                            Image(systemName: item.icon)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.dockAccent)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.label)
+                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.dockSecondaryText)
+                                Text(item.value)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                    .lineLimit(1)
+                            }
+                            if item.id != items.filter({ $0.id != "branch" }).last?.id {
+                                Divider()
+                                    .frame(height: 24)
+                                    .padding(.horizontal, 10)
                             }
                         }
                     }

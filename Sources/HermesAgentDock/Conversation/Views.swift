@@ -23,7 +23,9 @@ struct DockPopover: View {
     @State private var inputMode: InputMode = .chat
     @State private var suppressNextVoiceResponse = false
     @State private var sessionPendingDeletion: HermesSession?
-    @State private var inspectorScope: InspectorScope = .global
+    // A restored/active conversation is the primary workspace at launch, so
+    // the right pane should open on its session context rather than Today.
+    @State private var inspectorScope: InspectorScope = .session
     /// Cached project/repo folder name for the active session.
     /// Only updated when a non-nil value is resolved — never cleared on transient
     /// refresh-cycle gaps where projectIDBySessionID is momentarily empty.
@@ -31,6 +33,15 @@ struct DockPopover: View {
     @State private var cachedSessionRepositoryPath: String? = nil
     @State private var lastSessionTitleAtIdentityChange: String?
     @State private var isFullscreen = false
+    @State private var isMissionInspectorVisible = true
+
+    private enum FullscreenSurface {
+        case conversation
+        case global
+        case artifacts
+    }
+    @State private var fullscreenSurface: FullscreenSurface = .conversation
+    @State private var fullscreenGlobalTab: ControlTab = .today
 
     private enum InputMode {
         case chat, talk
@@ -99,35 +110,7 @@ struct DockPopover: View {
     }
 
     var body: some View {
-        Group {
-            if isFullscreen && !isNarrowLayout && isWorkspaceVisibleForLayout {
-                FullscreenPanelSplitView(
-                    leading: conversationColumn,
-                    trailing: contextPanel
-                )
-            } else {
-            HStack(spacing: 0) {
-                if !isNarrowLayout || !isNarrowControlVisible {
-                    conversationColumn
-                        .frame(
-                            width: isFullscreen ? .infinity : (showsDesktopContextPanel ? 480 : 500),
-                            height: isFullscreen ? .infinity : 720
-                        )
-                }
-
-                if isWorkspaceVisibleForLayout {
-                    Rectangle().fill(Color.dockBorderLight).frame(width: 0.5)
-
-                    contextPanel
-                        .frame(
-                            width: isFullscreen ? .infinity : (isNarrowLayout ? 500 : 480),
-                            height: isFullscreen ? .infinity : 720
-                        )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
-            }
-            }
-        }
+        layoutContent
         .frame(width: isFullscreen ? nil : popupWidth, height: isFullscreen ? nil : 720)
         .background(Color.dockCanvas)
         .clipShape(RoundedRectangle(cornerRadius: isFullscreen ? 0 : 22, style: .continuous))
@@ -140,19 +123,10 @@ struct DockPopover: View {
             ChatImagePreviewModal(image: preview.image)
         }
         .task {
-            model.restoreLatestSessionIfNeeded()
-            model.refreshRuntimeConfiguration()
-            model.refreshRuntimeModelOptions()
-            model.refreshDefaultReasoningVariant()
+            loadInitialModelConfiguration()
         }
         .onAppear {
-            synchronizePanelLayout()
-            synchronizeWorkspace()
-            controlCenter.bind(to: model)
-            controlCenter.refresh()
-            // Seed the project name cache immediately after bind so the label
-            // is visible from the first render if membership data is already loaded.
-            refreshCachedProjectName()
+            configureWorkspaceOnAppear()
         }
         .onChange(of: isWorkspaceVisible) { _, visible in
             if isNarrowLayout { isNarrowControlVisible = visible }
@@ -268,6 +242,97 @@ struct DockPopover: View {
         }
     }
 
+    private var layoutContent: AnyView {
+        if isFullscreen && !isNarrowLayout {
+            if fullscreenSurface == .global || fullscreenSurface == .artifacts {
+                return AnyView(
+                    FullscreenPanelSplitView(
+                        leading: missionControlQueue,
+                        trailing: fullscreenGlobalSurface,
+                        leadingFraction: 0.30
+                    )
+                )
+            }
+            if isMissionInspectorVisible {
+                return AnyView(
+                    MissionControlSplitView(
+                        queue: missionControlQueue,
+                        workspace: conversationColumn,
+                        inspector: contextPanel
+                    )
+                )
+            }
+            return AnyView(
+                FullscreenPanelSplitView(
+                    leading: missionControlQueue,
+                    trailing: conversationColumn,
+                    leadingFraction: 0.30
+                )
+            )
+        }
+
+        return AnyView(compactLayoutContent)
+    }
+
+    private var compactLayoutContent: some View {
+        if !isNarrowLayout {
+            if fullscreenSurface == .global || fullscreenSurface == .artifacts {
+                // Global destinations occupy the focused center workspace in
+                // the dock exactly as they do in fullscreen. The inspector
+                // is intentionally hidden until the user returns to a chat.
+                return AnyView(
+                    FullscreenPanelSplitView(
+                        leading: missionControlQueue,
+                        trailing: fullscreenGlobalSurface,
+                        leadingFraction: 0.30
+                    )
+                )
+            }
+            if isWorkspaceVisibleForLayout {
+                // The dock is the compact form of the fullscreen workspace:
+                // the same queue → conversation → inspector order, with
+                // narrower resizable columns.
+                return AnyView(
+                    MissionControlSplitView(
+                        queue: missionControlQueue,
+                        workspace: conversationColumn,
+                        inspector: contextPanel
+                    )
+                )
+            }
+
+            // Collapsing the inspector must leave the queue visible, because
+            // its top control is also how the inspector is restored.
+            return AnyView(
+                FullscreenPanelSplitView(
+                    leading: missionControlQueue,
+                    trailing: conversationColumn,
+                    leadingFraction: 0.30
+                )
+            )
+        }
+
+        return AnyView(HStack(spacing: 2) {
+            if !isNarrowLayout || !isNarrowControlVisible {
+                conversationColumn
+                    .frame(
+                        width: isFullscreen ? .infinity : (showsDesktopContextPanel ? 480 : 500),
+                        height: isFullscreen ? .infinity : 720
+                    )
+            }
+
+            if isWorkspaceVisibleForLayout {
+                Rectangle().fill(Color.dockBorderLight).frame(width: 0.5)
+                contextPanel
+                    .frame(
+                        width: isFullscreen ? .infinity : (isNarrowLayout ? 500 : 480),
+                        height: isFullscreen ? .infinity : 720
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        })
+    }
+
     private var isWorkspaceVisible: Bool {
         isWorkspaceManuallyExpanded || !model.activeSubagents.isEmpty
     }
@@ -276,9 +341,17 @@ struct DockPopover: View {
         isNarrowLayout ? isNarrowControlVisible : isWorkspaceVisible
     }
 
+    /// Both fullscreen and the desktop dock use the queue → workspace →
+    /// inspector shell. Keep the inspector chrome identical in those two
+    /// presentations; only the genuinely narrow two-pane dock needs its own
+    /// visible inspector scope picker.
+    private var usesMissionControlLayout: Bool {
+        isFullscreen || (!isNarrowLayout && isWorkspaceVisibleForLayout)
+    }
+
     private var popupWidth: CGFloat {
-        guard showsDesktopContextPanel else { return 500 }
-        return 480 + 0.5 + 480
+        if !isNarrowLayout { return showsDesktopContextPanel ? 1_200 : 720 }
+        return 500
     }
 
     private var showsDesktopContextPanel: Bool {
@@ -298,7 +371,7 @@ struct DockPopover: View {
         _ = onWorkspaceWidthChange(popupWidth)
     }
 
-    private var desktopRequiredWidth: CGFloat { 960.5 }
+    private var desktopRequiredWidth: CGFloat { 1_040 }
 
     private var conversationColumn: some View {
         VStack(spacing: 0) {
@@ -312,15 +385,116 @@ struct DockPopover: View {
                     model: model,
                     composer: model.composer,
                     speechInput: speechInput,
-                    onStop: stopCurrentRequest
+                    onStop: stopCurrentRequest,
+                    isFullscreen: isFullscreen
                 )
+            }
+        }
+    }
+
+    private func loadInitialModelConfiguration() {
+        model.restoreLatestSessionIfNeeded()
+        model.refreshRuntimeConfiguration()
+        model.refreshRuntimeModelOptions()
+        model.refreshDefaultReasoningVariant()
+    }
+
+    private func configureWorkspaceOnAppear() {
+        synchronizePanelLayout()
+        synchronizeWorkspace()
+        controlCenter.bind(to: model)
+        controlCenter.refresh()
+        // Seed the project name cache immediately after bind so the label is
+        // visible from the first render if membership data is already loaded.
+        refreshCachedProjectName()
+    }
+
+    /// Fullscreen has a dedicated navigation rail. Unlike the compact session
+    /// picker popover, it keeps the active queue visible while the user works
+    /// through a conversation or task.
+    private var missionControlQueue: some View {
+        MissionControlQueue(
+            model: model,
+            workspaceStore: workspaceStore,
+            controlCenter: controlCenter,
+            activeSessionID: model.sessionID,
+            activeGlobalTab: fullscreenSurface == .global ? fullscreenGlobalTab : nil,
+            isArtifactsActive: fullscreenSurface == .artifacts,
+            onNewConversation: {
+                fullscreenSurface = .conversation
+                inspectorScope = .session
+                model.newChat()
+                model.requestComposerFocus()
+            },
+            onSelectSession: { session in
+                fullscreenSurface = .conversation
+                inspectorScope = .session
+                model.resumeSession(session)
+            },
+            onSelectTask: { task in
+                if let sessionID = task.sessionID,
+                   let session = model.sessions.first(where: { $0.id == sessionID }) {
+                    fullscreenSurface = .conversation
+                    inspectorScope = .session
+                    model.resumeSession(session)
+                } else {
+                    // Workspace tasks without a conversation still have a
+                    // useful destination: the global Kanban surface.
+                    fullscreenGlobalTab = .kanban
+                    fullscreenSurface = .global
+                }
+            },
+            onOpenGlobal: { tab in
+                fullscreenGlobalTab = tab
+                fullscreenSurface = .global
+            },
+            onOpenArtifacts: {
+                fullscreenSurface = .artifacts
+            },
+            showsFullscreenToggle: true,
+            isFullscreen: isFullscreen,
+            onFullscreenToggle: toggleFullscreen
+        )
+    }
+
+    private var fullscreenGlobalControlSurface: some View {
+        WorkspaceActivitySidebar(
+            model: model,
+            store: workspaceStore,
+            control: controlCenter,
+            workflow: developerWorkflow,
+            onClose: onClose,
+            onOpenArtifacts: { },
+            onSessionOpened: { _ in
+                // Global surfaces (such as Projects) own discovery; after a
+                // session is chosen, return the user to the shared chat
+                // workspace where that session is visible.
+                fullscreenSurface = .conversation
+                isMissionInspectorVisible = true
+            },
+            showsHeader: false,
+            showsModePicker: false,
+            initialMode: fullscreenGlobalTab
+        )
+        .id("fullscreen-global-\(fullscreenGlobalTab.id)")
+    }
+
+    private var fullscreenGlobalSurface: some View {
+        Group {
+            if fullscreenSurface == .artifacts {
+                PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
+                    .id("fullscreen-artifacts")
+            } else {
+                fullscreenGlobalControlSurface
             }
         }
     }
 
     private var contextPanel: some View {
         VStack(spacing: 0) {
-            contextPanelHeader
+            if !usesMissionControlLayout {
+                contextPanelHeader
+            }
 
             Group {
                 switch inspectorScope {
@@ -332,8 +506,10 @@ struct DockPopover: View {
                         workflow: developerWorkflow,
                         onClose: onClose,
                         onOpenArtifacts: { inspectorScope = .artifacts },
-                        showsHeader: false
+                        showsHeader: false,
+                        initialMode: fullscreenGlobalTab
                     )
+                    .id("context-global-\(fullscreenGlobalTab.id)")
                  case .session:
                      SessionInspector(
                          model: model,
@@ -377,46 +553,10 @@ struct DockPopover: View {
 
     private var contextPanelHeader: some View {
         HStack(spacing: 12) {
-            // Always show the session title and project/repo name regardless of the selected scope.
-            // This gives persistent context so the user knows which session and project they're looking at
-            // even when browsing the Global tab.
-            VStack(alignment: .leading, spacing: 3) {
-                Text(model.currentSessionTitle ?? "Untitled session")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-
-                // Use cachedProjectName instead of the live computed value so that transient
-                // refresh-cycle gaps (where projectIDBySessionID is momentarily empty) don't
-                // cause the label to flicker or disappear. The cache is only updated with
-                // non-nil values via onChange(of: controlCenter.projectIDBySessionID).
-                if let activeSessionProjectName {
-                    HStack(spacing: 6) {
-                        Label(activeSessionProjectName, systemImage: "folder")
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .layoutPriority(1)
-
-                        // Only show the "NEW SESSION" button when in session scope to avoid clutter
-                        if inspectorScope == .session {
-                            Button(action: newChatForContextProject) {
-                                Image(systemName: "plus.bubble")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .frame(width: 28, height: 28)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.borderless)
-                            .foregroundStyle(Color.dockAccent)
-                            .fixedSize()
-                            .disabled(model.isRestoringSession || model.isCreatingSession)
-                            .help("Start a new chat in \(activeSessionProjectName)")
-                            .accessibilityLabel("Start a new chat in \(activeSessionProjectName)")
-                        }
-                    }
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Color.dockMetadataText)
-                }
-            }
+            Text("INSPECTOR")
+                .font(.system(size: 11, weight: .bold))
+                .tracking(1.05)
+                .foregroundStyle(Color.dockMetadataText)
 
             Spacer(minLength: 8)
 
@@ -460,14 +600,6 @@ struct DockPopover: View {
         return "\(sessionID):\(path)"
     }
 
-    private var activeSessionProjectName: String? {
-        let path = activeSessionRepositoryPath
-            ?? controlCenter.project(forSessionID: model.sessionID ?? "")?.name
-        guard let path, !path.isEmpty, path != "__no_project__" else { return nil }
-        let name = URL(fileURLWithPath: path).lastPathComponent
-        return name.isEmpty ? path : name
-    }
-
     /// Updates the cached project name from the live computed value.
     /// Called whenever the session or project membership changes.
     private func refreshCachedProjectName() {
@@ -488,36 +620,39 @@ struct DockPopover: View {
         model.updateCurrentSessionTitle(summary.title)
     }
 
-    private func newChatForContextProject() {
-        model.newChat()
-        model.requestComposerFocus()
-    }
-
     private var scopePicker: some View {
         HStack(spacing: 0) {
-            ForEach(InspectorScope.allCases) { scope in
+            // The fullscreen right region is an inspector for the active
+            // center surface, never a competing global workspace.
+            let scopes: [InspectorScope] = usesMissionControlLayout
+                ? [.session, .artifacts]
+                : InspectorScope.allCases
+            ForEach(scopes) { scope in
                 Button {
                     withAnimation(.dockEase(duration: 0.18)) {
                         inspectorScope = scope
                     }
                 } label: {
-                        Text(scope.rawValue)
+                    Text(scope.rawValue)
                         .font(.system(size: 13, weight: inspectorScope == scope ? .semibold : .regular))
                         .foregroundStyle(inspectorScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
-                        .frame(width: 78, height: 34)
-                        .background(Color.clear)
+                        .frame(width: 82, height: 34)
+                        .background {
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(inspectorScope == scope ? Color.dockAccent.opacity(0.10) : Color.clear)
+                        }
                         .overlay(alignment: .bottom) {
                             if inspectorScope == scope {
                                 Color.dockAccent.frame(height: 2)
                             }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Show \(scope.rawValue) inspector")
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Inspector scope")
     }
@@ -588,50 +723,19 @@ struct DockPopover: View {
                     .buttonStyle(.borderless)
                     .help("Talk mode")
 
-                    Button(action: {
-                        if isNarrowLayout {
-                            isNarrowControlVisible.toggle()
-                        } else {
-                            isWorkspaceManuallyExpanded.toggle()
-                        }
-                    }) {
-                        Image(systemName: isWorkspaceVisibleForLayout ? "rectangle.compress.vertical" : "rectangle.split.2x1")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(isWorkspaceVisibleForLayout ? Color.dockAccent : Color.dockSecondaryText)
-                            .frame(width: 28, height: 28)
+                    // This control belongs to the active conversation: it
+                    // toggles the inspector (the third workspace panel).
+                    Button(action: toggleInspectorPanel) {
+                        Image(systemName: inspectorPanelIsVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(inspectorPanelIsVisible ? Color.dockAccent : Color.dockSecondaryText)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(Color.dockSurface4))
                     }
                     .buttonStyle(.borderless)
-                    .help(isWorkspaceVisibleForLayout ? "Hide Control" : "Show Control")
+                    .help(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector")
+                    .padding(.leading, 6)
 
-                    Button(action: { model.newChat() }) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(model.isRestoringSession || model.isCreatingSession)
-                    .help("New chat")
-
-                    Button(action: {
-                        isFullscreen.toggle()
-                        // A compact display may have forced the popover into
-                        // its one-panel layout. Fullscreen always has room for
-                        // the split workspace and its resize handle.
-                        if isFullscreen {
-                            isNarrowLayout = false
-                        } else {
-                            synchronizePanelLayout()
-                        }
-                        onFullscreenToggle()
-                    }) {
-                        Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(isFullscreen ? Color.dockAccent : Color.dockSecondaryText)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.borderless)
-                    .help(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")
                 }
             }
             // Reduced vertical padding for a more compact header bar
@@ -653,6 +757,37 @@ struct DockPopover: View {
         case .needsClarification: .dockWarning
         case .offline: .dockDestructive
         }
+    }
+
+    private var inspectorPanelIsVisible: Bool {
+        isFullscreen ? isMissionInspectorVisible : isWorkspaceVisibleForLayout
+    }
+
+    private func toggleInspectorPanel() {
+        if isFullscreen {
+            isMissionInspectorVisible.toggle()
+        } else if isNarrowLayout {
+            isNarrowControlVisible.toggle()
+        } else {
+            isWorkspaceManuallyExpanded.toggle()
+        }
+    }
+
+    private func toggleFullscreen() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            isFullscreen.toggle()
+            if isFullscreen {
+                isNarrowLayout = false
+                isMissionInspectorVisible = true
+                inspectorScope = .session
+                fullscreenSurface = .conversation
+            } else {
+                synchronizePanelLayout()
+            }
+        }
+        onFullscreenToggle()
     }
 
     private var sessionModelDisplayName: String {
@@ -1591,12 +1726,687 @@ private struct ChatImagePreviewModal: View {
     }
 }
 
+/// Fullscreen navigation stays visible as a quiet operational queue. It is
+/// intentionally list-led rather than another dashboard: selecting an item
+/// always changes the central work surface.
+private struct MissionControlQueue: View {
+    private struct QueueTaskGroup: Identifiable {
+        let key: String
+        let task: WorkspaceTask
+        let count: Int
+        var id: String { key }
+    }
+
+    @ObservedObject var model: DockModel
+    @ObservedObject var workspaceStore: WorkspaceStore
+    @ObservedObject var controlCenter: ControlCenterModel
+    let activeSessionID: String?
+    let activeGlobalTab: ControlTab?
+    let isArtifactsActive: Bool
+    let onNewConversation: () -> Void
+    let onSelectSession: (HermesSession) -> Void
+    let onSelectTask: (WorkspaceTask) -> Void
+    let onOpenGlobal: (ControlTab) -> Void
+    let onOpenArtifacts: () -> Void
+    let showsFullscreenToggle: Bool
+    let isFullscreen: Bool
+    let onFullscreenToggle: () -> Void
+    @State private var showsAllConversations = false
+    @State private var selectedTaskID: UUID?
+    @State private var selectedSessionID: String?
+    @State private var collapsedProjectIDs: Set<String> = []
+    @State private var areProjectsExpanded = true
+    @State private var areConversationsExpanded = true
+
+    private var readyTasks: [WorkspaceTask] {
+        workspaceStore.tasks.filter { $0.status == .readyForReview || $0.status == .todo }
+    }
+
+    private var blockedTasks: [WorkspaceTask] {
+        workspaceStore.tasks.filter { $0.status == .awaitingApproval }
+    }
+
+    private var recentSessions: [HermesSession] {
+        model.sessions.sorted { sessionDate($0) > sessionDate($1) }
+    }
+
+    private struct ConversationGroup: Identifiable {
+        let id: String
+        let title: String
+        let sessions: [HermesSession]
+        let declaredSessionCount: Int
+        let projectID: String?
+        let isLinked: Bool
+    }
+
+    private var conversationGroups: [ConversationGroup] {
+        var groups: [ConversationGroup] = []
+        var assigned = Set<String>()
+
+        for project in controlCenter.projects where project.name != "__no_project__" {
+            var sessionsByID = Dictionary(uniqueKeysWithValues: recentSessions.compactMap { session -> (String, HermesSession)? in
+                let isMember = project.sessionIDs.contains(session.id)
+                    || controlCenter.projectIDBySessionID[session.id] == project.id
+                guard isMember else { return nil }
+                assigned.insert(session.id)
+                return (session.id, session)
+            })
+            for summary in controlCenter.projectSessionsByProjectID[project.id] ?? [] {
+                let savedSession = sessionsByID[summary.id]
+                sessionsByID[summary.id] = HermesSession(
+                    id: summary.id,
+                    title: summary.title,
+                    preview: summary.preview ?? savedSession?.preview ?? "",
+                    startedAt: savedSession?.startedAt,
+                    messageCount: savedSession?.messageCount ?? 0,
+                    source: savedSession?.source ?? "project"
+                )
+                assigned.insert(summary.id)
+            }
+            let sessions = sessionsByID.values.sorted { sessionDate($0) > sessionDate($1) }
+            groups.append(
+                ConversationGroup(
+                    id: "project:\(project.id)",
+                    title: projectDisplayName(project.name),
+                    sessions: sessions,
+                    declaredSessionCount: project.sessionCount,
+                    projectID: project.id,
+                    isLinked: true
+                )
+            )
+        }
+
+        let unlinked = recentSessions.filter { !assigned.contains($0.id) }
+        if !unlinked.isEmpty {
+            groups.append(
+                ConversationGroup(
+                    id: "unlinked",
+                    title: "Unlinked conversations",
+                    sessions: unlinked,
+                    declaredSessionCount: unlinked.count,
+                    projectID: nil,
+                    isLinked: false
+                )
+            )
+        }
+        return groups.sorted { lhs, rhs in
+            sessionDate(lhs.sessions.first) > sessionDate(rhs.sessions.first)
+        }
+    }
+
+    private func sessionDate(_ session: HermesSession) -> Date {
+        session.startedAt ?? .distantPast
+    }
+
+    private func sessionDate(_ session: HermesSession?) -> Date {
+        session.map(sessionDate) ?? .distantPast
+    }
+
+    private var readyTaskGroups: [QueueTaskGroup] {
+        groupedTasks(readyTasks)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                Spacer(minLength: 0)
+                Button(action: onNewConversation) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .frame(width: 32, height: 32)
+                        .background(Circle().fill(Color.dockSurface4))
+                }
+                .buttonStyle(.borderless)
+                .help("New conversation")
+                if showsFullscreenToggle {
+                    Button(action: onFullscreenToggle) {
+                        Image(systemName: isFullscreen
+                              ? "arrow.down.right.and.arrow.up.left"
+                              : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(Color.dockSurface4))
+                    }
+                    .buttonStyle(.borderless)
+                    .help(isFullscreen ? "Exit fullscreen" : "Enter fullscreen")
+                    .padding(.leading, 6)
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 52)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            ScrollView {
+                globalRailBar
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            }
+        }
+        .background(Color.dockSurface2)
+        .task { model.loadSessions() }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Hermes control queue")
+    }
+
+    private func conversationGroup(_ group: ConversationGroup) -> some View {
+        let sessionCount = max(group.declaredSessionCount, group.sessions.count)
+        let isCollapsed = sessionCount == 0 || collapsedProjectIDs.contains(group.id)
+
+        return VStack(alignment: .leading, spacing: 3) {
+            Button {
+                withAnimation(.dockEase(duration: 0.18)) {
+                    if collapsedProjectIDs.contains(group.id) {
+                        collapsedProjectIDs.remove(group.id)
+                    } else {
+                        collapsedProjectIDs.insert(group.id)
+                    }
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Text(group.title.uppercased())
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .tracking(0.9)
+                        .foregroundStyle(Color.dockAccent)
+                    Spacer(minLength: 0)
+                    Text(compactCount(sessionCount))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.dockAccent.opacity(0.07))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+
+            if !isCollapsed {
+                let visibleSessions = showsAllConversations
+                    ? group.sessions
+                    : Array(group.sessions.prefix(10))
+                VStack(alignment: .leading, spacing: 0) {
+                    if visibleSessions.isEmpty && sessionCount > 0 {
+                        Text("Loading linked sessions…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockMetadataText)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 9)
+                    } else {
+                        ForEach(visibleSessions) { session in
+                            sessionRow(session)
+                        }
+                    }
+                }
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) {
+                    Color.dockBorderLight.frame(width: DockLayout.hairline)
+                }
+            }
+        }
+        .task(id: "\(group.projectID ?? "unlinked"):\(isCollapsed)") {
+            guard !isCollapsed,
+                  let projectID = group.projectID,
+                  let project = controlCenter.projects.first(where: { $0.id == projectID }) else { return }
+            controlCenter.refreshProjectSessions(for: project)
+        }
+    }
+
+    private func projectDisplayName(_ rawName: String) -> String {
+        let name = URL(fileURLWithPath: rawName).lastPathComponent
+        return name.isEmpty ? rawName : name
+    }
+
+    private var statusColor: Color {
+        switch model.status {
+        case .idle: .dockSuccess
+        case .working: .dockAccent
+        case .needsApproval, .needsClarification: .dockWarning
+        case .offline: .dockDestructive
+        }
+    }
+
+    /// A one-line horizontal rail keeps global navigation compact and makes
+    /// selection independent from every neighbouring destination.
+    private var globalRailBar: some View {
+        let unlinked = conversationGroups.first(where: { !$0.isLinked })
+        let projects = conversationGroups.filter(\.isLinked)
+
+        return VStack(alignment: .leading, spacing: 2) {
+            globalRailDestination(.today)
+            globalRailDestination(.inbox)
+            globalRailDestination(.kanban)
+            globalRailDestination(.quota)
+            globalRailDestination(.automations)
+            queueRailDestination("Artifacts", icon: "doc.text.magnifyingglass", isSelected: isArtifactsActive) {
+                selectedTaskID = nil
+                selectedSessionID = nil
+                onOpenArtifacts()
+            }
+            navigationDisclosureRow(
+                title: "Conversations",
+                icon: "bubble.left.and.bubble.right",
+                count: unlinked?.sessions.count ?? 0,
+                isExpanded: areConversationsExpanded
+            ) {
+                withAnimation(.dockEase(duration: 0.18)) { areConversationsExpanded.toggle() }
+            }
+            if areConversationsExpanded {
+                if recentSessions.isEmpty && conversationGroups.isEmpty {
+                    queueEmpty("No saved conversations")
+                        .padding(.leading, 14)
+                } else if let unlinked {
+                    let visibleSessions = showsAllConversations
+                        ? unlinked.sessions
+                        : Array(unlinked.sessions.prefix(10))
+                    ForEach(visibleSessions) { session in
+                        sessionRow(session)
+                            .padding(.leading, 24)
+                    }
+                }
+                if conversationGroups.contains(where: { $0.sessions.count > 10 }) {
+                    conversationExpansionButton
+                        .padding(.leading, 24)
+                }
+            }
+
+            if !projects.isEmpty {
+                navigationDisclosureRow(
+                    title: "Projects",
+                    icon: "folder",
+                    count: projects.count,
+                    isExpanded: areProjectsExpanded
+                ) {
+                    withAnimation(.dockEase(duration: 0.18)) { areProjectsExpanded.toggle() }
+                }
+                if areProjectsExpanded {
+                    ForEach(projects) { group in
+                        conversationGroup(group)
+                            .padding(.leading, 14)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func globalRailDestination(_ tab: ControlTab) -> some View {
+        queueRailDestination(tab.globalRailLabel, icon: tab.icon, isSelected: activeGlobalTab == tab) {
+            selectedTaskID = nil
+            selectedSessionID = nil
+            onOpenGlobal(tab)
+        }
+    }
+
+    private func navigationDisclosureRow(
+        title: String,
+        icon: String,
+        count: Int,
+        isExpanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 22, alignment: .center)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockSecondaryText)
+                Spacer(minLength: 0)
+                Text(compactCount(count))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private func queueSection<Content: View>(
+        _ title: String,
+        count: Int?,
+        action: (() -> Void)? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Group {
+                if let action {
+                    Button(action: action) { queueSectionHeader(title, count: count, isInteractive: true) }
+                        .buttonStyle(.borderless)
+                        .help("Open \(title.lowercased())")
+                } else {
+                    queueSectionHeader(title, count: count, isInteractive: false)
+                }
+            }
+            content()
+        }
+    }
+
+    private func queueSectionHeader(_ title: String, count: Int?, isInteractive: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: title == "CONVERSATIONS" ? "bubble.left.and.bubble.right" : "sparkles")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isInteractive ? Color.dockAccent : Color.dockSecondaryText)
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(isInteractive ? Color.dockSecondaryText : Color.dockMetadataText)
+            Spacer(minLength: 0)
+            if let count {
+                Text(compactCount(count))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(count == 0 ? Color.dockMetadataText : Color.dockAccent)
+            }
+            if isInteractive {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .background(Color.clear)
+        .contentShape(Rectangle())
+    }
+
+    private func queueEmpty(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12))
+            .foregroundStyle(Color.dockMetadataText)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+    }
+
+    private func queueRailDestination(
+        _ title: String,
+        icon: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 22, alignment: .center)
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 34)
+                .contentShape(Rectangle())
+                .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.borderless)
+    }
+
+    @ViewBuilder
+    private func queueOverflowButton(total: Int, visible: Int, title: String, action: @escaping () -> Void) -> some View {
+        if total > visible {
+            Button(action: action) {
+                HStack(spacing: 6) {
+                    Text("Showing \(visible) of \(compactCount(total))")
+                    Text(title)
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.dockAccent)
+                .padding(.vertical, 5)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    private var conversationExpansionButton: some View {
+        Button { showsAllConversations.toggle() } label: {
+            HStack(spacing: 6) {
+                Text(showsAllConversations ? "Show recent conversations" : "Show more conversations")
+                Image(systemName: showsAllConversations ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Color.dockAccent)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private func taskRow(_ task: WorkspaceTask, duplicateCount: Int = 1) -> some View {
+        Button {
+            selectedTaskID = task.id
+            selectedSessionID = nil
+            onSelectTask(task)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(taskColor(task.status))
+                        .frame(width: 6, height: 6)
+                    Text(taskDisplayTitle(task))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if duplicateCount > 1 {
+                        Text("×\(duplicateCount)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                }
+                if let detail = taskDisplayDetail(task) {
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isTaskSelected(task) ? Color.dockAccent.opacity(0.14) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.borderless)
+        .help(task.sessionID == nil ? "Open this task in Kanban" : "Open task conversation")
+    }
+
+    private func sessionRow(_ session: HermesSession) -> some View {
+        Button {
+            selectedSessionID = session.id
+            selectedTaskID = nil
+            onSelectSession(session)
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(session.displayTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                if let preview = session.displayPreview {
+                    Text(preview)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
+                }
+                if let timestamp = session.startedAt {
+                    HStack(spacing: 4) {
+                        Text("Updated")
+                        Text(timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
+                    }
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isSessionSelected(session) ? Color.dockAccent.opacity(0.14) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private func taskColor(_ status: WorkspaceTaskStatus) -> Color {
+        switch status {
+        case .todo: .dockSecondaryText
+        case .inProgress: .dockAccent
+        case .awaitingApproval: .dockWarning
+        case .readyForReview: .dockSuccess
+        case .done: .dockMetadataText
+        }
+    }
+
+    private func isTaskSelected(_ task: WorkspaceTask) -> Bool {
+        guard activeGlobalTab == nil, !isArtifactsActive else { return false }
+        return selectedTaskID == task.id || (task.sessionID != nil && task.sessionID == activeSessionID)
+    }
+
+    private func isSessionSelected(_ session: HermesSession) -> Bool {
+        guard activeGlobalTab == nil, !isArtifactsActive else { return false }
+        return selectedSessionID == session.id || session.id == activeSessionID
+    }
+
+    private func taskDisplayTitle(_ task: WorkspaceTask) -> String {
+        guard task.title == "Untitled chat",
+              let sessionID = task.sessionID,
+              let session = model.sessions.first(where: { $0.id == sessionID }) else { return task.title }
+        return session.displayTitle
+    }
+
+    private func taskDisplayDetail(_ task: WorkspaceTask) -> String? {
+        if !task.summary.isEmpty { return task.summary }
+        guard let sessionID = task.sessionID,
+              let session = model.sessions.first(where: { $0.id == sessionID }) else { return nil }
+        return session.displayPreview
+    }
+
+    private func compactCount(_ count: Int) -> String {
+        count > 99 ? "99+" : "\(count)"
+    }
+
+    private func groupedTasks(_ tasks: [WorkspaceTask]) -> [QueueTaskGroup] {
+        var groups: [QueueTaskGroup] = []
+        var indexes: [String: Int] = [:]
+        for task in tasks {
+            let normalizedTitle = task.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            // Session-linked tasks represent distinct conversations. Unlinked
+            // tasks with the same title are grouped to prevent a stale or
+            // repeated projection from filling the entire navigation rail.
+            let key = task.sessionID.map { "session:\($0)" } ?? "title:\(normalizedTitle)"
+            if let index = indexes[key] {
+                let existing = groups[index]
+                groups[index] = QueueTaskGroup(key: existing.key, task: existing.task, count: existing.count + 1)
+            } else {
+                indexes[key] = groups.count
+                groups.append(QueueTaskGroup(key: key, task: task, count: 1))
+            }
+        }
+        return groups
+    }
+}
+
+/// A three-region fullscreen shell: queue, focused workspace, and contextual
+/// inspector. The queue and inspector keep sensible minimums while the center
+/// owns all remaining space.
+private struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: View>: NSViewRepresentable {
+    let queue: Queue
+    let workspace: Workspace
+    let inspector: Inspector
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSSplitView {
+        let splitView = NSSplitView()
+        splitView.isVertical = true
+        splitView.dividerStyle = .thin
+        splitView.delegate = context.coordinator
+        splitView.addArrangedSubview(context.coordinator.queueHost)
+        splitView.addArrangedSubview(context.coordinator.workspaceHost)
+        splitView.addArrangedSubview(context.coordinator.inspectorHost)
+        context.coordinator.splitView = splitView
+        return splitView
+    }
+
+    func updateNSView(_ splitView: NSSplitView, context: Context) {
+        context.coordinator.queueHost.rootView = AnyView(queue)
+        context.coordinator.workspaceHost.rootView = AnyView(workspace)
+        context.coordinator.inspectorHost.rootView = AnyView(inspector)
+
+        guard !context.coordinator.hasSetInitialPositions else { return }
+        DispatchQueue.main.async {
+            guard !context.coordinator.hasSetInitialPositions,
+                  splitView.bounds.width > 0 else { return }
+            // Mission Control deliberately gives the queue, work surface, and
+            // inspector equal outer weight at launch. Users may still resize
+            // either divider for a chat- or operations-heavy session.
+            splitView.setPosition(splitView.bounds.width * 0.30, ofDividerAt: 0)
+            splitView.setPosition(splitView.bounds.width * 0.70, ofDividerAt: 1)
+            context.coordinator.hasSetInitialPositions = true
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSSplitViewDelegate {
+        let queueHost = NSHostingView(rootView: AnyView(EmptyView()))
+        let workspaceHost = NSHostingView(rootView: AnyView(EmptyView()))
+        let inspectorHost = NSHostingView(rootView: AnyView(EmptyView()))
+        weak var splitView: NSSplitView?
+        var hasSetInitialPositions = false
+
+        func splitView(
+            _ splitView: NSSplitView,
+            constrainMinCoordinate proposedMinimumPosition: CGFloat,
+            ofSubviewAt dividerIndex: Int
+        ) -> CGFloat {
+            dividerIndex == 0 ? 220 : 540
+        }
+
+        func splitView(
+            _ splitView: NSSplitView,
+            constrainMaxCoordinate proposedMaximumPosition: CGFloat,
+            ofSubviewAt dividerIndex: Int
+        ) -> CGFloat {
+            if dividerIndex == 0 {
+                return min(360, splitView.bounds.width - 680)
+            }
+            return splitView.bounds.width - 280
+        }
+    }
+}
+
 /// AppKit owns the fullscreen divider so panel resizing stays responsive even
 /// while the conversation and inspector contain complex, frequently-updating
 /// SwiftUI content.
 private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRepresentable {
     let leading: Leading
     let trailing: Trailing
+    let leadingFraction: CGFloat
+
+    init(leading: Leading, trailing: Trailing, leadingFraction: CGFloat = 0.30) {
+        self.leading = leading
+        self.trailing = trailing
+        self.leadingFraction = leadingFraction
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -1619,7 +2429,7 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
         DispatchQueue.main.async {
             guard !context.coordinator.hasSetInitialPosition,
                   splitView.bounds.width > 0 else { return }
-            splitView.setPosition(splitView.bounds.width / 2, ofDividerAt: 0)
+            splitView.setPosition(splitView.bounds.width * leadingFraction, ofDividerAt: 0)
             context.coordinator.hasSetInitialPosition = true
         }
     }

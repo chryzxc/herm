@@ -299,73 +299,7 @@ struct SessionTerminalView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             terminalTabBar
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("SHELL")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .tracking(1.1)
-                        .foregroundStyle(Color.dockSecondaryText)
-                    Text(terminal.workingDirectory.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No project directory")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                }
-                Spacer()
-                Button { terminal.clear() } label: {
-                    Image(systemName: "trash")
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockSecondaryText)
-                .disabled(terminal.output.isEmpty)
-                .help("Clear terminal output")
-                .accessibilityLabel("Clear terminal output")
-                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalClearOutput)
-                Button { terminal.interrupt() } label: {
-                    Image(systemName: "stop.fill")
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(canInterrupt ? Color.dockWarning : Color.dockMetadataText)
-                .disabled(!canInterrupt)
-                .help("Interrupt running command")
-                .accessibilityLabel("Interrupt running command")
-                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalInterrupt)
-                if !recipes.isEmpty {
-                    Menu {
-                        ForEach(recipes) { recipe in
-                            Button(recipe.title) {
-                                guard let repositoryID, let repositoryFingerprint else { return }
-                                terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
-                            }
-                            Button("Copy \(recipe.title.lowercased()) command") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(recipe.command, forType: .string)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "checkmark.seal")
-                            .frame(width: 28, height: 28)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .help("Run verified repository check")
-                    .accessibilityLabel("Run verified repository check")
-                    .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalRunVerification)
-                    .disabled(terminal.state != .ready)
-                } else {
-                    Label("No verified repository recipes available", systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.dockWarning)
-                }
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 6, height: 6)
-                Text(statusText)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(statusColor)
-            }
-            .padding(.top, 14)
-            .padding(.bottom, 10)
+            terminalContext
             if let run = terminal.lastVerificationRun {
                 HStack(spacing: 8) {
                     Text(run.isComplete ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")" : "Running \(run.command)…")
@@ -387,20 +321,30 @@ struct SessionTerminalView: View {
                 .accessibilityLabel(run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
             }
 
-            // Scrollable Output Window
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(terminal.output.isEmpty ? "Terminal session initialized. Ready for commands." : terminal.output)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(terminal.output.isEmpty ? Color.dockSecondaryText : Color.dockPrimaryText)
-                        .lineSpacing(4)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 20)
-                        .id("terminal-output")
+                    if terminal.output.isEmpty {
+                        terminalEmptyState
+                    } else {
+                        Text(terminal.output)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineSpacing(4)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(18)
+                            .id("terminal-output")
+                    }
                 }
-                .frame(minHeight: 260, maxHeight: .infinity)
-                .background(Color.dockCanvas)
+                .frame(minHeight: 220, maxHeight: .infinity)
+                .background(Color.dockSurface2.opacity(0.42))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(Color.dockBorderLight, lineWidth: 0.5)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
                 .accessibilityLabel("Terminal output")
                 .accessibilityValue(terminal.output.isEmpty ? "No output" : "Output available")
                 .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalOutput)
@@ -415,18 +359,21 @@ struct SessionTerminalView: View {
             HStack(spacing: 8) {
                 Image(systemName: "lock.shield")
                     .foregroundStyle(Color.dockSuccess)
-                Text("Verification recipes only · arbitrary terminal commands are unavailable")
+                Text("Verified commands only")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockSecondaryText)
+                Text("Arbitrary shell input is unavailable")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
-                Toggle("Follow output", isOn: $followsOutput)
+                Toggle("Follow", isOn: $followsOutput)
                     .toggleStyle(.switch)
-                    .labelsHidden()
                     .help("Follow new terminal output")
                     .accessibilityLabel("Follow new terminal output")
             }
-            .padding(.vertical, 10)
-            .background(Color.dockSurface2)
+            .padding(.horizontal, 14)
+            .frame(height: 46)
+            .background(Color.dockSurface2.opacity(0.78))
             .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
         }
         .background(Color.dockCanvas)
@@ -458,8 +405,8 @@ struct SessionTerminalView: View {
                 .help("Close terminal")
             }
             .padding(.horizontal, 11)
-            .frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.dockSurface6))
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface6))
 
             Spacer(minLength: 0)
 
@@ -468,15 +415,108 @@ struct SessionTerminalView: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(width: 30, height: 30)
+            .foregroundStyle(Color.dockSecondaryText)
+            .frame(width: 32, height: 30)
             }
             .buttonStyle(.borderless)
             .help("New terminal session")
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private var terminalContext: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("WORKSPACE")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.dockMetadataText)
+                Text(terminal.workingDirectory.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No project attached")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if !recipes.isEmpty {
+                Menu {
+                    ForEach(recipes) { recipe in
+                        Button(recipe.title) {
+                            guard let repositoryID, let repositoryFingerprint else { return }
+                            terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
+                        }
+                        Button("Copy \(recipe.title.lowercased()) command") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(recipe.command, forType: .string)
+                        }
+                    }
+                } label: {
+                    Label("Run check", systemImage: "checkmark.seal")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .menuStyle(.borderlessButton)
+                .foregroundStyle(Color.dockAccent)
+                .help("Run verified repository check")
+                .accessibilityLabel("Run verified repository check")
+                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalRunVerification)
+                .disabled(terminal.state != .ready)
+            }
+
+            Button { terminal.clear() } label: {
+                Image(systemName: "trash")
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.dockSecondaryText)
+            .disabled(terminal.output.isEmpty)
+            .help("Clear terminal output")
+            .accessibilityLabel("Clear terminal output")
+            .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalClearOutput)
+
+            Button { terminal.interrupt() } label: {
+                Image(systemName: "stop.fill")
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(canInterrupt ? Color.dockWarning : Color.dockMetadataText)
+            .disabled(!canInterrupt)
+            .help("Interrupt running command")
+            .accessibilityLabel("Interrupt running command")
+
+            HStack(spacing: 6) {
+                Circle().fill(statusColor).frame(width: 6, height: 6)
+                Text(statusText)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            }
+            .foregroundStyle(statusColor)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private var terminalEmptyState: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("$ _")
+                .font(.system(size: 17, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.dockAccent)
+            Text(projectPath == nil ? "No project is attached to this session." : "Ready for a verified command.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            Text(projectPath == nil
+                ? "Open a session with a repository to make its approved verification recipes available here."
+                : recipes.isEmpty
+                    ? "This repository has no approved verification recipes yet."
+                    : "Choose Run check above to execute an approved repository recipe.")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+        .padding(22)
+        .accessibilityIdentifier("terminal-empty-state")
     }
 }
