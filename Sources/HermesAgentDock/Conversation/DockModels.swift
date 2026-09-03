@@ -372,8 +372,9 @@ struct ChatMessage: Identifiable, Equatable {
     let responseDuration: TimeInterval?
     let isSteering: Bool
     let steeringStatus: String?
+    let isError: Bool
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false) {
         self.id = id
         self.role = role
         self.text = text
@@ -383,6 +384,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.responseDuration = responseDuration
         self.isSteering = isSteering
         self.steeringStatus = steeringStatus
+        self.isError = isError
     }
 
     var image: NSImage? { images.first }
@@ -395,6 +397,9 @@ struct HermesSession: Identifiable, Equatable {
     let title: String
     let preview: String
     let startedAt: Date?
+    /// The most recent activity time. Older Hermes responses may omit it, so
+    /// callers should use `lastUpdatedAt` when rendering or sorting activity.
+    let updatedAt: Date?
     let messageCount: Int
     let source: String
 
@@ -404,6 +409,26 @@ struct HermesSession: Identifiable, Equatable {
 
     var displayPreview: String? {
         SessionPreviewPresentation.summary(preview)
+    }
+
+    var lastUpdatedAt: Date? { updatedAt ?? startedAt }
+
+    init(
+        id: String,
+        title: String,
+        preview: String,
+        startedAt: Date?,
+        updatedAt: Date? = nil,
+        messageCount: Int,
+        source: String
+    ) {
+        self.id = id
+        self.title = title
+        self.preview = preview
+        self.startedAt = startedAt
+        self.updatedAt = updatedAt
+        self.messageCount = messageCount
+        self.source = source
     }
 }
 

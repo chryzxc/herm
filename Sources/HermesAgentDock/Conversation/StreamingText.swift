@@ -56,7 +56,6 @@ struct StreamingMessageText: View {
         Text(streaming.text)
             .font(.system(size: 14))
             .lineSpacing(3)
-            .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
     }
 }

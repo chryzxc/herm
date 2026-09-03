@@ -14,10 +14,12 @@ private final class InterruptTestRPCClient: HermesRPCClientProtocol {
     let result: Result
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var interruptCallCount = 0
+    private(set) var requests: [(method: String, params: [String: Any])] = []
 
     init(result: Result) { self.result = result }
     func connect() async throws {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requests.append((method, params))
         interruptCallCount += method == "session.interrupt" ? 1 : 0
         switch result {
         case .success(let response): return response
@@ -120,6 +122,7 @@ struct DockNotificationTests {
             "session_id": "session-clarify",
             "payload": [
                 "question": "Which task list should I check?",
+                "request_id": "clarify-123",
                 "choices": ["Personal", "Work"]
             ]
         ])
@@ -127,11 +130,72 @@ struct DockNotificationTests {
         #expect(model.status == .needsClarification)
         #expect(model.clarificationQuestion == "Which task list should I check?")
         #expect(model.clarificationChoices == ["Personal", "Work"])
+        #expect(model.clarificationRequestID == "clarify-123")
         #expect(!model.isSending)
         #expect(model.messages.last?.role == .hermes)
         #expect(model.messages.last?.text.contains("Which task list should I check?") == true)
         #expect(model.messages.last?.text.contains("- Personal") == true)
         #expect(model.messages.last?.text.contains("- Work") == true)
+    }
+
+    @Test func clarificationReplyUsesHermesRequestIDAndAnswerFields() async throws {
+        let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
+        let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
+        model.receiveGatewayEvent("clarify.request", params: [
+            "session_id": "session-clarify",
+            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
+        ])
+
+        model.respondToClarification("Work")
+        await Task.yield()
+
+        let request = try #require(client.requests.first(where: { $0.method == "clarify.respond" }))
+        #expect(request.params["request_id"] as? String == "clarify-123")
+        #expect(request.params["answer"] as? String == "Work")
+        #expect(request.params["response"] == nil)
+        #expect(model.clarificationQuestion == nil)
+    }
+
+    @Test func clarificationResumeAppendsTheNextHermesReplyAfterTheAnswer() {
+        let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
+        let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
+        model.receiveGatewayEvent("clarify.request", params: [
+            "session_id": "session-clarify",
+            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
+        ])
+
+        model.respondToClarification("Work")
+        model.receiveGatewayEvent("message.delta", params: [
+            "session_id": "session-clarify",
+            "payload": ["delta": "I'll check Work."]
+        ])
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "session-clarify", "payload": [:]
+        ])
+
+        #expect(model.messages.map(\.text) == ["Which task list?", "Work", "I'll check Work."])
+    }
+
+    @Test func clarificationResumeDoesNotDuplicateAnAssistantRowWhenMessageStartArrivesLate() {
+        let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
+        let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
+        model.receiveGatewayEvent("clarify.request", params: [
+            "session_id": "session-clarify",
+            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
+        ])
+
+        model.respondToClarification("Work")
+        model.receiveGatewayEvent("message.delta", params: [
+            "session_id": "session-clarify", "payload": ["delta": "I'll check Work."]
+        ])
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "session-clarify", "payload": [:]
+        ])
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "session-clarify", "payload": [:]
+        ])
+
+        #expect(model.messages.map(\.text) == ["Which task list?", "Work", "I'll check Work."])
     }
 
     @Test func interruptReleasesPendingClarificationForNormalPrompting() async {

@@ -35,6 +35,31 @@ struct StreamingPerformanceTests {
         #expect(model.conversationActivityPhase == .idle)
     }
 
+    @Test func completionErrorAppearsInTranscriptAndReleasesSendingState() {
+        let sessionID = "quota-session"
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("quota-(UUID().uuidString).json"),
+            initialSessionID: sessionID
+        )
+        model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": [:]])
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": sessionID,
+            "payload": ["error": "HTTP 429: The usage limit has been reached"]
+        ])
+
+        #expect(model.messages.count == 1)
+        #expect(model.messages.last?.isError == true)
+        #expect(model.messages.last?.text == "HTTP 429: The usage limit has been reached")
+        #expect(model.status == .idle)
+        #expect(!model.isSending)
+    }
+
+    @Test func structuredCompletionErrorUsesNestedMessage() {
+        #expect(DockModel.messageCompletionError(from: [
+            "error": ["message": "The usage limit has been reached", "code": "rate_limit"]
+        ]) == "The usage limit has been reached")
+    }
+
     @Test func staleScheduledStreamingFlushCannotChangeAReplacedConversation() async {
         let sessionID = "stream-session"
         let model = DockModel(

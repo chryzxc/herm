@@ -43,7 +43,7 @@ struct VoiceModeToolbar: View {
       HStack(spacing: 6) {
         Button(action: onToggleWorkspace) {
           Image(
-            systemName: isWorkspaceVisible ? "rectangle.compress.vertical" : "rectangle.split.2x1"
+            systemName: isWorkspaceVisible ? "rectangle.split.2x1" : "rectangle"
           )
           .font(.system(size: 11, weight: .medium)).foregroundStyle(
             isWorkspaceVisible ? Color.dockAccent : Color.dockSecondaryText
@@ -132,24 +132,55 @@ struct MessageBubbleShape: Shape {
 
 struct MarkdownMessageView: View {
   let markdown: String
-  @State private var parsedBlocks: [Block]
-  private enum Block {
-    case heading(level: Int, text: String)
-    case paragraph(String)
-    case listItem(text: String, marker: String)
+  private let blocks: [RenderBlock]
+
+  /// Fully-rendered row payloads. Inline `AttributedString` parsing happens
+  /// once per distinct message, not on every body evaluation.
+  private enum RenderBlock {
+    case heading(level: Int, text: AttributedString)
+    case paragraph(AttributedString)
+    case listItem(text: AttributedString, marker: String)
     case code(String, language: String?)
-    case quote(String)
-    case tableRow([String])
+    case quote(AttributedString)
+    case tableRow([AttributedString])
   }
 
   init(markdown: String) {
     self.markdown = markdown
-    _parsedBlocks = State(initialValue: Self.parseBlocks(markdown))
+    // SwiftUI rebuilds each transcript row's view value on every parent
+    // render and each lazy row build while scrolling. The shared cache keeps
+    // that to a dictionary hit instead of re-parsing the message Markdown.
+    self.blocks = RenderCache.renderBlocks(for: markdown)
+  }
+
+  /// Parsed-and-rendered output keyed by the raw Markdown string. NSCache is
+  /// thread-safe and evicts under memory pressure without copying its keys.
+  @MainActor
+  private enum RenderCache {
+    private static let cache: NSCache<NSString, Entry> = {
+      let cache = NSCache<NSString, Entry>()
+      cache.countLimit = 400
+      return cache
+    }()
+
+    private final class Entry {
+      let blocks: [RenderBlock]
+      init(blocks: [RenderBlock]) { self.blocks = blocks }
+    }
+
+    static func renderBlocks(for markdown: String) -> [RenderBlock] {
+      let key = markdown as NSString
+      if let entry = cache.object(forKey: key) { return entry.blocks }
+      let blocks = MarkdownMessageView.renderBlocks(
+        from: MarkdownMessageView.parseBlocks(markdown))
+      cache.setObject(Entry(blocks: blocks), forKey: key)
+      return blocks
+    }
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      ForEach(Array(parsedBlocks.enumerated()), id: \.offset) { _, block in
+      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
         switch block {
         case .heading(let level, let text):
           renderedText(text).font(.system(size: Self.headingSize(level), weight: .semibold)).foregroundStyle(Color.dockPrimaryText).padding(
@@ -182,16 +213,16 @@ struct MarkdownMessageView: View {
         }
       }
     }
+    .textSelection(.enabled)
   }
 
-  private func renderedText(_ value: String) -> some View {
+  private func renderedText(_ value: AttributedString) -> some View {
     // Explicitly apply soft dockPrimaryText text color to eliminate pure white glare
-    Text(inlineMarkdown(value))
+    Text(value)
       .foregroundStyle(Color.dockPrimaryText)
       // Keep Markdown links native so AppKit/SwiftUI can provide the link
       // cursor and hover underline without breaking paragraph wrapping.
       .tint(Color.dockAccent)
-      .textSelection(.enabled)
       .fixedSize(horizontal: false, vertical: true)
   }
   private func codeBlock(_ code: String, language: String?) -> some View {
@@ -202,7 +233,7 @@ struct MarkdownMessageView: View {
             .top, 6)
       }
       ScrollView(.horizontal, showsIndicators: false) {
-        Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled).frame(
+        Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.dockPrimaryText).frame(
           maxWidth: .infinity, alignment: .leading
         ).padding(.horizontal, 8).padding(.vertical, 6)
       }
@@ -213,8 +244,18 @@ struct MarkdownMessageView: View {
   private static func headingSize(_ level: Int) -> CGFloat {
     level == 1 ? 18 : level == 2 ? 16 : level == 3 ? 14.5 : 14
   }
-  private static func parseBlocks(_ markdown: String) -> [Block] {
-    var result: [Block] = []
+  /// Line-level parse output before inline Markdown is rendered.
+  private enum ParsedBlock {
+    case heading(level: Int, text: String)
+    case paragraph(String)
+    case listItem(text: String, marker: String)
+    case code(String, language: String?)
+    case quote(String)
+    case tableRow([String])
+  }
+
+  private static func parseBlocks(_ markdown: String) -> [ParsedBlock] {
+    var result: [ParsedBlock] = []
     var code: [String] = []
     var language: String?
     var inCode = false
@@ -325,11 +366,24 @@ struct MarkdownMessageView: View {
     }
     return nil
   }
-  private func inlineMarkdown(_ value: String) -> AttributedString {
+  private static func renderBlocks(from parsed: [ParsedBlock]) -> [RenderBlock] {
+    parsed.map { block in
+      switch block {
+      case .heading(let level, let text): return .heading(level: level, text: inlineMarkdown(text))
+      case .paragraph(let text): return .paragraph(inlineMarkdown(text))
+      case .listItem(let text, let marker): return .listItem(text: inlineMarkdown(text), marker: marker)
+      case .code(let code, let language): return .code(code, language: language)
+      case .quote(let text): return .quote(inlineMarkdown(text))
+      case .tableRow(let columns): return .tableRow(columns.map(inlineMarkdown))
+      }
+    }
+  }
+
+  private static func inlineMarkdown(_ value: String) -> AttributedString {
     (try? AttributedString(
       markdown: value,
-      options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-      ?? AttributedString(value)
+      options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    )) ?? AttributedString(value)
   }
 }
 
@@ -350,9 +404,12 @@ struct ConversationActivityRow: View {
     case .responding: break
     case .idle: break
     }
-    guard latestPipelineActivity != nil else { return "Responding" }
+    // Read once: each access re-runs the presentation snapshot cache's input
+    // equality check over the full agent and activity arrays.
+    let activity = latestPipelineActivity
+    guard activity != nil else { return "Responding" }
     return AgentActivityPresentation.conversationTitle(
-      latestPipelineActivity: latestPipelineActivity, recentEvents: model.recentEvents)
+      latestPipelineActivity: activity, recentEvents: model.recentEvents)
   }
   var body: some View {
     HStack(spacing: 6) {

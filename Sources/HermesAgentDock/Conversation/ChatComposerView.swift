@@ -87,7 +87,8 @@ struct ChatComposerView: View {
         let showsInterruptControl = (isResponding || model.status == .needsClarification)
             && !speechInput.isRecording
             && !showStop
-        let minimumComposerHeight = isFullscreen ? 64 : ComposerLayout.minHeight
+        // Leave room for TextEditor's native top and bottom insets.
+        let minimumComposerHeight = isFullscreen ? 64 : max(ComposerLayout.minHeight, 52)
         let effectiveComposerHeight = max(minimumComposerHeight, draftIsEmpty ? ComposerLayout.minHeight : composerHeight)
         // TextEditor adds a small native leading inset on macOS. Keep that
         // correction in one place so the editor, placeholder, and measurement
@@ -107,28 +108,26 @@ struct ChatComposerView: View {
                     .onChange(of: isComposerFocused) { _, focused in
                         model.isComposerEditing = focused
                     }
+                    .onChange(of: composer.text) { _, _ in
+                        // A large paste can change NSTextView's content size
+                        // without updating its internal scroll origin. Defer
+                        // until AppKit lays out the new text, then keep the
+                        // insertion point visible inside the fixed editor.
+                        DispatchQueue.main.async {
+                            keepEditorCaretVisible()
+                        }
+                    }
                     .onKeyPress(phases: .down) { press in
-                        if press.key == .upArrow,
-                           !press.modifiers.contains(.shift),
-                           !press.modifiers.contains(.command),
-                           !press.modifiers.contains(.option),
-                           !press.modifiers.contains(.control),
-                           model.navigateComposerHistory(direction: -1) {
-                            return .handled
-                        }
-                        if press.key == .downArrow,
-                           !press.modifiers.contains(.shift),
-                           !press.modifiers.contains(.command),
-                           !press.modifiers.contains(.option),
-                           !press.modifiers.contains(.control),
-                           model.navigateComposerHistory(direction: 1) {
-                            return .handled
-                        }
-                        if press.key == .return,
-                           !press.modifiers.contains(.shift) {
-                            // Submit on Return without Shift
-                            model.submitComposerInput()
-                            return .handled
+                        let hasModifier = !press.modifiers.intersection([.shift, .command, .option, .control]).isEmpty
+                        if !hasModifier {
+                            switch press.key {
+                            case .upArrow where model.navigateComposerHistory(direction: -1): return .handled
+                            case .downArrow where model.navigateComposerHistory(direction: 1): return .handled
+                            case .return:
+                                model.submitComposerInput()
+                                return .handled
+                            default: break
+                            }
                         }
                         return .ignored
                     }
@@ -138,6 +137,13 @@ struct ChatComposerView: View {
                     // at the same x position as the placeholder overlay.
                     .padding(.horizontal, -textInset)
                     .padding(.vertical, 0)
+                    // NSTextView can draw outside its SwiftUI proposal when
+                    // its content grows. Keep the native editor inside the
+                    // composer; it will scroll internally once this height is
+                    // reached instead of covering the toolbar below.
+                    .frame(height: effectiveComposerHeight)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
                     .foregroundStyle(Color.dockPrimaryText)
                     .disabled(model.isRestoringSession)
 
@@ -149,12 +155,15 @@ struct ChatComposerView: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         // TextEditor already supplies the leading content inset
                         // used by the caret. Do not add another inset here.
-                        .padding(.leading, 3)
-                        .padding(.vertical, 7)
+                        // TextEditor is already shifted by `-textInset` above,
+                        // so the placeholder must not add another horizontal
+                        // inset. Its native macOS top inset is approximately
+                        // 5pt, which keeps the baseline aligned with the caret.
+                        .padding(.leading, 0)
+                        .padding(.top, textInset)
                         // macOS TextEditor places its insertion caret above the
                         // SwiftUI text overlay; lift the placeholder to share
                         // the caret's vertical text origin.
-                        .offset(y: -7)
                         .allowsHitTesting(false)
                 }
 
@@ -176,8 +185,12 @@ struct ChatComposerView: View {
             // Add back the horizontal inset we removed from TextEditor so the
             // whole block still respects the composer's visual gutter.
             .padding(.horizontal, textInset)
-            .frame(maxWidth: .infinity, minHeight: effectiveComposerHeight, maxHeight: effectiveComposerHeight)
-            .clipped()
+            .frame(height: effectiveComposerHeight)
+            .frame(maxWidth: .infinity)
+            // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
+            // proposal while its intrinsic text height changes. Mask the
+            // complete input surface as a final paint boundary.
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .padding(.horizontal, 10)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -397,6 +410,13 @@ struct ChatComposerView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
+            if let clarificationResponseError = model.clarificationResponseError {
+                Text(clarificationResponseError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            }
         }
         .padding(.horizontal, isFullscreen ? 20 : DockLayout.compactInset)
         // Keep a clear visual buffer below the transcript divider. A composer
@@ -424,6 +444,14 @@ struct ChatComposerView: View {
                 : Color.dockBorderLight)
                 .frame(height: DockLayout.hairline)
         }
+    }
+
+    private func keepEditorCaretVisible() {
+        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+              textView.isEditable else { return }
+
+        let caret = textView.selectedRange().location
+        textView.scrollRangeToVisible(NSRange(location: caret, length: 0))
     }
 
     private var placeholderText: String {

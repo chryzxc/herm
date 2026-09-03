@@ -161,19 +161,21 @@ struct StartupAssistantView: View {
 }
 
 struct VoiceOrbView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isListening: Bool
     let isResponding: Bool
     let audioLevel: CGFloat
 
     var body: some View {
         let isActive = isListening || isResponding
-        if isActive {
+        if isActive && !reduceMotion {
             TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
                 orb(time: context.date.timeIntervalSinceReferenceDate, isActive: true)
             }
         } else {
-            // An idle voice control must not keep the display link alive.
-            orb(time: 0, isActive: false)
+            // An idle or motion-reduced voice control must not keep the
+            // display link alive; render one static active frame instead.
+            orb(time: 0, isActive: isActive)
         }
     }
 
@@ -239,10 +241,11 @@ struct VoiceOrbView: View {
 }
 
 struct MicWaveform: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let isActive: Bool
 
     var body: some View {
-        if isActive {
+        if isActive && !reduceMotion {
             TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { context in
                 waveform(at: context.date.timeIntervalSinceReferenceDate)
             }

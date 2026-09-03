@@ -414,6 +414,20 @@ struct AgentProjectionTests {
         #expect(projection?.payload["text"] as? String == "read_file")
     }
 
+    @Test func delegationStatusRowsRequireCurrentSessionOwnership() {
+        #expect(DockModel.delegationStatusRow([
+            "subagent_id": "current-agent",
+            "parent_session_id": "session-current"
+        ], belongsTo: "session-current"))
+        #expect(!DockModel.delegationStatusRow([
+            "subagent_id": "other-agent",
+            "parent_session_id": "session-other"
+        ], belongsTo: "session-current"))
+        #expect(!DockModel.delegationStatusRow([
+            "subagent_id": "unscoped-agent"
+        ], belongsTo: "session-current"))
+    }
+
     @Test func unchangedDelegationStatusDoesNotDuplicateAgentActivity() {
         let agent = HermesSubagent(
             id: "agent-1",

@@ -30,6 +30,10 @@ final class DockModel: ObservableObject {
     @Published var approvalText: String?
     @Published private(set) var clarificationQuestion: String?
     @Published private(set) var clarificationChoices: [String] = []
+    /// Hermes assigns this identifier to the blocking clarify request. A reply
+    /// must echo it so the backend can release the exact waiting turn.
+    @Published private(set) var clarificationRequestID: String?
+    @Published private(set) var clarificationResponseError: String?
     @Published private(set) var isRespondingToClarification = false
     @Published private(set) var isRespondingToApproval = false
     @Published var debugLines: [String] = []
@@ -88,7 +92,14 @@ final class DockModel: ObservableObject {
     private var streamingMessageID: UUID?
     private(set) var streamingResponseStartedAt: Date?
     private var streamingMessageSessionID: String?
-    private var streamingMessageChunks: [String] = []
+    /// A clarification resumes an already-running Hermes turn. Some Hermes
+    /// versions continue with deltas only, without another `message.start`.
+    /// Reserve the next transcript slot so those deltas stay after the user's
+    /// answer instead of updating the pre-clarification assistant row.
+    private var isAwaitingClarificationResume = false
+    // Keep one append-only buffer. Joining every received chunk during each
+    // UI flush made long responses progressively more expensive.
+    private var streamingMessageBuffer = ""
     private var streamingMessagePublishedText = ""
     private var streamingMessageFlushTask: Task<Void, Never>?
     private var streamingMessageGeneration = 0
@@ -568,7 +579,7 @@ final class DockModel: ObservableObject {
     }
 
     @discardableResult
-    private func resumeSession(_ session: HermesSession, reportFailure: Bool) async -> Bool {
+    private func resumeSession(_ session: HermesSession, reportFailure: Bool, profileID: String? = nil) async -> Bool {
         commitStreamingMessage()
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
@@ -581,6 +592,8 @@ final class DockModel: ObservableObject {
         newSessionCreationAuthorized = false
         clarificationQuestion = nil
         clarificationChoices = []
+        clarificationRequestID = nil
+        clarificationResponseError = nil
         sessionModelOptionID = nil
         sessionModelValue = nil
         sessionReasoningVariant = nil
@@ -599,10 +612,9 @@ final class DockModel: ObservableObject {
         currentSessionTitle = session.displayTitle
         do {
             try await sessionRPCClient.connect()
-            let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: [
-                "session_id": session.id,
-                "source": "hermes-agent-dock"
-            ])
+            var resumeParams: [String: Any] = ["session_id": session.id, "source": "hermes-agent-dock"]
+            if let profileID, !profileID.isEmpty { resumeParams["profile"] = profileID }
+            let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
             sessionID = (result["session_id"] as? String) ?? session.id
             sessionStorageID = Self.stableSessionID(from: result) ?? session.id
@@ -634,6 +646,14 @@ final class DockModel: ObservableObject {
         }
     }
 
+    func resumeBotChat(_ bot: BotSummary) {
+        // Every Bot has a canonical, persistent Bot Chat. When the roster row
+        // has no canonical session pointer yet, Hermes resolves (and lazily
+        // creates) the chat by its exact title during profile-scoped resume.
+        let chat = bot.chat ?? BotChatReference(sessionID: BotService.canonicalBotChatTitle, profileID: bot.id)
+        Task { _ = await resumeSession(HermesSession(id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive, messageCount: 0, source: "hermes-bot"), reportFailure: true, profileID: chat.profileID) }
+    }
+
     private func resetComposerForSessionChange() {
         composer.reset()
         clearPendingImages()
@@ -657,6 +677,8 @@ final class DockModel: ObservableObject {
         newSessionProjectPath = projectPath
         clarificationQuestion = nil
         clarificationChoices = []
+        clarificationRequestID = nil
+        clarificationResponseError = nil
         defaults.removeObject(forKey: lastSessionIDKey)
         currentSessionTitle = nil
         currentModelName = nil
@@ -673,7 +695,7 @@ final class DockModel: ObservableObject {
         streamingMessageID = nil
         streamingMessageSessionID = nil
         streamingResponseStartedAt = nil
-        streamingMessageChunks = []
+        streamingMessageBuffer = ""
         streamingMessagePublishedText = ""
         conversationActivityPhase = .idle
         streamingMessageIsVisionNotice = false
@@ -764,10 +786,31 @@ final class DockModel: ObservableObject {
     /// different session cannot appear in Control without reaching the menu bar.
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
         eventRouter.route(type: type, params: params)
+        if type == "message.start" || type == "message.complete" || type == "sessions.changed" {
+            let payload = params["payload"] as? [String: Any] ?? [:]
+            let sessionID = params["session_id"] as? String ?? payload["session_id"] as? String
+            touchSession(sessionID: sessionID, at: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date())
+        }
         if Self.isUnreadUpdateEvent(type) {
             markUnreadUpdate()
         }
         handleEvent(type, params: params)
+    }
+
+    private func touchSession(sessionID: String?, at date: Date) {
+        guard let sessionID,
+              let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let session = sessions[index]
+        guard session.lastUpdatedAt.map({ date > $0 }) ?? true else { return }
+        sessions[index] = HermesSession(
+            id: session.id,
+            title: session.title,
+            preview: session.preview,
+            startedAt: session.startedAt,
+            updatedAt: date,
+            messageCount: session.messageCount,
+            source: session.source
+        )
     }
 
     static func isUnreadUpdateEvent(_ type: String) -> Bool {
@@ -1008,27 +1051,38 @@ final class DockModel: ObservableObject {
 
     func respondToClarification(_ response: String) {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let sessionID, !isRespondingToClarification else { return }
+        guard !trimmed.isEmpty, !isRespondingToClarification else { return }
+        guard let requestID = clarificationRequestID, !requestID.isEmpty else {
+            clarificationResponseError = "Hermes did not provide an ID for this question. Please ask it again."
+            return
+        }
         draft = ""
         messages.append(ChatMessage(role: .user, text: trimmed))
+        beginStreamingMessage()
+        isAwaitingClarificationResume = true
         isRespondingToClarification = true
+        clarificationResponseError = nil
         status = .working
         isSending = true
         conversationActivityPhase = .thinking
         Task {
             defer { isRespondingToClarification = false }
             do {
-                _ = try await gateway.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
-                    "session_id": sessionID,
-                    "response": trimmed
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
+                    "request_id": requestID,
+                    "answer": trimmed
                 ])
                 clarificationQuestion = nil
                 clarificationChoices = []
+                clarificationRequestID = nil
             } catch {
+                removePendingClarificationResumeMessage()
                 status = .needsClarification
                 isSending = false
                 conversationActivityPhase = .idle
-                DebugLog.write("model: clarification response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
+                clarificationResponseError = diagnostic
+                DebugLog.write("model: clarification response failed: \(diagnostic)")
             }
         }
     }
@@ -1150,15 +1204,14 @@ final class DockModel: ObservableObject {
             if let model {
                 currentModelName = model
             }
-            let responseStartedAt = Date()
-            messages.append(ChatMessage(role: .hermes, text: "", timestamp: responseStartedAt, modelName: currentModelName))
-            streamingMessageID = messages.last?.id
-            streamingMessageSessionID = sessionID
-            streamingResponseStartedAt = responseStartedAt
-        streamingMessageChunks = []
-            streamingMessagePublishedText = ""
-            streamingText.text = ""
-            streamingMessageGeneration &+= 1
+            // Hermes may send `message.start` after its first resumed delta, or
+            // repeat it while reconnecting. Until `message.complete` closes the
+            // active stream, it belongs to the already-reserved assistant row.
+            if streamingMessageID != nil {
+                isAwaitingClarificationResume = false
+            } else {
+                beginStreamingMessage()
+            }
             conversationActivityPhase = .responding
             streamingMessageIsVisionNotice = false
             reasoningState = nil
@@ -1169,13 +1222,15 @@ final class DockModel: ObservableObject {
             activeToolCalls = []
         case "message.delta":
             guard let delta = (payload["delta"] as? String) ?? (payload["text"] as? String), streamingMessageID != nil else { return }
+            isAwaitingClarificationResume = false
             if streamingMessageIsVisionNotice { return }
             if voiceState.isNativeConversationActive {
                 voiceTelemetry.receivedResponse()
             }
-            streamingMessageChunks.append(delta)
+            streamingMessageBuffer.append(delta)
             scheduleStreamingMessageFlush()
         case "message.complete":
+            isAwaitingClarificationResume = false
             let wasInterrupting = interruptState == .requesting
             interruptState = .idle
             if wasInterrupting {
@@ -1183,10 +1238,24 @@ final class DockModel: ObservableObject {
                 approvalText = nil
                 clarificationQuestion = nil
                 clarificationChoices = []
+                clarificationRequestID = nil
+                clarificationResponseError = nil
                 isSteering = false
                 steeringError = nil
             }
-            commitStreamingMessage()
+            if let error = Self.messageCompletionError(from: payload) {
+                discardStreamingMessage()
+                let text = Self.safeUserDiagnostic(error)
+                messages.append(ChatMessage(
+                    role: .hermes,
+                    text: text,
+                    modelName: currentModelName,
+                    isError: true
+                ))
+                notify(title: "Hermes could not complete the request", body: text, identifier: "failure:\(sessionID ?? "hermes")")
+            } else {
+                commitStreamingMessage()
+            }
             // A few Hermes adapters omit the final tool-result identifier. The
             // response boundary is authoritative, so do not leave those calls
             // displayed as running after the assistant has completed.
@@ -1226,11 +1295,23 @@ final class DockModel: ObservableObject {
             }
             notify(title: approval.title, body: approval.detail, identifier: "approval:\(sessionID ?? "hermes")")
         case "clarification.request", "clarify.request":
-            let question = (payload["question"] as? String)
-                ?? (payload["message"] as? String)
-                ?? (payload["description"] as? String)
+            // Hermes adapters have emitted clarification fields both inside
+            // `payload` and alongside it in the event params. Prefer the
+            // payload, but retain the top-level fields so the actual question
+            // is not replaced by the generic fallback text.
+            let question = Self.nestedClarificationString(
+                keys: ["question", "prompt", "query"],
+                in: params
+            )
+                ?? Self.nestedClarificationString(
+                    keys: ["message", "description", "text", "detail"],
+                    in: params
+                )
                 ?? "Hermes needs more information."
-            let choices = ((payload["choices"] as? [String]) ?? (payload["options"] as? [String]) ?? [])
+            let choices = Self.nestedClarificationStrings(
+                keys: ["choices", "options", "suggested_responses"],
+                in: params
+            )
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             let messageText = choices.isEmpty
                 ? question
@@ -1240,10 +1321,22 @@ final class DockModel: ObservableObject {
             }
             clarificationQuestion = question
             clarificationChoices = choices
+            clarificationRequestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
+            clarificationResponseError = nil
             isSending = false
             status = .needsClarification
             conversationActivityPhase = .idle
             notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")")
+        case "clarify.expire", "clarification.expire":
+            let expiredRequestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
+            guard expiredRequestID == nil || expiredRequestID == clarificationRequestID else { return }
+            clarificationQuestion = nil
+            clarificationChoices = []
+            clarificationRequestID = nil
+            clarificationResponseError = "This question expired before Hermes received an answer."
+            isSending = false
+            status = .idle
+            conversationActivityPhase = .idle
         case "error":
             commitStreamingMessage()
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
@@ -1392,6 +1485,113 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private func beginStreamingMessage() {
+        let responseStartedAt = Date()
+        messages.append(ChatMessage(role: .hermes, text: "", timestamp: responseStartedAt, modelName: currentModelName))
+        streamingMessageID = messages.last?.id
+        streamingMessageSessionID = sessionID
+        streamingResponseStartedAt = responseStartedAt
+        streamingMessageBuffer = ""
+        streamingMessagePublishedText = ""
+        streamingText.text = ""
+        streamingMessageGeneration &+= 1
+    }
+
+    private func removePendingClarificationResumeMessage() {
+        guard let streamingMessageID,
+              let index = messages.firstIndex(where: { $0.id == streamingMessageID }),
+              messages[index].role == .hermes,
+              messages[index].text.isEmpty else { return }
+        messages.remove(at: index)
+        self.streamingMessageID = nil
+        streamingMessageSessionID = nil
+        streamingResponseStartedAt = nil
+        streamingMessageBuffer = ""
+        streamingMessagePublishedText = ""
+        streamingText.text = ""
+        isAwaitingClarificationResume = false
+    }
+
+    private func discardStreamingMessage() {
+        streamingMessageFlushTask?.cancel()
+        streamingMessageFlushTask = nil
+        if let id = streamingMessageID,
+           let index = messages.firstIndex(where: { $0.id == id }) {
+            messages.remove(at: index)
+        }
+        streamingMessageID = nil
+        streamingMessageSessionID = nil
+        streamingResponseStartedAt = nil
+        streamingMessageBuffer = ""
+        streamingMessagePublishedText = ""
+        streamingText.text = ""
+        streamingMessageGeneration &+= 1
+    }
+
+    /// Completion failures are reported by Hermes inside the completion
+    /// envelope, rather than as a separate `error` event. Accept both the
+    /// plain string form and the structured error form used by the gateway.
+    static func messageCompletionError(from payload: [String: Any]) -> String? {
+        guard let rawError = payload["error"] else { return nil }
+        if let message = rawError as? String {
+            return message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : message
+        }
+        if let message = nestedClarificationString(keys: ["message", "detail", "description"], in: rawError) {
+            return message
+        }
+        let serialized = eventText(rawError)
+        return serialized.isEmpty ? "Hermes reported an error while completing the request." : serialized
+    }
+
+    private static func nestedClarificationString(keys: [String], in value: Any) -> String? {
+        if let dictionary = value as? [String: Any] {
+            for key in keys {
+                if let string = dictionary[key] as? String,
+                   !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    return string
+                }
+            }
+            for child in dictionary.values {
+                if let result = nestedClarificationString(keys: keys, in: child) { return result }
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                if let result = nestedClarificationString(keys: keys, in: child) { return result }
+            }
+        } else if let string = value as? String,
+                  let data = string.data(using: .utf8),
+                  let decoded = try? JSONSerialization.jsonObject(with: data) {
+            return nestedClarificationString(keys: keys, in: decoded)
+        }
+        return nil
+    }
+
+    private static func nestedClarificationStrings(keys: [String], in value: Any) -> [String] {
+        if let dictionary = value as? [String: Any] {
+            for key in keys {
+                if let strings = dictionary[key] as? [String] { return strings }
+                if let values = dictionary[key] as? [Any] {
+                    let strings = values.compactMap { $0 as? String }
+                    if !strings.isEmpty { return strings }
+                }
+            }
+            for child in dictionary.values {
+                let result = nestedClarificationStrings(keys: keys, in: child)
+                if !result.isEmpty { return result }
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                let result = nestedClarificationStrings(keys: keys, in: child)
+                if !result.isEmpty { return result }
+            }
+        } else if let string = value as? String,
+                  let data = string.data(using: .utf8),
+                  let decoded = try? JSONSerialization.jsonObject(with: data) {
+            return nestedClarificationStrings(keys: keys, in: decoded)
+        }
+        return []
+    }
+
     private static func isHighFrequencyEvent(_ type: String) -> Bool {
         switch type {
         case "message.delta", "reasoning.delta", "thinking.delta", "voice.status": true
@@ -1403,7 +1603,10 @@ final class DockModel: ObservableObject {
         guard streamingMessageFlushTask == nil else { return }
         let generation = streamingMessageGeneration
         streamingMessageFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(33))
+            // Limit live layout invalidation to a comfortable cadence. The
+            // gateway can deliver many more deltas than the transcript can
+            // render smoothly, especially for long Markdown responses.
+            try? await Task.sleep(for: .milliseconds(80))
             guard !Task.isCancelled, let self, self.streamingMessageGeneration == generation else { return }
             self.streamingMessageFlushTask = nil
             self.flushStreamingMessage()
@@ -1432,7 +1635,7 @@ final class DockModel: ObservableObject {
         applyVisionNoticeDetectionIfNeeded(to: newText)
         let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
         // Publish only to the streaming row: writing messages[index] here would
-        // re-render the whole popover at the 33ms flush cadence.
+        // Publish only the current buffer at the throttled live-text cadence.
         streamingText.text = publishedText
         streamingMessagePublishedText = publishedText
     }
@@ -1450,8 +1653,8 @@ final class DockModel: ObservableObject {
             streamingResponseStartedAt = nil
             return
         }
-        applyVisionNoticeDetectionIfNeeded(to: streamingMessageChunks.joined())
-        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()
+        applyVisionNoticeDetectionIfNeeded(to: streamingMessageBuffer)
+        let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageBuffer
         let message = messages[index]
         messages[index] = ChatMessage(
             id: id,
@@ -1467,7 +1670,7 @@ final class DockModel: ObservableObject {
     }
 
     private func pendingStreamingText() -> String? {
-        streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageChunks.joined()
+        streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageBuffer
     }
 
     private func applyVisionNoticeDetectionIfNeeded(to text: String) {
@@ -1655,13 +1858,22 @@ final class DockModel: ObservableObject {
 
     private func performDelegationStatusRefresh() {
         guard !isRefreshingDelegationStatus else { return }
-        let expectedSessionID = sessionID
+        guard let expectedSessionID = sessionID, !expectedSessionID.isEmpty else { return }
         isRefreshingDelegationStatus = true
         Task {
             do {
-                let result = try await gateway.request(HermesFeatureIDs.ID.delegationStatus.rawValue, params: [:])
+                let result = try await gateway.request(
+                    HermesFeatureIDs.ID.delegationStatus.rawValue,
+                    params: ["session_id": expectedSessionID]
+                )
                 guard sessionID == expectedSessionID else { return }
-                let rows = result["active"] as? [[String: Any]] ?? []
+                // Hermes can return global live workers even when a session is
+                // supplied. An unscoped worker must never animate in the
+                // current conversation; showing no activity is safer than
+                // attributing another session's work to this one.
+                let rows = (result["active"] as? [[String: Any]] ?? []).filter {
+                    Self.delegationStatusRow($0, belongsTo: expectedSessionID)
+                }
                 let projections = rows.compactMap { row -> (row: [String: Any], agent: HermesSubagent)? in
                     guard row["subagent_id"] is String,
                           let agent = self.telemetry(from: row, fallbackStatus: "running") else { return nil }
@@ -1699,6 +1911,20 @@ final class DockModel: ObservableObject {
         let lower = status.lowercased()
         return lower.contains("complete") || lower.contains("done") || lower.contains("finish")
             || lower.contains("error") || lower.contains("fail") || lower.contains("interrupt")
+    }
+
+    static func delegationStatusRow(_ row: [String: Any], belongsTo sessionID: String) -> Bool {
+        guard !sessionID.isEmpty else { return false }
+        for key in ["parent_session_id", "root_session_id", "session_id", "parent_id"] {
+            if (row[key] as? String) == sessionID { return true }
+        }
+        for key in ["parent", "session", "context"] {
+            guard let nested = row[key] as? [String: Any] else { continue }
+            for sessionKey in ["session_id", "id"] where (nested[sessionKey] as? String) == sessionID {
+                return true
+            }
+        }
+        return false
     }
 
     /// Builds the visible live-worker list from an authoritative Hermes
@@ -2554,7 +2780,8 @@ final class DockModel: ObservableObject {
         } else {
             detail = String(String(describing: params).prefix(500))
         }
-        DebugLog.write("event")
+        // The gateway already logs one line per received event; a duplicate
+        // here doubled the per-event logging cost during tool storms.
         recentEvents.append(AgentEvent(
             id: UUID(),
             type: type,
@@ -2598,14 +2825,29 @@ final class DockModel: ObservableObject {
     private static func parseSession(_ row: [String: Any]) -> HermesSession? {
         guard let id = row["id"] as? String else { return nil }
         let timestamp = (row["started_at"] as? NSNumber)?.doubleValue ?? (row["started_at"] as? Double)
+        let updatedAt = dateValue(row["updated_at"])
+            ?? dateValue(row["last_active"])
+            ?? dateValue(row["last_message_at"])
+            ?? timestamp.map { Date(timeIntervalSince1970: $0) }
         return HermesSession(
             id: id,
             title: row["title"] as? String ?? "",
             preview: row["preview"] as? String ?? "",
             startedAt: timestamp.map { Date(timeIntervalSince1970: $0) },
+            updatedAt: updatedAt,
             messageCount: (row["message_count"] as? NSNumber)?.intValue ?? 0,
             source: row["source"] as? String ?? ""
         )
+    }
+
+    private static func dateValue(_ value: Any?) -> Date? {
+        if let value, !(value is Bool), let number = value as? NSNumber {
+            return Date(timeIntervalSince1970: number.doubleValue)
+        }
+        if let string = value as? String {
+            return ISO8601DateFormatter().date(from: string)
+        }
+        return nil
     }
 
     private func rehydrateSubagents(from value: Any?) {
