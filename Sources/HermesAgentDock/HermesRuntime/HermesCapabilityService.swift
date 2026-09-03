@@ -228,6 +228,10 @@ final class HermesCapabilityService {
         }
         let specs: [(String, HermesFeatureIDs.ID, [String: Any])] = [
             ("session", HermesFeatureIDs.ID.sessionActiveList, [:]),
+            // The roster RPC is fast and read-only; probing it before the
+            // slow shell.exec probes keeps it inside the batch's bounded
+            // timeout instead of starving at the end of the serial queue.
+            ("profiles", HermesFeatureIDs.ID.profilesList, ["limit": 100]),
             ("scheduling", HermesFeatureIDs.ID.cronManage, ["action": "list"]),
             ("projects", HermesFeatureIDs.ID.projectsTree, [:]), ("tools", HermesFeatureIDs.ID.toolsList, [:]),
             ("plugins", HermesFeatureIDs.ID.pluginsList, [:]), ("config", HermesFeatureIDs.ID.configShow, [:]),
@@ -311,6 +315,7 @@ final class HermesCapabilityService {
         let journey = results["journey"] ?? nil
         let sessionStats = results["sessionStats"] ?? nil
         let memoryStatus = results["memoryStatus"] ?? nil
+        let profilesResult = results["profiles"] ?? nil
         let notesAvailable = Self.shellResultSucceeded(notesResult)
         let skillsAvailable = Self.shellResultSucceeded(skillsResult)
         let versionOutput = (versionResult?["stdout"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -333,6 +338,13 @@ final class HermesCapabilityService {
                 isAvailable: configResult != nil,
                 recovery: configResult == nil ? "Reconnect Hermes and refresh Core." : nil,
                 recoveryCommand: configResult == nil ? "hermes gateway start" : nil
+            ),
+            CapabilityState(
+                id: HermesFeatureIDs.ID.bots.rawValue,
+                title: "Hermes Bots",
+                detail: profilesResult == nil ? "profiles.list is unsupported or unavailable" : "Hermes profile roster is available",
+                isAvailable: profilesResult != nil,
+                recovery: profilesResult == nil ? "Upgrade Hermes to enable Bot Mode." : nil
             ),
             CapabilityState(
                 id: HermesFeatureIDs.ID.hermesVersion.rawValue,

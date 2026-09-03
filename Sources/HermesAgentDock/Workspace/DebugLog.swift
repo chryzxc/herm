@@ -15,9 +15,13 @@ enum DebugLog {
     private static let writer = DebugLogWriter()
     private static let fileURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/HermesAgentDock.log")
+    // Allocated once: write() fires for every gateway event while responses
+    // stream, and ISO8601DateFormatter construction is far too expensive for
+    // that hot path.
+    private static let timestampFormatter = ISO8601DateFormatter()
 
     static func write(_ message: String) {
-        let line = "[\(ISO8601DateFormatter().string(from: Date()))] event=\(persistentEventName(for: message))\n"
+        let line = "[\(timestampFormatter.string(from: Date()))] event=\(persistentEventName(for: message))\n"
         print(line, terminator: "")
         onLine?(line.trimmingCharacters(in: .newlines))
         writer.append(line, to: fileURL)
@@ -26,7 +30,7 @@ enum DebugLog {
     /// Temporary state-transition diagnostics. The full message is available
     /// only to the in-memory debug panel; durable output is metadata-only.
     static func writeDiagnostic(_ message: String) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let timestamp = timestampFormatter.string(from: Date())
         let inMemoryLine = "[\(timestamp)] diagnostic=\(message)"
         print(inMemoryLine)
         onLine?(inMemoryLine)

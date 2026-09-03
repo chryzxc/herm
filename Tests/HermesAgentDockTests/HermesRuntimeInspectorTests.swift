@@ -2,7 +2,7 @@ import Testing
 @testable import HermesAgentDock
 
 struct HermesRuntimeInspectorTests {
-    @Test func rejectsTruncatedHumanTableSkillNamesAsUnavailable() {
+    @Test func ignoresTruncatedRowsButKeepsCompleteHumanTableSkillNames() {
         let output = "│ my-dev-team-orchest… │ enabled │"
 
         #expect(HermesRuntimeInspector.parseEnabledSkills(output) == .unavailable(.unsupportedOutput))
@@ -12,7 +12,7 @@ struct HermesRuntimeInspectorTests {
         #expect(HermesRuntimeInspector.parseEnabledSkills("skills loaded successfully") == .unavailable(.unsupportedOutput))
     }
 
-    @Test func rejectsCompleteLookingHumanTableSkillNamesAsUnavailable() {
+    @Test func acceptsCompleteHumanTableSkillNames() {
         let output = """
         ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
         ┃ Name                                 ┃ Status    ┃
@@ -21,7 +21,7 @@ struct HermesRuntimeInspectorTests {
         ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━┛
         """
 
-        #expect(HermesRuntimeInspector.parseEnabledSkills(output) == .unavailable(.unsupportedOutput))
+        #expect(HermesRuntimeInspector.parseEnabledSkills(output) == .supported(["my-dev-team-orchestrator"]))
     }
 
     @Test func acceptsOnlyCompleteStableJSONSkillRecords() {

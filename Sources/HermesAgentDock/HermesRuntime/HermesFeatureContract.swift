@@ -95,6 +95,14 @@ enum HermesFeatureIDs {
         case modelOptions = "model.options"
         case shellExec = "shell.exec"
         case imageAttachBytes = "image.attach_bytes"
+        case profilesList = "profiles.list"
+        case profilesDescribe = "profiles.describe"
+        case profilesCreate = "profiles.create"
+        case profilesConfigure = "profiles.configure"
+        case profilesSetAsset = "profiles.set_asset"
+        case profilesGetAsset = "profiles.get_asset"
+        case imageGenerate = "image.generate"
+        case bots
     }
 
     static let transportIDs: [String] = [
@@ -104,7 +112,8 @@ enum HermesFeatureIDs {
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
         "approval.respond", "clarify.respond", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "config.get",
-        "config.set", "model.options", "shell.exec", "image.attach_bytes"
+        "config.set", "model.options", "shell.exec", "image.attach_bytes",
+        "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate"
     ]
     static let all = ID.allCases.map(\.rawValue)
     static let capabilityIDs = ID.allCases.filter { !transportIDs.contains($0.rawValue) }.map(\.rawValue)

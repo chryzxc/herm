@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Version facts parsed from the local `hermes --version` projection.
 struct HermesInstalledVersion: Equatable {
@@ -240,6 +241,7 @@ final class HermesUpdateService: ObservableObject {
     private static let versionReadTimeout: TimeInterval = 10
 
     private var updateProcess: Process?
+    private var relaunchScheduled = false
 
     var isBusy: Bool { phase == .checking || phase == .updating }
     var canCheck: Bool { !isBusy }
@@ -315,6 +317,7 @@ final class HermesUpdateService: ObservableObject {
                     self.phase = .updateSucceeded
                     self.appendLog("Update finished.")
                     await self.refreshInstalledVersionAfterUpdate()
+                    self.relaunchDock()
                 } else {
                     self.phase = .updateFailed("hermes update exited with status \(terminated.terminationStatus).")
                 }
@@ -338,6 +341,39 @@ final class HermesUpdateService: ObservableObject {
             appendLog("Installed version is now \(installed.displayVersion).")
         }
         appendLog("Restart Hermes so new sessions run the updated agent.")
+    }
+
+    private func relaunchDock() {
+        guard !relaunchScheduled else { return }
+        guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else {
+            // Swift package tests and command-line launches have no app bundle
+            // to reopen. Keep the successful update state in those contexts.
+            appendLog("Dock restart is unavailable outside the app bundle.")
+            return
+        }
+
+        relaunchScheduled = true
+        appendLog("Restarting Dock…")
+
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { [weak self] _, error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let error {
+                    self.relaunchScheduled = false
+                    self.appendLog("Dock restart failed: \(error.localizedDescription)")
+                    return
+                }
+                // applicationWillTerminate shuts down the existing Hermes
+                // backend before this instance exits.
+                NSApplication.shared.terminate(nil)
+            }
+        }
     }
 
     private func appendLog(_ lines: [String]) {

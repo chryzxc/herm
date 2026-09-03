@@ -200,23 +200,19 @@ final class HermesGateway: NSObject {
 
     private func receiveNext() {
         socket?.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self else { return }
-                switch result {
-                case .failure:
-                    DebugLog.write("receive: WebSocket failed")
-                    self.onConnectionChange?(false)
-                    self.socket = nil
-                    self.urlSession?.invalidateAndCancel()
-                    self.urlSession = nil
-                    self.pending.values.forEach { $0.resume(throwing: GatewayError.disconnected) }
-                    self.pending.removeAll()
-                    self.timeoutTasks.values.forEach { $0.cancel() }
-                    self.timeoutTasks.removeAll()
-                case .success(let message):
-                    if case .string(let text) = message,
-                       let data = text.data(using: .utf8),
-                       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            switch result {
+            case .failure:
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.handleReceiveFailure()
+                }
+            case .success(let message):
+                // Streaming turns deliver many WebSocket frames; decoding off
+                // the main actor keeps JSON parsing from contending with UI work.
+                let object = Self.decodeWebSocketMessage(message)
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let object {
                         self.handle(object)
                     } else {
                         DebugLog.write("receive: non-JSON or binary message")
@@ -225,6 +221,24 @@ final class HermesGateway: NSObject {
                 }
             }
         }
+    }
+
+    nonisolated private static func decodeWebSocketMessage(_ message: URLSessionWebSocketTask.Message) -> [String: Any]? {
+        guard case .string(let text) = message,
+              let data = text.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private func handleReceiveFailure() {
+        DebugLog.write("receive: WebSocket failed")
+        onConnectionChange?(false)
+        socket = nil
+        urlSession?.invalidateAndCancel()
+        urlSession = nil
+        pending.values.forEach { $0.resume(throwing: GatewayError.disconnected) }
+        pending.removeAll()
+        timeoutTasks.values.forEach { $0.cancel() }
+        timeoutTasks.removeAll()
     }
 
     private func handle(_ object: [String: Any]) {

@@ -77,9 +77,6 @@ enum HermesRuntimeInspector {
     static func parseEnabledSkills(_ output: String) -> HermesSkillsInventory {
         let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .unavailable(.emptyOutput) }
-        guard !trimmed.contains("…") && !trimmed.contains("...") else {
-            return .unavailable(.unsupportedOutput)
-        }
 
         // Keep compatibility with complete machine-readable records when a
         // caller already has them, but do not infer a new CLI JSON contract.
@@ -112,17 +109,49 @@ enum HermesRuntimeInspector {
             }
         }
 
-        // Human-readable tables and other nonempty text are display-only.
-        return .unavailable(.unsupportedOutput)
+        // `hermes skills list` uses a Rich table when it is attached to a
+        // non-interactive process. Names may be shortened with an ellipsis to
+        // fit Rich's table width, but that should not make the whole inventory
+        // disappear. Keep complete enabled names and ignore headers/borders
+        // and shortened rows.
+        let names = trimmed.split(separator: "\n").compactMap { line -> String? in
+            let columns = line
+                .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "│" || $0 == "┃" })
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            let fields = columns.filter { !$0.isEmpty }
+            guard fields.count >= 2 else { return nil }
+            let name = fields[0]
+            let status = fields.last?.lowercased() ?? ""
+            guard !name.isEmpty,
+                  name.lowercased() != "name",
+                  status == "enabled",
+                  !name.contains("…"),
+                  !name.contains("...") else { return nil }
+            return name
+        }
+
+        guard !names.isEmpty else { return .unavailable(.unsupportedOutput) }
+        return .supported(names)
     }
 
     private static func parseMCPServers(_ output: String) -> [String] {
         guard !output.localizedCaseInsensitiveContains("No MCP servers configured") else { return [] }
         return output.split(separator: "\n").compactMap { line in
-            let columns = line.split(separator: "│", omittingEmptySubsequences: false)
-            guard columns.count > 2 else { return nil }
-            let name = columns[1].trimmingCharacters(in: .whitespaces)
-            return name.isEmpty || name.lowercased() == "name" ? nil : name
+            let text = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, !text.hasPrefix("─") else { return nil }
+
+            // Current Hermes output is a whitespace-separated table:
+            // name, transport, tools, status. Keep the transport flexible
+            // because local paths and URLs may contain punctuation.
+            let columns = text.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+            guard columns.count >= 4,
+                  columns[0].lowercased() != "name",
+                  let toolsIndex = columns.firstIndex(where: {
+                      ["all", "selected", "excluded"].contains($0.lowercased())
+                  }),
+                  toolsIndex > 1,
+                  toolsIndex + 1 < columns.count else { return nil }
+            return columns[0]
         }
     }
 
