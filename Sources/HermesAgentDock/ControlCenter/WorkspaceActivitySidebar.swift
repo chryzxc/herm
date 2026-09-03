@@ -80,7 +80,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var pendingAgentID: String?
     @State private var isShowingAgentUpdateConfirmation = false
     @StateObject private var commandCenterPreferences = CommandCenterPreferencesStore()
-    @StateObject private var agentUpdateService = HermesUpdateService()
+    @ObservedObject var agentUpdateService: HermesUpdateService
 
     init(
         model: DockModel,
@@ -92,7 +92,8 @@ struct WorkspaceActivitySidebar: View {
         onSessionOpened: @escaping (String) -> Void = { _ in },
         showsHeader: Bool = true,
         showsModePicker: Bool = true,
-        initialMode: ControlTab = .today
+        initialMode: ControlTab = .today,
+        agentUpdateService: HermesUpdateService
     ) {
         self.model = model
         self.store = store
@@ -103,6 +104,7 @@ struct WorkspaceActivitySidebar: View {
         self.onSessionOpened = onSessionOpened
         self.showsHeader = showsHeader
         self.showsModePicker = showsModePicker
+        self.agentUpdateService = agentUpdateService
         _selectedMode = State(initialValue: initialMode)
     }
 
@@ -1162,7 +1164,7 @@ struct WorkspaceActivitySidebar: View {
                     if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: .dockWarning) }
                 }
             } else if control.projectFacts == nil {
-                emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Core to request verification facts.")
+                emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Settings to request verification facts.")
             }
         }
     }
@@ -1245,8 +1247,6 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var automationsContent: some View {
-        let selectedJob = control.cronJobs.first(where: { $0.id == selectedCronJobID }) ?? control.cronJobs.first
-
         return VStack(alignment: .leading, spacing: 20) {
             projectionRefreshNotice("cron.jobs")
 
@@ -1284,14 +1284,8 @@ struct WorkspaceActivitySidebar: View {
                 emptyState(icon: "clock.badge.questionmark", title: "No schedules", detail: "Create a Hermes cron job when work needs to run without you.")
             } else {
                 ForEach(control.cronJobs) { job in
-                    cronScheduleRow(job, isSelected: selectedJob?.id == job.id)
+                    cronScheduleRow(job, isExpanded: selectedCronJobID == job.id)
                 }
-            }
-
-            if let selectedJob {
-                sectionLabel("SCHEDULE DETAILS")
-                cronReportCard(selectedJob)
-                cronJobActions(selectedJob)
             }
 
             sectionLabel("RUN HISTORY  ·  \(control.cronRuns.count)")
@@ -1372,58 +1366,76 @@ struct WorkspaceActivitySidebar: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 
-    private func cronScheduleRow(_ job: CronSummary, isSelected: Bool) -> some View {
+    private func cronScheduleRow(_ job: CronSummary, isExpanded: Bool) -> some View {
         let health = AutomationHealthPresentation.make(
             job: job,
             runs: control.cronRuns,
-            capabilityAvailable: control.capabilityAvailable("rpc-scheduling"),
+            // A loaded job is not unavailable just because a mutation capability is missing.
+            capabilityAvailable: true,
             mcpErrorObserved: false
         )
-        return Button {
-            withAnimation(.dockEase(duration: 0.2)) { selectedCronJobID = job.id }
-        } label: {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
-                    .frame(width: 6, height: 6)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(job.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                    Text(CronScheduleFormatting.humanReadable(job.schedule))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.dockEase(duration: 0.2)) {
+                    selectedCronJobID = isExpanded ? nil : job.id
                 }
-                Spacer(minLength: 12)
-                if let nextRun = job.nextRun {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("NEXT RUN")
-                            .font(.system(size: 9, weight: .bold))
-                            .tracking(0.6)
-                        Text(HumanDateFormatting.dateAndTime(nextRun))
+            } label: {
+                HStack(spacing: 10) {
+                    Circle()
+                        .fill(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
+                        .frame(width: 6, height: 6)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(job.name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1)
+                        Text(CronScheduleFormatting.humanReadable(job.schedule))
                             .font(.system(size: 11))
+                            .foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1)
                     }
-                    .foregroundStyle(Color.dockMetadataText)
+                    Spacer(minLength: 12)
+                    if let nextRun = job.nextRun {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("NEXT RUN")
+                                .font(.system(size: 9, weight: .bold))
+                                .tracking(0.6)
+                            Text(HumanDateFormatting.dateAndTime(nextRun))
+                                .font(.system(size: 11))
+                        }
+                        .foregroundStyle(Color.dockMetadataText)
+                    }
+                    Text(health.state.rawValue.uppercased())
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockSecondaryText)
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                 }
-                Text(health.state.rawValue.uppercased())
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockSecondaryText)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? Color.dockAccent.opacity(0.12) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay(alignment: .bottom) {
-                if !isSelected { Color.dockBorderLight.frame(height: 0.5) }
+            .buttonStyle(.borderless)
+
+            if isExpanded {
+                Divider().overlay(Color.dockBorderLight)
+                VStack(alignment: .leading, spacing: 12) {
+                    cronReportCard(job)
+                    cronJobActions(job)
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .buttonStyle(.borderless)
+        .background(isExpanded ? Color.dockAccent.opacity(0.08) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isExpanded ? Color.dockAccent.opacity(0.3) : Color.dockBorderLight, lineWidth: 0.5)
+        }
     }
 
     private func cronJobActions(_ job: CronSummary) -> some View {
@@ -1436,6 +1448,11 @@ struct WorkspaceActivitySidebar: View {
                     DockActionLabel(title: "RUN NOW", pendingTitle: "RUNNING…", isPending: control.isActionPending(control.cronActionID("run", job: job)))
                 }
                 .disabled(control.isActionPending(control.cronActionID("run", job: job)))
+            } else {
+                Text("RUN NOW UNAVAILABLE")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .help("The installed Hermes CLI does not advertise the cron.runNow capability.")
             }
             if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
                 Button { cronEditJob = job } label: {
@@ -1462,7 +1479,7 @@ struct WorkspaceActivitySidebar: View {
 
     private func cronReportCard(_ job: CronSummary) -> some View {
         let latestRun = control.cronRuns.first { $0.jobID == job.id }
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: job.enabled ? "clock.badge.checkmark" : "clock.badge.xmark")
                     .font(.system(size: 14, weight: .semibold))
@@ -1480,7 +1497,9 @@ struct WorkspaceActivitySidebar: View {
                 Spacer(minLength: 0)
             }
 
-            Divider().overlay(Color.dockBorderLight)
+            Divider()
+                .overlay(Color.dockBorderLight)
+                .padding(.vertical, 5)
 
             reportRow("SCHEDULE", value: CronScheduleFormatting.humanReadable(job.schedule))
             reportRow("CRON", value: job.schedule)
@@ -1576,19 +1595,18 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
         }
-        .padding(12)
-        .dockGlassPane()
     }
 
     private func reportRow(_ label: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label == label.uppercased() ? label.lowercased().capitalized : label)
-                .frame(width: 70, alignment: .leading)
+                .frame(width: 88, alignment: .leading)
                 .foregroundStyle(Color.dockMetadataText)
             Text(value)
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(2)
         }
+        .padding(.vertical, 2)
         .font(.system(size: 11))
     }
 
@@ -3092,7 +3110,7 @@ struct WorkspaceActivitySidebar: View {
                                 .font(.system(size: 11, weight: .semibold))
                                 .tracking(0.7)
                                 .foregroundStyle(Color.dockPrimaryText)
-                            Text("Review integrations and required permissions in Core.")
+                            Text("Review integrations and required permissions in Settings.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.dockMetadataText)
                         }
@@ -3399,7 +3417,7 @@ struct WorkspaceActivitySidebar: View {
                                 .font(.system(size: 12, weight: .semibold))
                                 .tracking(0.7)
                                 .foregroundStyle(Color.dockPrimaryText)
-                            Text("Review integrations and required permissions in Core.")
+                            Text("Review integrations and required permissions in Settings.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Color.dockMetadataText)
                         }
@@ -4231,7 +4249,7 @@ struct WorkspaceActivitySidebar: View {
             if let installed = agentUpdateService.installed {
                 diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.dockSuccess)
             }
-            Text("Quit and reopen the Dock (or restart the Hermes backend) so new sessions run the updated agent.")
+            Text("The Dock will restart automatically so new sessions run the updated agent.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -4304,8 +4322,8 @@ struct WorkspaceActivitySidebar: View {
             if capabilityInventorySnapshot.states.isEmpty {
                 emptyState(
                     icon: "arrow.triangle.2.circlepath",
-                    title: "Core capabilities not yet available",
-                    detail: "Capability readiness has not been returned. Refresh Core or reconnect Hermes, then try again."
+                    title: "Settings capabilities not yet available",
+                    detail: "Capability readiness has not been returned. Refresh Settings or reconnect Hermes, then try again."
                 )
             } else {
                 ForEach(CapabilityCategory.allCases, id: \.self) { category in
@@ -4812,7 +4830,7 @@ struct WorkspaceActivitySidebar: View {
     private var coreOverview: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Core")
+                Text("Settings")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
                 Text("Runtime health, permissions, and session tools")

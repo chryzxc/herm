@@ -4,6 +4,18 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func syntheticProjectBucketsAreNotRenderableProjects() {
+        let projects = ControlCenterModel.parseProjects([
+            "projects": [
+                ["id": "tmp", "name": "TMP"],
+                ["id": "P_A3A4F8A1", "name": "P_A3A4F8A1"],
+                ["id": "repo-1", "name": "iboard-lokal"]
+            ]
+        ])
+
+        #expect(projects.map(\.isRenderableProject) == [false, false, true])
+    }
+
     @Test func projectCountsNestedSessionsWhenTheDeclaredCountIsStale() {
         let projects = ControlCenterModel.parseProjects([
             "projects": [[

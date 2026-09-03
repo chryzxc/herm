@@ -17,6 +17,21 @@ struct CommandCenterModelsTests {
         #expect(SessionPreviewPresentation.summary("{\"payload\":{}}") == "Session activity updated")
     }
 
+    @MainActor @Test func sessionParsingUsesLastActivityForUpdatedTime() {
+        let updated = Date(timeIntervalSince1970: 20_000)
+        let result = ControlCenterModel.parseSessions(["sessions": [[
+            "id": "session-1",
+            "title": "Conversation",
+            "state": "idle",
+            "preview": "Done",
+            "started_at": 10_000,
+            "updated_at": updated.timeIntervalSince1970
+        ]]])!
+
+        #expect(result.first?.updatedAt == updated)
+        #expect(result.first?.lastUpdatedAt == updated)
+    }
+
     @Test func cronScheduleValidationAcceptsFiveFieldExpressions() {
         #expect(CronSchedule.isValid("0 9 * * *"))
         #expect(CronSchedule.isValid("0 9 * * 1"))

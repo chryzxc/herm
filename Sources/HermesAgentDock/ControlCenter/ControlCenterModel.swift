@@ -57,6 +57,8 @@ final class ControlCenterModel: ObservableObject {
     /// this projection contains every session in a project, not just a count
     /// or a short preview.
     @Published private(set) var projectSessionsByProjectID: [String: [SessionSummary]] = [:]
+    @Published private(set) var isRefreshingProjectNavigation = false
+    private var didLoadInitialProjectNavigation = false
     @Published private(set) var selectedProjectID: String?
     /// Keeps the Projects detail view stable while its background projection is
     /// refreshing. A selected project can briefly be absent from a partial
@@ -75,6 +77,7 @@ final class ControlCenterModel: ObservableObject {
     private var rpc: HermesControlRPC?
     private var cli: HermesCLIAdapter?
     private var refreshTask: Task<Void, Never>?
+    private var initialProjectNavigationTask: Task<Void, Never>?
     private var refreshGeneration: UInt64 = 0
     private var clientBindingGeneration: UInt64 = 0
     private var searchTask: Task<Void, Never>?
@@ -94,7 +97,10 @@ final class ControlCenterModel: ObservableObject {
     private var projectFactsGeneration = UUID()
     private var verificationGeneration = UUID()
     private var projectSessionsGeneration = UUID()
-    private var projectSessionRefreshGenerations: [String: UUID] = [:]
+    private var projectNavigationRefreshGeneration: UUID?
+    private var pendingProjectNavigationSessions: [String: [SessionSummary]] = [:]
+    private var completedProjectNavigationIDs: Set<String> = []
+    private var projectNavigationRefreshIDs: Set<String> = []
     private var projectMembershipGeneration = UUID()
     private var cronRunsGeneration = UUID()
     private var mcpInventoryGeneration = UUID()
@@ -341,6 +347,8 @@ final class ControlCenterModel: ObservableObject {
             clientBindingGeneration &+= 1
             refreshTask?.cancel()
             refreshTask = nil
+            initialProjectNavigationTask?.cancel()
+            initialProjectNavigationTask = nil
             searchTask?.cancel()
             searchTask = nil
             sessionKanbanTask?.cancel()
@@ -390,7 +398,12 @@ final class ControlCenterModel: ObservableObject {
             developmentContext = nil
             projectSessions = []
             projectSessionsByProjectID = [:]
-            projectSessionRefreshGenerations = [:]
+            isRefreshingProjectNavigation = false
+            didLoadInitialProjectNavigation = false
+            projectNavigationRefreshGeneration = nil
+            pendingProjectNavigationSessions = [:]
+            completedProjectNavigationIDs = []
+            projectNavigationRefreshIDs = []
             selectedProjectID = nil
             selectedProject = nil
             capabilities = []
@@ -556,7 +569,18 @@ final class ControlCenterModel: ObservableObject {
 
                 do {
                     let result = try await rpc.projectsTree()
-                    let refreshedProjects = Self.parseProjects(result)
+                    let parsedProjects = Self.parseProjects(result)
+                    // The gateway does not guarantee ordering. Preserve the
+                    // current navigation order for existing projects and
+                    // append genuinely new projects deterministically, so a
+                    // refresh cannot make the rail visibly shuffle.
+                    // projects.tree may repeat a row; keep the first occurrence.
+                    let parsedByID = Dictionary(parsedProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                    let existingOrder = projects.map(\.id)
+                    let refreshedProjects = existingOrder.compactMap { parsedByID[$0] }
+                        + parsedProjects
+                            .filter { !existingOrder.contains($0.id) }
+                            .sorted { $0.id < $1.id }
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     projects = refreshedProjects
                     let validProjectIDs = Set(refreshedProjects.map(\.id))
@@ -942,28 +966,76 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    /// Loads a project's complete session projection without changing the
-    /// selected Projects screen. The navigation queue uses this when a group
-    /// becomes visible, so its rows can be populated independently.
-    func refreshProjectSessions(for project: ProjectSummary) {
-        guard let rpc else { return }
+    /// Explicit user action for the navigation rail. Automatic message and
+    /// activity events must not replace the visible project projection.
+    func refreshProjectNavigation() {
+        refreshProjectNavigation(refreshProjects: true)
+    }
+
+    private func refreshProjectNavigation(refreshProjects: Bool) {
+        guard !isRefreshingProjectNavigation else { return }
+        let navigationProjects = projects.filter { $0.name != "__no_project__" }
+        guard !navigationProjects.isEmpty else { return }
+        isRefreshingProjectNavigation = true
         let generation = UUID()
-        projectSessionRefreshGenerations[project.id] = generation
-        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
-        Task { @MainActor [weak self] in
-            guard let self,
-                  self.projectSessionRefreshGenerations[project.id] == generation,
-                  self.isCurrentClient(clientIdentity, bindingGeneration: self.clientBindingGeneration),
-                  let result = try? await rpc.projectSessions(projectID: project.id),
-                  self.projectSessionRefreshGenerations[project.id] == generation,
-                  self.isCurrentClient(clientIdentity, bindingGeneration: self.clientBindingGeneration) else { return }
-            let sessions = Self.parseProjectSessions(result)
-            self.projectSessionsByProjectID[project.id] = sessions
-            for session in sessions {
-                self.resolvedProjectIDBySessionID[session.id] = project.id
-                self.projectIDBySessionID[session.id] = project.id
+        projectNavigationRefreshIDs = Set(navigationProjects.map(\.id))
+        projectNavigationRefreshGeneration = generation
+        pendingProjectNavigationSessions = [:]
+        completedProjectNavigationIDs = []
+        if refreshProjects { refresh() }
+        for project in navigationProjects {
+            let projectID = project.id
+            guard let rpc else {
+                completeProjectNavigationRefresh(projectID, generation: generation)
+                continue
+            }
+            Task { @MainActor [weak self] in
+                let sessions = try? await rpc.projectSessions(projectID: projectID)
+                guard let self,
+                      self.projectNavigationRefreshGeneration == generation else { return }
+                if let sessions {
+                    self.pendingProjectNavigationSessions[projectID] = Self.parseProjectSessions(sessions)
+                }
+                self.completeProjectNavigationRefresh(projectID, generation: generation)
             }
         }
+    }
+
+    /// Starts the linked-session projection after the initial project tree is
+    /// ready. The tree and its session details are separate gateway calls, so
+    /// waiting here avoids leaving every project permanently on a loading row
+    /// until the user presses Refresh.
+    func startInitialProjectNavigationLoad() {
+        guard !didLoadInitialProjectNavigation,
+              initialProjectNavigationTask == nil else { return }
+        initialProjectNavigationTask = Task { @MainActor [weak self] in
+            for _ in 0..<120 {
+                guard let self, !Task.isCancelled else { return }
+                if !self.isRefreshing, !self.projects.isEmpty {
+                    self.didLoadInitialProjectNavigation = true
+                    self.initialProjectNavigationTask = nil
+                    self.refreshProjectNavigation(refreshProjects: false)
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            self?.initialProjectNavigationTask = nil
+        }
+    }
+
+    private func completeProjectNavigationRefresh(_ projectID: String, generation: UUID) {
+        guard projectNavigationRefreshGeneration == generation else { return }
+        completedProjectNavigationIDs.insert(projectID)
+        guard completedProjectNavigationIDs == projectNavigationRefreshIDs else { return }
+
+        // Publish one complete snapshot after every request has finished. This
+        // prevents the visible list from being rebuilt once per project.
+        projectSessionsByProjectID = projectSessionsByProjectID.merging(pendingProjectNavigationSessions) { _, new in new }
+        pendingProjectNavigationSessions = [:]
+        completedProjectNavigationIDs = []
+        projectNavigationRefreshIDs = []
+        projectNavigationRefreshGeneration = nil
+        isRefreshingProjectNavigation = false
     }
 
     func closeProject() {
@@ -1904,9 +1976,13 @@ final class ControlCenterModel: ObservableObject {
         guard let sessionID, !sessionID.isEmpty else { return }
 
         let detail = (payload["message"] as? String)
+            ?? (params["message"] as? String)
             ?? (payload["description"] as? String)
+            ?? (params["description"] as? String)
             ?? (payload["question"] as? String)
+            ?? (params["question"] as? String)
             ?? (payload["text"] as? String)
+            ?? (params["text"] as? String)
             ?? "Hermes reported \(type)."
         switch type {
         case "approval.request":
@@ -1922,7 +1998,10 @@ final class ControlCenterModel: ObservableObject {
                 actions: [.approve, .deny, .stop]
             ))
         case "clarification.request", "clarify.request":
-            let choices = (payload["choices"] as? [String])?.filter {
+            let choices = ((payload["choices"] as? [String])
+                ?? (params["choices"] as? [String])
+                ?? (payload["options"] as? [String])
+                ?? (params["options"] as? [String]))?.filter {
                 !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
             upsertAttention(AttentionItem(
@@ -2112,11 +2191,11 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func project(forSessionID sessionID: String) -> ProjectSummary? {
-        if let project = projects.first(where: { $0.sessionIDs.contains(sessionID) }) {
+        if let project = projects.first(where: { $0.isRenderableProject && $0.sessionIDs.contains(sessionID) }) {
             return project
         }
         guard let projectID = projectIDBySessionID[sessionID] else { return nil }
-        if let project = projects.first(where: { $0.id == projectID }) {
+        if let project = projects.first(where: { $0.isRenderableProject && $0.id == projectID }) {
             return project
         }
 
@@ -2490,12 +2569,14 @@ final class ControlCenterModel: ObservableObject {
                   isOptionalString(row["last_message"]) else {
                 return nil
             }
-            sessions.append(SessionSummary(
-                id: id,
-                title: (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session",
-                state: (row["state"] as? String) ?? (row["status"] as? String) ?? "active",
-                preview: row["preview"] as? String ?? row["last_message"] as? String
-            ))
+            let title = (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session"
+            let state = (row["state"] as? String) ?? (row["status"] as? String) ?? "active"
+            let preview = row["preview"] as? String ?? row["last_message"] as? String
+            let updatedAt = activityDate(row["updated_at"])
+                ?? activityDate(row["last_active"])
+                ?? activityDate(row["last_message_at"])
+                ?? activityDate(row["started_at"])
+            sessions.append(SessionSummary(id: id, title: title, state: state, preview: preview, updatedAt: updatedAt))
         }
         return sessions
     }
@@ -3068,12 +3149,14 @@ final class ControlCenterModel: ObservableObject {
         var seen = Set<String>()
         return rows.compactMap { row in
             guard let id = row["id"] as? String, seen.insert(id).inserted else { return nil }
-            return SessionSummary(
-                id: id,
-                title: (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session",
-                state: (row["state"] as? String) ?? (row["status"] as? String) ?? "active",
-                preview: row["preview"] as? String ?? row["last_message"] as? String
-            )
+            let title = (row["title"] as? String) ?? (row["name"] as? String) ?? "Hermes session"
+            let state = (row["state"] as? String) ?? (row["status"] as? String) ?? "active"
+            let preview = row["preview"] as? String ?? row["last_message"] as? String
+            let updatedAt = activityDate(row["updated_at"])
+                ?? activityDate(row["last_active"])
+                ?? activityDate(row["last_message_at"])
+                ?? activityDate(row["started_at"])
+            return SessionSummary(id: id, title: title, state: state, preview: preview, updatedAt: updatedAt)
         }
     }
 

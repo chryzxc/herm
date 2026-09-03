@@ -256,9 +256,20 @@ struct SessionSummary: Identifiable, Codable, Equatable {
     let title: String
     let state: String
     let preview: String?
+    let updatedAt: Date?
 
     var displayPreview: String? {
         SessionPreviewPresentation.summary(preview)
+    }
+
+    var lastUpdatedAt: Date? { updatedAt }
+
+    init(id: String, title: String, state: String, preview: String?, updatedAt: Date? = nil) {
+        self.id = id
+        self.title = title
+        self.state = state
+        self.preview = preview
+        self.updatedAt = updatedAt
     }
 }
 
@@ -381,6 +392,20 @@ struct ProjectSummary: Identifiable, Codable, Equatable {
     let sessionIDs: Set<String>
     let preview: String?
     let isActive: Bool
+
+    /// The gateway can expose internal/session buckets alongside real
+    /// repo-backed projects. Those buckets must not claim ownership of a
+    /// conversation in navigation or session metadata.
+    var isRenderableProject: Bool {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedName.isEmpty,
+              normalizedName != "__no_project__",
+              normalizedName != "tmp" else { return false }
+
+        let generatedIDPattern = "^p_[0-9a-f]{8,}$"
+        return normalizedName.range(of: generatedIDPattern, options: .regularExpression) == nil
+            && id.lowercased().range(of: generatedIDPattern, options: .regularExpression) == nil
+    }
 }
 
 struct ControlSearchResult: Identifiable, Equatable {
@@ -1008,6 +1033,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .session: "Overview"
         case .changes: "Source Control"
         case .automations: "Automate"
+        case .core: "Settings"
         default: rawValue
         }
     }
@@ -1018,6 +1044,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var globalRailLabel: String {
         switch self {
         case .automations: "Cron"
+        case .core: "Settings"
         default: rawValue
         }
     }
@@ -1034,7 +1061,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .projects: "folder.badge.gearshape"
         case .search: "magnifyingglass"
         case .kanban: "rectangle.3.group"
-        case .core: "cpu"
+        case .core: "gearshape"
         case .quota: "gauge.with.dots.needle.50percent"
         }
     }
