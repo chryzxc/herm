@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 struct SessionFilesView: View {
@@ -259,13 +260,64 @@ struct SessionFilesView: View {
 }
 
 /// Real interactive terminal view following DESIGN.md glass pane & typography specifications.
+@MainActor
+private final class TerminalTabStore: ObservableObject {
+    @Published private(set) var sessions: [LocalTerminalSession]
+    @Published var selectedID: LocalTerminalSession.ID
+    private var subscriptions: [AnyCancellable] = []
+
+    init() {
+        let session = LocalTerminalSession()
+        sessions = [session]
+        selectedID = session.id
+        observe(session)
+    }
+
+    var selected: LocalTerminalSession {
+        sessions.first(where: { $0.id == selectedID }) ?? sessions[0]
+    }
+
+    func add(directory: String) {
+        let session = LocalTerminalSession()
+        sessions.append(session)
+        observe(session)
+        selectedID = session.id
+        session.start(directory: directory)
+    }
+
+    func closeSelected() {
+        guard sessions.count > 1 else {
+            selected.close()
+            return
+        }
+        let index = sessions.firstIndex(where: { $0.id == selectedID }) ?? 0
+        sessions[index].close()
+        sessions.remove(at: index)
+        subscriptions.removeAll()
+        sessions.forEach(observe)
+        selectedID = sessions[min(index, sessions.count - 1)].id
+    }
+
+    func closeAll() {
+        sessions.forEach { $0.close() }
+    }
+
+    private func observe(_ session: LocalTerminalSession) {
+        session.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &subscriptions)
+    }
+}
+
 struct SessionTerminalView: View {
     let projectPath: String?
     let recipes: [VerificationRecipe]
     let repositoryID: String?
     let repositoryFingerprint: String?
-    @StateObject private var terminal = LocalTerminalSession()
+    @StateObject private var terminalTabs = TerminalTabStore()
     @State private var followsOutput = true
+
+    private var terminal: LocalTerminalSession { terminalTabs.selected }
 
     private var canInterrupt: Bool {
         if case .running = terminal.state { return true }
@@ -299,145 +351,129 @@ struct SessionTerminalView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             terminalTabBar
-            terminalContext
+            terminalControls
             if let run = terminal.lastVerificationRun {
-                HStack(spacing: 8) {
-                    Text(run.isComplete ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")" : "Running \(run.command)…")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
-                        .lineLimit(1)
-                    if let recipe = recipes.first(where: { $0.id == run.recipeID }), run.isComplete {
-                        Button("Rerun") {
-                            guard let repositoryID, let repositoryFingerprint else { return }
-                            terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Color.dockAccent)
-                        .accessibilityLabel("Rerun \(recipe.title)")
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 5)
-                .accessibilityLabel(run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
+                verificationRunBanner(run)
             }
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    if terminal.output.isEmpty {
-                        terminalEmptyState
-                    } else {
-                        Text(terminal.output)
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .lineSpacing(4)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18)
-                            .id("terminal-output")
+                    VStack(alignment: .leading, spacing: 14) {
+                        if terminal.output.isEmpty {
+                            terminalPrompt
+                        } else {
+                            Text(terminal.output)
+                                .font(.system(size: 14, design: .monospaced))
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineSpacing(4)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id("terminal-output")
+                        }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+                    .padding(.horizontal, 30)
+                    .padding(.top, 20)
+                    .padding(.bottom, 28)
                 }
                 .frame(minHeight: 220, maxHeight: .infinity)
-                .background(Color.dockSurface2.opacity(0.42))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.dockBorderLight, lineWidth: 0.5)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
+                .background(Color.dockCanvas)
                 .accessibilityLabel("Terminal output")
                 .accessibilityValue(terminal.output.isEmpty ? "No output" : "Output available")
                 .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalOutput)
                 .onChange(of: terminal.output) { _, _ in
                     guard followsOutput else { return }
-                    withAnimation(.easeOut(duration: 0.12)) {
-                        proxy.scrollTo("terminal-output", anchor: .bottom)
-                    }
+                    // An animated scrollTo toward an offset computed while PTY
+                    // output keeps growing overshoots the content end; keep the
+                    // follow jump non-animated so it clamps to the real tail.
+                    proxy.scrollTo("terminal-output", anchor: .bottom)
                 }
             }
-
-            HStack(spacing: 8) {
-                Image(systemName: "lock.shield")
-                    .foregroundStyle(Color.dockSuccess)
-                Text("Verified commands only")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.dockSecondaryText)
-                Text("Arbitrary shell input is unavailable")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-                Spacer()
-                Toggle("Follow", isOn: $followsOutput)
-                    .toggleStyle(.switch)
-                    .help("Follow new terminal output")
-                    .accessibilityLabel("Follow new terminal output")
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 46)
-            .background(Color.dockSurface2.opacity(0.78))
-            .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
         }
         .background(Color.dockCanvas)
         .task(id: projectPath) {
             guard let projectPath else { terminal.close(); return }
             terminal.start(directory: projectPath)
         }
-        .onDisappear { terminal.close() }
+        .onDisappear { terminalTabs.closeAll() }
     }
 
     private var terminalTabBar: some View {
         HStack(spacing: 8) {
-            HStack(spacing: 9) {
-                Image(systemName: "terminal")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockSecondaryText)
-                Text("\(NSUserName())@\(Host.current().localizedName ?? "hermes")")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                Button {
-                    terminal.close()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.dockMetadataText)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(terminalTabs.sessions) { session in
+                        terminalTab(session)
+                    }
                 }
-                .buttonStyle(.borderless)
-                .help("Close terminal")
             }
-            .padding(.horizontal, 11)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface6))
 
             Spacer(minLength: 0)
 
             Button {
-                terminal.start(directory: projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path)
+                terminalTabs.add(directory: projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 16, weight: .light))
             .foregroundStyle(Color.dockSecondaryText)
-            .frame(width: 32, height: 30)
+            .frame(width: 28, height: 28)
             }
             .buttonStyle(.borderless)
             .help("New terminal session")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 0)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private var terminalContext: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("WORKSPACE")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.dockMetadataText)
-                Text(terminal.workingDirectory.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "No project attached")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
+    private func terminalTab(_ session: LocalTerminalSession) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: "terminal")
+                .font(.system(size: 10, weight: .semibold))
+            Text("\(NSUserName())@\(Host.current().localizedName ?? "hermes")")
+                .font(.system(size: 10, design: .monospaced))
+                .lineLimit(1)
+            Button {
+                terminalTabs.selectedID = session.id
+                terminalTabs.closeSelected()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
             }
+            .buttonStyle(.borderless)
+            .help("Close terminal")
+        }
+        .foregroundStyle(terminalTabs.selectedID == session.id ? Color.dockPrimaryText : Color.dockSecondaryText)
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(terminalTabs.selectedID == session.id ? Color.dockSurface6 : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture { terminalTabs.selectedID = session.id }
+    }
+
+    private var terminalPrompt: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("➜")
+                .foregroundStyle(Color.dockSuccess)
+            Text(terminal.workingDirectory ?? "/")
+                .foregroundStyle(Color.dockAccent)
+        }
+        .font(.system(size: 12, weight: .medium, design: .monospaced))
+        .accessibilityLabel("Terminal prompt")
+    }
+
+    private var terminalControls: some View {
+        HStack(alignment: .center, spacing: 10) {
+            HStack(spacing: 6) {
+                Circle().fill(statusColor).frame(width: 6, height: 6)
+                Text(statusText)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            }
+            .foregroundStyle(statusColor)
 
             Spacer(minLength: 8)
 
@@ -486,37 +522,35 @@ struct SessionTerminalView: View {
             .help("Interrupt running command")
             .accessibilityLabel("Interrupt running command")
 
-            HStack(spacing: 6) {
-                Circle().fill(statusColor).frame(width: 6, height: 6)
-                Text(statusText)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            }
-            .foregroundStyle(statusColor)
+            Toggle("Follow", isOn: $followsOutput)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .help("Follow new terminal output")
+                .accessibilityLabel("Follow new terminal output")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .frame(height: 34)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private var terminalEmptyState: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("$ _")
-                .font(.system(size: 17, weight: .medium, design: .monospaced))
+    private func verificationRunBanner(_ run: VerificationRun) -> some View {
+        HStack(spacing: 8) {
+            Text(run.isComplete ? "\(run.command) · EXIT \(run.exitCode ?? -1)\(run.durationLabel.map { " · \($0)" } ?? "")" : "Running \(run.command)…")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(run.isComplete && run.exitCode == 0 ? Color.dockSuccess : Color.dockWarning)
+                .lineLimit(1)
+            if let recipe = recipes.first(where: { $0.id == run.recipeID }), run.isComplete {
+                Button("Rerun") {
+                    guard let repositoryID, let repositoryFingerprint else { return }
+                    terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
+                }
+                .buttonStyle(.borderless)
                 .foregroundStyle(Color.dockAccent)
-            Text(projectPath == nil ? "No project is attached to this session." : "Ready for a verified command.")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.dockPrimaryText)
-            Text(projectPath == nil
-                ? "Open a session with a repository to make its approved verification recipes available here."
-                : recipes.isEmpty
-                    ? "This repository has no approved verification recipes yet."
-                    : "Choose Run check above to execute an approved repository recipe.")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Rerun \(recipe.title)")
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-        .padding(22)
-        .accessibilityIdentifier("terminal-empty-state")
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .accessibilityLabel(run.isComplete ? "Verification completed with exit code \(run.exitCode ?? -1)" : "Verification running")
     }
 }

@@ -2,7 +2,9 @@ import Foundation
 import Darwin
 
 @MainActor
-final class LocalTerminalSession: ObservableObject {
+final class LocalTerminalSession: ObservableObject, Identifiable {
+    let id = UUID()
+
     enum State: Equatable {
         case idle
         case starting
