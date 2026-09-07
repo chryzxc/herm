@@ -83,6 +83,8 @@ enum BotRosterPresentation {
     static func emptyStateTitle(isSearching: Bool) -> String {
         isSearching ? "No matching Bots" : "No Bots yet"
     }
+
+    static let primaryActionLabel = "Edit Profile"
 }
 
 private extension String {

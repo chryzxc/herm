@@ -49,10 +49,29 @@ struct QuotaForecastingTests {
         ) == nil)
     }
 
-    @Test func dailyAllowanceSplitsRemainingAcrossDays() {
+    @Test func dailyAllowanceStopsOverBudgetUsage() {
         #expect(QuotaForecasting.dailyAllowance(
             for: window(label: "Weekly", remaining: 70, resetAfter: 7 * 86_400)
-        ) == 10)
+        ) == 0)
+    }
+
+    @Test func dailyAllowanceCarriesUnusedBudgetForward() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let quotaWindow = ProviderQuotaWindow(
+            id: "weekly",
+            label: "Weekly",
+            remainingPercent: 60,
+            remainingDisplay: nil,
+            limitDisplay: nil,
+            resetsAt: now.addingTimeInterval(2.5 * 86_400),
+            resetsDisplay: nil
+        )
+
+        // At 4.5 days into a seven-day cycle, the balance target after
+        // today's budget is 28.57%. The 60% remaining balance therefore
+        // carries roughly 31% of quota into today's spendable budget.
+        #expect(QuotaForecasting.dailyAllowance(for: quotaWindow, now: now) == 31)
+        #expect(abs(QuotaForecasting.dailyBudgetMarker(for: quotaWindow, now: now)! - (2.0 / 7.0 * 100)) < 0.01)
     }
 
     @Test func dailyAllowanceHiddenForShortWindows() {

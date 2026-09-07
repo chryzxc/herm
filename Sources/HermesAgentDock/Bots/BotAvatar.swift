@@ -1,8 +1,51 @@
 import SwiftUI
 
+/// Deterministic visual identity for built-in Bot roles. Stored Hermes assets
+/// still take precedence; this only improves the local fallback avatar.
+enum BotAvatarPresentation {
+    static func symbol(for profileID: String) -> String {
+        switch profileID.lowercased() {
+        case "nexus": return "compass.drawing"
+        case "cypher": return "shield.fill"
+        case "atlas": return "globe"
+        case "archon": return "building.columns.fill"
+        case "canvas": return "paintpalette.fill"
+        case "ripple": return "pencil.and.outline"
+        case "forge": return "hammer.fill"
+        case "sentry": return "eye.fill"
+        case "sentinel": return "checkmark.shield.fill"
+        case "aegis": return "server.rack"
+        case "scout": return "binoculars.fill"
+        default: return "person.crop.circle"
+        }
+    }
+
+    static func palette(for profileID: String) -> [Color] {
+        let hue: Double
+        switch profileID.lowercased() {
+        case "nexus": hue = 0.82
+        case "cypher": hue = 0.56
+        case "atlas": hue = 0.37
+        case "archon": hue = 0.13
+        case "canvas": hue = 0.29
+        case "ripple": hue = 0.95
+        case "forge": hue = 0.04
+        case "sentry": hue = 0.61
+        case "sentinel": hue = 0.46
+        case "aegis": hue = 0.72
+        case "scout": hue = 0.33
+        default: hue = 0.68
+        }
+        return [
+            Color(hue: hue, saturation: 0.58, brightness: 0.82),
+            Color(hue: hue, saturation: 0.72, brightness: 0.42)
+        ]
+    }
+}
+
 /// Avatar rendering with Bot Mode's fallback behavior: the profile's stored
-/// asset when Hermes has one, otherwise a deterministic face derived from
-/// the Bot's name so the same Bot always looks the same.
+/// asset when Hermes has one, otherwise a deterministic role mark derived from
+/// the Bot's profile ID so the same Bot always looks the same.
 struct BotAvatarView: View {
     let bot: BotSummary
     let imageData: Data?
@@ -27,28 +70,24 @@ struct BotAvatarView: View {
         .opacity(bot.isHidden ? 0.45 : 1)
     }
 
-    private var initials: String {
-        let source = (bot.title ?? bot.name).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !source.isEmpty else { return "?" }
-        let words = source.split(separator: " ").prefix(2)
-        let letters = words.compactMap(\.first).map(String.init).joined()
-        return letters.isEmpty ? String(source.prefix(1)).uppercased() : letters.uppercased()
-    }
-
     private var deterministicFace: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(LinearGradient(colors: [hueColor.opacity(0.85), hueColor.opacity(0.55)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            Text(initials)
-                .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.95))
-                .minimumScaleFactor(0.6)
+                .fill(
+                    LinearGradient(
+                        colors: BotAvatarPresentation.palette(for: bot.id),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+            Circle()
+                .stroke(.white.opacity(0.20), lineWidth: max(0.6, size * 0.018))
+                .frame(width: size * 0.64, height: size * 0.64)
+            LucideImage(systemName: BotAvatarPresentation.symbol(for: bot.id))
+                .font(.system(size: size * 0.34, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.white.opacity(0.96))
+                .shadow(color: .black.opacity(0.22), radius: size * 0.06, y: size * 0.04)
         }
-    }
-
-    private var hueColor: Color {
-        var hash = 5381
-        for scalar in bot.id.unicodeScalars { hash = (hash << 5) &+ hash &+ Int(scalar.value) }
-        return Color(hue: Double(abs(hash) % 360) / 360.0, saturation: 0.55, brightness: 0.72)
     }
 }

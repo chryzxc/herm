@@ -21,7 +21,6 @@ struct SessionInspector: View {
         case files = "Files"
         case changes = "Source Control"
         case terminal = "Terminal"
-        case verification = "Verify"
 
         var id: Self { self }
         var navigationTitle: String {
@@ -31,7 +30,6 @@ struct SessionInspector: View {
             case .activity: "Activity"
             case .changes: "Source Control"
             case .overview: "Overview"
-            case .verification: "Verify"
             }
         }
         var icon: String {
@@ -39,9 +37,8 @@ struct SessionInspector: View {
             case .overview: "bubble.left.and.bubble.right"
             case .activity: "waveform.path.ecg"
             case .files: "folder"
-            case .changes: "doc.text.magnifyingglass"
+            case .changes: "arrow.triangle.branch"
             case .terminal: "terminal"
-            case .verification: "checkmark.seal"
             }
         }
     }
@@ -55,7 +52,7 @@ struct SessionInspector: View {
 
             if let workflowError = workflow.error {
                 HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle")
+                    LucideImage(systemName: "exclamationmark.triangle")
                         .foregroundStyle(Color.dockWarning)
                     Text(workflowError)
                         .font(.system(size: 11))
@@ -87,7 +84,7 @@ struct SessionInspector: View {
         // There is no overflow menu competing with the same navigation model.
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                ForEach([Section.overview, .files, .terminal, .activity, .changes, .verification]) { section in
+                ForEach([Section.overview, .files, .terminal, .activity, .changes]) { section in
                     sectionButton(section)
                 }
             }
@@ -106,7 +103,7 @@ struct SessionInspector: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: section.icon)
+                LucideImage(systemName: section.icon)
                     .font(.system(size: 11, weight: .semibold))
                 Text(section.navigationTitle)
                     .lineLimit(1)
@@ -132,7 +129,7 @@ struct SessionInspector: View {
 
     private var inspectorHeader: some View {
         HStack(alignment: .center, spacing: 9) {
-            Image(systemName: "bubble.left.and.bubble.right")
+            LucideImage(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 2) {
@@ -141,7 +138,7 @@ struct SessionInspector: View {
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if let sessionProjectName {
-                    Label(sessionProjectName, systemImage: "folder")
+                    LucideLabel(sessionProjectName, icon: "folder")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
@@ -336,20 +333,6 @@ struct SessionInspector: View {
                 repositoryID: workflow.repository.isGitRepository ? workflow.repository.repositoryID : nil,
                 repositoryFingerprint: workflow.repositoryFingerprint
             )
-        case .verification:
-            VStack(alignment: .leading, spacing: 14) {
-                inspectorLabel("VERIFICATION")
-                if let verification = control.verification {
-                    let color: Color = verification.state == .passed ? .dockSuccess : verification.state == .failed ? .dockDestructive : .dockWarning
-                    inspectorCard(title: "STATUS", value: verification.state.rawValue.uppercased(), accent: color)
-                    if let evidence = verification.evidence,
-                       let command = evidence.canonicalCommand ?? evidence.command {
-                        inspectorCard(title: "EVIDENCE", value: command)
-                    }
-                } else {
-                    inspectorCard(title: "NOT AVAILABLE", value: "Verification results will appear when Hermes reports them for this session.")
-                }
-            }
         }
     }
 
@@ -427,7 +410,7 @@ struct SessionInspector: View {
                                     }
                                 } label: {
                                     if branchName == workflow.repository.branch {
-                                        Label(branchName, systemImage: "checkmark")
+                                        LucideLabel(branchName, icon: "checkmark")
                                     } else {
                                         Text(branchName)
                                     }
@@ -435,7 +418,7 @@ struct SessionInspector: View {
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: isSwitchingBranch ? "arrow.triangle.2.circlepath" : branch.icon)
+                                LucideImage(systemName: isSwitchingBranch ? "refresh-cw" : branch.icon)
                                     .font(.system(size: 11))
                                     .foregroundStyle(Color.dockAccent)
                                 Text(branch.value)
@@ -443,7 +426,7 @@ struct SessionInspector: View {
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
-                                Image(systemName: "chevron.down")
+                                LucideImage(systemName: "chevron.down")
                                     .font(.system(size: 8, weight: .bold))
                                     .foregroundStyle(Color.dockSecondaryText)
                             }
@@ -462,7 +445,7 @@ struct SessionInspector: View {
 
                     ForEach(items.filter { $0.id != "branch" }) { item in
                         HStack(spacing: 6) {
-                            Image(systemName: item.icon)
+                            LucideImage(systemName: item.icon)
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.dockAccent)
                             VStack(alignment: .leading, spacing: 1) {
@@ -499,7 +482,7 @@ struct SessionInspector: View {
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "checkmark.shield")
+                LucideImage(systemName: "checkmark.shield")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(color)
                 Text("PRE-FLIGHT READINESS")
@@ -531,7 +514,7 @@ struct SessionInspector: View {
     private func attentionRow(_ attention: AttentionItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                LucideImage(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockWarning)
                 Text(attention.title)

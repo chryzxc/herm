@@ -58,6 +58,7 @@ struct HermesProjectionStateTests {
 
     @Test func failedRuntimeInspectionRetainsTheLastSuccessfulConfiguration() {
         let previous = HermesRuntimeConfiguration(
+            agentName: nil,
             model: "gpt-5",
             provider: "openai",
             configPath: "/tmp/config.yaml",

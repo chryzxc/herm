@@ -29,6 +29,7 @@ struct VoiceWavePath: Shape {
 
 struct StartupAssistantView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let agentName: String
 
     var body: some View {
         TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 12.0)) { context in
@@ -40,7 +41,7 @@ struct StartupAssistantView: View {
                         .fill(Color.dockSuccess)
                         .frame(width: 5, height: 5)
                         .shadow(color: Color.dockSuccess.opacity(0.8), radius: 5)
-                    Text("HERMES // ONLINE")
+                    Text("\(agentName.uppercased()) // ONLINE")
                         .font(.system(size: 12, weight: .semibold))
                         .tracking(1.5)
                         .foregroundStyle(Color.dockAccent.opacity(0.85))
@@ -77,7 +78,7 @@ struct StartupAssistantView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Hermes online. All systems nominal. Awaiting command.")
+        .accessibilityLabel("\(agentName) online. All systems nominal. Awaiting command.")
     }
 
     @ViewBuilder
@@ -146,7 +147,7 @@ struct StartupAssistantView: View {
                 .frame(width: 82, height: 82)
                 .rotationEffect(.degrees(-t * 20))
 
-            Image(systemName: "mic.fill")
+            LucideImage(systemName: "audio-lines")
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(Color.dockAccent.opacity(0.9))
                 .shadow(color: Color.dockAccent.opacity(0.7), radius: 8)
@@ -231,7 +232,7 @@ struct VoiceOrbView: View {
                              : (isListening ? 0.025 + voiceLevel * 0.1 : 0))
                     )
                     .overlay {
-                        Image(systemName: isResponding ? "waveform" : "mic.fill")
+                        LucideImage(systemName: isResponding ? "waveform" : "audio-lines")
                             .font(.system(size: 32))
                             .foregroundStyle(Color.dockAccent)
                             .scaleEffect(1 - 0.12 * (1 + sin(animationTime * .pi * 1.6)) / 2)
@@ -296,7 +297,7 @@ struct KanbanMutationEditor: View {
                 .foregroundStyle(Color.dockPrimaryText)
             TextField(placeholder, text: $value, axis: .vertical)
                 .lineLimit(2...5)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.dockGlass)
             if (request.kind == .assign || request.kind == .reassign), !assignees.isEmpty {
                 Menu("Choose Hermes profile") {
                     ForEach(assignees, id: \.self) { assignee in
@@ -355,15 +356,15 @@ struct CronEditEditor: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             if job.editableFields.contains(.name) {
-                TextField("Name", text: $draft.name).textFieldStyle(.roundedBorder)
+                TextField("Name", text: $draft.name).textFieldStyle(.dockGlass)
             }
             if job.editableFields.contains(.schedule) {
-                TextField("Schedule", text: $draft.schedule).textFieldStyle(.roundedBorder)
+                TextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
             }
             if job.editableFields.contains(.prompt), job.prompt != nil {
                 TextField("Prompt", text: $draft.prompt, axis: .vertical)
                     .lineLimit(3...6)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.dockGlass)
             }
             Text("Only values supplied by Hermes are editable. Unchanged values are not sent.")
                 .font(.system(size: 11))
@@ -403,7 +404,7 @@ struct CronReportDetailSheet: View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CRON REPORT")
+                    Text("AUTOMATION REPORT")
                         .font(.system(size: 12, weight: .semibold))
                         .tracking(0.6)
                         .foregroundStyle(Color.dockAccent)
@@ -450,7 +451,7 @@ struct CronReportDetailSheet: View {
                     }
                 } else {
                     VStack(spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle")
+                        LucideImage(systemName: "exclamationmark.triangle")
                             .font(.system(size: 22))
                             .foregroundStyle(Color.dockWarning)
                         Text(loadError ?? "The report could not be loaded.")
@@ -500,7 +501,7 @@ struct RepositoryFleetRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
-                Image(systemName: snapshot?.isGitRepository == true ? "arrow.triangle.branch" : "folder")
+                LucideImage(systemName: snapshot?.isGitRepository == true ? "arrow.triangle.branch" : "folder")
                     .foregroundStyle(snapshot?.isGitRepository == true ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(URL(fileURLWithPath: path).lastPathComponent)
@@ -570,7 +571,7 @@ enum DockCommand: Identifiable, CaseIterable {
     var icon: String {
         switch self {
         case .tab(let tab): tab.icon
-        case .newChat: "square.and.pencil"
+        case .newChat: "message-circle-plus"
         case .focusComposer: "text.cursor"
         case .stop: "stop.circle"
         case .voice: "mic"
@@ -601,13 +602,13 @@ struct DockCommandPalette: View {
                     .foregroundStyle(Color.dockSecondaryText)
             }
             TextField("Search actions", text: $query)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.dockGlass)
             ForEach(commands) { command in
                 Button {
                     select(command)
                     dismiss()
                 } label: {
-                    Label(command.title, systemImage: command.icon)
+                    LucideLabel(command.title, icon: command.icon)
                         .font(.system(size: 13))
                         .foregroundStyle(Color.dockPrimaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -645,7 +646,7 @@ struct DockActionPalette: View {
                 Text("⌘K").font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
             }
             TextField("Search actions", text: $query)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.dockGlass)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(commands) { command in
@@ -656,7 +657,7 @@ struct DockActionPalette: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 9) {
-                                Image(systemName: command.icon).frame(width: 16)
+                                LucideImage(systemName: command.icon).frame(width: 16)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(command.title).font(.system(size: 13, weight: .medium))
                                     Text(command.isAvailable ? command.subtitle : (command.unavailableReason ?? command.subtitle))

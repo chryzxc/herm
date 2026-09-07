@@ -9,6 +9,8 @@ struct RepositoryCodeWorkspaceView: View {
     let document: RepositoryFileDocument
     let onClose: () -> Void
     let onSave: (String) async -> Bool
+    /// Standalone panes fill their container and omit the card chrome and back button.
+    var isStandalonePane = false
 
     @State private var draft: String
     @State private var savedDraft: String
@@ -24,11 +26,12 @@ struct RepositoryCodeWorkspaceView: View {
         case unavailable(String)
     }
 
-    init(repositoryPath: String, document: RepositoryFileDocument, onClose: @escaping () -> Void, onSave: @escaping (String) async -> Bool) {
+    init(repositoryPath: String, document: RepositoryFileDocument, onClose: @escaping () -> Void, onSave: @escaping (String) async -> Bool, isStandalonePane: Bool = false) {
         self.repositoryPath = repositoryPath
         self.document = document
         self.onClose = onClose
         self.onSave = onSave
+        self.isStandalonePane = isStandalonePane
         _draft = State(initialValue: document.contents)
         _savedDraft = State(initialValue: document.contents)
     }
@@ -50,12 +53,16 @@ struct RepositoryCodeWorkspaceView: View {
             }
         }
         .background(Color.dockCanvas)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 0.5))
-        // Keep a finite viewport so the embedded AppKit scroll view owns
-        // scrolling for long files instead of expanding with the inspector's
-        // outer ScrollView.
-        .frame(maxWidth: .infinity, minHeight: 360, maxHeight: 620)
+        .clipShape(RoundedRectangle(cornerRadius: isStandalonePane ? 0 : 14, style: .continuous))
+        .overlay {
+            if !isStandalonePane {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.dockBorderStrong, lineWidth: 0.5)
+            }
+        }
+        // Embedded usage keeps a finite viewport so the AppKit scroll view owns
+        // scrolling instead of expanding with the inspector's outer ScrollView.
+        .frame(maxWidth: .infinity, minHeight: isStandalonePane ? nil : 360, maxHeight: isStandalonePane ? .infinity : 620)
         .task(id: document.id) { await loadBlame() }
         .onChange(of: document.contents) { _, contents in
             draft = contents
@@ -66,25 +73,25 @@ struct RepositoryCodeWorkspaceView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button(action: onClose) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .bold))
-                    .frame(width: 32, height: 32)
+            if !isStandalonePane {
+                Button(action: onClose) {
+                        LucideImage(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockSecondaryText)
+                .frame(width: 32, height: 32)
+                .help("Back to files")
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Color.dockSecondaryText)
-            .frame(width: 32, height: 32)
-            .help("Back to files")
 
-            Image(systemName: "doc.text")
+            LucideImage(systemName: "doc.text")
                 .foregroundStyle(Color.dockAccent)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(document.path)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
+            Text(document.path)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 0)
             if hasUnsavedChanges {
                 Circle()
@@ -93,16 +100,16 @@ struct RepositoryCodeWorkspaceView: View {
                     .help("Unsaved changes")
             }
             Button(action: save) {
-                Image(systemName: isSaving ? "ellipsis" : "square.and.arrow.down")
+                LucideImage(systemName: isSaving ? "ellipsis" : "square.and.arrow.down")
                     .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(hasUnsavedChanges ? Color.dockAccent : Color.dockMetadataText)
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.borderless)
-            .foregroundStyle(hasUnsavedChanges ? Color.dockAccent : Color.dockMetadataText)
             .disabled(!hasUnsavedChanges || isSaving)
             .help(isSaving ? "Saving…" : "Save")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, isStandalonePane ? 14 : 12)
         .padding(.vertical, 10)
     }
 
@@ -176,7 +183,7 @@ struct RepositoryCodeWorkspaceView: View {
 
     private func blameDetail(_ line: RepositoryBlameLine) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("LINE \(line.lineNumber)", systemImage: "number")
+            LucideLabel("LINE \(line.lineNumber)", icon: "number")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             Text(line.commit.author)

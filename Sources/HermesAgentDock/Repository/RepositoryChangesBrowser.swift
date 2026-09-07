@@ -9,9 +9,10 @@ struct RepositoryChangesBrowser: View {
     let projectPath: String?
     let onRefresh: () async -> Void
     var onSelectProjectFolder: (() -> Void)?
+    var onSelectFile: ((RepositoryFileChange) -> Void)? = nil
+    var selectedFilePath: String? = nil
 
     @State private var selectedDiff: RepositoryDiff?
-    @State private var selectedFile: RepositoryFileChange?
 
     @State private var isLoading = false
     @State private var error: String?
@@ -23,20 +24,12 @@ struct RepositoryChangesBrowser: View {
             browser(changes)
         } else if let projectPath {
             emptyState(
-                icon: workflow.isRefreshing ? "arrow.triangle.2.circlepath" : "folder",
+                icon: workflow.isRefreshing ? "refresh-cw" : "folder",
                 title: workflow.isRefreshing ? "Inspecting project" : "Project is not a Git repository",
                 detail: workflow.isRefreshing ? projectPath : "\(projectPath) is available as a local project folder, but it has no Git working tree to inspect."
             )
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                emptyState(icon: "doc.text.magnifyingglass", title: "No project selected", detail: "Choose a project from Projects to inspect its local changes.")
-                if let onSelectProjectFolder {
-                    Button("SELECT PROJECT FOLDER", action: onSelectProjectFolder)
-                        .buttonStyle(.borderless)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.dockAccent)
-                }
-            }
+            SessionProjectRequiredState(onSelectProject: onSelectProjectFolder)
         }
     }
 
@@ -90,7 +83,7 @@ struct RepositoryChangesBrowser: View {
                 isExpanded.wrappedValue.toggle()
             } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                    LucideImage(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 12)
@@ -178,7 +171,7 @@ struct RepositoryChangesBrowser: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
-                sourceControlIcon("arrow.triangle.2.circlepath", help: "Refresh source control") {
+                sourceControlIcon("refresh-cw", help: "Refresh source control") {
                     Task { await onRefresh() }
                 }
             }
@@ -206,7 +199,7 @@ struct RepositoryChangesBrowser: View {
         if workflow.isAuthenticatingGitHub || workflow.githubAuthenticationNotice?.hasPrefix("GitHub connected") == true {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
-                    Image(systemName: "checkmark.circle")
+                    LucideImage(systemName: "checkmark.circle")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockSuccess)
                     Text(workflow.githubAuthenticationNotice ?? "GitHub connected. Refreshing pull requests…")
@@ -242,21 +235,21 @@ struct RepositoryChangesBrowser: View {
         case .noRemote:
             EmptyView()
         case .notLoaded:
-            githubStatusRow(icon: "arrow.clockwise", message: "GitHub status not loaded.", actionTitle: "Refresh") {
+            githubStatusRow(icon: "refresh-cw", message: "GitHub status not loaded.", actionTitle: "Refresh") {
                 Task { await workflow.refreshGitHub() }
             }
         case .unavailable(let error):
             if case .unauthorized = error {
                 HStack(spacing: 7) {
-                    Image(systemName: "person.badge.key")
+                    LucideImage(systemName: "person.badge.key")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockWarning)
                     Text("GitHub sign-in required.")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer(minLength: 8)
-                    Button("SIGN OUT & SIGN IN") {
-                        workflow.resetGitHubAuthentication()
+                    Button("SIGN IN") {
+                        workflow.authenticateGitHub()
                     }
                     .buttonStyle(.borderless)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -279,7 +272,7 @@ struct RepositoryChangesBrowser: View {
                         .accessibilityLabel("GitHub device code \(code)")
                 }
             } else {
-                githubStatusRow(icon: "exclamationmark.triangle", message: "GitHub is unavailable.", actionTitle: "Retry") {
+                githubStatusRow(icon: "exclamationmark.triangle", message: githubStatusMessage(for: error), actionTitle: "Retry") {
                     Task { await workflow.refreshGitHub() }
                 }
             }
@@ -290,7 +283,7 @@ struct RepositoryChangesBrowser: View {
         case .available:
             if let github = workflow.githubRepository {
                 HStack(spacing: 7) {
-                    Image(systemName: "checkmark.circle.fill")
+                    LucideImage(systemName: "checkmark.circle.fill")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockSuccess)
                     Text("GitHub")
@@ -300,7 +293,7 @@ struct RepositoryChangesBrowser: View {
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
                     Spacer()
-                    sourceControlIcon(workflow.isRefreshingGitHub ? "ellipsis" : "arrow.clockwise", help: "Refresh GitHub") {
+                    sourceControlIcon(workflow.isRefreshingGitHub ? "ellipsis" : "refresh-cw", help: "Refresh GitHub") {
                         Task { await workflow.refreshGitHub() }
                     }
                     .disabled(workflow.isRefreshingGitHub)
@@ -317,6 +310,17 @@ struct RepositoryChangesBrowser: View {
         }
     }
 
+    private func githubStatusMessage(for error: GitHubCodeHostError) -> String {
+        switch error {
+        case .forbidden:
+            "GitHub access to this repository is denied."
+        case .repositoryNotFound:
+            "GitHub repository was not found or is inaccessible."
+        default:
+            "GitHub is unavailable."
+        }
+    }
+
     private func githubStatusRow(
         icon: String,
         message: String,
@@ -324,7 +328,7 @@ struct RepositoryChangesBrowser: View {
         action: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 7) {
-            Image(systemName: icon)
+            LucideImage(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockWarning)
             Text(message)
@@ -342,7 +346,7 @@ struct RepositoryChangesBrowser: View {
 
     private func sourceControlIcon(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
+            LucideImage(systemName: systemName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 28, height: 28)
@@ -352,50 +356,75 @@ struct RepositoryChangesBrowser: View {
         .help(help)
     }
 
+    @ViewBuilder
     private func fileRow(_ file: RepositoryFileChange) -> some View {
-        DisclosureGroup {
-            VStack(alignment: .leading, spacing: 8) {
-                if let selectedDiff, selectedDiff.path == file.path, selectedDiff.isStaged == file.isStaged {
-                    Text(selectedDiff.text.isEmpty ? "No textual diff is available for this file." : selectedDiff.text)
-                        .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
-                    if selectedDiff.isTruncated { Text("Diff truncated for safe display.").foregroundStyle(Color.dockWarning) }
-                } else {
-                    Button(isLoading ? "Loading diff…" : "Load diff") { loadDiff(for: file) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent).disabled(isLoading)
-                }
-
+        if let onSelectFile {
+            Button {
+                onSelectFile(file)
+            } label: {
+                fileRowLabel(file, showsSelection: selectedFilePath == file.id)
             }
-            .font(.system(size: 12, design: .monospaced))
-            .padding(.leading, 26)
-            .padding(.top, 4)
-            .padding(.bottom, 10)
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: fileIcon(for: file))
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(statusColor(for: file))
-                    .frame(width: 17)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(fileName(for: file))
-                        .lineLimit(1)
-                        .foregroundStyle(Color.dockPrimaryText)
-                    if !fileDirectory(for: file).isEmpty {
-                        Text(fileDirectory(for: file))
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(Color.dockMetadataText)
-                            .lineLimit(1)
+            .buttonStyle(.plain)
+            .padding(.vertical, 8)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+        } else {
+            DisclosureGroup {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let selectedDiff, selectedDiff.path == file.path, selectedDiff.isStaged == file.isStaged {
+                        Text(selectedDiff.text.isEmpty ? "No textual diff is available for this file." : selectedDiff.text)
+                            .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                        if selectedDiff.isTruncated { Text("Diff truncated for safe display.").foregroundStyle(Color.dockWarning) }
+                    } else {
+                        Button(isLoading ? "Loading diff…" : "Load diff") { loadDiff(for: file) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent).disabled(isLoading)
                     }
+
                 }
-                Spacer(minLength: 6)
-                Circle()
-                    .fill(statusColor(for: file))
-                    .frame(width: 7, height: 7)
-                    .help(fileStatusDescription(for: file))
-                    .accessibilityLabel(fileStatusDescription(for: file))
+                .font(.system(size: 12, design: .monospaced))
+                .padding(.leading, 26)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+            } label: {
+                fileRowLabel(file, showsSelection: false)
             }
-            .font(.system(size: 12, weight: .medium))
+            .padding(.vertical, 8)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         }
-        .padding(.vertical, 8)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private func fileRowLabel(_ file: RepositoryFileChange, showsSelection: Bool) -> some View {
+        HStack(spacing: 8) {
+            LucideImage(systemName: fileIcon(for: file))
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(statusColor(for: file))
+                .frame(width: 17)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(fileName(for: file))
+                    .lineLimit(1)
+                    .foregroundStyle(Color.dockPrimaryText)
+                if !fileDirectory(for: file).isEmpty {
+                    Text(fileDirectory(for: file))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 6)
+            Circle()
+                .fill(statusColor(for: file))
+                .frame(width: 7, height: 7)
+                .help(fileStatusDescription(for: file))
+                .accessibilityLabel(fileStatusDescription(for: file))
+        }
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, showsSelection ? 8 : 0)
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .background {
+            if showsSelection {
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockAccent.opacity(0.13))
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .contentShape(Rectangle())
     }
 
     private func fileName(for file: RepositoryFileChange) -> String {
@@ -454,7 +483,7 @@ struct RepositoryChangesBrowser: View {
 
     private func emptyState(icon: String, title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+            LucideLabel(title, icon: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
             Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

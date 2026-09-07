@@ -19,6 +19,7 @@ enum OpenCodeQuotaService {
     }
 
     private static func loadAPIKey() -> String? {
+        if let stored = ProviderKeyStore().savedKey("opencode-go") { return stored }
         let environment = ProcessInfo.processInfo.environment
         if let key = [environment["OPENCODE_GO_API_KEY"], environment["OPENCODE_API_KEY"], environment["ZEN_API_KEY"]].compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) }).first(where: { !$0.isEmpty }) { return key }
         let home = FileManager.default.homeDirectoryForCurrentUser

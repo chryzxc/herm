@@ -1,6 +1,8 @@
 import Foundation
 
 struct HermesRuntimeConfiguration: Sendable, Equatable {
+    /// The display identity from Hermes' SOUL.md, when one is configured.
+    let agentName: String?
     let model: String?
     let provider: String?
     let configPath: String?
@@ -25,6 +27,7 @@ enum HermesRuntimeInspector {
         let mcpServers = parseMCPServers(output(arguments: ["mcp", "list"]) ?? "")
         let plugins = parsePlugins(output(arguments: ["plugins", "list", "--enabled", "--json"]) ?? "")
         return HermesRuntimeConfiguration(
+            agentName: configPath.flatMap { Self.agentName(configPath: $0) },
             model: nonEmpty(model),
             provider: nonEmpty(provider),
             configPath: nonEmpty(configPath),
@@ -35,6 +38,28 @@ enum HermesRuntimeInspector {
             mcpServers: mcpServers,
             plugins: plugins
         )
+    }
+
+    /// Hermes stores the primary agent identity in SOUL.md beside config.yaml.
+    /// Keep this parser deliberately narrow: only a level-one Markdown heading
+    /// in the first part of the file becomes UI identity text.
+    static func parseAgentName(_ soul: String) -> String? {
+        for line in soul.split(whereSeparator: \.isNewline).prefix(32) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("# ") else { continue }
+            let name = String(trimmed.dropFirst(2))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, name.count <= 80 else { return nil }
+            return name
+        }
+        return nil
+    }
+
+    private static func agentName(configPath: String) -> String? {
+        let configURL = URL(fileURLWithPath: configPath)
+        let soulURL = configURL.deletingLastPathComponent().appendingPathComponent("SOUL.md")
+        guard let soul = try? String(contentsOf: soulURL, encoding: .utf8) else { return nil }
+        return parseAgentName(soul)
     }
 
     private static func output(arguments: [String]) -> String? {

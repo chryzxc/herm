@@ -281,15 +281,30 @@ final class WorkspaceStore: ObservableObject {
         return trimmed.isEmpty ? "Untitled task" : String(trimmed.prefix(100))
     }
 
+    // Saves snapshot state on the main actor and write on a serial background
+    // queue; a synchronous atomic write here put a disk hitch on every task
+    // action. The serial queue preserves mutation ordering so an older
+    // snapshot can never overwrite a newer one.
+    private nonisolated static let saveQueue = DispatchQueue(label: "com.hermes-agent-dock.workspace-store-save", qos: .utility)
+
     private func save() {
         let state = WorkspaceState(tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences)
+        Self.saveQueue.async { [fileURL] in
+            Self.write(state, to: fileURL)
+        }
+    }
+
+    private nonisolated static func write(_ state: WorkspaceState, to fileURL: URL) {
         guard let data = try? JSONEncoder.workspace.encode(state) else { return }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try data.write(to: fileURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
         } catch {
-            DebugLog.write("workspace: persistence failed: \(error.localizedDescription)")
+            let detail = error.localizedDescription
+            Task { @MainActor in
+                DebugLog.write("workspace: persistence failed: \(detail)")
+            }
         }
     }
 }

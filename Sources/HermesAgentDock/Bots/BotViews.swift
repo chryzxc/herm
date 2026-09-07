@@ -15,7 +15,6 @@ struct BotRosterPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().overlay(Color.dockBorderLight)
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -48,20 +47,19 @@ struct BotRosterPage: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            if model.isRefreshing {
-                ProgressView().controlSize(.small)
-            }
-            Text("BOTS")
-                .font(.system(size: 12, weight: .semibold))
-                .tracking(1.1)
-                .foregroundStyle(Color.dockAccent.opacity(0.8))
-            Spacer()
+        DockPageHeader(
+            icon: "bot",
+            title: "Bots",
+            subtitle: "Profiles and routines",
+            onRefresh: { Task { await model.refreshNow(force: true) } },
+            isRefreshing: model.isRefreshing
+        ) {
+            HStack(spacing: 10) {
             if !model.hiddenBots.isEmpty {
                 Button {
                     showsHiddenBots.toggle()
                 } label: {
-                    Image(systemName: showsHiddenBots ? "eye" : "eye.slash")
+                    LucideImage(systemName: showsHiddenBots ? "eye" : "eye.slash")
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.dockSecondaryText)
@@ -70,31 +68,21 @@ struct BotRosterPage: View {
             Button {
                 isShowingRoutineForm = true
             } label: {
-                Label("Routine", systemImage: "clock.arrow.circlepath")
+                LucideLabel("Routine", icon: "clock.arrow.circlepath")
             }
             .controlSize(.regular)
             .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
             .help("Attach a recurring routine to a Bot")
             Button {
-                Task { await model.refreshNow(force: true) }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Color.dockSecondaryText)
-            .help("Refresh Bots")
-            Button {
                 isShowingCreateSheet = true
             } label: {
-                Label("New Bot", systemImage: "plus")
+                LucideLabel("New Bot", icon: "plus")
             }
             .controlSize(.regular)
             .disabled(!model.canCreateBots)
             .help(model.canCreateBots ? "Create a Bot from a new Hermes profile" : "Bot creation requires a Hermes runtime with profile support")
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.dockSurface2)
     }
 
     @ViewBuilder
@@ -126,7 +114,7 @@ struct BotRosterPage: View {
     private var readyContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
+                LucideImage(systemName: "magnifyingglass")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
                 TextField("Search Bots", text: $model.searchText)
@@ -184,7 +172,7 @@ struct BotRosterPage: View {
                     .foregroundStyle(Color.dockAccent)
             }
             Spacer(minLength: 0)
-            Text("Select a Bot to open its chat")
+            Text("Click a Bot to edit its profile")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockMetadataText)
         }
@@ -197,7 +185,7 @@ struct BotRosterPage: View {
             bot: bot,
             avatarData: model.avatarImages[bot.id],
             isSelected: false,
-            onSelect: { onSelectBot(bot) },
+            onSelect: { editingBot = bot },
             onEdit: { editingBot = bot },
             onDuplicate: { duplicatingBot = bot },
             onToggleHidden: {
@@ -219,7 +207,7 @@ struct BotRosterPage: View {
                 Button {
                     isShowingRoutineForm = true
                 } label: {
-                    Image(systemName: "plus")
+                    LucideImage(systemName: "plus")
                 }
                 .buttonStyle(.borderless)
                 .controlSize(.small)
@@ -235,7 +223,7 @@ struct BotRosterPage: View {
             } else {
                 ForEach(model.routines) { routine in
                     HStack(spacing: 8) {
-                        Image(systemName: "clock.arrow.circlepath")
+                        LucideImage(systemName: "clock.arrow.circlepath")
                             .font(.system(size: 11))
                             .foregroundStyle(Color.dockAccent)
                         VStack(alignment: .leading, spacing: 2) {
@@ -249,7 +237,7 @@ struct BotRosterPage: View {
                         Button {
                             Task { await model.removeRoutine(routine) }
                         } label: {
-                            Image(systemName: "trash")
+                            LucideImage(systemName: "trash")
                                 .font(.system(size: 10))
                         }
                         .buttonStyle(.borderless)
@@ -288,7 +276,7 @@ struct BotRosterPage: View {
                 Button {
                     isShowingCreateSheet = true
                 } label: {
-                    Label("New Bot", systemImage: "plus")
+                    LucideLabel("New Bot", icon: "plus")
                 }
                 .controlSize(.regular)
                 .disabled(!model.canCreateBots)
@@ -301,7 +289,7 @@ struct BotRosterPage: View {
 
     private func unavailableContent(title: String, detail: String, showsRetry: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: "person.2.slash")
+            LucideLabel(title, icon: "person.2.slash")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
@@ -317,7 +305,7 @@ struct BotRosterPage: View {
                     Button {
                         Task { await model.refreshNow(force: true) }
                     } label: {
-                        Label("Retry", systemImage: "arrow.clockwise")
+                        LucideLabel("Retry", icon: "refresh-cw")
                     }
                     .controlSize(.regular)
                 }
@@ -325,7 +313,7 @@ struct BotRosterPage: View {
                     Button {
                         isShowingCreateSheet = true
                     } label: {
-                        Label("New Bot", systemImage: "plus")
+                        LucideLabel("New Bot", icon: "plus")
                     }
                     .controlSize(.regular)
                 }
@@ -416,7 +404,7 @@ struct BotCreationSheet: View {
             Button {
                 withAnimation { showsAdvanced.toggle() }
             } label: {
-                Label(showsAdvanced ? "Hide Advanced" : "Advanced", systemImage: showsAdvanced ? "chevron.up" : "chevron.down")
+                LucideLabel(showsAdvanced ? "Hide Advanced" : "Advanced", icon: showsAdvanced ? "chevron.up" : "chevron.down")
                     .font(.system(size: 11, weight: .semibold))
             }
             .controlSize(.small)

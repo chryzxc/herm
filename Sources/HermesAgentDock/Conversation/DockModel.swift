@@ -33,10 +33,13 @@ final class DockModel: ObservableObject {
     /// Hermes assigns this identifier to the blocking clarify request. A reply
     /// must echo it so the backend can release the exact waiting turn.
     @Published private(set) var clarificationRequestID: String?
+    /// A clarification request is an event with a stable Hermes ID. Gate a
+    /// replay at the event boundary so it cannot become a second transcript
+    /// bubble after the user has already answered it.
+    private var presentedClarificationRequestIDs = Set<String>()
     @Published private(set) var clarificationResponseError: String?
     @Published private(set) var isRespondingToClarification = false
     @Published private(set) var isRespondingToApproval = false
-    @Published var debugLines: [String] = []
     @Published var sessions: [HermesSession] = []
     @Published private(set) var sessionProjectionState: HermesProjectionState<[HermesSession]> = .empty
     @Published var isShowingSessions = false
@@ -80,11 +83,23 @@ final class DockModel: ObservableObject {
     @Published private(set) var requestedAttentionID: String?
     @Published private(set) var scrollToLatestMessageRequest = 0
 
+    var agentDisplayName: String {
+        if let name = runtimeConfiguration?.agentName,
+           !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return name
+        }
+        return "Hermes"
+    }
+
     private let gateway = HermesGateway()
     private let sessionRPCClient: HermesRPCClientProtocol
     private let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
     @Published private(set) var sessionID: String?
+    /// Profile identity for a profile-scoped Bot Chat. This is authoritative
+    /// session context, not an inference from the assistant's prose.
+    @Published private(set) var activeBotProfileID: String?
+    @Published private(set) var activeBotDisplayName: String?
     private var sessionStorageID: String?
     var kanbanSessionID: String? {
         Self.sessionAttributionID(runtimeID: sessionID, storageID: sessionStorageID)
@@ -211,10 +226,6 @@ final class DockModel: ObservableObject {
         self.interruptRPC = HermesControlRPC(client: rpcClient ?? gateway)
         self.sessionRPCClient = rpcClient ?? gateway
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
-        DebugLog.onLine = { [weak self] line in
-            guard let self else { return }
-            debugLines = Array((debugLines + [line]).suffix(80))
-        }
         DebugLog.write("model: initialized")
         gateway.onEvent = { [weak self] type, params in
             self?.receiveGatewayEvent(type, params: params)
@@ -244,10 +255,13 @@ final class DockModel: ObservableObject {
         let attachedImages = pendingImages
         guard (!prompt.isEmpty || !attachedImages.isEmpty),
               !isSending,
+              !isUpdatingSessionModel,
               !isRestoringSession,
               sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
 
         let text = (prompt.isEmpty && !attachedImages.isEmpty) ? "What do you see in these images?" : prompt
+        let sessionBeforeSend = sessionID
+        let sendGeneration = sessionResumeGeneration
         draft = ""
         messages.append(ChatMessage(role: .user, text: text, images: attachedImages.map(\.image)))
         status = .working
@@ -256,7 +270,9 @@ final class DockModel: ObservableObject {
 
         Task {
             do {
-                try await gateway.connect()
+                try await sessionRPCClient.connect()
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == sessionBeforeSend else { return }
                 if sessionID == nil {
                     _ = try await createAuthorizedSession(source: "hermes-agent-dock")
                 }
@@ -264,13 +280,15 @@ final class DockModel: ObservableObject {
                 // Keep this operation bound to the session selected above. A
                 // late resume must not redirect a prompt into another chat.
                 let promptSessionID = sessionID
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == promptSessionID else { return }
 
                 for attachedImage in attachedImages {
                     let accessing = attachedImage.fileURL.startAccessingSecurityScopedResource()
                     defer { if accessing { attachedImage.fileURL.stopAccessingSecurityScopedResource() } }
                     let imageData = try Data(contentsOf: attachedImage.fileURL)
                     let base64 = imageData.base64EncodedString()
-                    let attachResult = try await gateway.request(
+                    let attachResult = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.imageAttachBytes.rawValue,
                         params: [
                             "session_id": promptSessionID,
@@ -288,12 +306,20 @@ final class DockModel: ObservableObject {
                     cleanupImageAttachment(attachedImage)
                 }
 
-                _ = try await gateway.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": promptSessionID, "text": text])
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == promptSessionID else { return }
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": promptSessionID, "text": text])
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == promptSessionID else { return }
                 pendingImages.removeAll { attachedImage in
                     attachedImages.contains { $0.id == attachedImage.id }
                 }
                 DebugLog.write("model: prompt submitted")
             } catch {
+                // A request from a previous session must not publish its error
+                // into whichever conversation the user opened meanwhile.
+                guard self.sessionResumeGeneration == sendGeneration,
+                      sessionBeforeSend == nil || self.sessionID == sessionBeforeSend else { return }
                 DebugLog.write("model: send failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 cleanupImageAttachments(attachedImages)
                 pendingImages.removeAll { pendingImage in
@@ -589,11 +615,24 @@ final class DockModel: ObservableObject {
         interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
         sessionID = session.id
+        activeBotProfileID = profileID
+        activeBotDisplayName = profileID == nil ? nil : session.displayTitle
+        // The old transcript belongs exclusively to the session that was just
+        // left. Clear the visible projection before awaiting the new session's
+        // resume response; otherwise the old conversation is rendered under
+        // the new session ID during that request's loading window.
+        messages = []
+        streamingText.text = ""
         newSessionCreationAuthorized = false
         clarificationQuestion = nil
         clarificationChoices = []
         clarificationRequestID = nil
+        presentedClarificationRequestIDs = []
         clarificationResponseError = nil
+        approvalTitle = nil
+        approvalText = nil
+        isRespondingToApproval = false
+        isRespondingToClarification = false
         sessionModelOptionID = nil
         sessionModelValue = nil
         sessionReasoningVariant = nil
@@ -608,6 +647,7 @@ final class DockModel: ObservableObject {
         reasoningFlushTask = nil
         streamingReasoningBuffer = ""
         streamingMessageID = nil
+        streamingMessageSessionID = nil
         streamingMessageIsVisionNotice = false
         currentSessionTitle = session.displayTitle
         do {
@@ -616,7 +656,31 @@ final class DockModel: ObservableObject {
             if let profileID, !profileID.isEmpty { resumeParams["profile"] = profileID }
             let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
-            sessionID = (result["session_id"] as? String) ?? session.id
+            let reportedSessionID = (result["session_id"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedSessionID = (reportedSessionID?.isEmpty == false) ? reportedSessionID! : session.id
+            // The response must prove it belongs to the conversation the user
+            // opened. While another session is responding, the gateway can
+            // resolve `session.resume` to that active session; adopting its
+            // identity and transcript here would project one session's
+            // conversation into another, so fail closed instead.
+            guard Self.resumeResponseProvesSessionOwnership(
+                requestedSessionID: session.id,
+                resolvedSessionID: resolvedSessionID,
+                result: result
+            ) else {
+                guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
+                let safeMessage = "Hermes returned a different session than the one requested. Try opening it again."
+                sessionProjectionState = Self.failedOrStale(sessionProjectionState, safeMessage: safeMessage)
+                if reportFailure {
+                    status = .offline
+                    messages = [ChatMessage(role: .hermes, text: "I couldn't load that conversation: \(safeMessage)", modelName: currentModelName)]
+                    scrollToLatestMessageRequest &+= 1
+                }
+                DebugLog.write("model: session resume mismatch: requested \(session.id), resolved \(resolvedSessionID)")
+                return false
+            }
+            sessionID = resolvedSessionID
             sessionStorageID = Self.stableSessionID(from: result) ?? session.id
             persistActiveSessionID(sessionID)
             let model = (result["model"] as? String) ?? (result["model_name"] as? String)
@@ -626,7 +690,11 @@ final class DockModel: ObservableObject {
             }
             refreshSessionModelOptions()
             refreshSessionReasoningVariant()
-            messages = Self.parseMessages(result["messages"])
+            messages = Self.parseMessages(
+                result["messages"],
+                defaultBotProfileID: profileID,
+                defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
+            )
             scrollToLatestMessageRequest &+= 1
             cacheCurrentAgentState()
             refreshDelegationStatus()
@@ -654,6 +722,34 @@ final class DockModel: ObservableObject {
         Task { _ = await resumeSession(HermesSession(id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive, messageCount: 0, source: "hermes-bot"), reportFailure: true, profileID: chat.profileID) }
     }
 
+    /// Routes an explicit, unambiguous Bot mention to the selected profile's
+    /// canonical Bot Chat. The profile-scoped session is the Hermes-supported
+    /// path that gives a Bot an actual run, identity, and activity watermark.
+    /// Generic `delegate_task` workers are never relabelled as the Bot.
+    func sendDirectBotRequest(profileID: String, displayName: String, text: String) {
+        let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !request.isEmpty,
+              !isSending,
+              !isUpdatingSessionModel,
+              !isRestoringSession,
+              pendingImages.isEmpty else { return }
+
+        Task {
+            let target = HermesSession(
+                id: BotService.canonicalBotChatTitle,
+                title: displayName,
+                preview: "",
+                startedAt: nil,
+                messageCount: 0,
+                source: "hermes-bot"
+            )
+            guard await resumeSession(target, reportFailure: true, profileID: profileID) else { return }
+            guard activeBotProfileID == profileID else { return }
+            draft = request
+            send()
+        }
+    }
+
     private func resetComposerForSessionChange() {
         composer.reset()
         clearPendingImages()
@@ -672,13 +768,20 @@ final class DockModel: ObservableObject {
         restoreGeneration &+= 1
         interruptGeneration &+= 1
         sessionID = nil
+        activeBotProfileID = nil
+        activeBotDisplayName = nil
         sessionStorageID = nil
         newSessionCreationAuthorized = true
         newSessionProjectPath = projectPath
         clarificationQuestion = nil
         clarificationChoices = []
         clarificationRequestID = nil
+        presentedClarificationRequestIDs = []
         clarificationResponseError = nil
+        approvalTitle = nil
+        approvalText = nil
+        isRespondingToApproval = false
+        isRespondingToClarification = false
         defaults.removeObject(forKey: lastSessionIDKey)
         currentSessionTitle = nil
         currentModelName = nil
@@ -867,23 +970,39 @@ final class DockModel: ObservableObject {
         }
     }
 
-    /// The turn ended after Hermes accepted the guidance, so the queued steer
-    /// was consumed at a tool-result boundary.
+    /// Hermes has started the turn that consumes the guidance. The response
+    /// placeholder is created before the steer is appended, so move applied
+    /// steering rows ahead of that response to preserve causal order.
     private func markQueuedSteeringMessagesApplied() {
-        for index in messages.indices
-        where messages[index].isSteering && messages[index].steeringStatus == "QUEUED" {
+        guard let responseID = streamingMessageID,
+              messages.contains(where: { $0.id == responseID }) else { return }
+
+        let queuedIndices = messages.indices.filter {
+            messages[$0].isSteering && messages[$0].steeringStatus == "QUEUED"
+        }
+        guard !queuedIndices.isEmpty else { return }
+
+        let appliedSteers = queuedIndices.map { index in
             let queued = messages[index]
-            messages[index] = ChatMessage(
+            return ChatMessage(
                 id: queued.id,
                 role: queued.role,
                 text: queued.text,
                 images: queued.images,
                 timestamp: queued.timestamp,
                 modelName: queued.modelName,
+                responseDuration: queued.responseDuration,
                 isSteering: true,
-                steeringStatus: "APPLIED"
+                steeringStatus: "APPLIED",
+                isError: queued.isError,
+                botProfileID: queued.botProfileID,
+                botDisplayName: queued.botDisplayName
             )
         }
+        let queuedIDs = Set(appliedSteers.map(\.id))
+        messages.removeAll { queuedIDs.contains($0.id) }
+        guard let updatedResponseIndex = messages.firstIndex(where: { $0.id == responseID }) else { return }
+        messages.insert(contentsOf: appliedSteers, at: updatedResponseIndex)
     }
 
     /// Control-center actions share the user-facing Hermes gateway so they do
@@ -1037,11 +1156,19 @@ final class DockModel: ObservableObject {
     func respondToApproval(_ choice: String) {
         guard let sessionID else { return }
         guard !isRespondingToApproval else { return }
+        let responseGeneration = sessionResumeGeneration
         isRespondingToApproval = true
         Task {
-            defer { isRespondingToApproval = false }
+            defer {
+                if self.sessionResumeGeneration == responseGeneration,
+                   self.sessionID == sessionID {
+                    self.isRespondingToApproval = false
+                }
+            }
             do {
                 _ = try await gateway.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: ["session_id": sessionID, "choice": choice])
+                guard self.sessionResumeGeneration == responseGeneration,
+                      self.sessionID == sessionID else { return }
                 resolveApproval(for: sessionID)
             } catch {
                 DebugLog.write("model: approval response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
@@ -1052,6 +1179,8 @@ final class DockModel: ObservableObject {
     func respondToClarification(_ response: String) {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRespondingToClarification else { return }
+        guard let responseSessionID = sessionID, !responseSessionID.isEmpty else { return }
+        let responseGeneration = sessionResumeGeneration
         guard let requestID = clarificationRequestID, !requestID.isEmpty else {
             clarificationResponseError = "Hermes did not provide an ID for this question. Please ask it again."
             return
@@ -1066,16 +1195,25 @@ final class DockModel: ObservableObject {
         isSending = true
         conversationActivityPhase = .thinking
         Task {
-            defer { isRespondingToClarification = false }
+            defer {
+                if self.sessionResumeGeneration == responseGeneration,
+                   self.sessionID == responseSessionID {
+                    self.isRespondingToClarification = false
+                }
+            }
             do {
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
                     "request_id": requestID,
                     "answer": trimmed
                 ])
+                guard self.sessionResumeGeneration == responseGeneration,
+                      self.sessionID == responseSessionID else { return }
                 clarificationQuestion = nil
                 clarificationChoices = []
                 clarificationRequestID = nil
             } catch {
+                guard self.sessionResumeGeneration == responseGeneration,
+                      self.sessionID == responseSessionID else { return }
                 removePendingClarificationResumeMessage()
                 status = .needsClarification
                 isSending = false
@@ -1212,6 +1350,11 @@ final class DockModel: ObservableObject {
             } else {
                 beginStreamingMessage()
             }
+            // A queued steer belongs to the next turn, not the response that
+            // was already in flight when it was submitted. Once Hermes opens
+            // that next response, mark and place the steer immediately before
+            // its response row.
+            markQueuedSteeringMessagesApplied()
             conversationActivityPhase = .responding
             streamingMessageIsVisionNotice = false
             reasoningState = nil
@@ -1263,7 +1406,6 @@ final class DockModel: ObservableObject {
                 activeToolCalls[index].isComplete = true
                 activeToolCalls[index].completedAt = Date()
             }
-            markQueuedSteeringMessagesApplied()
             status = .idle
             conversationActivityPhase = .idle
             isSending = false
@@ -1313,6 +1455,13 @@ final class DockModel: ObservableObject {
                 in: params
             )
                 .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
+            if let requestID, !requestID.isEmpty,
+               !presentedClarificationRequestIDs.insert(requestID).inserted {
+                // The gateway may replay a request after an answer has been
+                // submitted. Its request ID already owns the transcript row.
+                break
+            }
             let messageText = choices.isEmpty
                 ? question
                 : "\(question)\n\nSuggested responses:\n" + choices.map { "- \($0)" }.joined(separator: "\n")
@@ -1321,7 +1470,7 @@ final class DockModel: ObservableObject {
             }
             clarificationQuestion = question
             clarificationChoices = choices
-            clarificationRequestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
+            clarificationRequestID = requestID
             clarificationResponseError = nil
             isSending = false
             status = .needsClarification
@@ -1593,10 +1742,7 @@ final class DockModel: ObservableObject {
     }
 
     private static func isHighFrequencyEvent(_ type: String) -> Bool {
-        switch type {
-        case "message.delta", "reasoning.delta", "thinking.delta", "voice.status": true
-        default: false
-        }
+        HermesHighFrequencyEvent.includes(type)
     }
 
     private func scheduleStreamingMessageFlush() {
@@ -1656,14 +1802,19 @@ final class DockModel: ObservableObject {
         applyVisionNoticeDetectionIfNeeded(to: streamingMessageBuffer)
         let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageBuffer
         let message = messages[index]
+        let attribution = Self.botAttribution(from: publishedText)
+        let botProfileID = attribution?.profileID ?? activeBotProfileID
+        let botDisplayName = attribution?.displayName ?? activeBotDisplayName
         messages[index] = ChatMessage(
             id: id,
             role: .hermes,
-            text: publishedText,
+            text: attribution?.body ?? publishedText,
             image: message.image,
             timestamp: message.timestamp,
             modelName: message.modelName,
-            responseDuration: Date().timeIntervalSince(message.timestamp)
+            responseDuration: Date().timeIntervalSince(message.timestamp),
+            botProfileID: botProfileID,
+            botDisplayName: botDisplayName
         )
         streamingText.text = ""
         streamingResponseStartedAt = nil
@@ -1727,6 +1878,26 @@ final class DockModel: ObservableObject {
             }
         }
         return nil
+    }
+
+    /// A resume response may legitimately carry a fresh runtime session id —
+    /// a forked resumed conversation or the lazily created canonical Bot Chat
+    /// resumed by title — but those responses alias the requested session
+    /// through a storage key. Any other id (for example the gateway resolving
+    /// resume to whichever session is currently responding) belongs to a
+    /// different conversation and must not be adopted.
+    static func resumeResponseProvesSessionOwnership(
+        requestedSessionID: String,
+        resolvedSessionID: String,
+        result: [String: Any]
+    ) -> Bool {
+        let requested = requestedSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if resolvedSessionID == requested { return true }
+        if let storageAlias = stableSessionID(from: result),
+           storageAlias.trimmingCharacters(in: .whitespacesAndNewlines) == requested {
+            return true
+        }
+        return false
     }
 
     static func sessionAttributionID(runtimeID: String?, storageID: String?) -> String? {
@@ -1807,6 +1978,7 @@ final class DockModel: ObservableObject {
 
     private func submitNativeVoiceTranscript(_ text: String) {
         guard let sessionID, !isSending else { return }
+        let requestGeneration = sessionResumeGeneration
         messages.append(ChatMessage(role: .user, text: text))
         status = .working
         isSending = true
@@ -1818,7 +1990,11 @@ final class DockModel: ObservableObject {
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
                     params: ["session_id": sessionID, "text": text]
                 )
+                guard self.sessionResumeGeneration == requestGeneration,
+                      self.sessionID == sessionID else { return }
             } catch {
+                guard self.sessionResumeGeneration == requestGeneration,
+                      self.sessionID == sessionID else { return }
                 messages.append(ChatMessage(role: .hermes, text: "I couldn’t submit the voice request: \(Self.safeUserDiagnostic(error.localizedDescription))", modelName: currentModelName))
                 status = .offline
                 isSending = false
@@ -2915,7 +3091,7 @@ final class DockModel: ObservableObject {
         return nil
     }
 
-    private static func parseMessages(_ value: Any?) -> [ChatMessage] {
+    private static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> [ChatMessage] {
         guard let rows = value as? [[String: Any]] else { return [] }
         return rows.compactMap { row in
             guard let role = row["role"] as? String else { return nil }
@@ -2929,8 +3105,39 @@ final class DockModel: ObservableObject {
             } else {
                 timestamp = Date()
             }
-            return ChatMessage(role: role == "user" ? .user : .hermes, text: text, timestamp: timestamp)
+            guard role == "user" || role == "assistant" || role == "hermes" else { return nil }
+            let attribution = role == "user" ? nil : botAttribution(from: text)
+            return ChatMessage(
+                role: role == "user" ? .user : .hermes,
+                text: attribution?.body ?? text,
+                timestamp: timestamp,
+                botProfileID: attribution?.profileID ?? defaultBotProfileID,
+                botDisplayName: attribution?.displayName ?? defaultBotDisplayName
+            )
         }
+    }
+
+    /// Hermes Bot Mode's documented delivery envelope is:
+    /// `Message from 🤖 <sender> (@<profile>): <body>`.
+    /// Parse only that exact shape; ordinary assistant prose is untouched.
+    static func botAttribution(from text: String) -> (displayName: String, profileID: String, body: String)? {
+        let prefix = "Message from 🤖 "
+        guard text.hasPrefix(prefix),
+              let handleStart = text.firstIndex(of: "("),
+              handleStart < text.index(before: text.endIndex) else { return nil }
+        let handleMarker = text.index(after: handleStart)
+        guard text[handleMarker...].hasPrefix("@"),
+              let handleEnd = text[handleStart...].firstIndex(of: ")"),
+              handleEnd < text.index(before: text.endIndex) else { return nil }
+        let colonIndex = text.index(after: handleEnd)
+        guard text[colonIndex...].hasPrefix(":"),
+              colonIndex < text.index(before: text.endIndex) else { return nil }
+        let nameStart = text.index(text.startIndex, offsetBy: prefix.count)
+        let displayName = String(text[nameStart..<handleStart]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let profileID = String(text[text.index(handleMarker, offsetBy: 1)..<handleEnd])
+        let body = String(text[text.index(after: colonIndex)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !displayName.isEmpty, !profileID.isEmpty, !body.isEmpty else { return nil }
+        return (displayName, profileID, body)
     }
 
     private static func messageText(_ value: Any?) -> String {

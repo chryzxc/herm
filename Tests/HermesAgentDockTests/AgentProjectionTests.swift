@@ -41,6 +41,17 @@ struct AgentProjectionTests {
         #expect(agents.allSatisfy { $0.startedAt == startedAt })
     }
 
+    @Test func genericDelegatesRemainExplicitlyUnprofiledInActivity() {
+        let agents = DockModel.projectedDelegationAgents(
+            toolCallID: "delegate-security",
+            args: ["goal": "Have a security reviewer audit authentication and authorization"],
+            startedAt: .distantPast
+        )
+
+        let row = AgentActivityPresentation.pipeline(activities: [], toolCalls: [], subagents: agents).first
+        #expect(row?.agent == "Unprofiled Delegate · Security Reviewer")
+    }
+
     @Test func inlineAgentMapPreservesTopDownDepthAndScrollableSpacing() {
         let agents = [
             HermesSubagent(id: "parent", childSessionID: "parent-session", goal: "Plan implementation", status: "running"),
@@ -565,7 +576,7 @@ struct AgentProjectionTests {
             subagents: [agent]
         ).first
 
-        #expect(row?.agent == "Frontend")
+        #expect(row?.agent == "Unprofiled Delegate · Frontend")
         #expect(row?.agentID == "agent-1")
         #expect(AgentActivityPresentation.pipeline(activities: [], toolCalls: [call], subagents: [agent]).filter { $0.agentID == agent.id }.count == 1)
         #expect(row?.parentAgentID == "parent-agent")

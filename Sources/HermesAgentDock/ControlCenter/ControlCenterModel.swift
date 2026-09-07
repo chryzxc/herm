@@ -44,6 +44,10 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var sessionContext: SessionContextSummary?
     @Published private(set) var providerQuota: ProviderQuotaSnapshot?
     @Published private(set) var providerQuotas: [ProviderQuotaSnapshot] = []
+    /// Safe per-provider diagnostics from the last quota refresh, keyed by
+    /// catalog provider id. Providers without an entry connected successfully;
+    /// missing providers render disabled with their diagnostic, never invented.
+    @Published private(set) var providerQuotaDiagnostics: [String: String] = [:]
     @Published private(set) var kanbanDiagnostics: [KanbanDiagnosticSummary] = []
     @Published private(set) var kanbanAttachments: [KanbanAttachmentSummary] = []
     @Published private(set) var promptBudget: PromptBudgetSummary?
@@ -635,7 +639,9 @@ final class ControlCenterModel: ObservableObject {
                     refreshReadOnlyHealth()
                 }
                 refreshSessionCockpit(for: dockModel.sessionID)
-                refreshProviderQuota()
+                // Provider quota is refreshed when the Quota tab is opened. Antigravity
+                // quota scans for a running language server, so it stays lazy instead
+                // of adding subprocess churn to every startup.
                 refreshPromptBudget()
                 refreshVerification()
                 recordProjectionSuccess("core")
@@ -657,17 +663,36 @@ final class ControlCenterModel: ObservableObject {
         }
         beginProjectionRefresh("provider.quota")
         Task { @MainActor in
-            async let codexResult = Self.readQuota(CodexQuotaService.read)
-            async let openCodeResult = Self.readQuota(OpenCodeQuotaService.read)
-            async let glmResult = Self.readQuota(GLMQuotaService.read)
-            async let claudeResult = Self.readQuota(ClaudeQuotaService.read)
-            let results = await [codexResult, openCodeResult, glmResult, claudeResult]
+            let readers: [(id: String, read: @Sendable () async throws -> [String: Any])] = [
+                ("codex", CodexQuotaService.read),
+                ("codex-hermes", CodexQuotaService.readHermes),
+                ("opencode", OpenCodeQuotaService.read),
+                ("glm", GLMQuotaService.read),
+                ("claude", ClaudeQuotaService.read),
+                ("antigravity", AntigravityQuotaService.read)
+            ]
+            let collected = await withTaskGroup(of: (String, QuotaReadResult).self) { group in
+                for reader in readers {
+                    group.addTask { await (reader.id, Self.readQuota(reader.read)) }
+                }
+                var results: [(String, QuotaReadResult)] = []
+                for await result in group { results.append(result) }
+                return results
+            }
             guard generation == providerQuotaGeneration,
                   self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
-            let snapshots = results.compactMap { result -> ProviderQuotaSnapshot? in
-                guard let raw = result.value else { return nil }
-                return Self.parseProviderQuota(raw)
+            let byID = Dictionary(collected, uniquingKeysWith: { first, _ in first })
+            var snapshots: [ProviderQuotaSnapshot] = []
+            var diagnostics: [String: String] = [:]
+            for reader in readers {
+                let result = byID[reader.id] ?? QuotaReadResult(value: nil, error: nil)
+                if let raw = result.value, let snapshot = Self.parseProviderQuota(raw) {
+                    snapshots.append(snapshot)
+                } else if let error = result.error {
+                    diagnostics[reader.id] = error
+                }
             }
+            providerQuotaDiagnostics = diagnostics
             if !snapshots.isEmpty {
                 providerQuotas = snapshots
                 providerQuota = snapshots.first(where: { $0.provider == "codex" })
@@ -675,9 +700,32 @@ final class ControlCenterModel: ObservableObject {
             } else {
                 providerQuota = nil
                 providerQuotas = []
-                let errors = results.compactMap(\.error)
+                let errors = readers.compactMap { byID[$0.id]?.error }
                 recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")
             }
+        }
+    }
+
+    /// Saves (or removes, when nil) a user-entered API key for an API-key
+    /// provider and immediately re-reads quota with it.
+    func saveProviderAPIKey(_ key: String?, for descriptor: QuotaProviderDescriptor) {
+        guard let storageKey = descriptor.storageKey else { return }
+        ProviderKeyStore().save(key, storageKey: storageKey)
+        refreshProviderQuota()
+    }
+
+    /// Launches the provider's desktop app so the user can sign in; quota is
+    /// re-read shortly afterwards, once the app's local service is up.
+    func openProviderApplication(named applicationName: String) {
+        Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-a", applicationName]
+            try? process.run()
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            self.refreshProviderQuota()
         }
     }
 
@@ -763,7 +811,7 @@ final class ControlCenterModel: ObservableObject {
                 guard generation == cronRunsGeneration, isCurrent() else { return }
                 cronHistoryAvailable = result.succeeded
                 guard cronHistoryAvailable else {
-                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes cron history is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
+                    let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes automation history is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("cron.history", error: message)
                     lastError = message
                     return
@@ -847,7 +895,7 @@ final class ControlCenterModel: ObservableObject {
 
     func createCron(name: String, schedule: String, prompt: String) async -> Bool {
         guard rpc != nil, capabilityAvailable("rpc-scheduling") else {
-            lastError = "Cron control is unavailable through this Hermes gateway."
+            lastError = "Automation control is unavailable through this Hermes gateway."
             return false
         }
         let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -877,7 +925,7 @@ final class ControlCenterModel: ObservableObject {
 
     func removeCron(_ job: CronSummary) {
         guard rpc != nil, capabilityAvailable("rpc-scheduling") else {
-            lastError = "Cron control is unavailable through this Hermes gateway."
+            lastError = "Automation control is unavailable through this Hermes gateway."
             return
         }
         let actionID = cronActionID("remove", job: job)
@@ -898,7 +946,7 @@ final class ControlCenterModel: ObservableObject {
         guard let sessionID = job.sessionID, let dockModel else { return }
         dockModel.resumeSession(HermesSession(
             id: sessionID,
-            title: "Cron · \(job.name)",
+            title: "Automation · \(job.name)",
             preview: "",
             startedAt: nil,
             messageCount: 0,
@@ -1120,7 +1168,14 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func refreshKanban(filter: KanbanListFilter? = nil) {
-        guard let cli, capabilityAvailable("kanban") else { return }
+        // A capability probe is advisory and can still be in flight when the
+        // Kanban tab first appears. The list request itself is authoritative;
+        // do not make the initial load (or an explicit retry) silently fail
+        // just because that separate probe has not completed yet.
+        guard let cli else {
+            recordProjectionUnavailable("kanban.board")
+            return
+        }
         guard beginAction(refreshKanbanActionID) else { return }
         beginProjectionRefresh("kanban.board")
         let requestedFilter = filter ?? kanbanFilter
@@ -1810,7 +1865,7 @@ final class ControlCenterModel: ObservableObject {
 
     func editCron(_ job: CronSummary, draft: CronEditDraft) {
         guard let cli, capabilityAvailable("cron.edit") else {
-            lastError = "Cron editing is unavailable through the installed Hermes CLI."
+            lastError = "Automation editing is unavailable through the installed Hermes CLI."
             return
         }
         let changes = draft.changes(comparedTo: job).filter { job.editableFields.contains($0.key) }
@@ -1823,7 +1878,7 @@ final class ControlCenterModel: ObservableObject {
             return
         }
         if let schedule = changes[.schedule], !CronSchedule.isValid(schedule) {
-            lastError = "Schedule must be a 5-field cron expression (minute hour day month weekday)."
+            lastError = "Schedule must use five fields: minute, hour, day, month, and weekday."
             return
         }
         let actionID = cronActionID("edit", job: job)
@@ -1969,6 +2024,7 @@ final class ControlCenterModel: ObservableObject {
     /// The event's session/source identifier is the identity; display text may
     /// be enriched by later partial events without creating another row.
     func ingestEvent(_ type: String, params: [String: Any]) {
+        guard !HermesHighFrequencyEvent.includes(type) else { return }
         let payload = params["payload"] as? [String: Any] ?? [:]
         let sessionID = (params["session_id"] as? String)
             ?? (payload["session_id"] as? String)

@@ -80,6 +80,13 @@ struct GitHubCodeHostTests {
         #expect(GitHubCodeHostService.requestTimeout == 15)
     }
 
+    @Test func githubHTTPStatusOnlyMarksConfirmedCredentialFailuresAsUnauthorized() {
+        #expect(GitHubCodeHostService.error(forHTTPStatus: 401) == .unauthorized)
+        #expect(GitHubCodeHostService.error(forHTTPStatus: 403) == .forbidden)
+        #expect(GitHubCodeHostService.error(forHTTPStatus: 404) == .repositoryNotFound)
+        #expect(GitHubCodeHostService.error(forHTTPStatus: 500) == nil)
+    }
+
     @Test func staleGitHubRefreshCannotCrossRepositoryOrGeneration() {
         let repository = GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
         let generation = UUID()

@@ -16,6 +16,14 @@ struct PlanArtifactServiceTests {
         #expect(service.list().allSatisfy { $0.state == .available })
     }
 
+    @Test func keepsReviewMetadataOutOfTheArtifactLibrary() throws {
+        let fixture = try Fixture()
+        try fixture.write("plan.md", contents: "# Plan\n")
+        try fixture.write("reviews/plan.md", contents: "# Plan review comments\n")
+
+        #expect(PlanArtifactService(projectRoot: fixture.root).list().map(\.relativePath) == ["plan.md"])
+    }
+
     @Test func missingPlansDirectoryIsAnEmptyProjection() throws {
         let fixture = try Fixture(createPlans: false)
         #expect(PlanArtifactService(projectRoot: fixture.root).list().isEmpty)

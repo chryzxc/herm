@@ -21,6 +21,7 @@ enum GLMQuotaService {
     }
 
     private static func loadAPIKey() -> String? {
+        if let stored = ProviderKeyStore().savedKey("glm") { return stored }
         let environment = ProcessInfo.processInfo.environment
         if let key = ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"].compactMap({ environment[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }).first(where: { !$0.isEmpty }) { return key }
         let home = FileManager.default.homeDirectoryForCurrentUser

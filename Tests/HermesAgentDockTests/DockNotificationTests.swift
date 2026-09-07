@@ -198,6 +198,22 @@ struct DockNotificationTests {
         #expect(model.messages.map(\.text) == ["Which task list?", "Work", "I'll check Work."])
     }
 
+    @Test func replayedClarificationRequestDoesNotAppendItsQuestionAgain() {
+        let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
+        let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
+        let event: [String: Any] = [
+            "session_id": "session-clarify",
+            "payload": ["request_id": "clarify-123", "question": "Which task list?"]
+        ]
+
+        model.receiveGatewayEvent("clarify.request", params: event)
+        model.respondToClarification("Work")
+        model.receiveGatewayEvent("clarification.request", params: event)
+
+        #expect(model.messages.map(\.text) == ["Which task list?", "Work", ""])
+        #expect(model.status == .working)
+    }
+
     @Test func interruptReleasesPendingClarificationForNormalPrompting() async {
         let model = DockModel(
             initialSessionID: "session-clarify",
@@ -316,14 +332,39 @@ struct DockNotificationTests {
             steeringStatus: "QUEUED"
         )
         model.messages.append(steerMessage)
+        model.receiveGatewayEvent("message.delta", params: [
+            "session_id": "session-steer",
+            "payload": ["delta": "The response influenced by the steer."]
+        ])
 
         model.receiveGatewayEvent("message.complete", params: [
             "session_id": "session-steer",
             "payload": [:]
         ])
 
+        #expect(model.messages.map(\.text) == ["The response influenced by the steer.", "Prefer the second option"])
         #expect(model.messages.last?.isSteering == true)
-        #expect(model.messages.last?.steeringStatus == "APPLIED")
+        #expect(model.messages.last?.steeringStatus == "QUEUED")
+
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "session-steer",
+            "payload": [:]
+        ])
+        model.receiveGatewayEvent("message.delta", params: [
+            "session_id": "session-steer",
+            "payload": ["delta": "The next response uses the steer."]
+        ])
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "session-steer",
+            "payload": [:]
+        ])
+
+        #expect(model.messages.map(\.text) == [
+            "The response influenced by the steer.",
+            "Prefer the second option",
+            "The next response uses the steer."
+        ])
+        #expect(model.messages[1].steeringStatus == "APPLIED")
     }
 
     @Test func unselectedSessionCannotProjectGatewayActivity() {
@@ -336,6 +377,22 @@ struct DockNotificationTests {
 
         #expect(model.approvalText == nil)
         #expect(model.recentEvents.isEmpty)
+    }
+
+    @Test func switchingSessionsClearsPendingApprovalFromPreviousSession() {
+        let model = DockModel(initialSessionID: "session-approval")
+        model.receiveGatewayEvent("approval.request", params: [
+            "session_id": "session-approval",
+            "payload": ["command": "git push"]
+        ])
+
+        #expect(model.approvalText == "git push")
+
+        model.newChat()
+
+        #expect(model.approvalTitle == nil)
+        #expect(model.approvalText == nil)
+        #expect(model.status == .idle)
     }
 
     @Test func completionNotificationsAreOptIn() {

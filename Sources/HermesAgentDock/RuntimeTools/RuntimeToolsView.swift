@@ -22,7 +22,7 @@ struct RuntimeToolsView: View {
             }
             ForEach(snapshot.backends) { backend in
                 HStack(spacing: 10) {
-                    Image(systemName: icon(for: backend.id))
+                    LucideImage(systemName: icon(for: backend.id))
                         .foregroundStyle(color(for: backend.state))
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 3) {
@@ -49,7 +49,7 @@ struct RuntimeToolsView: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.top, 4)
                 ForEach(snapshot.toolsets) { toolset in
-                    Label(toolset.id, systemImage: toolset.isEnabled ? "checkmark.circle" : "circle")
+                    LucideLabel(toolset.id, icon: toolset.isEnabled ? "checkmark.circle" : "circle")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(toolset.isEnabled ? Color.dockSuccess : Color.dockMetadataText)
                 }

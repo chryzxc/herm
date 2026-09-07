@@ -1038,12 +1038,10 @@ enum ControlTab: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Terminology for the fullscreen navigation rail. “Cron” is the
-    /// operator-facing name for Hermes automations and is more scannable in a
-    /// compact navigation list.
+    /// Terminology for the fullscreen navigation rail.
     var globalRailLabel: String {
         switch self {
-        case .automations: "Cron"
+        case .automations: "Automation"
         case .core: "Settings"
         default: rawValue
         }
@@ -1055,7 +1053,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .session: "bubble.left.and.bubble.right"
         case .inbox: "tray"
         case .activity: "waveform.path.ecg"
-        case .changes: "doc.text.magnifyingglass"
+        case .changes: "arrow.triangle.branch"
         case .verification: "checkmark.seal"
         case .automations: "clock.arrow.circlepath"
         case .projects: "folder.badge.gearshape"
@@ -1063,6 +1061,35 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .kanban: "rectangle.3.group"
         case .core: "gearshape"
         case .quota: "gauge.with.dots.needle.50percent"
+        }
+    }
+
+    var pageHeaderIcon: String { icon }
+
+    var pageHeaderTitle: String {
+        switch self {
+        case .session: "Conversations"
+        case .changes: "Source Control"
+        case .automations: "Automation"
+        case .core: "Settings"
+        default: rawValue
+        }
+    }
+
+    var pageHeaderSubtitle: String {
+        switch self {
+        case .today: "A clear view of active work and decisions"
+        case .session: "Sessions and active work"
+        case .inbox: "Approvals, clarifications, and follow-ups"
+        case .activity: "Background tasks and agent activity"
+        case .changes: "Review local changes safely"
+        case .verification: "Observed checks and delivery evidence"
+        case .automations: "Recurring work, visible at a glance"
+        case .projects: "Repositories and connected sessions"
+        case .search: "Search across connected Hermes sources"
+        case .kanban: "Move work through the board"
+        case .core: "Runtime health, permissions, and session tools"
+        case .quota: "Provider capacity and reset windows"
         }
     }
 }

@@ -35,7 +35,10 @@ struct PlanArtifactService {
         guard fileManager.fileExists(atPath: plansRoot.path) else { return [] }
         let urls = (fileManager.subpaths(atPath: plansRoot.path) ?? [])
             .map { plansRoot.appendingPathComponent($0) }
-            .filter { isMarkdown($0) && isContained($0) && isRegularOrSafeSymlink($0) }
+            // Review files are persistence metadata for annotations, not plan artifacts.
+            // Keeping them out of this projection prevents a comment from appearing as
+            // a selectable document in the library.
+            .filter { isMarkdown($0) && !isReviewArtifact($0) && isContained($0) && isRegularOrSafeSymlink($0) }
         return urls.compactMap { summary(for: $0) }.sorted {
             if $0.modifiedAt != $1.modifiedAt { return ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
             return $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending
@@ -183,6 +186,9 @@ struct PlanArtifactService {
     }
 
     private func isMarkdown(_ url: URL) -> Bool { ["md", "markdown"].contains(url.pathExtension.lowercased()) }
+    private func isReviewArtifact(_ url: URL) -> Bool {
+        relativePath(for: url).split(separator: "/").first == "reviews"
+    }
     private func relativePath(for url: URL) -> String { String(url.path.dropFirst(plansRoot.path.count + 1)) }
     private func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     private func title(for relativePath: String, contents: String?) -> String {

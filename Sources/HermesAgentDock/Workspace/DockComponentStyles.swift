@@ -244,6 +244,85 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
     }
 }
 
+/// The consistent title treatment for full workspace destinations. Keeping it
+/// shared prevents individual pages from inventing competing title bars.
+struct DockPageHeader<Trailing: View>: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let onRefresh: (() -> Void)?
+    let isRefreshing: Bool
+    @ViewBuilder let trailing: () -> Trailing
+
+    init(
+        icon: String,
+        title: String,
+        subtitle: String,
+        onRefresh: (() -> Void)? = nil,
+        isRefreshing: Bool = false,
+        @ViewBuilder trailing: @escaping () -> Trailing
+    ) {
+        self.icon = icon
+        self.title = title
+        self.subtitle = subtitle
+        self.onRefresh = onRefresh
+        self.isRefreshing = isRefreshing
+        self.trailing = trailing
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            LucideImage(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.dockOnAccentText)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.dockAccent.opacity(0.14))
+                )
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                Text(subtitle)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            if let onRefresh {
+                Button(action: onRefresh) {
+                    Group {
+                        if isRefreshing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            LucideImage(systemName: "refresh-cw")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                    }
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .disabled(isRefreshing)
+                .help("Refresh")
+            }
+            trailing()
+        }
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .padding(.bottom, 10)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+    }
+}
+
+extension DockPageHeader where Trailing == EmptyView {
+    init(icon: String, title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false) {
+        self.init(icon: icon, title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) { EmptyView() }
+    }
+}
+
 /// A compact in-place pending treatment for actions that call Hermes. The
 /// button retains its footprint so the surrounding control surface never jumps.
 struct DockActionLabel: View {

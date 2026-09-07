@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import HermesAgentDock
@@ -16,8 +17,26 @@ struct StreamingPerformanceTests {
         #expect(!model.isSending)
     }
 
-    @Test func streamedDeltasPublishExactTextOnlyAtCompletionBoundary() {
-        let sessionID = "stream-session"
+    @Test func streamedDeltasDoNotPublishDockModelChanges() {
+        let sessionID = "stream-silence"
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("stream-silence-(UUID().uuidString).json"),
+            initialSessionID: sessionID
+        )
+        var publishes = 0
+        let cancellable = model.objectWillChange.sink { _ in publishes += 1 }
+        model.receiveGatewayEvent("message.start", params: ["session_id": sessionID, "payload": ["model": "test"]])
+        let publishesAfterStart = publishes
+
+        for index in 0..<1_000 {
+            model.receiveGatewayEvent("message.delta", params: ["session_id": sessionID, "payload": ["delta": " \(index)"]])
+        }
+
+        #expect(publishes == publishesAfterStart)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    @Test func streamedDeltasPublishExactTextOnlyAtCompletionBoundary() {        let sessionID = "stream-session"
         let model = DockModel(
             sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("stream-(UUID().uuidString).json"),
             initialSessionID: sessionID

@@ -85,7 +85,7 @@ struct SessionKanbanActivityView: View {
                         }
                     } label: {
                         HStack {
-                            Image(systemName: showsCompleted ? "chevron.down" : "chevron.right")
+                            LucideImage(systemName: showsCompleted ? "chevron.down" : "chevron.right")
                             Text("\(snapshot.completedCount) COMPLETED")
                             Spacer()
                         }
@@ -103,7 +103,7 @@ struct SessionKanbanActivityView: View {
 
             if let error = refreshState?.error {
                 HStack(alignment: .top, spacing: 7) {
-                    Image(systemName: "exclamationmark.triangle")
+                    LucideImage(systemName: "exclamationmark.triangle")
                     Text(refreshState?.isStale == true ? "STALE · \(error)" : error)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -123,7 +123,7 @@ struct SessionKanbanActivityView: View {
                     HStack {
                         Text("OPEN FULL KANBAN BOARD")
                         Spacer()
-                        Image(systemName: "arrow.up.right")
+                        LucideImage(systemName: "arrow.up.right")
                     }
                 }
                 .buttonStyle(.borderless)
@@ -147,7 +147,7 @@ struct SessionKanbanActivityView: View {
             Button {
                 if let sessionID { control.refreshSessionKanban(for: sessionID) }
             } label: {
-                Image(systemName: "arrow.clockwise")
+                LucideImage(systemName: "refresh-cw")
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.dockAccent)
@@ -188,7 +188,7 @@ struct SessionKanbanActivityView: View {
                             .lineLimit(2)
                     }
                 }
-                Image(systemName: "chevron.right")
+                LucideImage(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
                     .padding(.top, 3)

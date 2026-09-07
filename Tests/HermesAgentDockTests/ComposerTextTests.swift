@@ -7,6 +7,10 @@ struct ComposerTextTests {
         #expect(MarkdownMessageView.orderedListMarkers(in: "1. First\n2. Second\n3. Third") == ["1.", "2.", "3."])
     }
 
+    @Test func markdownOrderedListsPreserveMarkersAcrossParagraphs() {
+        #expect(MarkdownMessageView.orderedListMarkers(in: "1. First\n\nContext paragraph.\n\n4. Fourth\n\n5. Fifth") == ["1.", "4.", "5."])
+    }
+
     private let history = ["first prompt", "second prompt", "third prompt"]
 
     @Test func upArrowEntersHistoryAtNewestPrompt() {

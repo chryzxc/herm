@@ -33,7 +33,7 @@ struct ResponseDurationLabel: View {
     }
 
     private func label(for seconds: TimeInterval) -> some View {
-        Label(ResponseDurationFormatting.string(seconds: seconds), systemImage: "stopwatch")
+        LucideLabel(ResponseDurationFormatting.string(seconds: seconds), icon: "stopwatch")
     }
 }
 

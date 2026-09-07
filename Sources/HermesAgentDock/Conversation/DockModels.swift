@@ -56,6 +56,20 @@ enum HermesVoiceState: Equatable {
         }
     }
 
+    func label(agentName: String) -> String {
+        let name = agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return label }
+        return switch self {
+        case .inactive: "VOICE OFF"
+        case .preparing: "CONNECTING " + name.uppercased() + " VOICE"
+        case .listening: name.uppercased() + " IS LISTENING"
+        case .interrupted: "HEARD YOU — TRANSCRIBING"
+        case .thinking: name.uppercased() + " IS THINKING"
+        case .speaking: name.uppercased() + " IS SPEAKING"
+        case .localFallback: "LOCAL VOICE FALLBACK"
+        }
+    }
+
     var fallbackDetail: String? {
         if case .localFallback(let detail) = self { return detail }
         return nil
@@ -373,8 +387,13 @@ struct ChatMessage: Identifiable, Equatable {
     let isSteering: Bool
     let steeringStatus: String?
     let isError: Bool
+    /// Hermes Bot Mode prefixes teammate deliveries with a documented sender
+    /// attribution. Keep it separate from ordinary assistant messages so the
+    /// UI never guesses a Bot from message prose.
+    let botProfileID: String?
+    let botDisplayName: String?
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil) {
         self.id = id
         self.role = role
         self.text = text
@@ -385,6 +404,8 @@ struct ChatMessage: Identifiable, Equatable {
         self.isSteering = isSteering
         self.steeringStatus = steeringStatus
         self.isError = isError
+        self.botProfileID = botProfileID
+        self.botDisplayName = botDisplayName
     }
 
     var image: NSImage? { images.first }

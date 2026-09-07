@@ -15,7 +15,7 @@ struct RecoveryCenterView: View {
 
             ForEach(snapshot.items) { item in
                 HStack(spacing: 10) {
-                    Image(systemName: icon(for: item.id))
+                    LucideImage(systemName: icon(for: item.id))
                         .foregroundStyle(color(for: item.state))
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 3) {

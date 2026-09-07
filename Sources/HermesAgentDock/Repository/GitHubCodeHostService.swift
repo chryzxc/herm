@@ -4,6 +4,8 @@ enum GitHubCodeHostError: Error, Equatable, Sendable {
     case invalidEndpoint
     case unavailable
     case unauthorized
+    case forbidden
+    case repositoryNotFound
     case malformedResponse
 }
 
@@ -13,6 +15,8 @@ extension GitHubCodeHostError: CustomStringConvertible {
         case .invalidEndpoint: "invalid GitHub endpoint"
         case .unavailable: "GitHub API unavailable or rate-limited"
         case .unauthorized: "authentication required (private repository or expired credentials)"
+        case .forbidden: "GitHub access was denied or rate-limited"
+        case .repositoryNotFound: "GitHub repository was not found or is not accessible"
         case .malformedResponse: "GitHub returned an unreadable response"
         }
     }
@@ -30,7 +34,9 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
 
     init(session: URLSession = .init(configuration: .ephemeral)) { self.session = session }
 
-    private static func localGitHubToken() -> String? {
+    /// Shared by the read-only pull-request center. Tokens are never stored
+    /// by Dock; this only consults the launch environment or `gh` keychain.
+    static func localGitHubToken() -> String? {
         let environment = ProcessInfo.processInfo.environment
         if let token = [environment["GH_TOKEN"], environment["GITHUB_TOKEN"]]
             .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
@@ -147,10 +153,22 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw GitHubCodeHostError.unavailable }
-        // GitHub intentionally returns 404 for private repositories when the
-        // caller is unauthenticated, so treat it like an auth failure too.
-        if http.statusCode == 401 || http.statusCode == 403 || http.statusCode == 404 { throw GitHubCodeHostError.unauthorized }
+        if let error = Self.error(forHTTPStatus: http.statusCode) { throw error }
         guard (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }
         return try JSONSerialization.jsonObject(with: data)
+    }
+
+    /// Only an HTTP 401 is proof that the credential itself needs attention.
+    /// GitHub uses 403 and 404 for several authenticated states, including
+    /// missing repository permissions and a private repository that is hidden
+    /// from the current account. Treating those as a sign-out prompt caused
+    /// the Dock to ask signed-in people to reset their GitHub session.
+    static func error(forHTTPStatus statusCode: Int) -> GitHubCodeHostError? {
+        switch statusCode {
+        case 401: .unauthorized
+        case 403: .forbidden
+        case 404: .repositoryNotFound
+        default: nil
+        }
     }
 }

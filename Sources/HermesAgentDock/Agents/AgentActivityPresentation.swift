@@ -144,7 +144,7 @@ enum AgentActivityPresentation {
                 timestamp: activity.timestamp,
                 status: status,
                 task: activityTitle(for: activity),
-                agent: activity.agentID.flatMap { agentByID[$0].map { $0.name ?? $0.role ?? "Agent" } } ?? "Hermes",
+                agent: activity.agentID.flatMap { agentByID[$0].map { agentLabel(name: $0.name, role: $0.role) } } ?? "Hermes",
                 agentID: activity.agentID,
                 parentAgentID: activity.parentAgentID,
                 childSessionID: activity.childSessionID,
@@ -163,7 +163,7 @@ enum AgentActivityPresentation {
                 timestamp: call.completedAt ?? call.startedAt,
                 status: call.isComplete ? "Complete" : "Running",
                 task: toolActivityTitle(name: call.name, context: call.context),
-                agent: call.agentID.flatMap { agentByID[$0].map { $0.name ?? $0.role ?? "Agent" } } ?? "Orchestrator",
+                agent: call.agentID.flatMap { agentByID[$0].map { agentLabel(name: $0.name, role: $0.role) } } ?? "Orchestrator",
                 agentID: call.agentID,
                 parentAgentID: call.parentAgentID,
                 childSessionID: call.childSessionID,
@@ -204,7 +204,7 @@ enum AgentActivityPresentation {
                 timestamp: agent.startedAt ?? .distantPast,
                 status: agent.status,
                 task: agent.goal,
-                agent: agent.name ?? agent.role ?? "Agent",
+                agent: agentLabel(name: agent.name, role: agent.role),
                 agentID: agent.id,
                 parentAgentID: agent.parentID,
                 childSessionID: agent.childSessionID,
@@ -219,6 +219,23 @@ enum AgentActivityPresentation {
             )
         }
         .sorted { $0.timestamp > $1.timestamp }
+    }
+
+    /// Role inference is helpful for generic delegates, but it is not a Bot
+    /// identity. Make that boundary visible rather than turning a skill-like
+    /// label such as "Security" into an apparently named agent.
+    private static func agentLabel(name: String?, role: String?) -> String {
+        let cleanName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanRole = role?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasMeaningfulName = cleanName.map { !$0.isEmpty && $0.caseInsensitiveCompare("agent") != .orderedSame } ?? false
+        if hasMeaningfulName,
+           cleanName?.caseInsensitiveCompare(cleanRole ?? "") != .orderedSame {
+            return cleanName!
+        }
+        if let cleanRole, !cleanRole.isEmpty {
+            return "Unprofiled Delegate · \(cleanRole)"
+        }
+        return "Unprofiled Delegate"
     }
 
     /// Converts a raw agent event into the same operator-friendly activity

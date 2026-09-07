@@ -77,4 +77,21 @@ struct ProviderQuotaTests {
         #expect(snapshot?.windows.map(\.id) == ["five_hour", "seven_day", "seven_day_opus"])
         #expect(snapshot?.windows.first?.remainingPercent == 75)
     }
+
+    @MainActor
+    @Test func normalizesAntigravitySharedQuotaPools() {
+        let raw: [String: Any] = [
+            "response": ["groups": [["buckets": [
+                ["bucketId": "gemini-5h", "remainingFraction": 0.82, "resetTime": "2026-08-22T12:00:00Z"],
+                ["bucketId": "gemini-weekly", "remainingFraction": 0.61],
+                ["bucketId": "3p-5h", "remainingFraction": 0.44],
+                ["bucketId": "3p-weekly", "remainingFraction": 0.33],
+                ["bucketId": "future-pool", "remainingFraction": 0.99]
+            ]]]]
+        ]
+        let snapshot = ControlCenterModel.parseProviderQuota(AntigravityQuotaService.normalize(raw, now: Date(timeIntervalSince1970: 1_700_000_000)))
+        #expect(snapshot?.provider == "antigravity")
+        #expect(snapshot?.windows.map(\.id) == ["gemini-5h", "gemini-weekly", "3p-5h", "3p-weekly"])
+        #expect(snapshot?.windows.first?.remainingPercent == 82)
+    }
 }

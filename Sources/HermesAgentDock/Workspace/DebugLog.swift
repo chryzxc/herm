@@ -11,7 +11,6 @@ enum HermesAppRuntime {
 
 @MainActor
 enum DebugLog {
-    static var onLine: ((String) -> Void)?
     private static let writer = DebugLogWriter()
     private static let fileURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/HermesAgentDock.log")
@@ -22,20 +21,18 @@ enum DebugLog {
 
     static func write(_ message: String) {
         let line = "[\(timestampFormatter.string(from: Date()))] event=\(persistentEventName(for: message))\n"
-        print(line, terminator: "")
-        onLine?(line.trimmingCharacters(in: .newlines))
         writer.append(line, to: fileURL)
     }
 
     /// Temporary state-transition diagnostics. The full message is available
-    /// only to the in-memory debug panel; durable output is metadata-only.
+    /// only to the console output; durable output is metadata-only.
     static func writeDiagnostic(_ message: String) {
         let timestamp = timestampFormatter.string(from: Date())
-        let inMemoryLine = "[\(timestamp)] diagnostic=\(message)"
-        print(inMemoryLine)
-        onLine?(inMemoryLine)
-        let persistentLine = "[\(timestamp)] event=diagnostic\n"
-        writer.append(persistentLine, to: fileURL)
+        writer.append(
+            "[\(timestamp)] event=diagnostic\n",
+            to: fileURL,
+            consoleLine: "[\(timestamp)] diagnostic=\(message)\n"
+        )
     }
 
     /// Persistent diagnostics deliberately retain only a bounded event category.
@@ -61,35 +58,64 @@ enum DebugLog {
     }
 }
 
-private final class DebugLogWriter {
+/// Appends durable log lines on a background queue. Console output happens on
+/// that queue too: print() performs synchronous stdio I/O and would otherwise
+/// block the main actor for every gateway event while responses stream.
+/// Mutable state is confined to the serial `queue`.
+private final class DebugLogWriter: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.hermes-agent-dock.log-writer", qos: .utility)
     private let maximumFileSize: UInt64 = 1_048_576
+    private let sizeCheckInterval = 256
+    private var openFileURL: URL?
+    private var handle: FileHandle?
+    private var appendsSinceSizeCheck = 0
 
-    func append(_ line: String, to fileURL: URL) {
-        queue.async { [maximumFileSize] in
-            Self.append(line, to: fileURL, maximumFileSize: maximumFileSize)
+    func append(_ line: String, to fileURL: URL, consoleLine: String? = nil) {
+        queue.async { self.appendOnQueue(line, to: fileURL, consoleLine: consoleLine) }
+    }
+
+    private func appendOnQueue(_ line: String, to fileURL: URL, consoleLine: String?) {
+        do {
+            try openHandleIfNeeded(for: fileURL)
+            guard let handle else { return }
+            print(consoleLine ?? line, terminator: "")
+            try handle.write(contentsOf: Data(line.utf8))
+            appendsSinceSizeCheck += 1
+            if appendsSinceSizeCheck >= sizeCheckInterval {
+                appendsSinceSizeCheck = 0
+                try rotateIfNeeded(fileURL: fileURL)
+            }
+        } catch {
+            closeHandle()
+            print("[HermesAgentDock] Could not write log file: \(error.localizedDescription)")
         }
     }
 
-    private static func append(_ line: String, to fileURL: URL, maximumFileSize: UInt64) {
-        do {
-            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-               let size = attributes[.size] as? NSNumber,
-               size.uint64Value >= maximumFileSize {
-                try Data().write(to: fileURL, options: .atomic)
-            }
-            if FileManager.default.fileExists(atPath: fileURL.path) {
-                let handle = try FileHandle(forWritingTo: fileURL)
-                try handle.seekToEnd()
-                try handle.write(contentsOf: Data(line.utf8))
-                try handle.close()
-            } else {
-                try Data(line.utf8).write(to: fileURL)
-            }
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
-        } catch {
-            print("[HermesAgentDock] Could not write log file: \(error.localizedDescription)")
+    private func openHandleIfNeeded(for fileURL: URL) throws {
+        guard handle == nil || openFileURL != fileURL else { return }
+        closeHandle()
+        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            try Data().write(to: fileURL)
         }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        let newHandle = try FileHandle(forWritingTo: fileURL)
+        try newHandle.seekToEnd()
+        handle = newHandle
+        openFileURL = fileURL
+    }
+
+    private func rotateIfNeeded(fileURL: URL) throws {
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        guard let size = attributes[.size] as? NSNumber, size.uint64Value >= maximumFileSize else { return }
+        closeHandle()
+        try Data().write(to: fileURL, options: .atomic)
+        try openHandleIfNeeded(for: fileURL)
+    }
+
+    private func closeHandle() {
+        try? handle?.close()
+        handle = nil
+        openFileURL = nil
     }
 }

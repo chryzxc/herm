@@ -373,6 +373,18 @@ struct BotServiceTests {
         #expect(BotRosterPresentation.emptyStateTitle(isSearching: true) == "No matching Bots")
         #expect(BotRosterPresentation.emptyStateTitle(isSearching: false) == "No Bots yet")
     }
+
+    @Test func botRosterPrimaryActionIsEditProfile() {
+        #expect(BotRosterPresentation.primaryActionLabel == "Edit Profile")
+    }
+
+    @Test func knownBotsHaveDistinctRoleAvatarSymbols() {
+        #expect(BotAvatarPresentation.symbol(for: "nexus") == "compass.drawing")
+        #expect(BotAvatarPresentation.symbol(for: "cypher") == "shield.fill")
+        #expect(BotAvatarPresentation.symbol(for: "atlas") == "globe")
+        #expect(BotAvatarPresentation.symbol(for: "scout") == "binoculars.fill")
+        #expect(BotAvatarPresentation.symbol(for: "unknown") == "person.crop.circle")
+    }
 }
 
 @MainActor

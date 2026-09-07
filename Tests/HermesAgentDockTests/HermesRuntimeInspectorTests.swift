@@ -46,6 +46,16 @@ struct HermesRuntimeInspectorTests {
         #expect(HermesRuntimeInspector.stripANSI("plain output") == "plain output")
     }
 
+    @Test func readsAgentNameFromSoulHeading() {
+        let soul = "# Nexus\n\nYou are the primary coordinator."
+
+        #expect(HermesRuntimeInspector.parseAgentName(soul) == "Nexus")
+    }
+
+    @Test func ignoresSoulWithoutPrimaryIdentityHeading() {
+        #expect(HermesRuntimeInspector.parseAgentName("You are an assistant.\n## Details") == nil)
+    }
+
     @Test func providerSelectionUpdatesOnlyGlobalDefault() {
         let option = HermesModelOption(provider: "opencode-zen", model: "gpt-5.6")
 

@@ -33,6 +33,12 @@ final class SpeechInput: ObservableObject {
     func startListening() {
         guard !isRecording, !isStarting else { return }
         startGeneration &+= 1
+        // `stop()` cancels callbacks from its recognition turn. Clear that
+        // marker before waiting on asynchronous permission callbacks for this
+        // new turn, or every listen after the first completed turn exits at
+        // the cancellation guard below. The generation still rejects stale
+        // callbacks from the old turn.
+        isStopping = false
         isUnavailable = false
         errorMessage = nil
         requestPermissionsAndStart(generation: startGeneration)

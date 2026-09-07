@@ -259,7 +259,7 @@ struct AgentBoardView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(color(for: subagent.status))
                 .frame(minWidth: 62, alignment: .trailing)
-            Image(systemName: isSelected ? "chevron.up" : "chevron.down")
+            LucideImage(systemName: isSelected ? "chevron.up" : "chevron.down")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.dockMetadataText)
         }
@@ -295,7 +295,7 @@ struct AgentBoardView: View {
             Spacer()
 
             Button(action: onClose) {
-                Image(systemName: "chevron.left")
+                LucideImage(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 36, height: 36)
@@ -335,7 +335,7 @@ struct AgentBoardView: View {
 
     private func emptyState(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Image(systemName: "person.2.slash")
+            LucideImage(systemName: "person.2.slash")
                 .font(.system(size: 13))
                 .foregroundStyle(Color.dockMetadataText)
             Text(title)
@@ -423,7 +423,7 @@ struct AgentBoardView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
-                                Image(systemName: expandedActivityID == activity.id ? "chevron.up" : "chevron.down")
+                                LucideImage(systemName: expandedActivityID == activity.id ? "chevron.up" : "chevron.down")
                                     .font(.system(size: 9, weight: .semibold))
                                     .foregroundStyle(Color.dockMetadataText)
                             }
@@ -477,7 +477,7 @@ struct AgentBoardView: View {
                                 .frame(width: timeColumnWidth, alignment: .trailing)
                             pipelineDuration(item)
                                 .frame(width: durationColumnWidth, alignment: .trailing)
-                            Image(systemName: expandedPipelineItemID == item.id ? "chevron.up" : "chevron.down")
+                            LucideImage(systemName: expandedPipelineItemID == item.id ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(Color.dockMetadataText)
                         }

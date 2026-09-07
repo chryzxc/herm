@@ -59,7 +59,7 @@ subtle and reserved for the app background, voice orb, or focused state.
   a grid of unrelated cards.
 - Glass surfaces use 0.5pt borders and modest opacity. Do not add thick colored
   borders or a left-accent stripe to ordinary cards.
-- Inputs and compact controls use an 8pt corner radius. Larger panes use 14pt.
+- Inputs and compact controls use an 8pt corner radius and the shared `.dockGlass` text-field style. Native `.roundedBorder` fields are not permitted because their appearance can introduce a warm/brown fill inconsistent with the Dock palette. Use `Color.dockControlSurface` for custom controls and keep all surfaces in the cool navy glass hierarchy.
 - The menubar popover and embedded views share the same surface hierarchy; an
   embedded view must not introduce a second black window inside its parent.
 
@@ -70,6 +70,8 @@ subtle and reserved for the app background, voice orb, or focused state.
   labels, logs, and concise operational metadata.
 - Standard body and metadata text: 12pt or larger.
 - Section labels: uppercase, semibold monospaced, with restrained tracking.
+- Page headers use 16pt semibold. Compact empty states use a 12pt semibold
+  title and 12pt detail text; they are not secondary page headers.
 - Use sentence case for action labels; use uppercase only for compact status or
   section labels.
 - Truncate only the compact summary. Expanded details must wrap or remain
@@ -104,6 +106,16 @@ Within a control tab, use this hierarchy:
 
 The most urgent or active information belongs near the top. Secondary
 diagnostics, history, and setup guidance follow it.
+
+### Layout stability
+
+- Do not insert or remove transient loading, retry, or projection-status rows
+  above a page header or primary content. When that row disappears, the entire
+  page jumps and disrupts the user's visual position.
+- Put short transient status into a footprint that already exists: a page-header
+  subtitle, a fixed status slot, or an in-place control spinner. Longer errors
+  belong inside the affected section with stable placement; they must not
+  reflow unrelated content.
 
 ## Component rules
 

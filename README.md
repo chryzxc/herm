@@ -16,14 +16,44 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   While Hermes is responding, the same composer automatically submits typed
   guidance as in-turn steering. Tool calls stay
   out of the conversation transcript. Streaming deltas are coalesced before
-  publication to keep long responses responsive, and session restoration shows
+  publication, WebSocket frames are decoded off the main thread, and parsed
+  message Markdown is cached per message, so long sessions, streaming
+  responses, and lazy row builds while scrolling stay responsive. The
+  transcript scroll view is rebuilt per session and starts bottom-anchored, so
+  opening or switching a conversation lands on the latest message without a
+  past-the-end blank viewport; programmatic scrolls target a non-lazy bottom
+  sentinel, a stale past-the-end offset is detected and re-clamped automatically,
+  and a viewport parked at the bottom stays pinned to the streaming response.
+  Session
+  restoration shows
   an explicit loading state that prevents prompts from being sent while a
   conversation is being rehydrated.
 - **Explicit session lifecycle.** Restoring or selecting an existing session
   never creates a replacement session implicitly. A backend session is created
   only after the user chooses New Chat, and the new-chat transition is guarded
   while creation is in progress so prompts, voice, and control actions cannot
-  race session setup.
+  race session setup. Session data stays isolated to its session: streamed
+  events are accepted only when they prove ownership of the open session, and
+  a resume response whose session identity resolves elsewhere (for example to
+  the session that is currently responding) fails closed instead of projecting
+  another conversation under the session the user opened. A resumed
+  conversation may still receive a fresh runtime session id when the response
+  aliases the requested session, and the lazily created canonical Bot Chat may
+  resolve by title.
+- **Session workspace surfaces.** The session header switches the conversation
+  column between Chat, Talk, Explorer, Source Control, and Pull Requests.
+  Explorer browses the session repository's file tree in the center pane and
+  opens the selected file in the inspector as the blame-aware editor (with the
+  existing explicit save action). Source Control lists the repository's
+  staged, unstaged, and untracked files in the center pane and previews the
+  selected file's bounded diff in the inspector. Pull Requests lists open pull
+  requests scoped to the session's repository only — no account-wide GitHub
+  search — and reuses the pull-request detail pane (Summary and Code tabs,
+  comments, status changes) in the inspector, including its Open chat action.
+  All three projections resolve the repository from the active session's
+  project membership, clear their selection when that repository changes, and
+  fail closed with explicit empty states when the session has no bound
+  repository or GitHub remote.
 - **Interactive clarification requests.** When Hermes pauses for clarification,
   the conversation shows the question as an action-needed state, presents any
   suggested choices, and lets the user edit and submit a response through
@@ -57,6 +87,43 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   Hermes; unchanged or unavailable fields are never sent. History remains a
   live CLI projection rather than a second local execution database, and report
   files are not read from Hermes' private filesystem.
+- **Bots.** The left navigation rail carries a Bots destination beside
+  Conversations, matching Hermes' documented Bot Mode placement; selecting
+  it opens a full Bots page in the workspace pane. Each Bot is a Hermes
+  profile read through the verified `profiles.list` contract: roster title
+  (from profile ui_meta), model, latest-message preview, timestamp, hidden
+  state, and avatar. Avatars render from the profile's stored asset via
+  `profiles.get_asset` with a deterministic name-derived fallback face, and
+  can be uploaded, AI-generated through `image.generate`, or cleared. An
+  Active-now strip shows Bots with fresh worker or chat activity (~90s),
+  matching the documented presence behaviour. Selecting a Bot opens its
+  canonical Bot Chat through profile-scoped `session.resume`; when Hermes
+  has not reported a canonical session yet, the Dock resumes by the
+  canonical `Bot Chat` title and Hermes lazily creates the chat on that
+  profile. The page offers the documented New Agent quick path — Name,
+  Title, Description — plus the Advanced disclosure (clone from an existing
+  profile, create empty without bundled skills) through `profiles.create`;
+  the roster title persists as profile ui_meta via `profiles.configure`.
+  Edit Profile reopens the live surface: avatar, title, description, model
+  pin through the `model.options` catalogue with Hermes' guarded-model
+  confirmation handshake, the full SOUL.md, and per-skill, per-toolset, and
+  per-MCP-server enablement. Duplicate clones a Bot through
+  `profiles.create clone_from`. Hide/Unhide Bot is display-only roster
+  state stored in profile ui_meta. Routines are namespaced
+  `[bot:<name>]` Hermes cron jobs managed through `cron.manage` (list, add,
+  remove). Hermes remains the authority for every outcome, and the roster
+  is refreshed from Hermes rather than optimistically patched. Opening the
+  page verifies the profiles contract directly — mirroring Hermes' own Bot
+  Mode feature detection — so a slow or starved capability batch cannot
+  leave Bots falsely unavailable, and runtimes without the `profiles.*`
+  RPCs are reported as unsupported. The Dock stores only stable display
+  fields — unknown roster keys Hermes adds are ignored, and credentials,
+  memory, profile paths, and tool payloads never enter Dock state (the
+  editor's explicit SOUL.md write is the single sanctioned instruction
+  path). Profile deletion (no gateway RPC yet), group chats, cross-machine
+  connections, bot-to-bot @mention composer autocomplete, and
+  pixel-pet/blob-face avatars remain planned until their Hermes contracts
+  are exposed and verified.
 - **Hermes Projects.** Projects reads the authoritative `projects.tree`
   projection from Hermes, showing active project context, repository counts,
   and grouped session previews without maintaining a second project database.
@@ -204,6 +271,19 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   working. Steering queues guidance for Hermes's next tool-result boundary
   without restarting the turn; rejected text remains in the field instead of
   being silently discarded.
+- **Provider quota.** The Global Quota tab lists every supported subscription
+  provider — Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity —
+  always. Connected providers show their remaining-allowance windows;
+  providers without a working login render disabled with a safe diagnostic
+  and a Connect action instead of disappearing. Connecting is provider
+  specific: Codex and Claude run their CLI's own login command (browser
+  sign-in; the Dock never stores those credentials), OpenCode Go and GLM
+  accept a pasted API key stored in the Dock's owner-only provider config
+  (no Keychain is used), and Antigravity opens the app to sign in. Antigravity
+  quota itself is read credential-free from the local language server of a
+  running Antigravity app or `agy` CLI — no Keychain credential, no OAuth
+  refresh, no remote Google endpoint — so it is explicitly unavailable while
+  Antigravity is not running.
 - **Adaptive composer.** The chat composer grows with longer prompts up to six
   lines, then scrolls within the field so the send controls remain visible.
 - **Context guardrails and handoffs.** Hermes-reported context use is labelled
@@ -316,7 +396,9 @@ microphone → Hermes VAD/transcription → Hermes text request → streaming TT
 If Hermes reports unavailable voice dependencies, the Dock presents a visible
 `LOCAL VOICE FALLBACK` state and uses the earlier continuous turn-based flow:
 Apple speech recognition → end-of-turn silence → Hermes text request → macOS
-speech synthesis → listening resumes.
+speech synthesis → listening resumes. Each resumed turn clears the completed
+turn's cancellation state, and a transient local capture failure can be retried
+by starting Talk again.
 
 The selected Hermes model still affects response latency and quality, but it
 does not by itself make a provider-native audio session. Tool use, model

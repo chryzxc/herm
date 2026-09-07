@@ -1,7 +1,17 @@
+import Foundation
 import Testing
 @testable import HermesAgentDock
 
 struct LocalTerminalSessionTests {
+    @Test func terminalSurfaceDoesNotExposeFreeFormCommandDispatch() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/HermesAgentDock/SessionWorkspace/SessionWorkspaceTools.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        #expect(!source.contains("terminal.submit("))
+        #expect(!source.contains("commandInput"))
+    }
+
     @MainActor @Test func missingProjectDirectoryFailsClosed() {
         let terminal = LocalTerminalSession()
         terminal.start(directory: "/tmp/hermes-terminal-directory-does-not-exist")

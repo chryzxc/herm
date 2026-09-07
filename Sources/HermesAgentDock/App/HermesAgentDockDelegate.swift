@@ -130,12 +130,18 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         static let height: CGFloat = 720
         static let screenInset: CGFloat = 12
         static let menuGap: CGFloat = 8
+        /// The shortcut begins as a compact capsule, then opens horizontally
+        /// from the left edge before settling into the normal Dock workspace.
+        static let shortcutIslandWidth: CGFloat = 56
+        static let shortcutIslandHeight: CGFloat = 56
+        static let shortcutAnimationDuration: TimeInterval = 0.42
     }
 
     private let model: DockModel
     private let statusItem: NSStatusItem
     private let unreadBadge = UnreadBadgeView(frame: .zero)
     private let panel: DockPanel
+    private let panelPresentation = DockPanelPresentation()
     private var cancellables = Set<AnyCancellable>()
     private var outsideClickMonitors: [Any] = []
     private var desiredWidth = Metrics.workspaceWidth
@@ -195,7 +201,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.onCancel = { [weak self] in self?.hide() }
         let hostingView = NSHostingView(
-            rootView: DockPopover(model: model, onWorkspaceWidthChange: { [weak self] width in
+            rootView: DockPopover(model: model, panelPresentation: panelPresentation, onWorkspaceWidthChange: { [weak self] width in
                 self?.resizePanel(to: width) ?? width
             }, onClose: { [weak self] in
                 self?.hide()
@@ -204,9 +210,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             })
         )
         hostingView.wantsLayer = true
-        hostingView.layer?.cornerRadius = 22
-        hostingView.layer?.cornerCurve = .continuous
-        hostingView.layer?.masksToBounds = true
+        // DockPopover owns the contour so a shortcut can attach cleanly to the
+        // screen edge while ordinary presentations remain fully rounded.
+        hostingView.layer?.masksToBounds = false
         panel.contentView = hostingView
     }
 
@@ -216,6 +222,13 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] hasUnreadResponse in
                 self?.updateStatusIcon(hasUnreadResponse: hasUnreadResponse)
+            }
+            .store(in: &cancellables)
+
+        model.$runtimeConfiguration
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateStatusItemIdentity()
             }
             .store(in: &cancellables)
     }
@@ -258,10 +271,16 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func updateStatusIcon(hasUnreadResponse: Bool) {
         statusItem.button?.image = robotStatusImage()
-        statusItem.button?.image?.accessibilityDescription = hasUnreadResponse ? "Hermes AI agent, unread update" : "Hermes AI agent"
-        statusItem.button?.toolTip = hasUnreadResponse ? "Hermes AI agent — unread update" : "Hermes AI agent"
+        updateStatusItemIdentity(hasUnreadResponse: hasUnreadResponse)
         unreadBadge.isHidden = !hasUnreadResponse
         DebugLog.write("status item: unread badge \(hasUnreadResponse ? "shown" : "hidden")")
+    }
+
+    private func updateStatusItemIdentity(hasUnreadResponse: Bool? = nil) {
+        let name = model.agentDisplayName
+        let unread = hasUnreadResponse ?? model.hasUnreadResponse
+        statusItem.button?.image?.accessibilityDescription = unread ? "\(name) AI agent, unread update" : "\(name) AI agent"
+        statusItem.button?.toolTip = unread ? "\(name) AI agent — unread update" : "\(name) AI agent"
     }
 
     private func robotStatusImage() -> NSImage {
@@ -309,7 +328,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         if panel.isVisible {
             hide()
         } else {
-            show()
+            show(fromShortcut: true)
             model.requestComposerFocus()
         }
     }
@@ -318,10 +337,13 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         if !panel.isVisible { show() }
     }
 
-    private func show() {
+    private func show(fromShortcut: Bool = false) {
+        panelPresentation.isEdgeAttached = fromShortcut && !isFullscreen
         if isFullscreen {
             guard let screen = NSScreen.main else { return }
             panel.setFrame(screen.visibleFrame, display: true)
+        } else if fromShortcut {
+            showWithShortcutIslandAnimation()
         } else {
             resizePanel(to: desiredWidth, animated: false)
         }
@@ -338,12 +360,43 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// A double-Command invocation should have an immediate visual origin even
+    /// when the menu-bar item is far away. Start with a small top-left capsule
+    /// and let it grow across the workspace rather than dropping down from the
+    /// status item. The final geometry is still the same usable Dock panel.
+    private func showWithShortcutIslandAnimation() {
+        guard let screen = shortcutScreen else {
+            resizePanel(to: desiredWidth, animated: false)
+            return
+        }
+
+        let target = shortcutPanelFrame(in: screen)
+        let origin = NSRect(
+            x: target.minX,
+            y: target.maxY - Metrics.shortcutIslandHeight,
+            width: Metrics.shortcutIslandWidth,
+            height: Metrics.shortcutIslandHeight
+        )
+
+        panel.setFrame(origin, display: true)
+        panel.alphaValue = 0.96
+        panel.orderFrontRegardless()
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Metrics.shortcutAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
+            panel.animator().setFrame(target, display: true)
+            panel.animator().alphaValue = 1
+        }
+    }
+
     private func hide() {
         guard panel.isVisible else { return }
         if isFullscreen {
             exitFullscreen()
         }
         panel.orderOut(nil)
+        panelPresentation.isEdgeAttached = false
         model.markPopoverHidden()
     }
 
@@ -414,9 +467,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panel.isMovableByWindowBackground = false
 
         if let hostingView = panel.contentView {
-            hostingView.layer?.masksToBounds = true
-            hostingView.layer?.cornerRadius = 22
-            hostingView.layer?.cornerCurve = .continuous
+            hostingView.layer?.masksToBounds = false
             hostingView.autoresizingMask = []
         }
 
@@ -456,6 +507,27 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             panel.setFrame(frame, display: true)
         }
         return fittedWidth
+    }
+
+    /// The display hosting the status item is the display the Dock belongs to;
+    /// do not use `NSScreen.main` because the active app may be elsewhere.
+    private var shortcutScreen: NSScreen? {
+        guard let button = statusItem.button else { return NSScreen.main }
+        let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil))
+        return buttonRect.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } }
+            ?? button.window?.screen
+            ?? NSScreen.main
+    }
+
+    private func shortcutPanelFrame(in screen: NSScreen) -> NSRect {
+        let visibleFrame = screen.visibleFrame
+        let width = min(desiredWidth, visibleFrame.width)
+        return NSRect(
+            x: visibleFrame.minX,
+            y: max(visibleFrame.minY, visibleFrame.maxY - Metrics.height),
+            width: width,
+            height: Metrics.height
+        )
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

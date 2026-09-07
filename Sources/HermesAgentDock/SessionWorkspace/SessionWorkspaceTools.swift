@@ -5,6 +5,8 @@ import SwiftUI
 struct SessionFilesView: View {
     let projectPath: String?
     let onRefresh: () async -> Void
+    var scope: SessionRepositoryScope? = nil
+    var onOpenFile: ((SessionRepositoryScope, RepositoryFileDocument) -> Void)? = nil
     @State private var entries: [ProjectFileEntry] = []
     @State private var expandedDirectories = Set<String>()
     @State private var document: RepositoryFileDocument?
@@ -13,10 +15,11 @@ struct SessionFilesView: View {
     @State private var error: String?
     @State private var filterText = ""
     @State private var selectedPath: String?
+    @State private var openRequestID = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let document, let projectPath {
+            if let document, let projectPath, onOpenFile == nil {
                 RepositoryCodeWorkspaceView(
                     repositoryPath: projectPath,
                     document: document,
@@ -31,7 +34,7 @@ struct SessionFilesView: View {
             } else if projectPath != nil {
                 explorer
             } else {
-                empty("folder.badge.questionmark", "No project selected", "Choose a project before browsing its local files.")
+                SessionProjectRequiredState()
             }
         }
         .task(id: projectPath) {
@@ -45,6 +48,13 @@ struct SessionFilesView: View {
             // not look empty while its files are hidden behind collapsed rows.
             expandedDirectories = Set(loadedEntries.filter(\.isDirectory).map(\.path))
             isLoading = false
+        }
+        .onChange(of: scope?.identity ?? projectPath ?? "") { _, _ in
+            openRequestID = UUID()
+            isOpeningFile = false
+            document = nil
+            selectedPath = nil
+            error = nil
         }
         // Keep the files surface anchored to the inspector's top edge. Without
         // an explicit alignment, the empty state is centered inside the
@@ -144,7 +154,7 @@ struct SessionFilesView: View {
     private func explorerRow(icon: String, title: String, path: String?, depth: Int, isDirectory: Bool, isExpanded: Bool, color: Color) -> some View {
         HStack(spacing: 8) {
             if isDirectory {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                LucideImage(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 12)
@@ -152,7 +162,7 @@ struct SessionFilesView: View {
                 Color.clear.frame(width: 12)
             }
 
-            Image(systemName: icon)
+            LucideImage(systemName: icon)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(color)
                 .frame(width: 20)
@@ -216,17 +226,25 @@ struct SessionFilesView: View {
 
     private func open(_ entry: ProjectFileEntry) {
         guard let projectPath else { return }
+        let requestID = UUID()
+        openRequestID = requestID
+        let requestedScope = scope
         Task {
             isOpeningFile = true
             selectedPath = entry.path
             error = nil
             let loaded = await RepositoryService.loadDocument(path: projectPath, filePath: entry.path)
+            guard openRequestID == requestID else { return }
             isOpeningFile = false
             guard let loaded else {
                 error = "This file cannot be opened inline. Only regular UTF-8 files up to 256 KB are supported."
                 return
             }
-            document = loaded
+            if let onOpenFile, let requestedScope {
+                onOpenFile(requestedScope, loaded)
+            } else {
+                document = loaded
+            }
         }
     }
 
@@ -249,7 +267,7 @@ struct SessionFilesView: View {
 
     private func empty(_ icon: String, _ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: icon).font(.system(size: 12, weight: .semibold))
+            LucideLabel(title, icon: icon).font(.system(size: 12, weight: .semibold))
             Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
         }
         .foregroundStyle(Color.dockPrimaryText)
@@ -257,6 +275,7 @@ struct SessionFilesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .dockGlassPane()
     }
+
 }
 
 /// Real interactive terminal view following DESIGN.md glass pane & typography specifications.
@@ -328,8 +347,7 @@ struct SessionTerminalView: View {
     private var statusColor: Color {
         switch terminal.state {
         case .ready, .running: Color.dockSuccess
-        case .interrupting: Color.dockWarning
-        case .starting: Color.dockWarning
+        case .interrupting, .starting: Color.dockWarning
         case .exited, .closed, .idle: Color.dockSecondaryText
         case .failed: Color.dockDestructive
         }
@@ -344,14 +362,14 @@ struct SessionTerminalView: View {
         case .exited: "EXITED"
         case .closed: "CLOSED"
         case .idle: "IDLE"
-        case .failed(let err): "FAILED (\(err))"
+        case .failed(let error): "FAILED (\(error))"
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             terminalTabBar
-            terminalControls
+            if !recipes.isEmpty { terminalControls }
             if let run = terminal.lastVerificationRun {
                 verificationRunBanner(run)
             }
@@ -360,7 +378,11 @@ struct SessionTerminalView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         if terminal.output.isEmpty {
-                            terminalPrompt
+                            if recipes.isEmpty {
+                                terminalUnavailable
+                            } else {
+                                terminalPrompt
+                            }
                         } else {
                             Text(terminal.output)
                                 .font(.system(size: 14, design: .monospaced))
@@ -383,16 +405,13 @@ struct SessionTerminalView: View {
                 .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalOutput)
                 .onChange(of: terminal.output) { _, _ in
                     guard followsOutput else { return }
-                    // An animated scrollTo toward an offset computed while PTY
-                    // output keeps growing overshoots the content end; keep the
-                    // follow jump non-animated so it clamps to the real tail.
                     proxy.scrollTo("terminal-output", anchor: .bottom)
                 }
             }
         }
         .background(Color.dockCanvas)
         .task(id: projectPath) {
-            guard let projectPath else { terminal.close(); return }
+            guard let projectPath, !recipes.isEmpty else { terminal.close(); return }
             terminal.start(directory: projectPath)
         }
         .onDisappear { terminalTabs.closeAll() }
@@ -411,15 +430,17 @@ struct SessionTerminalView: View {
             Spacer(minLength: 0)
 
             Button {
-                terminalTabs.add(directory: projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path)
+                guard let projectPath, !recipes.isEmpty else { return }
+                terminalTabs.add(directory: projectPath)
             } label: {
-                Image(systemName: "plus")
+                LucideImage(systemName: "plus")
                     .font(.system(size: 16, weight: .light))
             .foregroundStyle(Color.dockSecondaryText)
             .frame(width: 28, height: 28)
             }
             .buttonStyle(.borderless)
             .help("New terminal session")
+            .disabled(projectPath == nil || recipes.isEmpty)
         }
         .padding(.horizontal, 0)
         .padding(.top, 8)
@@ -429,7 +450,7 @@ struct SessionTerminalView: View {
 
     private func terminalTab(_ session: LocalTerminalSession) -> some View {
         HStack(spacing: 7) {
-            Image(systemName: "terminal")
+            LucideImage(systemName: "terminal")
                 .font(.system(size: 10, weight: .semibold))
             Text("\(NSUserName())@\(Host.current().localizedName ?? "hermes")")
                 .font(.system(size: 10, design: .monospaced))
@@ -438,7 +459,7 @@ struct SessionTerminalView: View {
                 terminalTabs.selectedID = session.id
                 terminalTabs.closeSelected()
             } label: {
-                Image(systemName: "xmark")
+                LucideImage(systemName: "xmark")
                     .font(.system(size: 9, weight: .semibold))
             }
             .buttonStyle(.borderless)
@@ -459,11 +480,27 @@ struct SessionTerminalView: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text("➜")
                 .foregroundStyle(Color.dockSuccess)
-            Text(terminal.workingDirectory ?? "/")
+            Text(terminal.workingDirectory ?? "No repository")
                 .foregroundStyle(Color.dockAccent)
         }
         .font(.system(size: 12, weight: .medium, design: .monospaced))
-        .accessibilityLabel("Terminal prompt")
+        .accessibilityLabel("Terminal working directory")
+    }
+
+    private var terminalUnavailable: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Verification unavailable")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            Text(projectPath == nil
+                 ? "Select a repository-backed session to use the terminal."
+                 : "Hermes has not provided an allow-listed verification recipe for this repository.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockMetadataText)
+        }
+        .padding(12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Verification unavailable")
     }
 
     private var terminalControls: some View {
@@ -502,8 +539,7 @@ struct SessionTerminalView: View {
             }
 
             Button { terminal.clear() } label: {
-                Image(systemName: "trash")
-                    .frame(width: 26, height: 26)
+                LucideImage(systemName: "trash").frame(width: 26, height: 26)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.dockSecondaryText)
@@ -513,14 +549,13 @@ struct SessionTerminalView: View {
             .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalClearOutput)
 
             Button { terminal.interrupt() } label: {
-                Image(systemName: "stop.fill")
-                    .frame(width: 26, height: 26)
+                LucideImage(systemName: "stop.fill").frame(width: 26, height: 26)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(canInterrupt ? Color.dockWarning : Color.dockMetadataText)
             .disabled(!canInterrupt)
-            .help("Interrupt running command")
-            .accessibilityLabel("Interrupt running command")
+            .help("Interrupt running verification")
+            .accessibilityLabel("Interrupt running verification")
 
             Toggle("Follow", isOn: $followsOutput)
                 .toggleStyle(.switch)

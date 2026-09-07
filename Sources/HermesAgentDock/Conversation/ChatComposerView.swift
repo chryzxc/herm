@@ -10,6 +10,7 @@ struct ChatComposerView: View {
     @ObservedObject var model: DockModel
     @ObservedObject var composer: ComposerText
     @ObservedObject var speechInput: SpeechInput
+    @ObservedObject var botMode: BotModeModel
     var onStop: () -> Void
     var isFullscreen = false
 
@@ -17,6 +18,7 @@ struct ChatComposerView: View {
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
     @State private var showingImagePicker = false
+    @State private var showingBotMentionPicker = false
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
@@ -90,25 +92,38 @@ struct ChatComposerView: View {
         // Leave room for TextEditor's native top and bottom insets.
         let minimumComposerHeight = isFullscreen ? 64 : max(ComposerLayout.minHeight, 52)
         let effectiveComposerHeight = max(minimumComposerHeight, draftIsEmpty ? ComposerLayout.minHeight : composerHeight)
-        // TextEditor adds a small native leading inset on macOS. Keep that
-        // correction in one place so the editor, placeholder, and measurement
-        // text all share the same content origin.
-        let textInset: CGFloat = 5
+        // One visual gutter shared by the native editor and placeholder. Do
+        // not counteract TextEditor's internal padding with nested offsets:
+        // those offsets made the caret look detached from the input edge.
+        let textContentInset: CGFloat = 16
+        let textTopPadding: CGFloat = 8
 
         return VStack(spacing: 8) {
-            // Main multi-line text input area at top of card container.
-            // TextEditor on macOS has a built-in ~5px leading inset; we apply a
-            // negative horizontal padding of -5 so the cursor lands exactly where
-            // the placeholder text starts, then re-apply an equal positive padding
-            // on the surrounding ZStack to restore the visual offset.
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $composer.text)
-                    .font(.system(size: 14))
-                    .focused($isComposerFocused)
-                    .onChange(of: isComposerFocused) { _, focused in
-                        model.isComposerEditing = focused
+            if showingBotMentionPicker {
+                BotMentionPicker(
+                    bots: mentionCandidates,
+                    isLoading: botMode.isRefreshing || botMode.inventory.availability == .unavailable,
+                    onSelect: { profileID in
+                        composer.text = ComposerMentionPresentation.replacingActiveToken(in: composer.text, with: profileID)
+                        showingBotMentionPicker = false
+                        isComposerFocused = true
                     }
-                    .onChange(of: composer.text) { _, _ in
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            // Main multi-line text input area at top of card container.
+            ZStack(alignment: .topLeading) {
+                ComposerInputEditor(
+                    text: $composer.text,
+                    isFocused: isComposerFocused,
+                    onSubmit: submitComposerInput,
+                    onFocusChanged: { focused in
+                        isComposerFocused = focused
+                        model.isComposerEditing = focused
+                    },
+                    onTextChanged: { text in
+                        updateMentionPicker(for: text)
                         // A large paste can change NSTextView's content size
                         // without updating its internal scroll origin. Defer
                         // until AppKit lays out the new text, then keep the
@@ -116,82 +131,36 @@ struct ChatComposerView: View {
                         DispatchQueue.main.async {
                             keepEditorCaretVisible()
                         }
+                    },
+                    onContentHeightChanged: { contentHeight in
+                        composerHeight = ComposerLayout.height(for: contentHeight)
                     }
-                    .onKeyPress(phases: .down) { press in
-                        let hasModifier = !press.modifiers.intersection([.shift, .command, .option, .control]).isEmpty
-                        if !hasModifier {
-                            switch press.key {
-                            case .upArrow where model.navigateComposerHistory(direction: -1): return .handled
-                            case .downArrow where model.navigateComposerHistory(direction: 1): return .handled
-                            case .return:
-                                model.submitComposerInput()
-                                return .handled
-                            default: break
-                            }
-                        }
-                        return .ignored
-                    }
-                    .scrollContentBackground(.hidden)
-                    .scrollIndicators(.automatic)
-                    // Negate the TextEditor's internal 5pt inset so text starts
-                    // at the same x position as the placeholder overlay.
-                    .padding(.horizontal, -textInset)
-                    .padding(.vertical, 0)
-                    // NSTextView can draw outside its SwiftUI proposal when
-                    // its content grows. Keep the native editor inside the
-                    // composer; it will scroll internally once this height is
-                    // reached instead of covering the toolbar below.
-                    .frame(height: effectiveComposerHeight)
+                )
+                    // The native scroll view remains bounded while its document
+                    // grows, so wheel and trackpad scrolling stay inside the
+                    // editor after the composer reaches its maximum height.
+                    .frame(height: max(1, effectiveComposerHeight - textTopPadding))
                     .frame(maxWidth: .infinity)
-                    .clipped()
-                    .foregroundStyle(Color.dockPrimaryText)
                     .disabled(model.isRestoringSession)
 
-                // Placeholder text displayed when input draft is empty.
-                // Padding must match the TextEditor's effective content origin.
+                // Placeholder text shares the editor's single visual gutter.
                 if composer.text.isEmpty {
                     Text(placeholderText)
                         .font(.system(size: 14))
                         .foregroundStyle(Color.dockSecondaryText)
-                        // TextEditor already supplies the leading content inset
-                        // used by the caret. Do not add another inset here.
-                        // TextEditor is already shifted by `-textInset` above,
-                        // so the placeholder must not add another horizontal
-                        // inset. Its native macOS top inset is approximately
-                        // 5pt, which keeps the baseline aligned with the caret.
-                        .padding(.leading, 0)
-                        .padding(.top, textInset)
-                        // macOS TextEditor places its insertion caret above the
-                        // SwiftUI text overlay; lift the placeholder to share
-                        // the caret's vertical text origin.
+                        .padding(.leading, textContentInset)
                         .allowsHitTesting(false)
                 }
-
-                // Invisible measurement overlay — same font/padding as real text —
-                // so the ZStack grows to the correct height for dynamic sizing.
-                    Text(composer.text.isEmpty ? "" : composer.text)
-                        .font(.system(size: 14))
-                        .padding(.horizontal, textInset)
-                        .padding(.vertical, 7)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .opacity(0)
-                    .background {
-                        GeometryReader { proxy in
-                            Color.clear.preference(key: ComposerContentHeightKey.self, value: proxy.size.height)
-                        }
-                    }
             }
-            // Add back the horizontal inset we removed from TextEditor so the
-            // whole block still respects the composer's visual gutter.
-            .padding(.horizontal, textInset)
+            // Move the native editor and the placeholder together; applying
+            // padding to only the placeholder would reintroduce caret drift.
+            .padding(.top, textTopPadding)
             .frame(height: effectiveComposerHeight)
             .frame(maxWidth: .infinity)
             // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
             // proposal while its intrinsic text height changes. Mask the
             // complete input surface as a final paint boundary.
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .padding(.horizontal, 10)
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .fill(Color.dockCanvas.opacity(0.72))
@@ -200,10 +169,6 @@ struct ChatComposerView: View {
                             .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
                     }
             )
-            .onPreferenceChange(ComposerContentHeightKey.self) { contentHeight in
-                // Cap composer height between 40px and 140px
-                composerHeight = ComposerLayout.height(for: contentHeight)
-            }
 
             // Image Attachment Previews (if any images are pending)
             if !model.pendingImages.isEmpty {
@@ -217,7 +182,7 @@ struct ChatComposerView: View {
                                     .frame(width: 40, height: 40)
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 Button(action: { model.removePendingImage(image) }) {
-                                    Image(systemName: "xmark")
+                                    LucideImage(systemName: "xmark")
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockSecondaryText)
                                 }
@@ -238,7 +203,7 @@ struct ChatComposerView: View {
                 HStack(alignment: .center, spacing: 6) {
                     // Attachment Paperclip Button
                     Button(action: { showingImagePicker = true }) {
-                        Image(systemName: "paperclip")
+                        LucideImage(systemName: "paperclip")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(Color.dockSecondaryText)
                             .frame(width: 24, height: 24)
@@ -263,7 +228,7 @@ struct ChatComposerView: View {
                                     HStack {
                                         Text(option.displayName)
                                         if option.id == selectedModelOptionID {
-                                            Image(systemName: "checkmark")
+                                            LucideImage(systemName: "checkmark")
                                         }
                                     }
                                 }
@@ -301,14 +266,14 @@ struct ChatComposerView: View {
                                 HStack {
                                     Text(variant.displayName)
                                     if variant == selectedReasoningVariant {
-                                        Image(systemName: "checkmark")
+                                        LucideImage(systemName: "checkmark")
                                     }
                                 }
                             }
                         }
                     } label: {
                         HStack(spacing: 5) {
-                            Image(systemName: "brain")
+                            LucideImage(systemName: "brain")
                                 .font(.system(size: 12, weight: .medium))
                             Text(sessionReasoningDisplayName)
                                 .font(.system(size: 12, weight: .regular))
@@ -329,7 +294,7 @@ struct ChatComposerView: View {
 
                     if showsInterruptControl {
                         Button(action: { onStop() }) {
-                            Image(systemName: "stop.fill")
+                            LucideImage(systemName: "stop.fill")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(Color.dockDestructive)
                                 .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
@@ -350,7 +315,7 @@ struct ChatComposerView: View {
                         } else if showStop {
                             onStop()
                         } else {
-                            model.submitComposerInput()
+                            submitComposerInput()
                         }
                     }) {
                         ZStack {
@@ -360,15 +325,15 @@ struct ChatComposerView: View {
                                 .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
 
                             if speechInput.isRecording {
-                                Image(systemName: "stop.fill")
+                                LucideImage(systemName: "stop.fill")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(Color.dockPrimaryText)
                             } else if showStop {
-                                Image(systemName: "stop.fill")
+                                LucideImage(systemName: "stop.fill")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(Color.dockDestructive)
                             } else {
-                                Image(systemName: "arrow.up")
+                                LucideImage(systemName: "arrow.up")
                                     .font(.system(size: 12, weight: .semibold))
                                     // Use soft dockPrimaryText instead of stark white to prevent eye strain
                                     .foregroundStyle(canSubmit && !model.isSteering ? Color.dockPrimaryText : Color.dockSecondaryText.opacity(0.5))
@@ -376,7 +341,11 @@ struct ChatComposerView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .disabled(model.isRestoringSession || (!speechInput.isRecording && !showStop && (!canSubmit || (isSteeringTurn ? model.isSteering : model.isSending))))
+                    .disabled(
+                        model.isRestoringSession ||
+                        model.isUpdatingSessionModel ||
+                        (!speechInput.isRecording && !showStop && (!canSubmit || (isSteeringTurn ? model.isSteering : model.isSending)))
+                    )
                     .keyboardShortcut(.return, modifiers: [.command])
                     .help(
                         speechInput.isRecording
@@ -446,6 +415,45 @@ struct ChatComposerView: View {
         }
     }
 
+    private var mentionCandidates: [BotSummary] {
+        let query = ComposerMentionPresentation.activeToken(in: composer.text)?
+            .dropFirst().lowercased() ?? ""
+        return botMode.visibleBots.filter { bot in
+            query.isEmpty
+                || bot.id.localizedCaseInsensitiveContains(query)
+                || bot.name.localizedCaseInsensitiveContains(query)
+                || (bot.title?.localizedCaseInsensitiveContains(query) == true)
+        }
+    }
+
+    private func submitComposerInput() {
+        // A single explicit roster mention is a request to that Bot, not a hint
+        // for the current ordinary-chat agent to create an unprofiled delegate.
+        // Attachments and in-flight turns retain their existing, conservative
+        // submission paths until Hermes exposes a profile-scoped attachment API.
+        if model.status != .working,
+           !model.isSending,
+           model.pendingImages.isEmpty,
+           let request = ComposerMentionPresentation.directBotRequest(
+                in: composer.text,
+                profileIDs: botMode.visibleBots.map(\.id)
+           ),
+           let bot = botMode.visibleBots.first(where: { $0.id == request.profileID }) {
+            showingBotMentionPicker = false
+            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text)
+            return
+        }
+        model.submitComposerInput()
+    }
+
+    private func updateMentionPicker(for text: String) {
+        showingBotMentionPicker = ComposerMentionPresentation.activeToken(in: text) != nil
+        guard showingBotMentionPicker else { return }
+        Task { @MainActor in
+            await botMode.refreshNow(force: true)
+        }
+    }
+
     private func keepEditorCaretVisible() {
         guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
               textView.isEditable else { return }
@@ -494,10 +502,209 @@ struct ChatComposerView: View {
     }
 }
 
-private struct ComposerContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 44
+private struct BotMentionPicker: View {
+    let bots: [BotSummary]
+    let isLoading: Bool
+    let onSelect: (String) -> Void
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Text("CALL A BOT")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundStyle(Color.dockAccent)
+                Spacer()
+                Text("@")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(Color.dockSurface6.opacity(0.5))
+
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if isLoading {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading Bots…")
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                    } else if bots.isEmpty {
+                        HStack(spacing: 8) {
+                            LucideImage(systemName: "person.2.slash")
+                                .foregroundStyle(Color.dockMetadataText)
+                            Text("No matching Bots")
+                        }
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                    } else {
+                        ForEach(bots) { bot in
+                            Button {
+                                onSelect(bot.id)
+                            } label: {
+                                HStack(spacing: 9) {
+                                    BotAvatarView(bot: bot, imageData: nil, size: 30)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(bot.name)
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(Color.dockPrimaryText)
+                                            .lineLimit(1)
+                                        if let description = bot.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+                                           !description.isEmpty {
+                                            Text(description)
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(Color.dockMetadataText)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    Spacer(minLength: 8)
+                                    Text("@\(bot.id)")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(Color.dockMetadataText)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.borderless)
+                            .background(Color.dockCanvas.opacity(0.28))
+                            .overlay(alignment: .bottom) {
+                                Color.dockBorderLight.opacity(0.45)
+                                    .frame(height: DockLayout.hairline)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 360)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color.dockSurface2)
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+        }
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
+    }
+}
+
+private struct ComposerInputEditor: NSViewRepresentable {
+    @Binding var text: String
+    let isFocused: Bool
+    let onSubmit: () -> Void
+    let onFocusChanged: (Bool) -> Void
+    let onTextChanged: (String) -> Void
+    let onContentHeightChanged: (CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.verticalScrollElasticity = .automatic
+        scrollView.horizontalScrollElasticity = .none
+
+        let textView = ComposerInputTextView()
+        textView.delegate = context.coordinator
+        textView.onSubmit = onSubmit
+        textView.string = text
+        textView.font = .systemFont(ofSize: 14)
+        textView.textColor = NSColor(Color.dockPrimaryText)
+        textView.insertionPointColor = NSColor(Color.dockAccent)
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainerInset = NSSize(width: 16, height: 0)
+        // NSTextContainer adds a 5pt line-fragment inset by default. The
+        // placeholder already uses the shared 16pt gutter, so remove that
+        // hidden extra inset to align the caret with its first character.
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+
+        scrollView.documentView = textView
+        context.coordinator.reportContentHeight(for: textView)
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? ComposerInputTextView else { return }
+        context.coordinator.parent = self
+        textView.onSubmit = onSubmit
+        if textView.string != text {
+            context.coordinator.isSynchronizingText = true
+            textView.string = text
+            context.coordinator.isSynchronizingText = false
+        }
+        context.coordinator.reportContentHeight(for: textView)
+
+        guard isFocused, scrollView.window?.firstResponder !== textView else { return }
+        DispatchQueue.main.async {
+            scrollView.window?.makeFirstResponder(textView)
+        }
+    }
+
+    @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: ComposerInputEditor
+        var isSynchronizingText = false
+
+        init(_ parent: ComposerInputEditor) {
+            self.parent = parent
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            parent.onFocusChanged(true)
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            parent.onFocusChanged(false)
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            if !isSynchronizingText, parent.text != textView.string {
+                parent.text = textView.string
+                parent.onTextChanged(textView.string)
+            }
+            reportContentHeight(for: textView)
+        }
+
+        func reportContentHeight(for textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+            layoutManager.ensureLayout(for: textContainer)
+            let height = layoutManager.usedRect(for: textContainer).height
+                + (textView.textContainerInset.height * 2)
+            parent.onContentHeightChanged(max(ComposerLayout.minHeight, height))
+        }
+    }
+}
+
+private final class ComposerInputTextView: NSTextView {
+    var onSubmit: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
+        if (event.keyCode == 36 || event.keyCode == 76),
+           event.modifierFlags.intersection(editingModifiers).isEmpty {
+            onSubmit?()
+            return
+        }
+        super.keyDown(with: event)
     }
 }

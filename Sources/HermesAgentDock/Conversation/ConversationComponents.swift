@@ -29,50 +29,6 @@ struct ThinkingDots: View {
   }
 }
 
-struct VoiceModeToolbar: View {
-  var onReturnToChat: () -> Void
-  var onToggleWorkspace: () -> Void
-  var isWorkspaceVisible: Bool
-  var canStopRequest: Bool
-  var onStopRequest: () -> Void
-
-  var body: some View {
-    HStack {
-      Spacer()
-      // Voice mode action toolbar buttons — using uniform 28pt frames and 6pt gap matching the header
-      HStack(spacing: 6) {
-        Button(action: onToggleWorkspace) {
-          Image(
-            systemName: isWorkspaceVisible ? "rectangle.split.2x1" : "rectangle"
-          )
-          .font(.system(size: 11, weight: .medium)).foregroundStyle(
-            isWorkspaceVisible ? Color.dockAccent : Color.dockSecondaryText
-          ).frame(width: 28, height: 28)
-          .background(
-            Circle().fill(isWorkspaceVisible ? Color.dockAccent.opacity(0.1) : Color.dockSurface4)
-          )
-        }
-        .buttonStyle(.borderless).help(
-          isWorkspaceVisible ? "Hide Workspace" : "Show Workspace")
-        if canStopRequest {
-          Button(action: onStopRequest) {
-            Image(systemName: "stop.fill").font(.system(size: 11, weight: .semibold))
-              .foregroundStyle(Color.dockDestructive).frame(width: 28, height: 28).background(
-                Circle().fill(Color.dockDestructive.opacity(0.1)))
-          }
-          .buttonStyle(.borderless).help("Stop Hermes request")
-        }
-        Button(action: onReturnToChat) {
-          Image(systemName: "text.bubble").font(.system(size: 11, weight: .medium)).foregroundStyle(
-            Color.dockSecondaryText
-          ).frame(width: 28, height: 28).background(Circle().fill(Color.dockSurface4))
-        }
-        .buttonStyle(.borderless).help("Return to chat")
-      }
-    }
-  }
-}
-
 struct AgentAvatar: View {
   let identity: String
   let statusColor: Color
@@ -82,7 +38,7 @@ struct AgentAvatar: View {
       Circle()
         .fill(statusColor.opacity(0.12))
         .overlay {
-          Image(systemName: "person.fill")
+          LucideImage(systemName: "person.fill")
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(statusColor)
         }
@@ -260,7 +216,6 @@ struct MarkdownMessageView: View {
     var language: String?
     var inCode = false
     var paragraph: [String] = []
-    var orderedIndex = 0
     func flushParagraph() {
       let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
       paragraph.removeAll()
@@ -274,7 +229,6 @@ struct MarkdownMessageView: View {
     for line in markdown.components(separatedBy: "\n") {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
       if trimmed.hasPrefix("```") {
-        orderedIndex = 0
         if inCode {
           flushCode()
         } else {
@@ -290,7 +244,6 @@ struct MarkdownMessageView: View {
         continue
       }
       if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
-        orderedIndex = 0
         if trimmed.contains("---") {
           continue // skip table separator syntax lines cleanly
         }
@@ -302,7 +255,6 @@ struct MarkdownMessageView: View {
         }
       }
       if let level = Self.headingLevel(trimmed) {
-        orderedIndex = 0
         flushParagraph()
         result.append(
           .heading(
@@ -310,31 +262,28 @@ struct MarkdownMessageView: View {
             text: String(trimmed.drop(while: { $0 == "#" }).drop(while: { $0 == " " }))))
         continue
       }
-      if let content = Self.orderedListContent(trimmed) {
+      if let item = Self.orderedListItem(trimmed) {
         flushParagraph()
-        orderedIndex += 1
-        result.append(.listItem(text: content, marker: "\(orderedIndex)."))
+        // Honor the authored marker. The former synthesized counter reset on
+        // prose/blank lines, incorrectly rendering valid `4.` and `5.` as 1.
+        result.append(.listItem(text: item.content, marker: item.marker))
         continue
       }
       if let item = Self.unorderedListItem(trimmed) {
-        orderedIndex = 0
         flushParagraph()
         result.append(.listItem(text: item, marker: "•"))
         continue
       }
       if trimmed.hasPrefix(">") {
-        orderedIndex = 0
         flushParagraph()
         let content = String(trimmed.dropFirst().trimmingCharacters(in: .whitespaces))
         if !content.isEmpty { result.append(.quote(content)) }
         continue
       }
       if trimmed.isEmpty {
-        orderedIndex = 0
         flushParagraph()
         continue
       }
-      orderedIndex = 0
       paragraph.append(line)
     }
     if inCode { flushCode() } else { flushParagraph() }
@@ -353,12 +302,15 @@ struct MarkdownMessageView: View {
     else { return nil }
     return hashes
   }
-  private static func orderedListContent(_ line: String) -> String? {
+  private static func orderedListItem(_ line: String) -> (marker: String, content: String)? {
     guard let dotIndex = line.firstIndex(of: "."), !line[..<dotIndex].isEmpty,
       line[..<dotIndex].allSatisfy(\.isNumber), line.index(after: dotIndex) < line.endIndex,
       line[line.index(after: dotIndex)] == " "
     else { return nil }
-    return String(line[line.index(dotIndex, offsetBy: 2)...]).trimmingCharacters(in: .whitespaces)
+    return (
+      marker: String(line[...dotIndex]),
+      content: String(line[line.index(dotIndex, offsetBy: 2)...]).trimmingCharacters(in: .whitespaces)
+    )
   }
   private static func unorderedListItem(_ line: String) -> String? {
     for prefix in ["- ", "* ", "+ "] where line.hasPrefix(prefix) {
@@ -387,9 +339,21 @@ struct MarkdownMessageView: View {
   }
 }
 
-struct ConversationBottomPreferenceKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+/// Reported bounds of the whole transcript content in the scroll view's
+/// coordinate space. The top edge is what distinguishes a genuinely
+/// bottom-parked viewport from one left past the content end: only a scrolled
+/// transcript (top above the viewport top) whose bottom also sits above the
+/// viewport bottom is overscrolled into blank space.
+struct ConversationContentBounds: Equatable {
+    var topMinY: CGFloat
+    var bottomMaxY: CGFloat
+}
+
+struct ConversationContentBoundsPreferenceKey: PreferenceKey {
+    static let defaultValue = ConversationContentBounds(topMinY: 0, bottomMaxY: 0)
+    static func reduce(value: inout ConversationContentBounds, nextValue: () -> ConversationContentBounds) {
+        value = nextValue()
+    }
 }
 
 struct ConversationActivityRow: View {

@@ -258,7 +258,11 @@ final class HermesGateway: NSObject {
         guard object["method"] as? String == "event",
               let params = object["params"] as? [String: Any],
               let type = params["type"] as? String else { return }
-        DebugLog.write("receive: event \(type)")
+        // Delta frames arrive at stream rate; logging each one would put
+        // console and file I/O on the main actor for every chunk of text.
+        if !HermesHighFrequencyEvent.includes(type) {
+            DebugLog.write("receive: event \(type)")
+        }
         onEvent?(type, params)
     }
 

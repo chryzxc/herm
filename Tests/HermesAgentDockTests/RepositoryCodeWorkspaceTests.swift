@@ -2,7 +2,116 @@ import Foundation
 import Testing
 @testable import HermesAgentDock
 
+@MainActor
+private final class PullRequestMutationFake: PullRequestMutationExecuting {
+    var commentCalls = 0
+    var statusCalls = 0
+
+    func postComment(_ body: String, on record: PullRequestRecord) async -> PullRequestComment? {
+        commentCalls += 1
+        return nil
+    }
+
+    func updateStatus(_ status: PullRequestStatus, for record: PullRequestRecord) async -> PullRequestRecord? {
+        statusCalls += 1
+        return nil
+    }
+}
+
 struct RepositoryCodeWorkspaceTests {
+    @Test func sessionRepositoryScopeKeepsSessionsDistinctForOnePath() {
+        let first = SessionRepositoryScope(sessionID: "session-a", repositoryPath: "/workspace/repo")
+        let second = SessionRepositoryScope(sessionID: "session-b", repositoryPath: "/workspace/repo")
+        #expect(first != second)
+        #expect(first.identity != second.identity)
+    }
+
+    @MainActor
+    @Test func pullRequestMutationRequestDoesNotCallExecutorUntilConfirmed() async {
+        let fake = PullRequestMutationFake()
+        let center = PullRequestCenterModel(mutationExecutor: fake)
+        let record = PullRequestRecord(
+            repository: GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!),
+            localPath: "/tmp/repo", number: 7, title: "Improve reliability", body: "", author: "owner",
+            authorAvatarURL: nil, headBranch: "feature", baseBranch: "main", updatedAt: nil, isDraft: true,
+            webURL: nil, requestedReviewers: [], comments: 0, additions: nil, deletions: nil, changedFiles: nil,
+            checks: [], reviews: []
+        )
+        let coordinator = PullRequestMutationCoordinator()
+
+        coordinator.requestComment("Please add coverage.", for: record)
+        #expect(fake.commentCalls == 0)
+        #expect(coordinator.pending != nil)
+
+        _ = await coordinator.confirm(using: center)
+        #expect(fake.commentCalls == 1)
+        #expect(coordinator.pending == nil)
+
+        coordinator.requestStatus(.readyForReview, for: record)
+        #expect(fake.statusCalls == 0)
+        coordinator.cancel()
+        #expect(fake.statusCalls == 0)
+        #expect(coordinator.pending == nil)
+    }
+
+    @MainActor
+    @Test func pullRequestDetailLoadsCanRunForSeparateSelections() {
+        let center = PullRequestCenterModel()
+        #expect(center.beginDetailLoad(for: "repository#1"))
+        #expect(center.beginDetailLoad(for: "repository#2"))
+        #expect(!center.beginDetailLoad(for: "repository#1"))
+
+        #expect(center.isLoadingDetail)
+        center.finishDetailLoad(for: "repository#1")
+        #expect(center.isLoadingDetail)
+        center.finishDetailLoad(for: "repository#2")
+        #expect(!center.isLoadingDetail)
+    }
+
+    @Test func pullRequestFileTreeGroupsNestedPaths() {
+        let files = [
+            PullRequestFile(path: "Sources/App/Main.swift", status: "modified", additions: 1, deletions: 2, patch: nil, webURL: nil),
+            PullRequestFile(path: "README.md", status: "modified", additions: 3, deletions: 0, patch: nil, webURL: nil)
+        ]
+        let tree = PullRequestFileTreeBuilder.make(files: files)
+        #expect(tree.map(\.id) == ["README.md", "Sources", "Sources/App", "Sources/App/Main.swift"])
+        #expect(tree.first(where: { $0.id == "Sources/App" })?.isDirectory == true)
+        #expect(tree.first(where: { $0.id == "Sources/App/Main.swift" })?.depth == 2)
+    }
+
+    @Test func pullRequestDiffParserClassifiesAndPairsChangedRuns() {
+        let patch = "@@ -1,2 +1,2 @@\n-old value\n+new value\n unchanged"
+        let lines = PullRequestDiffPresentation.lines(patch)
+        #expect(lines.map(\.kind) == [.hunk, .deletion, .addition, .context])
+        let rows = PullRequestDiffPresentation.splitRows(lines)
+        #expect(rows.count == 3)
+        #expect(rows[1].left?.text == "-old value")
+        #expect(rows[1].right?.text == "+new value")
+
+        let additionOnly = PullRequestDiffPresentation.splitRows(PullRequestDiffPresentation.lines("+new file"))
+        #expect(additionOnly.count == 1)
+        #expect(additionOnly[0].left == nil)
+        #expect(additionOnly[0].right?.kind == .addition)
+    }
+
+    @Test func pullRequestReviewPreferencesPersistAndToggleExpandedFiles() {
+        let suiteName = "hermes-review-preferences-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let first = PullRequestReviewPreferenceStore(defaults: defaults)
+        #expect(first.diffMode == .unified)
+        #expect(first.showsFileTree == false)
+        first.diffMode = .split
+        first.wordWrap = true
+        first.toggleExpanded("README.md")
+        let second = PullRequestReviewPreferenceStore(defaults: defaults)
+        #expect(second.diffMode == .split)
+        #expect(second.wordWrap)
+        #expect(second.expandedFileIDs == Set(["README.md"]))
+        second.toggleExpanded("README.md")
+        #expect(second.expandedFileIDs.isEmpty)
+    }
+
     @Test func changesBrowserDoesNotExposeAnEditorSaveCallback() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

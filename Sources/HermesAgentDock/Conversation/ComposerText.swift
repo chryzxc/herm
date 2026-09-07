@@ -1,6 +1,54 @@
 import Foundation
 
-/// Owns the composer's draft text and prompt-history navigation. Kept separate
+/// Pure text rules for the composer’s Bot mention picker.
+enum ComposerMentionPresentation {
+    struct DirectBotRequest: Equatable {
+        let profileID: String
+        let text: String
+    }
+
+    /// A complete, single leading roster mention may be safely delivered as a
+    /// direct user request to that Bot's canonical Bot Chat. This deliberately
+    /// does not guess from roles, skills, prose, or partial/embedded mentions.
+    static func directBotRequest(in text: String, profileIDs: [String]) -> DirectBotRequest? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstWhitespace = trimmed.firstIndex(where: { $0.isWhitespace }) else { return nil }
+        let firstToken = String(trimmed[..<firstWhitespace])
+        let requestText = String(trimmed[firstWhitespace...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard firstToken.hasPrefix("@"), !requestText.isEmpty else { return nil }
+
+        let handle = String(firstToken.dropFirst())
+        guard let profileID = profileIDs.first(where: { $0.caseInsensitiveCompare(handle) == .orderedSame }) else {
+            return nil
+        }
+
+        let rosterHandles = Set(profileIDs.map { "@\($0.lowercased())" })
+        let hasAdditionalRosterMention = requestText
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { String($0).lowercased() }
+            .contains(where: rosterHandles.contains)
+        guard !hasAdditionalRosterMention else { return nil }
+
+        return DirectBotRequest(profileID: profileID, text: requestText)
+    }
+
+    static func activeToken(in text: String) -> String? {
+        guard let start = text.lastIndex(where: { $0.isWhitespace }) else {
+            return text.hasPrefix("@") ? text : nil
+        }
+        let tokenStart = text.index(after: start)
+        let token = String(text[tokenStart...])
+        return token.hasPrefix("@") ? token : nil
+    }
+
+    static func replacingActiveToken(in text: String, with profileID: String) -> String {
+        guard activeToken(in: text) != nil, let tokenStart = text.lastIndex(of: "@") else {
+            return text
+        }
+        return String(text[..<tokenStart]) + "@\(profileID) "
+    }
+}
+
 /// from DockModel so every keystroke re-renders only the composer view instead
 /// of the whole popover (conversation, sidebar, and context panel observe
 /// DockModel and would otherwise re-diff on each character).

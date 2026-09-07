@@ -18,7 +18,26 @@ enum CodexQuotaService {
         }
         guard (200..<300).contains(response.status) else { throw CodexQuotaError.unavailable("Codex usage returned HTTP \(response.status).") }
         guard let object = try JSONSerialization.jsonObject(with: response.data) as? [String: Any] else { throw CodexQuotaError.invalidResponse }
-        return normalize(object, headers: response.headers)
+        return normalize(object, headers: response.headers, provider: "codex", displayName: "Codex CLI")
+    }
+
+    /// Reads the separate Codex OAuth store managed by Hermes. Hermes and the
+    /// standalone Codex CLI can be signed into different ChatGPT accounts, so
+    /// this must remain a distinct quota source.
+    static func readHermes() async throws -> [String: Any] {
+        guard let auth = loadHermesAuth() else {
+            throw CodexQuotaError.unavailable("No Hermes-managed Codex login was found.")
+        }
+        let response = try await request(auth)
+        guard (200..<300).contains(response.status) else {
+            throw CodexQuotaError.unavailable(response.status == 401 || response.status == 403
+                ? "Hermes-managed Codex authentication was rejected. Run `hermes auth add openai-codex`."
+                : "Hermes-managed Codex usage returned HTTP \(response.status).")
+        }
+        guard let object = try JSONSerialization.jsonObject(with: response.data) as? [String: Any] else {
+            throw CodexQuotaError.invalidResponse
+        }
+        return normalize(object, headers: response.headers, provider: "codex-hermes", displayName: "Codex via Hermes")
     }
 
     private static func request(_ auth: Auth) async throws -> (data: Data, status: Int, headers: [String: String]) {
@@ -62,13 +81,39 @@ enum CodexQuotaService {
         return nil
     }
 
+    private static func loadHermesAuth() -> Auth? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let root = ProcessInfo.processInfo.environment["HERMES_HOME"].map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+        } ?? home.appendingPathComponent(".hermes", isDirectory: true)
+        let file = root.appendingPathComponent("auth.json")
+        guard let data = try? Data(contentsOf: file),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+
+        if let providers = json["providers"] as? [String: Any],
+           let provider = providers["openai-codex"] as? [String: Any],
+           let tokens = provider["tokens"] as? [String: Any],
+           let access = tokens["access_token"] as? String,
+           !access.isEmpty {
+            return Auth(access: access, refresh: tokens["refresh_token"] as? String, account: tokens["account_id"] as? String, file: file)
+        }
+
+        guard let pool = json["credential_pool"] as? [String: Any],
+              let entries = pool["openai-codex"] as? [[String: Any]] else { return nil }
+        for entry in entries {
+            guard let access = entry["access_token"] as? String, !access.isEmpty else { continue }
+            return Auth(access: access, refresh: entry["refresh_token"] as? String, account: nil, file: file)
+        }
+        return nil
+    }
+
     private static func persist(_ auth: Auth) {
         guard let file = auth.file, let data = try? Data(contentsOf: file), var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], var tokens = json["tokens"] as? [String: Any] else { return }
         tokens["access_token"] = auth.access; if let refresh = auth.refresh { tokens["refresh_token"] = refresh }; json["tokens"] = tokens
         if let output = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) { try? output.write(to: file, options: .atomic) }
     }
 
-    private static func normalize(_ object: [String: Any], headers: [String: String]) -> [String: Any] {
+    private static func normalize(_ object: [String: Any], headers: [String: String], provider: String, displayName: String) -> [String: Any] {
         let rate = object["rate_limit"] as? [String: Any] ?? object
         var windows: [[String: Any]] = []
         for (key, label, header) in [("primary_window", "Session", "x-codex-primary-used-percent"), ("secondary_window", "Weekly", "x-codex-secondary-used-percent")] {
@@ -79,7 +124,7 @@ enum CodexQuotaService {
             else if let seconds = QuotaJSON.number(raw["reset_after_seconds"]) { row["resets_at"] = QuotaJSON.iso8601String(from: Date(timeIntervalSinceNow: seconds)) }
             windows.append(row)
         }
-        var result: [String: Any] = ["provider": "codex", "display_name": "Codex", "updated_at": QuotaJSON.iso8601String(from: .now), "windows": windows]
+        var result: [String: Any] = ["provider": provider, "display_name": displayName, "updated_at": QuotaJSON.iso8601String(from: .now), "windows": windows]
         if let plan = object["plan_type"] as? String { result["safe_detail"] = "Plan: \(plan)" }; return result
     }
 }

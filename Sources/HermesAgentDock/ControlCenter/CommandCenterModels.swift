@@ -104,7 +104,7 @@ enum MissionControlSnapshotBuilder {
         let changed = activities.suffix(4).reversed().map {
             MissionControlWorkItem(id: "activity:\($0.id.uuidString)", kind: .activity($0), title: $0.kind.replacingOccurrences(of: "subagent.", with: "").uppercased(), detail: $0.text, isUrgent: false)
         } + cronRuns.prefix(3).map {
-            MissionControlWorkItem(id: "cron:\($0.id)", kind: .cron($0), title: "CRON · \($0.status.uppercased())", detail: $0.jobID ?? "Scheduled job", isUrgent: $0.status.lowercased().contains("fail"))
+            MissionControlWorkItem(id: "cron:\($0.id)", kind: .cron($0), title: "AUTOMATION · \($0.status.uppercased())", detail: $0.jobID ?? "Scheduled job", isUrgent: $0.status.lowercased().contains("fail"))
         }
         let readiness = readiness(repository: repository, attention: openAttention, verification: verification, context: context)
         return MissionControlSnapshot(
@@ -184,7 +184,7 @@ enum WorkflowRecipe: String, CaseIterable, Identifiable {
 
 enum DockAction: Hashable, Identifiable {
     case tab(ControlTab)
-    case newChat, focusComposer, stop, voice, refresh, artifacts
+    case newChat, focusComposer, stop, voice, refresh, artifacts, restartDock
     case workflow(WorkflowRecipe)
 
     var id: String {
@@ -196,6 +196,7 @@ enum DockAction: Hashable, Identifiable {
         case .voice: "voice"
         case .refresh: "refresh"
         case .artifacts: "artifacts"
+        case .restartDock: "restart-dock"
         case .workflow(let recipe): "workflow.\(recipe.rawValue)"
         }
     }
@@ -220,11 +221,12 @@ enum DockActionRegistry {
             DockActionDescriptor(action: .tab(tab), title: "Open \(tab.tabLabel)", subtitle: "Navigate to \(tab.tabLabel)", icon: tab.icon, category: "Navigation", keywords: [tab.rawValue], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
         }
         let basics = [
-            DockActionDescriptor(action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: "square.and.pencil", category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
+            DockActionDescriptor(action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: "message-circle-plus", category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .focusComposer, title: "Focus composer", subtitle: "Return to Ask", icon: "text.cursor", category: "Session", keywords: ["ask", "prompt"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .stop, title: "Stop active request", subtitle: "Interrupt the active Hermes turn", icon: "stop.circle", category: "Session", keywords: ["interrupt", "cancel"], isAvailable: isWorking, unavailableReason: isWorking ? nil : "No active request", requiresConfirmation: false),
             DockActionDescriptor(action: .voice, title: "Start voice", subtitle: "Start a voice conversation", icon: "mic", category: "Session", keywords: ["talk", "microphone"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
-            DockActionDescriptor(action: .refresh, title: "Refresh command center", subtitle: "Refresh live Hermes projections", icon: "arrow.clockwise", category: "Control", keywords: ["reload", "update"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
+            DockActionDescriptor(action: .refresh, title: "Refresh command center", subtitle: "Refresh live Hermes projections", icon: "refresh-cw", category: "Control", keywords: ["reload", "update"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
+            DockActionDescriptor(action: .restartDock, title: "Restart Hermes Agent Dock", subtitle: "Reload Codex account credentials and restart Hermes", icon: "arrow.clockwise.circle", category: "System", keywords: ["restart", "relaunch", "account", "credentials", "codex"], isAvailable: true, unavailableReason: nil, requiresConfirmation: true),
             DockActionDescriptor(action: .artifacts, title: "Open plan artifacts", subtitle: "Browse ~/.hermes/plans in the inspector", icon: "doc.text.magnifyingglass", category: "Navigation", keywords: ["plans", "markdown", "comments", "revisions"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
         ]
         let workflows = WorkflowRecipe.allCases.map { recipe in

@@ -70,7 +70,7 @@ struct KnowledgeCenterView: View {
 
     private func statusCard(title: String, status: String, icon: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: icon)
+            LucideLabel(title, icon: icon)
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(Color.dockMetadataText)
             Text(status)
@@ -169,7 +169,7 @@ struct KnowledgeCenterView: View {
 
     private var unavailableState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Skill inventory unavailable", systemImage: "exclamationmark.triangle")
+            LucideLabel("Skill inventory unavailable", icon: "exclamationmark.triangle")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text(inventory.diagnostic.isEmpty ? "Hermes did not provide a verified structured inventory." : inventory.diagnostic)

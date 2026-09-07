@@ -23,6 +23,9 @@ struct BotProfileEditorSheet: View {
     @State private var pendingAvatarData: Data?
     @State private var clearsAvatar = false
     @State private var showsSoul = false
+    @State private var showsSkills = false
+    @State private var showsToolsets = false
+    @State private var showsMCPServers = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -35,7 +38,7 @@ struct BotProfileEditorSheet: View {
                 Spacer()
             }
             if detail == nil {
-                ProgressView("Loading profile…").controlSize(.small).padding(.vertical, 20)
+                BotEditorLoadingState()
             } else {
                 editorForm
             }
@@ -54,36 +57,52 @@ struct BotProfileEditorSheet: View {
     }
 
     private var editorForm: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                avatarRow
-                titledField("Title") {
-                    TextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
-                        .textFieldStyle(.roundedBorder)
-                }
-                titledField("Description") {
-                    TextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }))
-                        .textFieldStyle(.roundedBorder)
-                }
-                modelRow
-                soulRow
-                toggleSection("Skills", items: skillBinding)
-                toolsetSection
-                toggleSection("MCP Servers", items: mcpBinding)
-                if let editError {
-                    Text(editError).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
-                }
-                HStack {
-                    Spacer()
-                    Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                    Button {
-                        Task { await save(confirm: false) }
-                    } label: {
-                        if isSaving { ProgressView().controlSize(.small) } else { Text("Save") }
+        VStack(spacing: 10) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    avatarRow
+                    titledField("Title") {
+                        TextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
+                            .textFieldStyle(.dockGlass)
                     }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(isSaving)
+                    titledField("Description") {
+                        TextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }))
+                            .textFieldStyle(.dockGlass)
+                    }
+                    modelRow
+                    soulRow
+                    DisclosureGroup("Skills  ·  \(detail?.skills.count ?? 0)", isExpanded: $showsSkills) {
+                        toggleSection(items: skillBinding)
+                    }
+                    DisclosureGroup("Toolsets  ·  \(detail?.toolsets.count ?? 0)", isExpanded: $showsToolsets) {
+                        toolsetSection
+                    }
+                    DisclosureGroup("MCP Servers  ·  \(detail?.mcpServers.count ?? 0)", isExpanded: $showsMCPServers) {
+                        toggleSection(items: mcpBinding)
+                    }
+                    if let editError {
+                        Text(editError).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
+                    }
                 }
+                .padding(.vertical, 2)
+            }
+            .frame(maxHeight: 500)
+
+            Divider().overlay(Color.dockBorderLight)
+            HStack {
+                Text("Changes apply to Hermes profile \(bot.id)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button {
+                    Task { await save(confirm: false) }
+                } label: {
+                    if isSaving { ProgressView().controlSize(.small) } else { Text("Save Changes") }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(isSaving)
             }
         }
     }
@@ -180,9 +199,8 @@ struct BotProfileEditorSheet: View {
         }
     }
 
-    private func toggleSection(_ title: String, items: Binding<[BotToggleItem]>) -> some View {
+    private func toggleSection(items: Binding<[BotToggleItem]>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
             if items.wrappedValue.isEmpty {
                 Text("None reported by Hermes").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
             } else {
@@ -306,6 +324,34 @@ struct BotProfileEditorSheet: View {
     }
 }
 
+private struct BotEditorLoadingState: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading profile configuration…")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
+            }
+            .padding(.bottom, 4)
+            ForEach(0..<3, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.dockControlSurface)
+                    .frame(height: 38)
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.dockSurface4)
+                            .frame(width: 110, height: 8)
+                            .padding(.horizontal, 12)
+                    }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 230, alignment: .topLeading)
+        .padding(.top, 8)
+    }
+}
+
 /// Duplicate = `profiles.create` with `clone_from`, matching Bot Mode's
 /// full-clone duplication of a profile.
 struct BotDuplicateSheet: View {
@@ -320,7 +366,7 @@ struct BotDuplicateSheet: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             TextField("New profile name (lowercase)", text: $newName)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.dockGlass)
             if let error = model.botCreationError {
                 Text(error).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
             }

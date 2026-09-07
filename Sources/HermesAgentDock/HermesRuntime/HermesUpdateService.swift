@@ -332,6 +332,13 @@ final class HermesUpdateService: ObservableObject {
         }
     }
 
+    /// Restarts the Dock and its Hermes backend so newly selected provider
+    /// credentials are loaded by a fresh `hermes serve` process.
+    func restartDock() {
+        guard !isBusy else { return }
+        relaunchDock()
+    }
+
     private func refreshInstalledVersionAfterUpdate() async {
         let output = await Self.runHermes(arguments: ["--version"], timeout: Self.versionReadTimeout)
         if output.succeeded,

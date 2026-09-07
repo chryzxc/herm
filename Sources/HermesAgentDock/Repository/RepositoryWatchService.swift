@@ -10,6 +10,9 @@ struct WatchedRepository: Hashable {
 /// decide whether Git state changed and whether to show a notification.
 final class RepositoryWatchService {
     var onEvent: ((String) -> Void)?
+    // Watched-repository file storms are delivered and filtered here, off the
+    // main thread; consumers hop to the main actor for refresh decisions.
+    private let watchQueue = DispatchQueue(label: "com.hermes-agent-dock.repository-watch", qos: .utility)
     private var registrations: [String: Registration] = [:]
 
     func synchronize(_ repositories: Set<WatchedRepository>) {
@@ -47,7 +50,7 @@ final class RepositoryWatchService {
         ) else { return }
         registration.stream = stream
         registrations[repository.id] = registration
-        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamSetDispatchQueue(stream, watchQueue)
         FSEventStreamStart(stream)
     }
 
@@ -85,6 +88,7 @@ private func repositoryWatchFSEventCallback(
     guard let clientCallBackInfo else { return }
     let registration = Unmanaged<RepositoryWatchService.Registration>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
     let id = registration.repository.id
-    // The stream is explicitly scheduled on the main queue.
+    // Runs on the watch queue, not the main queue; onEvent consumers hop to
+    // the main actor themselves (see DeveloperWorkflowModel's watcher setup).
     registration.service?.receive(id)
 }
