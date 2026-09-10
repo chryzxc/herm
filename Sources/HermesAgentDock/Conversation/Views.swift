@@ -749,7 +749,7 @@ struct DockPopover: View {
                 )
                 .id("fullscreen-pull-requests")
             } else if fullscreenSurface == .artifacts {
-                PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
+                ArtifactsInspectorView(model: model)
                     .id("fullscreen-artifacts")
             } else if fullscreenSurface == .bots {
                 BotRosterPage(model: botMode, onSelectBot: openBotChat)
@@ -830,7 +830,7 @@ struct DockPopover: View {
                              showsHeader: false
                          )
                     case .artifacts:
-                        PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
+                        ArtifactsInspectorView(model: model)
                     }
                 }
                 .transition(.opacity)

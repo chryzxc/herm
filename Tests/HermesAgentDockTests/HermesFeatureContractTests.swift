@@ -22,7 +22,7 @@ struct HermesFeatureContractTests {
 
     @Test func everySupportedTransportMethodIsExplicitlyRegistered() throws {
         let expectedMethods = [
-            "session.list", "session.active_list", "session.activate", "session.resume", "session.delete",
+            "session.list", "session.active_list", "session.activate", "session.resume", "session.delete", "session.messages",
             "session.interrupt", "session.usage", "session.context_breakdown", "project.facts", "verification.status",
             "prompt.background", "session.title", "session.steer", "session.branch", "session.compress", "session.undo",
             "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill", "approval.respond", "clarify.respond",

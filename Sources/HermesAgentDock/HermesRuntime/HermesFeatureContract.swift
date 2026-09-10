@@ -60,6 +60,7 @@ enum HermesFeatureIDs {
         case sessionActivate = "session.activate"
         case sessionDelete = "session.delete"
         case sessionResume = "session.resume"
+        case sessionMessages = "session.messages"
         case sessionInterrupt = "session.interrupt"
         case sessionUsage = "session.usage"
         case sessionContextBreakdown = "session.context_breakdown"
@@ -107,7 +108,7 @@ enum HermesFeatureIDs {
 
     static let transportIDs: [String] = [
         "session.list", "session.active_list", "session.activate", "session.delete", "session.resume",
-        "session.interrupt", "session.usage", "session.context_breakdown", "session.create", "project.facts",
+        "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create", "project.facts",
         "verification.status", "prompt.submit", "prompt.background", "session.title", "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
         "approval.respond", "clarify.respond", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",

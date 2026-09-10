@@ -714,6 +714,14 @@ final class DockModel: ObservableObject {
         }
     }
 
+    func artifactMessages(for session: HermesSession) async throws -> [[String: Any]] {
+        let result = try await sessionRPCClient.request(
+            HermesFeatureIDs.ID.sessionMessages.rawValue,
+            params: ["session_id": session.id, "limit": 500]
+        )
+        return result["messages"] as? [[String: Any]] ?? result["data"] as? [[String: Any]] ?? []
+    }
+
     func resumeBotChat(_ bot: BotSummary) {
         // Every Bot has a canonical, persistent Bot Chat. When the roster row
         // has no canonical session pointer yet, Hermes resolves (and lazily
