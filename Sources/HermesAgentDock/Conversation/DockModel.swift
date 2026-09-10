@@ -3009,7 +3009,10 @@ final class DockModel: ObservableObject {
     private static func parseSession(_ row: [String: Any]) -> HermesSession? {
         guard let id = row["id"] as? String else { return nil }
         let timestamp = (row["started_at"] as? NSNumber)?.doubleValue ?? (row["started_at"] as? Double)
-        let updatedAt = dateValue(row["updated_at"])
+        // Hermes persists canonical recency as `last_activity_at`. Older
+        // gateway versions may instead expose one of the legacy aliases.
+        let updatedAt = dateValue(row["last_activity_at"])
+            ?? dateValue(row["updated_at"])
             ?? dateValue(row["last_active"])
             ?? dateValue(row["last_message_at"])
             ?? timestamp.map { Date(timeIntervalSince1970: $0) }

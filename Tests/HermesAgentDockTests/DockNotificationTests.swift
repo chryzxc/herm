@@ -497,6 +497,23 @@ struct DockNotificationTests {
         #expect(model.sessionProjectionState == .stale(previousSessions, safeMessage: "Hermes session data is unavailable. Try refreshing."))
     }
 
+    @Test func sessionIndexUsesCanonicalLastActivityTimestamp() async {
+        let client = SessionProjectionTestRPCClient(results: [
+            "session.list": [.success(["sessions": [[
+                "id": "session-1",
+                "title": "Conversation",
+                "updated_at": 100,
+                "last_activity_at": 200
+            ]]])]
+        ])
+        let model = DockModel(rpcClient: client)
+
+        let task = model.loadSessions()
+        await task?.value
+
+        #expect(model.sessions.first?.lastUpdatedAt == Date(timeIntervalSince1970: 200))
+    }
+
     @Test func malformedRestoreResponsePreservesPersistedLastSessionID() async {
         let defaults = UserDefaults(suiteName: "projection-malformed-restore-\(UUID().uuidString)")!
         defaults.set("saved-session", forKey: "hermes.session.last-active.v1")
