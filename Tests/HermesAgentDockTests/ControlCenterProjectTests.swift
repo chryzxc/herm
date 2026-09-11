@@ -4,6 +4,16 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func clearingSelectedProfileDisablesProjectHydration() {
+        let model = ControlCenterModel()
+
+        model.setProjectProfile("bot-a")
+        model.setProjectProfile(nil)
+
+        #expect(model.projectProfileID == nil)
+        #expect(model.projectProfileScopeUnavailable)
+    }
+
     @Test func syntheticProjectBucketsAreNotRenderableProjects() {
         let projects = ControlCenterModel.parseProjects([
             "projects": [
@@ -44,6 +54,20 @@ struct ControlCenterProjectTests {
         #expect(SessionContextPressure.make(percent: context.contextPercent) == .unavailable)
     }
 
+    @Test func checkpointsRequireAnEnabledBoundedPayload() {
+        let checkpoints = ControlCenterModel.parseCheckpoints([
+            "enabled": true,
+            "checkpoints": [
+                ["hash": "abc123", "timestamp": "2026-09-07T12:00:00Z", "message": "Before refactor"],
+                ["timestamp": "2026-09-07T12:01:00Z"]
+            ]
+        ])
+
+        #expect(checkpoints == [HermesCheckpointSummary(hash: "abc123", timestamp: "2026-09-07T12:00:00Z", message: "Before refactor")])
+        #expect(ControlCenterModel.parseCheckpoints(["enabled": false, "checkpoints": [["hash": "abc"]]]).isEmpty)
+        #expect(ControlCenterModel.parseCheckpoints(["enabled": true, "checkpoints": Array(repeating: ["hash": "abc"], count: 51)]).isEmpty)
+    }
+
     @Test func parsesNestedProjectSessionsAndDeduplicatesRows() {
         let result: [String: Any] = [
             "project": [
@@ -64,6 +88,85 @@ struct ControlCenterProjectTests {
         #expect(sessions.map(\.id) == ["one", "two"])
         #expect(sessions.first?.title == "First")
         #expect(sessions.last?.state == "idle")
+    }
+
+    @Test func sessionKanbanQueryDoesNotDependOnCapabilityProbe() {
+        #expect(ControlCenterModel.shouldAttemptSessionKanbanQuery(
+            sessionID: "session-a",
+            hasCLI: true
+        ))
+        #expect(!ControlCenterModel.shouldAttemptSessionKanbanQuery(
+            sessionID: nil,
+            hasCLI: true
+        ))
+        #expect(!ControlCenterModel.shouldAttemptSessionKanbanQuery(
+            sessionID: "session-a",
+            hasCLI: false
+        ))
+    }
+
+    @Test func globalKanbanFilterNeverRetainsSessionScope() {
+        let scoped = KanbanListFilter(
+            status: "running",
+            assignee: "forge",
+            mine: true,
+            sessionID: "session-a",
+            includeArchived: true,
+            sort: "updated"
+        )
+        let global = ControlCenterModel.globalKanbanFilter(scoped)
+        #expect(global.sessionID == nil)
+        #expect(global.status == "running")
+        #expect(global.assignee == "forge")
+        #expect(global.mine)
+        #expect(global.includeArchived)
+        #expect(global.sort == "updated")
+    }
+
+    @Test func sessionKanbanRefreshCoalescesOnlyIdenticalInFlightQueries() {
+        let active = SessionKanbanProjectionRequest(sessionID: "session-a", boardSlug: "default")
+
+        #expect(ControlCenterModel.shouldCoalesceSessionKanbanRefresh(
+            activeRequest: active,
+            hasInFlightTask: true,
+            requested: active
+        ))
+        #expect(!ControlCenterModel.shouldCoalesceSessionKanbanRefresh(
+            activeRequest: active,
+            hasInFlightTask: true,
+            requested: SessionKanbanProjectionRequest(sessionID: "session-b", boardSlug: "default")
+        ))
+        #expect(!ControlCenterModel.shouldCoalesceSessionKanbanRefresh(
+            activeRequest: active,
+            hasInFlightTask: false,
+            requested: active
+        ))
+    }
+
+    @Test func sessionKanbanResultRemainsCurrentWhileGlobalBoardSelectionResolves() {
+        // Session Activity owns a distinct projection. The global board picker
+        // resolving from nil to a board must not discard that in-flight result.
+        #expect(ControlCenterModel.isCurrentSessionKanbanResult(
+            generationMatches: true,
+            publishedSessionID: "session-a",
+            requestedSessionID: "session-a",
+            publishedBoardSlug: nil,
+            requestedBoardSlug: nil
+        ))
+        #expect(!ControlCenterModel.isCurrentSessionKanbanResult(
+            generationMatches: true,
+            publishedSessionID: "session-b",
+            requestedSessionID: "session-a",
+            publishedBoardSlug: nil,
+            requestedBoardSlug: nil
+        ))
+        #expect(!ControlCenterModel.isCurrentSessionKanbanResult(
+            generationMatches: true,
+            publishedSessionID: "session-a",
+            requestedSessionID: "session-a",
+            publishedBoardSlug: "default",
+            requestedBoardSlug: nil
+        ))
     }
 
     @Test func parsesDelegatedAgents() {
@@ -104,6 +207,20 @@ struct ControlCenterProjectTests {
         #expect(results.map(\.reference.source).contains(.appleReminder))
     }
 
+    @Test func sessionKanbanProjectionPublishesOnlyExactSessionAttribution() {
+        let parsed = ControlCenterModel.parseKanbanTasks("""
+        [
+          {"id":"current","title":"Current task","session_id":"session-a"},
+          {"id":"other","title":"Other task","session_id":"session-b"},
+          {"id":"unscoped","title":"Unscoped task"}
+        ]
+        """)
+
+        let scoped = ControlCenterModel.filterSessionKanbanTasks(parsed, sessionID: "session-a")
+
+        #expect(scoped.map(\.id) == ["current"])
+    }
+
     @Test func parsesKanbanJSONWithoutOwningTheRecords() {
         let tasks = ControlCenterModel.parseKanbanTasks("""
         [{"id":"k1","title":"Prepare launch","status":"ready","body":"Write the checklist","priority":"1","assignee":"operator"}]
@@ -113,6 +230,24 @@ struct ControlCenterProjectTests {
         #expect(tasks.first?.title == "Prepare launch")
         #expect(tasks.first?.status == "ready")
         #expect(tasks.first?.assignee == "operator")
+    }
+
+    @Test func kanbanTaskParserPreservesAggregateBoardOwnership() {
+        let tasks = ControlCenterModel.parseKanbanTasks(
+            "[{\"id\":\"k1\",\"title\":\"Cross-board task\",\"status\":\"ready\",\"board_slug\":\"client-board\"}]"
+        )
+
+        #expect(tasks.first?.boardSlug == "client-board")
+    }
+
+    @Test func strictKanbanParserDistinguishesEmptyBoardFromMalformedOutput() {
+        let empty = ControlCenterModel.parseKanbanTasksStrict("[]", boardSlug: "default")
+        #expect(empty != nil)
+        #expect(empty?.isEmpty == true)
+        #expect(ControlCenterModel.parseKanbanTasksStrict("{}", boardSlug: "default") == nil)
+        #expect(ControlCenterModel.parseKanbanTasksStrict("not-json", boardSlug: "default") == nil)
+        let wrapped = ControlCenterModel.parseKanbanTasksStrict("{\"tasks\":[{\"id\":\"wrapped\",\"title\":\"Wrapped task\",\"status\":\"running\"}]}", boardSlug: "default")
+        #expect(wrapped?.map(\.id) == ["wrapped"])
     }
 
     @Test func parsesKanbanBoardInventoryWithoutLeakingDatabasePaths() {
@@ -149,6 +284,48 @@ struct ControlCenterProjectTests {
         #expect(detail?.status == "review")
         #expect(runs.first?.outcome == "success")
         #expect(runs.first?.elapsed == "4s")
+    }
+
+    @Test func parsesWrappedKanbanTaskDetailResponses() {
+        let fallback = KanbanTaskSummary(id: "k1", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let detail = ControlCenterModel.parseKanbanTaskDetail(
+            "{\"result\":[{\"id\":\"k1\",\"title\":\"Wrapped detail\",\"status\":\"blocked\"}]}",
+            fallback: fallback
+        )
+
+        #expect(detail?.title == "Wrapped detail")
+        #expect(detail?.status == "blocked")
+    }
+
+    @Test func fallsBackToKanbanSummaryWhenDetailsAreNotStructured() {
+        let task = KanbanTaskSummary(
+            id: "k1",
+            boardSlug: "default",
+            title: "Summary task",
+            status: "blocked",
+            detail: "Waiting on a dependency",
+            priority: "1",
+            assignee: "forge"
+        )
+        let detail = ControlCenterModel.fallbackKanbanTaskDetail(task)
+
+        #expect(detail.title == "Summary task")
+        #expect(detail.body == "Waiting on a dependency")
+        #expect(detail.status == "blocked")
+        #expect(detail.assignee == "forge")
+    }
+
+    @Test func parsesShownKanbanTaskAndCanAttributeExactObservedTaskToSession() {
+        let task = ControlCenterModel.parseKanbanTaskSummary("""
+        {"task":{"id":"t_33604ca9","title":"Correct communications authorization review findings","status":"running","assignee":"forge","started_at":1789015230,"current_step_key":"review"},"events":[{"kind":"heartbeat","created_at":1789015231,"payload":{"note":"still working"}}]}
+        """, boardSlug: "default", sessionID: "session-a")
+
+        #expect(task?.id == "t_33604ca9")
+        #expect(task?.status == "running")
+        #expect(task?.sessionID == "session-a")
+        #expect(task?.currentStepKey == "review")
+        #expect(task?.latestEventKind == "heartbeat")
+        #expect(task?.latestEventNote == "still working")
     }
 
     @Test func parsesKanbanDiagnosticsAndUsesStableFallbackIDs() {
@@ -388,6 +565,42 @@ struct ControlCenterProjectTests {
         #expect(model.todaySnapshot.currentFocus?.sessionID == "session-1")
     }
 
+    @Test func restoringSessionAfterFocusClearStartsANewSessionKanbanQuery() async throws {
+        let client = DelayedSessionKanbanClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+
+        model.focus(sessionID: "session-a")
+        for _ in 0..<100 where client.kanbanListCalls == 0 {
+            await Task.yield()
+        }
+        #expect(client.kanbanListCalls == 1)
+
+        model.focus(sessionID: nil)
+        model.focus(sessionID: "session-a")
+        for _ in 0..<100 where client.kanbanListCalls < 2 {
+            await Task.yield()
+        }
+
+        #expect(client.kanbanListCalls == 2)
+        model.focus(sessionID: nil)
+    }
+
+    @Test func boardInventoryResolutionNeverRestartsTheSessionKanbanProjection() {
+        let initialResolution = ControlCenterModel.boardInventoryRefreshPlan(
+            previousSelection: nil,
+            resolvedSelection: "default"
+        )
+        #expect(initialResolution.refreshBoard)
+        #expect(!initialResolution.refreshSession)
+
+        let unchangedResolution = ControlCenterModel.boardInventoryRefreshPlan(
+            previousSelection: "default",
+            resolvedSelection: "default"
+        )
+        #expect(!unchangedResolution.refreshBoard)
+        #expect(!unchangedResolution.refreshSession)
+    }
+
     @Test func repositoryProjectionFeedsTodaySnapshotWithoutOwningSelection() {
         let model = ControlCenterModel()
         let repository = RepositorySnapshot(path: "/work/app", branch: "main", changedFiles: 2, latestCommit: "abc update", isGitRepository: true)
@@ -535,6 +748,42 @@ private final class ProjectSessionRaceClient: HermesRPCClientProtocol {
             try await Task.sleep(for: .milliseconds(40))
         }
         return ["sessions": [["id": "\(projectID)-session", "title": projectID, "state": "active"]]]
+    }
+}
+
+@MainActor
+private final class DelayedSessionKanbanClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var kanbanListCalls = 0
+
+    func connect() async throws {}
+    func close() {}
+
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if path == "/api/plugins/kanban/boards" {
+            return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
+        }
+        if path == "/api/plugins/kanban/board?board=default" {
+            kanbanListCalls += 1
+            try await Task.sleep(for: .seconds(10))
+            return ["columns": []]
+        }
+        return [:]
+    }
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == HermesFeatureIDs.ID.shellExec.rawValue,
+           let command = params["command"] as? String {
+            if command.contains("'kanban' 'boards' 'list'") {
+                return ["code": 0, "stdout": "[{\"slug\":\"default\",\"name\":\"Default\",\"is_current\":true,\"archived\":false}]"]
+            }
+            if command.contains("'kanban' 'list'") && command.contains("'--session'") {
+                kanbanListCalls += 1
+                try await Task.sleep(for: .seconds(10))
+                return ["code": 0, "stdout": "[]"]
+            }
+        }
+        return ["code": 0, "stdout": "[]"]
     }
 }
 

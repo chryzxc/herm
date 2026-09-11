@@ -2,6 +2,15 @@ import Foundation
 
 @MainActor
 final class ControlCenterModel: ObservableObject {
+    private enum KanbanRefreshScope {
+        case aggregate
+        case visible
+
+        var isAggregate: Bool {
+            if case .aggregate = self { return true }
+            return false
+        }
+    }
     nonisolated static func safeUserDiagnostic(_ raw: String) -> String {
         HermesDiagnosticsService.safeSummary(raw)
     }
@@ -53,6 +62,14 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var promptBudget: PromptBudgetSummary?
     @Published private(set) var projectFacts: ProjectFactsSummary?
     @Published private(set) var verification: VerificationSummary?
+    @Published private(set) var appearanceProjection: AppearanceCLIProjection.Inventory?
+    @Published private(set) var appearanceProjectionAvailable = false
+    @Published private(set) var insightsSummary: HermesInsightsSummary?
+    @Published private(set) var checkpoints: [HermesCheckpointSummary] = []
+    @Published private(set) var checkpointDiff: String?
+    @Published private(set) var isLoadingCheckpoints = false
+    @Published private(set) var emergencyStopActive: Bool?
+    @Published private(set) var emergencyStopMessage: String?
     @Published private(set) var developmentContext: RepositorySnapshot?
     @Published private(set) var isLoadingKanbanDetail = false
     @Published private(set) var isCreatingKanbanTask = false
@@ -64,6 +81,10 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var isRefreshingProjectNavigation = false
     private var didLoadInitialProjectNavigation = false
     @Published private(set) var selectedProjectID: String?
+    /// Profile scope used exclusively by the Projects projection and its
+    /// mutations. Other Control tabs remain gateway-global by design.
+    @Published private(set) var projectProfileID: String?
+    @Published private(set) var projectProfileScopeUnavailable = false
     /// Keeps the Projects detail view stable while its background projection is
     /// refreshing. A selected project can briefly be absent from a partial
     /// `projects.tree` response, but that must not dismiss the user's detail.
@@ -86,10 +107,11 @@ final class ControlCenterModel: ObservableObject {
     private var clientBindingGeneration: UInt64 = 0
     private var searchTask: Task<Void, Never>?
     private var searchGeneration = UUID()
-    private var kanbanRefreshGeneration = UUID()
-    private var kanbanProjectionBoardSlug: String?
+    private var aggregateKanbanRefreshGeneration = UUID()
+    private var visibleKanbanRefreshGeneration = UUID()
     private var sessionKanbanRefreshGeneration = UUID()
     private var sessionKanbanTask: Task<Void, Never>?
+    private var sessionKanbanRequest: SessionKanbanProjectionRequest?
     private var sessionKanbanBoardSlug: String?
     private var kanbanBoardsGeneration = UUID()
     private var kanbanStatsGeneration = UUID()
@@ -100,6 +122,8 @@ final class ControlCenterModel: ObservableObject {
     private var promptBudgetGeneration = UUID()
     private var projectFactsGeneration = UUID()
     private var verificationGeneration = UUID()
+    private var appearanceProjectionGeneration = UUID()
+    private var checkpointsGeneration = UUID()
     private var projectSessionsGeneration = UUID()
     private var projectNavigationRefreshGeneration: UUID?
     private var pendingProjectNavigationSessions: [String: [SessionSummary]] = [:]
@@ -153,6 +177,11 @@ final class ControlCenterModel: ObservableObject {
     func setDevelopmentContextProjection(_ snapshot: RepositorySnapshot?) {
         developmentContext = snapshot
         refreshVerification()
+    }
+
+    var isKanbanRefreshPending: Bool {
+        pendingActionIDs.contains(visibleKanbanRefreshActionID)
+            || pendingActionIDs.contains(aggregateKanbanRefreshActionID)
     }
 
     func isActionPending(_ id: String) -> Bool {
@@ -269,7 +298,10 @@ final class ControlCenterModel: ObservableObject {
     func mcpTestActionID(_ server: MCPServerSummary) -> String { "mcp.test:\(server.id)" }
     var reloadMCPActionID: String { "mcp.reload" }
     var refreshKanbanActionID: String { "kanban.refresh" }
+    private var aggregateKanbanRefreshActionID: String { "kanban.refresh.aggregate" }
+    private var visibleKanbanRefreshActionID: String { "kanban.refresh.visible" }
     var refreshKanbanBoardsActionID: String { "kanban.boards.refresh" }
+    var emergencyStopActionID: String { "dispatch.pause" }
 
     private func beginAction(_ id: String) -> Bool {
         guard !pendingActionIDs.contains(id) else { return false }
@@ -357,6 +389,7 @@ final class ControlCenterModel: ObservableObject {
             searchTask = nil
             sessionKanbanTask?.cancel()
             sessionKanbanTask = nil
+            sessionKanbanRequest = nil
             isRefreshing = false
             attention = []
             reminders = []
@@ -373,6 +406,7 @@ final class ControlCenterModel: ObservableObject {
             delegationPaused = false
             processes = []
             projects = []
+            projectProfileID = nil
             projectIDBySessionID = [:]
             resolvedProjectIDBySessionID = [:]
             searchResults = []
@@ -385,7 +419,6 @@ final class ControlCenterModel: ObservableObject {
             kanbanAssignees = []
             kanbanBoards = []
             selectedKanbanBoardSlug = nil
-            kanbanProjectionBoardSlug = nil
             journeyNodes = []
             sessionStoreStatus = nil
             memoryHealthStatus = nil
@@ -399,6 +432,14 @@ final class ControlCenterModel: ObservableObject {
             promptBudget = nil
             projectFacts = nil
             verification = nil
+            appearanceProjection = nil
+            appearanceProjectionAvailable = false
+            insightsSummary = nil
+            checkpoints = []
+            checkpointDiff = nil
+            isLoadingCheckpoints = false
+            emergencyStopActive = nil
+            emergencyStopMessage = nil
             developmentContext = nil
             projectSessions = []
             projectSessionsByProjectID = [:]
@@ -426,7 +467,8 @@ final class ControlCenterModel: ObservableObject {
             cronRunsGeneration = UUID()
             mcpInventoryGeneration = UUID()
             promptBudgetGeneration = UUID()
-            kanbanRefreshGeneration = UUID()
+            aggregateKanbanRefreshGeneration = UUID()
+            visibleKanbanRefreshGeneration = UUID()
             sessionKanbanRefreshGeneration = UUID()
             kanbanBoardsGeneration = UUID()
             kanbanStatsGeneration = UUID()
@@ -454,6 +496,36 @@ final class ControlCenterModel: ObservableObject {
             }
         }
         rebuildAttention()
+        // Bind is the earliest point the CLI client exists. Start the global
+        // board projection here so the left Kanban never depends on a tab or
+        // Activity action to receive its first task list.
+        refreshGlobalKanban()
+    }
+
+    /// Re-home only the profile-owned Projects projection. The old snapshot is
+    /// cleared before the new request starts so rows from another Bot can
+    /// never remain visible under the new header.
+    func setProjectProfile(_ profileID: String?) {
+        let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = normalized?.isEmpty == false ? normalized : nil
+        let nextUnavailable = next == nil
+        guard projectProfileID != next || projectProfileScopeUnavailable != nextUnavailable else { return }
+        projectProfileID = next
+        projectProfileScopeUnavailable = nextUnavailable
+        projectNavigationRefreshGeneration = nil
+        projectNavigationRefreshIDs = []
+        pendingProjectNavigationSessions = [:]
+        completedProjectNavigationIDs = []
+        projectSessionsGeneration = UUID()
+        projectMembershipGeneration = UUID()
+        projects = []
+        projectIDBySessionID = [:]
+        resolvedProjectIDBySessionID = [:]
+        projectSessionsByProjectID = [:]
+        selectedProjectID = nil
+        selectedProject = nil
+        isRefreshingProjectNavigation = false
+        refresh()
     }
 
     func refresh(forceCapabilities: Bool = false) {
@@ -463,6 +535,10 @@ final class ControlCenterModel: ObservableObject {
         isRefreshing = true
         lastError = nil
         rebuildAttention()
+        // The left Kanban is a global Control projection. Hydrate it with the
+        // shared refresh so a relaunch or tab restoration cannot leave its
+        // cards empty merely because no view-local change event fired.
+        refreshGlobalKanban()
         if remindersAdapter != nil { beginProjectionRefresh("reminders") }
         if rpc != nil { ["cron.jobs", "sessions", "latest.activity", "agents", "processes", "projects"].forEach(beginProjectionRefresh) }
         if dockModel != nil { beginProjectionRefresh("core") }
@@ -570,9 +646,19 @@ final class ControlCenterModel: ObservableObject {
                 }
 
                 refreshMCPInventory(refreshGeneration: generation, clientIdentity: clientIdentity)
+                refreshAppearanceProjection(refreshGeneration: generation, clientIdentity: clientIdentity)
+                refreshInsights(refreshGeneration: generation, clientIdentity: clientIdentity)
 
+                if projectProfileScopeUnavailable {
+                    projects = []
+                    projectIDBySessionID = [:]
+                    resolvedProjectIDBySessionID = [:]
+                    projectSessionsByProjectID = [:]
+                    selectedProject = nil
+                    recordProjectionSuccess("projects")
+                } else {
                 do {
-                    let result = try await rpc.projectsTree()
+                    let result = try await rpc.projectsTree(profileID: projectProfileID)
                     let parsedProjects = Self.parseProjects(result)
                     // The gateway does not guarantee ordering. Preserve the
                     // current navigation order for existing projects and
@@ -610,12 +696,16 @@ final class ControlCenterModel: ObservableObject {
                     // the focused session, which is the authoritative UI
                     // selection for this model.
                     resolveProjectMembership(for: currentFocus?.sessionID)
+                    if !refreshedProjects.isEmpty, projectProfileID != nil {
+                        refreshProjectNavigation(refreshProjects: false)
+                    }
                     recordProjectionSuccess("projects")
                 } catch {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                     recordProjectionFailure("projects", error: message)
                     lastError = message
+                }
                 }
             }
             refreshCronRuns(refreshGeneration: generation, clientIdentity: clientIdentity)
@@ -630,6 +720,13 @@ final class ControlCenterModel: ObservableObject {
                 guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                 capabilities = probedCapabilities
                 capabilitySnapshotGeneratedAt = .now
+                // Activity may mount before the bounded capability probe finishes.
+                // Refresh here, at the ownership boundary, so a successful Kanban
+                // probe immediately hydrates the focused session projection rather
+                // than leaving the renderer to wait for its next polling interval.
+                if capabilityAvailable("kanban"), let sessionID = dockModel.kanbanSessionID {
+                    refreshSessionKanban(for: sessionID)
+                }
                 if forceCapabilities || diagnostics.isEmpty {
                     let refreshedDiagnostics = await diagnosticsService.read(client: dockModel.controlRPCClient)
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
@@ -834,6 +931,108 @@ final class ControlCenterModel: ObservableObject {
         // Intentionally empty.
     }
 
+    func refreshAppearanceProjection(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {
+        guard let cli else { return }
+        let resolvedClientIdentity = clientIdentity ?? dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let bindingGeneration = self.clientBindingGeneration
+        guard isCurrentClient(resolvedClientIdentity, bindingGeneration: bindingGeneration) else { return }
+        let isCurrent: () -> Bool = {
+            if let refreshGeneration {
+                return self.isCurrentRefresh(refreshGeneration, clientIdentity: resolvedClientIdentity)
+            }
+            return self.isCurrentClient(resolvedClientIdentity, bindingGeneration: bindingGeneration)
+        }
+        let generation = UUID()
+        appearanceProjectionGeneration = generation
+        Task {
+            do {
+                async let skins = cli.skinList()
+                async let pets = cli.installedPetsList()
+                let skinResult = try await skins
+                let petResult = try await pets
+                guard generation == appearanceProjectionGeneration, isCurrent() else { return }
+                guard skinResult.succeeded, petResult.succeeded else {
+                    appearanceProjectionAvailable = appearanceProjection != nil
+                    return
+                }
+                appearanceProjection = AppearanceCLIProjection.inventory(
+                    skinsOutput: skinResult.stdout,
+                    petsOutput: petResult.stdout
+                )
+                appearanceProjectionAvailable = true
+            } catch {
+                guard generation == appearanceProjectionGeneration, isCurrent() else { return }
+                appearanceProjectionAvailable = appearanceProjection != nil
+            }
+        }
+    }
+
+    func engageEmergencyStop(reason: String? = nil) {
+        guard let cli else { return }
+        let actionID = emergencyStopActionID
+        guard beginAction(actionID) else { return }
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        Task {
+            defer { finishAction(actionID) }
+            do {
+                let result = try await cli.emergencyStop(reason: reason)
+                guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                guard result.succeeded else {
+                    emergencyStopMessage = HermesDiagnosticsService.safeSummary(result.stderr).isEmpty ? "Hermes could not engage the emergency stop." : HermesDiagnosticsService.safeSummary(result.stderr)
+                    return
+                }
+                emergencyStopActive = true
+                emergencyStopMessage = "New Hermes work is paused. In-flight work continues."
+            } catch {
+                guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                emergencyStopMessage = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            }
+        }
+    }
+
+    func releaseEmergencyStop() {
+        guard let cli else { return }
+        let actionID = emergencyStopActionID
+        guard beginAction(actionID) else { return }
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        Task {
+            defer { finishAction(actionID) }
+            do {
+                let result = try await cli.resumeEmergencyStop()
+                guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                guard result.succeeded else {
+                    emergencyStopMessage = HermesDiagnosticsService.safeSummary(result.stderr).isEmpty ? "Hermes could not resume dispatch." : HermesDiagnosticsService.safeSummary(result.stderr)
+                    return
+                }
+                emergencyStopActive = false
+                emergencyStopMessage = "Hermes dispatch resumed."
+            } catch {
+                guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                emergencyStopMessage = HermesDiagnosticsService.safeSummary(error.localizedDescription)
+            }
+        }
+    }
+
+    func refreshInsights(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {
+        guard let rpc else { return }
+        let resolved = clientIdentity ?? dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let binding = clientBindingGeneration
+        guard isCurrentClient(resolved, bindingGeneration: binding) else { return }
+        Task {
+            do {
+                let result = try await rpc.insights(days: 30)
+                guard refreshGeneration.map({ self.isCurrentRefresh($0, clientIdentity: resolved) }) ?? self.isCurrentClient(resolved, bindingGeneration: binding) else { return }
+                guard let days = result["days"] as? Int, let sessions = result["sessions"] as? Int, let messages = result["messages"] as? Int,
+                      (1...90).contains(days), sessions >= 0, messages >= 0 else { return }
+                insightsSummary = HermesInsightsSummary(days: days, sessions: sessions, messages: messages)
+            } catch {
+                return
+            }
+        }
+    }
+
     func refreshMCPInventory(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {
         guard let cli else { return }
         let resolvedClientIdentity = clientIdentity ?? dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -992,9 +1191,10 @@ final class ControlCenterModel: ObservableObject {
         selectedProjectID = project.id
         selectedProject = project
         projectSessions = []
+        let profileID = projectProfileID
         Task {
             do {
-                let result = try await rpc?.projectSessions(projectID: project.id)
+                let result = try await rpc?.projectSessions(projectID: project.id, profileID: profileID)
                 guard let result else { throw HermesGateway.GatewayError.malformedResponse }
                 guard generation == projectSessionsGeneration,
                       selectedProjectID == project.id,
@@ -1021,9 +1221,15 @@ final class ControlCenterModel: ObservableObject {
     }
 
     private func refreshProjectNavigation(refreshProjects: Bool) {
+        guard !projectProfileScopeUnavailable else {
+            projectSessionsByProjectID = [:]
+            isRefreshingProjectNavigation = false
+            return
+        }
         guard !isRefreshingProjectNavigation else { return }
         let navigationProjects = projects.filter { $0.name != "__no_project__" }
         guard !navigationProjects.isEmpty else { return }
+        let profileID = projectProfileID
         isRefreshingProjectNavigation = true
         let generation = UUID()
         projectNavigationRefreshIDs = Set(navigationProjects.map(\.id))
@@ -1038,7 +1244,7 @@ final class ControlCenterModel: ObservableObject {
                 continue
             }
             Task { @MainActor [weak self] in
-                let sessions = try? await rpc.projectSessions(projectID: projectID)
+                let sessions = try? await rpc.projectSessions(projectID: projectID, profileID: profileID)
                 guard let self,
                       self.projectNavigationRefreshGeneration == generation else { return }
                 if let sessions {
@@ -1054,6 +1260,11 @@ final class ControlCenterModel: ObservableObject {
     /// waiting here avoids leaving every project permanently on a loading row
     /// until the user presses Refresh.
     func startInitialProjectNavigationLoad() {
+        guard !projectProfileScopeUnavailable else {
+            initialProjectNavigationTask?.cancel()
+            initialProjectNavigationTask = nil
+            return
+        }
         guard !didLoadInitialProjectNavigation,
               initialProjectNavigationTask == nil else { return }
         initialProjectNavigationTask = Task { @MainActor [weak self] in
@@ -1091,6 +1302,56 @@ final class ControlCenterModel: ObservableObject {
         selectedProjectID = nil
         selectedProject = nil
         projectSessions = []
+    }
+
+    func setActiveProject(_ project: ProjectSummary?) async -> Bool {
+        guard capabilityAvailable(HermesFeatureIDs.ID.projectsSetActive.rawValue), let rpc else { return false }
+        do {
+            _ = try await rpc.setActiveProject(id: project?.id, profileID: projectProfileID)
+            refresh()
+            return true
+        } catch {
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            return false
+        }
+    }
+
+    func createProject(name: String, folder: String) async -> Bool {
+        guard capabilityAvailable(HermesFeatureIDs.ID.projectsCreate.rawValue), let rpc, !name.isEmpty, !folder.isEmpty else { return false }
+        do {
+            _ = try await rpc.createProject(name: name, folders: [folder], profileID: projectProfileID)
+            refresh()
+            return true
+        } catch {
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            return false
+        }
+    }
+
+    func archiveProject(_ project: ProjectSummary, restore: Bool = false) async -> Bool {
+        guard capabilityAvailable(HermesFeatureIDs.ID.projectsArchive.rawValue), let rpc else { return false }
+        do {
+            _ = try await rpc.archiveProject(id: project.id, restore: restore, profileID: projectProfileID)
+            closeProject()
+            refresh()
+            return true
+        } catch {
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            return false
+        }
+    }
+
+    func deleteProject(_ project: ProjectSummary) async -> Bool {
+        guard capabilityAvailable(HermesFeatureIDs.ID.projectsDelete.rawValue), let rpc else { return false }
+        do {
+            _ = try await rpc.deleteProject(id: project.id, profileID: projectProfileID)
+            closeProject()
+            refresh()
+            return true
+        } catch {
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            return false
+        }
     }
 
     func search(_ query: String) {
@@ -1168,6 +1429,10 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func refreshKanban(filter: KanbanListFilter? = nil) {
+        refreshKanban(filter: filter, scope: .visible)
+    }
+
+    private func refreshKanban(filter: KanbanListFilter?, scope: KanbanRefreshScope) {
         // A capability probe is advisory and can still be in flight when the
         // Kanban tab first appears. The list request itself is authoritative;
         // do not make the initial load (or an explicit retry) silently fail
@@ -1176,46 +1441,122 @@ final class ControlCenterModel: ObservableObject {
             recordProjectionUnavailable("kanban.board")
             return
         }
-        guard beginAction(refreshKanbanActionID) else { return }
-        beginProjectionRefresh("kanban.board")
-        let requestedFilter = filter ?? kanbanFilter
-        let requestedBoardSlug = selectedKanbanBoardSlug
-        let projectionChanged = requestedFilter != kanbanFilter || requestedBoardSlug != kanbanProjectionBoardSlug
-        if projectionChanged {
-            kanbanTasks = []
+        let actionID = scope.isAggregate ? aggregateKanbanRefreshActionID : visibleKanbanRefreshActionID
+        guard beginAction(actionID) else {
+            return
         }
-        if let filter { kanbanFilter = filter }
+        beginProjectionRefresh("kanban.board")
+        let requestedBoardSlug = scope.isAggregate ? nil : selectedKanbanBoardSlug
+        // Global aggregation deliberately omits --board; session activity has
+        // its own board-aware projection and never uses this request.
+        // loading. Clearing here turns a transient refresh race into the
+        // false "This board is clear" state seen in the UI; the published
+        // replacement below remains generation-checked.
+        if let filter, !scope.isAggregate { kanbanFilter = filter }
         let activeFilter = kanbanFilter
         let generation = UUID()
-        kanbanRefreshGeneration = generation
+        if scope.isAggregate { aggregateKanbanRefreshGeneration = generation }
+        else { visibleKanbanRefreshGeneration = generation }
         Task {
-            defer { finishAction(refreshKanbanActionID) }
+            defer { finishAction(actionID) }
             do {
-                let result = try await cli.kanbanList(boardSlug: requestedBoardSlug, filter: activeFilter)
+                // `hermes kanban list --json` is the canonical complete board
+                // projection. Query it once: splitting an unfiltered board
+                // into assumed status lanes delays publication until every
+                // request completes and drops any future Hermes status value.
+                let result = scope.isAggregate
+                    ? try await cli.kanbanListAggregate(filter: activeFilter)
+                    : try await cli.kanbanList(boardSlug: requestedBoardSlug, filter: activeFilter)
                 guard result.succeeded else {
-                    guard generation == kanbanRefreshGeneration,
-                          requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                    guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
                     let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("kanban.board", error: message)
                     lastError = message
                     return
                 }
-                guard generation == kanbanRefreshGeneration,
-                      requestedBoardSlug == selectedKanbanBoardSlug else { return }
-                kanbanProjectionBoardSlug = requestedBoardSlug
-                kanbanTasks = Self.parseKanbanTasks(result.stdout, boardSlug: requestedBoardSlug)
+                guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
+                guard let parsedTasks = Self.parseKanbanTasksStrict(result.stdout, boardSlug: requestedBoardSlug) else {
+                    let message = "Hermes returned malformed Kanban data."
+                    recordProjectionFailure("kanban.board", error: message)
+                    lastError = message
+                    return
+                }
+                var refreshedTasks = parsedTasks
+                // A successful `kanban show <id>` in the current session is
+                // exact evidence that the card exists even when a stale or
+                // filtered list response omitted it. Recover that card by ID;
+                // never synthesize cards from titles or assignees.
+                if !scope.isAggregate {
+                    let knownIDs = Set(refreshedTasks.map(\.id))
+                    let observedIDs = dockModel?.observedKanbanTaskIDs ?? []
+                    for taskID in observedIDs where !knownIDs.contains(taskID) {
+                        guard let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID),
+                              shown.succeeded,
+                              let task = Self.parseKanbanTaskSummary(shown.stdout, boardSlug: requestedBoardSlug) else { continue }
+                        refreshedTasks.append(task)
+                    }
+                }
+                // Automatic polling commonly returns the same board. Avoid
+                // publishing an unchanged array: the Kanban surface observes
+                // this model, so an unnecessary publish forces SwiftUI to
+                // re-diff every visible lane while the user is scrolling.
+                if scope.isAggregate {
+                    // Before board inventory has selected a board, the
+                    // aggregate is the only valid visible projection.
+                    if selectedKanbanBoardSlug == nil, kanbanTasks != refreshedTasks {
+                        kanbanTasks = refreshedTasks
+                    }
+                } else if kanbanTasks != refreshedTasks {
+                    kanbanTasks = refreshedTasks
+                }
                 recordProjectionSuccess("kanban.board")
-                refreshKanbanStats()
-                refreshKanbanAssignees()
-                refreshKanbanBoards()
-                refreshKanbanDiagnostics()
+                refreshKanbanSupportingProjections()
             } catch {
-                guard generation == kanbanRefreshGeneration else { return }
+                guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
                 let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 recordProjectionFailure("kanban.board", error: message)
                 lastError = message
             }
         }
+    }
+
+    private func isCurrentKanbanRefresh(_ generation: UUID, scope: KanbanRefreshScope, boardSlug: String?) -> Bool {
+        let currentGeneration = scope.isAggregate ? aggregateKanbanRefreshGeneration : visibleKanbanRefreshGeneration
+        return generation == currentGeneration && (scope.isAggregate || boardSlug == selectedKanbanBoardSlug)
+    }
+
+    private func refreshKanbanSupportingProjections() {
+        refreshKanbanStats()
+        refreshKanbanAssignees()
+        refreshKanbanBoards()
+        refreshKanbanDiagnostics()
+    }
+
+    /// The global Kanban surface must never inherit a hidden session scope
+    /// left behind by the session-activity shortcut. Keep the user's ordinary
+    /// status, assignee, mine, archive, and sort choices, but make ownership
+    /// explicit at this boundary.
+    static func globalKanbanFilter(_ filter: KanbanListFilter) -> KanbanListFilter {
+        var global = filter
+        global.sessionID = nil
+        return global
+    }
+
+    /// Refreshes the global Kanban projection. Board inventory and board
+    /// selection are global controls, so they must never resurrect a session
+    /// filter retained from an Activity shortcut.
+    func refreshGlobalKanban(filter: KanbanListFilter? = nil) {
+        refreshKanban(
+            filter: Self.globalKanbanFilter(filter ?? kanbanFilter),
+            scope: .aggregate
+        )
+    }
+
+    /// Refreshes the user-visible Kanban list using the selected board and
+    /// explicit UI filters. Unlike aggregate hydration, this preserves a
+    /// deliberate session-only filter.
+    func refreshVisibleKanban(filter: KanbanListFilter? = nil) {
+        refreshKanban(filter: filter ?? kanbanFilter, scope: .visible)
     }
 
     /// Refreshes the Kanban projection for the currently focused session without
@@ -1226,10 +1567,22 @@ final class ControlCenterModel: ObservableObject {
             ? dockModel?.kanbanSessionID
             : candidateSessionID
         let requestedBoardSlug = selectedKanbanBoardSlug
+        let requested = SessionKanbanProjectionRequest(
+            sessionID: requestedSessionID,
+            boardSlug: requestedBoardSlug
+        )
+        if Self.shouldCoalesceSessionKanbanRefresh(
+            activeRequest: sessionKanbanRequest,
+            hasInFlightTask: sessionKanbanTask != nil,
+            requested: requested
+        ) {
+            return
+        }
         let generation = UUID()
         let isNewProjection = sessionKanbanSessionID != requestedSessionID || sessionKanbanBoardSlug != requestedBoardSlug
         sessionKanbanTask?.cancel()
         sessionKanbanRefreshGeneration = generation
+        sessionKanbanRequest = requested
         if isNewProjection {
             sessionKanbanTasks = []
         }
@@ -1237,10 +1590,12 @@ final class ControlCenterModel: ObservableObject {
         sessionKanbanBoardSlug = requestedBoardSlug
         beginProjectionRefresh("kanban.session")
 
-        guard let requestedSessionID,
-              !requestedSessionID.isEmpty,
-              let cli,
-              capabilityAvailable("kanban") else {
+        guard Self.shouldAttemptSessionKanbanQuery(
+            sessionID: requestedSessionID,
+            hasCLI: cli != nil
+        ),
+        let requestedSessionID,
+        let cli else {
             recordProjectionFailure("kanban.session", error: "Kanban is unavailable for the current session.")
             return
         }
@@ -1252,9 +1607,13 @@ final class ControlCenterModel: ObservableObject {
                     boardSlug: requestedBoardSlug,
                     filter: KanbanListFilter(sessionID: requestedSessionID, sort: "updated")
                 )
-                guard generation == self.sessionKanbanRefreshGeneration,
-                      self.sessionKanbanSessionID == requestedSessionID,
-                      requestedBoardSlug == self.selectedKanbanBoardSlug else { return }
+                guard Self.isCurrentSessionKanbanResult(
+                    generationMatches: generation == self.sessionKanbanRefreshGeneration,
+                    publishedSessionID: self.sessionKanbanSessionID,
+                    requestedSessionID: requestedSessionID,
+                    publishedBoardSlug: self.sessionKanbanBoardSlug,
+                    requestedBoardSlug: requestedBoardSlug
+                ) else { return }
                 guard result.succeeded else {
                     self.recordProjectionFailure(
                         "kanban.session",
@@ -1263,16 +1622,71 @@ final class ControlCenterModel: ObservableObject {
                     self.sessionKanbanTask = nil
                     return
                 }
-                self.sessionKanbanTasks = Self.parseKanbanTasks(result.stdout, boardSlug: requestedBoardSlug)
+                var sessionTasks = Self.filterSessionKanbanTasks(
+                    Self.parseKanbanTasks(result.stdout, boardSlug: requestedBoardSlug),
+                    sessionID: requestedSessionID
+                )
+
+                // Hermes agents can create a card through the kanban toolset
+                // without persisting the originating chat session on the
+                // task row. If this session explicitly ran `kanban show
+                // <task-id>`, that exact command is stronger attribution
+                // evidence than the missing database field. Enrich only
+                // those exact IDs; never match by assignee or title.
+                let observedIDs = self.dockModel?.observedKanbanTaskIDs ?? []
+                let knownIDs = Set(sessionTasks.map(\.id))
+                for taskID in observedIDs where !knownIDs.contains(taskID) {
+                    guard let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID),
+                          shown.succeeded,
+                          let task = Self.parseKanbanTaskSummary(
+                            shown.stdout,
+                            boardSlug: requestedBoardSlug,
+                            sessionID: requestedSessionID
+                          ) else { continue }
+                    sessionTasks.append(task)
+                }
+                self.sessionKanbanTasks = sessionTasks
                 self.sessionKanbanTask = nil
+                self.sessionKanbanRequest = nil
                 self.recordProjectionSuccess("kanban.session")
             } catch {
                 guard generation == self.sessionKanbanRefreshGeneration,
                       self.sessionKanbanSessionID == requestedSessionID else { return }
                 self.sessionKanbanTask = nil
+                self.sessionKanbanRequest = nil
                 self.recordProjectionFailure("kanban.session", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
+    }
+
+    static func shouldCoalesceSessionKanbanRefresh(
+        activeRequest: SessionKanbanProjectionRequest?,
+        hasInFlightTask: Bool,
+        requested: SessionKanbanProjectionRequest
+    ) -> Bool {
+        hasInFlightTask && activeRequest == requested
+    }
+
+    /// A session Activity result belongs to the request that created its
+    /// projection. The global board selector is populated asynchronously and
+    /// must not invalidate an otherwise current session-scoped list response.
+    static func isCurrentSessionKanbanResult(
+        generationMatches: Bool,
+        publishedSessionID: String?,
+        requestedSessionID: String,
+        publishedBoardSlug: String?,
+        requestedBoardSlug: String?
+    ) -> Bool {
+        generationMatches
+            && publishedSessionID == requestedSessionID
+            && publishedBoardSlug == requestedBoardSlug
+    }
+
+    /// The read-only list request is authoritative. Capability probes can be
+    /// delayed or stale and must not suppress a session-scoped Activity query.
+    static func shouldAttemptSessionKanbanQuery(sessionID: String?, hasCLI: Bool) -> Bool {
+        guard let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return hasCLI && !sessionID.isEmpty
     }
 
     func refreshKanbanBoards() {
@@ -1290,7 +1704,9 @@ final class ControlCenterModel: ObservableObject {
                     return
                 }
                 let boards = Self.parseKanbanBoards(result.stdout)
-                kanbanBoards = boards
+                if kanbanBoards != boards {
+                    kanbanBoards = boards
+                }
                 let previousSelection = selectedKanbanBoardSlug
                 if let selected = selectedKanbanBoardSlug,
                    boards.contains(where: { $0.slug == selected && !$0.archived }) {
@@ -1300,12 +1716,17 @@ final class ControlCenterModel: ObservableObject {
                     selectedKanbanBoardSlug = boards.first(where: { $0.isCurrent && !$0.archived })?.slug
                         ?? boards.first(where: { !$0.archived })?.slug
                 }
-                if previousSelection != selectedKanbanBoardSlug,
-                   selectedKanbanBoardSlug != nil {
-                    refreshKanban()
-                    if let sessionID = currentFocus?.sessionID {
-                        refreshSessionKanban(for: sessionID)
-                    }
+                let inventoryRefreshPlan = Self.boardInventoryRefreshPlan(
+                    previousSelection: previousSelection,
+                    resolvedSelection: selectedKanbanBoardSlug
+                )
+                if inventoryRefreshPlan.refreshBoard {
+                    // Keep eager aggregate hydration separate from the
+                    // visible board-scoped list.
+                    refreshVisibleKanban()
+                }
+                if inventoryRefreshPlan.refreshSession {
+                    refreshSessionKanban(for: dockModel?.kanbanSessionID)
                 }
             } catch {
                 guard generation == kanbanBoardsGeneration else { return }
@@ -1317,7 +1738,7 @@ final class ControlCenterModel: ObservableObject {
     func selectKanbanBoard(_ board: KanbanBoardSummary) {
         guard !board.archived, selectedKanbanBoardSlug != board.slug else { return }
         selectedKanbanBoardSlug = board.slug
-        kanbanRefreshGeneration = UUID()
+        visibleKanbanRefreshGeneration = UUID()
         kanbanStatsGeneration = UUID()
         kanbanAssigneesGeneration = UUID()
         kanbanDetailGeneration = UUID()
@@ -1330,11 +1751,20 @@ final class ControlCenterModel: ObservableObject {
         kanbanDiagnostics = []
         kanbanAttachments = []
         isLoadingKanbanDetail = false
-        refreshKanban()
-        if let sessionID = currentFocus?.sessionID {
-            refreshSessionKanban(for: sessionID)
-        }
+        refreshVisibleKanban()
+        refreshSessionKanban(for: dockModel?.kanbanSessionID)
         refreshKanbanDiagnostics()
+    }
+
+    /// Board inventory establishes the global board selector. It must not
+    /// restart the independently scoped session Activity request; explicit
+    /// user board selection is handled by `selectKanbanBoard(_:)` instead.
+    static func boardInventoryRefreshPlan(
+        previousSelection: String?,
+        resolvedSelection: String?
+    ) -> (refreshBoard: Bool, refreshSession: Bool) {
+        let selectionChanged = previousSelection != resolvedSelection && resolvedSelection != nil
+        return (refreshBoard: selectionChanged, refreshSession: false)
     }
 
     private func refreshKanbanAssignees() {
@@ -1347,7 +1777,10 @@ final class ControlCenterModel: ObservableObject {
                   result.succeeded,
                   generation == kanbanAssigneesGeneration,
                   requestedBoardSlug == selectedKanbanBoardSlug else { return }
-            kanbanAssignees = Self.parseKanbanAssignees(result.stdout)
+            let assignees = Self.parseKanbanAssignees(result.stdout)
+            if kanbanAssignees != assignees {
+                kanbanAssignees = assignees
+            }
         }
     }
 
@@ -1393,6 +1826,8 @@ final class ControlCenterModel: ObservableObject {
         if sessionCockpitSessionID != sessionID {
             sessionUsage = nil
             sessionContext = nil
+            checkpoints = []
+            checkpointDiff = nil
         }
         sessionCockpitSessionID = sessionID
         Task { @MainActor in
@@ -1407,6 +1842,54 @@ final class ControlCenterModel: ObservableObject {
             if usage != nil || context != nil {
                 recordProjectionSuccess("session.cockpit")
             }
+        }
+        refreshCheckpoints(sessionID: sessionID)
+    }
+
+    func refreshCheckpoints(sessionID: String? = nil) {
+        guard let rpc, let resolvedSessionID = sessionID ?? dockModel?.sessionID, !resolvedSessionID.isEmpty else {
+            checkpoints = []
+            checkpointDiff = nil
+            return
+        }
+        let generation = UUID()
+        checkpointsGeneration = generation
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        isLoadingCheckpoints = true
+        Task {
+            defer {
+                if generation == checkpointsGeneration { isLoadingCheckpoints = false }
+            }
+            guard let result = try? await rpc.rollbackList(sessionID: resolvedSessionID),
+                  generation == checkpointsGeneration,
+                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
+                  (sessionID != nil || dockModel?.sessionID == resolvedSessionID) else { return }
+            checkpoints = Self.parseCheckpoints(result)
+            if checkpoints.isEmpty { checkpointDiff = nil }
+        }
+    }
+
+    func loadCheckpointDiff(_ checkpoint: HermesCheckpointSummary) {
+        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty else { return }
+        let generation = checkpointsGeneration
+        Task {
+            guard let result = try? await rpc.rollbackDiff(sessionID: sessionID, hash: checkpoint.hash),
+                  generation == checkpointsGeneration,
+                  let diff = result["diff"] as? String, diff.utf8.count <= 4_096 else { return }
+            checkpointDiff = diff
+        }
+    }
+
+    func restoreCheckpoint(_ checkpoint: HermesCheckpointSummary) async -> Bool {
+        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty, dockModel?.status != .working else { return false }
+        do {
+            _ = try await rpc.rollbackRestore(sessionID: sessionID, hash: checkpoint.hash)
+            refreshCheckpoints(sessionID: sessionID)
+            return true
+        } catch {
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            return false
         }
     }
 
@@ -1458,7 +1941,10 @@ final class ControlCenterModel: ObservableObject {
                     recordProjectionFailure("kanban.diagnostics", error: Self.safeUserDiagnostic(result.stderr))
                     return
                 }
-                kanbanDiagnostics = Self.parseKanbanDiagnostics(result.stdout, boardSlug: requestedBoardSlug, severity: severity)
+                let diagnostics = Self.parseKanbanDiagnostics(result.stdout, boardSlug: requestedBoardSlug, severity: severity)
+                if kanbanDiagnostics != diagnostics {
+                    kanbanDiagnostics = diagnostics
+                }
                 recordProjectionSuccess("kanban.diagnostics")
             } catch {
                 guard generation == kanbanDiagnosticsGeneration else { return }
@@ -1722,13 +2208,19 @@ final class ControlCenterModel: ObservableObject {
             }
             do {
                 let taskResult = try await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: task.id)
-                guard taskResult.succeeded,
-                      var detail = Self.parseKanbanTaskDetail(taskResult.stdout, fallback: task, boardSlug: requestedBoardSlug) else {
+                guard taskResult.succeeded else {
                     guard generation == kanbanDetailGeneration else { return }
                     let safeError = HermesDiagnosticsService.safeSummary(taskResult.stderr)
                     lastError = safeError.isEmpty ? "Hermes Kanban task details are unavailable." : safeError
                     return
                 }
+                // A successful Hermes version may return a human-readable
+                // `show` response instead of structured JSON. The selected
+                // card already contains authoritative summary data, so keep
+                // Details usable and use the structured response only to
+                // enrich it when available.
+                var detail = Self.parseKanbanTaskDetail(taskResult.stdout, fallback: task, boardSlug: requestedBoardSlug)
+                    ?? Self.fallbackKanbanTaskDetail(task, boardSlug: requestedBoardSlug)
 
                 let runsResult = capabilityAvailable("kanban.taskRuns") ? try await cli.kanbanRuns(boardSlug: requestedBoardSlug, taskID: task.id) : nil
                 if let runsResult, runsResult.succeeded {
@@ -1764,7 +2256,10 @@ final class ControlCenterModel: ObservableObject {
                   result.succeeded,
                   generation == kanbanStatsGeneration,
                   requestedBoardSlug == selectedKanbanBoardSlug else { return }
-            kanbanStats = Self.parseKanbanStats(result.stdout)
+            let stats = Self.parseKanbanStats(result.stdout)
+            if kanbanStats != stats {
+                kanbanStats = stats
+            }
         }
     }
 
@@ -1783,7 +2278,12 @@ final class ControlCenterModel: ObservableObject {
         isCreatingKanbanTask = true
         defer { isCreatingKanbanTask = false }
         do {
-            let result = try await cli.kanbanCreate(boardSlug: selectedKanbanBoardSlug, title: cleanTitle, body: cleanBody.isEmpty ? nil : cleanBody)
+            let result = try await cli.kanbanCreate(
+                boardSlug: selectedKanbanBoardSlug,
+                title: cleanTitle,
+                body: cleanBody.isEmpty ? nil : cleanBody,
+                sessionID: dockModel?.kanbanSessionID
+            )
             guard result.succeeded else {
                 lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr)
                 return false
@@ -1962,7 +2462,10 @@ final class ControlCenterModel: ObservableObject {
                     _ = try await rpc.respondToClarification(sessionID: reference.sessionID ?? reference.sourceID, response: response)
                 case .stop:
                     guard let rpc else { return }
-                    _ = try await rpc.interrupt(sessionID: reference.sessionID ?? reference.sourceID)
+                    _ = try await rpc.interrupt(
+                        sessionID: reference.sessionID ?? reference.sourceID,
+                        profileID: projectProfileID
+                    )
                 case .resume:
                     guard let rpc else { return }
                     _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
@@ -2199,6 +2702,8 @@ final class ControlCenterModel: ObservableObject {
     func focus(sessionID: String?) {
         guard let sessionID, !sessionID.isEmpty else {
             sessionKanbanTask?.cancel()
+            sessionKanbanTask = nil
+            sessionKanbanRequest = nil
             sessionKanbanRefreshGeneration = UUID()
             sessionKanbanSessionID = nil
             sessionKanbanBoardSlug = nil
@@ -2292,7 +2797,7 @@ final class ControlCenterModel: ObservableObject {
             for project in candidates {
                 guard generation == projectMembershipGeneration,
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
-                guard let result = try? await rpc.projectSessions(projectID: project.id) else { continue }
+                guard let result = try? await rpc.projectSessions(projectID: project.id, profileID: self.projectProfileID) else { continue }
                 guard generation == projectMembershipGeneration,
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 if Self.parseProjectSessions(result).contains(where: { $0.id == sessionID }) {
@@ -2739,6 +3244,17 @@ final class ControlCenterModel: ObservableObject {
         )
     }
 
+    static func parseCheckpoints(_ result: [String: Any]) -> [HermesCheckpointSummary] {
+        guard result["enabled"] as? Bool == true,
+              let rows = result["checkpoints"] as? [[String: Any]], rows.count <= 50 else { return [] }
+        return rows.compactMap { row in
+            guard let hash = row["hash"] as? String, !hash.isEmpty, hash.count <= 128 else { return nil }
+            let timestamp = (row["timestamp"] as? String ?? "").prefix(128)
+            let message = (row["message"] as? String ?? "").prefix(512)
+            return HermesCheckpointSummary(hash: hash, timestamp: String(timestamp), message: String(message))
+        }
+    }
+
     static func parseSessionContext(_ result: [String: Any]) -> SessionContextSummary {
         let rows = (result["categories"] as? [[String: Any]] ?? []).enumerated().map { index, row in
             SessionContextCategory(
@@ -2835,27 +3351,136 @@ final class ControlCenterModel: ObservableObject {
     }
 
     static func parseKanbanTasks(_ output: String, boardSlug: String? = nil) -> [KanbanTaskSummary] {
-        guard let data = output.data(using: .utf8),
-              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-        return rows.compactMap { row in
-            guard let id = (row["id"] as? String) ?? (row["task_id"] as? String),
-                  let title = row["title"] as? String else { return nil }
-            return KanbanTaskSummary(
-                id: id,
-                boardSlug: boardSlug,
-                title: title,
-                status: (row["status"] as? String) ?? "unknown",
-                detail: (row["body"] as? String) ?? (row["description"] as? String),
-                priority: Self.stringValue(row["priority"]),
-                assignee: (row["assignee"] as? String) ?? (row["assigned_to"] as? String)
-            )
+        parseKanbanTasksStrict(output, boardSlug: boardSlug) ?? []
+    }
+
+    /// Returns nil when the CLI response is not a top-level task array. The
+    /// optional result distinguishes malformed output from a genuine empty
+    /// board, whose valid `[]` response must still replace the projection.
+    static func parseKanbanTasksStrict(_ output: String, boardSlug: String? = nil) -> [KanbanTaskSummary]? {
+        let starts = output.indices.filter { output[$0] == "[" || output[$0] == "{" }
+        var validEmptyRows: [[String: Any]]?
+        for start in starts {
+            var end = start
+            while end < output.endIndex {
+                if output[end] == "]" || output[end] == "}" {
+                    let candidate = String(output[start...end])
+                    if let data = candidate.data(using: .utf8),
+                       let value = try? JSONSerialization.jsonObject(with: data),
+                       let rows = kanbanTaskRows(from: value) {
+                        if !rows.isEmpty { return rows.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) } }
+                        validEmptyRows = rows
+                    }
+                }
+                end = output.index(after: end)
+            }
         }
+        return validEmptyRows?.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) }
+    }
+
+    private static func kanbanTaskRows(from value: Any) -> [[String: Any]]? {
+        if let rows = value as? [[String: Any]] { return rows }
+        if let encoded = value as? String,
+           let data = encoded.data(using: .utf8),
+           let nested = try? JSONSerialization.jsonObject(with: data) {
+            return kanbanTaskRows(from: nested)
+        }
+        guard let envelope = value as? [String: Any] else { return nil }
+        // Accept only known Hermes relay/list envelopes. Arbitrary objects must
+        // remain malformed instead of silently becoming an empty board.
+        for key in ["tasks", "items", "data", "result", "payload", "stdout", "output"] {
+            if let rows = kanbanTaskRows(from: envelope[key] as Any) { return rows }
+        }
+        return nil
+    }
+
+    static func parseKanbanTaskSummary(
+        _ output: String,
+        boardSlug: String? = nil,
+        sessionID: String? = nil
+    ) -> KanbanTaskSummary? {
+        guard let data = output.data(using: .utf8),
+              let value = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        let row: [String: Any]
+        if let dictionary = value as? [String: Any], let task = dictionary["task"] as? [String: Any] {
+            row = task
+        } else if let dictionary = value as? [String: Any] {
+            row = dictionary
+        } else {
+            return nil
+        }
+        guard let base = parseKanbanTaskSummary(row, boardSlug: boardSlug, sessionID: sessionID) else { return nil }
+        let event = parseLatestKanbanEvent((value as? [String: Any])?["events"])
+        return KanbanTaskSummary(
+            id: base.id,
+            boardSlug: base.boardSlug,
+            title: base.title,
+            status: base.status,
+            detail: base.detail,
+            priority: base.priority,
+            assignee: base.assignee,
+            sessionID: base.sessionID,
+            startedAt: base.startedAt,
+            completedAt: base.completedAt,
+            currentStepKey: base.currentStepKey,
+            latestEventKind: event.kind,
+            latestEventNote: event.note,
+            latestEventAt: event.date
+        )
+    }
+
+    private static func parseKanbanTaskSummary(
+        _ row: [String: Any],
+        boardSlug: String?,
+        sessionID: String? = nil
+    ) -> KanbanTaskSummary? {
+        guard let id = (row["id"] as? String) ?? (row["task_id"] as? String),
+              let title = (row["title"] as? String) ?? (row["t"] as? String) else { return nil }
+        return KanbanTaskSummary(
+            id: id,
+            boardSlug: boardSlug
+                ?? (row["board_slug"] as? String)
+                ?? (row["boardSlug"] as? String)
+                ?? (row["board"] as? String),
+            title: title,
+            status: (row["status"] as? String) ?? (row["s"] as? String) ?? "unknown",
+            detail: (row["body"] as? String) ?? (row["description"] as? String),
+            priority: Self.stringValue(row["priority"] ?? row["p"]),
+            assignee: (row["assignee"] as? String) ?? (row["assigned_to"] as? String) ?? (row["a"] as? String),
+            sessionID: sessionID ?? (row["session_id"] as? String) ?? (row["sessionID"] as? String),
+            startedAt: activityDate(row["started_at"] ?? row["startedAt"]),
+            completedAt: activityDate(row["completed_at"] ?? row["completedAt"]),
+            currentStepKey: (row["current_step_key"] as? String) ?? (row["currentStepKey"] as? String)
+        )
+    }
+
+    private static func parseLatestKanbanEvent(_ value: Any?) -> (kind: String?, note: String?, date: Date?) {
+        guard let events = value as? [[String: Any]], !events.isEmpty else { return (nil, nil, nil) }
+        let latest = events.max { lhs, rhs in
+            (activityDate(lhs["created_at"] ?? lhs["createdAt"]) ?? .distantPast)
+                < (activityDate(rhs["created_at"] ?? rhs["createdAt"]) ?? .distantPast)
+        } ?? [:]
+        return (
+            (latest["kind"] as? String) ?? (latest["type"] as? String),
+            (latest["note"] as? String)
+                ?? ((latest["payload"] as? [String: Any])?["note"] as? String)
+                ?? (latest["payload"] as? String),
+            activityDate(latest["created_at"] ?? latest["createdAt"])
+        )
+    }
+
+    /// The session Activity projection is a privacy boundary. Even when the
+    /// CLI request carries a session filter, publish only rows that return a
+    /// present, exact canonical session identifier.
+    static func filterSessionKanbanTasks(_ tasks: [KanbanTaskSummary], sessionID: String) -> [KanbanTaskSummary] {
+        guard !sessionID.isEmpty else { return [] }
+        return tasks.filter { $0.sessionID == sessionID }
     }
 
     static func parseKanbanTaskDetail(_ output: String, fallback: KanbanTaskSummary, boardSlug: String? = nil) -> KanbanTaskDetail? {
         guard let data = output.data(using: .utf8),
-              let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        let source = (row["task"] as? [String: Any]) ?? row
+              let value = try? JSONSerialization.jsonObject(with: data),
+              let source = kanbanTaskDetailRow(from: value) else { return nil }
         guard let id = (source["id"] as? String) ?? (source["task_id"] as? String) else { return nil }
         return KanbanTaskDetail(
             id: id,
@@ -2867,6 +3492,39 @@ final class ControlCenterModel: ObservableObject {
             assignee: (source["assignee"] as? String) ?? (source["assigned_to"] as? String) ?? fallback.assignee,
             runs: []
         )
+    }
+
+    static func fallbackKanbanTaskDetail(_ task: KanbanTaskSummary, boardSlug: String? = nil) -> KanbanTaskDetail {
+        KanbanTaskDetail(
+            id: task.id,
+            boardSlug: boardSlug ?? task.boardSlug,
+            title: task.title,
+            body: task.detail,
+            status: task.status,
+            priority: task.priority,
+            assignee: task.assignee,
+            runs: []
+        )
+    }
+
+    /// Hermes versions and relay transports have returned task details as a
+    /// task object, a one-item array, or a known result envelope. Keep this
+    /// normalization local to the parser so the UI does not need to know
+    /// which transport shape produced the response.
+    private static func kanbanTaskDetailRow(from value: Any) -> [String: Any]? {
+        if let rows = value as? [[String: Any]] {
+            return rows.first.flatMap { kanbanTaskDetailRow(from: $0) }
+        }
+        guard let dictionary = value as? [String: Any] else { return nil }
+        if let task = dictionary["task"] {
+            if let row = kanbanTaskDetailRow(from: task) { return row }
+        }
+        for key in ["data", "result", "payload", "output", "stdout"] {
+            if let row = dictionary[key].flatMap({ kanbanTaskDetailRow(from: $0) }) {
+                return row
+            }
+        }
+        return dictionary["id"] != nil || dictionary["task_id"] != nil ? dictionary : nil
     }
 
     static func parseKanbanRuns(_ output: String, boardSlug: String? = nil) -> [KanbanRunSummary] {

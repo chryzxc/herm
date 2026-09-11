@@ -253,6 +253,7 @@ struct ReminderSummary: Identifiable, Codable, Equatable {
 
 struct SessionSummary: Identifiable, Codable, Equatable {
     let id: String
+    let profileID: String?
     let title: String
     let state: String
     let preview: String?
@@ -264,8 +265,9 @@ struct SessionSummary: Identifiable, Codable, Equatable {
 
     var lastUpdatedAt: Date? { updatedAt }
 
-    init(id: String, title: String, state: String, preview: String?, updatedAt: Date? = nil) {
+    init(id: String, title: String, state: String, preview: String?, updatedAt: Date? = nil, profileID: String? = nil) {
         self.id = id
+        self.profileID = profileID
         self.title = title
         self.state = state
         self.preview = preview
@@ -424,8 +426,15 @@ struct KanbanTaskSummary: Identifiable, Equatable {
     let detail: String?
     let priority: String?
     let assignee: String?
+    let sessionID: String?
+    let startedAt: Date?
+    let completedAt: Date?
+    let currentStepKey: String?
+    let latestEventKind: String?
+    let latestEventNote: String?
+    let latestEventAt: Date?
 
-    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?) {
+    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil) {
         self.id = id
         self.boardSlug = boardSlug
         self.title = title
@@ -433,6 +442,13 @@ struct KanbanTaskSummary: Identifiable, Equatable {
         self.detail = detail
         self.priority = priority
         self.assignee = assignee
+        self.sessionID = sessionID
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.currentStepKey = currentStepKey
+        self.latestEventKind = latestEventKind
+        self.latestEventNote = latestEventNote
+        self.latestEventAt = latestEventAt
     }
 }
 
@@ -503,6 +519,14 @@ struct KanbanListFilter: Equatable {
     var sessionID: String?
     var includeArchived = false
     var sort: String?
+}
+
+/// Identifies the authoritative scope of an in-flight session Kanban query.
+/// Multiple workspace surfaces can observe the same session; identical reads
+/// must share one request rather than canceling one another.
+struct SessionKanbanProjectionRequest: Equatable {
+    let sessionID: String?
+    let boardSlug: String?
 }
 
 struct HermesJourneyNode: Identifiable, Equatable {
@@ -996,6 +1020,19 @@ struct VerificationEvidenceSummary: Equatable {
 struct VerificationSummary: Equatable {
     let state: VerificationState
     let evidence: VerificationEvidenceSummary?
+}
+
+struct HermesInsightsSummary: Equatable, Sendable {
+    let days: Int
+    let sessions: Int
+    let messages: Int
+}
+
+struct HermesCheckpointSummary: Identifiable, Equatable, Sendable {
+    let hash: String
+    let timestamp: String
+    let message: String
+    var id: String { hash }
 }
 
 enum ControlTab: String, CaseIterable, Identifiable {

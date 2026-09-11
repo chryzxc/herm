@@ -4,6 +4,7 @@ import Foundation
 import UniformTypeIdentifiers
 struct WorkspaceActivitySidebar: View {
     @ObservedObject var model: DockModel
+    @ObservedObject var botMode: BotModeModel
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
@@ -60,6 +61,8 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingAllSkills = false
     @State private var expandedSettingsCapabilityCategories: Set<CapabilityCategory> = [.core]
     @State private var isAgentUpdateExpanded = true
+    @State private var isAppearanceExpanded = false
+    @State private var isInsightsExpanded = false
     @State private var isCapabilitiesExpanded = true
     @State private var isSetupExpanded = true
     @State private var isVerificationExpanded = false
@@ -69,7 +72,9 @@ struct WorkspaceActivitySidebar: View {
     @State private var isLearningExpanded = false
     @State private var isRuntimeConfigurationExpanded = false
     @State private var kanbanStatusFilter = "All"
+    @State private var isShowingKanbanStatusFilter = false
     @State private var kanbanAssigneeFilter = "All"
+    @State private var isShowingKanbanAssigneeFilter = false
     @State private var kanbanMineOnly = false
     @State private var kanbanCurrentSessionOnly = false
     @State private var kanbanSort = "updated"
@@ -92,6 +97,13 @@ struct WorkspaceActivitySidebar: View {
     @State private var pendingAgentID: String?
     @State private var isShowingAgentUpdateConfirmation = false
     @State private var isShowingDockRestartConfirmation = false
+    @State private var isShowingEmergencyStopConfirmation = false
+    @State private var isShowingEmergencyResumeConfirmation = false
+    @State private var checkpointForRestore: HermesCheckpointSummary?
+    @State private var pendingProjectMutation: ProjectMutation?
+    @State private var isShowingProjectMutationConfirmation = false
+    @State private var pendingProjectFolder: URL?
+    @State private var isShowingProjectCreationConfirmation = false
     @State private var quotaProviderOrder = QuotaProviderCatalog.orderedProviderIDs()
     @State private var draggingQuotaProviderID: String?
     @StateObject private var commandCenterPreferences = CommandCenterPreferencesStore()
@@ -99,6 +111,7 @@ struct WorkspaceActivitySidebar: View {
 
     init(
         model: DockModel,
+        botMode: BotModeModel,
         store: WorkspaceStore,
         control: ControlCenterModel,
         workflow: DeveloperWorkflowModel,
@@ -112,6 +125,7 @@ struct WorkspaceActivitySidebar: View {
         agentUpdateService: HermesUpdateService
     ) {
         self.model = model
+        self.botMode = botMode
         self.store = store
         self.control = control
         self.workflow = workflow
@@ -136,6 +150,30 @@ struct WorkspaceActivitySidebar: View {
         case done = "Done"
 
         var id: String { rawValue }
+        var emptyTitle: String {
+            switch self {
+            case .triage: "Nothing awaiting triage"
+            case .todo: "No queued work"
+            case .ready: "Nothing ready to start"
+            case .running: "No active work"
+            case .review: "Nothing awaiting review"
+            case .scheduled: "Nothing scheduled"
+            case .blocked: "No blocked work"
+            case .done: "No completed work"
+            }
+        }
+        var emptyDetail: String {
+            switch self {
+            case .triage: "New tasks will appear here for routing."
+            case .todo: "Tasks waiting for an owner or next step appear here."
+            case .ready: "Assigned tasks ready for execution appear here."
+            case .running: "Tasks currently being worked will appear here."
+            case .review: "Tasks submitted for review appear here."
+            case .scheduled: "Tasks with a future dispatch time appear here."
+            case .blocked: "Tasks needing attention or a dependency appear here."
+            case .done: "Completed tasks remain visible here when reported."
+            }
+        }
         var icon: String {
             switch self {
             case .triage: "scope"
@@ -162,6 +200,11 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private enum ProjectMutation: String, Identifiable {
+        case activate, archive, delete
+        var id: Self { self }
+    }
+
     private var sidebarContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             if showsHeader {
@@ -171,28 +214,32 @@ struct WorkspaceActivitySidebar: View {
             if showsModePicker {
                 modePicker
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    pageHeader
+            if selectedMode == .kanban {
+                kanbanContent
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        pageHeader
 
-                    Group {
-                        switch selectedMode {
-                        case .today: nowContent
-                        case .session: sessionOverviewContent
-                        case .inbox: inboxContent
-                        case .activity: activityContent
-                        case .changes: changesContent
-                        case .verification: verificationContent
-                        case .automations: automationsContent
-                        case .projects: projectsContent
-                        case .search: searchContent
-                        case .kanban: kanbanContent
-                        case .core: coreContent
-                        case .quota: quotaContent
+                        Group {
+                            switch selectedMode {
+                            case .today: nowContent
+                            case .session: sessionOverviewContent
+                            case .inbox: inboxContent
+                            case .activity: activityContent
+                            case .changes: changesContent
+                            case .verification: verificationContent
+                            case .automations: automationsContent
+                            case .projects: projectsContent
+                            case .search: searchContent
+                            case .kanban: kanbanContent
+                            case .core: coreContent
+                            case .quota: quotaContent
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
                 }
             }
         }
@@ -200,11 +247,21 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var pageHeader: some View {
-        DockPageHeader(
-            icon: selectedMode.pageHeaderIcon,
-            title: selectedMode.pageHeaderTitle,
-            subtitle: pageHeaderSubtitle
-        )
+        if selectedMode == .kanban {
+            DockPageHeader(
+                icon: selectedMode.pageHeaderIcon,
+                title: selectedMode.pageHeaderTitle,
+                subtitle: pageHeaderSubtitle,
+                onRefresh: { applyKanbanFilters() },
+                isRefreshing: control.isKanbanRefreshPending
+            )
+        } else {
+            DockPageHeader(
+                icon: selectedMode.pageHeaderIcon,
+                title: selectedMode.pageHeaderTitle,
+                subtitle: pageHeaderSubtitle
+            )
+        }
     }
 
     private var pageHeaderSubtitle: String {
@@ -305,7 +362,7 @@ struct WorkspaceActivitySidebar: View {
             if selectedMode == .quota {
                 control.refreshProviderQuota()
             } else if selectedMode == .kanban {
-                control.refreshKanban()
+                applyKanbanFilters()
             }
         }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
@@ -323,14 +380,17 @@ struct WorkspaceActivitySidebar: View {
         }
         .onChange(of: control.capabilities) { _, _ in
             guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
-            control.refreshKanban()
+            applyKanbanFilters()
         }
         .onChange(of: selectedMode) { _, mode in
             switch mode {
             case .quota:
                 control.refreshProviderQuota()
             case .kanban:
-                control.refreshKanban()
+                // Re-apply this surface's visible controls. This prevents a
+                // session-only query started from Activity from leaking into
+                // a separately opened global board.
+                applyKanbanFilters()
             default:
                 break
             }
@@ -338,6 +398,13 @@ struct WorkspaceActivitySidebar: View {
         .onChange(of: model.runtimeConfiguration) { _, _ in
             guard selectedMode == .quota else { return }
             control.refreshProviderQuota()
+        }
+        .onChange(of: model.observedKanbanTaskRevision) { _, _ in
+            // Keep the board in step with an exact `kanban show <id>` tool
+            // event. The task may not carry a durable session_id, so waiting
+            // for a session-filtered list would leave the board falsely empty.
+            guard selectedMode == .kanban else { return }
+            applyKanbanFilters()
         }
         .task(id: selectedMode == .quota) {
             guard selectedMode == .quota else { return }
@@ -360,9 +427,6 @@ struct WorkspaceActivitySidebar: View {
 
     var body: some View {
         observedSidebar
-        .sheet(item: $selectedKanbanTask) { task in
-            kanbanDetailSheet(task)
-        }
         .sheet(isPresented: $isShowingCommandPalette) {
             DockActionPalette(repositoryAvailable: activeRepositoryPath != nil, isWorking: model.status == .working) { command in
                 run(command)
@@ -501,6 +565,67 @@ struct WorkspaceActivitySidebar: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This changes delegation for Hermes globally, not only for the current session.")
+        }
+        .confirmationDialog("Pause New Hermes Work?", isPresented: $isShowingEmergencyStopConfirmation) {
+            Button("Pause New Work", role: .destructive) {
+                control.engageEmergencyStop(reason: "Paused from Hermes Agent Dock")
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Hermes will stop new cron, Kanban, and gateway turns. In-flight work will continue.")
+        }
+        .confirmationDialog("Resume New Hermes Work?", isPresented: $isShowingEmergencyResumeConfirmation) {
+            Button("Resume New Work") {
+                control.releaseEmergencyStop()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Hermes will resume accepting new cron, Kanban, and gateway turns globally.")
+        }
+        .confirmationDialog("Restore Session Checkpoint?", isPresented: Binding(get: { checkpointForRestore != nil }, set: { if !$0 { checkpointForRestore = nil } })) {
+            if let checkpoint = checkpointForRestore {
+                Button("Restore Checkpoint", role: .destructive) {
+                    Task {
+                        _ = await control.restoreCheckpoint(checkpoint)
+                        checkpointForRestore = nil
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { checkpointForRestore = nil }
+        } message: {
+            if let checkpoint = checkpointForRestore {
+                Text("Hermes will restore this session to checkpoint \(checkpoint.hash). Changes after that checkpoint cannot be recovered through the Dock.")
+            }
+        }
+        .confirmationDialog("Change Project?", isPresented: $isShowingProjectMutationConfirmation) {
+            if let mutation = pendingProjectMutation, let project = control.selectedProject {
+                switch mutation {
+                case .activate:
+                    Button("Set Active Project") { Task { _ = await control.setActiveProject(project) } }
+                case .archive:
+                    Button("Archive Project", role: .destructive) { Task { _ = await control.archiveProject(project) } }
+                case .delete:
+                    Button("Delete Project", role: .destructive) { Task { _ = await control.deleteProject(project) } }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let mutation = pendingProjectMutation, let project = control.selectedProject {
+                Text(projectMutationMessage(mutation, project: project))
+            }
+        }
+        .confirmationDialog("Create Project?", isPresented: $isShowingProjectCreationConfirmation) {
+            if let folder = pendingProjectFolder {
+                Button("Create Project") {
+                    let name = folder.lastPathComponent
+                    Task { _ = await control.createProject(name: name, folder: folder.path) }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            if let folder = pendingProjectFolder {
+                Text("Hermes will create a project named \(folder.lastPathComponent) for this folder.")
+            }
         }
         .confirmationDialog("Stop Hermes Process?", isPresented: Binding(get: { pendingProcess != nil }, set: { if !$0 { pendingProcess = nil } })) {
             if let process = pendingProcess {
@@ -828,7 +953,10 @@ struct WorkspaceActivitySidebar: View {
             Task { await refreshRepository() }
         }
         if mode == .search { control.search(searchQuery) }
-        if mode == .kanban { control.refreshKanban() }
+        // Always derive the request from this surface's visible controls. A
+        // direct refresh can retain the session filter set by Activity, then
+        // make the global board look empty while active cards exist.
+        if mode == .kanban { applyKanbanFilters() }
         if mode == .verification { control.refreshVerification() }
         if mode == .changes { Task { await refreshRepository() } }
     }
@@ -906,27 +1034,22 @@ struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.dockAccent)
                 }
             }
-            SessionKanbanActivityView(
-                control: control,
+            SessionBotActivityView(
+                model: model,
+                botMode: botMode,
                 sessionID: model.kanbanSessionID,
-                onOpenBoard: openSessionKanban,
-                onOpenTask: openSessionKanbanTask
+                onOpenBotChat: { bot in model.resumeBotChat(bot) }
             )
             AgentBoardView(model: model, embedded: true)
         }
     }
 
     private func openSessionKanban() {
-        kanbanCurrentSessionOnly = true
+        // The left Control Kanban is always global. Session attribution belongs
+        // to the Activity projection, not this board surface.
+        kanbanCurrentSessionOnly = false
         withAnimation(.dockEase(duration: 0.2)) { selectedMode = .kanban }
-        control.refreshKanban(filter: KanbanListFilter(
-            status: nil,
-            assignee: nil,
-            mine: false,
-            sessionID: model.kanbanSessionID,
-            includeArchived: false,
-            sort: kanbanSort
-        ))
+        applyKanbanFilters()
     }
 
     private func openSessionKanbanTask(_ taskID: String) {
@@ -1168,7 +1291,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
-            if let verification = control.verification {
+                if let verification = control.verification {
                 let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
                 diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .dockSuccess : .dockWarning)
                 Text(deliveryEvidence.nextAction)
@@ -1268,6 +1391,17 @@ struct WorkspaceActivitySidebar: View {
                         store.attachProject(at: selected, toSessionID: model.sessionID)
                     }
                 }
+            }
+        }
+        .task(id: selectedMode == .kanban) {
+            guard selectedMode == .kanban else { return }
+            while !Task.isCancelled {
+                let hasLiveCards = control.kanbanTasks.contains {
+                    ["running", "claimed", "in_progress", "blocked", "review", "waiting"].contains($0.status.lowercased())
+                }
+                try? await Task.sleep(for: hasLiveCards ? .seconds(5) : .seconds(15))
+                guard !Task.isCancelled, selectedMode == .kanban else { return }
+                applyKanbanFilters()
             }
         }
     }
@@ -1974,14 +2108,14 @@ struct WorkspaceActivitySidebar: View {
                 HStack {
                     sectionLabel("PROJECTS  ·  0")
                     Spacer()
-                    addProjectDirectoryButton
+                    projectDirectoryActions
                 }
                 emptyState(icon: "folder", title: "No projects", detail: "Projects will appear here when project contexts are available.")
             } else {
                 HStack {
                     sectionLabel("PROJECTS  ·  \(control.projects.count)")
                     Spacer()
-                    addProjectDirectoryButton
+                    projectDirectoryActions
                 }
                 ForEach(control.projects) { project in
                     Button {
@@ -2037,6 +2171,19 @@ struct WorkspaceActivitySidebar: View {
         .help("Start a new chat in a directory")
     }
 
+    private var projectDirectoryActions: some View {
+        HStack(spacing: 10) {
+            addProjectDirectoryButton
+            if control.capabilityAvailable(HermesFeatureIDs.ID.projectsCreate.rawValue) {
+                Button("CREATE PROJECT") { chooseProjectForCreation() }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockAccent)
+                    .help("Create a Hermes project from a folder")
+            }
+        }
+    }
+
     private func startNewChat(in path: String) {
         store.attachProject(at: path)
         control.closeProject()
@@ -2067,6 +2214,19 @@ struct WorkspaceActivitySidebar: View {
         startNewChat(in: url.standardizedFileURL.path)
     }
 
+    private func chooseProjectForCreation() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a project directory"
+        panel.message = "Select the folder to add as a Hermes project."
+        panel.prompt = "Create Project"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        pendingProjectFolder = url.standardizedFileURL
+        isShowingProjectCreationConfirmation = true
+    }
+
     private func selectedProjectSummary(_ project: ProjectSummary) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
@@ -2085,6 +2245,23 @@ struct WorkspaceActivitySidebar: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            HStack(spacing: 10) {
+                if !project.isActive, control.capabilityAvailable(HermesFeatureIDs.ID.projectsSetActive.rawValue) {
+                    Button("SET ACTIVE") { requestProjectMutation(.activate) }
+                        .foregroundStyle(Color.dockAccent)
+                }
+                if control.capabilityAvailable(HermesFeatureIDs.ID.projectsArchive.rawValue) {
+                    Button("ARCHIVE") { requestProjectMutation(.archive) }
+                        .foregroundStyle(Color.dockWarning)
+                }
+                if control.capabilityAvailable(HermesFeatureIDs.ID.projectsDelete.rawValue) {
+                    Button("DELETE") { requestProjectMutation(.delete) }
+                        .foregroundStyle(Color.dockDestructive)
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 4)
@@ -2102,6 +2279,19 @@ struct WorkspaceActivitySidebar: View {
         let counts = "\(folderLabel)  ·  \(sessionLabel)"
         guard project.name != "__no_project__" else { return counts }
         return "\(counts)  ·  \(project.name)"
+    }
+
+    private func projectMutationMessage(_ mutation: ProjectMutation, project: ProjectSummary) -> String {
+        switch mutation {
+        case .activate: "Hermes will make \(projectDisplayName(project)) the active project."
+        case .archive: "Hermes will archive \(projectDisplayName(project)) and remove it from active project navigation."
+        case .delete: "Hermes will permanently delete \(projectDisplayName(project)) from Hermes project storage."
+        }
+    }
+
+    private func requestProjectMutation(_ mutation: ProjectMutation) {
+        pendingProjectMutation = mutation
+        isShowingProjectMutationConfirmation = true
     }
 
     private var selectedProjectFolderPath: String? {
@@ -2168,9 +2358,14 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var kanbanContent: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            kanbanOverviewMetrics
-            kanbanBoardToolbar
+        HSplitView {
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 0) {
+                    pageHeader
+                        .padding(.horizontal, 16)
+
+                    VStack(alignment: .leading, spacing: 18) {
+                        kanbanOverviewMetrics
 
             if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly {
                 HStack {
@@ -2244,7 +2439,7 @@ struct WorkspaceActivitySidebar: View {
                                 HStack {
                                     Text(diagnostic.severity.uppercased())
                                         .foregroundStyle(diagnostic.severity.lowercased() == "error" ? Color.dockDestructive : Color.dockWarning)
-                                    Text(diagnostic.title).foregroundStyle(Color.dockPrimaryText)
+                                    Text(diagnostic.title).foregroundStyle(Color.dockSecondaryText)
                                     Spacer()
                                     if diagnostic.taskID != nil { LucideImage(systemName: "chevron.right") }
                                 }
@@ -2260,25 +2455,19 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
-            if let state = control.refreshState(for: "kanban.board"), state.error != nil, !state.isRefreshing, control.kanbanTasks.isEmpty {
-                emptyState(
-                    icon: "exclamationmark.triangle",
-                    title: kanbanCurrentSessionOnly ? "Session Kanban unavailable" : "Kanban unavailable",
-                    detail: "The current board query failed. Retry before treating this board as empty."
-                )
-            } else if control.kanbanTasks.isEmpty {
-                kanbanEmptyState
-            } else {
-                LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 220), spacing: 12, alignment: .top)],
-                    alignment: .leading,
-                    spacing: 14
-                ) {
+            // Keep the complete board in one scan line. Each lane owns its
+            // vertical content while the board itself scrolls horizontally,
+            // so cards remain visible from the top of the board to the bottom
+            // without creating a second row of lanes.
+            ScrollView(.horizontal, showsIndicators: true) {
+                LazyHStack(alignment: .top, spacing: 12) {
                     ForEach(KanbanLane.allCases) { lane in
                         kanbanLane(lane)
                     }
                 }
+                .padding(.vertical, 1)
             }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             if let state = control.refreshState(for: "kanban.board"), let error = state.error {
                 HStack(alignment: .top, spacing: 8) {
                     LucideImage(systemName: "exclamationmark.triangle")
@@ -2294,47 +2483,20 @@ struct WorkspaceActivitySidebar: View {
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockWarning.opacity(0.34), lineWidth: 0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-        }
-    }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                }
+            }
+            .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
 
-    private var kanbanBoardToolbar: some View {
-        HStack(spacing: 10) {
-            if control.capabilityAvailable("kanban.boards") {
-                Menu {
-                    ForEach(control.kanbanBoards.filter { !$0.archived }) { board in
-                        Button {
-                            control.selectKanbanBoard(board)
-                        } label: {
-                            LucideLabel(board.name, icon: control.selectedKanbanBoardSlug == board.slug ? "checkmark.circle" : "circle")
-                        }
-                    }
-                    if control.kanbanBoards.isEmpty {
-                        Text("No boards reported by Hermes")
-                    }
-                    Button {
-                        control.refreshKanbanBoards()
-                    } label: {
-                        LucideLabel("Refresh boards", icon: "refresh-cw")
-                    }
-                } label: {
-                    LucideLabel(control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name ?? "BOARD", icon: "rectangle.3.group")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockAccent)
+            if let task = selectedKanbanTask {
+                kanbanDetailPanel(task)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-            Spacer()
-            Button { control.refreshKanban() } label: {
-                if control.isActionPending(control.refreshKanbanActionID) {
-                    ProgressView().controlSize(.small).tint(Color.dockAccent)
-                } else {
-                    LucideLabel("Refresh", icon: "refresh-cw")
-                }
-            }
-            .buttonStyle(.borderless)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Color.dockAccent)
-            .disabled(control.isActionPending(control.refreshKanbanActionID))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.dockEase(duration: 0.2), value: selectedKanbanTask?.id)
     }
 
     private var kanbanOverviewMetrics: some View {
@@ -2378,73 +2540,238 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private var kanbanEmptyState: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LucideImage(systemName: "rectangle.3.group")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(Color.dockAccent)
-            Text(kanbanCurrentSessionOnly ? "No tasks for this session" : "This board is clear")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.dockPrimaryText)
-            Text(
-                kanbanCurrentSessionOnly
-                    ? "No cards are attributed to this session. Turn off Session to view global work."
-                    : "Add the next piece of work when it needs ownership, a status, or follow-up."
-            )
-            .font(.system(size: 12))
-            .foregroundStyle(Color.dockMetadataText)
-            .fixedSize(horizontal: false, vertical: true)
-            if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly {
-                Button("Add first task") {
-                    withAnimation(.dockEase(duration: 0.2)) { isShowingKanbanComposer = true }
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 210, alignment: .leading)
-        .padding(.horizontal, 20)
-        .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-    }
 
     private var kanbanFilterControls: some View {
-        HStack(spacing: 8) {
-            Menu(kanbanStatusFilter.uppercased()) {
-                Button("ALL") { kanbanStatusFilter = "All"; applyKanbanFilters() }
-                ForEach(KanbanLane.allCases) { lane in
-                    Button(lane.rawValue.uppercased()) { kanbanStatusFilter = lane.rawValue; applyKanbanFilters() }
-                }
+        HStack(spacing: 6) {
+            Button {
+                isShowingKanbanStatusFilter.toggle()
+            } label: {
+                kanbanFilterChip(kanbanStatusFilter == "All" ? "Status" : kanbanStatusFilter, icon: "line.3.horizontal.decrease")
             }
-            Menu(kanbanAssigneeFilter.uppercased()) {
-                Button("ALL ASSIGNEES") { kanbanAssigneeFilter = "All"; applyKanbanFilters() }
-                ForEach(control.kanbanAssignees, id: \.self) { assignee in
-                    Button(assignee) { kanbanAssigneeFilter = assignee; applyKanbanFilters() }
-                }
+            .popover(isPresented: $isShowingKanbanStatusFilter, arrowEdge: .bottom) {
+                kanbanStatusPopover
             }
-            Toggle("MINE", isOn: $kanbanMineOnly)
-                .toggleStyle(.button)
-                .onChange(of: kanbanMineOnly) { _, _ in applyKanbanFilters() }
-            if model.kanbanSessionID != nil {
-                Toggle("SESSION", isOn: $kanbanCurrentSessionOnly)
-                    .toggleStyle(.button)
-                    .onChange(of: kanbanCurrentSessionOnly) { _, _ in applyKanbanFilters() }
+            Button {
+                isShowingKanbanAssigneeFilter.toggle()
+            } label: {
+                kanbanFilterChip(kanbanAssigneeFilter == "All" ? "Assignee" : kanbanAssigneeFilter, icon: "person.2.fill")
             }
-            Menu("SORT") {
+            .popover(isPresented: $isShowingKanbanAssigneeFilter, arrowEdge: .bottom) {
+                kanbanAssigneePopover
+            }
+            Button {
+                kanbanMineOnly.toggle()
+                applyKanbanFilters()
+            } label: {
+                kanbanFilterChip("Mine", icon: "person.fill", isSelected: kanbanMineOnly)
+            }
+            Menu {
                 ForEach(["updated", "created-desc", "priority-desc", "title"], id: \.self) { value in
                     Button(value.uppercased()) { kanbanSort = value; applyKanbanFilters() }
                 }
+            } label: {
+                kanbanFilterChip(kanbanSort == "updated" ? "Sort" : kanbanSort, icon: "arrow.up.arrow.down")
             }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(Color.dockAccent)
-        .disabled(control.isActionPending(control.refreshKanbanActionID))
+        .padding(6)
+        .background(Color.dockSurface2.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.dockBorderLight, lineWidth: 0.5)
+        }
+        .disabled(control.isKanbanRefreshPending)
+    }
+
+    private func kanbanFilterChip(_ title: String, icon: String, isSelected: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+            Text(title)
+                .lineLimit(1)
+            Image(systemName: "chevron-down")
+                .font(.system(size: 8, weight: .bold))
+        }
+        .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.dockSurface.opacity(0.72))
+        .clipShape(Capsule())
+        .overlay {
+            Capsule().stroke(isSelected ? Color.dockAccent.opacity(0.28) : Color.dockBorderLight, lineWidth: 0.5)
+        }
+    }
+
+    private var kanbanStatusPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Image(systemName: "circle.grid.2x2.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
+                Text("STATUS")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.9)
+                    .foregroundStyle(Color.dockMetadataText)
+                Spacer()
+                Text("\(KanbanLane.allCases.count)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            ScrollView {
+                LazyVStack(spacing: 3) {
+                    kanbanStatusRow(nil, title: "All statuses", isSelected: kanbanStatusFilter == "All")
+                    ForEach(KanbanLane.allCases) { lane in
+                        kanbanStatusRow(lane, title: lane.rawValue, isSelected: kanbanStatusFilter == lane.rawValue)
+                    }
+                }
+                .padding(8)
+            }
+            .frame(maxHeight: 320)
+        }
+        .frame(width: 270)
+        .background(Color.dockCanvas)
+    }
+
+    private func kanbanStatusRow(_ lane: KanbanLane?, title: String, isSelected: Bool) -> some View {
+        Button {
+            kanbanStatusFilter = lane?.rawValue ?? "All"
+            isShowingKanbanStatusFilter = false
+            applyKanbanFilters()
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill((lane?.color ?? Color.dockAccent).opacity(0.18))
+                    if let lane {
+                        LucideImage(systemName: lane.icon)
+                            .foregroundStyle(lane.color)
+                    } else {
+                        Image(systemName: "circle.grid.2x2.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
+                    }
+                }
+                .frame(width: 30, height: 30)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.dockAccent)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(isSelected ? Color.dockAccent.opacity(0.11) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var kanbanAssigneePopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 9) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
+                Text("ASSIGNEE")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.9)
+                    .foregroundStyle(Color.dockMetadataText)
+                Spacer()
+                Text("\(control.kanbanAssignees.count)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            ScrollView {
+                LazyVStack(spacing: 3) {
+                    kanbanAssigneeRow("All", isSelected: kanbanAssigneeFilter == "All")
+                    ForEach(control.kanbanAssignees, id: \.self) { assignee in
+                        kanbanAssigneeRow(assignee, isSelected: kanbanAssigneeFilter == assignee)
+                    }
+                }
+                .padding(8)
+            }
+            .frame(maxHeight: 320)
+        }
+        .frame(width: 270)
+        .background(Color.dockCanvas)
+    }
+
+    private func kanbanAssigneeRow(_ assignee: String, isSelected: Bool) -> some View {
+        Button {
+            kanbanAssigneeFilter = assignee
+            isShowingKanbanAssigneeFilter = false
+            applyKanbanFilters()
+        } label: {
+            HStack(spacing: 10) {
+                if assignee == "All" {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(Color.dockAccent.opacity(0.18))
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
+                    }
+                    .frame(width: 30, height: 30)
+                } else {
+                    if let bot = botMode.visibleBots.first(where: {
+                        $0.id.caseInsensitiveCompare(assignee) == .orderedSame
+                    }) {
+                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30)
+                    } else {
+                        kanbanAssigneeAvatar(assignee)
+                    }
+                }
+                Text(assignee == "All" ? "All assignees" : assignee)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.dockAccent)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(isSelected ? Color.dockAccent.opacity(0.11) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func kanbanAssigneeAvatar(_ assignee: String, size: CGFloat = 30) -> some View {
+        let hue = Double(assignee.utf8.reduce(0) { ($0 + Int($1)) % 360 }) / 360
+        let initial = String(assignee.prefix(1)).uppercased()
+        return ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color(hue: hue, saturation: 0.62, brightness: 0.82))
+            Text(initial)
+                .font(.system(size: size * 0.4, weight: .bold))
+                .foregroundStyle(.white.opacity(0.95))
+        }
+        .frame(width: size, height: size)
     }
 
     private func applyKanbanFilters() {
-        control.refreshKanban(filter: KanbanListFilter(
+        control.refreshVisibleKanban(filter: KanbanListFilter(
             status: kanbanStatusFilter == "All" ? nil : kanbanStatusFilter.lowercased(),
             assignee: kanbanAssigneeFilter == "All" ? nil : kanbanAssigneeFilter,
             mine: kanbanMineOnly,
@@ -2520,20 +2847,30 @@ struct WorkspaceActivitySidebar: View {
             Rectangle().fill(lane.color.opacity(0.55)).frame(height: 1)
 
             if laneTasks.isEmpty {
-                Text("No tasks")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .frame(maxWidth: .infinity, minHeight: 108)
-                    .background(Color.dockSurface2)
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(lane.emptyTitle)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockSecondaryText)
+                    Text(lane.emptyDetail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, minHeight: 108, alignment: .leading)
+                .padding(.horizontal, 12)
+                .background(Color.dockSurface2)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             } else {
-                ForEach(laneTasks) { task in
-                    kanbanTaskCard(task, lane: lane)
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(laneTasks) { task in
+                        kanbanTaskCard(task, lane: lane)
+                    }
                 }
             }
         }
         .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 178, alignment: .topLeading)
+        .frame(width: 260, alignment: .topLeading)
+        .frame(minHeight: 178, alignment: .topLeading)
         .background(Color.black.opacity(0.14))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
@@ -2541,31 +2878,65 @@ struct WorkspaceActivitySidebar: View {
 
     private func kanbanTaskCard(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(task.title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.dockPrimaryText)
-                .lineLimit(3)
-            if let detail = task.detail, !detail.isEmpty {
-                Text(detail)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(3)
-            }
             HStack(spacing: 6) {
+                Circle()
+                    .fill(lane.color)
+                    .frame(width: 8, height: 8)
                 if let priority = task.priority, !priority.isEmpty {
-                    Text("P\(priority)")
-                        .foregroundStyle(Color.dockWarning)
+                    kanbanMetadataPill("P\(priority)", tint: Color.dockWarning)
                 }
                 if let assignee = task.assignee, !assignee.isEmpty {
-                    Text(assignee)
-                        .lineLimit(1)
+                    kanbanAssigneePill(assignee)
                 }
-                Spacer()
+                Spacer(minLength: 4)
                 Text(task.id)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
             }
-            .font(.system(size: 10))
-            .foregroundStyle(Color.dockMetadataText)
+            Text(task.title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Color.dockSecondaryText)
+                .lineLimit(3)
+            if let detail = kanbanCardDetail(task.detail) {
+                Text(detail)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(2)
+            }
+
+            if let step = task.currentStepKey, !step.isEmpty {
+                Text("STEP · \(step)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockAccent)
+                    .lineLimit(1)
+            }
+            if let event = task.latestEventKind,
+               !event.isEmpty,
+               !isRedundantKanbanStatus(event, for: lane) {
+                HStack(spacing: 5) {
+                    Text(event.replacingOccurrences(of: "_", with: " ").uppercased())
+                    if let eventAt = task.latestEventAt {
+                        Text(eventAt, style: .relative)
+                    }
+                }
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.dockMetadataText)
+                if let note = task.latestEventNote, !note.isEmpty {
+                    Text(note)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(2)
+                }
+            } else if let startedAt = task.startedAt {
+                Text("STARTED \(startedAt, style: .relative)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+
+            Rectangle()
+                .fill(Color.dockBorderLight)
+                .frame(height: 0.5)
 
             HStack(spacing: 10) {
                 if control.capabilityAvailable("kanban.taskDetails") {
@@ -2573,15 +2944,16 @@ struct WorkspaceActivitySidebar: View {
                         selectedKanbanTask = task
                         control.loadKanbanTask(task)
                     } label: {
-                        DockActionLabel(
-                            title: "DETAILS",
-                            pendingTitle: "LOADING…",
+                        kanbanActionChip(
+                            title: "Details",
+                            icon: "doc.text",
+                            pendingTitle: "Loading…",
                             isPending: control.isLoadingKanbanDetail,
-                            tint: Color.dockAccent
+                            tint: Color.dockSecondaryText,
+                            filled: false
                         )
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.dockSecondaryText)
+                    .buttonStyle(.plain)
                     .disabled(control.isLoadingKanbanDetail)
                 }
                 if lane == .done, control.capabilityAvailable("kanban.archive") {
@@ -2601,121 +2973,263 @@ struct WorkspaceActivitySidebar: View {
         .padding(10)
         .background(Color.dockSurface)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2).fill(lane.color).frame(width: 2)
-        }
         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 
-    private func kanbanDetailSheet(_ task: KanbanTaskSummary) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("KANBAN TASK")
-                    .font(.system(size: 12, weight: .semibold))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.dockAccent)
-                Spacer()
-                Button("DONE") { selectedKanbanTask = nil }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
+    private func kanbanMetadataPill(_ value: String, tint: Color) -> some View {
+        Text(value)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(tint)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(tint.opacity(0.10))
+            .clipShape(Capsule())
+    }
 
-            if control.isLoadingKanbanDetail {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("LOADING HERMES TASK…")
-                        .font(.system(size: 12))
+    private func kanbanAssigneePill(_ assignee: String) -> some View {
+        HStack(spacing: 5) {
+            if let bot = botMode.visibleBots.first(where: {
+                $0.id.caseInsensitiveCompare(assignee) == .orderedSame
+            }) {
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 18)
+            } else {
+                kanbanAssigneeAvatar(assignee, size: 18)
+            }
+            Text(assignee)
+                .lineLimit(1)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(Color.dockSecondaryText)
+        .padding(.leading, 3)
+        .padding(.trailing, 8)
+        .padding(.vertical, 3)
+        .background(Color.dockSecondaryText.opacity(0.10))
+        .clipShape(Capsule())
+    }
+
+    private func kanbanActionChip(
+        title: String,
+        icon: String,
+        pendingTitle: String,
+        isPending: Bool,
+        tint: Color,
+        filled: Bool = true
+    ) -> some View {
+        HStack(spacing: 5) {
+            if isPending {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(tint)
+            } else {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+            }
+            Text(isPending ? pendingTitle : title)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(tint)
+        .lineLimit(1)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(filled ? tint.opacity(0.12) : Color.dockSurface2.opacity(0.8))
+        .overlay {
+            Capsule().stroke(tint.opacity(filled ? 0.18 : 0.28), lineWidth: 0.5)
+        }
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+    }
+
+    private func isRedundantKanbanStatus(_ event: String, for lane: KanbanLane) -> Bool {
+        let normalizedEvent = event
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        let normalizedLane = lane.rawValue.lowercased()
+        return normalizedEvent == normalizedLane
+            || (lane == .done && ["complete", "completed", "archived"].contains(normalizedEvent))
+            || (lane == .blocked && ["failed", "error"].contains(normalizedEvent))
+    }
+
+    private func kanbanCardDetail(_ detail: String?) -> String? {
+        guard let detail else { return nil }
+        let lines = detail
+            .components(separatedBy: .newlines)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("TASK_ID:") }
+            .map { line in
+                line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "OBJECTIVE:", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+        let normalized = lines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private func kanbanDetailPanel(_ task: KanbanTaskSummary) -> some View {
+        let lane = kanbanLane(for: task)
+        let laneColor: Color = switch lane {
+        case .triage: .dockWarning
+        case .todo: .dockSecondaryText
+        case .ready: .dockAccent
+        case .running: .dockAccent
+        case .review: .dockAccent
+        case .scheduled: .dockAccent
+        case .blocked: .dockDestructive
+        case .done: .dockSuccess
+        }
+
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("KANBAN TASK")
+                        .font(.system(size: 12, weight: .semibold))
+                        .tracking(1.1)
+                        .foregroundStyle(Color.dockAccent)
+                    Text(task.id)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button {
+                    selectedKanbanTask = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 28, height: 28)
+                        .background(Color.dockSurface2)
+                        .clipShape(Circle())
                 }
-            } else if let detail = control.kanbanDetail {
-                Text(detail.title)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                HStack(spacing: 10) {
-                    Text(detail.status.uppercased())
-                    if let priority = detail.priority { Text("P\(priority)") }
-                    if let assignee = detail.assignee { Text(assignee) }
-                }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
-                if let body = detail.body, !body.isEmpty {
-                    Text(body)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !control.kanbanAttachments.isEmpty {
-                    DisclosureGroup("ATTACHMENTS  ·  \(control.kanbanAttachments.count)") {
-                        ForEach(control.kanbanAttachments) { attachment in
-                            HStack {
-                                LucideImage(systemName: "paperclip")
-                                Text(attachment.name).lineLimit(1)
-                                Spacer()
-                                if let kind = attachment.kind { Text(kind) }
-                                if let size = attachment.sizeBytes {
-                                    Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close task details")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 16) {
+                    if control.isLoadingKanbanDetail {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("LOADING HERMES TASK…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.dockSecondaryText)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if let detail = control.kanbanDetail {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(detail.title)
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            HStack(spacing: 7) {
+                                kanbanMetadataPill(detail.status.uppercased(), tint: laneColor)
+                                if let priority = detail.priority {
+                                    kanbanMetadataPill("P\(priority)", tint: Color.dockWarning)
+                                }
+                                if let assignee = detail.assignee {
+                                    kanbanMetadataPill(assignee, tint: Color.dockSecondaryText)
                                 }
                             }
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .padding(.vertical, 4)
-                        }
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                }
-                Menu {
-                    ForEach(KanbanMutationKind.allCases) { kind in
-                        if control.capabilityAvailable(kind.capabilityID) {
-                            Button(kind.title) {
-                                kanbanMutationRequest = KanbanMutationRequest(task: task, kind: kind, value: "", reclaimFirst: false)
+
+                            if let body = detail.body, !body.isEmpty {
+                                MarkdownMessageView(markdown: body)
+                                    .padding(12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(Color.dockSurface2.opacity(0.55))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                             }
                         }
-                    }
-                } label: {
-                    LucideLabel("TASK ACTIONS", icon: "ellipsis.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
-                }
-                .menuStyle(.borderlessButton)
-                Divider().overlay(Color.dockBorderLight)
-                Text("RUN HISTORY  ·  \(detail.runs.count)")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockSecondaryText)
-                if detail.runs.isEmpty {
-                    Text("No run history returned by Hermes.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockMetadataText)
-                } else {
-                    ForEach(detail.runs) { run in
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack {
-                                Text(run.status.uppercased())
-                                if let outcome = run.outcome { Text(outcome) }
-                                Spacer()
-                                if let elapsed = run.elapsed { Text(elapsed) }
+
+                        if !control.kanbanAttachments.isEmpty {
+                            DisclosureGroup("ATTACHMENTS  ·  \(control.kanbanAttachments.count)") {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(control.kanbanAttachments) { attachment in
+                                        HStack {
+                                            LucideImage(systemName: "paperclip")
+                                            Text(attachment.name).lineLimit(1)
+                                            Spacer()
+                                            if let kind = attachment.kind { Text(kind) }
+                                            if let size = attachment.sizeBytes {
+                                                Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                                            }
+                                        }
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                        .padding(.vertical, 4)
+                                    }
+                                }
+                                .padding(.top, 5)
                             }
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
-                            if let summary = run.summary {
-                                Text(summary)
+                        }
+
+                        Menu {
+                            ForEach(KanbanMutationKind.allCases) { kind in
+                                if control.capabilityAvailable(kind.capabilityID) {
+                                    Button(kind.title) {
+                                        kanbanMutationRequest = KanbanMutationRequest(task: task, kind: kind, value: "", reclaimFirst: false)
+                                    }
+                                }
+                            }
+                        } label: {
+                            kanbanActionChip(title: "Task actions", icon: "ellipsis.circle", pendingTitle: "Task actions", isPending: false, tint: Color.dockAccent)
+                        }
+                        .menuStyle(.borderlessButton)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("RUN HISTORY  ·  \(detail.runs.count)")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.dockSecondaryText)
+                            if detail.runs.isEmpty {
+                                Text("No run history returned by Hermes.")
                                     .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockSecondaryText)
+                                    .foregroundStyle(Color.dockMetadataText)
+                            } else {
+                                ForEach(detail.runs) { run in
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack {
+                                            Text(run.status.uppercased())
+                                            if let outcome = run.outcome { Text(outcome) }
+                                            Spacer()
+                                            if let elapsed = run.elapsed { Text(elapsed) }
+                                        }
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.dockAccent)
+                                        if let summary = run.summary {
+                                            Text(summary)
+                                                .font(.system(size: 12))
+                                                .foregroundStyle(Color.dockSecondaryText)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                    .padding(.vertical, 7)
+                                    .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+                                }
                             }
                         }
-                        .padding(.vertical, 5)
-                        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+                    } else {
+                        Text("Hermes did not return structured details for this task.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockWarning)
                     }
                 }
-            } else {
-                Text("Hermes did not return structured details for this task.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockWarning)
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
-        .padding(20)
-        .frame(width: 430, height: 500, alignment: .topLeading)
+        .frame(minWidth: 340, idealWidth: 360, maxWidth: 420, maxHeight: .infinity, alignment: .topLeading)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.dockBorder, lineWidth: 0.5)
+        }
         .background(Color.dockCanvas)
     }
 
@@ -2744,17 +3258,25 @@ struct WorkspaceActivitySidebar: View {
             kanbanChangeRequest = KanbanChangeRequest(task: task, action: action)
             isShowingKanbanChangeConfirmation = true
         } label: {
-            DockActionLabel(
+            kanbanActionChip(
                 title: label,
-                pendingTitle: "UPDATING…",
+                icon: kanbanActionIcon(for: action),
+                pendingTitle: "Updating…",
                 isPending: isPending,
                 tint: action == .block || action == .archive ? Color.dockWarning : Color.dockAccent
             )
         }
-        .buttonStyle(.borderless)
-        .font(.system(.body).weight(.semibold))
-        .foregroundStyle(action == .block || action == .archive ? Color.dockWarning : Color.dockAccent)
+        .buttonStyle(.plain)
         .disabled(isPending)
+    }
+
+    private func kanbanActionIcon(for action: KanbanTaskAction) -> String {
+        switch action {
+        case .complete: "checkmark"
+        case .block: "pause"
+        case .unblock: "arrow.uturn.backward"
+        case .archive: "archivebox"
+        }
     }
 
     private var searchContent: some View {
@@ -4539,6 +5061,21 @@ struct WorkspaceActivitySidebar: View {
                 agentUpdateSection
             }
 
+            settingsDisclosure(title: "Appearance & pets", subtitle: appearanceSubtitle, icon: "sparkles", isExpanded: $isAppearanceExpanded) {
+                appearanceSection
+            }
+
+            if let insights = control.insightsSummary {
+                settingsDisclosure(title: "Usage insights", subtitle: "Last \(insights.days) days", icon: "chart.bar", isExpanded: $isInsightsExpanded) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        diagnosticRow(label: "SESSIONS", value: "\(insights.sessions)", color: .dockAccent)
+                        diagnosticRow(label: "MESSAGES", value: "\(insights.messages)", color: .dockMetadataText)
+                    }
+                }
+            }
+
+            emergencyStopSection
+
             if !unavailableSetupCapabilities.isEmpty {
                 settingsDisclosure(title: "Setup needed", subtitle: "\(unavailableSetupCapabilities.count) integrations need attention", icon: "exclamationmark.triangle", isExpanded: $isSetupExpanded, tint: .dockWarning) {
                     ForEach(unavailableSetupCapabilities) { capability in
@@ -4624,7 +5161,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             let canSteerSession = model.status == .working && model.sessionID != nil
-            if control.sessionUsage != nil || control.sessionContext != nil || canSteerSession {
+            if control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.checkpoints.isEmpty || control.isLoadingCheckpoints {
                 settingsDisclosure(title: "Session cockpit", subtitle: "Context, usage, and active-turn controls", icon: "waveform.path.ecg", isExpanded: $isSessionCockpitExpanded) {
                     if let usage = control.sessionUsage {
                     diagnosticRow(label: "TOKENS", value: "\(usage.totalTokens) total  ·  \(usage.inputTokens) in  ·  \(usage.outputTokens) out", color: Color.dockAccent)
@@ -4655,6 +5192,35 @@ struct WorkspaceActivitySidebar: View {
                         }
                     }
                 }
+                    if control.isLoadingCheckpoints {
+                        Text("Loading session checkpoints…")
+                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                    } else if !control.checkpoints.isEmpty {
+                        Text("CHECKPOINTS")
+                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+                        ForEach(control.checkpoints) { checkpoint in
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(checkpoint.message.isEmpty ? checkpoint.hash : checkpoint.message)
+                                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                                    Text(checkpoint.timestamp.isEmpty ? checkpoint.hash : checkpoint.timestamp)
+                                        .font(.system(size: 10)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                                }
+                                Spacer()
+                                Button("DIFF") { control.loadCheckpointDiff(checkpoint) }
+                                    .buttonStyle(.borderless).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                                Button("RESTORE") { checkpointForRestore = checkpoint }
+                                    .buttonStyle(.borderless).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
+                                    .disabled(model.status == .working)
+                            }
+                        }
+                        if let checkpointDiff = control.checkpointDiff, !checkpointDiff.isEmpty {
+                            Text(checkpointDiff)
+                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                .lineLimit(12)
+                                .textSelection(.enabled)
+                        }
+                    }
                     if canSteerSession, let sessionID = model.sessionID {
                     Text("Hermes will apply this guidance after the next tool-result boundary without restarting the turn.")
                         .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
@@ -5063,6 +5629,90 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private var appearanceSubtitle: String {
+        guard let projection = control.appearanceProjection,
+              control.appearanceProjectionAvailable else {
+            return "Skin and installed-pet inventory unavailable"
+        }
+        return "\(projection.skins.count) skins · \(projection.installedPets.count) installed pets"
+    }
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !control.appearanceProjectionAvailable {
+                emptyState(
+                    icon: "sparkles",
+                    title: "Appearance inventory unavailable",
+                    detail: "Hermes did not return a readable skin and installed-pet projection. Refresh Settings to retry."
+                )
+            } else if let projection = control.appearanceProjection {
+                if !projection.skins.isEmpty {
+                    settingsCategoryDisclosure(title: "SKINS", count: projection.skins.count, readyCount: projection.skins.filter(\.isActive).count, isExpanded: .constant(true)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(projection.skins, id: \.id) { skin in
+                                diagnosticRow(label: skin.isActive ? "ACTIVE" : "SKIN", value: skin.name, color: skin.isActive ? .dockSuccess : .dockMetadataText)
+                            }
+                        }
+                    }
+                }
+                if !projection.installedPets.isEmpty {
+                    settingsCategoryDisclosure(title: "INSTALLED PETS", count: projection.installedPets.count, readyCount: projection.installedPets.count, isExpanded: .constant(true)) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(projection.installedPets, id: \.id) { pet in
+                                diagnosticRow(label: "PET", value: pet.name, color: .dockMetadataText)
+                            }
+                        }
+                    }
+                }
+                if projection.skins.isEmpty && projection.installedPets.isEmpty {
+                    emptyState(icon: "sparkles", title: "No installed appearance items", detail: "Hermes reported no readable skins or installed pets.")
+                }
+                Text("Switching skins or pets remains copy-only until Hermes publishes a verified mutation contract.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+        }
+    }
+
+    private var emergencyStopSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                LucideImage(systemName: control.emergencyStopActive == true ? "pause.circle.fill" : "play.circle")
+                    .foregroundStyle(control.emergencyStopActive == true ? Color.dockWarning : Color.dockSecondaryText)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(control.emergencyStopActive == true ? "NEW WORK PAUSED" : control.emergencyStopActive == false ? "DISPATCH RESUMED" : "DISPATCH STATUS UNKNOWN")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text(control.emergencyStopMessage ?? "Pause or resume records this Dock action; Hermes does not expose a stable ESTOP status contract.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    if control.emergencyStopActive == true {
+                        isShowingEmergencyResumeConfirmation = true
+                    } else {
+                        isShowingEmergencyStopConfirmation = true
+                    }
+                } label: {
+                    DockActionLabel(
+                        title: control.emergencyStopActive == true ? "RESUME" : "PAUSE",
+                        pendingTitle: "UPDATING…",
+                        isPending: control.isActionPending(control.emergencyStopActionID),
+                        tint: control.emergencyStopActive == true ? .dockSuccess : .dockWarning
+                    )
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(control.emergencyStopActive == true ? Color.dockSuccess : Color.dockWarning)
+                .disabled(control.isActionPending(control.emergencyStopActionID))
+            }
+        }
+        .padding(12)
+        .dockGlassPane()
+    }
+
     private var coreOverview: some View {
         HStack(spacing: 0) {
             coreSummaryMetric(
@@ -5260,6 +5910,8 @@ struct WorkspaceActivitySidebar: View {
                 .accessibilityLabel("Refresh provider quota")
             }
 
+            quotaOverviewMetrics
+
             if !control.providerQuotas.isEmpty || control.refreshState(for: "provider.quota")?.isRefreshing != true {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(orderedQuotaProviders) { descriptor in
@@ -5269,7 +5921,7 @@ struct WorkspaceActivitySidebar: View {
             }
 
             if let state = control.refreshState(for: "provider.quota"), let error = state.error {
-                Text(state.isStale ? "Showing last successful data. (error)" : error)
+                Text(state.isStale ? "Showing last successful data. \(error)" : error)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
@@ -5277,6 +5929,48 @@ struct WorkspaceActivitySidebar: View {
         }
         .sheet(item: $connectTarget) { descriptor in
             ProviderConnectSheet(descriptor: descriptor, control: control)
+        }
+    }
+
+    private var quotaOverviewMetrics: some View {
+        let connected = control.providerQuotas.count
+        let attention = control.providerQuotas.filter { snapshot in
+            snapshot.windows.contains { $0.threshold == .warning || $0.threshold == .critical }
+        }.count
+        let offline = max(0, orderedQuotaProviders.count - connected)
+
+        return HStack(spacing: 0) {
+            quotaMetric(value: "\(orderedQuotaProviders.count)", label: "PROVIDERS", tint: .dockAccent)
+            quotaMetric(value: "\(connected)", label: "CONNECTED", tint: connected > 0 ? .dockAccent : .dockSecondaryText)
+            quotaMetric(value: "\(attention)", label: "ATTENTION", tint: attention > 0 ? .dockWarning : .dockSuccess)
+            quotaMetric(value: "\(offline)", label: "OFFLINE", tint: offline > 0 ? .dockSecondaryText : .dockSuccess)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.dockSurface.opacity(0.34))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.dockBorderLight, lineWidth: 0.5)
+        }
+    }
+
+    private func quotaMetric(value: String, label: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                .foregroundStyle(tint)
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(Color.dockMetadataText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .overlay(alignment: .trailing) {
+            Color.dockBorderLight.frame(width: 0.5, height: 28)
         }
     }
 
@@ -5311,6 +6005,9 @@ struct WorkspaceActivitySidebar: View {
     private func quotaProviderCard(_ snapshot: ProviderQuotaSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Circle()
+                    .fill(quotaProviderColor(snapshot))
+                    .frame(width: 8, height: 8)
                 Text(snapshot.displayName)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
@@ -5338,9 +6035,16 @@ struct WorkspaceActivitySidebar: View {
                 ForEach(snapshot.windows) { window in quotaWindow(window) }
             }
         }
-        .padding(12)
+        .padding(10)
         .modifier(QuotaCardSurfaceModifier())
         .textSelection(.enabled)
+    }
+
+    private func quotaProviderColor(_ snapshot: ProviderQuotaSnapshot) -> Color {
+        guard !snapshot.windows.isEmpty else { return .dockMetadataText }
+        if snapshot.windows.contains(where: { $0.threshold == .critical }) { return .dockDestructive }
+        if snapshot.windows.contains(where: { $0.threshold == .warning }) { return .dockWarning }
+        return .dockSuccess
     }
 
     private func quotaDisconnectedCard(_ descriptor: QuotaProviderDescriptor) -> some View {
@@ -5382,7 +6086,7 @@ struct WorkspaceActivitySidebar: View {
                 Spacer()
             }
         }
-        .padding(12)
+        .padding(10)
         .modifier(QuotaCardSurfaceModifier())
         .opacity(0.78)
     }
@@ -5482,7 +6186,7 @@ struct WorkspaceActivitySidebar: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.dockSurface.opacity(0.42))
+                        .fill(Color.dockSurface2.opacity(0.72))
                 )
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
