@@ -1,0 +1,89 @@
+import CoreGraphics
+import Foundation
+
+/// Bounded presentation window for the canonical transcript. Hermes remains
+/// the owner of every message; this policy only limits how many exact SwiftUI
+/// rows are mounted at once.
+enum ConversationMessageWindow {
+    // The active fallback renderer uses an exact SwiftUI stack, so keep its
+    // default mounted page small. Older history is revealed in the same
+    // bounded increment so a single tap cannot remount a huge transcript.
+    static let initialLimit = 12
+    static let pageSize = 12
+    static let topLoadThreshold: CGFloat = 24
+    static let topRearmDistance: CGFloat = 80
+
+    static func visibleMessages<Element>(_ messages: [Element], limit: Int) -> ArraySlice<Element> {
+        messages.suffix(max(initialLimit, limit))
+    }
+
+    static func revealedLimit(currentLimit: Int, totalCount: Int) -> Int {
+        min(totalCount, max(initialLimit, currentLimit) + pageSize)
+    }
+
+    /// A session owns no transcript presentation state. Never carry an
+    /// expanded page from one session into another, where it would silently
+    /// mount hundreds of rich rows before the reader requests them.
+    static func limitForSessionReplacement() -> Int { initialLimit }
+
+    static func limitAfterCountChange(
+        currentLimit: Int,
+        oldCount: Int,
+        newCount: Int,
+        isAtBottom: Bool
+    ) -> Int {
+        let normalizedLimit = max(initialLimit, currentLimit)
+        guard newCount > oldCount, !isAtBottom else { return normalizedLimit }
+        // Preserve the visible start index while the user reads above the
+        // bottom; appended messages extend the window instead of evicting a
+        // row from the top of their viewport.
+        return normalizedLimit + (newCount - oldCount)
+    }
+
+    static func shouldLoadEarlier(
+        topMinY: CGFloat,
+        hiddenCount: Int,
+        isArmed: Bool
+    ) -> Bool {
+        isArmed && hiddenCount > 0 && topMinY >= -topLoadThreshold
+    }
+
+    static func shouldRearmTopTrigger(topMinY: CGFloat) -> Bool {
+        topMinY < -topRearmDistance
+    }
+}
+
+/// The unread badge represents message presentations the reader can actually
+/// see, never transport-only assistant placeholders or activity events.
+enum ConversationUnreadMessagePolicy {
+    static func rendersMessageBubble(_ message: ChatMessage, streamingID: UUID?) -> Bool {
+        if message.id == streamingID { return true }
+        if message.isSteering { return true }
+        if !message.images.isEmpty { return true }
+        return !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    static func renderedMessageCount(_ messages: [ChatMessage], streamingID: UUID?) -> Int {
+        messages.count { rendersMessageBubble($0, streamingID: streamingID) }
+    }
+}
+
+/// Live text gets progressively more expensive to line-wrap as it grows. Keep
+/// early responses immediate, then lower the presentation cadence before a
+/// long response can monopolize the main actor. This policy affects only the
+/// disposable live tail; completed messages retain their full content.
+enum ConversationStreamingPresentationPolicy {
+    static func flushIntervalMilliseconds(textLength: Int) -> Int {
+        switch textLength {
+        case ..<2_048: 80
+        case ..<8_192: 120
+        case ..<24_576: 180
+        default: 250
+        }
+    }
+
+    /// Native/SwiftUI scrolling is substantially more expensive than changing
+    /// the live text. A bounded cadence lets several flushes share one footer
+    /// movement without visibly falling behind a streaming response.
+    static let tailAdjustmentIntervalMilliseconds = 120
+}

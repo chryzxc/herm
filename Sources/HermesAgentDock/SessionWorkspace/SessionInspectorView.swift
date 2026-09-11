@@ -4,6 +4,7 @@ import Foundation
 import UniformTypeIdentifiers
 struct SessionInspector: View {
     @ObservedObject var model: DockModel
+    @ObservedObject var botMode: BotModeModel
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
     let sessionRepositoryPath: String?
@@ -68,14 +69,15 @@ struct SessionInspector: View {
                 }
             }
 
-            GeometryReader { proxy in
-                ScrollView {
-                    inspectorContent
-                        .padding(16)
-                        .frame(minHeight: max(0, proxy.size.height - 32), alignment: .top)
-                }
+            ScrollView {
+                inspectorContent
+                    .padding(.horizontal, DockLayout.compactInset)
+                    .padding(.top, selectedSection == .activity ? DockLayout.tight : DockLayout.compactInset)
+                    .padding(.bottom, DockLayout.compactInset)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
     }
 
@@ -307,9 +309,15 @@ struct SessionInspector: View {
             }
         case .activity:
             VStack(alignment: .leading, spacing: 12) {
-                SessionKanbanActivityView(control: control, sessionID: model.kanbanSessionID)
+                SessionKanbanActivityView(
+                    model: model,
+                    control: control,
+                    botMode: botMode,
+                    sessionID: model.kanbanSessionID
+                )
                 AgentBoardView(model: model, embedded: true)
             }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         case .files:
             VStack(alignment: .leading, spacing: 14) {
                 inspectorLabel("PROJECT FILES")

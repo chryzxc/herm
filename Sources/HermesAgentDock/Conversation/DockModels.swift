@@ -392,8 +392,12 @@ struct ChatMessage: Identifiable, Equatable {
     /// UI never guesses a Bot from message prose.
     let botProfileID: String?
     let botDisplayName: String?
+    /// Stable content revision computed once when a message enters the model.
+    /// Transcript descriptors can then compare revisions without re-hashing
+    /// the full Markdown body during unrelated view updates.
+    let contentRevision: Int
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil) {
         self.id = id
         self.role = role
         self.text = text
@@ -406,15 +410,28 @@ struct ChatMessage: Identifiable, Equatable {
         self.isError = isError
         self.botProfileID = botProfileID
         self.botDisplayName = botDisplayName
+        self.contentRevision = contentRevision ?? Self.revision(for: text)
     }
 
     var image: NSImage? { images.first }
+
+    private static func revision(for text: String) -> Int {
+        var value: UInt64 = 1469598103934665603
+        for byte in text.utf8 {
+            value ^= UInt64(byte)
+            value &*= 1099511628211
+        }
+        return Int(truncatingIfNeeded: value)
+    }
 
     enum Role { case user, hermes }
 }
 
 struct HermesSession: Identifiable, Equatable {
     let id: String
+    /// Hermes profile that owns this session. Older launch-profile payloads
+    /// omit it, so the value remains optional for compatibility.
+    let profileID: String?
     let title: String
     let preview: String
     let startedAt: Date?
@@ -423,6 +440,7 @@ struct HermesSession: Identifiable, Equatable {
     let updatedAt: Date?
     let messageCount: Int
     let source: String
+    let isHidden: Bool
 
     var displayTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled chat" : title
@@ -434,22 +452,42 @@ struct HermesSession: Identifiable, Equatable {
 
     var lastUpdatedAt: Date? { updatedAt ?? startedAt }
 
+    var scopedID: ProfileScopedID { ProfileScopedID(profileID: profileID, resourceID: id) }
+
     init(
         id: String,
+        profileID: String? = nil,
         title: String,
         preview: String,
         startedAt: Date?,
         updatedAt: Date? = nil,
         messageCount: Int,
-        source: String
+        source: String,
+        isHidden: Bool = false
     ) {
         self.id = id
+        self.profileID = profileID
         self.title = title
         self.preview = preview
         self.startedAt = startedAt
         self.updatedAt = updatedAt
         self.messageCount = messageCount
         self.source = source
+        self.isHidden = isHidden
+    }
+}
+
+/// Stable identity for a profile-owned Hermes resource. Display names are
+/// presentation only and must never be used as routing keys.
+struct ProfileScopedID: Hashable, Equatable, Sendable {
+    let profileID: String?
+    let resourceID: String
+
+    init(profileID: String?, resourceID: String) {
+        self.profileID = profileID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+        self.resourceID = resourceID
     }
 }
 

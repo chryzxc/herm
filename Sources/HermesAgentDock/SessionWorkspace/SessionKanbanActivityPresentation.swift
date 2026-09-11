@@ -1,6 +1,16 @@
 import Foundation
 
 enum SessionKanbanActivityPresentation {
+    struct BotWorkRow: Identifiable, Equatable {
+        let taskID: String
+        let botID: String
+        let botName: String
+        let title: String
+        let status: Status
+
+        var id: String { taskID }
+    }
+
     enum Status: Equatable {
         case blocked
         case done
@@ -94,6 +104,27 @@ enum SessionKanbanActivityPresentation {
                 return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
             }
         return Snapshot(activeRows: activeRows, completedRows: completedRows)
+    }
+
+    static func botWork(tasks: [KanbanTaskSummary], bots: [BotSummary], sessionID: String?) -> [BotWorkRow] {
+        guard let sessionID, !sessionID.isEmpty else { return [] }
+        let botByID = Dictionary(uniqueKeysWithValues: bots.map { ($0.id, $0) })
+        return tasks.compactMap { task in
+            guard task.sessionID == sessionID,
+                  let assignee = trimmed(task.assignee),
+                  let bot = botByID[assignee],
+                  !bot.isHidden else { return nil }
+            return BotWorkRow(
+                taskID: task.id,
+                botID: bot.id,
+                botName: bot.name,
+                title: task.title,
+                status: Status(rawValue: task.status)
+            )
+        }.sorted { lhs, rhs in
+            if lhs.status != rhs.status { return lhs.status < rhs.status }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
     }
 
     private static func trimmed(_ value: String?) -> String? {

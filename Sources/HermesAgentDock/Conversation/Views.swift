@@ -10,6 +10,18 @@ final class DockPanelPresentation: ObservableObject {
     @Published var isEdgeAttached = false
 }
 
+/// Presentation state owned by the left navigation rail, rather than a
+/// particular split-view host. Global destinations replace their trailing
+/// content host, so keeping this state here lets the rail retain its expanded
+/// sections and local selection while the user moves between pages.
+private final class MissionControlNavigationState: ObservableObject {
+    @Published var showsAllConversations = false
+    @Published var selectedTaskID: UUID?
+    @Published var selectedSessionID: String?
+    @Published var areConversationsExpanded = true
+    var hasRequestedSessionIndex = false
+}
+
 private struct DockPanelSurfaceShape: Shape {
     let isEdgeAttached: Bool
     let cornerRadius: CGFloat
@@ -76,20 +88,21 @@ struct ScopedRepositoryChange: Equatable {
 struct DockPopover: View {
     @ObservedObject var model: DockModel
     @ObservedObject var panelPresentation: DockPanelPresentation
+    /// Read-only screen capacity. Layout decisions must never resize the live
+    /// panel while they are merely determining whether desktop content fits.
+    var availableWorkspaceWidth: () -> CGFloat = { .greatestFiniteMagnitude }
     var onWorkspaceWidthChange: (CGFloat) -> CGFloat = { $0 }
     var onClose: () -> Void = {}
     var onFullscreenToggle: () -> Void = {}
     @State private var isConversationAtBottom = true
     @State private var unseenMessageCount = 0
-    @State private var scrollSettleTask: Task<Void, Never>?
-    @State private var isScrollSettlePending = false
-    @State private var scrollReassertCount = 0
-    @State private var pastEndRepairCount = 0
-
-    /// Bottom sentinel identity. Programmatic scrolls target this real,
-    /// non-lazy row because a LazyVStack row's frame is only an estimate
-    /// before materialization, and scrolling to an estimate lands past the end.
-    private static let conversationBottomSentinelID = "conversationBottom"
+    @State private var lastRenderedMessageBubbleCount = 0
+    @State private var conversationScrollRequest = 0
+    @State private var renderedMessageLimit = ConversationMessageWindow.initialLimit
+    @State private var isStreamingTailScrollScheduled = false
+    @State private var isTransientTailAdjustmentScheduled = false
+    @State private var isPastEndRepairScheduled = false
+    @State private var conversationPerformance = ConversationPerformanceMonitor()
     @State private var isWorkspaceManuallyExpanded = true
     @State private var isNarrowLayout = false
     @State private var isNarrowControlVisible = true
@@ -104,6 +117,7 @@ struct DockPopover: View {
     @StateObject private var pullRequestChatLinks = PullRequestChatLinkStore()
     @StateObject private var repositoryPreferences = CommandCenterPreferencesStore()
     @StateObject private var botMode = BotModeModel()
+    @StateObject private var missionControlNavigation = MissionControlNavigationState()
     @State private var sessionWorkspaceMode: SessionWorkspaceMode = .chat
     @State private var suppressNextVoiceResponse = false
     @State private var sessionPendingDeletion: HermesSession?
@@ -252,6 +266,9 @@ struct DockPopover: View {
 
     private func observerLayerOne<V: View>(_ view: V) -> some View {
         view
+        .onReceive(model.objectWillChange) { _ in
+            conversationPerformance.recordModelPublication()
+        }
         .onChange(of: controlCenter.capabilities) { _, capabilities in
             handleCapabilitiesChange(capabilities)
         }
@@ -260,6 +277,9 @@ struct DockPopover: View {
         }
         .onChange(of: isWorkspaceVisible) { _, visible in
             handleWorkspaceVisibilityChange(visible)
+        }
+        .onChange(of: botMode.selectedProfileID) { _, profileID in
+            handleProfileScopeChange(profileID)
         }
         .onChange(of: speechInput.completedTranscript) { _, transcript in
             handleCompletedTranscript(transcript)
@@ -345,25 +365,7 @@ struct DockPopover: View {
     @ViewBuilder
     private var layoutContent: some View {
         if isFullscreen && !isNarrowLayout {
-            if fullscreenSurface == .global || fullscreenSurface == .artifacts || fullscreenSurface == .bots || fullscreenSurface == .pullRequests {
-                FullscreenPanelSplitView(
-                    leading: missionControlQueue,
-                    trailing: fullscreenGlobalSurface,
-                    leadingFraction: fullscreenSurface == .pullRequests ? 0.18 : 0.30
-                )
-            } else if isMissionInspectorVisible {
-                MissionControlSplitView(
-                    queue: missionControlQueue,
-                    workspace: conversationColumn,
-                    inspector: contextPanel
-                )
-            } else {
-                FullscreenPanelSplitView(
-                    leading: missionControlQueue,
-                    trailing: conversationColumn,
-                    leadingFraction: 0.30
-                )
-            }
+            desktopWorkspaceShell
         } else {
             compactLayoutContent
         }
@@ -372,33 +374,7 @@ struct DockPopover: View {
     @ViewBuilder
     private var compactLayoutContent: some View {
         if !isNarrowLayout {
-            if fullscreenSurface == .global || fullscreenSurface == .artifacts || fullscreenSurface == .bots || fullscreenSurface == .pullRequests {
-                // Global destinations occupy the focused center workspace in
-                // the dock exactly as they do in fullscreen. The inspector
-                // is intentionally hidden until the user returns to a chat.
-                FullscreenPanelSplitView(
-                    leading: missionControlQueue,
-                    trailing: fullscreenGlobalSurface,
-                    leadingFraction: fullscreenSurface == .pullRequests ? 0.18 : 0.30
-                )
-            } else if isWorkspaceVisibleForLayout {
-                // The dock is the compact form of the fullscreen workspace:
-                // the same queue → conversation → inspector order, with
-                // narrower resizable columns.
-                MissionControlSplitView(
-                    queue: missionControlQueue,
-                    workspace: conversationColumn,
-                    inspector: contextPanel
-                )
-            } else {
-                // Collapsing the inspector must leave the queue visible, because
-                // its top control is also how the inspector is restored.
-                FullscreenPanelSplitView(
-                    leading: missionControlQueue,
-                    trailing: conversationColumn,
-                    leadingFraction: 0.30
-                )
-            }
+            desktopWorkspaceShell
         } else {
             HStack(spacing: 2) {
                 if !isNarrowLayout || !isNarrowControlVisible {
@@ -422,8 +398,53 @@ struct DockPopover: View {
         }
     }
 
+    /// Keep the navigation rail in one AppKit host for every desktop
+    /// destination. Replacing a two-pane global host with a three-pane chat
+    /// host remounted the rail after a session selection, producing the
+    /// visible whole-app restart. Only the trailing workspace changes here.
+    private var desktopWorkspaceShell: some View {
+        FullscreenPanelSplitView(
+            leading: missionControlQueue,
+            trailing: desktopTrailingWorkspace,
+            leadingFraction: 0.30
+        )
+    }
+
+    private var desktopTrailingWorkspace: AnyView {
+        if isGlobalSurfaceActive {
+            AnyView(fullscreenGlobalSurface)
+        } else if isInspectorVisibleForDesktopWorkspace {
+            // The nested split keeps the conversation and inspector resizable
+            // without disturbing the outer, persistent navigation split.
+            AnyView(
+                FullscreenPanelSplitView(
+                    leading: conversationColumn,
+                    trailing: contextPanel,
+                    leadingFraction: 0.57
+                )
+            )
+        } else {
+            AnyView(conversationColumn)
+        }
+    }
+
+    private var isGlobalSurfaceActive: Bool {
+        switch fullscreenSurface {
+        case .global, .artifacts, .bots, .pullRequests: true
+        case .conversation: false
+        }
+    }
+
+    private var isInspectorVisibleForDesktopWorkspace: Bool {
+        isFullscreen ? isMissionInspectorVisible : isWorkspaceVisibleForLayout
+    }
+
     private var isWorkspaceVisible: Bool {
-        isWorkspaceManuallyExpanded || !model.activeSubagents.isEmpty
+        // Inspector visibility is user-owned presentation state. Letting a
+        // subagent event force it open replaces the split-view host and
+        // reflows every transcript row during an active response, which can
+        // invalidate the conversation's scroll extent.
+        isWorkspaceManuallyExpanded
     }
 
     private var isWorkspaceVisibleForLayout: Bool {
@@ -451,12 +472,12 @@ struct DockPopover: View {
     /// Ask the native panel for the width it can actually occupy before choosing
     /// the desktop layout, then render only a layout that fits that screen.
     private func synchronizePanelLayout() {
-        let fittedDesktopWidth = onWorkspaceWidthChange(desktopRequiredWidth)
-        let shouldUseNarrowLayout = fittedDesktopWidth < desktopRequiredWidth
+        let shouldUseNarrowLayout = availableWorkspaceWidth() < desktopRequiredWidth
         if isNarrowLayout != shouldUseNarrowLayout {
             isNarrowLayout = shouldUseNarrowLayout
             if shouldUseNarrowLayout { isNarrowControlVisible = false }
         }
+        // Resize once, after the final presentation decision is known.
         _ = onWorkspaceWidthChange(popupWidth)
     }
 
@@ -508,7 +529,6 @@ struct DockPopover: View {
     }
 
     private func loadInitialModelConfiguration() {
-        model.restoreLatestSessionIfNeeded()
         model.refreshRuntimeConfiguration()
         model.refreshRuntimeModelOptions()
         model.refreshDefaultReasoningVariant()
@@ -594,7 +614,6 @@ struct DockPopover: View {
         DebugLog.writeDiagnostic("session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")")
         synchronizeWorkspace()
         controlCenter.focus(sessionID: newValue)
-        controlCenter.refresh()
         synchronizePanelLayout()
 
         guard oldValue != newValue else { return }
@@ -642,11 +661,19 @@ struct DockPopover: View {
         synchronizePanelLayout()
         synchronizeWorkspace()
         controlCenter.bind(to: model)
+        // The session Activity child can mount before this root lifecycle hook.
+        // Reissue its durable, read-only projection after binding so an early
+        // unbound attempt cannot leave the visible session permanently empty.
+        controlCenter.refreshSessionKanban(for: model.kanbanSessionID)
         botMode.bind(to: model.controlRPCClient, capabilityAvailable: controlCenter.capabilityAvailable(HermesFeatureIDs.ID.bots.rawValue))
-        botMode.refresh()
         agentUpdateService.checkForUpdates()
-        controlCenter.refresh()
-        controlCenter.startInitialProjectNavigationLoad()
+        Task { @MainActor in
+            await botMode.refreshNow(force: true)
+            handleProfileScopeChange(botMode.selectedProfileID)
+            model.restoreLatestSessionIfNeeded()
+            controlCenter.refresh()
+            controlCenter.startInitialProjectNavigationLoad()
+        }
         // Seed the project name cache immediately after bind so the label is
         // visible from the first render if membership data is already loaded.
         refreshCachedProjectName()
@@ -658,9 +685,11 @@ struct DockPopover: View {
     private var missionControlQueue: some View {
         MissionControlQueue(
             model: model,
+            botMode: botMode,
             workspaceStore: workspaceStore,
             controlCenter: controlCenter,
             agentUpdateService: agentUpdateService,
+            navigationState: missionControlNavigation,
             activeSessionID: model.sessionID,
             activeGlobalTab: fullscreenSurface == .global ? fullscreenGlobalTab : nil,
             isArtifactsActive: fullscreenSurface == .artifacts,
@@ -706,13 +735,25 @@ struct DockPopover: View {
             },
             showsFullscreenToggle: true,
             isFullscreen: isFullscreen,
-            onFullscreenToggle: toggleFullscreen
+            onFullscreenToggle: toggleFullscreen,
+            onSelectProfile: { botMode.selectProfile($0) }
         )
+    }
+
+    private func handleProfileScopeChange(_ profileID: String?) {
+        let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = normalized?.isEmpty == false ? normalized : nil
+        model.setProfileScope(selected)
+        controlCenter.setProjectProfile(selected)
+        clearSessionSurfaceSelections()
+        cachedProjectName = nil
+        cachedSessionRepositoryPath = nil
     }
 
     private var fullscreenGlobalControlSurface: some View {
         WorkspaceActivitySidebar(
             model: model,
+            botMode: botMode,
             store: workspaceStore,
             control: controlCenter,
             workflow: developerWorkflow,
@@ -749,10 +790,10 @@ struct DockPopover: View {
                 )
                 .id("fullscreen-pull-requests")
             } else if fullscreenSurface == .artifacts {
-                ArtifactsInspectorView(model: model)
+                PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
                     .id("fullscreen-artifacts")
             } else if fullscreenSurface == .bots {
-                BotRosterPage(model: botMode, onSelectBot: openBotChat)
+                BotRosterPage(model: botMode, dockModel: model, onSelectBot: openBotChat)
                     .id("fullscreen-bots")
             } else {
                 fullscreenGlobalControlSurface
@@ -806,6 +847,7 @@ struct DockPopover: View {
                     case .global:
                         WorkspaceActivitySidebar(
                             model: model,
+                            botMode: botMode,
                             store: workspaceStore,
                             control: controlCenter,
                             workflow: developerWorkflow,
@@ -823,6 +865,7 @@ struct DockPopover: View {
                      case .session:
                          SessionInspector(
                              model: model,
+                             botMode: botMode,
                              control: controlCenter,
                              workflow: developerWorkflow,
                              sessionRepositoryPath: activeSessionRepositoryPath,
@@ -830,7 +873,7 @@ struct DockPopover: View {
                              showsHeader: false
                          )
                     case .artifacts:
-                        ArtifactsInspectorView(model: model)
+                        PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
                     }
                 }
                 .transition(.opacity)
@@ -1213,17 +1256,24 @@ struct DockPopover: View {
     }
 
     private func toggleFullscreen() {
+        // Fullscreen changes only the host window and available layout space.
+        // It must not select a different workspace, inspector scope, or
+        // session surface: those are user-owned presentation state.
+        let preservedInspectorVisibility = inspectorPanelIsVisible
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             isFullscreen.toggle()
             if isFullscreen {
                 isNarrowLayout = false
-                isMissionInspectorVisible = true
-                inspectorScope = .session
-                fullscreenSurface = .conversation
+                isMissionInspectorVisible = preservedInspectorVisibility
             } else {
                 synchronizePanelLayout()
+                if isNarrowLayout {
+                    isNarrowControlVisible = preservedInspectorVisibility
+                } else {
+                    isWorkspaceManuallyExpanded = preservedInspectorVisibility
+                }
             }
         }
         onFullscreenToggle()
@@ -1416,6 +1466,19 @@ struct DockPopover: View {
         } message: {
             Text(model.sessionDeletionError ?? "The session could not be deleted.")
         }
+        .alert(
+            "Could Not Update Session Visibility",
+            isPresented: Binding(
+                get: { model.sessionVisibilityError != nil },
+                set: { if !$0 { model.clearSessionVisibilityError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                model.clearSessionVisibilityError()
+            }
+        } message: {
+            Text(model.sessionVisibilityError ?? "The session visibility could not be updated.")
+        }
     }
 
     private var sessionList: some View {
@@ -1496,6 +1559,18 @@ struct DockPopover: View {
                             .disabled(session.id == model.sessionID || model.deletingSessionID != nil)
                             .help(session.id == model.sessionID ? "The active session cannot be deleted" : "Delete session")
                             .accessibilityLabel("Delete \(session.displayTitle)")
+
+                            Button {
+                                model.setSessionHidden(session, hidden: !session.isHidden)
+                            } label: {
+                                LucideImage(systemName: session.isHidden ? "eye" : "eye.slash")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.dockSecondaryText)
+                                    .frame(width: 28, height: 28)
+                            }
+                            .buttonStyle(.borderless)
+                            .help(session.isHidden ? "Show session" : "Hide session")
+                            .accessibilityLabel(session.isHidden ? "Show \(session.displayTitle)" : "Hide \(session.displayTitle)")
                         }
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
@@ -1649,33 +1724,147 @@ struct DockPopover: View {
     }
 
     private var chatScroll: some View {
+        // Keep the exact renderer active while the native table's AppKit row
+        // height transaction is repaired. The native implementation remains
+        // isolated and must not be allowed to take down the menu-bar app.
+        legacyChatScroll
+    }
+
+    private var nativeChatScroll: some View {
+        ZStack(alignment: .bottom) {
+            ConversationVirtualizedTranscript(
+                rows: nativeTranscriptProjection.rows,
+                sessionID: model.sessionID,
+                scrollRequest: model.scrollToLatestMessageRequest &+ conversationScrollRequest,
+                streamingText: model.streamingText,
+                nativeSnapshots: nativeTranscriptProjection.nativeSnapshots,
+                onImagePreview: { image in selectedChatImage = ChatImagePreview(image: image) },
+                onTopReached: { _ in revealEarlierMessages() },
+                onPinnedChange: { pinned in
+                    isConversationAtBottom = pinned
+                    if pinned { unseenMessageCount = 0 }
+                },
+                makeRow: makeNativeTranscriptRow
+            )
+            .id(model.sessionID)
+            .onAppear {
+                isConversationAtBottom = true
+                unseenMessageCount = 0
+                renderedMessageLimit = ConversationMessageWindow.limitForSessionReplacement()
+                lastRenderedMessageBubbleCount = renderedMessageBubbleCount
+            }
+            .onChange(of: model.messages.count) { oldCount, newCount in
+                renderedMessageLimit = ConversationMessageWindow.limitAfterCountChange(
+                    currentLimit: renderedMessageLimit, oldCount: oldCount, newCount: newCount,
+                    isAtBottom: isConversationAtBottom
+                )
+                let previous = lastRenderedMessageBubbleCount
+                let current = renderedMessageBubbleCount
+                lastRenderedMessageBubbleCount = current
+                guard newCount > oldCount else { return }
+                let added = max(0, current - previous)
+                guard !isConversationAtBottom, added > 0 else { return }
+                unseenMessageCount += added
+            }
+
+            if unseenMessageCount > 0 {
+                Button {
+                    unseenMessageCount = 0
+                    isConversationAtBottom = true
+                    renderedMessageLimit = ConversationMessageWindow.limitForSessionReplacement()
+                    conversationScrollRequest &+= 1
+                } label: {
+                    HStack(spacing: 7) {
+                        LucideIcon(name: .arrowDown, size: 11, color: Color.dockOnAccentText)
+                        Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.dockOnAccentText)
+                    .padding(.horizontal, 14).frame(height: 34)
+                    .background(Capsule().fill(Color.dockAccent))
+                }
+                .buttonStyle(.borderless).padding(.bottom, 12)
+            }
+        }
+    }
+
+    private var nativeTranscriptProjection: ConversationTranscriptProjection {
+        ConversationTranscriptProjection(
+            messages: model.messages,
+            limit: renderedMessageLimit,
+            streamingID: model.streamingMessageIDForPresentation,
+            streamingText: model.streamingText.text,
+            hasApproval: model.approvalText != nil,
+            approvalRevision: (model.approvalText ?? "").hashValue ^ (model.approvalTitle ?? "").hashValue,
+            hasActivity: isConversationActivityVisible,
+            activityRevision: model.activeToolCalls.count ^ model.activeSubagents.count,
+            isIdle: model.status != .working
+        )
+    }
+
+    private func makeNativeTranscriptRow(_ descriptor: ConversationTranscriptRowDescriptor) -> AnyView {
+        switch descriptor.kind {
+        case .startup: return AnyView(StartupAssistantView(agentName: model.agentDisplayName))
+        case .historyPlaceholder: return AnyView(EmptyView())
+        case .message, .streaming:
+            guard let id = UUID(uuidString: descriptor.id), let message = model.messages.first(where: { $0.id == id }) else { return AnyView(EmptyView()) }
+            return AnyView(messageRow(message))
+        case .approval: return AnyView(approvalRow(title: model.approvalTitle ?? "Review requested action", detail: model.approvalText ?? ""))
+        case .activity: return AnyView(activityView)
+        }
+    }
+
+    private var legacyChatScroll: some View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottom) {
                     ScrollView {
-                        // Keep the transcript lazy: each row may parse Markdown,
-                        // create selectable text storage, or decode images.
-                        // Building the entire history up front makes scrolling
-                        // increasingly expensive as the chat grows.
                         VStack(spacing: 0) {
-                            // Keep message rows lazy for large conversations.
-                            // The bottom anchor remains outside this lazy
-                            // stack below, so virtualization never owns the
-                            // scroll target itself.
-                            LazyVStack(spacing: 0) {
+                            // Variable-height Markdown rows need an exact
+                            // SwiftUI document extent. LazyVStack estimates
+                            // off-screen heights and can expose a blank tail
+                            // before it corrects those estimates.
+                            VStack(spacing: 0) {
                                 if model.messages.isEmpty && model.status != .working {
                                     StartupAssistantView(agentName: model.agentDisplayName)
                                         .frame(maxWidth: .infinity)
                                         .frame(minHeight: max(300, viewport.size.height - 16))
                                 }
-                                let msgList = model.messages
-                                ForEach(msgList) { message in
+
+                                let messages = ConversationMessageWindow.visibleMessages(
+                                    model.messages,
+                                    limit: renderedMessageLimit
+                                )
+                                if model.messages.count > messages.count {
+                                    Button(action: revealEarlierMessages) {
+                                        HStack(spacing: 7) {
+                                            LucideImage(systemName: "arrow.up")
+                                                .font(.system(size: 11, weight: .semibold))
+                                            Text("Show earlier messages")
+                                                .font(.system(size: 12, weight: .semibold))
+                                        }
+                                        .foregroundStyle(Color.dockPrimaryText)
+                                        .padding(.horizontal, 14)
+                                        .frame(height: 32)
+                                        .background(
+                                            Capsule(style: .continuous)
+                                                .fill(Color.dockSurface4)
+                                                .overlay {
+                                                    Capsule(style: .continuous)
+                                                        .stroke(Color.dockAccent.opacity(0.32), lineWidth: 0.6)
+                                                }
+                                        )
+                                        .shadow(color: Color.black.opacity(0.18), radius: 8, y: 3)
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, 3)
+                                    .padding(.bottom, 8)
+                                }
+
+                                ForEach(messages) { message in
                                     messageRow(message)
                                         .id(message.id)
-                                        .transition(.asymmetric(
-                                            insertion: .opacity.combined(with: .move(edge: .bottom)).combined(with: .scale(scale: 0.97)),
-                                            removal: .opacity
-                                        ))
                                 }
                                 if let approval = model.approvalText {
                                     approvalRow(title: model.approvalTitle ?? "Review requested action", detail: approval)
@@ -1688,92 +1877,115 @@ struct DockPopover: View {
                             }
                             .padding(.vertical, 8)
 
-                            // Keep the scroll target outside LazyVStack. The
-                            // footer must remain a stable content boundary
-                            // while transcript rows are virtualized/relaid out.
                             Color.clear
                                 .frame(height: 1)
-                                .id(Self.conversationBottomSentinelID)
+                                .id("conversation-bottom")
                         }
                         .background(
                             GeometryReader { geometry in
                                 Color.clear.preference(
                                     key: ConversationContentBoundsPreferenceKey.self,
                                     value: ConversationContentBounds(
-                                        topMinY: geometry.frame(in: .named("conversationScroll")).minY,
-                                        bottomMaxY: geometry.frame(in: .named("conversationScroll")).maxY
+                                        topMinY: geometry.frame(in: .named("conversation-scroll")).minY,
+                                        bottomMaxY: geometry.frame(in: .named("conversation-scroll")).maxY
                                     )
                                 )
                             }
                         )
                     }
-                    // Rebuilding the scroll view per session discards the
-                    // previous conversation's scroll offset. AppKit otherwise
-                    // retains that offset unclamped past the end of the new,
-                    // still-estimated lazy content until the user scrolls.
                     .id(model.sessionID)
-                    // A fresh scroll view identity starts parked on the last
-                    // message instead of racing a programmatic jump to it.
                     .defaultScrollAnchor(.bottom)
+                    .coordinateSpace(name: "conversation-scroll")
                     .onAppear {
-                        // Transient pill state must not survive the per-session
-                        // rebuild; a new identity starts at the bottom.
                         isConversationAtBottom = true
                         unseenMessageCount = 0
+                        renderedMessageLimit = ConversationMessageWindow.limitForSessionReplacement()
+                        lastRenderedMessageBubbleCount = renderedMessageBubbleCount
                     }
-                    .coordinateSpace(name: "conversationScroll")
+                    .onChange(of: model.sessionID) { _, _ in
+                        // The ScrollView identity is session-specific, but its
+                        // parent presentation state is not. Reset explicitly
+                        // so a session opened after an expanded history page
+                        // mounts only its bounded recent window.
+                        isConversationAtBottom = true
+                        unseenMessageCount = 0
+                        renderedMessageLimit = ConversationMessageWindow.limitForSessionReplacement()
+                        lastRenderedMessageBubbleCount = renderedMessageBubbleCount
+                        isStreamingTailScrollScheduled = false
+                        isTransientTailAdjustmentScheduled = false
+                        isPastEndRepairScheduled = false
+                        scrollConversationToBottom(proxy)
+                    }
                     .onPreferenceChange(ConversationContentBoundsPreferenceKey.self) { bounds in
-                        handleConversationBottomReport(
+                        conversationPerformance.recordScrollBoundsUpdate()
+                        updateConversationPosition(
                             bounds,
                             viewportHeight: viewport.size.height,
                             proxy: proxy
                         )
                     }
                     .onChange(of: model.scrollToLatestMessageRequest) { _, _ in
-                        // DockModel bumps this after replacing the transcript
-                        // wholesale (session resume or load failure); the
-                        // per-session identity above cannot cover content
-                        // that lands after first layout.
                         unseenMessageCount = 0
                         isConversationAtBottom = true
-                        scrollConversationToBottom(proxy, animated: false)
+                        scrollConversationToBottom(proxy)
+                    }
+                    .onChange(of: conversationScrollRequest) { _, _ in
+                        scrollConversationToBottom(proxy, animated: true)
                     }
                     .onChange(of: model.messages.count) { oldCount, newCount in
+                        renderedMessageLimit = ConversationMessageWindow.limitAfterCountChange(
+                            currentLimit: renderedMessageLimit,
+                            oldCount: oldCount,
+                            newCount: newCount,
+                            isAtBottom: isConversationAtBottom
+                        )
+                        let previousBubbleCount = lastRenderedMessageBubbleCount
+                        let currentBubbleCount = renderedMessageBubbleCount
+                        lastRenderedMessageBubbleCount = currentBubbleCount
+
                         guard newCount > oldCount else {
                             if newCount < oldCount { unseenMessageCount = 0 }
                             return
                         }
+                        // Activity transport can append empty assistant
+                        // placeholders to the canonical array. They do not
+                        // produce a message bubble, so they must not create
+                        // an unread-message badge.
+                        let newBubbleCount = max(0, currentBubbleCount - previousBubbleCount)
+                        guard newBubbleCount > 0 else { return }
                         if isConversationAtBottom {
-                            scrollConversationToBottom(proxy, animated: false)
+                            scrollConversationToBottom(proxy)
                         } else {
-                            unseenMessageCount += newCount - oldCount
+                            unseenMessageCount += newBubbleCount
                         }
                     }
                     .onChange(of: model.approvalText) { _, _ in
                         guard isConversationAtBottom else { return }
-                        scrollConversationToBottom(proxy, animated: false)
+                        scheduleTransientTailAdjustment(proxy)
                     }
                     .onChange(of: isConversationActivityVisible) { _, _ in
                         guard isConversationAtBottom else { return }
-                        scrollConversationToBottom(proxy, animated: false)
+                        scheduleTransientTailAdjustment(proxy)
                     }
                     .onReceive(model.streamingText.$text) { _ in
-                        // DockPopover does not observe StreamingText (flushes
-                        // stay confined to the streaming row), so subscribe to
-                        // the publisher directly to keep a parked viewport sticky.
+                        conversationPerformance.recordStreamingUpdate()
                         guard isConversationAtBottom else { return }
-                        scrollConversationToBottom(proxy, animated: false)
+                        scheduleStreamingTailScroll(proxy)
                     }
 
                     if unseenMessageCount > 0 {
                         Button {
                             unseenMessageCount = 0
                             isConversationAtBottom = true
-                            scrollConversationToBottom(proxy, duration: 0.25)
+                            renderedMessageLimit = ConversationMessageWindow.limitForSessionReplacement()
+                            conversationScrollRequest &+= 1
                         } label: {
                             HStack(spacing: 7) {
-                                LucideImage(systemName: "arrow.down")
-                                    .font(.system(size: 11, weight: .bold))
+                                LucideIcon(
+                                    name: .arrowDown,
+                                    size: 11,
+                                    color: Color.dockOnAccentText
+                                )
                                 Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
                                     .font(.system(size: 12, weight: .semibold))
                             }
@@ -1785,10 +1997,113 @@ struct DockPopover: View {
                         }
                         .buttonStyle(.borderless)
                         .padding(.bottom, 12)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
             }
+        }
+    }
+
+    private func revealEarlierMessages() {
+        guard renderedMessageLimit < model.messages.count else { return }
+        renderedMessageLimit = ConversationMessageWindow.revealedLimit(
+            currentLimit: renderedMessageLimit,
+            totalCount: model.messages.count
+        )
+    }
+
+    private var renderedMessageBubbleCount: Int {
+        ConversationUnreadMessagePolicy.renderedMessageCount(
+            model.messages,
+            streamingID: model.streamingMessageIDForPresentation
+        )
+    }
+
+    private func updateConversationPosition(
+        _ bounds: ConversationContentBounds,
+        viewportHeight: CGFloat,
+        proxy: ScrollViewProxy
+    ) {
+        let atBottom = ConversationScrollMetrics.isAtBottom(
+            topMinY: bounds.topMinY,
+            bottomMaxY: bounds.bottomMaxY,
+            viewportHeight: viewportHeight
+        )
+        if atBottom != isConversationAtBottom {
+            isConversationAtBottom = atBottom
+            if atBottom { unseenMessageCount = 0 }
+        }
+
+        // This is deliberately independent of the pinned/browsing transition
+        // above. A simultaneous composer resize and approval/activity change
+        // can leave the clip origin past the real content end without changing
+        // the derived pinned state. The stable footer is the one canonical
+        // clamp target for that invalid geometry.
+        if ConversationScrollMetrics.isPastEnd(
+            topMinY: bounds.topMinY,
+            bottomMaxY: bounds.bottomMaxY,
+            viewportHeight: viewportHeight
+        ) {
+            schedulePastEndRepair(proxy)
+        }
+    }
+
+    private func scrollConversationToBottom(_ proxy: ScrollViewProxy, animated: Bool = false) {
+        Task { @MainActor in
+            // Let the inserted row participate in layout before targeting the
+            // stable footer. This is the only programmatic scroll target in
+            // the restored SwiftUI presentation.
+            await Task.yield()
+            if animated {
+                withAnimation(.dockEase(duration: 0.22)) {
+                    proxy.scrollTo("conversation-bottom", anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo("conversation-bottom", anchor: .bottom)
+            }
+        }
+    }
+
+    private func scheduleStreamingTailScroll(_ proxy: ScrollViewProxy) {
+        guard !isStreamingTailScrollScheduled else { return }
+        isStreamingTailScrollScheduled = true
+        Task { @MainActor in
+            // A streaming text flush already triggers an expensive re-wrap of
+            // the growing live row. Coalesce footer movement on a slightly
+            // slower cadence so it cannot compete with that work every 80 ms.
+            try? await Task.sleep(
+                for: .milliseconds(ConversationStreamingPresentationPolicy.tailAdjustmentIntervalMilliseconds)
+            )
+            isStreamingTailScrollScheduled = false
+            guard isConversationAtBottom else { return }
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
+        }
+    }
+
+    private func scheduleTransientTailAdjustment(_ proxy: ScrollViewProxy) {
+        guard !isTransientTailAdjustmentScheduled else { return }
+        isTransientTailAdjustmentScheduled = true
+        Task { @MainActor in
+            // Clarification chips resize the composer while approval/activity
+            // rows resize the transcript. Wait through both layout turns and
+            // issue one footer request only for a viewport that was pinned.
+            await Task.yield()
+            await Task.yield()
+            isTransientTailAdjustmentScheduled = false
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
+        }
+    }
+
+    private func schedulePastEndRepair(_ proxy: ScrollViewProxy) {
+        guard !isPastEndRepairScheduled else { return }
+        isPastEndRepairScheduled = true
+        Task { @MainActor in
+            // A negative content top together with a trailing edge above the
+            // viewport is an invalid offset, never a legitimate browsing
+            // position. Coalesce the repair after the current layout pass.
+            await Task.yield()
+            await Task.yield()
+            isPastEndRepairScheduled = false
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
     }
 
@@ -1796,105 +2111,11 @@ struct DockPopover: View {
         ConversationActivityRow(model: model)
     }
 
-    /// The activity row deliberately represents one current state. Showing a
-    /// history of streaming events here pushes the conversation out of view.
-    private var conversationPipelineActivities: [AgentActivityPresentation.PipelineActivity] {
-        model.agentPresentationSnapshot.pipeline
-    }
-
     private var isConversationActivityVisible: Bool {
         model.status == .working || AgentActivityPresentation.hasActiveWork(
             toolCalls: model.activeToolCalls,
             subagents: model.activeSubagents
         )
-    }
-
-    private func activityLabel(for rawValue: String) -> String {
-        let normalized = rawValue
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: ".", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .split(whereSeparator: { $0.isWhitespace })
-            .map { $0.capitalized }
-            .joined(separator: " ")
-        return normalized.isEmpty ? "Task" : normalized
-    }
-
-    private func scrollConversationToBottom(
-        _ proxy: ScrollViewProxy,
-        animated: Bool = true,
-        duration: TimeInterval = 0.2
-    ) {
-        scrollSettleTask?.cancel()
-        isScrollSettlePending = true
-        scrollReassertCount = 0
-        pastEndRepairCount = 0
-        scrollSettleTask = Task { @MainActor in
-            // Wait one main-actor turn for an inserted row to enter the lazy
-            // layout. Animation is reserved for the explicit new-message
-            // control: animating toward an offset computed from an unsettled
-            // estimate is what leaves a blank past-the-end tail.
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            if animated {
-                withAnimation(.dockEase(duration: duration)) {
-                    proxy.scrollTo(Self.conversationBottomSentinelID, anchor: .bottom)
-                }
-            } else {
-                proxy.scrollTo(Self.conversationBottomSentinelID, anchor: .bottom)
-            }
-        }
-    }
-
-    private func handleConversationBottomReport(
-        _ bounds: ConversationContentBounds,
-        viewportHeight: CGFloat,
-        proxy: ScrollViewProxy
-    ) {
-        let isAtBottom = ConversationScrollMetrics.isAtBottom(
-            bottomMaxY: bounds.bottomMaxY,
-            viewportHeight: viewportHeight
-        )
-        if isConversationAtBottom != isAtBottom {
-            isConversationAtBottom = isAtBottom
-            if isAtBottom { unseenMessageCount = 0 }
-        }
-        // A viewport left past the content end renders the blank tail. AppKit
-        // re-clamps a stale offset only on the next scroll event, so repair it
-        // here even after a scroll was already considered settled: re-scrolling
-        // to the sentinel pulls the viewport back up to the true bottom.
-        if ConversationScrollMetrics.isPastEnd(
-            topMinY: bounds.topMinY,
-            bottomMaxY: bounds.bottomMaxY,
-            viewportHeight: viewportHeight
-        ) {
-            guard ConversationScrollSettle.canRepairPastEnd(repairCount: pastEndRepairCount) else {
-                isScrollSettlePending = false
-                return
-            }
-            pastEndRepairCount += 1
-            proxy.scrollTo(Self.conversationBottomSentinelID, anchor: .bottom)
-            return
-        }
-        if isAtBottom {
-            if isScrollSettlePending || scrollReassertCount != 0 || pastEndRepairCount != 0 {
-                scrollReassertCount = 0
-                pastEndRepairCount = 0
-                isScrollSettlePending = false
-            }
-            return
-        }
-        guard isScrollSettlePending else { return }
-        guard ConversationScrollSettle.shouldReassert(
-            bottomMaxY: bounds.bottomMaxY,
-            viewportHeight: viewportHeight,
-            reassertCount: scrollReassertCount
-        ) else {
-            isScrollSettlePending = false
-            return
-        }
-        scrollReassertCount += 1
-        proxy.scrollTo(Self.conversationBottomSentinelID, anchor: .bottom)
     }
 
     @ViewBuilder
@@ -1943,9 +2164,8 @@ struct DockPopover: View {
                                         .foregroundStyle(Color.dockAccent)
                                 }
                                 if !userText.isEmpty {
-                                    Text(userText)
-                                        .font(.system(size: 14))
-                                        .textSelection(.enabled)
+                                    MarkdownMessageView(markdown: userText)
+                                        .equatable()
                                 }
                             }
                             .fixedSize(horizontal: false, vertical: true)
@@ -1980,11 +2200,25 @@ struct DockPopover: View {
                                         size: 24
                                     )
                                 } else {
-                                    LucideImage(systemName: "cpu.fill")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.dockAccent)
-                                        .frame(width: 24, height: 24)
-                                        .background(Circle().fill(Color.dockAccent.opacity(0.14)))
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous)
+                                            .fill(
+                                                LinearGradient(
+                                                    colors: BotAvatarPresentation.palette(for: botProfileID),
+                                                    startPoint: .topLeading,
+                                                    endPoint: .bottomTrailing
+                                                )
+                                            )
+                                        Circle()
+                                            .stroke(.white.opacity(0.20), lineWidth: 0.6)
+                                            .frame(width: 15, height: 15)
+                                        LucideImage(systemName: BotAvatarPresentation.symbol(for: botProfileID))
+                                            .font(.system(size: 8, weight: .semibold))
+                                            .symbolRenderingMode(.hierarchical)
+                                            .foregroundStyle(.white.opacity(0.96))
+                                    }
+                                    .frame(width: 24, height: 24)
+                                    .clipShape(RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous))
                                 }
                                 Text(bot?.name ?? message.botDisplayName ?? botProfileID)
                                     .font(.system(size: 12, weight: .semibold))
@@ -2014,6 +2248,7 @@ struct DockPopover: View {
                                     }
                                 } else {
                                     MarkdownMessageView(markdown: message.text)
+                                        .equatable()
                                 }
                             }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -2084,9 +2319,12 @@ struct DockPopover: View {
     private func approvalRow(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
-                LucideImage(systemName: "exclamationmark.triangle.fill")
+                LucideIcon(
+                    name: .triangleAlert,
+                    size: 16,
+                    color: Color.white
+                )
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.black)
                     .frame(width: 28, height: 28)
                     .background(
                         Circle()
@@ -2268,9 +2506,11 @@ private struct MissionControlQueue: View {
     }
 
     @ObservedObject var model: DockModel
+    @ObservedObject var botMode: BotModeModel
     @ObservedObject var workspaceStore: WorkspaceStore
     @ObservedObject var controlCenter: ControlCenterModel
     @ObservedObject var agentUpdateService: HermesUpdateService
+    @ObservedObject var navigationState: MissionControlNavigationState
     let activeSessionID: String?
     let activeGlobalTab: ControlTab?
     let isArtifactsActive: Bool
@@ -2286,10 +2526,8 @@ private struct MissionControlQueue: View {
     let showsFullscreenToggle: Bool
     let isFullscreen: Bool
     let onFullscreenToggle: () -> Void
-    @State private var showsAllConversations = false
-    @State private var selectedTaskID: UUID?
-    @State private var selectedSessionID: String?
-    @State private var areConversationsExpanded = false
+    let onSelectProfile: (String) -> Void
+    @State private var isProfileSelectorPresented = false
 
     private var readyTasks: [WorkspaceTask] {
         workspaceStore.tasks.filter { $0.status == .readyForReview || $0.status == .todo }
@@ -2372,14 +2610,17 @@ private struct MissionControlQueue: View {
             for summary in controlCenter.projectSessionsByProjectID[project.id] ?? [] {
                 let savedSession = sessionsByID[summary.id]
                 let updatedAt = [summary.updatedAt, savedSession?.updatedAt].compactMap { $0 }.max()
+                let savedSessionIsNewer = sessionDate(savedSession) > (summary.updatedAt ?? .distantPast)
                 sessionsByID[summary.id] = HermesSession(
                     id: summary.id,
-                    title: summary.title,
-                    preview: summary.preview ?? savedSession?.preview ?? "",
+                    profileID: controlCenter.projectProfileID,
+                    title: savedSessionIsNewer ? savedSession?.title ?? summary.title : summary.title,
+                    preview: savedSessionIsNewer ? savedSession?.preview ?? summary.preview ?? "" : summary.preview ?? savedSession?.preview ?? "",
                     startedAt: savedSession?.startedAt,
                     updatedAt: updatedAt,
                     messageCount: savedSession?.messageCount ?? 0,
-                    source: savedSession?.source ?? "project"
+                    source: savedSession?.source ?? "project",
+                    isHidden: savedSession?.isHidden ?? false
                 )
                 assigned.insert(summary.id)
             }
@@ -2406,14 +2647,17 @@ private struct MissionControlQueue: View {
             for summary in controlCenter.projectSessionsByProjectID[project.id] ?? [] {
                 let savedSession = unlinkedByID[summary.id]
                 let updatedAt = [summary.updatedAt, savedSession?.updatedAt].compactMap { $0 }.max()
+                let savedSessionIsNewer = sessionDate(savedSession) > (summary.updatedAt ?? .distantPast)
                 unlinkedByID[summary.id] = HermesSession(
                     id: summary.id,
-                    title: summary.title,
-                    preview: summary.preview ?? savedSession?.preview ?? "",
+                    profileID: controlCenter.projectProfileID,
+                    title: savedSessionIsNewer ? savedSession?.title ?? summary.title : summary.title,
+                    preview: savedSessionIsNewer ? savedSession?.preview ?? summary.preview ?? "" : summary.preview ?? savedSession?.preview ?? "",
                     startedAt: savedSession?.startedAt,
                     updatedAt: updatedAt,
                     messageCount: savedSession?.messageCount ?? 0,
-                    source: savedSession?.source ?? "conversation"
+                    source: savedSession?.source ?? "conversation",
+                    isHidden: savedSession?.isHidden ?? false
                 )
             }
         }
@@ -2459,14 +2703,7 @@ private struct MissionControlQueue: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 10, height: 10)
-                Text(model.agentDisplayName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                    .padding(.leading, 8)
+                profileHeader
                 Spacer(minLength: 0)
                 Button(action: onNewConversation) {
                     LucideIcon(name: .messageCirclePlus, size: 18, color: Color.dockPrimaryText)
@@ -2504,7 +2741,15 @@ private struct MissionControlQueue: View {
             }
         }
         .background(Color.dockSurface2)
-        .task { model.loadSessions() }
+        // This queue can move between AppKit split-view hosts as the center
+        // destination changes. Loading the index is an initial-popover task,
+        // not a navigation side effect; otherwise selecting a project or
+        // conversation remounts the rail and reissues a full list refresh.
+        .task {
+            guard !navigationState.hasRequestedSessionIndex else { return }
+            navigationState.hasRequestedSessionIndex = true
+            model.loadSessions()
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes control queue")
     }
@@ -2523,6 +2768,116 @@ private struct MissionControlQueue: View {
         }
     }
 
+    private var selectedBot: BotSummary? {
+        let visible = botMode.bots.filter { !$0.isHidden }
+        if let id = botMode.selectedProfileID,
+           let selected = visible.first(where: { $0.id == id }) {
+            return selected
+        }
+        return visible.first(where: \.isDefault) ?? visible.first
+    }
+
+    private var visibleBots: [BotSummary] { botMode.bots.filter { !$0.isHidden } }
+
+    /// Projects belong to the primary Hermes profile. Keep the legacy
+    /// single-profile/unsupported behavior intact, but do not expose project
+    /// navigation while another visible Bot is selected.
+    private var showsProjectsForSelectedBot: Bool {
+        visibleBots.count <= 1 || selectedBot?.isDefault == true
+    }
+
+    private var profileHeader: some View {
+        let bot = selectedBot
+        let label = bot.map { option in
+            option.title.map { "\(option.name) — \($0)" } ?? option.name
+        } ?? model.agentDisplayName
+        let identity = HStack(spacing: 8) {
+            if let bot {
+                BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 24)
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockSurface4)
+                    LucideImage(systemName: "bot")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
+                .frame(width: 24, height: 24)
+            }
+            Text(label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+        }
+
+        return Group {
+            if visibleBots.count > 1 {
+                Button {
+                    isProfileSelectorPresented.toggle()
+                } label: {
+                    HStack(spacing: 6) {
+                        identity
+                        LucideImage(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .popover(isPresented: $isProfileSelectorPresented, arrowEdge: .top) {
+                    profileSelectorPopover(selectedBot: bot)
+                }
+                .accessibilityLabel("Select Bot, currently \(label)")
+            } else {
+                identity.accessibilityLabel("Current Bot: \(label)")
+            }
+        }
+    }
+
+    private func profileSelectorPopover(selectedBot: BotSummary?) -> some View {
+        let popoverHeight = min(CGFloat(visibleBots.count) * 40 + 12, 360)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: 2) {
+                ForEach(visibleBots) { option in
+                    Button {
+                        onSelectProfile(option.id)
+                        isProfileSelectorPresented = false
+                    } label: {
+                        HStack(spacing: 9) {
+                            BotAvatarView(
+                                bot: option,
+                                imageData: botMode.avatarImages[option.id],
+                                size: 22
+                            )
+                            Text(option.title.map { "\(option.name) — \($0)" } ?? option.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            if option.id == selectedBot?.id {
+                                LucideImage(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.dockAccent)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        option.id == selectedBot?.id
+                            ? "\(option.name), selected"
+                            : "Select \(option.name)"
+                    )
+                }
+            }
+            .padding(6)
+        }
+        .frame(width: 300, height: popoverHeight)
+        .background(Color.dockSurface2)
+    }
+
     /// A one-line horizontal rail keeps global navigation compact and makes
     /// selection independent from every neighbouring destination.
     private var globalRailBar: some View {
@@ -2537,59 +2892,59 @@ private struct MissionControlQueue: View {
             pullRequestsDestinationRow
             globalRailDestination(.automations)
             queueRailDestination("Artifacts", icon: "doc.text.magnifyingglass", isSelected: isArtifactsActive) {
-                selectedTaskID = nil
-                selectedSessionID = nil
                 onOpenArtifacts()
             }
             botsDestinationRow
 
-            MissionControlProjectList(
-                groups: projects,
-                activeSessionID: activeSessionID,
-                attentionDots: sessionAttentionDots,
-                showsAllConversations: showsAllConversations,
-                isLoadingProjects: controlCenter.isRefreshing && projects.isEmpty,
-                isRefreshing: controlCenter.isRefreshingProjectNavigation,
-                isCreatingChat: model.isCreatingSession,
-                onSelectSession: { session in
-                    selectedSessionID = session.id
-                    selectedTaskID = nil
-                    onSelectSession(session)
-                },
-                onRefresh: {
-                    controlCenter.refreshProjectNavigation()
-                },
-                onNewChatInProject: { projectPath in
-                    Task {
-                        await model.startNewChat(in: projectPath)
-                        model.loadSessions()
+            if showsProjectsForSelectedBot {
+                MissionControlProjectList(
+                    groups: projects,
+                    activeSessionID: activeSessionID,
+                    selectedSessionID: navigationState.selectedSessionID,
+                    attentionDots: sessionAttentionDots,
+                    showsAllConversations: navigationState.showsAllConversations,
+                    isLoadingProjects: controlCenter.isRefreshing && projects.isEmpty,
+                    isRefreshing: controlCenter.isRefreshingProjectNavigation,
+                    isCreatingChat: model.isCreatingSession,
+                    onSelectSession: { session in
+                        navigationState.selectedSessionID = session.id
+                        navigationState.selectedTaskID = nil
+                        onSelectSession(session)
+                    },
+                    onRefresh: {
                         controlCenter.refreshProjectNavigation()
-                        model.requestComposerFocus()
+                    },
+                    onNewChatInProject: { projectPath in
+                        Task {
+                            await model.startNewChat(in: projectPath)
+                            model.loadSessions()
+                            controlCenter.refreshProjectNavigation()
+                            model.requestComposerFocus()
+                        }
                     }
-                }
-            )
-            .equatable()
+                )
+            }
 
             navigationDisclosureRow(
                 title: "Conversations",
                 icon: "bubble.left.and.bubble.right",
                 count: allConversations.count,
-                isExpanded: areConversationsExpanded,
+                isExpanded: navigationState.areConversationsExpanded,
                 isRefreshing: controlCenter.isRefreshingProjectNavigation,
                 refreshAction: {
                     model.loadSessions()
                     controlCenter.refreshProjectNavigation()
                 }
             ) {
-                withAnimation(.dockEase(duration: 0.18)) { areConversationsExpanded.toggle() }
+                withAnimation(.dockEase(duration: 0.18)) { navigationState.areConversationsExpanded.toggle() }
             }
-            if areConversationsExpanded {
+            if navigationState.areConversationsExpanded {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if allConversations.isEmpty {
                         queueEmpty("No saved conversations")
                             .padding(.leading, 14)
                     } else {
-                        let visibleSessions = showsAllConversations
+                        let visibleSessions = navigationState.showsAllConversations
                             ? allConversations
                             : Array(allConversations.prefix(10))
                         ForEach(visibleSessions) { session in
@@ -2617,16 +2972,12 @@ private struct MissionControlQueue: View {
             icon: "bot",
             isSelected: isBotsActive
         ) {
-            selectedTaskID = nil
-            selectedSessionID = nil
             onOpenBots()
         }
     }
 
     private var pullRequestsDestinationRow: some View {
         Button {
-            selectedTaskID = nil
-            selectedSessionID = nil
             onOpenPullRequests()
         } label: {
             HStack(spacing: 8) {
@@ -2654,8 +3005,6 @@ private struct MissionControlQueue: View {
             isSelected: activeGlobalTab == tab,
             showsUpdateBadge: tab == .core && agentUpdateService.phase == .updateAvailable
         ) {
-            selectedTaskID = nil
-            selectedSessionID = nil
             onOpenGlobal(tab)
         }
     }
@@ -2814,10 +3163,10 @@ private struct MissionControlQueue: View {
     }
 
     private var conversationExpansionButton: some View {
-        Button { showsAllConversations.toggle() } label: {
+        Button { navigationState.showsAllConversations.toggle() } label: {
             HStack(spacing: 6) {
-                Text(showsAllConversations ? "Show recent conversations" : "Show more conversations")
-                LucideImage(systemName: showsAllConversations ? "chevron.up" : "chevron.down")
+                Text(navigationState.showsAllConversations ? "Show recent conversations" : "Show more conversations")
+                LucideImage(systemName: navigationState.showsAllConversations ? "chevron.up" : "chevron.down")
                     .font(.system(size: 9, weight: .bold))
             }
             .font(.system(size: 11, weight: .medium))
@@ -2830,8 +3179,8 @@ private struct MissionControlQueue: View {
 
     private func taskRow(_ task: WorkspaceTask, duplicateCount: Int = 1) -> some View {
         Button {
-            selectedTaskID = task.id
-            selectedSessionID = nil
+            navigationState.selectedTaskID = task.id
+            navigationState.selectedSessionID = nil
             onSelectTask(task)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
@@ -2875,8 +3224,8 @@ private struct MissionControlQueue: View {
             projectName: projectNameBySessionID[session.id],
             attentionDot: sessionAttentionDots[session.id],
             onSelect: {
-                selectedSessionID = session.id
-                selectedTaskID = nil
+                navigationState.selectedSessionID = session.id
+                navigationState.selectedTaskID = nil
                 onSelectSession(session)
             }
         )
@@ -2895,12 +3244,12 @@ private struct MissionControlQueue: View {
 
     private func isTaskSelected(_ task: WorkspaceTask) -> Bool {
         guard activeGlobalTab == nil, !isArtifactsActive else { return false }
-        return selectedTaskID == task.id || (task.sessionID != nil && task.sessionID == activeSessionID)
+        return navigationState.selectedTaskID == task.id || (task.sessionID != nil && task.sessionID == activeSessionID)
     }
 
     private func isSessionSelected(_ session: HermesSession) -> Bool {
         guard activeGlobalTab == nil, !isArtifactsActive else { return false }
-        return selectedSessionID == session.id || session.id == activeSessionID
+        return navigationState.selectedSessionID == session.id || session.id == activeSessionID
     }
 
     private func taskDisplayTitle(_ task: WorkspaceTask) -> String {
@@ -3010,6 +3359,7 @@ private struct MissionControlConversationSessionRow: View, Equatable {
 private struct MissionControlProjectList: View, Equatable {
     let groups: [MissionControlConversationGroup]
     let activeSessionID: String?
+    let selectedSessionID: String?
     let attentionDots: [String: SessionAttentionDot]
     let showsAllConversations: Bool
     let isLoadingProjects: Bool
@@ -3019,11 +3369,12 @@ private struct MissionControlProjectList: View, Equatable {
     let onRefresh: () -> Void
     let onNewChatInProject: (String) -> Void
     @State private var collapsedProjectIDs: Set<String> = []
-    @State private var isExpanded = false
+    @State private var isExpanded = true
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.groups == rhs.groups
             && lhs.activeSessionID == rhs.activeSessionID
+            && lhs.selectedSessionID == rhs.selectedSessionID
             && lhs.attentionDots == rhs.attentionDots
             && lhs.showsAllConversations == rhs.showsAllConversations
             && lhs.isLoadingProjects == rhs.isLoadingProjects
@@ -3182,6 +3533,7 @@ private struct MissionControlProjectList: View, Equatable {
         MissionControlProjectSessionRow(
             session: session,
             activeSessionID: activeSessionID,
+            selectedSessionID: selectedSessionID,
             attentionDot: attentionDots[session.id],
             onSelect: onSelectSession
         )
@@ -3194,11 +3546,15 @@ private struct MissionControlProjectList: View, Equatable {
 private struct MissionControlProjectSessionRow: View, Equatable {
     let session: HermesSession
     let activeSessionID: String?
+    let selectedSessionID: String?
     let attentionDot: SessionAttentionDot?
     let onSelect: (HermesSession) -> Void
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.session == rhs.session && lhs.activeSessionID == rhs.activeSessionID && lhs.attentionDot == rhs.attentionDot
+        lhs.session == rhs.session
+            && lhs.activeSessionID == rhs.activeSessionID
+            && lhs.selectedSessionID == rhs.selectedSessionID
+            && lhs.attentionDot == rhs.attentionDot
     }
 
     var body: some View {
@@ -3235,7 +3591,11 @@ private struct MissionControlProjectSessionRow: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .background(session.id == activeSessionID ? Color.dockAccent.opacity(0.12) : Color.clear)
+            .background(
+                session.id == activeSessionID || session.id == selectedSessionID
+                    ? Color.dockAccent.opacity(0.12)
+                    : Color.clear
+            )
             .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.borderless)
@@ -3388,35 +3748,34 @@ enum ConversationScrollMetrics {
     static let pastEndTolerance: CGFloat = 1
 
     static func isAtBottom(bottomMaxY: CGFloat, viewportHeight: CGFloat) -> Bool {
-        bottomMaxY <= viewportHeight + atBottomTolerance
+        bottomMaxY >= viewportHeight - pastEndTolerance
+            && bottomMaxY <= viewportHeight + atBottomTolerance
     }
 
-    static func isPastEnd(topMinY: CGFloat, bottomMaxY: CGFloat, viewportHeight: CGFloat) -> Bool {
-        guard topMinY < 0 else { return false }
-        return bottomMaxY < viewportHeight - pastEndTolerance
-    }
-}
-
-enum ConversationScrollSettle {
-    // One bounded non-animated re-assertion repairs a programmatic scroll that
-    // targeted a pre-settle layout estimate. More would race streaming layout
-    // and risk the blank past-the-end tail this policy exists to prevent.
-    static let maxReassertions = 1
-    static let maxPastEndRepairs = 2
-
-    static func canRepairPastEnd(repairCount: Int) -> Bool {
-        repairCount < maxPastEndRepairs
-    }
-
-    static func shouldReassert(
+    static func isAtBottom(
+        topMinY: CGFloat,
         bottomMaxY: CGFloat,
-        viewportHeight: CGFloat,
-        reassertCount: Int
+        viewportHeight: CGFloat
     ) -> Bool {
-        guard reassertCount < maxReassertions else { return false }
-        return !ConversationScrollMetrics.isAtBottom(
-            bottomMaxY: bottomMaxY,
-            viewportHeight: viewportHeight
-        )
+        // A transcript that fits without scrolling has one legal origin: zero.
+        // It is therefore both at the top and at the bottom; treating it as
+        // browsing produces a false unread badge on the next append.
+        if topMinY >= -pastEndTolerance,
+           bottomMaxY <= viewportHeight + pastEndTolerance {
+            return true
+        }
+        return isAtBottom(bottomMaxY: bottomMaxY, viewportHeight: viewportHeight)
+    }
+
+    /// The content is visibly above the viewport bottom despite having already
+    /// been scrolled upward. Unlike a short transcript at origin zero, this is
+    /// an invalid trailing scroll position and must be clamped to the footer.
+    static func isPastEnd(
+        topMinY: CGFloat,
+        bottomMaxY: CGFloat,
+        viewportHeight: CGFloat
+    ) -> Bool {
+        topMinY < -pastEndTolerance
+            && bottomMaxY < viewportHeight - pastEndTolerance
     }
 }

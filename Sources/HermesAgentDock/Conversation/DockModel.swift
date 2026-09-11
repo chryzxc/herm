@@ -23,11 +23,39 @@ final class DockModel: ObservableObject {
         set { composer.text = newValue }
     }
     @Published var pendingImages: [ImageAttachment] = []
+    @Published private(set) var pendingPDFURL: URL?
+    @Published private(set) var pendingPDFError: String?
     @Published var isSending = false
     @Published private(set) var isSteering = false
     @Published private(set) var steeringError: String?
     @Published var approvalTitle: String?
     @Published var approvalText: String?
+    /// Approval requests arrive on the shared gateway stream, including while
+    /// another conversation is selected. Retain the latest unresolved request
+    /// by Hermes session identity and project only the selected session here.
+    /// This is intentionally process-local: Hermes remains the authority after
+    /// a runtime restart, so stale approval payloads are never restored from disk.
+    private struct PendingApproval: Equatable {
+        let title: String
+        let detail: String
+    }
+    private var pendingApprovalsBySessionID: [String: PendingApproval] = [:]
+    private var pendingApprovalAliasesBySessionID: [String: Set<String>] = [:]
+    private struct PendingClarification: Equatable {
+        let question: String
+        let choices: [String]
+        let requestID: String?
+
+        var transcriptText: String {
+            choices.isEmpty
+                ? question
+                : "\(question)\n\nSuggested responses:\n" + choices.map { "- \($0)" }.joined(separator: "\n")
+        }
+    }
+    private var pendingClarificationsBySessionID: [String: PendingClarification] = [:]
+    private var pendingClarificationAliasesBySessionID: [String: Set<String>] = [:]
+    private var resolvedClarificationRequestIDs = Set<String>()
+    private var resolvedClarificationRequestIDOrder: [String] = []
     @Published private(set) var clarificationQuestion: String?
     @Published private(set) var clarificationChoices: [String] = []
     /// Hermes assigns this identifier to the blocking clarify request. A reply
@@ -44,22 +72,34 @@ final class DockModel: ObservableObject {
     @Published private(set) var sessionProjectionState: HermesProjectionState<[HermesSession]> = .empty
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
+    /// A live event can arrive while the initial session index is loading.
+    /// Retain one follow-up refresh so the navigation list cannot get stuck on
+    /// the snapshot that predated that event.
+    private var pendingSessionIndexRefresh = false
     @Published private(set) var deletingSessionID: String?
     @Published private(set) var sessionDeletionError: String?
+    @Published private(set) var sessionVisibilityError: String?
     @Published private(set) var isRestoringSession = false
     @Published private(set) var isCreatingSession = false
     @Published var currentSessionTitle: String?
-    @Published var reasoningState: ReasoningState?
-    @Published private(set) var conversationActivityPhase: ConversationActivityPhase = .idle
+    var reasoningState: ReasoningState? { didSet { scheduleActivityPresentation() } }
+    private(set) var conversationActivityPhase: ConversationActivityPhase = .idle { didSet { scheduleActivityPresentation() } }
     @Published private(set) var interruptState: InterruptState = .idle
     @Published var isShowingReasoning = false
-    @Published var activeToolCalls: [ActiveToolCall] = []
+    var activeToolCalls: [ActiveToolCall] = [] { didSet { scheduleActivityPresentation() } }
     @Published var hasUnreadResponse = false
     @Published private(set) var completionNotificationsEnabled: Bool
-    @Published var recentEvents: [AgentEvent] = []
-    @Published var activeSubagents: [HermesSubagent] = []
-    @Published var sessionAgents: [HermesSubagent] = []
-    @Published var agentActivities: [AgentActivity] = []
+    var recentEvents: [AgentEvent] = [] { didSet { scheduleActivityPresentation() } }
+    var activeSubagents: [HermesSubagent] = [] { didSet { scheduleActivityPresentation() } }
+    var sessionAgents: [HermesSubagent] = [] { didSet { scheduleActivityPresentation() } }
+    var agentActivities: [AgentActivity] = [] { didSet { scheduleActivityPresentation() } }
+    /// The sole UI invalidation signal for high-frequency agent activity.
+    /// Canonical arrays above update immediately; this revision is coalesced.
+    @Published private(set) var activityPresentationRevision = 0
+    /// Changes whenever the active session proves an exact Kanban task
+    /// reference through a Hermes tool event. Views observe this instead of
+    /// waiting for their periodic Kanban refresh.
+    @Published private(set) var observedKanbanTaskRevision = 0
     @Published private(set) var backgroundTasks: [HermesBackgroundTask] = []
     @Published var runtimeConfiguration: HermesRuntimeConfiguration?
     @Published var isLoadingRuntimeConfiguration = false
@@ -96,13 +136,80 @@ final class DockModel: ObservableObject {
     private let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
     @Published private(set) var sessionID: String?
+    /// Canonical Hermes profile used by new chats and profile-owned
+    /// navigation projections. This is intentionally separate from
+    /// `activeBotProfileID`, which identifies an open canonical Bot Chat.
+    @Published private(set) var profileScopeID: String?
+    @Published private(set) var profileScopeUnavailable = false
+    @Published private(set) var sessionProfileID: String?
     /// Profile identity for a profile-scoped Bot Chat. This is authoritative
     /// session context, not an inference from the assistant's prose.
     @Published private(set) var activeBotProfileID: String?
     @Published private(set) var activeBotDisplayName: String?
+    /// Explicit Bot dispatches are retained by their origin session. This is
+    /// presentation state, not a second transcript or task database.
+    @Published private(set) var botActivityBySessionID: [String: [BotActivityRecord]] = [:]
+    @Published private(set) var botActivityRevision = 0
+    private struct InFlightBotActivity: Equatable {
+        let activityID: String
+        let originSessionID: String
+        let botID: String
+        var botChatSessionID: String?
+        var clarificationRequestID: String?
+    }
+    private var inFlightBotActivities: [String: InFlightBotActivity] = [:]
+    private let botActivityStore: BotActivityStore
+    private let botActivityWriter: BotActivityWriter
     private var sessionStorageID: String?
+    /// The durable identifier selected by the user for session-scoped durable
+    /// projections. Gateway resume may return a transient alias for streaming,
+    /// which must not replace the Kanban attribution boundary.
+    private var kanbanAttributionSessionID: String?
+    /// A Kanban task may legitimately have no `session_id` in Hermes' durable
+    /// store. Keep only exact task IDs seen in a tool command/result for the
+    /// owning chat session; do not infer ownership from titles or assignees.
+    private var observedKanbanTaskIDsBySessionID: [String: Set<String>] = [:]
     var kanbanSessionID: String? {
-        Self.sessionAttributionID(runtimeID: sessionID, storageID: sessionStorageID)
+        Self.kanbanAttributionID(
+            requestedSessionID: kanbanAttributionSessionID,
+            runtimeID: sessionID,
+            storageID: sessionStorageID
+        )
+    }
+
+    /// Exact Kanban IDs observed in Hermes tool activity for this selected
+    /// session. A worker can create a card without copying the originating
+    /// session into the task row; the `kanban show <id>` command is still a
+    /// definitive, session-scoped association and lets the UI recover it.
+    var observedKanbanTaskIDs: [String] {
+        let aliases = [sessionID, sessionStorageID, kanbanAttributionSessionID, kanbanSessionID]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var ids = Set(aliases.flatMap { observedKanbanTaskIDsBySessionID[$0] ?? [] })
+        // Exact references survive process restarts in the bounded activity
+        // archive. They are identifiers only; prompts and tool results are
+        // never needed to restore the session-to-card association.
+        for alias in aliases {
+            ids.formUnion(
+                botActivityBySessionID[alias, default: []]
+                    .filter(\.isKanbanReference)
+                    .compactMap(\.linkedCardID)
+            )
+        }
+        // `recentEvents` is the bounded, persisted activity history. Include
+        // it so a completed terminal command observed before this view opens
+        // can still recover its exact Kanban card after session restoration.
+        let values = agentActivities.map(\.text)
+            + activeToolCalls.map { $0.input + " " + $0.context }
+            + recentEvents.map(\.detail)
+        for value in values where value.localizedCaseInsensitiveContains("kanban") {
+            ids.formUnion(Self.kanbanTaskIDs(in: value))
+        }
+        return ids.sorted()
+    }
+
+    var botActivitySessionIDs: [String?] {
+        [sessionID, sessionStorageID, kanbanAttributionSessionID, kanbanSessionID]
     }
     private var streamingMessageID: UUID?
     private(set) var streamingResponseStartedAt: Date?
@@ -117,8 +224,13 @@ final class DockModel: ObservableObject {
     private var streamingMessageBuffer = ""
     private var streamingMessagePublishedText = ""
     private var streamingMessageFlushTask: Task<Void, Never>?
+    private var activityPresentationTask: Task<Void, Never>?
     private var streamingMessageGeneration = 0
     private var streamingMessageIsVisionNotice = false
+    /// A single backend turn may report the same failure through both `error`
+    /// and `message.complete`. Keep terminal error presentation idempotent for
+    /// that turn without collapsing identical errors from later turns.
+    private var didAppendTerminalErrorForCurrentTurn = false
     private var streamingReasoningBuffer = ""
     private var reasoningFlushTask: Task<Void, Never>?
     private var lastAgentStateCacheAt: Date?
@@ -134,6 +246,15 @@ final class DockModel: ObservableObject {
     private var delegationRefreshTask: Task<Void, Never>?
     private var delegationRefreshRequested = false
     private var lastDelegationRefreshAt: Date = .distantPast
+    /// Hermes stamps gateway events with a per-session sequence. Keep a
+    /// bounded de-duplication window so reconnect replay and live delivery
+    /// can safely share the same projection path.
+    private var gatewayReplayEpoch: String?
+    private var processedGatewaySequencesBySessionID: [String: Set<Int>] = [:]
+    private var highestGatewaySequenceBySessionID: [String: Int] = [:]
+    private var gatewayReplayTask: Task<Void, Never>?
+    private var gatewayReplayInFlight = Set<String>()
+    private var delegationMonitoringTask: Task<Void, Never>?
     private var synthesizedSubagentIDs: Set<String> = []
     private var cachedAgentSnapshot: AgentPresentationSnapshot?
     private var cachedAgentSnapshotInputs: ([HermesSubagent], [AgentActivity], [ActiveToolCall])?
@@ -149,8 +270,11 @@ final class DockModel: ObservableObject {
     private var hasShutDown = false
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
     private let lastSessionIDKey = "hermes.session.last-active.v1"
+    private let profileScopeKey = "hermes.dock.selected-profile.v1"
     private let defaults: UserDefaults
     private let playApprovalSound: () -> Void
+    private var sessionLoadTask: Task<Void, Never>?
+    private var sessionLoadGeneration: UInt64 = 0
 
     /// Presentation-only union for the Agent map and pipeline. Hermes'
     /// `delegation.status.active` owns liveness; cached agents are retained as
@@ -213,16 +337,26 @@ final class DockModel: ObservableObject {
         defaults: UserDefaults = .standard,
         approvalSoundPlayer: @escaping () -> Void = { NSSound.beep() },
         initialSessionID: String? = nil,
+        botActivityFileURL: URL? = nil,
         rpcClient: HermesRPCClientProtocol? = nil
     ) {
         let agentStateStore = SessionAgentStateStore(fileURL: sessionAgentStateFileURL)
         self.agentStateStore = agentStateStore
         self.agentStateWriter = SessionAgentStateWriter(store: agentStateStore)
         self.agentStateBySessionID = agentStateStore.load()
+        let botActivityStore = BotActivityStore(fileURL: botActivityFileURL)
+        self.botActivityStore = botActivityStore
+        self.botActivityWriter = BotActivityWriter(store: botActivityStore)
+        self.botActivityBySessionID = botActivityStore.load()
         self.defaults = defaults
         self.playApprovalSound = approvalSoundPlayer
         self.sessionID = initialSessionID
+        let initialProfileID = Self.normalizedProfileID(defaults.string(forKey: profileScopeKey))
+        self.profileScopeID = initialProfileID
+        self.profileScopeUnavailable = false
+        self.sessionProfileID = initialProfileID
         self.sessionStorageID = initialSessionID
+        self.kanbanAttributionSessionID = initialSessionID
         self.interruptRPC = HermesControlRPC(client: rpcClient ?? gateway)
         self.sessionRPCClient = rpcClient ?? gateway
         completionNotificationsEnabled = defaults.bool(forKey: completionNotificationsKey)
@@ -233,6 +367,7 @@ final class DockModel: ObservableObject {
         gateway.onConnectionChange = { [weak self] connected in
             self?.isHermesConnected = connected
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
+            if connected { self?.replayTrackedGatewayEvents() }
         }
     }
 
@@ -243,27 +378,46 @@ final class DockModel: ObservableObject {
         guard !hasShutDown else { return }
         hasShutDown = true
         streamingMessageFlushTask?.cancel()
+        sessionLoadTask?.cancel()
         delegationRefreshTask?.cancel()
+        delegationMonitoringTask?.cancel()
+        gatewayReplayTask?.cancel()
         nativeVoiceCapture.reset()
         gateway.close()
-        Task { await agentStateWriter.flush() }
+        detachInFlightBotActivities(as: .canceled)
+        Task {
+            await agentStateWriter.flush()
+            await botActivityWriter.flush()
+        }
         DebugLog.write("model: shutdown complete")
     }
 
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImages = pendingImages
-        guard (!prompt.isEmpty || !attachedImages.isEmpty),
+        let attachedPDF = pendingPDFURL
+        guard (!prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil),
               !isSending,
               !isUpdatingSessionModel,
               !isRestoringSession,
               sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
 
-        let text = (prompt.isEmpty && !attachedImages.isEmpty) ? "What do you see in these images?" : prompt
+        let text: String
+        if !prompt.isEmpty {
+            text = prompt
+        } else if attachedPDF != nil {
+            text = attachedImages.isEmpty ? "What does this document contain?" : "What do you see in these attachments?"
+        } else {
+            text = "What do you see in these images?"
+        }
         let sessionBeforeSend = sessionID
+        let botActivityID = sessionBeforeSend.flatMap { eventSessionID in
+            inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
+        }
         let sendGeneration = sessionResumeGeneration
         draft = ""
-        messages.append(ChatMessage(role: .user, text: text, images: attachedImages.map(\.image)))
+        let transcriptText = attachedPDF.map { "[PDF: \($0.lastPathComponent)]\n\(text)" } ?? text
+        messages.append(ChatMessage(role: .user, text: transcriptText, images: attachedImages.map(\.image)))
         status = .working
         isSending = true
         DebugLog.write("model: send started (\(prompt.count) characters, images: \(attachedImages.count))")
@@ -290,11 +444,11 @@ final class DockModel: ObservableObject {
                     let base64 = imageData.base64EncodedString()
                     let attachResult = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.imageAttachBytes.rawValue,
-                        params: [
+                        params: scopedSessionParams([
                             "session_id": promptSessionID,
                             "content_base64": base64,
                             "filename": attachedImage.fileName
-                        ]
+                        ])
                     )
                     let attached = (attachResult["attached"] as? Bool) ?? false
                     guard attached else {
@@ -306,9 +460,32 @@ final class DockModel: ObservableObject {
                     cleanupImageAttachment(attachedImage)
                 }
 
+                if let attachedPDF {
+                    let accessing = attachedPDF.startAccessingSecurityScopedResource()
+                    defer { if accessing { attachedPDF.stopAccessingSecurityScopedResource() } }
+                    let pdfData = try Data(contentsOf: attachedPDF)
+                    guard pdfData.count <= 25 * 1024 * 1024 else {
+                        throw HermesGateway.GatewayError.imageAttachFailed("PDF attachments are limited to 25 MB.")
+                    }
+                    let result = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.pdfAttach.rawValue,
+                        params: scopedSessionParams([
+                            "session_id": promptSessionID,
+                            "content_base64": pdfData.base64EncodedString(),
+                            "filename": attachedPDF.lastPathComponent
+                        ])
+                    )
+                    guard result["attached"] as? Bool == true else {
+                        throw HermesGateway.GatewayError.imageAttachFailed(
+                            (result["message"] as? String) ?? "Hermes could not attach the PDF."
+                        )
+                    }
+                    pendingPDFURL = nil
+                }
+
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: ["session_id": promptSessionID, "text": text])
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": text]))
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
                 pendingImages.removeAll { attachedImage in
@@ -341,6 +518,9 @@ final class DockModel: ObservableObject {
                     ? "I couldn’t connect to Hermes: \(Self.safeUserDiagnostic(error.localizedDescription))"
                     : "Hermes couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
                 messages.append(ChatMessage(role: .hermes, text: message, modelName: currentModelName))
+                if let botActivityID {
+                    markBotActivityFailed(id: botActivityID, result: message)
+                }
                 status = transportFailure ? .offline : .idle
                 isSending = false
             }
@@ -445,6 +625,33 @@ final class DockModel: ObservableObject {
         DebugLog.write("model: picked image \(url.lastPathComponent)")
     }
 
+    func stagePDFFile(at url: URL) {
+        pendingPDFError = nil
+        guard url.pathExtension.lowercased() == "pdf" else {
+            pendingPDFError = "Only PDF files can be attached as documents."
+            return
+        }
+        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize else {
+            pendingPDFError = "The PDF size could not be read."
+            return
+        }
+        guard size <= 25 * 1024 * 1024 else {
+            pendingPDFError = "PDF attachments are limited to 25 MB."
+            return
+        }
+        pendingPDFURL = url
+    }
+
+    func reportPDFError(_ message: String) {
+        pendingPDFError = message
+    }
+
+    func removePendingPDF() {
+        pendingPDFURL = nil
+        pendingPDFError = nil
+    }
+
     func removePendingImage(_ image: ImageAttachment) {
         cleanupImageAttachment(image)
         pendingImages.removeAll { $0.id == image.id }
@@ -493,6 +700,40 @@ final class DockModel: ObservableObject {
         if isShowingSessions { loadSessions() }
     }
 
+    /// Re-home the foreground session surface and profile-owned conversation
+    /// index. The old projection is cleared before the target request starts;
+    /// late responses are rejected by the generation guard below.
+    func setProfileScope(_ profileID: String?) {
+        let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let next = normalized?.isEmpty == false ? normalized : nil
+        let nextUnavailable = next == nil
+        guard profileScopeID != next || profileScopeUnavailable != nextUnavailable else {
+            if sessionProfileID == nil { sessionProfileID = next }
+            return
+        }
+        profileScopeID = next
+        profileScopeUnavailable = nextUnavailable
+        sessionProfileID = next
+        if let next { defaults.set(next, forKey: profileScopeKey) }
+        else { defaults.removeObject(forKey: profileScopeKey) }
+        sessionLoadGeneration &+= 1
+        sessionLoadTask?.cancel()
+        sessionLoadTask = nil
+        isLoadingSessions = false
+        sessions = []
+        sessionProjectionState = .loading
+        newChat()
+        loadSessions()
+    }
+
+    func artifactMessages(for session: HermesSession) async throws -> [[String: Any]] {
+        let result = try await sessionRPCClient.request(
+            HermesFeatureIDs.ID.sessionMessages.rawValue,
+            params: ["session_id": session.id, "limit": 500]
+        )
+        return result["messages"] as? [[String: Any]] ?? result["data"] as? [[String: Any]] ?? []
+    }
+
     func updateCurrentSessionTitle(_ title: String) {
         guard sessionID != nil else { return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -506,28 +747,48 @@ final class DockModel: ObservableObject {
     }
 
     @discardableResult
-    func loadSessions() -> Task<Void, Never>? {
+    func loadSessions(profileID: String? = nil) -> Task<Void, Never>? {
+        let scope = profileID ?? profileScopeID
+        if profileScopeUnavailable, scope == nil {
+            sessions = []
+            sessionProjectionState = .empty
+            return nil
+        }
         guard !isLoadingSessions else { return nil }
         isLoadingSessions = true
+        sessionLoadGeneration &+= 1
+        let generation = sessionLoadGeneration
         let previousProjectionState = sessionProjectionState
         sessionProjectionState = .loading
-        return Task {
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
             defer { isLoadingSessions = false }
             do {
                 try await sessionRPCClient.connect()
-                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: ["limit": 50])
+                var params: [String: Any] = ["limit": 50]
+                if let scope, !scope.isEmpty { params["profile"] = scope }
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: params)
+                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
                 guard let rawSessions = result["sessions"] as? [[String: Any]] else {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
-                let loaded = rawSessions.compactMap(Self.parseSession)
-                sessions = loaded
-                sessionProjectionState = loaded.isEmpty ? .empty : .ready(loaded)
+                let loaded = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }
+                // The session index can lag behind the live gateway stream.
+                // Keep a newer event timestamp until Hermes publishes an equal
+                // or newer canonical row, so navigation never regresses its
+                // visible “Updated” time after a completed message.
+                let merged = Self.mergingSessionIndex(loaded, with: sessions)
+                sessions = merged
+                sessionProjectionState = merged.isEmpty ? .empty : .ready(merged)
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
             } catch {
+                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
                 sessionProjectionState = Self.failedOrStale(previousProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
                 DebugLog.write("model: session list failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
+        sessionLoadTask = task
+        return task
     }
 
     func deleteSession(_ session: HermesSession) {
@@ -542,7 +803,9 @@ final class DockModel: ObservableObject {
             defer { deletingSessionID = nil }
             do {
                 try await gateway.connect()
-                _ = try await gateway.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: ["session_id": session.id])
+                var params: [String: Any] = ["session_id": session.id]
+                if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
+                _ = try await gateway.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
                 sessions.removeAll { $0.id == session.id }
                 DebugLog.write("model: deleted saved session \(session.id)")
             } catch {
@@ -550,6 +813,24 @@ final class DockModel: ObservableObject {
                 DebugLog.write("model: session delete failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
+    }
+
+    func setSessionHidden(_ session: HermesSession, hidden: Bool) {
+        sessionVisibilityError = nil
+        Task {
+            do {
+                var params: [String: Any] = ["session_id": session.id, "hidden": hidden]
+                if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionSetHidden.rawValue, params: params)
+                loadSessions()
+            } catch {
+                sessionVisibilityError = Self.safeUserDiagnostic(error.localizedDescription)
+            }
+        }
+    }
+
+    func clearSessionVisibilityError() {
+        sessionVisibilityError = nil
     }
 
     func clearSessionDeletionError() {
@@ -560,30 +841,39 @@ final class DockModel: ObservableObject {
     func restoreLatestSessionIfNeeded() -> Task<Void, Never>? {
         guard !didRestoreLatestSession else { return nil }
         didRestoreLatestSession = true
+        guard !profileScopeUnavailable else {
+            isRestoringSession = false
+            sessionProjectionState = .empty
+            return nil
+        }
         restoreGeneration &+= 1
         let generation = restoreGeneration
         isRestoringSession = true
         let previousProjectionState = sessionProjectionState
+        let scope = profileScopeID
         sessionProjectionState = .loading
         return Task {
             defer { isRestoringSession = false }
             do {
                 try await sessionRPCClient.connect()
-                if let savedSessionID = defaults.string(forKey: lastSessionIDKey),
+                let scopedLastSessionKey = lastSessionIDKey(for: scope)
+                if let savedSessionID = defaults.string(forKey: scopedLastSessionKey),
                    !savedSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                    await resumeSession(HermesSession(id: savedSessionID, title: "", preview: "", startedAt: nil, messageCount: 0, source: ""), reportFailure: false) {
                     return
                 }
-                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: ["limit": 1])
+                var listParams: [String: Any] = ["limit": 1]
+                if let scope, !scope.isEmpty { listParams["profile"] = scope }
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionList.rawValue, params: listParams)
                 guard generation == restoreGeneration else { return }
                 guard let rawSessions = result["sessions"] as? [[String: Any]] else {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
-                let latest = rawSessions.compactMap(Self.parseSession).first
+                let latest = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }.first
                 guard generation == restoreGeneration else { return }
                 guard let latest else {
                     sessionProjectionState = .empty
-                    defaults.removeObject(forKey: lastSessionIDKey)
+                    defaults.removeObject(forKey: scopedLastSessionKey)
                     DebugLog.write("model: no saved session to restore")
                     return
                 }
@@ -606,15 +896,31 @@ final class DockModel: ObservableObject {
 
     @discardableResult
     private func resumeSession(_ session: HermesSession, reportFailure: Bool, profileID: String? = nil) async -> Bool {
+        let owningProfileID = profileID ?? session.profileID ?? profileScopeID
+        // The session queue uses Hermes' durable storage identity, whereas a
+        // resume can expose a different runtime identity. Both identify the
+        // same active conversation and must retain its unsent composer text.
+        let isRefreshingActiveSession = session.id == sessionID || session.id == sessionStorageID
         commitStreamingMessage()
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
         }
-        resetComposerForSessionChange()
+        // Reopening the selected session refreshes its transcript, but is not
+        // a session change. Its composer belongs to that active conversation
+        // and must survive navigation through a Control page or a repeated
+        // click in the session queue.
+        if !isRefreshingActiveSession {
+            resetComposerForSessionChange()
+            if profileID == nil {
+                detachInFlightBotActivities(as: .canceled)
+            }
+        }
         sessionResumeGeneration &+= 1
         interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
         sessionID = session.id
+        sessionProfileID = owningProfileID
+        kanbanAttributionSessionID = session.id
         activeBotProfileID = profileID
         activeBotDisplayName = profileID == nil ? nil : session.displayTitle
         // The old transcript belongs exclusively to the session that was just
@@ -650,10 +956,11 @@ final class DockModel: ObservableObject {
         streamingMessageSessionID = nil
         streamingMessageIsVisionNotice = false
         currentSessionTitle = session.displayTitle
+        restorePendingApproval(for: [session.id])
         do {
             try await sessionRPCClient.connect()
             var resumeParams: [String: Any] = ["session_id": session.id, "source": "hermes-agent-dock"]
-            if let profileID, !profileID.isEmpty { resumeParams["profile"] = profileID }
+            if let owningProfileID, !owningProfileID.isEmpty { resumeParams["profile"] = owningProfileID }
             let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
             let reportedSessionID = (result["session_id"] as? String)?
@@ -681,7 +988,12 @@ final class DockModel: ObservableObject {
                 return false
             }
             sessionID = resolvedSessionID
+            kanbanAttributionSessionID = Self.kanbanAttributionAfterResume(
+                requestedSessionID: session.id,
+                resolvedSessionID: resolvedSessionID
+            )
             sessionStorageID = Self.stableSessionID(from: result) ?? session.id
+            restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             persistActiveSessionID(sessionID)
             let model = (result["model"] as? String) ?? (result["model_name"] as? String)
             if let model {
@@ -695,10 +1007,16 @@ final class DockModel: ObservableObject {
                 defaultBotProfileID: profileID,
                 defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
             )
+            restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
+            mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
+            projectBotMessagesIntoActivity()
             scrollToLatestMessageRequest &+= 1
             cacheCurrentAgentState()
             refreshDelegationStatus()
-            status = .idle
+            startDelegationMonitoring()
+            if approvalText == nil, clarificationQuestion == nil {
+                status = .idle
+            }
             DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)")
             return true
         } catch {
@@ -714,14 +1032,6 @@ final class DockModel: ObservableObject {
         }
     }
 
-    func artifactMessages(for session: HermesSession) async throws -> [[String: Any]] {
-        let result = try await sessionRPCClient.request(
-            HermesFeatureIDs.ID.sessionMessages.rawValue,
-            params: ["session_id": session.id, "limit": 500]
-        )
-        return result["messages"] as? [[String: Any]] ?? result["data"] as? [[String: Any]] ?? []
-    }
-
     func resumeBotChat(_ bot: BotSummary) {
         // Every Bot has a canonical, persistent Bot Chat. When the roster row
         // has no canonical session pointer yet, Hermes resolves (and lazily
@@ -730,40 +1040,235 @@ final class DockModel: ObservableObject {
         Task { _ = await resumeSession(HermesSession(id: chat.sessionID, title: bot.name, preview: chat.preview ?? "", startedAt: chat.lastActive, messageCount: 0, source: "hermes-bot"), reportFailure: true, profileID: chat.profileID) }
     }
 
-    /// Routes an explicit, unambiguous Bot mention to the selected profile's
-    /// canonical Bot Chat. The profile-scoped session is the Hermes-supported
-    /// path that gives a Bot an actual run, identity, and activity watermark.
+    /// Routes an explicit, unambiguous Bot mention through Hermes' relay
+    /// contract. Relay owns the Bot Chat turn; this model keeps the foreground
+    /// session untouched and projects the returned reply into its transcript.
     /// Generic `delegate_task` workers are never relabelled as the Bot.
-    func sendDirectBotRequest(profileID: String, displayName: String, text: String) {
+    func sendDirectBotRequest(profileID: String, displayName: String, text: String, chatSessionID: String? = nil) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !request.isEmpty,
               !isSending,
               !isUpdatingSessionModel,
               !isRestoringSession,
-              pendingImages.isEmpty else { return }
+              pendingImages.isEmpty,
+              pendingPDFURL == nil,
+              let currentSessionID = sessionID,
+              !currentSessionID.isEmpty,
+              let originSessionID = sessionStorageID ?? sessionID,
+              !originSessionID.isEmpty else { return }
 
-        Task {
-            let target = HermesSession(
-                id: BotService.canonicalBotChatTitle,
-                title: displayName,
-                preview: "",
-                startedAt: nil,
-                messageCount: 0,
-                source: "hermes-bot"
-            )
-            guard await resumeSession(target, reportFailure: true, profileID: profileID) else { return }
-            guard activeBotProfileID == profileID else { return }
-            draft = request
-            send()
+        let explicitBotSessionID = chatSessionID
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : $0 }
+        let activity = BotActivityRecord(originSessionID: originSessionID, botID: profileID, botName: displayName, summary: request, botChatSessionID: explicitBotSessionID)
+        inFlightBotActivities[activity.id] = InFlightBotActivity(activityID: activity.id, originSessionID: originSessionID, botID: profileID, botChatSessionID: explicitBotSessionID, clarificationRequestID: nil)
+        insertBotActivity(activity)
+        if explicitBotSessionID != nil {
+            updateBotActivity(id: activity.id, state: .working)
         }
+        let sendGeneration = sessionResumeGeneration
+        let transcriptText = "@\(displayName) \(request)"
+        let relayMessage = Self.botRelayMessage(request: request, transcript: messages)
+        draft = ""
+        messages.append(ChatMessage(role: .user, text: transcriptText))
+        status = .working
+        isSending = true
+        Task {
+            do {
+                try await sessionRPCClient.connect()
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == currentSessionID else { return }
+                let result = try await sessionRPCClient.request(
+                    HermesFeatureIDs.ID.botRelayDeliver.rawValue,
+                    params: ["profile": profileID, "message": relayMessage]
+                )
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == currentSessionID else { return }
+                let reply = (result["reply"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let reportedBotSessionID = (result["session_id"] as? String) ?? (result["bot_session_id"] as? String)
+                let botSessionID = reportedBotSessionID?.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let botSessionID, !botSessionID.isEmpty {
+                    self.inFlightBotActivities[activity.id]?.botChatSessionID = botSessionID
+                    self.updateBotActivity(id: activity.id, state: .working, botChatSessionID: botSessionID)
+                }
+                if reply.isEmpty {
+                    // Relay already accepted and owns the asynchronous turn.
+                    // Without Hermes' explicit session correlation, retain
+                    // this activity as unresolved rather than guessing or
+                    // resubmitting through a canonical Bot Chat.
+                    status = .idle
+                    isSending = false
+                    return
+                }
+                messages.append(ChatMessage(role: .hermes, text: reply, botProfileID: profileID, botDisplayName: displayName))
+                updateBotActivity(id: activity.id, state: .completed, result: reply)
+                inFlightBotActivities.removeValue(forKey: activity.id)
+                status = .idle
+                isSending = false
+            } catch {
+                guard self.sessionResumeGeneration == sendGeneration,
+                      self.sessionID == currentSessionID else { return }
+                let message = "\(displayName) couldn’t process this request: \(Self.safeUserDiagnostic(error.localizedDescription))"
+                messages.append(ChatMessage(role: .hermes, text: message, isError: true, botProfileID: profileID, botDisplayName: displayName))
+                updateBotActivity(id: activity.id, state: .failed, result: message)
+                inFlightBotActivities.removeValue(forKey: activity.id)
+                status = .idle
+                isSending = false
+            }
+        }
+    }
+
+    private func projectBotMessagesIntoActivity() {
+        guard let originSessionID = sessionStorageID ?? sessionID, !originSessionID.isEmpty else { return }
+        var existing = Set(botActivityBySessionID[originSessionID, default: []].compactMap { $0.result })
+        for (index, message) in messages.enumerated() {
+            guard let botID = message.botProfileID,
+                  !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !existing.contains(message.text) else { continue }
+            let request = index > 0 && messages[index - 1].role == .user
+                ? messages[index - 1].text
+                : "Bot response"
+            insertBotActivity(BotActivityRecord(
+                originSessionID: originSessionID,
+                botID: botID,
+                botName: message.botDisplayName ?? botID,
+                summary: request,
+                state: .completed,
+                createdAt: message.timestamp,
+                updatedAt: message.timestamp,
+                result: message.text
+            ))
+            existing.insert(message.text)
+        }
+    }
+
+    static func botRelayMessage(request: String, transcript: [ChatMessage]) -> String {
+        let context = transcript.suffix(24).compactMap { message -> String? in
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let role = message.role == .user ? "User" : (message.botDisplayName ?? "Assistant")
+            return "\(role): \(text.prefix(1000))"
+        }.joined(separator: "\n")
+        guard !context.isEmpty else { return request }
+        return "[CURRENT SESSION CONTEXT — reference only]\n\(context)\n[END CURRENT SESSION CONTEXT]\n\nRespond to this request: \(request)"
+    }
+
+    private func mergePersistedBotActivities(for sessionIDs: [String?]) {
+        var seenActivityIDs = Set<String>()
+        for sessionID in sessionIDs.compactMap({ $0 }).filter({ !$0.isEmpty }) {
+            guard let records = botActivityBySessionID[sessionID] else { continue }
+            for record in records {
+                guard seenActivityIDs.insert(record.id).inserted,
+                      record.state == .completed,
+                      let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      !result.isEmpty else { continue }
+                let userText = "@\(record.botName) \(record.summary)"
+                let alreadyPresent = messages.contains { $0.text == result && $0.botProfileID == record.botID }
+                guard !alreadyPresent else { continue }
+                messages.append(ChatMessage(role: .user, text: userText, timestamp: record.createdAt))
+                messages.append(ChatMessage(role: .hermes, text: result, timestamp: record.updatedAt, botProfileID: record.botID, botDisplayName: record.botName))
+            }
+        }
+        messages.sort {
+            if $0.timestamp != $1.timestamp { return $0.timestamp < $1.timestamp }
+            return $0.id.uuidString < $1.id.uuidString
+        }
+    }
+
+    private func insertBotActivity(_ record: BotActivityRecord) {
+        botActivityBySessionID[record.originSessionID, default: []].append(record)
+        botActivityRevision &+= 1
+        enqueueBotActivityPersistence()
+    }
+
+    private func updateBotActivity(id: String, state: BotActivityState, result: String? = nil, botChatSessionID: String? = nil) {
+        for originSessionID in botActivityBySessionID.keys {
+            guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else { continue }
+            var record = botActivityBySessionID[originSessionID]![index]
+            guard record.state != .completed, record.state != .failed, record.state != .canceled else { return }
+            record.state = state
+            record.updatedAt = Date()
+            if result != nil { record.result = result }
+            if botChatSessionID != nil { record.botChatSessionID = botChatSessionID }
+            botActivityBySessionID[originSessionID]![index] = record
+            botActivityRevision &+= 1
+            enqueueBotActivityPersistence()
+            return
+        }
+    }
+
+    private func enqueueBotActivityPersistence() {
+        let snapshot = botActivityBySessionID
+        Task { await botActivityWriter.enqueue(snapshot) }
+    }
+
+    private func markBotActivityFailed(originSessionID: String?, result: String) {
+        let activities = Array(inFlightBotActivities.values)
+        for activity in activities where activity.originSessionID == originSessionID {
+            updateBotActivity(id: activity.activityID, state: .failed, result: result)
+            inFlightBotActivities.removeValue(forKey: activity.activityID)
+        }
+    }
+
+    private func markBotActivityFailed(id: String, result: String) {
+        guard inFlightBotActivities[id] != nil else { return }
+        updateBotActivity(id: id, state: .failed, result: result)
+        inFlightBotActivities.removeValue(forKey: id)
+    }
+
+    private func updateInFlightBotActivity(for eventSessionID: String?, state: BotActivityState, result: String? = nil) {
+        guard let eventSessionID else { return }
+        let activities = Array(inFlightBotActivities.values)
+        for activity in activities {
+            guard activity.botChatSessionID == eventSessionID else { continue }
+            updateBotActivity(id: activity.activityID, state: state, result: result)
+            if state == .completed || state == .failed || state == .canceled {
+                inFlightBotActivities.removeValue(forKey: activity.activityID)
+            }
+        }
+    }
+
+    private func setInFlightBotActivityWorking(for eventSessionID: String?) {
+        guard let eventSessionID else { return }
+        for activity in inFlightBotActivities.values where activity.botChatSessionID == eventSessionID {
+            updateBotActivity(id: activity.activityID, state: .working)
+        }
+    }
+
+    private func setInFlightBotActivityWaiting(for eventSessionID: String?, requestID: String? = nil) {
+        guard let eventSessionID else { return }
+        for activity in inFlightBotActivities.values where activity.botChatSessionID == eventSessionID {
+            inFlightBotActivities[activity.activityID]?.clarificationRequestID = requestID
+            updateBotActivity(id: activity.activityID, state: .waiting)
+        }
+    }
+
+    private func updateInFlightBotActivity(for requestID: String, state: BotActivityState, result: String?) {
+        let activities = Array(inFlightBotActivities.values)
+        for activity in activities where activity.clarificationRequestID == requestID {
+            updateBotActivity(id: activity.activityID, state: state, result: result)
+            if state == .completed || state == .failed || state == .canceled {
+                inFlightBotActivities.removeValue(forKey: activity.activityID)
+            }
+        }
+    }
+
+    private func detachInFlightBotActivities(as state: BotActivityState) {
+        let activities = Array(inFlightBotActivities.values)
+        for activity in activities {
+            updateBotActivity(id: activity.activityID, state: state)
+        }
+        inFlightBotActivities.removeAll()
     }
 
     private func resetComposerForSessionChange() {
         composer.reset()
         clearPendingImages()
+        removePendingPDF()
     }
 
     func newChat(projectPath: String? = nil) {
+        detachInFlightBotActivities(as: .canceled)
         commitStreamingMessage()
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
@@ -775,9 +1280,12 @@ final class DockModel: ObservableObject {
         sessionResumeGeneration &+= 1
         restoreGeneration &+= 1
         interruptGeneration &+= 1
+        delegationMonitoringTask?.cancel()
+        delegationMonitoringTask = nil
         sessionID = nil
         activeBotProfileID = nil
         activeBotDisplayName = nil
+        sessionProfileID = profileScopeID
         sessionStorageID = nil
         newSessionCreationAuthorized = true
         newSessionProjectPath = projectPath
@@ -790,7 +1298,7 @@ final class DockModel: ObservableObject {
         approvalText = nil
         isRespondingToApproval = false
         isRespondingToClarification = false
-        defaults.removeObject(forKey: lastSessionIDKey)
+        defaults.removeObject(forKey: lastSessionIDKey(for: sessionProfileID ?? profileScopeID))
         currentSessionTitle = nil
         currentModelName = nil
         sessionModelOptionID = nil
@@ -896,16 +1404,350 @@ final class DockModel: ObservableObject {
     /// session. Own unread state at this shared boundary so attention from a
     /// different session cannot appear in Control without reaching the menu bar.
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
+        guard acceptGatewayEvent(type: type, params: params) else { return }
+        captureObservedKanbanTaskIDs(type: type, params: params)
         eventRouter.route(type: type, params: params)
+        reconcileDirectBotLifecycle(type: type, params: params)
+        capturePendingApproval(type: type, params: params)
+        capturePendingClarification(type: type, params: params)
         if type == "message.start" || type == "message.complete" || type == "sessions.changed" {
             let payload = params["payload"] as? [String: Any] ?? [:]
             let sessionID = params["session_id"] as? String ?? payload["session_id"] as? String
             touchSession(sessionID: sessionID, at: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date())
         }
+        // `sessions.changed` is a notification, not a new session snapshot.
+        // Re-read the authoritative index after a turn completes so titles,
+        // previews, and project membership in the left navigation are current.
+        // Coalescing keeps a busy stream from issuing an index request for
+        // every event.
+        if type == "message.complete" || type == "sessions.changed" {
+            refreshSessionIndexAfterActivity()
+        }
         if Self.isUnreadUpdateEvent(type) {
             markUnreadUpdate()
         }
         handleEvent(type, params: params)
+    }
+
+    /// Hermes frequently clears completed terminal rows before the next
+    /// session-Kanban polling pass. Capture an exact task ID at the gateway
+    /// boundary, while the command/result still exists, so a task whose
+    /// database row lacks `session_id` can remain visible to its owner.
+    private func captureObservedKanbanTaskIDs(type: String, params: [String: Any]) {
+        guard type == "tool.call" || type == "tool.start" || type == "tool.use" || type == "tool_use"
+                || type == "tool.result" || type == "tool_result" || type == "tool.complete" || type == "tool_complete",
+              let currentSessionID = sessionID else { return }
+        let payload = params["payload"] as? [String: Any] ?? [:]
+        let envelopeSessionID = params["session_id"] as? String
+        let eventSessionID = envelopeSessionID ?? (payload["session_id"] as? String)
+        guard Self.eventBelongsToSession(
+            type: type,
+            envelopeSessionID: envelopeSessionID,
+            eventSessionID: eventSessionID,
+            payload: payload,
+            currentSessionID: currentSessionID,
+            agents: sessionAgents + activeSubagents
+        ) else { return }
+
+        let text = Self.eventText(payload)
+        guard text.localizedCaseInsensitiveContains("kanban") else { return }
+        let taskIDs = Self.kanbanTaskIDs(in: text)
+        guard !taskIDs.isEmpty else { return }
+
+        let aliases = [currentSessionID, sessionStorageID, kanbanAttributionSessionID, kanbanSessionID]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var changed = false
+        for alias in aliases {
+            let existing = observedKanbanTaskIDsBySessionID[alias, default: []]
+            let merged = existing.union(taskIDs)
+            if merged != existing {
+                observedKanbanTaskIDsBySessionID[alias] = merged
+                changed = true
+            }
+        }
+        // Preserve the trusted card reference so a null `task.session_id`
+        // remains recoverable after app restart. The hidden reference is not
+        // presented as Bot work; `kanban show` remains the source of its
+        // lifecycle, title, assignee, and heartbeat.
+        let originSessionID = sessionStorageID ?? currentSessionID
+        for taskID in taskIDs where !botActivityBySessionID[originSessionID, default: []].contains(where: { $0.isKanbanReference && $0.linkedCardID == taskID }) {
+            insertBotActivity(BotActivityRecord(
+                id: "kanban-reference:\(originSessionID):\(taskID)",
+                originSessionID: originSessionID,
+                botID: "kanban-reference",
+                botName: "Hermes Kanban",
+                summary: "Exact Hermes card reference",
+                state: .queued,
+                linkedCardID: taskID
+            ))
+        }
+        guard changed else { return }
+        observedKanbanTaskRevision &+= 1
+        DebugLog.write("kanban: observed exact task reference in session activity")
+    }
+
+    /// Relay acknowledgements may not contain the Bot Chat session ID. Bind a
+    /// single unattributed in-flight request when its own approval,
+    /// clarification, or completion event arrives on the gateway stream.
+    /// This keeps direct Bot activity truthful without guessing from prose.
+    private func reconcileDirectBotLifecycle(type: String, params: [String: Any]) {
+        let payload = params["payload"] as? [String: Any] ?? [:]
+        let eventSessionID = (params["session_id"] as? String) ?? (payload["session_id"] as? String)
+        guard let eventSessionID, !eventSessionID.isEmpty else { return }
+        switch type {
+        case "approval.request":
+            setInFlightBotActivityWaiting(for: eventSessionID)
+        case "clarification.request", "clarify.request":
+            let requestID = Self.nestedClarificationString(keys: ["request_id", "id"], in: params)
+            setInFlightBotActivityWaiting(for: eventSessionID, requestID: requestID)
+        case "clarify.expire", "clarification.expire":
+            let requestID = Self.nestedClarificationString(keys: ["request_id", "id"], in: params)
+            if let requestID {
+                updateInFlightBotActivity(for: requestID, state: .canceled, result: "This question expired before Hermes received an answer.")
+            }
+        case "message.start":
+            setInFlightBotActivityWorking(for: eventSessionID)
+        case "message.complete":
+            let result = Self.messageCompletionError(from: payload)
+            updateInFlightBotActivity(for: eventSessionID, state: result == nil ? .completed : .failed, result: result)
+        default:
+            break
+        }
+    }
+
+    /// Accept both current Hermes events (which carry `seq`) and older
+    /// gateways (which do not). Replayed events use this same boundary so
+    /// de-duplication and ownership remain centralized.
+    private func acceptGatewayEvent(type: String, params: [String: Any]) -> Bool {
+        if type == "gateway.ready",
+           let payload = params["payload"] as? [String: Any],
+           let epoch = payload["replay_epoch"] as? String,
+           !epoch.isEmpty,
+           epoch != gatewayReplayEpoch {
+            gatewayReplayEpoch = epoch
+            processedGatewaySequencesBySessionID.removeAll()
+            highestGatewaySequenceBySessionID.removeAll()
+            if sessionID != nil { refreshDelegationStatus() }
+            return true
+        }
+
+        guard let sequence = (params["seq"] as? NSNumber)?.intValue ?? params["seq"] as? Int,
+              let eventSessionID = (params["session_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !eventSessionID.isEmpty else {
+            return true
+        }
+
+        var processed = processedGatewaySequencesBySessionID[eventSessionID, default: []]
+        guard !processed.contains(sequence) else { return false }
+        let previousHighest = highestGatewaySequenceBySessionID[eventSessionID] ?? 0
+        processed.insert(sequence)
+        if processed.count > 1024 {
+            let floor = max(0, sequence - 512)
+            processed = Set(processed.filter { $0 >= floor })
+        }
+        processedGatewaySequencesBySessionID[eventSessionID] = processed
+        highestGatewaySequenceBySessionID[eventSessionID] = max(previousHighest, sequence)
+
+        if previousHighest > 0, sequence > previousHighest + 1 {
+            DebugLog.write("activity: gateway sequence gap detected")
+            replayGatewayEvents(for: eventSessionID, after: previousHighest)
+        }
+        return true
+    }
+
+    private func replayTrackedGatewayEvents() {
+        gatewayReplayTask?.cancel()
+        gatewayReplayTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let ids = Set([
+                self.sessionID,
+                self.sessionStorageID,
+                self.kanbanAttributionSessionID
+            ].compactMap { $0 }.filter { !$0.isEmpty })
+            for id in ids {
+                guard !Task.isCancelled else { return }
+                guard let last = self.highestGatewaySequenceBySessionID[id], last > 0 else { continue }
+                self.replayGatewayEvents(for: id, after: last)
+            }
+        }
+    }
+
+    private func replayGatewayEvents(for sessionID: String, after sequence: Int) {
+        guard !gatewayReplayInFlight.contains(sessionID) else { return }
+        gatewayReplayInFlight.insert(sessionID)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.gatewayReplayInFlight.remove(sessionID) }
+            do {
+                let result = try await self.sessionRPCClient.request(
+                    HermesFeatureIDs.ID.sessionEventsSince.rawValue,
+                    params: ["session_id": sessionID, "last_seen": sequence]
+                )
+                if let epoch = result["epoch"] as? String, !epoch.isEmpty, epoch != self.gatewayReplayEpoch {
+                    self.gatewayReplayEpoch = epoch
+                    self.processedGatewaySequencesBySessionID.removeAll()
+                    self.highestGatewaySequenceBySessionID.removeAll()
+                }
+                let frames = result["events"] as? [[String: Any]] ?? []
+                for frame in frames.sorted(by: { lhs, rhs in
+                    let left = (lhs["seq"] as? NSNumber)?.intValue ?? lhs["seq"] as? Int ?? 0
+                    let right = (rhs["seq"] as? NSNumber)?.intValue ?? rhs["seq"] as? Int ?? 0
+                    return left < right
+                }) {
+                    guard let type = frame["type"] as? String else { continue }
+                    self.receiveGatewayEvent(type, params: frame)
+                }
+                if (result["truncated"] as? Bool) == true {
+                    self.refreshDelegationStatus()
+                }
+            } catch {
+                DebugLog.write("activity: gateway replay unavailable: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            }
+        }
+    }
+
+    private func capturePendingApproval(type: String, params: [String: Any]) {
+        guard type == "approval.request" else { return }
+        let payload = params["payload"] as? [String: Any] ?? [:]
+        guard let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !ownerSessionID.isEmpty else { return }
+        let approval = ApprovalPresentation.from(payload: payload)
+        let pendingApproval = PendingApproval(
+            title: approval.title,
+            detail: approval.detail
+        )
+        let aliases = pendingApprovalAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
+        for alias in aliases {
+            pendingApprovalsBySessionID[alias] = pendingApproval
+        }
+    }
+
+    private func restorePendingApproval(for sessionIDs: [String?]) {
+        let identities = sessionIDs
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let approval = identities.compactMap({ pendingApprovalsBySessionID[$0] }).first else {
+            approvalTitle = nil
+            approvalText = nil
+            return
+        }
+        // A resume may reveal runtime and durable aliases for the same
+        // conversation. Preserve that alias group so a response from another
+        // surface clears the whole request even while this session is hidden.
+        var aliases = Set(identities)
+        for identity in identities {
+            aliases.formUnion(pendingApprovalAliasesBySessionID[identity] ?? [])
+        }
+        for identity in aliases {
+            pendingApprovalsBySessionID[identity] = approval
+            pendingApprovalAliasesBySessionID[identity] = aliases
+        }
+        approvalTitle = approval.title
+        approvalText = approval.detail
+        status = .needsApproval
+    }
+
+    @discardableResult
+    private func removePendingApproval(for sessionID: String) -> Set<String> {
+        let aliases = pendingApprovalAliasesBySessionID[sessionID] ?? [sessionID]
+        for alias in aliases {
+            pendingApprovalsBySessionID.removeValue(forKey: alias)
+            pendingApprovalAliasesBySessionID.removeValue(forKey: alias)
+        }
+        return aliases
+    }
+
+    private func capturePendingClarification(type: String, params: [String: Any]) {
+        guard type == "clarification.request" || type == "clarify.request"
+                || type == "clarification.expire" || type == "clarify.expire" else { return }
+        let payload = params["payload"] as? [String: Any] ?? [:]
+        guard let ownerSessionID = ((params["session_id"] as? String) ?? (payload["session_id"] as? String) ?? sessionID)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !ownerSessionID.isEmpty else { return }
+
+        if type == "clarification.expire" || type == "clarify.expire" {
+            let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
+            if let requestID { markClarificationResolved(requestID) }
+            _ = removePendingClarification(for: ownerSessionID, requestID: requestID)
+            return
+        }
+
+        let clarification = Self.pendingClarification(from: params)
+        if let requestID = clarification.requestID,
+           resolvedClarificationRequestIDs.contains(requestID) {
+            return
+        }
+        let aliases = pendingClarificationAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
+        for alias in aliases {
+            pendingClarificationsBySessionID[alias] = clarification
+        }
+    }
+
+    private func restorePendingClarification(for sessionIDs: [String?]) {
+        let identities = sessionIDs
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let clarification = identities.compactMap({ pendingClarificationsBySessionID[$0] }).first else {
+            clarificationQuestion = nil
+            clarificationChoices = []
+            clarificationRequestID = nil
+            clarificationResponseError = nil
+            return
+        }
+        var aliases = Set(identities)
+        for identity in identities {
+            aliases.formUnion(pendingClarificationAliasesBySessionID[identity] ?? [])
+        }
+        for identity in aliases {
+            pendingClarificationsBySessionID[identity] = clarification
+            pendingClarificationAliasesBySessionID[identity] = aliases
+        }
+        clarificationQuestion = clarification.question
+        clarificationChoices = clarification.choices
+        clarificationRequestID = clarification.requestID
+        clarificationResponseError = nil
+        if messages.last?.role != .hermes || messages.last?.text != clarification.transcriptText {
+            messages.append(ChatMessage(role: .hermes, text: clarification.transcriptText, modelName: currentModelName))
+        }
+        status = .needsClarification
+    }
+
+    @discardableResult
+    private func removePendingClarification(for sessionID: String, requestID: String? = nil) -> Set<String> {
+        let aliases = pendingClarificationAliasesBySessionID[sessionID] ?? [sessionID]
+        if let requestID,
+           !aliases.compactMap({ pendingClarificationsBySessionID[$0]?.requestID }).contains(requestID) {
+            return []
+        }
+        for alias in aliases {
+            pendingClarificationsBySessionID.removeValue(forKey: alias)
+            pendingClarificationAliasesBySessionID.removeValue(forKey: alias)
+        }
+        return aliases
+    }
+
+    private static func pendingClarification(from params: [String: Any]) -> PendingClarification {
+        let question = nestedClarificationString(keys: ["question", "prompt", "query"], in: params)
+            ?? nestedClarificationString(keys: ["message", "description", "text", "detail"], in: params)
+            ?? "Hermes needs more information."
+        let choices = nestedClarificationStrings(keys: ["choices", "options", "suggested_responses"], in: params)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        return PendingClarification(
+            question: question,
+            choices: choices,
+            requestID: nestedClarificationString(keys: ["request_id"], in: params)
+        )
+    }
+
+    private func markClarificationResolved(_ requestID: String) {
+        guard resolvedClarificationRequestIDs.insert(requestID).inserted else { return }
+        resolvedClarificationRequestIDOrder.append(requestID)
+        if resolvedClarificationRequestIDOrder.count > 256 {
+            let expiredID = resolvedClarificationRequestIDOrder.removeFirst()
+            resolvedClarificationRequestIDs.remove(expiredID)
+        }
     }
 
     private func touchSession(sessionID: String?, at date: Date) {
@@ -922,6 +1764,20 @@ final class DockModel: ObservableObject {
             messageCount: session.messageCount,
             source: session.source
         )
+    }
+
+    private func refreshSessionIndexAfterActivity() {
+        guard !isLoadingSessions else {
+            pendingSessionIndexRefresh = true
+            return
+        }
+        guard let refresh = loadSessions() else { return }
+        Task { @MainActor [weak self] in
+            await refresh.value
+            guard let self, self.pendingSessionIndexRefresh else { return }
+            self.pendingSessionIndexRefresh = false
+            self.refreshSessionIndexAfterActivity()
+        }
     }
 
     static func isUnreadUpdateEvent(_ type: String) -> Bool {
@@ -966,7 +1822,10 @@ final class DockModel: ObservableObject {
         return Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                _ = try await interruptRPC.interrupt(sessionID: sessionID)
+                _ = try await interruptRPC.interrupt(
+                    sessionID: sessionID,
+                    profileID: sessionProfileID ?? profileScopeID
+                )
                 // Hermes' response only acknowledges the request. The local
                 // turn remains authoritative until a terminal lifecycle event.
             } catch {
@@ -1122,6 +1981,9 @@ final class DockModel: ObservableObject {
         isCreatingSession = true
         defer { isCreatingSession = false }
         var createParams: [String: Any] = ["source": source]
+        if let profileID = profileScopeID, !profileID.isEmpty {
+            createParams["profile"] = profileID
+        }
         if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
             createParams["cwd"] = newSessionProjectPath
         }
@@ -1131,7 +1993,9 @@ final class DockModel: ObservableObject {
             throw HermesGateway.GatewayError.malformedResponse
         }
         sessionID = createdSessionID
+        sessionProfileID = profileScopeID
         sessionStorageID = Self.stableSessionID(from: result) ?? createdSessionID
+        kanbanAttributionSessionID = createdSessionID
         persistActiveSessionID(sessionID)
         let model = (result["model"] as? String) ?? (result["model_name"] as? String)
         if let model {
@@ -1143,6 +2007,7 @@ final class DockModel: ObservableObject {
         refreshSessionModelOptions()
         refreshSessionReasoningVariant()
         refreshDelegationStatus()
+        startDelegationMonitoring()
         DebugLog.write("model: session created (id present: true)")
         return createdSessionID
     }
@@ -1214,11 +2079,14 @@ final class DockModel: ObservableObject {
                     "request_id": requestID,
                     "answer": trimmed
                 ])
+                markClarificationResolved(requestID)
+                _ = removePendingClarification(for: responseSessionID, requestID: requestID)
                 guard self.sessionResumeGeneration == responseGeneration,
                       self.sessionID == responseSessionID else { return }
                 clarificationQuestion = nil
                 clarificationChoices = []
                 clarificationRequestID = nil
+                setInFlightBotActivityWorking(for: responseSessionID)
             } catch {
                 guard self.sessionResumeGeneration == responseGeneration,
                       self.sessionID == responseSessionID else { return }
@@ -1234,14 +2102,25 @@ final class DockModel: ObservableObject {
     }
 
     /// Reconciles an approval answered through another surface, such as Inbox.
-    /// The model only presents the current session, so responses for other
-    /// sessions must not alter the visible conversation.
+    /// Responses for other sessions clear their retained request without
+    /// altering the visible conversation.
     func resolveApproval(for resolvedSessionID: String) {
-        guard sessionID == resolvedSessionID else { return }
+        // A direct Bot relay can pause in its own Bot Chat session while the
+        // foreground conversation remains selected. Resolve that activity by
+        // its exact event session before applying the foreground approval UI.
+        setInFlightBotActivityWorking(for: resolvedSessionID)
+        let activeSessionIDs = Set([sessionID, sessionStorageID, kanbanAttributionSessionID].compactMap { $0 })
+        let resolvedAliases = removePendingApproval(for: resolvedSessionID)
+        guard !activeSessionIDs.isDisjoint(with: resolvedAliases) else { return }
+        for activeSessionID in activeSessionIDs {
+            _ = removePendingApproval(for: activeSessionID)
+        }
         approvalTitle = nil
         approvalText = nil
         if status == .needsApproval {
             status = .working
+            setInFlightBotActivityWorking(for: resolvedSessionID)
+            setInFlightBotActivityWorking(for: sessionID)
         }
     }
 
@@ -1385,6 +2264,14 @@ final class DockModel: ObservableObject {
             let wasInterrupting = interruptState == .requesting
             interruptState = .idle
             if wasInterrupting {
+                let activeSessionIDs = Set([sessionID, sessionStorageID, kanbanAttributionSessionID].compactMap { $0 })
+                if let clarificationRequestID {
+                    markClarificationResolved(clarificationRequestID)
+                }
+                for activeSessionID in activeSessionIDs {
+                    _ = removePendingApproval(for: activeSessionID)
+                    _ = removePendingClarification(for: activeSessionID)
+                }
                 approvalTitle = nil
                 approvalText = nil
                 clarificationQuestion = nil
@@ -1397,15 +2284,16 @@ final class DockModel: ObservableObject {
             if let error = Self.messageCompletionError(from: payload) {
                 discardStreamingMessage()
                 let text = Self.safeUserDiagnostic(error)
-                messages.append(ChatMessage(
-                    role: .hermes,
-                    text: text,
-                    modelName: currentModelName,
-                    isError: true
-                ))
+                appendTerminalErrorMessage(text)
+                updateInFlightBotActivity(for: eventSessionID, state: .failed, result: text)
                 notify(title: "Hermes could not complete the request", body: text, identifier: "failure:\(sessionID ?? "hermes")")
             } else {
                 commitStreamingMessage()
+                let result = messages.last(where: { $0.role == .hermes })?.text
+                updateInFlightBotActivity(for: eventSessionID, state: wasInterrupting ? .canceled : .completed, result: result)
+            }
+            if wasInterrupting {
+                updateInFlightBotActivity(for: eventSessionID, state: .canceled)
             }
             // A few Hermes adapters omit the final tool-result identifier. The
             // response boundary is authoritative, so do not leave those calls
@@ -1436,6 +2324,7 @@ final class DockModel: ObservableObject {
             if let sessionStorageID { cacheAgentState(for: sessionStorageID); Task { await agentStateWriter.flush() } }
         case "approval.request":
             let approval = ApprovalPresentation.from(payload: payload)
+            setInFlightBotActivityWaiting(for: eventSessionID)
             let isPresentingApproval = approvalText == nil
             approvalTitle = approval.title
             approvalText = approval.detail
@@ -1449,30 +2338,20 @@ final class DockModel: ObservableObject {
             // `payload` and alongside it in the event params. Prefer the
             // payload, but retain the top-level fields so the actual question
             // is not replaced by the generic fallback text.
-            let question = Self.nestedClarificationString(
-                keys: ["question", "prompt", "query"],
-                in: params
-            )
-                ?? Self.nestedClarificationString(
-                    keys: ["message", "description", "text", "detail"],
-                    in: params
-                )
-                ?? "Hermes needs more information."
-            let choices = Self.nestedClarificationStrings(
-                keys: ["choices", "options", "suggested_responses"],
-                in: params
-            )
-                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
+            let clarification = Self.pendingClarification(from: params)
+            let question = clarification.question
+            let choices = clarification.choices
+            let requestID = clarification.requestID
+            if let requestID, resolvedClarificationRequestIDs.contains(requestID) {
+                break
+            }
             if let requestID, !requestID.isEmpty,
                !presentedClarificationRequestIDs.insert(requestID).inserted {
                 // The gateway may replay a request after an answer has been
                 // submitted. Its request ID already owns the transcript row.
                 break
             }
-            let messageText = choices.isEmpty
-                ? question
-                : "\(question)\n\nSuggested responses:\n" + choices.map { "- \($0)" }.joined(separator: "\n")
+            let messageText = clarification.transcriptText
             if messages.last?.role != .hermes || messages.last?.text != messageText {
                 messages.append(ChatMessage(role: .hermes, text: messageText, modelName: currentModelName))
             }
@@ -1480,6 +2359,7 @@ final class DockModel: ObservableObject {
             clarificationChoices = choices
             clarificationRequestID = requestID
             clarificationResponseError = nil
+            setInFlightBotActivityWaiting(for: eventSessionID, requestID: requestID)
             isSending = false
             status = .needsClarification
             conversationActivityPhase = .idle
@@ -1491,6 +2371,19 @@ final class DockModel: ObservableObject {
             clarificationChoices = []
             clarificationRequestID = nil
             clarificationResponseError = "This question expired before Hermes received an answer."
+            if let expiredRequestID {
+                updateInFlightBotActivity(
+                    for: expiredRequestID,
+                    state: .canceled,
+                    result: clarificationResponseError
+                )
+            } else {
+                updateInFlightBotActivity(
+                    for: eventSessionID,
+                    state: .canceled,
+                    result: clarificationResponseError
+                )
+            }
             isSending = false
             status = .idle
             conversationActivityPhase = .idle
@@ -1500,7 +2393,7 @@ final class DockModel: ObservableObject {
             let text = Self.isVisionUnsupportedError(raw)
                 ? Self.visionUnsupportedNotice
                 : Self.safeUserDiagnostic(raw)
-            messages.append(ChatMessage(role: .hermes, text: text, modelName: currentModelName))
+            appendTerminalErrorMessage(text)
             status = .idle
             conversationActivityPhase = .idle
             streamingMessageID = nil
@@ -1512,6 +2405,7 @@ final class DockModel: ObservableObject {
                 armNativeVoiceCapture()
             }
             notify(title: "Hermes encountered an error", body: text, identifier: "failure:\(sessionID ?? "hermes")")
+            updateInFlightBotActivity(for: eventSessionID, state: .failed, result: text)
 
         case "reasoning.start", "thinking":
             conversationActivityPhase = .thinking
@@ -1564,6 +2458,10 @@ final class DockModel: ObservableObject {
                 input = args
             } else if let inputStr = payload["input"] as? [String: Any] {
                 input = inputStr.compactMap { "\($0.key): \($0.value)" }.joined(separator: ", ")
+            } else if let inputString = payload["input"] as? String {
+                input = inputString
+            } else if let command = payload["command"] as? String {
+                input = command
             } else {
                 input = ""
             }
@@ -1642,7 +2540,19 @@ final class DockModel: ObservableObject {
         }
     }
 
+    private func appendTerminalErrorMessage(_ text: String) {
+        guard !didAppendTerminalErrorForCurrentTurn else { return }
+        didAppendTerminalErrorForCurrentTurn = true
+        messages.append(ChatMessage(
+            role: .hermes,
+            text: text,
+            modelName: currentModelName,
+            isError: true
+        ))
+    }
+
     private func beginStreamingMessage() {
+        didAppendTerminalErrorForCurrentTurn = false
         let responseStartedAt = Date()
         messages.append(ChatMessage(role: .hermes, text: "", timestamp: responseStartedAt, modelName: currentModelName))
         streamingMessageID = messages.last?.id
@@ -1753,15 +2663,29 @@ final class DockModel: ObservableObject {
         HermesHighFrequencyEvent.includes(type)
     }
 
+    private func scheduleActivityPresentation() {
+        guard activityPresentationTask == nil else { return }
+        activityPresentationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled, let self else { return }
+            self.activityPresentationTask = nil
+            self.activityPresentationRevision &+= 1
+        }
+    }
+
     private func scheduleStreamingMessageFlush() {
         guard streamingMessageFlushTask == nil else { return }
         let generation = streamingMessageGeneration
         streamingMessageFlushTask = Task { @MainActor [weak self] in
-            // Limit live layout invalidation to a comfortable cadence. The
-            // gateway can deliver many more deltas than the transcript can
-            // render smoothly, especially for long Markdown responses.
-            try? await Task.sleep(for: .milliseconds(80))
-            guard !Task.isCancelled, let self, self.streamingMessageGeneration == generation else { return }
+            guard let self else { return }
+            // Limit live layout invalidation to a comfortable cadence. As a
+            // response grows, wrapping its entire live Text becomes more
+            // expensive, so the presentation cadence backs off while the
+            // transport buffer remains lossless.
+            let interval = ConversationStreamingPresentationPolicy
+                .flushIntervalMilliseconds(textLength: self.streamingMessageBuffer.utf8.count)
+            try? await Task.sleep(for: .milliseconds(interval))
+            guard !Task.isCancelled, self.streamingMessageGeneration == generation else { return }
             self.streamingMessageFlushTask = nil
             self.flushStreamingMessage()
         }
@@ -1875,7 +2799,26 @@ final class DockModel: ObservableObject {
 
     private func persistActiveSessionID(_ sessionID: String?) {
         guard let sessionID = sessionID?.trimmingCharacters(in: .whitespacesAndNewlines), !sessionID.isEmpty else { return }
-        defaults.set(sessionID, forKey: lastSessionIDKey)
+        defaults.set(sessionID, forKey: lastSessionIDKey(for: sessionProfileID ?? profileScopeID))
+    }
+
+    private func lastSessionIDKey(for profileID: String?) -> String {
+        let suffix = Self.normalizedProfileID(profileID) ?? "launch"
+        return "\(lastSessionIDKey).\(suffix)"
+    }
+
+    private static func normalizedProfileID(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private func scopedSessionParams(_ params: [String: Any], profileID: String? = nil) -> [String: Any] {
+        let scope = profileID ?? sessionProfileID ?? profileScopeID
+        guard let scope, !scope.isEmpty else { return params }
+        var scoped = params
+        scoped["profile"] = scope
+        return scoped
     }
 
     static func stableSessionID(from result: [String: Any]) -> String? {
@@ -1915,6 +2858,29 @@ final class DockModel: ObservableObject {
             }
         }
         return nil
+    }
+
+    /// Once Hermes accepts a resume, its resolved identifier is the identity
+    /// that downstream runtime-owned records (including Kanban work) use.
+    static func kanbanAttributionAfterResume(
+        requestedSessionID: String,
+        resolvedSessionID: String
+    ) -> String {
+        let resolved = resolvedSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !resolved.isEmpty { return resolved }
+        return requestedSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func kanbanAttributionID(
+        requestedSessionID: String?,
+        runtimeID: String?,
+        storageID: String?
+    ) -> String? {
+        if let requestedSessionID = requestedSessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !requestedSessionID.isEmpty {
+            return requestedSessionID
+        }
+        return sessionAttributionID(runtimeID: runtimeID, storageID: storageID)
     }
 
     private func armNativeVoiceCapture(generation expectedGeneration: Int? = nil) {
@@ -2024,6 +2990,23 @@ final class DockModel: ObservableObject {
         UNUserNotificationCenter.current().add(request)
     }
 
+    private func startDelegationMonitoring() {
+        delegationMonitoringTask?.cancel()
+        guard sessionID != nil else { return }
+        delegationMonitoringTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                let hasLiveWorkers = self.activeSubagents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
+                    || self.sessionAgents.contains { AgentActivityPresentation.isActiveStatus($0.status) }
+                    || self.status == .working
+                let interval: Duration = hasLiveWorkers ? .seconds(3) : .seconds(15)
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled, self.sessionID != nil else { return }
+                self.refreshDelegationStatus()
+            }
+        }
+    }
+
     func refreshDelegationStatus() {
         guard sessionID != nil else { return }
         delegationRefreshRequested = true
@@ -2099,7 +3082,10 @@ final class DockModel: ObservableObject {
 
     static func delegationStatusRow(_ row: [String: Any], belongsTo sessionID: String) -> Bool {
         guard !sessionID.isEmpty else { return false }
-        for key in ["parent_session_id", "root_session_id", "session_id", "parent_id"] {
+        // Current Hermes registry rows use owner_agent_session_id. The other
+        // names are retained only for older gateways that exposed an explicit
+        // session owner. `parent_id` is a subagent ID, never a session owner.
+        for key in ["owner_agent_session_id", "parent_session_id", "root_session_id", "session_id"] {
             if (row[key] as? String) == sessionID { return true }
         }
         for key in ["parent", "session", "context"] {
@@ -2428,6 +3414,19 @@ final class DockModel: ObservableObject {
         return text
     }
 
+    /// Extract only Hermes' stable Kanban identifiers. This deliberately does
+    /// not attribute a card from conversational prose, profile names, titles,
+    /// or assignees; callers must first establish a trusted tool-event and
+    /// session boundary.
+    static func kanbanTaskIDs(in text: String) -> Set<String> {
+        let pattern = #"\bt_[A-Za-z0-9][A-Za-z0-9_-]*\b"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        return Set(expression.matches(in: text, range: range).compactMap {
+            Range($0.range, in: text).map { String(text[$0]) }
+        })
+    }
+
     /// Hermes emits `inline_diff` for edit tool completions. Some adapters use
     /// `diff`, `patch`, or place the patch in a subagent output tail, so accept
     /// those shapes while refusing ordinary tool output.
@@ -2752,7 +3751,28 @@ final class DockModel: ObservableObject {
         let previousProjectionState = runtimeConfigurationProjectionState
         runtimeConfigurationProjectionState = .loading
         Task.detached { [weak self] in
-            let configuration = HermesRuntimeInspector.read()
+            // Resolve the compact status-item label independently. Full
+            // runtime inspection invokes several CLI commands and should not
+            // leave the menu bar on its generic fallback while those finish.
+            let configurationTask = Task.detached { HermesRuntimeInspector.read() }
+            let agentName = HermesRuntimeInspector.readAgentName()
+            if let agentName {
+                await MainActor.run {
+                    self?.runtimeConfiguration = HermesRuntimeConfiguration(
+                        agentName: agentName,
+                        model: nil,
+                        provider: nil,
+                        configPath: nil,
+                        maxTurns: nil,
+                        terminalTimeout: nil,
+                        skills: [],
+                        skillsInventory: .unavailable(.emptyOutput),
+                        mcpServers: [],
+                        plugins: []
+                    )
+                }
+            }
+            let configuration = await configurationTask.value
             await MainActor.run {
                 guard let self else { return }
                 if Self.hasRuntimeConfigurationData(configuration) {
@@ -2767,7 +3787,7 @@ final class DockModel: ObservableObject {
     }
 
     private static func hasRuntimeConfigurationData(_ configuration: HermesRuntimeConfiguration) -> Bool {
-        configuration.model != nil || configuration.provider != nil || configuration.configPath != nil || configuration.maxTurns != nil || configuration.terminalTimeout != nil || !configuration.skills.isEmpty || !configuration.mcpServers.isEmpty || !configuration.plugins.isEmpty
+        configuration.agentName != nil || configuration.model != nil || configuration.provider != nil || configuration.configPath != nil || configuration.maxTurns != nil || configuration.terminalTimeout != nil || !configuration.skills.isEmpty || !configuration.mcpServers.isEmpty || !configuration.plugins.isEmpty
     }
 
     func refreshRuntimeModelOptions(sessionID: String? = nil) {
@@ -3006,7 +4026,33 @@ final class DockModel: ObservableObject {
         return lower.contains("does not support image")
     }
 
-    private static func parseSession(_ row: [String: Any]) -> HermesSession? {
+    /// Reconcile delayed index snapshots with newer activity observed directly
+    /// from the gateway. The index remains authoritative for session metadata,
+    /// while a live event remains authoritative for recency until the index
+    /// catches up.
+    private static func mergingSessionIndex(_ loaded: [HermesSession], with existing: [HermesSession]) -> [HermesSession] {
+        let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return loaded.map { session in
+            guard let observed = existingByID[session.id],
+                  let observedDate = observed.lastUpdatedAt,
+                  observedDate > (session.lastUpdatedAt ?? .distantPast) else {
+                return session
+            }
+            return HermesSession(
+                id: session.id,
+                profileID: session.profileID,
+                title: session.title,
+                preview: session.preview,
+                startedAt: session.startedAt,
+                updatedAt: observedDate,
+                messageCount: session.messageCount,
+                source: session.source,
+                isHidden: session.isHidden
+            )
+        }
+    }
+
+    private static func parseSession(_ row: [String: Any], profileID: String? = nil) -> HermesSession? {
         guard let id = row["id"] as? String else { return nil }
         let timestamp = (row["started_at"] as? NSNumber)?.doubleValue ?? (row["started_at"] as? Double)
         // Hermes persists canonical recency as `last_activity_at`. Older
@@ -3018,12 +4064,14 @@ final class DockModel: ObservableObject {
             ?? timestamp.map { Date(timeIntervalSince1970: $0) }
         return HermesSession(
             id: id,
+            profileID: profileID,
             title: row["title"] as? String ?? "",
             preview: row["preview"] as? String ?? "",
             startedAt: timestamp.map { Date(timeIntervalSince1970: $0) },
             updatedAt: updatedAt,
             messageCount: (row["message_count"] as? NSNumber)?.intValue ?? 0,
-            source: row["source"] as? String ?? ""
+            source: row["source"] as? String ?? "",
+            isHidden: row["hidden"] as? Bool ?? false
         )
     }
 
@@ -3102,12 +4150,13 @@ final class DockModel: ObservableObject {
         return nil
     }
 
-    private static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> [ChatMessage] {
+    static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> [ChatMessage] {
         guard let rows = value as? [[String: Any]] else { return [] }
         return rows.compactMap { row in
             guard let role = row["role"] as? String else { return nil }
-            let text = messageText(row["text"] ?? row["content"])
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            let persisted = persistedImageContent(from: messageText(row["text"] ?? row["content"]))
+            let text = persisted.text
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.images.isEmpty else { return nil }
             let timestamp: Date
             if let ts = row["timestamp"] as? Double {
                 timestamp = Date(timeIntervalSince1970: ts)
@@ -3121,11 +4170,50 @@ final class DockModel: ObservableObject {
             return ChatMessage(
                 role: role == "user" ? .user : .hermes,
                 text: attribution?.body ?? text,
+                images: persisted.images,
                 timestamp: timestamp,
                 botProfileID: attribution?.profileID ?? defaultBotProfileID,
                 botDisplayName: attribution?.displayName ?? defaultBotDisplayName
             )
         }
+    }
+
+    /// Hermes persists uploaded images as directive lines in the session
+    /// transcript. Rehydrate those files for the native transcript instead of
+    /// exposing the storage path as user-visible message text.
+    static func persistedImageContent(from rawText: String) -> (text: String, images: [NSImage]) {
+        let lines = rawText.components(separatedBy: .newlines)
+        var images: [NSImage] = []
+        var removedImageReference = false
+        var remainingLines: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix("@image:") else {
+                remainingLines.append(line)
+                continue
+            }
+
+            removedImageReference = true
+            var path = String(trimmed.dropFirst("@image:".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if path.count >= 2, path.first == "`", path.last == "`" {
+                path.removeFirst()
+                path.removeLast()
+            }
+            if let image = NSImage(contentsOf: URL(fileURLWithPath: path)) {
+                images.append(image)
+            }
+        }
+
+        if removedImageReference {
+            remainingLines.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "[screenshot]" }
+        }
+        // This boundary feeds every restored transcript message, not only
+        // messages with image directives. Preserve real line breaks so the
+        // Markdown renderer receives the exact persisted body rather than
+        // literal `\\n` source characters.
+        return (remainingLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), images)
     }
 
     /// Hermes Bot Mode's documented delivery envelope is:

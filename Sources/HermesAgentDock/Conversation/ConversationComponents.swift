@@ -86,7 +86,7 @@ struct MessageBubbleShape: Shape {
   }
 }
 
-struct MarkdownMessageView: View {
+struct MarkdownMessageView: View, Equatable {
   let markdown: String
   private let blocks: [RenderBlock]
 
@@ -109,13 +109,24 @@ struct MarkdownMessageView: View {
     self.blocks = RenderCache.renderBlocks(for: markdown)
   }
 
+  /// Transcript activity and scrolling can invalidate the surrounding stack
+  /// without changing a completed message. The Markdown body is immutable,
+  /// so use it as the equality boundary and let SwiftUI retain the already
+  /// laid-out rich subtree until the message itself changes.
+  nonisolated static func == (lhs: MarkdownMessageView, rhs: MarkdownMessageView) -> Bool {
+    lhs.markdown == rhs.markdown
+  }
+
   /// Parsed-and-rendered output keyed by the raw Markdown string. NSCache is
   /// thread-safe and evicts under memory pressure without copying its keys.
   @MainActor
   private enum RenderCache {
     private static let cache: NSCache<NSString, Entry> = {
       let cache = NSCache<NSString, Entry>()
-      cache.countLimit = 400
+      // Hermes bounds restored transcripts to 500 messages. Keep one full
+      // transcript resident so exact (non-lazy) row layout does not turn an
+      // activity update into a Markdown reparse cascade.
+      cache.countLimit = 600
       return cache
     }()
 
@@ -127,6 +138,10 @@ struct MarkdownMessageView: View {
     static func renderBlocks(for markdown: String) -> [RenderBlock] {
       let key = markdown as NSString
       if let entry = cache.object(forKey: key) { return entry.blocks }
+      // Always use the same renderer for restored and live messages. A
+      // cheap-looking plain-text shortcut can miss inline Markdown (for
+      // example `*italic*`, `_emphasis_`, or backticks), which makes resumed
+      // assistant replies display their source syntax instead of formatting.
       let blocks = MarkdownMessageView.renderBlocks(
         from: MarkdownMessageView.parseBlocks(markdown))
       cache.setObject(Entry(blocks: blocks), forKey: key)
@@ -200,6 +215,7 @@ struct MarkdownMessageView: View {
   private static func headingSize(_ level: Int) -> CGFloat {
     level == 1 ? 18 : level == 2 ? 16 : level == 3 ? 14.5 : 14
   }
+
   /// Line-level parse output before inline Markdown is rendered.
   private enum ParsedBlock {
     case heading(level: Int, text: String)
@@ -226,8 +242,17 @@ struct MarkdownMessageView: View {
       code.removeAll()
       language = nil
     }
-    for line in markdown.components(separatedBy: "\n") {
+    let lines = markdown.components(separatedBy: "\n")
+    var skippedJSONLines = 0
+    for (index, line) in lines.enumerated() {
+      if index < skippedJSONLines { continue }
       let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if !inCode, let json = Self.unmarkedJSONObject(in: lines, startingAt: index) {
+        flushParagraph()
+        result.append(.code(json.text, language: "json"))
+        skippedJSONLines = json.nextLineIndex
+        continue
+      }
       if trimmed.hasPrefix("```") {
         if inCode {
           flushCode()
@@ -289,6 +314,38 @@ struct MarkdownMessageView: View {
     if inCode { flushCode() } else { flushParagraph() }
     return result
   }
+
+  /// Hermes status messages can contain a prose summary followed by a raw
+  /// JSON result. JSON is only Markdown when fenced, but its object syntax is
+  /// unambiguous and should still be readable as structured output instead
+  /// of flowing through a proportional prose paragraph.
+  private static func unmarkedJSONObject(
+    in lines: [String], startingAt start: Int
+  ) -> (text: String, nextLineIndex: Int)? {
+    guard lines[start].trimmingCharacters(in: .whitespaces).hasPrefix("{") else {
+      return nil
+    }
+
+    var candidate = ""
+    for end in start..<lines.count {
+      if !candidate.isEmpty { candidate.append("\n") }
+      candidate.append(lines[end])
+      guard let data = candidate.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data),
+            object is [String: Any] else {
+        continue
+      }
+      return (candidate, end + 1)
+    }
+    return nil
+  }
+
+  static func codeBlockLanguages(in markdown: String) -> [String?] {
+    parseBlocks(markdown).compactMap { block in
+      guard case .code(_, let language) = block else { return nil }
+      return language
+    }
+  }
   static func orderedListMarkers(in markdown: String) -> [String] {
     parseBlocks(markdown).compactMap { block in
       guard case .listItem(_, let marker) = block, marker != "•" else { return nil }
@@ -339,11 +396,9 @@ struct MarkdownMessageView: View {
   }
 }
 
-/// Reported bounds of the whole transcript content in the scroll view's
-/// coordinate space. The top edge is what distinguishes a genuinely
-/// bottom-parked viewport from one left past the content end: only a scrolled
-/// transcript (top above the viewport top) whose bottom also sits above the
-/// viewport bottom is overscrolled into blank space.
+/// Content bounds from the restored SwiftUI transcript. This has one purpose:
+/// determine whether the reader is at the real tail so streaming never steals
+/// their position while they browse older messages.
 struct ConversationContentBounds: Equatable {
     var topMinY: CGFloat
     var bottomMaxY: CGFloat
@@ -351,6 +406,7 @@ struct ConversationContentBounds: Equatable {
 
 struct ConversationContentBoundsPreferenceKey: PreferenceKey {
     static let defaultValue = ConversationContentBounds(topMinY: 0, bottomMaxY: 0)
+
     static func reduce(value: inout ConversationContentBounds, nextValue: () -> ConversationContentBounds) {
         value = nextValue()
     }

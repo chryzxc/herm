@@ -3,12 +3,27 @@ import Testing
 
 @MainActor
 struct ComposerTextTests {
+    @Test func markdownMessagesUseTheirSourceAsTheRenderEqualityBoundary() {
+        #expect(MarkdownMessageView(markdown: "- One") == MarkdownMessageView(markdown: "- One"))
+        #expect(MarkdownMessageView(markdown: "- One") != MarkdownMessageView(markdown: "- Two"))
+    }
+
     @Test func markdownOrderedListsIncrementNumbers() {
         #expect(MarkdownMessageView.orderedListMarkers(in: "1. First\n2. Second\n3. Third") == ["1.", "2.", "3."])
     }
 
     @Test func markdownOrderedListsPreserveMarkersAcrossParagraphs() {
         #expect(MarkdownMessageView.orderedListMarkers(in: "1. First\n\nContext paragraph.\n\n4. Fourth\n\n5. Fifth") == ["1.", "4.", "5."])
+    }
+
+    @Test func markdownRendersEmbeddedRuntimeJSONAsACodeBlock() {
+        let message = """
+        Worker completed.
+
+        {"verdict":"REQUEST_CHANGES","findings":["retry required"]}
+        """
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
     }
 
     private let history = ["first prompt", "second prompt", "third prompt"]

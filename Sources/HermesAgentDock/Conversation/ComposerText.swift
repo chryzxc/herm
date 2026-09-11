@@ -32,6 +32,13 @@ enum ComposerMentionPresentation {
         return DirectBotRequest(profileID: profileID, text: requestText)
     }
 
+    /// Direct Bot relay currently accepts text only. Attachments must remain
+    /// on the ordinary session submission path until Hermes exposes a Bot
+    /// attachment contract.
+    static func canDirectRouteBot(hasImages: Bool, hasPDF: Bool) -> Bool {
+        !hasImages && !hasPDF
+    }
+
     static func activeToken(in text: String) -> String? {
         guard let start = text.lastIndex(where: { $0.isWhitespace }) else {
             return text.hasPrefix("@") ? text : nil

@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct SessionKanbanActivityView: View {
+    @ObservedObject var model: DockModel
     @ObservedObject var control: ControlCenterModel
+    @ObservedObject var botMode: BotModeModel
     let sessionID: String?
     var onOpenBoard: (() -> Void)?
     var onOpenTask: ((String) -> Void)?
@@ -16,33 +18,84 @@ struct SessionKanbanActivityView: View {
         return SessionKanbanActivityPresentation.makeSnapshot(tasks: control.sessionKanbanTasks)
     }
 
+    private var botWorkRows: [SessionKanbanActivityPresentation.BotWorkRow] {
+        SessionKanbanActivityPresentation.botWork(tasks: control.sessionKanbanTasks, bots: botMode.visibleBots, sessionID: sessionID)
+    }
+
+    private var sessionActivityBots: [BotSummary] {
+        let activityBotIDs = Set(botWorkRows.map(\.botID))
+        return botMode.visibleBots.filter { activityBotIDs.contains($0.id) }
+    }
+
+    private func activityText(for bot: BotSummary) -> String {
+        botWorkRows
+            .filter { $0.botID == bot.id }
+            .map { "\($0.status.label) · \($0.title)" }
+            .joined(separator: "\n")
+    }
+
     private var refreshState: ProjectionRefreshState? {
         control.refreshState(for: "kanban.session")
     }
 
     var body: some View {
         Group {
-            if sessionID != nil, control.capabilityAvailable("kanban") {
+            if sessionID != nil {
                 content
+            } else {
+                unavailableContent
             }
         }
         .task(id: sessionID) {
             guard let sessionID else { return }
-            if control.capabilityAvailable("kanban") {
-                control.refreshSessionKanban(for: sessionID)
-            }
+            control.refreshSessionKanban(for: sessionID)
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(15))
-                guard !Task.isCancelled, control.capabilityAvailable("kanban") else { continue }
+                guard !Task.isCancelled else { continue }
                 control.refreshSessionKanban(for: sessionID)
             }
         }
+        .onChange(of: model.observedKanbanTaskRevision) { _, _ in
+            // A terminal tool row can disappear before the 15-second polling
+            // pass. Its exact task reference is retained by DockModel, so
+            // refresh immediately rather than presenting a false empty state.
+            if let sessionID { control.refreshSessionKanban(for: sessionID) }
+        }
+    }
+
+    @ViewBuilder
+    private var unavailableContent: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("SESSION ACTIVITY")
+            Text(sessionID == nil ? "SESSION ATTRIBUTION UNAVAILABLE" : "KANBAN CAPABILITY UNAVAILABLE")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockWarning)
+            Text(sessionID == nil
+                 ? "This session has no durable attribution ID, so Bot work cannot be matched safely."
+                 : "Hermes did not advertise the Kanban capability for this session.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .dockGlassPane()
     }
 
     @ViewBuilder
     private var content: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
+            SessionBotActivityView(
+                model: model,
+                botMode: botMode,
+                sessionID: sessionID,
+                kanbanTasks: control.sessionKanbanTasks,
+                embedded: true
+            )
+
+            if !botWorkRows.isEmpty {
+                botWorkSection
+            }
 
             if snapshot.activeRows.isEmpty, snapshot.completedCount == 0 {
                 if refreshState?.isRefreshing == true {
@@ -131,13 +184,14 @@ struct SessionKanbanActivityView: View {
                 .foregroundStyle(Color.dockAccent)
             }
         }
-        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, DockLayout.tight)
         .dockGlassPane()
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            sectionLabel("SESSION KANBAN")
+            sectionLabel("BOT ACTIVITY")
             Spacer(minLength: 0)
             if snapshot.activeCount > 0 {
                 Text("\(snapshot.activeCount) ACTIVE")
@@ -152,6 +206,78 @@ struct SessionKanbanActivityView: View {
             .buttonStyle(.borderless)
             .foregroundStyle(Color.dockAccent)
             .accessibilityLabel("Refresh session Kanban")
+        }
+    }
+
+    private var botActivitySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if sessionActivityBots.isEmpty {
+                Text("No activity yet.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockSecondaryText)
+            } else {
+                ForEach(sessionActivityBots) { bot in
+                    HStack(alignment: .top, spacing: 9) {
+                        BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 30)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text(bot.name)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                Spacer(minLength: 4)
+                                if bot.isRecentlyActive {
+                                    Text("ACTIVE NOW")
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(Color.dockSuccess)
+                                }
+                            }
+                            Text(BotRosterPresentation.role(for: bot))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.dockMetadataText)
+                                .lineLimit(1)
+                            Text(activityText(for: bot))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .lineLimit(2)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .background(Color.dockSurface4.opacity(0.68))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+                }
+            }
+        }
+    }
+
+    private var botWorkSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("BOT WORK")
+            ForEach(botWorkRows) { row in
+                Button { onOpenTask?(row.taskID) } label: {
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle().fill(statusColor(row.status)).frame(width: 7, height: 7).padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(row.botName).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                            Text(row.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
+                            Text("\(row.status.label) · KANBAN TASK \(row.taskID)")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(statusColor(row.status))
+                        }
+                        Spacer(minLength: 0)
+                        LucideImage(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(Color.dockSurface4.opacity(0.68))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(onOpenTask == nil)
+                .accessibilityLabel("\(row.botName), \(row.status.label): \(row.title)")
+            }
         }
     }
 

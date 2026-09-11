@@ -23,9 +23,17 @@ struct ChatComposerView: View {
 
     var body: some View {
         composerContent
-            .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image], allowsMultipleSelection: true) { result in
+            .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image, .pdf], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
-                    urls.forEach { model.stageImageFile(at: $0) }
+                    let pdfURLs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
+                    urls.filter { $0.pathExtension.lowercased() != "pdf" }.forEach { url in
+                        model.stageImageFile(at: url)
+                    }
+                    if pdfURLs.count == 1, let pdfURL = pdfURLs.first {
+                        model.stagePDFFile(at: pdfURL)
+                    } else if pdfURLs.count > 1 {
+                        model.reportPDFError("Select one PDF at a time. Multiple images can still be selected together.")
+                    }
                 }
             }
             .onChange(of: model.composerFocusRequest) { _, _ in
@@ -79,10 +87,10 @@ struct ChatComposerView: View {
     private var composerContent: some View {
         // Evaluate submission capabilities based on draft text, images, and steering state
         let draftIsEmpty = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasComposerContent = !draftIsEmpty || !model.pendingImages.isEmpty
+        let hasComposerContent = !draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil
         let isResponding = model.status == .working || model.isSending
         let isSteeringTurn = model.status == .working && model.isSending && model.sessionID != nil
-        let canSubmit = isSteeringTurn ? !draftIsEmpty : (!draftIsEmpty || !model.pendingImages.isEmpty)
+        let canSubmit = isSteeringTurn ? !draftIsEmpty : (!draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil)
         let showStop = isResponding && !hasComposerContent && !speechInput.isRecording
         // Keep stop reachable while a steer draft is typed or Hermes waits on a
         // clarification; the submit button already shows stop when the draft is empty.
@@ -110,6 +118,19 @@ struct ChatComposerView: View {
                     }
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if model.status == .needsClarification, !model.clarificationChoices.isEmpty {
+                ClarificationChoiceChips(
+                    choices: model.clarificationChoices,
+                    isDisabled: model.isRespondingToClarification || model.isRestoringSession,
+                    onSelect: { choice in
+                        // A suggested response is a complete answer, so send it
+                        // directly instead of making the user copy it into the
+                        // editor and submit a second time.
+                        model.respondToClarification(choice)
+                    }
+                )
             }
 
             // Main multi-line text input area at top of card container.
@@ -195,6 +216,32 @@ struct ChatComposerView: View {
                         }
                     }
                 }
+            }
+            if let pdfURL = model.pendingPDFURL {
+                HStack(spacing: 7) {
+                    LucideImage(systemName: "doc.text")
+                        .foregroundStyle(Color.dockAccent)
+                    Text(pdfURL.lastPathComponent)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                    Button { model.removePendingPDF() } label: {
+                        LucideImage(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.dockSecondaryText)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Remove PDF")
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface))
+            }
+            if let pdfError = model.pendingPDFError {
+                Text(pdfError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // Integrated Bottom Toolbar Row
@@ -372,13 +419,6 @@ struct ChatComposerView: View {
                     .foregroundStyle(Color.dockWarning)
                     .padding(.top, 2)
             }
-            if model.status == .needsClarification {
-                Text("Hermes is waiting for your answer — the next message you send replies to the question above.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockAccent)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
-            }
             if let clarificationResponseError = model.clarificationResponseError {
                 Text(clarificationResponseError)
                     .font(.system(size: 11))
@@ -433,14 +473,17 @@ struct ChatComposerView: View {
         // submission paths until Hermes exposes a profile-scoped attachment API.
         if model.status != .working,
            !model.isSending,
-           model.pendingImages.isEmpty,
+           ComposerMentionPresentation.canDirectRouteBot(
+               hasImages: !model.pendingImages.isEmpty,
+               hasPDF: model.pendingPDFURL != nil
+           ),
            let request = ComposerMentionPresentation.directBotRequest(
                 in: composer.text,
                 profileIDs: botMode.visibleBots.map(\.id)
            ),
            let bot = botMode.visibleBots.first(where: { $0.id == request.profileID }) {
             showingBotMentionPicker = false
-            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text)
+            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text, chatSessionID: bot.chat?.sessionID)
             return
         }
         model.submitComposerInput()
@@ -499,6 +542,57 @@ struct ChatComposerView: View {
 
     private var selectedReasoningVariant: HermesReasoningVariant? {
         model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
+    }
+}
+
+/// Stacked response choices for an active Hermes clarification. The composer
+/// remains available for a custom response.
+private struct ClarificationChoiceChips: View {
+    let choices: [String]
+    let isDisabled: Bool
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SUGGESTED RESPONSES")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .tracking(0.6)
+                .foregroundStyle(Color.dockMetadataText)
+
+            ForEach(Array(choices.enumerated()), id: \.offset) { item in
+                let choice = item.element
+                Button {
+                    onSelect(choice)
+                } label: {
+                    HStack(spacing: 8) {
+                        LucideImage(systemName: "arrow.right")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(choice)
+                            .font(.system(size: 12, weight: .medium))
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(isDisabled ? Color.dockMetadataText : Color.dockAccent)
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                        .fill(Color.dockAccent.opacity(isDisabled ? 0.04 : 0.10))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                .stroke(Color.dockAccent.opacity(isDisabled ? 0.16 : 0.42), lineWidth: DockLayout.hairline)
+                        }
+                )
+                .disabled(isDisabled)
+                .help("Send suggested response: \(choice)")
+                .accessibilityLabel("Send suggested response: \(choice)")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Suggested clarification responses")
     }
 }
 

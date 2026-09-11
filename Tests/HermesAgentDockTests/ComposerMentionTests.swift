@@ -26,4 +26,10 @@ struct ComposerMentionTests {
         #expect(ComposerMentionPresentation.directBotRequest(in: "@unknown audit this", profileIDs: ["sentry"]) == nil)
         #expect(ComposerMentionPresentation.directBotRequest(in: "@sentry", profileIDs: ["sentry"]) == nil)
     }
+
+    @Test func attachmentsStayOnTheOrdinarySubmissionPathForBotMentions() {
+        #expect(ComposerMentionPresentation.canDirectRouteBot(hasImages: false, hasPDF: false))
+        #expect(!ComposerMentionPresentation.canDirectRouteBot(hasImages: true, hasPDF: false))
+        #expect(!ComposerMentionPresentation.canDirectRouteBot(hasImages: false, hasPDF: true))
+    }
 }
