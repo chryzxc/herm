@@ -59,8 +59,10 @@ enum HermesFeatureIDs {
         case sessionActiveList = "session.active_list"
         case sessionActivate = "session.activate"
         case sessionDelete = "session.delete"
+        case sessionSetHidden = "session.set_hidden"
         case sessionResume = "session.resume"
         case sessionMessages = "session.messages"
+        case sessionEventsSince = "session.events.since"
         case sessionInterrupt = "session.interrupt"
         case sessionUsage = "session.usage"
         case sessionContextBreakdown = "session.context_breakdown"
@@ -68,6 +70,7 @@ enum HermesFeatureIDs {
         case projectFacts = "project.facts"
         case verificationStatus = "verification.status"
         case promptSubmit = "prompt.submit"
+        case botRelayDeliver = "bot_relay.deliver"
         case promptBackground = "prompt.background"
         case sessionTitle = "session.title"
         case sessionSteer = "session.steer"
@@ -89,6 +92,10 @@ enum HermesFeatureIDs {
         case configShow = "config.show"
         case projectsTree = "projects.tree"
         case projectsProjectSessions = "projects.project_sessions"
+        case projectsCreate = "projects.create"
+        case projectsArchive = "projects.archive"
+        case projectsDelete = "projects.delete"
+        case projectsSetActive = "projects.set_active"
         case voiceToggle = "voice.toggle"
         case voiceRecord = "voice.record"
         case configGet = "config.get"
@@ -96,6 +103,7 @@ enum HermesFeatureIDs {
         case modelOptions = "model.options"
         case shellExec = "shell.exec"
         case imageAttachBytes = "image.attach_bytes"
+        case pdfAttach = "pdf.attach"
         case profilesList = "profiles.list"
         case profilesDescribe = "profiles.describe"
         case profilesCreate = "profiles.create"
@@ -103,18 +111,23 @@ enum HermesFeatureIDs {
         case profilesSetAsset = "profiles.set_asset"
         case profilesGetAsset = "profiles.get_asset"
         case imageGenerate = "image.generate"
+        case insightsGet = "insights.get"
+        case rollbackList = "rollback.list"
+        case rollbackDiff = "rollback.diff"
+        case rollbackRestore = "rollback.restore"
         case bots
     }
 
     static let transportIDs: [String] = [
         "session.list", "session.active_list", "session.activate", "session.delete", "session.resume",
-        "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create", "project.facts",
-        "verification.status", "prompt.submit", "prompt.background", "session.title", "session.steer", "session.branch",
+        "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create", "session.set_hidden", "session.events.since", "project.facts",
+        "verification.status", "prompt.submit", "bot_relay.deliver", "prompt.background", "session.title", "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
         "approval.respond", "clarify.respond", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "config.get",
-        "config.set", "model.options", "shell.exec", "image.attach_bytes",
-        "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate"
+        "config.set", "model.options", "shell.exec", "image.attach_bytes", "pdf.attach",
+        "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore",
+        "projects.create", "projects.archive", "projects.delete", "projects.set_active"
     ]
     static let all = ID.allCases.map(\.rawValue)
     static let capabilityIDs = ID.allCases.filter { !transportIDs.contains($0.rawValue) }.map(\.rawValue)

@@ -17,6 +17,12 @@ struct HermesRuntimeConfiguration: Sendable, Equatable {
 enum HermesRuntimeInspector {
     private static let commandTimeout: TimeInterval = 15
 
+    /// Resolves just the menu-bar identity without waiting for the complete
+    /// runtime inspection (skills, MCP servers, plugins, and model settings).
+    static func readAgentName() -> String? {
+        output(arguments: ["config", "path"]).flatMap { agentName(configPath: $0) }
+    }
+
     static func read() -> HermesRuntimeConfiguration {
         let model = output(arguments: ["config", "get", "model.default"])
         let provider = output(arguments: ["config", "get", "model.provider"])
@@ -47,8 +53,16 @@ enum HermesRuntimeInspector {
         for line in soul.split(whereSeparator: \.isNewline).prefix(32) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.hasPrefix("# ") else { continue }
-            let name = String(trimmed.dropFirst(2))
+            let heading = String(trimmed.dropFirst(2))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            // SOUL.md headings can add a role after an em dash, for example
+            // `# Nexus — Coordinator`. The menu bar should show the agent's
+            // identity, not its descriptive role.
+            let name = heading
+                .split(separator: "—", maxSplits: 1)
+                .first
+                .map(String.init)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? heading
             guard !name.isEmpty, name.count <= 80 else { return nil }
             return name
         }

@@ -12,18 +12,25 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
 - **Conversation workspace.** Streams assistant messages, supports multiple image
   attachments and approvals, and lets you interrupt an in-progress request.
   Selected and pasted images can be reviewed and removed individually before
-  sending. Image bytes are uploaded through Hermes' dedicated attachment RPC.
+  sending. PDFs may be attached through Hermes' dedicated attachment RPC; the
+  Dock records the filename in the transcript and enforces its 25 MB limit
+  again immediately before upload. Image bytes are uploaded through Hermes'
+  dedicated attachment RPC.
   While Hermes is responding, the same composer automatically submits typed
   guidance as in-turn steering. Tool calls stay
   out of the conversation transcript. Streaming deltas are coalesced before
   publication, WebSocket frames are decoded off the main thread, and parsed
   message Markdown is cached per message, so long sessions, streaming
-  responses, and lazy row builds while scrolling stay responsive. The
+  responses stay responsive. The transcript uses an exact recent-message
+  window so active session updates cannot inflate a lazy document-height
+  estimate; reaching the top loads older history in bounded pages while
+  preserving the current reading position. The
   transcript scroll view is rebuilt per session and starts bottom-anchored, so
   opening or switching a conversation lands on the latest message without a
   past-the-end blank viewport; programmatic scrolls target a non-lazy bottom
-  sentinel, a stale past-the-end offset is detected and re-clamped automatically,
-  and a viewport parked at the bottom stays pinned to the streaming response.
+  sentinel, the native scroll boundary rejects offsets invalidated by later
+  size contraction, and a viewport parked at the bottom stays pinned to the
+  streaming response.
   Session
   restoration shows
   an explicit loading state that prevents prompts from being sent while a
@@ -124,6 +131,13 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   connections, bot-to-bot @mention composer autocomplete, and
   pixel-pet/blob-face avatars remain planned until their Hermes contracts
   are exposed and verified.
+- **Session Bot Activity.** The session Activity surface projects only
+  session-attributed Kanban tasks assigned to visible Hermes Bot profiles.
+  Bot-owned rows show the profile name, task status, and canonical task ID;
+  they open the same Kanban task as the existing session task view. Generic
+  delegated agents remain separate, and Bot Chat recency is never used to
+  invent task ownership or duration. Tasks from another session and tasks
+  assigned to unknown profiles are omitted.
 - **Hermes Projects.** Projects reads the authoritative `projects.tree`
   projection from Hermes, showing active project context, repository counts,
   and grouped session previews without maintaining a second project database.
@@ -215,6 +229,15 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
   authoritative for reminder content. The Dock stores references, display state,
   UI preferences, and cached metadata rather than duplicating those systems.
+- **Bot-scoped navigation.** When Hermes exposes its Bot roster, the left
+  navigation header becomes a profile selector showing each visible Bot's
+  avatar, friendly name, and optional title. The selected profile is persisted
+  by stable Hermes profile ID and scopes Conversations, Projects, project
+  actions, and newly created chats. Switching profiles starts a fresh draft,
+  clears the previous profile's rows while the target reloads, and discards
+  late responses from the old profile. Global destinations and canonical Bot
+  Chat routing remain unchanged. Unsupported or single-profile runtimes keep
+  the existing identity header and launch-profile behavior.
 - **Inbox presentation state.** Dismissed items remain dismissed locally, while
   snoozed items reappear automatically after one hour. Neither action mutates
   the Hermes or Apple source. Due Apple Reminders are projected into the same
@@ -270,7 +293,10 @@ on the left, with Today, Inbox, Activity, and Core controls on the right.
   budget, verification evidence, and a compact steering control while a turn is
   working. Steering queues guidance for Hermes's next tool-result boundary
   without restarting the turn; rejected text remains in the field instead of
-  being silently discarded.
+  being silently discarded. When Hermes advertises rollback checkpoints, Core
+  lists a bounded session-scoped history, can show a bounded diff, and requires
+  explicit destructive confirmation before restore; restoring is unavailable
+  during an active turn.
 - **Provider quota.** The Global Quota tab lists every supported subscription
   provider — Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity —
   always. Connected providers show their remaining-allowance windows;
@@ -478,7 +504,9 @@ stable, capability-advertised gateway RPC or JSON response:
 
 - Project mutation: structured identifiers, current values, mutation
   request/response schemas, and conflict errors. Kanban board enumeration is
-  available through Hermes v0.19.1's verified JSON/CLI contract. The Dock uses
+  available through Hermes v0.19.1's verified JSON/CLI contract. The Dock
+  currently keeps project creation, activation, archive, and deletion hidden
+  until Hermes publishes verified per-method mutation capabilities. The Dock uses
   local board selection plus per-call `--board` scope, so it deliberately does
   not expose a shared-board switch action.
 - Third-party MCP discovery/invocation: scoped authorization, tool schemas, and

@@ -3,10 +3,13 @@ import Testing
 @testable import HermesAgentDock
 
 @MainActor
+@Suite(.serialized)
 struct HermesCapabilityServiceTests {
     @Test func shellAvailabilityRequiresSuccessfulExitCode() {
         #expect(HermesCapabilityService.shellResultSucceeded(["code": 0, "stdout": "memo 1.0"]) == true)
         #expect(HermesCapabilityService.shellResultSucceeded(["code": 127, "stderr": "command not found"]) == false)
+        #expect(HermesCapabilityService.shellResultSucceeded(["exit_code": 0, "output": "hermes kanban"]) == true)
+        #expect(HermesCapabilityService.shellResultSucceeded(["exit_code": 1, "error": "failed"]) == false)
         #expect(HermesCapabilityService.shellResultSucceeded(nil) == false)
     }
 

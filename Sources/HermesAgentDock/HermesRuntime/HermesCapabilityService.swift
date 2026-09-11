@@ -65,6 +65,13 @@ private final class CapabilityProbeResultBox: @unchecked Sendable {
         continuation?.resume(returning: result)
         return true
     }
+
+    var hasTimedOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if case .timedOut? = result { return true }
+        return false
+    }
 }
 
 @MainActor
@@ -231,13 +238,16 @@ final class HermesCapabilityService {
             // The roster RPC is fast and read-only; probing it before the
             // slow shell.exec probes keeps it inside the batch's bounded
             // timeout instead of starving at the end of the serial queue.
+            // Kanban backs the primary Control/Activity projection. Probe it
+            // before the long tail of optional shell integrations so the
+            // bounded capability pass cannot time out before reaching it.
+            ("kanban", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban list --help"]),
             ("profiles", HermesFeatureIDs.ID.profilesList, ["limit": 100]),
             ("scheduling", HermesFeatureIDs.ID.cronManage, ["action": "list"]),
             ("projects", HermesFeatureIDs.ID.projectsTree, [:]), ("tools", HermesFeatureIDs.ID.toolsList, [:]),
             ("plugins", HermesFeatureIDs.ID.pluginsList, [:]), ("config", HermesFeatureIDs.ID.configShow, [:]),
             ("version", HermesFeatureIDs.ID.shellExec, ["command": "hermes --version"]),
             ("skills", HermesFeatureIDs.ID.shellExec, ["command": "hermes skills list --enabled-only"]),
-            ("kanban", HermesFeatureIDs.ID.shellExec, ["command": "hermes kanban list --help"]),
             ("notes", HermesFeatureIDs.ID.shellExec, ["command": "memo --version"]),
             ("email", HermesFeatureIDs.ID.shellExec, ["command": "himalaya --version"]),
             ("messaging", HermesFeatureIDs.ID.shellExec, ["command": "imsg --version"]),
@@ -272,6 +282,11 @@ final class HermesCapabilityService {
         let results = await requestBatch(
             client,
             specs: specs.map { ProbeSpec(key: $0.0, method: $0.1, params: $0.2) },
+            generation: generation,
+            resultBox: resultBox,
+            // Keep the sweep serial. A timed-out transport is allowed to
+            // ignore cancellation, so parallel replacement requests would
+            // let overlapping generations exceed the bounded request budget.
             limit: 1,
             onFirstRequest: { resultBox.markStarted() }
         )
@@ -625,6 +640,8 @@ final class HermesCapabilityService {
     private func requestBatch(
         _ client: HermesRPCClientProtocol,
         specs: [ProbeSpec],
+        generation: Int,
+        resultBox: CapabilityProbeResultBox,
         limit: Int,
         onFirstRequest: @escaping @MainActor () -> Void
     ) async -> [String: [String: Any]?] {
@@ -632,7 +649,9 @@ final class HermesCapabilityService {
             let boxedClient = ClientBox(client: client)
             var iterator = specs.makeIterator()
             var results: [String: [String: Any]?] = [:]
+            var inFlight = 0
             func add(_ spec: ProbeSpec) {
+                inFlight += 1
                 group.addTask {
                     guard !Task.isCancelled else { return (spec.key, ProbeResponse(value: nil)) }
                     await onFirstRequest()
@@ -640,12 +659,31 @@ final class HermesCapabilityService {
                     return (spec.key, response)
                 }
             }
-            for _ in 0..<min(limit, specs.count) {
-                if let spec = iterator.next() { add(spec) }
-            }
+            // Start exactly one request. Besides avoiding an unnecessary
+            // burst when a transport is unavailable, this lets a newer probe
+            // supersede a stalled one before it schedules the remainder.
+            if let spec = iterator.next() { add(spec) }
             while let result = await group.next() {
+                inFlight -= 1
                 results[result.0] = result.1.value
-                if let spec = iterator.next() { add(spec) }
+                // A timeout cancels the parent probe while a non-cooperative
+                // transport may still be completing its current request. Do
+                // not start the remainder of the serial capability sweep
+                // after that cancellation; it would starve the next refresh
+                // and could later overwrite its cache boundary.
+                guard generation == probeGeneration,
+                      !timedOutGenerations.contains(generation),
+                      !resultBox.hasTimedOut,
+                      !Task.isCancelled else {
+                    group.cancelAll()
+                    break
+                }
+                // Once the first request has completed, maintain the bounded
+                // pipeline for the remaining low-cost capability probes.
+                while inFlight < limit {
+                    if let spec = iterator.next() { add(spec) }
+                    else { break }
+                }
             }
             return results
         }
@@ -676,7 +714,13 @@ final class HermesCapabilityService {
 
     @MainActor
     private func requestResponse(_ client: HermesRPCClientProtocol, spec: ProbeSpec) async -> ProbeResponse {
-        guard let value = try? await client.request(spec.method.rawValue, params: spec.params),
+        guard let rawValue = try? await client.request(spec.method.rawValue, params: spec.params) else {
+            return ProbeResponse(value: nil)
+        }
+        let value = spec.method == .shellExec
+            ? HermesControlRPC.normalizedShellResult(rawValue)
+            : rawValue
+        guard
               !Task.isCancelled,
               !value.isEmpty,
               value["error"] == nil else { return ProbeResponse(value: nil) }

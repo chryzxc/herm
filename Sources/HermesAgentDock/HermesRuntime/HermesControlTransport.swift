@@ -70,7 +70,9 @@ final class HermesControlRPC {
     }
 
     func activeSessions() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:]) }
-    func sessions(limit: Int = 50) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionList.rawValue, params: ["limit": limit]) }
+    func sessions(limit: Int = 50, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.sessionList.rawValue, params: Self.profileParams(["limit": limit], profileID: profileID))
+    }
     func sessionPages(limit: Int = 100, offset: Int = 0) async throws -> [String: Any] {
         let result = try await client.fetchHTTP("/api/sessions?limit=\(limit)&offset=\(offset)")
         // Hermes Agent's REST endpoint uses `sessions`/`total`; the Dock's
@@ -105,9 +107,14 @@ final class HermesControlRPC {
         return canonical
     }
     func activate(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionActivate.rawValue, params: ["session_id": sessionID]) }
-    func resume(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: ["session_id": sessionID, "source": "hermes-agent-dock-control"]) }
-    func delete(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: ["session_id": sessionID]) }
-    func interrupt(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionInterrupt.rawValue, params: ["session_id": sessionID]) }
+    func resume(sessionID: String, profileID: String? = nil) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: Self.profileParams(["session_id": sessionID, "source": "hermes-agent-dock-control"], profileID: profileID)) }
+    func delete(sessionID: String, profileID: String? = nil) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: Self.profileParams(["session_id": sessionID], profileID: profileID)) }
+    func interrupt(sessionID: String, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(
+            HermesFeatureIDs.ID.sessionInterrupt.rawValue,
+            params: Self.profileParams(["session_id": sessionID], profileID: profileID)
+        )
+    }
     func sessionUsage(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionUsage.rawValue, params: ["session_id": sessionID]) }
     func sessionContextBreakdown(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionContextBreakdown.rawValue, params: ["session_id": sessionID]) }
     func projectFacts(cwd: String) async throws -> [String: Any] {
@@ -179,13 +186,91 @@ final class HermesControlRPC {
     func tools() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.toolsList.rawValue, params: [:]) }
     func plugins() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.pluginsList.rawValue, params: [:]) }
     func configuration() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.configShow.rawValue, params: [:]) }
-    func projectsTree() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.projectsTree.rawValue, params: [:]) }
-    func projectSessions(projectID: String) async throws -> [String: Any] {
-        try await client.request(HermesFeatureIDs.ID.projectsProjectSessions.rawValue, params: ["project_id": projectID])
+    func projectsTree(profileID: String? = nil) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.projectsTree.rawValue, params: Self.profileParams([:], profileID: profileID)) }
+    func projectSessions(projectID: String, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.projectsProjectSessions.rawValue, params: Self.profileParams(["project_id": projectID], profileID: profileID))
     }
+    func createProject(name: String, folders: [String], description: String? = nil, profileID: String? = nil) async throws -> [String: Any] {
+        var params: [String: Any] = ["name": name, "folders": folders]
+        if let description, !description.isEmpty { params["description"] = description }
+        return try await client.request(HermesFeatureIDs.ID.projectsCreate.rawValue, params: Self.profileParams(params, profileID: profileID))
+    }
+    func archiveProject(id: String, restore: Bool = false, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.projectsArchive.rawValue, params: Self.profileParams(["id": id, "restore": restore], profileID: profileID))
+    }
+    func deleteProject(id: String, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.projectsDelete.rawValue, params: Self.profileParams(["id": id], profileID: profileID))
+    }
+    func setActiveProject(id: String?, profileID: String? = nil) async throws -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let id, !id.isEmpty { params["id"] = id }
+        return try await client.request(HermesFeatureIDs.ID.projectsSetActive.rawValue, params: Self.profileParams(params, profileID: profileID))
+    }
+    func setSessionHidden(sessionID: String, hidden: Bool, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.sessionSetHidden.rawValue, params: Self.profileParams(["session_id": sessionID, "hidden": hidden], profileID: profileID))
+    }
+
+    private static func profileParams(_ params: [String: Any], profileID: String?) -> [String: Any] {
+        guard let profileID, !profileID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return params }
+        var scoped = params
+        scoped["profile"] = profileID
+        return scoped
+    }
+    func insights(days: Int = 30) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.insightsGet.rawValue, params: ["days": max(1, min(days, 90))])
+    }
+    func rollbackList(sessionID: String) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.rollbackList.rawValue, params: ["session_id": sessionID])
+    }
+    func rollbackDiff(sessionID: String, hash: String) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.rollbackDiff.rawValue, params: ["session_id": sessionID, "hash": hash])
+    }
+    func rollbackRestore(sessionID: String, hash: String, filePath: String? = nil) async throws -> [String: Any] {
+        var params: [String: Any] = ["session_id": sessionID, "hash": hash]
+        if let filePath, !filePath.isEmpty { params["file_path"] = filePath }
+        return try await client.request(HermesFeatureIDs.ID.rollbackRestore.rawValue, params: params)
+    }
+    /// Authenticated, read-only gateway HTTP request used for structured Hermes projections.
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        try await client.fetchHTTP(path)
+    }
+
     /// Structured-command entry point; never accept an arbitrary shell string.
     func runCommand(_ command: HermesCLICommand) async throws -> [String: Any] {
         let rendered = try command.rendered()
-        return try await client.request(HermesFeatureIDs.ID.shellExec.rawValue, params: ["command": rendered])
+        return Self.normalizedShellResult(
+            try await client.request(HermesFeatureIDs.ID.shellExec.rawValue, params: ["command": rendered])
+        )
+    }
+
+    /// Hermes gateways in the field return either the original `stdout` /
+    /// `code` form or the terminal relay form used in activity events:
+    /// `output` / `exit_code` / `error`. Normalize only this typed shell
+    /// boundary so read-only projections consume one honest result contract.
+    static func normalizedShellResult(_ raw: [String: Any]) -> [String: Any] {
+        var normalized = raw
+        if raw["error"] is NSNull {
+            normalized.removeValue(forKey: "error")
+        }
+        if normalized["stdout"] == nil, let output = raw["output"] as? String {
+            normalized["stdout"] = output
+        }
+        if normalized["stderr"] == nil,
+           let error = raw["error"] as? String,
+           !error.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            normalized["stderr"] = error
+        }
+        if normalized["code"] == nil,
+           let exitCode = (raw["exit_code"] as? NSNumber)?.intValue ?? raw["exit_code"] as? Int {
+            normalized["code"] = exitCode
+        }
+        if normalized["success"] == nil {
+            if let code = (normalized["code"] as? NSNumber)?.intValue ?? normalized["code"] as? Int {
+                normalized["success"] = code == 0
+            } else if normalized["stdout"] != nil {
+                normalized["success"] = true
+            }
+        }
+        return normalized
     }
 }

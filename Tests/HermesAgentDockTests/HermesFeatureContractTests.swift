@@ -22,15 +22,15 @@ struct HermesFeatureContractTests {
 
     @Test func everySupportedTransportMethodIsExplicitlyRegistered() throws {
         let expectedMethods = [
-            "session.list", "session.active_list", "session.activate", "session.resume", "session.delete", "session.messages",
-            "session.interrupt", "session.usage", "session.context_breakdown", "project.facts", "verification.status",
-            "prompt.background", "session.title", "session.steer", "session.branch", "session.compress", "session.undo",
+            "session.list", "session.active_list", "session.activate", "session.resume", "session.delete",
+            "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.set_hidden", "session.events.since", "project.facts", "verification.status",
+            "prompt.background", "bot_relay.deliver", "session.title", "session.steer", "session.branch", "session.compress", "session.undo",
             "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill", "approval.respond", "clarify.respond",
             "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list", "plugins.list", "config.show",
-            "projects.tree", "projects.project_sessions", "shell.exec", "image.attach_bytes", "session.create", "prompt.submit", "voice.toggle",
+            "projects.tree", "projects.project_sessions", "projects.create", "projects.archive", "projects.delete", "projects.set_active", "shell.exec", "image.attach_bytes", "pdf.attach", "session.create", "prompt.submit", "voice.toggle",
             "voice.record", "config.get", "config.set", "model.options",
             "profiles.list", "profiles.describe", "profiles.create", "profiles.configure",
-            "profiles.set_asset", "profiles.get_asset", "image.generate"
+            "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore"
         ]
         #expect(Set(HermesFeatureIDs.transportIDs) == Set(expectedMethods))
 

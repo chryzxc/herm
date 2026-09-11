@@ -38,13 +38,34 @@ struct HermesCLIAdapterTests {
         #expect(client.commands.last == "'hermes' 'kanban' 'reassign' '--reclaim' 'task-1' 'worker'")
     }
 
-    @Test func kanbanListForwardsOnlyHermesSupportedFilters() async throws {
+    @Test func kanbanListUsesStructuredReadOnlyBoardProjection() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
 
-        _ = try await adapter.kanbanList(filter: KanbanListFilter(status: "ready", assignee: "default", mine: true, sessionID: "session-1", includeArchived: true, sort: "priority-desc"))
+        let result = try await adapter.kanbanList(filter: KanbanListFilter(status: "ready"))
 
-        #expect(client.commands.last == "'hermes' 'kanban' 'list' '--json' '--status' 'ready' '--assignee' 'default' '--mine' '--session' 'session-1' '--archived' '--sort' 'priority-desc'")
+        #expect(client.httpPaths == ["/api/plugins/kanban/boards", "/api/plugins/kanban/board?board=default"])
+        #expect(result.succeeded)
+        #expect(result.stdout.contains("ready-task"))
+        #expect(result.stdout.contains("\"board_slug\":\"default\""))
+    }
+
+    @Test func mineFilterDoesNotTreatAnyAssignmentAsMine() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        let result = try await adapter.kanbanList(filter: KanbanListFilter(mine: true))
+
+        #expect(result.stdout == "[]")
+    }
+
+    @Test func kanbanCreateForwardsCanonicalSessionAttribution() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.kanbanCreate(title: "Session work", body: nil, sessionID: "session-1")
+
+        #expect(client.commands.last == "'hermes' 'kanban' 'create' '--json' '--session' 'session-1' 'Session work'")
     }
 
     @Test func kanbanBoardCommandsUseSupportedContracts() async throws {
@@ -55,7 +76,41 @@ struct HermesCLIAdapterTests {
         #expect(client.commands.last == "'hermes' 'kanban' 'boards' 'list' '--json' '--all'")
 
         _ = try await adapter.kanbanList(boardSlug: "client-board")
-        #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'list' '--json'")
+        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client-board"])
+    }
+
+    @Test func kanbanBoardScopeSafelyEncodesQueryReservedCharacters() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.kanbanList(boardSlug: "client&ops=west")
+
+        #expect(client.httpPaths == ["/api/plugins/kanban/board?board=client%26ops%3Dwest"])
+    }
+
+    @Test func aggregateKanbanIncludesArchivedBoardsOnlyWhenRequested() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        let result = try await adapter.kanbanList(filter: KanbanListFilter(includeArchived: true))
+
+        #expect(client.httpPaths == [
+            "/api/plugins/kanban/boards",
+            "/api/plugins/kanban/board?board=default",
+            "/api/plugins/kanban/board?board=archived-board"
+        ])
+        #expect(result.stdout.contains("archived-task"))
+    }
+
+    @Test func updatedKanbanSortIsNewestFirstAndStableForMissingDates() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        let result = try await adapter.kanbanList(filter: KanbanListFilter(sort: "updated"))
+        let data = try #require(result.stdout.data(using: .utf8))
+        let rows = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+
+        #expect(rows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
     }
     @Test func kanbanDiagnosticsAndAttachmentsForwardBoardScope() async throws {
         let client = CLITestRPCClient()
@@ -82,12 +137,35 @@ struct HermesCLIAdapterTests {
 private final class CLITestRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var commands: [String] = []
+    private(set) var httpPaths: [String] = []
+    var result: [String: Any] = ["code": 0, "stdout": "ok"]
 
     func connect() async throws {}
     func close() {}
 
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        httpPaths.append(path)
+        if path == "/api/plugins/kanban/boards" {
+            return ["boards": [
+                ["slug": "default", "archived": false],
+                ["slug": "archived-board", "archived": true]
+            ]]
+        }
+        if path.contains("archived-board") {
+            return ["columns": [["name": "archived", "tasks": [[
+                "id": "archived-task", "title": "Archived task", "status": "archived"
+            ]]]]]
+        }
+        return ["columns": [["name": "ready", "tasks": [
+            ["id": "ready-task", "title": "Ready task", "status": "ready"],
+            ["id": "new-task", "title": "New task", "status": "ready", "updated_at": 200],
+            ["id": "old-task", "title": "Old task", "status": "ready", "updated_at": 100],
+            ["id": "undated-task", "title": "Undated task", "status": "ready"]
+        ]]]]
+    }
+
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         if method == "shell.exec", let command = params["command"] as? String { commands.append(command) }
-        return ["code": 0, "stdout": "ok"]
+        return result
     }
 }
