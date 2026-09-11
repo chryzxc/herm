@@ -255,6 +255,45 @@ struct AgentProjectionTests {
         #expect(!DockModel.isBackgroundDelegationDispatch("plain text result"))
     }
 
+    @Test func exactKanbanIDsAreExtractedFromToolEvidenceOnly() {
+        #expect(DockModel.kanbanTaskIDs(in: "hermes kanban show t_33604ca9 --json") == ["t_33604ca9"])
+        #expect(DockModel.kanbanTaskIDs(in: "unrelated prose has no durable card") == [])
+    }
+
+    @Test func activeSessionRetainsKanbanReferenceAfterTerminalToolActivity() {
+        let model = DockModel(initialSessionID: "session-a")
+
+        model.receiveGatewayEvent("tool.start", params: [
+            "session_id": "session-a",
+            "payload": [
+                "name": "terminal",
+                "input": "hermes kanban show t_33604ca9 --json"
+            ]
+        ])
+        model.receiveGatewayEvent("tool.start", params: [
+            "session_id": "session-b",
+            "payload": [
+                "name": "terminal",
+                "input": "hermes kanban show t_unowned --json"
+            ]
+        ])
+
+        #expect(model.observedKanbanTaskIDs == ["t_33604ca9"])
+        #expect(model.observedKanbanTaskRevision == 1)
+    }
+
+    @Test func restoredBoundedToolHistoryCanRecoverAnObservedKanbanCard() {
+        let model = DockModel(initialSessionID: "session-a")
+        model.recentEvents = [AgentEvent(
+            id: UUID(),
+            type: "tool.complete",
+            detail: #"{"payload":{"input":"hermes kanban show t_33604ca9 --json"}}"#,
+            timestamp: .now
+        )]
+
+        #expect(model.observedKanbanTaskIDs == ["t_33604ca9"])
+    }
+
     @Test func lateProgressCannotReopenACompletedAgent() {
         #expect(DockModel.agentStatus(current: "complete", eventType: "subagent.tool") == "complete")
         #expect(DockModel.agentStatus(current: "running", eventType: "subagent.complete") == "complete")
@@ -357,6 +396,20 @@ struct AgentProjectionTests {
         ]) == "stored-resumed")
         #expect(DockModel.sessionAttributionID(runtimeID: "live-5678", storageID: "stored-resumed") == "stored-resumed")
         #expect(DockModel.sessionAttributionID(runtimeID: "live-5678", storageID: nil) == "live-5678")
+        #expect(DockModel.kanbanAttributionAfterResume(
+            requestedSessionID: "requested-stale-id",
+            resolvedSessionID: "resolved-live-id"
+        ) == "resolved-live-id")
+        #expect(DockModel.kanbanAttributionID(
+            requestedSessionID: "durable-selected-session",
+            runtimeID: "gateway-runtime-alias",
+            storageID: "gateway-storage-alias"
+        ) == "durable-selected-session")
+        #expect(DockModel.kanbanAttributionID(
+            requestedSessionID: nil,
+            runtimeID: "gateway-runtime-alias",
+            storageID: "gateway-storage-alias"
+        ) == "gateway-storage-alias")
     }
 
     @Test func realHermesSubagentEnvelopeSequenceProjectsEveryTaskToOneAgent() {
@@ -428,6 +481,10 @@ struct AgentProjectionTests {
     @Test func delegationStatusRowsRequireCurrentSessionOwnership() {
         #expect(DockModel.delegationStatusRow([
             "subagent_id": "current-agent",
+            "owner_agent_session_id": "session-current"
+        ], belongsTo: "session-current"))
+        #expect(DockModel.delegationStatusRow([
+            "subagent_id": "current-agent",
             "parent_session_id": "session-current"
         ], belongsTo: "session-current"))
         #expect(!DockModel.delegationStatusRow([
@@ -436,6 +493,10 @@ struct AgentProjectionTests {
         ], belongsTo: "session-current"))
         #expect(!DockModel.delegationStatusRow([
             "subagent_id": "unscoped-agent"
+        ], belongsTo: "session-current"))
+        #expect(!DockModel.delegationStatusRow([
+            "subagent_id": "session-current",
+            "parent_id": "session-current"
         ], belongsTo: "session-current"))
     }
 

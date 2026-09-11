@@ -60,18 +60,12 @@ struct AgentBoardView: View {
 
             VStack(spacing: 0) {
                 if !embedded { titlebar }
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        activeAgentsHeading
-                        agentSectionContent
-                        sectionHeading("ACTIVE PIPELINE", detail: totalPipelineItemCount > pipelineItems.count ? "LATEST \(pipelineItems.count) / \(totalPipelineItemCount)" : "\(totalPipelineItemCount) ITEMS")
-                        if pipelineItems.isEmpty {
-                            emptyState(title: "No live activity", detail: "The pipeline will populate when a Hermes subagent starts work.")
-                        } else {
-                            pipelineList(pipelineItems)
-                        }
+                if embedded {
+                    boardContent(totalPipelineItemCount: totalPipelineItemCount, pipelineItems: pipelineItems)
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        boardContent(totalPipelineItemCount: totalPipelineItemCount, pipelineItems: pipelineItems)
                     }
-                    .padding(embedded ? 0 : 20)
                 }
             }
         }
@@ -99,6 +93,21 @@ struct AgentBoardView: View {
                 withAnimation(.dockEase(duration: 0.32)) { appeared = true }
             }
         }
+    }
+
+    @ViewBuilder
+    private func boardContent(totalPipelineItemCount: Int, pipelineItems: [PipelineItem]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            activeAgentsHeading
+            agentSectionContent
+            sectionHeading("ACTIVE PIPELINE", detail: totalPipelineItemCount > pipelineItems.count ? "LATEST \(pipelineItems.count) / \(totalPipelineItemCount)" : "\(totalPipelineItemCount) ITEMS")
+            if pipelineItems.isEmpty {
+                emptyState(title: "No live activity", detail: "The pipeline will populate when a Hermes subagent starts work.")
+            } else {
+                pipelineList(pipelineItems)
+            }
+        }
+        .padding(embedded ? 0 : 20)
     }
 
     private var ambientLight: some View {

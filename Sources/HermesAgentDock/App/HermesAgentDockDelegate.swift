@@ -45,6 +45,9 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNoti
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         dockPanel = DockPanelController(model: model)
+        // The panel is intentionally created lazily, but its menu-bar identity
+        // must still reflect the configured SOUL.md name at launch.
+        model.refreshRuntimeConfiguration()
         if HermesAppRuntime.supportsUserNotifications {
             UNUserNotificationCenter.current().delegate = self
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
@@ -52,6 +55,38 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNoti
             DebugLog.write("model: UserNotifications unavailable outside an app bundle")
         }
         installCommandDoubleTapShortcut()
+        writeStatusItemDiagnosticIfRequested()
+        if CommandLine.arguments.contains("--show-panel") {
+            // The production app starts quietly in the menu bar. The debug
+            // launcher passes this explicit argument so a manual run provides
+            // immediate visible confirmation that the freshly built app is up.
+            DispatchQueue.main.async { [weak self] in
+                self?.dockPanel?.showFromDebugLaunch()
+            }
+        }
+    }
+
+    private func writeStatusItemDiagnosticIfRequested() {
+        guard CommandLine.arguments.contains("--status-item-diagnostics") else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            let button = self.dockPanel?.statusItemDiagnostic
+            let frame = button.flatMap { button in
+                button.window?.convertToScreen(button.convert(button.bounds, to: nil))
+            }
+            let detail = [
+                "title=\(button?.title ?? "")",
+                "visible=\(self.dockPanel?.statusItemIsVisible ?? false)",
+                "button_hidden=\(button?.isHidden ?? true)",
+                "button_frame=\(frame.map(NSStringFromRect) ?? "nil")",
+                "screen_count=\(NSScreen.screens.count)"
+            ].joined(separator: "\n") + "\n"
+            try? detail.write(
+                to: URL(fileURLWithPath: "/private/tmp/hermes-status-item-diagnostic.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
     }
 
     private func installCommandDoubleTapShortcut() {
@@ -146,10 +181,23 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private var outsideClickMonitors: [Any] = []
     private var desiredWidth = Metrics.workspaceWidth
     private var isFullscreen = false
+    private var isPanelContentInstalled = false
+
+    var statusItemDiagnostic: NSStatusBarButton? { statusItem.button }
+    var statusItemIsVisible: Bool { statusItem.isVisible }
 
     init(model: DockModel) {
         self.model = model
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        // Use a variable-width item with a text fallback. A square custom
+        // template image can be visually lost by the modern Control Center
+        // status-item host even though the item is registered successfully.
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // Without a stable autosave name, newer macOS Control Center hosts
+        // this as an ephemeral item and can omit it from the visible bar on a
+        // subsequent launch. Persist the item identity and opt it in to the
+        // visible status area before configuring its button.
+        statusItem.autosaveName = "com.christian.HermesAgentDock.statusItem"
+        statusItem.isVisible = true
         panel = DockPanel(
             contentRect: NSRect(x: 0, y: 0, width: Metrics.workspaceWidth, height: Metrics.height),
             styleMask: [.borderless, .fullSizeContentView],
@@ -167,7 +215,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
         button.image = robotStatusImage()
-        button.imagePosition = .imageOnly
+        button.title = model.agentDisplayName
+        button.font = .systemFont(ofSize: 12, weight: .semibold)
+        button.imagePosition = .imageLeading
         button.target = self
         button.action = #selector(togglePanel)
         button.sendAction(on: [.leftMouseUp])
@@ -200,8 +250,18 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         // can deactivate the agent while processing the click that opens it.
         panel.hidesOnDeactivate = false
         panel.onCancel = { [weak self] in self?.hide() }
+    }
+
+    /// Creating `DockPopover` starts its restore task. Keep that work out of
+    /// a quiet menu-bar launch so the launcher does not claim a session before
+    /// the user has opened this surface.
+    private func installPanelContentIfNeeded() {
+        guard !isPanelContentInstalled else { return }
+        isPanelContentInstalled = true
         let hostingView = NSHostingView(
-            rootView: DockPopover(model: model, panelPresentation: panelPresentation, onWorkspaceWidthChange: { [weak self] width in
+            rootView: DockPopover(model: model, panelPresentation: panelPresentation, availableWorkspaceWidth: { [weak self] in
+                self?.availableWorkspaceWidth() ?? .greatestFiniteMagnitude
+            }, onWorkspaceWidthChange: { [weak self] width in
                 self?.resizePanel(to: width) ?? width
             }, onClose: { [weak self] in
                 self?.hide()
@@ -279,6 +339,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private func updateStatusItemIdentity(hasUnreadResponse: Bool? = nil) {
         let name = model.agentDisplayName
         let unread = hasUnreadResponse ?? model.hasUnreadResponse
+        statusItem.button?.title = name
         statusItem.button?.image?.accessibilityDescription = unread ? "\(name) AI agent, unread update" : "\(name) AI agent"
         statusItem.button?.toolTip = unread ? "\(name) AI agent — unread update" : "\(name) AI agent"
     }
@@ -337,7 +398,17 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         if !panel.isVisible { show() }
     }
 
+    func showFromDebugLaunch() {
+        // An accessory/menu-bar app may register its item in an overflow area
+        // or on a different display. A debug launch must still reveal a
+        // concrete surface on the active desktop.
+        show()
+        panel.orderFrontRegardless()
+        panel.makeKey()
+    }
+
     private func show(fromShortcut: Bool = false) {
+        installPanelContentIfNeeded()
         panelPresentation.isEdgeAttached = fromShortcut && !isFullscreen
         if isFullscreen {
             guard let screen = NSScreen.main else { return }
@@ -497,6 +568,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         let y = max(visibleFrame.minY + Metrics.screenInset, preferredY)
         let frame = NSRect(x: x, y: y, width: fittedWidth, height: Metrics.height)
 
+        // Session selection may re-evaluate the layout. Setting an identical
+        // frame through the animator still visibly relayouts the host tree.
+        guard !panel.frame.equalTo(frame) else { return fittedWidth }
+
         if animated, panel.isVisible {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.35
@@ -507,6 +582,18 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             panel.setFrame(frame, display: true)
         }
         return fittedWidth
+    }
+
+    /// Reads the capacity of the display hosting the menu-bar item without
+    /// resizing the live panel. SwiftUI uses this only for layout decisions.
+    private func availableWorkspaceWidth() -> CGFloat {
+        guard let button = statusItem.button else { return .greatestFiniteMagnitude }
+        let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil))
+        let screen = buttonRect.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } }
+            ?? button.window?.screen
+            ?? NSScreen.main
+        guard let screen else { return .greatestFiniteMagnitude }
+        return max(Metrics.compactWidth, screen.visibleFrame.width - Metrics.screenInset * 2)
     }
 
     /// The display hosting the status item is the display the Dock belongs to;

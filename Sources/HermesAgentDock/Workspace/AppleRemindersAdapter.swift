@@ -62,6 +62,7 @@ final class AppleRemindersAdapter {
     static func shellResultSucceeded(_ result: [String: Any]) -> Bool {
         if (result["success"] as? Bool) == false { return false }
         if let code = (result["code"] as? NSNumber)?.intValue { return code == 0 }
-        return result["stdout"] != nil
+        if let exitCode = (result["exit_code"] as? NSNumber)?.intValue { return exitCode == 0 }
+        return result["stdout"] != nil || result["output"] != nil
     }
 }

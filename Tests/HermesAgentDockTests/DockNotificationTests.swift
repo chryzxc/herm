@@ -39,10 +39,12 @@ private final class SessionProjectionTestRPCClient: HermesRPCClientProtocol {
 
     var results: [String: [Result]]
     var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var requestedMethods: [String] = []
 
     init(results: [String: [Result]]) { self.results = results }
     func connect() async throws {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requestedMethods.append(method)
         let result = results[method]?.isEmpty == false ? results[method]!.removeFirst() : .failure(.rejected)
         switch result {
         case .success(let response): return response
@@ -70,6 +72,7 @@ private final class LatestActivityProjectionRPCClient: HermesRPCClientProtocol {
         throw TestError.rejected
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if path == "/api/plugins/kanban/boards" { return ["boards": []] }
         if path.contains("/messages?") { return messages }
         sessionPagePaths.append(path)
         guard path.contains("limit=100") else { throw TestError.rejected }
@@ -497,6 +500,26 @@ struct DockNotificationTests {
         #expect(model.sessionProjectionState == .stale(previousSessions, safeMessage: "Hermes session data is unavailable. Try refreshing."))
     }
 
+    @Test func completedMessageRefreshesTheSessionIndex() async {
+        let latestSession: [String: Any] = [
+            "id": "session-1",
+            "title": "Latest conversation",
+            "preview": "The completed response",
+            "updated_at": 1_789_000_000
+        ]
+        let client = SessionProjectionTestRPCClient(results: [
+            "session.list": [.success(["sessions": [latestSession]])]
+        ])
+        let model = DockModel(initialSessionID: "session-1", rpcClient: client)
+
+        model.receiveGatewayEvent("message.complete", params: ["session_id": "session-1", "payload": [:]])
+        for _ in 0..<10 { await Task.yield() }
+
+        #expect(client.requestedMethods == ["session.list"])
+        #expect(model.sessions.first?.title == "Latest conversation")
+        #expect(model.sessions.first?.preview == "The completed response")
+    }
+
     @Test func sessionIndexUsesCanonicalLastActivityTimestamp() async {
         let client = SessionProjectionTestRPCClient(results: [
             "session.list": [.success(["sessions": [[
@@ -510,6 +533,39 @@ struct DockNotificationTests {
 
         let task = model.loadSessions()
         await task?.value
+
+        #expect(model.sessions.first?.lastUpdatedAt == Date(timeIntervalSince1970: 200))
+    }
+
+    @Test func delayedSessionIndexDoesNotOverwriteNewerLiveActivityTime() async {
+        let initialSession: [String: Any] = [
+            "id": "session-1",
+            "title": "Conversation",
+            "preview": "Earlier response",
+            "updated_at": 100
+        ]
+        let delayedIndexRow: [String: Any] = [
+            "id": "session-1",
+            "title": "Conversation",
+            "preview": "Earlier response",
+            "updated_at": 100
+        ]
+        let client = SessionProjectionTestRPCClient(results: [
+            "session.list": [
+                .success(["sessions": [initialSession]]),
+                .success(["sessions": [delayedIndexRow]])
+            ]
+        ])
+        let model = DockModel(initialSessionID: "session-1", rpcClient: client)
+
+        let initialTask = model.loadSessions()
+        await initialTask?.value
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "session-1",
+            "timestamp": 200,
+            "payload": [:]
+        ])
+        for _ in 0..<10 { await Task.yield() }
 
         #expect(model.sessions.first?.lastUpdatedAt == Date(timeIntervalSince1970: 200))
     }
