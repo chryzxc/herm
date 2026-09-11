@@ -18,6 +18,25 @@ struct BotChatReference: Equatable, Sendable {
     }
 }
 
+/// The profile-owned worker session Hermes includes in `profiles.list`.
+/// This is deliberately separate from a Bot's canonical chat: Kanban and
+/// delegated-tool workers are hidden from normal conversation lists but
+/// heartbeat while they are running.
+struct BotWorkerReference: Equatable, Sendable {
+    let sessionID: String
+    let source: String?
+    let title: String?
+    let lastActive: Date?
+
+    /// Hermes workers heartbeat at least once a minute. Allow one missed
+    /// heartbeat without presenting a finished worker as perpetually active.
+    var isLive: Bool {
+        guard let lastActive else { return false }
+        let age = Date().timeIntervalSince(lastActive)
+        return (0...150).contains(age)
+    }
+}
+
 struct BotSummary: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
@@ -26,18 +45,40 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     let model: String?
     let isActive: Bool
     let chat: BotChatReference?
+    let worker: BotWorkerReference?
     let avatarURL: URL?
     let preview: String?
     let lastActive: Date?
     let isHidden: Bool
     let hasAvatar: Bool
+    let hasCustomAvatar: Bool
     let isDefault: Bool
+
+    init(id: String, name: String, title: String?, description: String?, model: String?, isActive: Bool, chat: BotChatReference?, worker: BotWorkerReference? = nil, avatarURL: URL?, preview: String?, lastActive: Date?, isHidden: Bool, hasAvatar: Bool, hasCustomAvatar: Bool = false, isDefault: Bool) {
+        self.id = id
+        self.name = name
+        self.title = title
+        self.description = description
+        self.model = model
+        self.isActive = isActive
+        self.chat = chat
+        self.worker = worker
+        self.avatarURL = avatarURL
+        self.preview = preview
+        self.lastActive = lastActive
+        self.isHidden = isHidden
+        self.hasAvatar = hasAvatar
+        self.hasCustomAvatar = hasCustomAvatar
+        self.isDefault = isDefault
+    }
     /// Newest of the canonical-chat and worker watermarks; Hermes reports
     /// both in epoch seconds and Bot Mode treats ~90s as "working now".
     var isRecentlyActive: Bool {
         guard let lastActive else { return false }
         return (0...90).contains(Date().timeIntervalSince(lastActive))
     }
+
+    var isWorkingNow: Bool { worker?.isLive == true }
 }
 
 struct BotDetails: Equatable, Sendable {
@@ -77,7 +118,9 @@ enum BotRosterPresentation {
     }
 
     static func activity(for bot: BotSummary) -> String {
-        bot.preview?.nonEmpty ?? "No recent activity"
+        if let preview = bot.preview?.nonEmpty { return preview }
+        if bot.isWorkingNow { return "Working in \(bot.worker?.source ?? "Hermes") work." }
+        return bot.isRecentlyActive ? "Active in Bot work." : "No recent activity"
     }
 
     static func emptyStateTitle(isSearching: Bool) -> String {

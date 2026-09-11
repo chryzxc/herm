@@ -32,7 +32,9 @@ struct BotServiceTests {
         #expect(inventory.bots.first?.name == "Research Buddy")
         #expect(inventory.bots.first?.chat?.sessionID == "tip")
         #expect(inventory.bots.first?.title == "Paper Finder")
-        #expect(inventory.bots.first?.isActive == true)
+        // A worker session without a heartbeat is historical metadata, not
+        // proof that the Bot is currently working.
+        #expect(inventory.bots.first?.isActive == false)
         #expect(inventory.bots.first?.preview == "older preview")
     }
 
@@ -81,6 +83,20 @@ struct BotServiceTests {
         #expect(inventory.bots.first { $0.id == "remote" }?.avatarURL?.scheme == "https")
         #expect(inventory.bots.first { $0.id == "local" }?.avatarURL?.scheme == "data")
         #expect(inventory.bots.first { $0.id == "broken" }?.avatarURL == nil)
+    }
+
+    @Test func rosterRefreshDoesNotGenerateOrPersistMissingAvatars() async {
+        let client = BotFixtureClient(result: ["profiles": [[
+            "name": "research", "is_default": false, "has_avatar": false
+        ]]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+
+        await model.refreshNow()
+
+        #expect(client.methods == ["profiles.list"])
+        #expect(!client.methods.contains("image.generate"))
+        #expect(!client.methods.contains("profiles.set_asset"))
     }
 
     @Test func createParsesHermesCreateResultWithoutTitleParam() async throws {
@@ -174,6 +190,19 @@ struct BotServiceTests {
         #expect(bot?.isHidden == true)
         #expect(bot?.hasAvatar == true)
         #expect(bot?.isRecentlyActive == true)
+        #expect(bot?.isWorkingNow == true)
+        #expect(bot?.worker?.sessionID == "w1")
+    }
+
+    @Test func staleWorkerSessionDoesNotKeepBotWorkingForever() async throws {
+        let client = BotFixtureClient(result: ["profiles": [[
+            "name": "forge",
+            "worker_session": ["id": "worker-old", "source": "kanban", "last_active": Date().timeIntervalSince1970 - 360]
+        ]]])
+        let inventory = await BotService(client: client).list()
+        let bot = try #require(inventory.bots.first)
+        #expect(bot.isActive == false)
+        #expect(bot.isWorkingNow == false)
     }
 
     @Test func avatarAssetRoundTripUsesAssetRPCs() async throws {
@@ -347,6 +376,11 @@ struct BotServiceTests {
             isActive: false, chat: nil, avatarURL: nil, preview: nil,
             lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false
         )) == "No recent activity")
+        #expect(BotRosterPresentation.activity(for: BotSummary(
+            id: "worker-active", name: "Forge", title: nil, description: nil, model: nil,
+            isActive: true, chat: nil, avatarURL: nil, preview: nil,
+            lastActive: .now, isHidden: false, hasAvatar: false, isDefault: false
+        )) == "Active in Bot work.")
     }
 
     @Test func futureLastActiveTimestampIsNotRecentlyActive() {

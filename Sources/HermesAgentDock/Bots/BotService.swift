@@ -256,22 +256,39 @@ final class BotService {
         let title = try optionalString(raw, key: "title") ?? rosterTitle(raw)
         let description = try optionalString(raw, key: "description")
         let model = try optionalString(raw, key: "model")
+        let worker = try parseWorker(raw["worker_session"])
         let isActive: Bool
-        if let value = raw["is_active"] { guard let value = value as? Bool else { throw ParseError.invalid }; isActive = value } else { isActive = raw["worker_session"] != nil }
+        if let value = raw["is_active"] { guard let value = value as? Bool else { throw ParseError.invalid }; isActive = value } else { isActive = worker?.isLive == true }
         let preview = chat?.preview ?? fallbackChat?.preview
-        let workerLastActive = (raw["worker_session"] as? [String: Any]).flatMap { parseTimestamp($0["last_active"]) }
+        let workerLastActive = worker?.lastActive
         let lastActive = [chat?.lastActive, fallbackChat?.lastActive, workerLastActive].compactMap { $0 }.max()
         let botsMeta = rosterMeta(raw)
         return BotSummary(
             id: id, name: name, title: title, description: description, model: model,
-            isActive: isActive, chat: chat, avatarURL: avatarURL(raw), preview: preview,
+            isActive: isActive, chat: chat, worker: worker, avatarURL: avatarURL(raw), preview: preview,
             lastActive: lastActive, isHidden: botsMeta?.hidden == true,
             hasAvatar: (raw["has_avatar"] as? Bool) == true,
+            hasCustomAvatar: botsMeta?.custom == true,
             isDefault: (raw["is_default"] as? Bool) == true
         )
     }
 
-    private struct RosterMeta { var title: String?; var hidden: Bool? }
+    private static func parseWorker(_ value: Any?) throws -> BotWorkerReference? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard let worker = value as? [String: Any],
+              let sessionID = worker["id"] as? String,
+              safeID(sessionID) else { throw ParseError.invalid }
+        let source = try optionalString(worker, key: "source")
+        let title = try optionalString(worker, key: "title")
+        return BotWorkerReference(
+            sessionID: sessionID,
+            source: source,
+            title: title,
+            lastActive: parseTimestamp(worker["last_active"])
+        )
+    }
+
+    private struct RosterMeta { var title: String?; var hidden: Bool?; var custom: Bool? }
 
     /// Bot Mode keeps its roster display metadata (title, hidden) in the
     /// profile's `ui_meta['hermes-bots']` block so every client sees it.
@@ -280,7 +297,8 @@ final class BotService {
               let bots = uiMeta["hermes-bots"] as? [String: Any] else { return nil }
         let title = (bots["title"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let hidden = (bots["hidden"] as? Bool)
-        return RosterMeta(title: (title?.count ?? 0) <= 512 ? title : nil, hidden: hidden)
+        let custom = (bots["custom"] as? Bool) ?? false
+        return RosterMeta(title: (title?.count ?? 0) <= 512 ? title : nil, hidden: hidden, custom: custom)
     }
 
     private static func rosterTitle(_ raw: [String: Any]) -> String? { rosterMeta(raw)?.title }
@@ -388,8 +406,19 @@ final class BotModeModel: ObservableObject {
     @Published private(set) var isCreatingBot = false
     @Published var searchText = ""
     @Published var botCreationError: String?
+    @Published private(set) var selectedProfileID: String?
     private var service: BotService?
     private var capabilityAvailable = false
+    private let selectedProfileKey = "hermes.dock.selected-profile.v1"
+
+    init() {
+        if let stored = UserDefaults.standard.string(forKey: selectedProfileKey) {
+            let normalized = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+            selectedProfileID = normalized.isEmpty ? nil : normalized
+        } else {
+            selectedProfileID = nil
+        }
+    }
 
     var bots: [BotSummary] { inventory.bots }
 
@@ -431,7 +460,37 @@ final class BotModeModel: ObservableObject {
         let refreshed = await service.list()
         if refreshed.availability == .ready { capabilityAvailable = true }
         inventory = refreshed
+        resolveSelectedProfile()
         isRefreshing = false
+        await loadAvatars()
+    }
+
+    /// Chooses a stable Hermes profile ID, never a display name. Hidden Bots
+    /// are intentionally excluded from the selector.
+    private func resolveSelectedProfile() {
+        guard inventory.availability == .ready else { return }
+        let visible = inventory.bots.filter { !$0.isHidden }
+        let candidate = Self.resolvedProfileID(currentSelection: selectedProfileID, visibleBots: visible)
+        guard selectedProfileID != candidate else { return }
+        selectedProfileID = candidate
+        if let candidate { UserDefaults.standard.set(candidate, forKey: selectedProfileKey) }
+        else { UserDefaults.standard.removeObject(forKey: selectedProfileKey) }
+    }
+
+    static func resolvedProfileID(currentSelection: String?, visibleBots: [BotSummary]) -> String? {
+        if let currentSelection {
+            // An explicit selection that disappeared must remain unresolved;
+            // silently switching profiles would expose another Bot's scope.
+            return visibleBots.first(where: { $0.id == currentSelection })?.id
+        }
+        return visibleBots.first(where: \.isDefault)?.id ?? visibleBots.first?.id
+    }
+
+    func selectProfile(_ profileID: String) {
+        guard let bot = inventory.bots.first(where: { $0.id == profileID }), !bot.isHidden else { return }
+        guard selectedProfileID != bot.id else { return }
+        selectedProfileID = bot.id
+        UserDefaults.standard.set(bot.id, forKey: selectedProfileKey)
     }
 
     /// Returns true when Hermes accepted the new profile; the roster is
@@ -471,7 +530,7 @@ final class BotModeModel: ObservableObject {
     }
 
     var activeNowBots: [BotSummary] {
-        inventory.bots.filter(\.isRecentlyActive)
+        inventory.bots.filter { $0.isRecentlyActive || $0.isWorkingNow }
     }
 
     func loadAvatars() async {
