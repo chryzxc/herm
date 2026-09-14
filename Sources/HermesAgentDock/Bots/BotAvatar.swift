@@ -15,6 +15,8 @@ enum BotAvatarPresentation {
         case "sentry": return "eye.fill"
         case "sentinel": return "checkmark.shield.fill"
         case "aegis": return "server.rack"
+        case "probe": return "flask.fill"
+        case "beacon": return "antenna.radiowaves.left.and.right"
         case "scout": return "binoculars.fill"
         default: return "person.crop.circle"
         }

@@ -181,12 +181,14 @@ final class HermesCLIAdapter {
         if let platform, !platform.isEmpty { words += ["--platform", platform] }
         return try await run(words)
     }
-    func kanbanCreate(boardSlug: String? = nil, title: String, body: String?, sessionID: String? = nil) async throws -> HermesCLIResult {
+    func kanbanCreate(boardSlug: String? = nil, title: String, body: String?) async throws -> HermesCLIResult {
         var words = kanbanWords(boardSlug: boardSlug, action: "create") + ["--json"]
         if let body, !body.isEmpty { words += ["--body", body] }
-        if let sessionID, !sessionID.isEmpty { words += ["--session", sessionID] }
         words.append(title)
         return try await run(words)
+    }
+    func kanbanAttributeSession(taskID: String, sessionID: String) async throws -> HermesCLIResult {
+        try await run(["bash", "\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh", taskID, sessionID])
     }
     func kanbanComplete(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "complete") + [taskID, "--summary", "Completed from Hermes Control"]) }
     func kanbanBlock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "block") + [taskID, "Blocked from Hermes Control"]) }

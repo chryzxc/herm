@@ -1,540 +1,145 @@
 # Hermes Agent Dock
 
-Hermes Agent Dock is a native macOS menu-bar control surface for a local Hermes
-Agent session. Its unified popover keeps Ask, voice, sessions, and quick capture
-on the left, with Today, Inbox, Activity, and Core controls on the right.
+A native macOS menu-bar control surface for a local [Hermes Agent](https://github.com/NousResearch/hermes-agent) session.
 
-## Features
+The Dock lives in your menu bar as a unified popover: conversations, voice, sessions, and quick capture on the left; Today, Inbox, Activity, and Core controls on the right. It is a projection and control surface for the Hermes runtime you already have installed — never a second runtime.
 
-- **Local Hermes connection.** Starts a loopback-only Hermes backend, establishes
-  an authenticated WebSocket session, and clearly shows whether the CLI agent is
-  connected.
-- **Conversation workspace.** Streams assistant messages, supports multiple image
-  attachments and approvals, and lets you interrupt an in-progress request.
-  Selected and pasted images can be reviewed and removed individually before
-  sending. PDFs may be attached through Hermes' dedicated attachment RPC; the
-  Dock records the filename in the transcript and enforces its 25 MB limit
-  again immediately before upload. Image bytes are uploaded through Hermes'
-  dedicated attachment RPC.
-  While Hermes is responding, the same composer automatically submits typed
-  guidance as in-turn steering. Tool calls stay
-  out of the conversation transcript. Streaming deltas are coalesced before
-  publication, WebSocket frames are decoded off the main thread, and parsed
-  message Markdown is cached per message, so long sessions, streaming
-  responses stay responsive. The transcript uses an exact recent-message
-  window so active session updates cannot inflate a lazy document-height
-  estimate; reaching the top loads older history in bounded pages while
-  preserving the current reading position. The
-  transcript scroll view is rebuilt per session and starts bottom-anchored, so
-  opening or switching a conversation lands on the latest message without a
-  past-the-end blank viewport; programmatic scrolls target a non-lazy bottom
-  sentinel, the native scroll boundary rejects offsets invalidated by later
-  size contraction, and a viewport parked at the bottom stays pinned to the
-  streaming response.
-  Session
-  restoration shows
-  an explicit loading state that prevents prompts from being sent while a
-  conversation is being rehydrated.
-- **Explicit session lifecycle.** Restoring or selecting an existing session
-  never creates a replacement session implicitly. A backend session is created
-  only after the user chooses New Chat, and the new-chat transition is guarded
-  while creation is in progress so prompts, voice, and control actions cannot
-  race session setup. Session data stays isolated to its session: streamed
-  events are accepted only when they prove ownership of the open session, and
-  a resume response whose session identity resolves elsewhere (for example to
-  the session that is currently responding) fails closed instead of projecting
-  another conversation under the session the user opened. A resumed
-  conversation may still receive a fresh runtime session id when the response
-  aliases the requested session, and the lazily created canonical Bot Chat may
-  resolve by title.
-- **Session workspace surfaces.** The session header switches the conversation
-  column between Chat, Talk, Explorer, Source Control, and Pull Requests.
-  Explorer browses the session repository's file tree in the center pane and
-  opens the selected file in the inspector as the blame-aware editor (with the
-  existing explicit save action). Source Control lists the repository's
-  staged, unstaged, and untracked files in the center pane and previews the
-  selected file's bounded diff in the inspector. Pull Requests lists open pull
-  requests scoped to the session's repository only — no account-wide GitHub
-  search — and reuses the pull-request detail pane (Summary and Code tabs,
-  comments, status changes) in the inspector, including its Open chat action.
-  All three projections resolve the repository from the active session's
-  project membership, clear their selection when that repository changes, and
-  fail closed with explicit empty states when the session has no bound
-  repository or GitHub remote.
-- **Interactive clarification requests.** When Hermes pauses for clarification,
-  the conversation shows the question as an action-needed state, presents any
-  suggested choices, and lets the user edit and submit a response through
-  `clarify.respond`. The Dock preserves the clarification state until Hermes
-  accepts the response and resumes the turn.
-- **Native Markdown links.** Links in assistant Markdown retain native
-  SwiftUI/AppKit interaction, including link tinting, hover behavior, and text
-  selection without breaking paragraph wrapping.
-- **General control center.** Today summarizes current focus, approvals,
-  failures, due Apple Reminders, active Hermes work, and scheduled jobs. Inbox
-  groups actionable approvals, clarifications, failures, and completed work.
-  Activity and Core expose live runtime information, capabilities, integrations,
-  health, and setup guidance. Current focus is an authoritative Hermes session
-  or most recently selected control reference; any local task completion label
-  is presentation metadata, not a second source of truth.
-- **Provider setup guidance.** Today renders setup cards for unavailable
-  Reminders, Notes, Calendar, Messaging, and Email providers instead of showing
-  empty or invented content. When Hermes' installed skill documents a setup
-  command, the card offers it as a copy-only recovery action.
-- **Active-work projection.** Today can show active Hermes sessions and managed
-  delegated agents, and managed processes, with controls to open related
-  sessions when Hermes provides their identifiers.
-- **Scheduled-work controls.** Today lists cron jobs and supports related-session
-  opening.
-- **Automations.** The Automations tab can review, create, and remove Hermes cron
-  jobs through `cron.manage` only when the runtime scheduler
-  capability is verified, and reads recent run history
-  through Hermes `cron runs`. When the installed Hermes CLI supports it, a
-  confirmed Run Now action starts a job immediately. Jobs expose a confirmed
-  edit form only for name, schedule, and prompt values explicitly returned by
-  Hermes; unchanged or unavailable fields are never sent. History remains a
-  live CLI projection rather than a second local execution database, and report
-  files are not read from Hermes' private filesystem.
-- **Bots.** The left navigation rail carries a Bots destination beside
-  Conversations, matching Hermes' documented Bot Mode placement; selecting
-  it opens a full Bots page in the workspace pane. Each Bot is a Hermes
-  profile read through the verified `profiles.list` contract: roster title
-  (from profile ui_meta), model, latest-message preview, timestamp, hidden
-  state, and avatar. Avatars render from the profile's stored asset via
-  `profiles.get_asset` with a deterministic name-derived fallback face, and
-  can be uploaded, AI-generated through `image.generate`, or cleared. An
-  Active-now strip shows Bots with fresh worker or chat activity (~90s),
-  matching the documented presence behaviour. Selecting a Bot opens its
-  canonical Bot Chat through profile-scoped `session.resume`; when Hermes
-  has not reported a canonical session yet, the Dock resumes by the
-  canonical `Bot Chat` title and Hermes lazily creates the chat on that
-  profile. The page offers the documented New Agent quick path — Name,
-  Title, Description — plus the Advanced disclosure (clone from an existing
-  profile, create empty without bundled skills) through `profiles.create`;
-  the roster title persists as profile ui_meta via `profiles.configure`.
-  Edit Profile reopens the live surface: avatar, title, description, model
-  pin through the `model.options` catalogue with Hermes' guarded-model
-  confirmation handshake, the full SOUL.md, and per-skill, per-toolset, and
-  per-MCP-server enablement. Duplicate clones a Bot through
-  `profiles.create clone_from`. Hide/Unhide Bot is display-only roster
-  state stored in profile ui_meta. Routines are namespaced
-  `[bot:<name>]` Hermes cron jobs managed through `cron.manage` (list, add,
-  remove). Hermes remains the authority for every outcome, and the roster
-  is refreshed from Hermes rather than optimistically patched. Opening the
-  page verifies the profiles contract directly — mirroring Hermes' own Bot
-  Mode feature detection — so a slow or starved capability batch cannot
-  leave Bots falsely unavailable, and runtimes without the `profiles.*`
-  RPCs are reported as unsupported. The Dock stores only stable display
-  fields — unknown roster keys Hermes adds are ignored, and credentials,
-  memory, profile paths, and tool payloads never enter Dock state (the
-  editor's explicit SOUL.md write is the single sanctioned instruction
-  path). Profile deletion (no gateway RPC yet), group chats, cross-machine
-  connections, bot-to-bot @mention composer autocomplete, and
-  pixel-pet/blob-face avatars remain planned until their Hermes contracts
-  are exposed and verified.
-- **Session Bot Activity.** The session Activity surface projects only
-  session-attributed Kanban tasks assigned to visible Hermes Bot profiles.
-  Bot-owned rows show the profile name, task status, and canonical task ID;
-  they open the same Kanban task as the existing session task view. Generic
-  delegated agents remain separate, and Bot Chat recency is never used to
-  invent task ownership or duration. Tasks from another session and tasks
-  assigned to unknown profiles are omitted.
-- **Hermes Projects.** Projects reads the authoritative `projects.tree`
-  projection from Hermes, showing active project context, repository counts,
-  and grouped session previews without maintaining a second project database.
-  Selecting a project loads its grouped sessions through
-  `projects.project_sessions`; selecting a session activates it in Ask.
-- **Connected-source search.** Search keeps a lightweight in-memory projection
-  of Hermes sessions, projects, Inbox items, and Apple Reminders. Hermes remains
-  authoritative for session results, and no durable local search database is
-  introduced until cross-source indexing requires one.
-- **Narrow-screen mode.** On displays too narrow for the split view, the Dock
-  switches between Ask and Control as a single pane without horizontal clipping.
-- **Native macOS presentation.** The popover follows the visual language of
-  macOS menu-bar panels: an appearance-aware navy surface, system typography,
-  native controls, restrained system-blue selection, and divider-led sections.
-  Light and dark appearances use adaptive colors rather than a forced color
-  scheme. Status colors are reserved for meaning: blue for active work, green
-  for healthy or completed work, amber for warnings, and red for failures.
-- **Readable controls.** The compact Control surface uses a deliberate type
-  scale: 13pt body text, 11–12pt supporting metadata, 15pt section headings,
-  and 18pt overview metrics. Grouped metric tiles, padded list rows, stronger
-  section separators, and tuned secondary-label contrast make long activity
-  feeds easier to scan while reducing visual fatigue.
-- **Single-row session configuration.** The active model and thinking depth
-  live in one divider-led control rail, keeping both settings visible and
-  independently selectable without adding a second configuration row.
-- **Native interactions.** Secondary controls use macOS borderless buttons,
-  switches, menus, and rounded text fields with preserved hit targets. Primary
-  actions use the system prominent treatment instead of custom sci-fi chrome.
-- **Quick capture.** The composer offers transparent prompt shortcuts for
-  reminders, Notes, research, summaries, recurring automation, review, email,
-  messaging, connected-source search, and Kanban tasks. Provider availability is
-  shown in Core before use. Core also provides a recorder for the configurable
-  global shortcut that opens the Dock and focuses Ask.
-- **Kanban boundary.** When Hermes exposes its Kanban CLI, the Kanban tab reads
-  the authoritative board and supports confirmed task creation through Hermes
-  `shell.exec`, plus confirmed complete, block/unblock, archive, comment,
-  schedule, assign/reassign, promote, and reclaim actions when their individual
-  Hermes CLI contracts are verified. The Dock can also open structured task
-  details and run history when the installed CLI exposes the corresponding JSON
-  commands. Native status/assignee/mine/sort filters are forwarded to Hermes,
-  including an optional current-session filter, and the assignment picker is
-  populated from `kanban assignees --json`. Hermes v0.19.1 does not provide an
-  unschedule operation, so the Dock deliberately does not invent one. The
-  Dock treats board selection as local view state and scopes every supported
-  task command with Hermes' per-call `kanban --board <slug>` option. Choosing a
-  board in the Dock never changes Hermes' shared current-board pointer. The
-  Dock does not create a competing local board or expose permanent purge;
-  desktop Kanban RPC actions remain unavailable.
-- **Daily workflow controls.** The Control sidebar includes a local Command-K
-  palette for existing Dock actions and local Inbox filters. The palette cannot
-  execute arbitrary shell or Hermes commands.
-- **Developer command center.** Today starts with a Mission Control focus strip
-  and an honest readiness state. Changes provides a read-only, bounded Git
-  working-tree and bounded diff projection, including new untracked files.
-  Loaded diffs receive a local, added-line-only
-  pre-commit signal pass for conflict markers, likely credential assignments,
-  debug statements, unfinished-work markers, and bare Python exception clauses;
-  suspected credential values are never repeated in the UI. Verification reuses Hermes-provided project
-  facts and evidence without inventing commands; Repositories lists local
-  repositories explicitly attached to Hermes sessions. Command-K includes
-  capability-aware navigation, refresh, and transparent built-in review recipes.
-- **Local verification terminal.** Session Terminal runs only repository-fact-
-  derived, allow-listed recipes through a bounded local PTY. It has no free-form
-  command input or shell escape hatch; when no valid recipe is available it shows
-  an explicit unavailable state. Verification results carry repository
-  identity/fingerprint metadata, and terminal/provider failures never create a
-  second task store.
-- **GitHub pull-request context.** Changes discovers GitHub SSH/HTTPS remotes
-  and can show open pull requests, check status, review state, actionable
-  blockers, and deep links. Missing remotes, unavailable access, and stale
-  refreshes are explicit. Draft creation and title/body updates use typed,
-  confirmation-gated requests; merge, commenting, force-push, and workflow
-  dispatch are intentionally unsupported.
-- **Repository review and watch.** Changes can run a bounded repository-wide
-  local review over staged, unstaged, and untracked files, reporting only safe
-  finding metadata and clearly marking truncated, binary, unreadable, or
-  over-limit coverage as partial. A complete baseline also requires every
-  covered file to be explicitly marked reviewed; any Git-derived fingerprint
-  change immediately makes it stale. Partial coverage can be acknowledged only
-  after every covered file is reviewed and remains visibly partial. Baselines
-  persist only stable fingerprints and acknowledged finding IDs. Repositories can be passively watched with
-  opt-in notifications; multiple explicitly watched repositories share a
-  managed watcher, and a detected change refreshes local state and adds an
-  in-app notice with explicit review and verification actions, but never starts
-  Hermes work automatically. Repositories also
-  expose a read-only worktree fleet with local session association controls;
-  inspection is bounded to eight worktrees at once.
-- **Canonical-source projections.** Hermes remains authoritative for sessions,
-  agents, approvals, tools, skills, profiles, and cron. Apple Reminders remains
-  authoritative for reminder content. The Dock stores references, display state,
-  UI preferences, and cached metadata rather than duplicating those systems.
-- **Bot-scoped navigation.** When Hermes exposes its Bot roster, the left
-  navigation header becomes a profile selector showing each visible Bot's
-  avatar, friendly name, and optional title. The selected profile is persisted
-  by stable Hermes profile ID and scopes Conversations, Projects, project
-  actions, and newly created chats. Switching profiles starts a fresh draft,
-  clears the previous profile's rows while the target reloads, and discards
-  late responses from the old profile. Global destinations and canonical Bot
-  Chat routing remain unchanged. Unsupported or single-profile runtimes keep
-  the existing identity header and launch-profile behavior.
-- **Inbox presentation state.** Dismissed items remain dismissed locally, while
-  snoozed items reappear automatically after one hour. Neither action mutates
-  the Hermes or Apple source. Due Apple Reminders are projected into the same
-  stable attention stream with `appleReminder:<id>` references.
-- **Clarification responses.** Inbox clarification requests open a response
-  sheet and submit the entered text through Hermes `clarify.respond`. Approval,
-  clarification, and failure notifications open the exact attention item.
-- **Completion alerts.** Core provides an opt-in, locally persisted notification
-  for completed Hermes work while the Dock is hidden; it is disabled by default.
-- **Menu-bar unread badge.** A compact red badge appears on the Hermes status
-  icon when hidden work completes or needs attention, and clears when the Dock
-  is opened.
-- **Safe reminder completion.** Clicking a due reminder opens a confirmation
-  before the Dock submits a transparent completion request through Hermes and
-  the Apple Reminders skill.
-- **Conditional development context.** Repository status appears only when the
-  active Hermes work references a repository; development is a contextual module,
-  not the product's organizing model.
-- **Live agent activity.** Shows real Hermes subagents by name, with a stable
-  identity-based accent color and a compact current-status card. Selecting an
-  agent expands its Hermes event history grouped into Pending, Running, and
-  Completed states. The Active Pipeline likewise stays collapsed until an
-  individual event is selected; the expanded detail can show the Hermes event
-  text, tool name, handoff target, tool input/result, and a color-coded diff
-  preview when Hermes supplied one. Batch `delegate_task` calls render one row
-  per worker, using Hermes' human-facing `agent_role` (or a goal-derived role
-  for older payloads), and background dispatch acknowledgements remain running
-  until Hermes emits the worker's terminal lifecycle event. Each bounded
-  activity window is retained locally by Hermes session ID, so switching
-  sessions or relaunching the Dock restores that session's agents and pipeline.
-  This local projection is operational context, not an audit database. Its Now
-  view persists one task per Hermes session, keeps task state
-  synchronized with live execution, and shows the selected repository's
-  branch, working-tree state, and latest commit. It deliberately does not fall
-  back to sample or mock data. The Active Agents section includes an inline
-  handoff map derived from live parent IDs and Hermes handoff events. The map
-  lays out recursive agent-to-agent delegation as a left-to-right scrollable
-  tree, resolving both stable agent IDs and child-session parent references so
-  every reported generation remains nested. It animates active directional
-  flows and shows each agent's current task, lifecycle, and tool count. The
-  activity surface can switch between a bounded Live view and the full
-  available history; embedded views limit the newest pipeline items and reduce
-  continuous animation to keep the compact Control pane responsive.
-  Selecting a node discloses that agent's canonical in-memory
-  activity beneath the map. Parent-session tool calls are labelled Orchestrator
-  so they remain distinct from explicitly attributed delegated-agent activity.
-- **Session inspector activity summary.** The session inspector surfaces the
-  latest bounded pipeline activity first, with task-oriented labels and details;
-  when no pipeline activity is available, it falls back to the newest session
-  events rather than relying on insertion order.
-- **Session Cockpit.** Core shows the active session's Hermes-reported token
-  usage and context breakdown when available. It also shows Hermes prompt
-  budget, verification evidence, and a compact steering control while a turn is
-  working. Steering queues guidance for Hermes's next tool-result boundary
-  without restarting the turn; rejected text remains in the field instead of
-  being silently discarded. When Hermes advertises rollback checkpoints, Core
-  lists a bounded session-scoped history, can show a bounded diff, and requires
-  explicit destructive confirmation before restore; restoring is unavailable
-  during an active turn.
-- **Provider quota.** The Global Quota tab lists every supported subscription
-  provider — Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity —
-  always. Connected providers show their remaining-allowance windows;
-  providers without a working login render disabled with a safe diagnostic
-  and a Connect action instead of disappearing. Connecting is provider
-  specific: Codex and Claude run their CLI's own login command (browser
-  sign-in; the Dock never stores those credentials), OpenCode Go and GLM
-  accept a pasted API key stored in the Dock's owner-only provider config
-  (no Keychain is used), and Antigravity opens the app to sign in. Antigravity
-  quota itself is read credential-free from the local language server of a
-  running Antigravity app or `agy` CLI — no Keychain credential, no OAuth
-  refresh, no remote Google endpoint — so it is explicitly unavailable while
-  Antigravity is not running.
-- **Adaptive composer.** The chat composer grows with longer prompts up to six
-  lines, then scrolls within the field so the send controls remain visible.
-- **Context guardrails and handoffs.** Hermes-reported context use is labelled
-  normal below 80%, warning at 80–89.99%, and critical at 90% or higher. The
-  Dock offers explicit branch, confirmed compression, and a confirmed no-edit
-  Hermes background handoff. Handoff Markdown is retained only in the current
-  runtime and can be copied or opened as an editable Kanban draft.
-- **Verification Center.** Core consumes Hermes `project.facts` and
-  `verification.status` to show detected manifests, package managers, exact
-  verification commands, and best-known evidence. Targeted evidence remains
-  labelled targeted; the Dock never upgrades it into a repository-wide claim.
-  Commands can be copied or submitted to Hermes as explicit background tasks;
-  supported repository recipes can also be run explicitly in the local
-  Session Terminal with bounded output and exit-code evidence.
-- **Background tasks.** Activity can submit a prompt through Hermes
-  `prompt.background`, track its task ID, and display the eventual
-  `background.complete` output. Background rows are collapsed by default and
-  are retained only in the current Dock runtime window.
-- **Session and runtime controls.** Core provides confirmed rename, redirect,
-  branch, compress, undo, delegation pause/resume, native-agent interrupt, and
-  session-scoped process-stop actions. Hermes responses remain authoritative;
-  the Dock does not optimistically invent final state.
-- **Runtime core.** Exposes the active provider/model, execution limits,
-  installed skills, configured MCP servers, and enabled plugins supplied by
-  Hermes. Unavailable gateway/version states include copyable recovery commands;
-  the Dock never runs recovery commands automatically. Core can explicitly and
-  manually check the NousResearch release feed and run the allow-listed
-  `hermes update` command after confirmation, showing streamed progress.
-  When a session is active, configured MCP tools can be explicitly reloaded after
-  confirmation; the reload applies to the next session and does not rewrite the
-  active conversation. Model/reasoning selection is a session-scoped Hermes
-  mutation and remains disabled while no session exists or while a change is
-  pending. Missing structured runtime data is shown as unavailable/stale rather
-  than inferred from a version string.
-  Core also shows a live, read-only MCP inventory with each server's transport,
-  tool scope, and enabled state; third-party MCP browsing/actions remain
-  dependent on future Hermes RPCs. When Hermes exposes `mcp test`, Core can run
-  a read-only connection test for a configured server and show the result.
-- **Read-only Hermes health.** When the installed CLI advertises the commands,
-  Core displays a compact Journey projection plus sanitized session-store and
-  memory-health summaries. These cards never edit memory, sessions, skills, or
-  Hermes configuration.
-- **Kanban health and attachments.** Kanban diagnostics and attachments are
-  read-only, board/task scoped, and use Hermes JSON output. Diagnostic and
-  attachment identities remain stable even when Hermes omits an ID. Prompt
-  budget and Kanban refreshes retain their last successful projection when a
-  transient request fails and mark the section stale.
-- **Capability-gated controls.** Optional Dock controls are classified at
-  runtime as verified Hermes gateway RPCs, stable read-only Hermes CLI
-  projections, confirmed CLI mutations, unsupported operations, or external
-  setup. Mutation probes require the documented help terms the Dock will send,
-  not merely a successful `--help` exit. A missing or failed capability probe fails closed and leaves the
-  existing recovery guidance visible; the Dock does not infer support from a
-  Hermes version string alone.
-- **Refresh resilience.** Automations, Projects, Core, Kanban, cron history,
-  and MCP inventory show their own refresh state. A transient Hermes failure
-  keeps the last successful projection visible, marks it stale, and keeps the
-  error local to that section instead of replacing the data with an empty state.
-- **Voice conversation.** Prefers Hermes' native voice gateway: server VAD,
-  Hermes transcription, streaming TTS, and spoken barge-in. The Dock retains
-  macOS speech recognition and system speech as an explicitly labelled fallback
-  when Hermes voice dependencies are unavailable. The voice orb responds to
-  microphone loudness in local fallback mode, and the voice toolbar includes
-  both the Control surface and request cancellation. Native voice also shows
-  time to first streamed text and end-to-end turn duration.
-- **Hermes agent updates.** Core compares the installed Hermes version with the
-  latest NousResearch/hermes-agent GitHub release. A confirmed update runs
-  `hermes update` and shows live output, elapsed time, and the resulting
-  version. Updates never start automatically.
-
-## Control authority and unavailable states
-
-The Dock is a projection and control surface, not a replacement Hermes runtime.
-Hermes owns sessions, agents, prompts, models, skills, plugins, MCP configuration,
-cron, and other agent state. Local Git, GitHub, Apple Reminders, and presentation
-preferences remain authoritative only for the data they own. A Dock action is
-enabled only after its typed Hermes RPC/CLI contract or local adapter has been
-verified; missing, malformed, denied, or unsupported capability data fails closed
-and remains visibly unavailable (or stale when a prior projection exists).
-
-- **Model and reasoning:** the active session's Hermes configuration is
-  authoritative. Changing it is an explicit user selection sent through Hermes;
-  no-session and in-flight states are unavailable, and the displayed value is
-  updated only after Hermes accepts the change. Default configuration changes
-  are separate Hermes mutations and are not implied by changing the active
-  session. A running turn applies an accepted change to the next turn.
-- **Skills and plugins:** Core may display Hermes-provided inventories. The Dock
-  does not install, remove, enable, disable, or configure them; those actions stay
-  unavailable until Hermes exposes a verified typed contract. No restart is
-  silently performed by the Dock.
-- **MCP:** configured-server inventory is read-only, and a verified reload may be
-  requested only from an active session after confirmation. The reload is a
-  Hermes/runtime operation for subsequent work; it does not mutate the current
-  transcript. Adding, removing, authenticating, browsing, or invoking
-  third-party tools remains unavailable pending the upstream contracts below.
-- **Updates and recovery:** `hermes update` is an explicit confirmed mutation and
-  reports its streamed result. The user must restart Hermes for new sessions to
-  use an updated agent. Recovery/setup guidance is copy-only unless a separately
-  verified action is listed; the Dock never runs recovery commands automatically.
-
-## Voice behaviour today
-
-Voice now prefers Hermes' native continuous voice loop:
-
-```text
-microphone → Hermes VAD/transcription → Hermes text request → streaming TTS
-           → full-duplex listening / spoken barge-in
 ```
-
-If Hermes reports unavailable voice dependencies, the Dock presents a visible
-`LOCAL VOICE FALLBACK` state and uses the earlier continuous turn-based flow:
-Apple speech recognition → end-of-turn silence → Hermes text request → macOS
-speech synthesis → listening resumes. Each resumed turn clears the completed
-turn's cancellation state, and a transient local capture failure can be retried
-by starting Talk again.
-
-The selected Hermes model still affects response latency and quality, but it
-does not by itself make a provider-native audio session. Tool use, model
-queueing, turn detection, and the configured TTS provider also contribute to
-perceived delay.
-
-## Realtime voice plan
-
-This is the implementation plan for true low-latency, interruptible voice while
-keeping Hermes as the provider/model control plane.
-
-1. **Expose model capabilities from Hermes.** Extend the gateway/catalogue data
-   to report whether the selected provider and model support text chat, streaming
-   audio input/output, server VAD, and interruption. The picker must prevent a
-   realtime mode from being selected for a text-only model.
-2. **Add a provider-neutral voice-session protocol.** Define a Hermes gateway
-   voice-session lifecycle (create, configure, send audio, receive audio/text,
-   cancel, close). Hermes can then route to OpenAI or another provider without
-   putting vendor-specific transport details in the Dock UI.
-3. **Stream audio instead of waiting for transcription.** Capture small PCM
-   chunks, send them during speech, and play returned audio chunks as they
-   arrive. Use server-side VAD when available, with a local VAD fallback and
-   configurable turn-detection thresholds.
-4. **Support barge-in.** Hermes-native voice already handles spoken barge-in by
-   cutting playback and interrupting the running turn; the existing Stop
-   controls remain the manual equivalent. A provider-native audio session must
-   preserve that same behavior.
-5. **Make latency observable.** The Dock now displays time to first streamed
-   text and end-to-end request completion for native Hermes voice. Extend the
-   gateway later with audio-output timestamps to isolate provider audio latency
-   from model and tool work.
-6. **Degrade safely.** If the selected model, Hermes version, or network session
-   lacks realtime support, keep the current continuous turn-based voice mode and
-   explain why in the UI rather than silently pretending it is realtime.
-
-The Dock currently integrates Hermes' `voice.toggle`, `voice.record`, and
-voice events alongside `prompt.submit` and streamed message events. It does not
-yet establish a provider-native bidirectional audio session. Therefore steps
-1–3 still require gateway and provider work in Hermes, not only a Dock UI
-change. An OpenAI realtime-capable model is one possible adapter, but it must be
-surfaced by Hermes as a supported capability before the Dock uses it.
-
-For the current continuous voice mode, the Dock keeps the ordinary turn recorder
-closed while streamed TTS drains after `message.complete`. Hermes' full-duplex
-listener still owns spoken barge-in during playback; the next quiet listening
-turn opens only after the estimated speech and CoreAudio tail have finished.
-This prevents speaker output from being transcribed as the user's next reply.
-
-## Run locally
-
-```sh
 swift run
 ```
 
-The app expects the `hermes` executable to be available on the user’s PATH. On launch it starts a loopback-only Hermes backend, connects over Hermes’s authenticated `/api/ws` WebSocket gateway, and speaks the TUI Gateway JSON-RPC protocol. It uses `session.create`, `prompt.submit`, `session.interrupt`, and `approval.respond`, streams assistant messages, and surfaces approval requests in the native UI.
+## Table of contents
 
-The Dock targets the locally installed Hermes Agent contract. Optional controls
-fail closed when their Hermes RPC or CLI capability is unavailable. Core updates
-Hermes only through the explicit, confirmed `hermes update` action; it does
-not configure providers, invoke arbitrary shell commands, expose bulk
-destructive controls, or create a second Hermes runtime.
+- [Requirements](#requirements)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Getting started](#getting-started)
+- [Development](#development)
+- [Current limitations](#current-limitations)
+- [Maintaining this document](#maintaining-this-document)
 
-## Documentation rule
+## Requirements
 
-Every user-facing feature or behavior change must update the relevant section of
-this README in the same change set. Mark incomplete work as planned, and do not
-describe mock data or provider capabilities as live functionality. Calendar,
-email, iMessage, automation fields Hermes does not return, and third-party MCP
-browsing remain planned follow-on integrations. Read-only MCP connection inventory is available
-today; the Dock does not add, remove, authenticate, or invoke MCP servers
-directly.
+- macOS with SwiftUI (built and tested on Apple Silicon)
+- Swift toolchain (`swift build` / `swift test`)
+- The `hermes` executable on your `PATH` (installed via the Hermes Agent setup)
 
-## Hermes contracts still required
+## Features
 
-The Dock intentionally leaves these features unavailable until Hermes exposes a
-stable, capability-advertised gateway RPC or JSON response:
+### Conversations
 
-- Project mutation: structured identifiers, current values, mutation
-  request/response schemas, and conflict errors. Kanban board enumeration is
-  available through Hermes v0.19.1's verified JSON/CLI contract. The Dock
-  currently keeps project creation, activation, archive, and deletion hidden
-  until Hermes publishes verified per-method mutation capabilities. The Dock uses
-  local board selection plus per-call `--board` scope, so it deliberately does
-  not expose a shared-board switch action.
-- Third-party MCP discovery/invocation: scoped authorization, tool schemas, and
-  redacted results; the Dock will not call providers directly.
-- Structured Cron reports and richer diagnostics: response schemas that avoid
-  reading private Hermes directories or parsing terminal tables.
-- Provider-neutral realtime audio: voice session create/configure/audio/cancel/
-  close operations plus model VAD/audio capability metadata.
-- Calendar access: explicit provider capability, authorization state, and
-  stable event operations.
-- Durable activity feeds, fleet session usage, and authoritative project
-  repository enumeration: see
-  `HERMES_COMMAND_CENTER_CONTRACTS.md` for the required fail-closed contracts.
+- **Streaming chat** with bottom-anchored transcript, bounded history paging, native Markdown links, and in-turn steering — typed guidance is submitted to the running turn at its next tool boundary.
+- **Attachments**: multiple images (reviewable and removable before sending) and PDFs through Hermes' dedicated attachment RPC, with the 25 MB limit enforced again before upload.
+- **Explicit session lifecycle**: selecting or restoring a session never creates a replacement implicitly; new chats are created only on request, guarded against races. Session data stays isolated to its owning session and fails closed on identity mismatch.
+- **Clarification requests** render as action-needed states with editable responses submitted through `clarify.respond`.
+- **Session surfaces**: the session header switches the conversation column between **Chat**, **Talk**, **Explorer**, **Source Control**, and **Pull Requests** — Explorer browses the session repository with a blame-aware editor, Source Control shows staged/unstaged/untracked files with bounded diffs, and Pull Requests lists open PRs scoped to the session's repository.
+- **Context guardrails**: Hermes-reported context use is labelled normal/warning/critical (80% / 90% thresholds) with explicit branch, confirmed compression, and no-edit background handoff actions.
 
-## Quality checks
+### Voice
 
-Run the same baseline checks before submitting changes:
+- Prefers Hermes' native continuous voice loop (server VAD, Hermes transcription, streaming TTS, spoken barge-in) with an explicitly labelled macOS speech fallback when voice dependencies are unavailable.
+- Native voice reports time to first streamed text and end-to-end turn duration.
 
-```sh
-swift build
-swift test
+### Bots
+
+- A full **Bots page** built on the verified Hermes `profiles.*` contract: roster with titles, models, latest-message previews, active-now strip, and avatars (stored asset, upload, AI generation, or deterministic fallback).
+- Open a Bot's canonical **Bot Chat**; create new agents (quick path or advanced clone/empty), edit profiles (avatar, title, description, guarded model pin, full SOUL.md, per-skill/toolset/MCP-server enablement), duplicate, and hide/unhide.
+- **Routines** per bot via namespaced `[bot:<name>]` cron jobs.
+- **Bot-scoped navigation**: the nav header becomes a profile selector scoping conversations, projects, and new chats to the selected bot.
+- **Session Bot Activity** projects session-attributed Kanban tasks owned by visible bot profiles.
+
+### Control center
+
+- **Today**: current focus, approvals, failures, due Apple Reminders, active Hermes work, scheduled jobs, and setup cards for unavailable providers (with copy-only recovery commands).
+- **Inbox**: actionable approvals, clarifications, failures, and completed work — dismissed items persist, snoozed items return after an hour, due Reminders project into the same stream.
+- **Activity**: live delegated agents by name with event history, an animated agent-to-agent handoff map, background task tracking, and a per-session Now view synced to live execution.
+- **Core**: session cockpit (token usage, context breakdown, prompt budget, steering, rollback checkpoints with confirmed restore), runtime inventories (skills, MCP servers, plugins), session/runtime controls (rename, branch, compress, undo, delegation pause, interrupt), read-only Hermes health, and opt-in completion notifications.
+
+### Developer command center
+
+- **Changes**: bounded read-only Git working-tree and diff projection (including untracked files) with a local added-line pre-commit signal pass (conflict markers, likely credentials, debug statements, unfinished-work markers, bare exception clauses — credential values are never repeated in the UI).
+- **GitHub context**: open pull requests, check status, review state, actionable blockers, and deep links for the session repository; confirmed draft creation and title/body updates. Merge, commenting, force-push, and workflow dispatch are intentionally unsupported.
+- **Repository review and watch**: bounded repository-wide local review with explicit partial-coverage accounting and fingerprint-stale invalidation; passive opt-in repository watching with in-app notices that never start Hermes work automatically; read-only worktree fleet (bounded to eight at a time).
+- **Verification Center**: manifests, package managers, exact verification commands, and best-known evidence from Hermes `project.facts` / `verification.status`; targeted evidence is never upgraded to repository-wide claims.
+- **Session Terminal**: runs only repository-fact-derived, allow-listed recipes through a bounded local PTY — no free-form shell input.
+- **Command-K palette** for Dock actions and Inbox filters; it cannot execute arbitrary shell or Hermes commands.
+
+### Kanban
+
+- Reads the authoritative Hermes board and supports confirmed task creation plus complete, block/unblock, archive, comment, schedule, assign/reassign, promote, and reclaim — each individually capability-gated against the installed Hermes CLI contract.
+- Native status/assignee/mine/sort/session filters are forwarded to Hermes; board selection is local view state scoped per call with `--board <slug>` and never moves Hermes' shared current-board pointer. Read-only diagnostics and attachments use Hermes JSON output.
+
+### Automations and quota
+
+- **Automations**: review, create, and remove Hermes cron jobs through `cron.manage` when the scheduler capability is verified; confirmed Run Now when supported; live run history through `cron runs`.
+- **Global Quota**: always lists every supported subscription provider (Codex, OpenCode Go, GLM Coding Plan, Claude, Antigravity). Connected providers show remaining-allowance windows; others render disabled with a safe diagnostic and a provider-specific Connect action. The Dock never stores CLI OAuth credentials; OpenCode Go and GLM keys live in owner-only local provider config; Antigravity quota is read credential-free from its local language server.
+- **Hermes updates**: explicit, confirmed `hermes update` with streamed progress — never automatic.
+
+### Office Preview
+
+- Control → More → Office Preview renders a furnished 3D office and garden built locally from original RealityKit geometry (no purchased assets). Every visible bot gets one stable chibi character matched to Kanban tasks by profile ID: running work goes to the computers, review to the boardroom, planning to the Kanban room; idle bots take patio breaks, coffee, and walks. Task ownership and status are live; office actions are simulated.
+- Live Nexus avatars render for working or attention-needed conversations. Status icons, hover details, a task board, workspace/whole-office camera presets, and full keyboard camera navigation (WASD/arrows, Q/E, R/F, +/−, Shift; Home resets). Reduce Motion disables travel, pulses, and decorative animation.
+
+### Presentation
+
+- Native macOS menu-bar presentation: appearance-aware navy surface, system typography, native controls, restrained selection, divider-led sections, and a deliberate compact type scale.
+- Status colors are reserved for meaning (blue active, green healthy, amber warning, red failure).
+- Menu-bar unread badge for hidden completed/attention work; narrow-screen mode swaps Ask/Control as a single pane; adaptive composer grows to six lines then scrolls.
+
+## How it works
+
+```text
+menu-bar popover ─SwiftUI─► Dock services ─WebSocket /api/ws─► local Hermes gateway
+                                   │                            (loopback-only, authenticated)
+                                   └── capability-gated Hermes CLI (shell.exec) for kanban, cron, update
 ```
 
-The test suite and release build are also run on every pull request and on pushes
-to the default branch. Test counts are intentionally not hard-coded here because
-they change as coverage evolves.
+- **Local connection.** On launch the Dock starts a loopback-only Hermes backend, establishes an authenticated WebSocket session, and speaks the TUI Gateway JSON-RPC protocol (`session.create`, `prompt.submit`, `session.interrupt`, `approval.respond`, streamed messages, approval requests).
+- **Hermes is authoritative.** Sessions, agents, prompts, models, skills, profiles, MCP, and cron belong to Hermes; Apple Reminders owns reminder content; local Git/GitHub own repository data. The Dock stores references, display state, UI preferences, and cached metadata — never a second copy of those systems. Credentials, memory, profile paths, and tool payloads never enter Dock state.
+- **Capability-gated, fail-closed controls.** Every optional control is classified at runtime (verified gateway RPC, stable read-only CLI projection, confirmed CLI mutation, unsupported, or external setup). Mutation probes require the documented help terms the Dock will actually send. A missing or failed probe fails closed: the control stays unavailable (or stale-with-last-good-projection), and support is never inferred from a version string.
+- **Control authority.** Model/reasoning changes are explicit Hermes mutations applied to the next turn. Skills and plugin management stay with Hermes. MCP inventory is read-only with a confirmed session-scoped reload. Recovery guidance is copy-only; the Dock never runs recovery commands or `hermes update` automatically.
+- **Architecture in the codebase.** Transport and process-launch concerns live in gateway/runtime services, persistent workspace state in `WorkspaceStore`, presentation state in `DockModel`; new parsing/state-transition behavior is extracted into testable helpers instead of expanding view types.
 
-Packaged DMGs are local developer artifacts. They use ad-hoc signing and are not
-notarized for external distribution.
+## Getting started
 
-Keep transport and process-launch concerns in the gateway/runtime services, persistent workspace state in `WorkspaceStore`, and presentation state in `DockModel`. New parsing or state-transition behavior should be extracted into testable helpers instead of expanding view types.
+```sh
+git clone <this repository>
+cd hermes-agent-dock
+swift run
+```
+
+The app launches quietly into the menu bar. Double-tap the Command key (or click the status item) to open the popover; `--show-panel` forces it visible immediately for development runs.
+
+Packaged DMGs under `dist/` are local developer artifacts — ad-hoc signed, not notarized.
+
+## Development
+
+```sh
+swift build   # baseline build
+swift test    # full test suite
+```
+
+Both run on every pull request and on pushes to the default branch. Test counts are intentionally not hard-coded here because they change as coverage evolves.
+
+- `DESIGN.md` — source of truth for Dock UI behavior and styling.
+- `AGENTS.md` — contributor guidance for agent-driven work.
+- `HERMES_COMMAND_CENTER_CONTRACTS.md` — fail-closed contracts required for remaining integrations.
+- `CONTRIBUTING.md` — how to contribute.
+
+## Current limitations
+
+Features below stay intentionally unavailable until Hermes exposes a stable, capability-advertised contract:
+
+- **Project mutation** (creation/activation/archive/deletion) — Kanban board enumeration is available today.
+- **Third-party MCP discovery/invocation** (scoped authorization, tool schemas, redacted results) — read-only MCP inventory and connection tests are available today.
+- **Structured cron reports** and richer diagnostics beyond the live CLI projections.
+- **Provider-neutral realtime audio** (voice-session lifecycle RPCs and model audio-capability metadata).
+- **Calendar access** (provider capability, authorization state, stable event operations).
+- **Durable activity feeds, fleet session usage, authoritative project repository enumeration.**
+- Bot profile deletion (no gateway RPC yet), group chats, cross-machine connections, bot-to-bot @mention autocomplete.
+
+Voice today uses Hermes' native continuous loop when available, with the labelled local fallback otherwise; true provider-native realtime audio (bidirectional voice sessions, streamed PCM, provider VAD metadata) remains gated on a Hermes voice-session gateway protocol and is not yet implemented.
+
+## Maintaining this document
+
+Every user-facing feature or behavior change must update the relevant section of this README in the same change set. Mark incomplete work as planned, and never describe mock data or provider capabilities as live functionality. Calendar, email, iMessage, automation fields Hermes does not return, and third-party MCP browsing remain planned follow-on integrations.

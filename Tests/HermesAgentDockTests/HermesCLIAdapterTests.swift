@@ -59,13 +59,22 @@ struct HermesCLIAdapterTests {
         #expect(result.stdout == "[]")
     }
 
-    @Test func kanbanCreateForwardsCanonicalSessionAttribution() async throws {
+    @Test func kanbanCreateOmitsUnsupportedSessionFlag() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
 
-        _ = try await adapter.kanbanCreate(title: "Session work", body: nil, sessionID: "session-1")
+        _ = try await adapter.kanbanCreate(title: "Session work", body: nil)
 
-        #expect(client.commands.last == "'hermes' 'kanban' 'create' '--json' '--session' 'session-1' 'Session work'")
+        #expect(client.commands.last == "'hermes' 'kanban' 'create' '--json' 'Session work'")
+    }
+
+    @Test func kanbanAttributeSessionUsesUserStateHelper() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.kanbanAttributeSession(taskID: "t_abc123", sessionID: "session-1")
+
+        #expect(client.commands.last == "'bash' '\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh' 't_abc123' 'session-1'")
     }
 
     @Test func kanbanBoardCommandsUseSupportedContracts() async throws {

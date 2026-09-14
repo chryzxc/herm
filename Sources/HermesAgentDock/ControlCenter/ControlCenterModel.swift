@@ -2290,12 +2290,16 @@ final class ControlCenterModel: ObservableObject {
             let result = try await cli.kanbanCreate(
                 boardSlug: selectedKanbanBoardSlug,
                 title: cleanTitle,
-                body: cleanBody.isEmpty ? nil : cleanBody,
-                sessionID: dockModel?.kanbanSessionID
+                body: cleanBody.isEmpty ? nil : cleanBody
             )
             guard result.succeeded else {
                 lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban could not create the task." : Self.safeUserDiagnostic(result.stderr)
                 return false
+            }
+            if let sessionID = dockModel?.kanbanSessionID, !sessionID.isEmpty,
+               (selectedKanbanBoardSlug ?? "").isEmpty,
+               let taskID = Self.kanbanTaskID(fromCreateOutput: result.stdout) {
+                try? await cli.kanbanAttributeSession(taskID: taskID, sessionID: sessionID)
             }
             refreshKanban()
             refreshGlobalKanban()
@@ -2304,6 +2308,18 @@ final class ControlCenterModel: ObservableObject {
             lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             return false
         }
+    }
+
+    static func kanbanTaskID(fromCreateOutput output: String) -> String? {
+        if let data = output.data(using: .utf8),
+           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let id = object["id"] as? String {
+            return id
+        }
+        return output.range(of: #""id"\s*:\s*"(t_[A-Za-z0-9_-]+)""#, options: .regularExpression)
+            .flatMap { range in
+                String(output[range]).components(separatedBy: "\"").last { !$0.isEmpty && !$0.contains(":") }
+            }
     }
 
     func updateKanbanTask(_ task: KanbanTaskSummary, action: KanbanTaskAction) {
