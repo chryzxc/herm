@@ -216,6 +216,8 @@ struct WorkspaceActivitySidebar: View {
             }
             if selectedMode == .kanban {
                 kanbanContent
+            } else if selectedMode == .officePreview {
+                officePreviewContent
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -233,6 +235,7 @@ struct WorkspaceActivitySidebar: View {
                             case .projects: projectsContent
                             case .search: searchContent
                             case .kanban: kanbanContent
+                            case .officePreview: officePreviewContent
                             case .core: coreContent
                             case .quota: quotaContent
                             }
@@ -261,6 +264,64 @@ struct WorkspaceActivitySidebar: View {
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle
             )
+        }
+    }
+
+    private var officeKanbanIsCurrent: Bool {
+        control.globalKanbanIsCurrent
+    }
+
+    private var officePreviewContent: some View {
+        OfficePreviewView(
+            kanbanTasks: control.globalKanbanTasks,
+            bots: botMode.visibleBots,
+            mainSessions: officeMainSessions,
+            onOpenSession: { id in
+                if let session = model.sessions.first(where: { $0.id == id }) { model.resumeSession(session) }
+                else if let session = control.activeSessions.first(where: { $0.id == id }) { control.openLatestActivitySession(session) }
+            },
+            avatarImages: botMode.avatarImages,
+            canAssignTasks: control.capabilityAvailable("kanban.assign"),
+            isDataCurrent: officeKanbanIsCurrent,
+            subtitle: projectionHeaderSubtitle(control.projectionState(for: "kanban.board"), fallback: selectedMode.pageHeaderSubtitle),
+            onRefresh: { control.refreshGlobalKanban(); control.refresh(); botMode.refresh() },
+            isRefreshing: control.isKanbanRefreshPending
+        ) { task, botID in
+                guard control.capabilityAvailable("kanban.assign") else { return }
+                kanbanMutationRequest = KanbanMutationRequest(task: task, kind: .assign, value: botID, reclaimFirst: false)
+        }
+        .task { await botMode.refreshNow(force: true) }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var officeMainSessions: [OfficeMainSession] {
+        let botIDs = Set(botMode.visibleBots.filter { !$0.isDefault }.map(\.id))
+        let sessionsCurrent: Bool
+        if case .ready = control.projectionState(for: "sessions") { sessionsCurrent = true }
+        else { sessionsCurrent = false }
+        var summaries = control.activeSessions.filter { session in
+            session.profileID.map { !botIDs.contains($0) } ?? true
+        }
+        if let id = model.sessionID, !summaries.contains(where: { $0.id == id }),
+           model.sessionProfileID.map({ !botIDs.contains($0) }) ?? true {
+            summaries.append(.init(id: id, title: model.sessions.first(where: { $0.id == id })?.displayTitle ?? "Current conversation", state: "unknown", preview: nil))
+        }
+        return summaries.map { session in
+            let current = session.id == model.sessionID
+            let state: String
+            if current {
+                switch model.status {
+                case .working: state = "working"
+                case .needsApproval: state = "needs_approval"
+                case .needsClarification: state = "needs_clarification"
+                case .idle: state = "idle"
+                case .offline: state = "offline"
+                }
+            } else { state = sessionsCurrent ? session.state : "unknown" }
+            let activities = control.latestActivities.filter { $0.sessionID == session.id }.prefix(12).map {
+                OfficeMainSession.Activity(id: $0.id, name: $0.activityName, timestamp: $0.timestamp)
+            }
+            return OfficeMainSession(id: session.id, title: session.title, state: state, isCurrent: current, activities: activities)
         }
     }
 
@@ -363,6 +424,8 @@ struct WorkspaceActivitySidebar: View {
                 control.refreshProviderQuota()
             } else if selectedMode == .kanban {
                 applyKanbanFilters()
+            } else if selectedMode == .officePreview {
+                control.refreshGlobalKanban()
             }
         }
         .onChange(of: model.status) { _, _ in control.rebuildAttention() }
@@ -391,6 +454,10 @@ struct WorkspaceActivitySidebar: View {
                 // session-only query started from Activity from leaking into
                 // a separately opened global board.
                 applyKanbanFilters()
+            case .officePreview:
+                // The office reads the same global Kanban projection as the
+                // Kanban page; it never creates or mutates a second task store.
+                control.refreshGlobalKanban()
             default:
                 break
             }
@@ -403,8 +470,8 @@ struct WorkspaceActivitySidebar: View {
             // Keep the board in step with an exact `kanban show <id>` tool
             // event. The task may not carry a durable session_id, so waiting
             // for a session-filtered list would leave the board falsely empty.
-            guard selectedMode == .kanban else { return }
-            applyKanbanFilters()
+            if selectedMode == .officePreview { control.refreshGlobalKanban() }
+            else if selectedMode == .kanban { applyKanbanFilters() }
         }
         .task(id: selectedMode == .quota) {
             guard selectedMode == .quota else { return }
@@ -852,7 +919,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var compactOverflowNavigation: [ControlTab] {
-        [.projects, .search, .core]
+        [.projects, .search, .officePreview, .core]
     }
 
     private var isToolsModeSelected: Bool {

@@ -278,6 +278,15 @@ struct KanbanMutationEditor: View {
     @State private var reclaimFirst = false
     @State private var confirming = false
 
+    init(request: KanbanMutationRequest, assignees: [String], isPending: Bool, submit: @escaping (KanbanMutationRequest) -> Void) {
+        self.request = request
+        self.assignees = assignees
+        self.isPending = isPending
+        self.submit = submit
+        _value = State(initialValue: request.value)
+        _reclaimFirst = State(initialValue: request.reclaimFirst)
+    }
+
     private var placeholder: String {
         switch request.kind {
         case .comment: "Comment for Hermes"

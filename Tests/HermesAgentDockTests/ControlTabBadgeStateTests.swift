@@ -7,7 +7,7 @@ struct ControlTabBadgeStateTests {
         #expect(ControlTab.primaryNavigation == [.today, .inbox, .kanban])
         #expect(ControlTab.sessionNavigation == [.session, .activity, .changes, .verification])
         #expect(ControlTab.workspaceNavigation == [.projects])
-        #expect(ControlTab.toolsNavigation == [.automations, .search, .core])
+        #expect(ControlTab.toolsNavigation == [.automations, .search, .officePreview, .core])
         #expect(ControlTab.globalNavigation == [.today, .inbox, .kanban, .projects, .quota])
         #expect(Set(ControlTab.globalNavigation + ControlTab.secondaryNavigation) == Set(ControlTab.allCases))
     }

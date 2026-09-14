@@ -38,6 +38,9 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var searchResults: [ControlSearchResult] = []
     @Published private(set) var isSearching = false
     @Published private(set) var kanbanTasks: [KanbanTaskSummary] = []
+    /// Canonical unfiltered aggregate, independent of the board page's visible filters.
+    @Published private(set) var globalKanbanTasks: [KanbanTaskSummary] = []
+    @Published private(set) var globalKanbanIsCurrent = false
     @Published private(set) var sessionKanbanTasks: [KanbanTaskSummary] = []
     @Published private(set) var sessionKanbanSessionID: String?
     @Published private(set) var kanbanDetail: KanbanTaskDetail?
@@ -412,6 +415,8 @@ final class ControlCenterModel: ObservableObject {
             searchResults = []
             isSearching = false
             kanbanTasks = []
+            globalKanbanTasks = []
+            globalKanbanIsCurrent = false
             sessionKanbanTasks = []
             sessionKanbanSessionID = nil
             kanbanDetail = nil
@@ -1439,6 +1444,7 @@ final class ControlCenterModel: ObservableObject {
         // just because that separate probe has not completed yet.
         guard let cli else {
             recordProjectionUnavailable("kanban.board")
+            if scope.isAggregate { globalKanbanIsCurrent = false }
             return
         }
         let actionID = scope.isAggregate ? aggregateKanbanRefreshActionID : visibleKanbanRefreshActionID
@@ -1446,6 +1452,7 @@ final class ControlCenterModel: ObservableObject {
             return
         }
         beginProjectionRefresh("kanban.board")
+        if scope.isAggregate { globalKanbanIsCurrent = false }
         let requestedBoardSlug = scope.isAggregate ? nil : selectedKanbanBoardSlug
         // Global aggregation deliberately omits --board; session activity has
         // its own board-aware projection and never uses this request.
@@ -1453,7 +1460,7 @@ final class ControlCenterModel: ObservableObject {
         // false "This board is clear" state seen in the UI; the published
         // replacement below remains generation-checked.
         if let filter, !scope.isAggregate { kanbanFilter = filter }
-        let activeFilter = kanbanFilter
+        let activeFilter = scope.isAggregate ? (filter ?? KanbanListFilter()) : kanbanFilter
         let generation = UUID()
         if scope.isAggregate { aggregateKanbanRefreshGeneration = generation }
         else { visibleKanbanRefreshGeneration = generation }
@@ -1501,6 +1508,8 @@ final class ControlCenterModel: ObservableObject {
                 // this model, so an unnecessary publish forces SwiftUI to
                 // re-diff every visible lane while the user is scrolling.
                 if scope.isAggregate {
+                    if globalKanbanTasks != refreshedTasks { globalKanbanTasks = refreshedTasks }
+                    globalKanbanIsCurrent = true
                     // Before board inventory has selected a board, the
                     // aggregate is the only valid visible projection.
                     if selectedKanbanBoardSlug == nil, kanbanTasks != refreshedTasks {
@@ -1547,7 +1556,7 @@ final class ControlCenterModel: ObservableObject {
     /// filter retained from an Activity shortcut.
     func refreshGlobalKanban(filter: KanbanListFilter? = nil) {
         refreshKanban(
-            filter: Self.globalKanbanFilter(filter ?? kanbanFilter),
+            filter: Self.globalKanbanFilter(filter ?? KanbanListFilter()),
             scope: .aggregate
         )
     }
@@ -2289,6 +2298,7 @@ final class ControlCenterModel: ObservableObject {
                 return false
             }
             refreshKanban()
+            refreshGlobalKanban()
             return true
         } catch {
             lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
@@ -2315,6 +2325,7 @@ final class ControlCenterModel: ObservableObject {
                     return
                 }
                 refreshKanban()
+                refreshGlobalKanban()
             } catch {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
@@ -2357,6 +2368,7 @@ final class ControlCenterModel: ObservableObject {
                 }
                 refreshKanban()
                 loadKanbanTask(request.task)
+                refreshGlobalKanban()
             } catch {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }

@@ -1046,6 +1046,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case projects = "Projects"
     case search = "Search"
     case kanban = "Kanban"
+    case officePreview = "Office Preview"
     case core = "Core"
     case quota = "Quota"
 
@@ -1058,7 +1059,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota]
     static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
     static let workspaceNavigation: [ControlTab] = [.projects]
-    static let toolsNavigation: [ControlTab] = [.automations, .search, .core]
+    static let toolsNavigation: [ControlTab] = [.automations, .search, .officePreview, .core]
 
     static var secondaryNavigation: [ControlTab] {
         sessionNavigation + toolsNavigation
@@ -1070,6 +1071,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .session: "Overview"
         case .changes: "Source Control"
         case .automations: "Automate"
+        case .officePreview: "3D Workspace"
         case .core: "Settings"
         default: rawValue
         }
@@ -1079,6 +1081,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var globalRailLabel: String {
         switch self {
         case .automations: "Automation"
+        case .officePreview: "3D Workspace"
         case .core: "Settings"
         default: rawValue
         }
@@ -1096,6 +1099,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .projects: "folder.badge.gearshape"
         case .search: "magnifyingglass"
         case .kanban: "rectangle.3.group"
+        case .officePreview: "cube"
         case .core: "gearshape"
         case .quota: "gauge.with.dots.needle.50percent"
         }
@@ -1125,6 +1129,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .projects: "Repositories and connected sessions"
         case .search: "Search across connected Hermes sources"
         case .kanban: "Move work through the board"
+        case .officePreview: "Live bot assignments in a simulated 3D office"
         case .core: "Runtime health, permissions, and session tools"
         case .quota: "Provider capacity and reset windows"
         }
@@ -1187,7 +1192,7 @@ struct ControlTabBadgeState: Equatable {
         case .activity: activityCount
         case .changes: changeCount
         case .verification: verificationCount
-        case .automations, .projects, .search, .kanban, .core, .quota: 0
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota: 0
         }
     }
 
@@ -1198,7 +1203,7 @@ struct ControlTabBadgeState: Equatable {
         case .inbox: urgentAttentionCount > 0
         case .changes: changeCount > 0
         case .verification: verificationCount > 0
-        case .activity, .automations, .projects, .search, .kanban, .core, .quota: false
+        case .activity, .automations, .projects, .search, .kanban, .officePreview, .core, .quota: false
         }
     }
 }

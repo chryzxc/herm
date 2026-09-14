@@ -2891,6 +2891,7 @@ private struct MissionControlQueue: View {
             globalRailDestination(.quota)
             pullRequestsDestinationRow
             globalRailDestination(.automations)
+            globalRailDestination(.officePreview)
             queueRailDestination("Artifacts", icon: "doc.text.magnifyingglass", isSelected: isArtifactsActive) {
                 onOpenArtifacts()
             }

@@ -213,13 +213,14 @@ final class PullRequestDiffPresentationCache: ObservableObject {
 
 enum LucideIconName {
     case gitPullRequest, gitBranch, refreshCw, search, arrowRight, arrowUp, arrowDown, pencil, check, checkCircle, xmark, fileText, braces, image
-    case sun, inbox, kanban, gauge, clock, activity, audioLines, bot, fileSearch, users, user, folder, messages, messageCircle, messageCirclePlus, settings, panelOpen, panelClosed, chevronDown, chevronUp, chevronRight, chevronLeft, arrowDownUp, fileDiff, plus, ellipsis, circle, triangleAlert, trash, terminal, paperclip, mic, stop, pause, calendar, link, externalLink, sliders, radio, cpu, brain, flame, eye, download, upload, expand, minimize, fullscreen, sparkles
+    case sun, inbox, kanban, cube, gauge, clock, activity, audioLines, bot, fileSearch, users, user, folder, messages, messageCircle, messageCirclePlus, settings, panelOpen, panelClosed, chevronDown, chevronUp, chevronRight, chevronLeft, arrowDownUp, fileDiff, plus, ellipsis, circle, triangleAlert, trash, terminal, paperclip, mic, stop, pause, calendar, link, externalLink, sliders, radio, cpu, brain, flame, eye, download, upload, expand, minimize, fullscreen, sparkles
 
     static func from(systemName: String) -> Self {
         switch systemName {
         case "sun.max": return .sun
         case "tray": return .inbox
         case "rectangle.3.group": return .kanban
+        case "cube": return .cube
         case "gauge.with.dots.needle.50percent", "gauge.with.dots.needle.bottom.50percent": return .gauge
         case "clock.arrow.circlepath": return .clock
         case "stopwatch": return .clock
@@ -409,6 +410,8 @@ private struct LucideIconShape: Shape {
             path.move(to: p(4, 5)); path.addLine(to: p(20, 5)); path.addLine(to: p(22, 17)); path.addLine(to: p(2, 17)); path.closeSubpath(); path.move(to: p(2, 17)); path.addCurve(to: p(7, 20), control1: p(3, 20), control2: p(5, 20)); path.addLine(to: p(17, 20)); path.addCurve(to: p(22, 17), control1: p(19, 20), control2: p(21, 20))
         case .kanban:
             path.addRect(CGRect(x: 3 * s, y: 4 * s, width: 5 * s, height: 7 * s)); path.addRect(CGRect(x: 3 * s, y: 14 * s, width: 5 * s, height: 6 * s)); path.addRect(CGRect(x: 11 * s, y: 4 * s, width: 10 * s, height: 16 * s))
+        case .cube:
+            path.move(to: p(12, 3)); path.addLine(to: p(21, 8)); path.addLine(to: p(21, 16)); path.addLine(to: p(12, 21)); path.addLine(to: p(3, 16)); path.addLine(to: p(3, 8)); path.closeSubpath(); path.move(to: p(3, 8)); path.addLine(to: p(12, 13)); path.addLine(to: p(21, 8)); path.move(to: p(12, 13)); path.addLine(to: p(12, 21))
         case .gauge:
             path.move(to: p(3, 15)); path.addCurve(to: p(21, 15), control1: p(5, 3), control2: p(19, 3)); path.move(to: p(5, 19)); path.addLine(to: p(19, 19)); path.move(to: p(12, 15)); path.addLine(to: p(16, 9)); path.addEllipse(in: CGRect(x: 10 * s, y: 13 * s, width: 4 * s, height: 4 * s))
         case .clock:

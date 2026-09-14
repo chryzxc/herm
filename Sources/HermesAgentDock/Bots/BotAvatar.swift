@@ -21,21 +21,14 @@ enum BotAvatarPresentation {
     }
 
     static func palette(for profileID: String) -> [Color] {
-        let hue: Double
-        switch profileID.lowercased() {
-        case "nexus": hue = 0.82
-        case "cypher": hue = 0.56
-        case "atlas": hue = 0.37
-        case "archon": hue = 0.13
-        case "canvas": hue = 0.29
-        case "ripple": hue = 0.95
-        case "forge": hue = 0.04
-        case "sentry": hue = 0.61
-        case "sentinel": hue = 0.46
-        case "aegis": hue = 0.72
-        case "scout": hue = 0.33
-        default: hue = 0.68
+        // Profile IDs are Hermes-owned and can be added or renamed. FNV-1a is
+        // stable across launches, unlike Swift's randomized Hasher, so every
+        // dynamic bot keeps the same fallback identity without a role table.
+        let normalized = profileID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let seed = normalized.utf8.reduce(UInt64(14695981039346656037)) {
+            ($0 ^ UInt64($1)) &* 1099511628211
         }
+        let hue = normalized.isEmpty ? 0.68 : Double(seed % 360) / 360
         return [
             Color(hue: hue, saturation: 0.58, brightness: 0.82),
             Color(hue: hue, saturation: 0.72, brightness: 0.42)
