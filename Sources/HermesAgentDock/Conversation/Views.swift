@@ -1809,7 +1809,13 @@ struct DockPopover: View {
         case .message, .streaming:
             guard let id = UUID(uuidString: descriptor.id), let message = model.messages.first(where: { $0.id == id }) else { return AnyView(EmptyView()) }
             return AnyView(messageRow(message))
-        case .approval: return AnyView(approvalRow(title: model.approvalTitle ?? "Review requested action", detail: model.approvalText ?? ""))
+        case .approval: return AnyView(approvalRow(
+            title: model.approvalTitle ?? "Review requested action",
+            detail: model.approvalText ?? "",
+            alwaysAllowCaption: ApprovalPresentation.alwaysAllowCaption(
+                title: model.approvalTitle ?? "Review requested action",
+                detail: model.approvalText ?? "")
+        ))
         case .activity: return AnyView(activityView)
         }
     }
@@ -1867,7 +1873,13 @@ struct DockPopover: View {
                                         .id(message.id)
                                 }
                                 if let approval = model.approvalText {
-                                    approvalRow(title: model.approvalTitle ?? "Review requested action", detail: approval)
+                                    approvalRow(
+                                        title: model.approvalTitle ?? "Review requested action",
+                                        detail: approval,
+                                        alwaysAllowCaption: ApprovalPresentation.alwaysAllowCaption(
+                                            title: model.approvalTitle ?? "Review requested action",
+                                            detail: approval)
+                                    )
                                         .id("approval")
                                 }
                                 if isConversationActivityVisible {
@@ -2316,7 +2328,7 @@ struct DockPopover: View {
         )
     }
 
-    private func approvalRow(title: String, detail: String) -> some View {
+    private func approvalRow(title: String, detail: String, alwaysAllowCaption: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
                 LucideIcon(
@@ -2400,7 +2412,29 @@ struct DockPopover: View {
                         .fill(Color.dockAccent)
                 )
                 .disabled(model.isRespondingToApproval)
+                Button { model.respondToApproval(ApprovalChoice.always) } label: {
+                    DockActionLabel(
+                        title: "Always allow",
+                        pendingTitle: "Allowing…",
+                        isPending: model.isRespondingToApproval,
+                        tint: Color.dockOnAccentText
+                    )
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockOnAccentText)
+                .frame(minWidth: 112, minHeight: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.dockAccent.opacity(0.82))
+                )
+                .disabled(model.isRespondingToApproval)
             }
+            Text(alwaysAllowCaption)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
         .background(

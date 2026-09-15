@@ -23,6 +23,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var mcpServers: [MCPServerSummary] = []
     @Published private(set) var mcpTestResults: [String: String] = [:]
     @Published private(set) var mcpInventoryAvailable = false
+    @Published private(set) var commandAllowlistEntries: [String]?
     @Published private(set) var activeSessions: [SessionSummary] = []
     @Published private(set) var latestActivities: [LatestActivityItem] = []
     @Published private(set) var currentFocus: ControlReference?
@@ -402,6 +403,7 @@ final class ControlCenterModel: ObservableObject {
             mcpServers = []
             mcpTestResults = [:]
             mcpInventoryAvailable = false
+            commandAllowlistEntries = nil
             activeSessions = []
             latestActivities = []
             currentFocus = nil
@@ -651,6 +653,7 @@ final class ControlCenterModel: ObservableObject {
                 }
 
                 refreshMCPInventory(refreshGeneration: generation, clientIdentity: clientIdentity)
+                refreshCommandAllowlist()
                 refreshAppearanceProjection(refreshGeneration: generation, clientIdentity: clientIdentity)
                 refreshInsights(refreshGeneration: generation, clientIdentity: clientIdentity)
 
@@ -934,6 +937,36 @@ final class ControlCenterModel: ObservableObject {
     /// display unavailable until Hermes exposes a structured report operation.
     func refreshCronReports() {
         // Intentionally empty.
+    }
+
+    func refreshCommandAllowlist() {
+        guard let cli else { return }
+        Task {
+            do {
+                let result = try await cli.configGetCommandAllowlist()
+                commandAllowlistEntries = result.succeeded ? Self.parseCommandAllowlist(result.stdout) : nil
+            } catch {
+                commandAllowlistEntries = nil
+            }
+        }
+    }
+
+    nonisolated static func parseCommandAllowlist(_ output: String) -> [String] {
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "[]", trimmed != "null" else { return [] }
+        if let data = trimmed.data(using: .utf8),
+           let array = try? JSONSerialization.jsonObject(with: data) as? [String] {
+            return array
+        }
+        return trimmed.split(separator: "\n").compactMap { line in
+            let value = line.trimmingCharacters(in: .whitespaces)
+            guard value.hasPrefix("- ") else { return nil }
+            var entry = String(value.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            if entry.hasPrefix("'"), entry.hasSuffix("'"), entry.count >= 2 {
+                entry = String(entry.dropFirst().dropLast())
+            }
+            return entry.isEmpty ? nil : entry
+        }
     }
 
     func refreshAppearanceProjection(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {

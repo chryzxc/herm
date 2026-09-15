@@ -190,6 +190,9 @@ final class HermesCLIAdapter {
     func kanbanAttributeSession(taskID: String, sessionID: String) async throws -> HermesCLIResult {
         try await run(["bash", "\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh", taskID, sessionID])
     }
+    func configGetCommandAllowlist() async throws -> HermesCLIResult {
+        try await run(["hermes", "config", "get", "command_allowlist"])
+    }
     func kanbanComplete(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "complete") + [taskID, "--summary", "Completed from Hermes Control"]) }
     func kanbanBlock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "block") + [taskID, "Blocked from Hermes Control"]) }
     func kanbanUnblock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "unblock") + [taskID, "--reason", "Unblocked from Hermes Control"]) }

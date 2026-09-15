@@ -150,6 +150,7 @@ enum CapabilityAvailability: String, Codable, Equatable {
 struct ApprovalPresentation: Equatable {
     let title: String
     let detail: String
+    let detailIsCommand: Bool
 
     static func from(payload: [String: Any]) -> ApprovalPresentation {
         let command = stringValue(in: payload, keys: ["command", "cmd"])
@@ -163,7 +164,22 @@ struct ApprovalPresentation: Equatable {
         let title = stringValue(in: payload, keys: ["title", "approval_title", "action_title"])
             ?? (command != nil ? "Run command" : "Review requested action")
 
-        return ApprovalPresentation(title: title, detail: detail)
+        return ApprovalPresentation(title: title, detail: detail, detailIsCommand: command != nil)
+    }
+
+    static func alwaysAllowCaption(for presentation: ApprovalPresentation) -> String {
+        guard presentation.detailIsCommand else {
+            return "Hermes may limit this to the current session for content findings."
+        }
+        return "Always allow persists this command in Hermes' allowlist. Never ask again for: \(presentation.detail)"
+    }
+
+    static func alwaysAllowCaption(title: String, detail: String) -> String {
+        alwaysAllowCaption(for: ApprovalPresentation(
+            title: title,
+            detail: detail,
+            detailIsCommand: title == "Run command"
+        ))
     }
 
     private static func stringValue(in payload: [String: Any], keys: [String]) -> String? {
@@ -174,6 +190,12 @@ struct ApprovalPresentation: Equatable {
         }
         return nil
     }
+}
+
+enum ApprovalChoice {
+    static let deny = "deny"
+    static let once = "once"
+    static let always = "always"
 }
 
 enum ControlSource: String, Codable, Hashable {

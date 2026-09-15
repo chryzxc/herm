@@ -77,6 +77,15 @@ struct HermesCLIAdapterTests {
         #expect(client.commands.last == "'bash' '\(NSHomeDirectory())/.hermes/scripts/kanban-attribute-session.sh' 't_abc123' 'session-1'")
     }
 
+    @Test func configGetCommandAllowlistUsesTypedConfigPath() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.configGetCommandAllowlist()
+
+        #expect(client.commands.last == "'hermes' 'config' 'get' 'command_allowlist'")
+    }
+
     @Test func kanbanBoardCommandsUseSupportedContracts() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
