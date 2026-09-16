@@ -3,12 +3,24 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 import UserNotifications
+/// A parsed session-resume transcript. Image attachment is deferred: only
+/// file references are parsed synchronously so session selection never
+/// performs disk reads or image decoding on the main actor.
+struct RestoredTranscript {
+    struct PendingImages: Sendable {
+        let messageID: UUID
+        let fileURLs: [URL]
+    }
+
+    let messages: [ChatMessage]
+    let pendingImages: [PendingImages]
+}
+
 @MainActor
 final class DockModel: ObservableObject {
     nonisolated static func safeUserDiagnostic(_ raw: String) -> String {
         HermesDiagnosticsService.safeSummary(raw)
     }
-
     @Published var status: HermesStatus = .idle
     @Published private(set) var isHermesConnected = false
     @Published var messages: [ChatMessage] = []
@@ -222,6 +234,7 @@ final class DockModel: ObservableObject {
     // Keep one append-only buffer. Joining every received chunk during each
     // UI flush made long responses progressively more expensive.
     private var streamingMessageBuffer = ""
+    private var streamingMessagePendingPresentationDelta = ""
     private var streamingMessagePublishedText = ""
     private var streamingMessageFlushTask: Task<Void, Never>?
     private var activityPresentationTask: Task<Void, Never>?
@@ -928,7 +941,7 @@ final class DockModel: ObservableObject {
         // resume response; otherwise the old conversation is rendered under
         // the new session ID during that request's loading window.
         messages = []
-        streamingText.text = ""
+        streamingText.clearPresentation()
         newSessionCreationAuthorized = false
         clarificationQuestion = nil
         clarificationChoices = []
@@ -1002,10 +1015,15 @@ final class DockModel: ObservableObject {
             }
             refreshSessionModelOptions()
             refreshSessionReasoningVariant()
-            messages = Self.parseMessages(
+            let restored = Self.parseMessages(
                 result["messages"],
                 defaultBotProfileID: profileID,
                 defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
+            )
+            messages = restored.messages
+            rehydratePendingTranscriptImages(
+                restored.pendingImages,
+                requestedSessionID: session.id
             )
             restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
@@ -1315,6 +1333,7 @@ final class DockModel: ObservableObject {
         streamingMessageSessionID = nil
         streamingResponseStartedAt = nil
         streamingMessageBuffer = ""
+        streamingMessagePendingPresentationDelta = ""
         streamingMessagePublishedText = ""
         conversationActivityPhase = .idle
         streamingMessageIsVisionNotice = false
@@ -2258,6 +2277,7 @@ final class DockModel: ObservableObject {
                 voiceTelemetry.receivedResponse()
             }
             streamingMessageBuffer.append(delta)
+            streamingMessagePendingPresentationDelta.append(delta)
             scheduleStreamingMessageFlush()
         case "message.complete":
             isAwaitingClarificationResume = false
@@ -2559,8 +2579,9 @@ final class DockModel: ObservableObject {
         streamingMessageSessionID = sessionID
         streamingResponseStartedAt = responseStartedAt
         streamingMessageBuffer = ""
+        streamingMessagePendingPresentationDelta = ""
         streamingMessagePublishedText = ""
-        streamingText.text = ""
+        streamingText.clearPresentation()
         streamingMessageGeneration &+= 1
     }
 
@@ -2574,8 +2595,9 @@ final class DockModel: ObservableObject {
         streamingMessageSessionID = nil
         streamingResponseStartedAt = nil
         streamingMessageBuffer = ""
+        streamingMessagePendingPresentationDelta = ""
         streamingMessagePublishedText = ""
-        streamingText.text = ""
+        streamingText.clearPresentation()
         isAwaitingClarificationResume = false
     }
 
@@ -2590,8 +2612,9 @@ final class DockModel: ObservableObject {
         streamingMessageSessionID = nil
         streamingResponseStartedAt = nil
         streamingMessageBuffer = ""
+        streamingMessagePendingPresentationDelta = ""
         streamingMessagePublishedText = ""
-        streamingText.text = ""
+        streamingText.clearPresentation()
         streamingMessageGeneration &+= 1
     }
 
@@ -2708,13 +2731,16 @@ final class DockModel: ObservableObject {
         streamingMessageFlushTask = nil
         guard streamingMessageID != nil,
               streamingMessageSessionID == sessionID,
-              let newText = pendingStreamingText(),
-              newText != streamingMessagePublishedText else { return }
+              let newText = pendingStreamingText() else { return }
         applyVisionNoticeDetectionIfNeeded(to: newText)
         let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : newText
-        // Publish only to the streaming row: writing messages[index] here would
-        // Publish only the current buffer at the throttled live-text cadence.
-        streamingText.text = publishedText
+        if streamingMessageIsVisionNotice {
+            streamingText.replacePresentation(with: publishedText)
+        } else {
+            let delta = streamingMessagePendingPresentationDelta
+            streamingMessagePendingPresentationDelta = ""
+            streamingText.appendPresentation(delta)
+        }
         streamingMessagePublishedText = publishedText
     }
 
@@ -2727,7 +2753,7 @@ final class DockModel: ObservableObject {
         guard let id = streamingMessageID,
               streamingMessageSessionID == sessionID,
               let index = messages.firstIndex(where: { $0.id == id }) else {
-            streamingText.text = ""
+            streamingText.clearPresentation()
             streamingResponseStartedAt = nil
             return
         }
@@ -2748,7 +2774,8 @@ final class DockModel: ObservableObject {
             botProfileID: botProfileID,
             botDisplayName: botDisplayName
         )
-        streamingText.text = ""
+        streamingMessagePendingPresentationDelta = ""
+        streamingText.clearPresentation()
         streamingResponseStartedAt = nil
     }
 
@@ -4150,13 +4177,47 @@ final class DockModel: ObservableObject {
         return nil
     }
 
-    static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> [ChatMessage] {
-        guard let rows = value as? [[String: Any]] else { return [] }
-        return rows.compactMap { row in
-            guard let role = row["role"] as? String else { return nil }
+    /// Reads deferred transcript image files off the main actor and attaches
+    /// the decoded images to their messages. Returns the task so tests can
+    /// await completion. A stale generation or a session mismatch drops the
+    /// payload exactly like a stale resume response.
+    @discardableResult
+    func rehydratePendingTranscriptImages(
+        _ pending: [RestoredTranscript.PendingImages],
+        requestedSessionID: String,
+        loadData: (@Sendable (URL) -> Data?)? = nil
+    ) -> Task<Void, Never> {
+        guard !pending.isEmpty else { return Task<Void, Never> {} }
+        let generation = sessionResumeGeneration
+        return Task { @MainActor in
+            let loaded = await Task.detached(priority: .userInitiated) { () -> [(UUID, [Data])] in
+                pending.map { entry in
+                    (entry.messageID, entry.fileURLs.compactMap { url in
+                        loadData.map { loader in loader(url) } ?? (try? Data(contentsOf: url))
+                    })
+                }
+            }.value
+            guard generation == sessionResumeGeneration, sessionID == requestedSessionID else { return }
+            for entry in loaded where !entry.1.isEmpty {
+                let images = entry.1.compactMap { NSImage(data: $0) }
+                guard !images.isEmpty,
+                      let index = messages.firstIndex(where: { $0.id == entry.0 }) else { continue }
+                messages[index] = messages[index].attachingImages(images)
+            }
+        }
+    }
+
+    static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> RestoredTranscript {
+        guard let rows = value as? [[String: Any]] else {
+            return RestoredTranscript(messages: [], pendingImages: [])
+        }
+        var messages: [ChatMessage] = []
+        var pendingImages: [RestoredTranscript.PendingImages] = []
+        for row in rows {
+            guard let role = row["role"] as? String else { continue }
             let persisted = persistedImageContent(from: messageText(row["text"] ?? row["content"]))
             let text = persisted.text
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.images.isEmpty else { return nil }
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.imageFileURLs.isEmpty else { continue }
             let timestamp: Date
             if let ts = row["timestamp"] as? Double {
                 timestamp = Date(timeIntervalSince1970: ts)
@@ -4165,25 +4226,35 @@ final class DockModel: ObservableObject {
             } else {
                 timestamp = Date()
             }
-            guard role == "user" || role == "assistant" || role == "hermes" else { return nil }
+            guard role == "user" || role == "assistant" || role == "hermes" else { continue }
             let attribution = role == "user" ? nil : botAttribution(from: text)
-            return ChatMessage(
+            let message = ChatMessage(
                 role: role == "user" ? .user : .hermes,
                 text: attribution?.body ?? text,
-                images: persisted.images,
+                images: [],
                 timestamp: timestamp,
                 botProfileID: attribution?.profileID ?? defaultBotProfileID,
                 botDisplayName: attribution?.displayName ?? defaultBotDisplayName
             )
+            messages.append(message)
+            if !persisted.imageFileURLs.isEmpty {
+                pendingImages.append(RestoredTranscript.PendingImages(
+                    messageID: message.id,
+                    fileURLs: persisted.imageFileURLs
+                ))
+            }
         }
+        return RestoredTranscript(messages: messages, pendingImages: pendingImages)
     }
 
     /// Hermes persists uploaded images as directive lines in the session
     /// transcript. Rehydrate those files for the native transcript instead of
-    /// exposing the storage path as user-visible message text.
-    static func persistedImageContent(from rawText: String) -> (text: String, images: [NSImage]) {
+    /// exposing the storage path as user-visible message text. Only file
+    /// references are collected here; decoding happens off the main actor in
+    /// `rehydratePendingTranscriptImages`.
+    static func persistedImageContent(from rawText: String) -> (text: String, imageFileURLs: [URL]) {
         let lines = rawText.components(separatedBy: .newlines)
-        var images: [NSImage] = []
+        var imageFileURLs: [URL] = []
         var removedImageReference = false
         var remainingLines: [String] = []
 
@@ -4201,9 +4272,7 @@ final class DockModel: ObservableObject {
                 path.removeFirst()
                 path.removeLast()
             }
-            if let image = NSImage(contentsOf: URL(fileURLWithPath: path)) {
-                images.append(image)
-            }
+            imageFileURLs.append(URL(fileURLWithPath: path))
         }
 
         if removedImageReference {
@@ -4213,7 +4282,7 @@ final class DockModel: ObservableObject {
         // messages with image directives. Preserve real line breaks so the
         // Markdown renderer receives the exact persisted body rather than
         // literal `\\n` source characters.
-        return (remainingLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), images)
+        return (remainingLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), imageFileURLs)
     }
 
     /// Hermes Bot Mode's documented delivery envelope is:

@@ -86,6 +86,14 @@ struct MessageBubbleShape: Shape {
   }
 }
 
+/// Caps the unmarked-JSON detection scan in `MarkdownMessageView`. The scan
+/// re-attempts a full parse per accumulated line, so without a cap a single
+/// large message can monopolize the main actor on first render.
+enum MarkdownJSONScanPolicy {
+    static let maxScanLines = 400
+    static let maxScanBytes = 1_048_576
+}
+
 struct MarkdownMessageView: View, Equatable {
   let markdown: String
   private let blocks: [RenderBlock]
@@ -326,10 +334,21 @@ struct MarkdownMessageView: View, Equatable {
       return nil
     }
 
+    // Each attempt re-parses the whole growing candidate, so an unbounded
+    // scan is quadratic in message length. Cap both dimensions; anything
+    // past the budget renders as prose.
     var candidate = ""
-    for end in start..<lines.count {
-      if !candidate.isEmpty { candidate.append("\n") }
-      candidate.append(lines[end])
+    var candidateBytes = 0
+    let lastLine = min(lines.count, start + MarkdownJSONScanPolicy.maxScanLines)
+    for end in start..<lastLine {
+      let line = lines[end]
+      if !candidate.isEmpty {
+        candidate.append("\n")
+        candidateBytes += 1
+      }
+      candidate.append(line)
+      candidateBytes += line.utf8.count
+      if candidateBytes > MarkdownJSONScanPolicy.maxScanBytes { return nil }
       guard let data = candidate.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data),
             object is [String: Any] else {

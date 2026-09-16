@@ -44,6 +44,27 @@ struct OfficePreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            OfficePreviewHeader(
+                title: "3D Workspace",
+                subtitle: subtitle,
+                wholeOffice: $wholeOffice,
+                showsAgents: $showsAgents,
+                freeAgentCount: simulation.agents.filter(\.hasNoPendingTasks).count,
+                isDataCurrent: isDataCurrent,
+                isRefreshing: isRefreshing,
+                onRefresh: onRefresh,
+                onViewChange: {
+                    cameraFocusID = nil
+                    cameraResetToken += 1
+                },
+                onFocusNextFreeAgent: focusNextFreeAgent,
+                onShowBoard: { selection = .board },
+                onResetCamera: {
+                    cameraFocusID = nil
+                    cameraResetToken += 1
+                }
+            )
+
             GeometryReader { geometry in
                 ZStack(alignment: .topLeading) {
                     OfficePreviewSceneView(
@@ -56,36 +77,17 @@ struct OfficePreviewView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    OfficePreviewHeader(
-                        wholeOffice: $wholeOffice,
-                        showsAgents: $showsAgents,
-                        freeAgentCount: simulation.agents.filter(\.hasNoPendingTasks).count,
-                        isDataCurrent: isDataCurrent,
-                        isRefreshing: isRefreshing,
-                        onRefresh: onRefresh,
-                        onViewChange: {
-                            cameraFocusID = nil
-                            cameraResetToken += 1
-                        },
-                        onFocusNextFreeAgent: focusNextFreeAgent,
-                        onShowBoard: { selection = .board },
-                        onResetCamera: {
-                            cameraFocusID = nil
-                            cameraResetToken += 1
-                        }
-                    )
-                    .padding(12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-
                     if let selection {
                         OfficePreviewInspector(
                             title: inspectorTitle,
+                            subtitle: inspectorSubtitle,
                             avatarBot: selectedBot,
                             avatarData: selectedBot.flatMap { avatarImages[$0.id] },
                             width: min(360, max(0, geometry.size.width - 24)),
                             height: min(460, max(0, geometry.size.height - 24)),
                             onClose: { self.selection = nil }
                         ) {
+                            VStack(alignment: .leading, spacing: 12) {
                             switch selection {
                             case .agent(let id):
                                 if let agent = simulation.agents.first(where: { $0.id == id }) {
@@ -94,16 +96,25 @@ struct OfficePreviewView: View {
                                         .foregroundStyle(isDataCurrent && agent.hasNoPendingTasks ? Color.dockSuccess : Color.dockSecondaryText)
                                     if let session = agent.mainSession {
                                         Button("Open conversation") { onOpenSession(session.id) }
-                                        Text("Nexus orchestrator")
-                                            .font(.system(size: 12, weight: .semibold))
+                                            .buttonStyle(.borderedProminent)
                                         OfficePreviewDetail(label: "CURRENT WORK", value: session.title)
                                         Text(session.isCurrent ? "Current conversation" : "Background conversation")
-                                        if session.activities.isEmpty { Text("No recent activity available.") }
-                                        else { Text("Recent recorded activity").fontWeight(.semibold) }
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Color.dockSecondaryText)
+                                        if session.activities.isEmpty {
+                                            Text("No recent activity available.")
+                                                .foregroundStyle(Color.dockSecondaryText)
+                                        } else {
+                                            Text("RECENT ACTIVITY")
+                                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                                .foregroundStyle(Color.dockSecondaryText)
+                                        }
                                         ForEach(session.activities) { activity in
                                             VStack(alignment: .leading, spacing: 4) {
                                                 Text(activity.name)
-                                                Text(activity.timestamp, style: .time).foregroundStyle(Color.dockSecondaryText)
+                                                Text(activity.timestamp, style: .time)
+                                                    .font(.system(size: 11, design: .monospaced))
+                                                    .foregroundStyle(Color.dockSecondaryText)
                                             }
                                         }
                                     } else {
@@ -119,6 +130,7 @@ struct OfficePreviewView: View {
                                 }
                             case .board:
                                 OfficePreviewBoardDetails(lanes: simulation.board)
+                            }
                             }
                         }
                         .padding(12)
@@ -143,6 +155,13 @@ struct OfficePreviewView: View {
             return simulation.agents.first(where: { $0.id == id })?.name ?? "Bot"
         }
         return "Kanban task board"
+    }
+
+    private var inspectorSubtitle: String {
+        if case .board = selection {
+            return "Kanban board"
+        }
+        return "Agent details"
     }
 
     private var selectedBot: BotSummary? {
@@ -173,6 +192,8 @@ struct OfficePreviewView: View {
 }
 
 private struct OfficePreviewHeader: View {
+    let title: String
+    let subtitle: String
     @Binding var wholeOffice: Bool
     @Binding var showsAgents: Bool
     let freeAgentCount: Int
@@ -185,56 +206,80 @@ private struct OfficePreviewHeader: View {
     let onResetCamera: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Picker("Camera view", selection: Binding(get: { wholeOffice }, set: { value in
-                wholeOffice = value
-                onViewChange()
-            })) {
-                Text("Workspace").tag(false)
-                Text("Whole office").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-            .frame(width: 174)
-            Toggle("Show agents", isOn: $showsAgents)
-                .toggleStyle(.checkbox)
-                .font(.system(size: 12))
-            Menu {
-                Button("Next free bot (\(isDataCurrent ? String(freeAgentCount) : "—"))", action: onFocusNextFreeAgent)
-                    .disabled(!isDataCurrent || freeAgentCount == 0)
-                Button("Task board", action: onShowBoard)
-            } label: {
-                Label("Inspect", systemImage: "list.bullet.rectangle")
-            }
-            .menuStyle(.borderlessButton)
-            .help("Inspect free bots and the live Kanban board")
-            Button(action: onRefresh) {
-                Group {
-                    if isRefreshing { ProgressView().controlSize(.small) }
-                    else { LucideImage(systemName: "refresh-cw").font(.system(size: 14, weight: .medium)) }
+        DockPageHeader(
+            icon: "cube.transparent",
+            title: title,
+            subtitle: subtitle,
+            onRefresh: onRefresh,
+            isRefreshing: isRefreshing
+        ) {
+            HStack(spacing: 8) {
+                HStack(spacing: 2) {
+                    cameraModeButton("Workspace", isSelected: !wholeOffice, wholeOfficeValue: false)
+                    cameraModeButton("Whole office", isSelected: wholeOffice, wholeOfficeValue: true)
                 }
-                .frame(width: 30, height: 30)
+                .padding(2)
+                .background(Capsule().fill(Color.dockControlSurface))
+
+                Button {
+                    showsAgents.toggle()
+                } label: {
+                    Image(systemName: showsAgents ? "person.2.fill" : "person.2")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .help(showsAgents ? "Hide agents" : "Show agents")
+                .accessibilityLabel(showsAgents ? "Hide agents" : "Show agents")
+
+                Menu {
+                    Button("Next free bot (\(isDataCurrent ? String(freeAgentCount) : "—"))", action: onFocusNextFreeAgent)
+                        .disabled(!isDataCurrent || freeAgentCount == 0)
+                    Button("Task board", action: onShowBoard)
+                } label: {
+                    Image(systemName: "list.bullet.rectangle")
+                        .frame(width: 28, height: 28)
+                }
+                .menuStyle(.borderlessButton)
+                .help("Inspect free bots and the live Kanban board")
+                .accessibilityLabel("Inspect workspace")
+
+                Button(action: onResetCamera) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.borderless)
+                .help("Reset camera")
+                .accessibilityLabel("Reset camera")
             }
-            .buttonStyle(.borderless)
-            .disabled(isRefreshing)
-            .help("Refresh Office Preview")
-            Button(action: onResetCamera) {
-                Image(systemName: "arrow.counterclockwise").frame(width: 30, height: 30)
-            }
-            .buttonStyle(.borderless)
-            .help("Reset camera")
-            .accessibilityLabel("Reset camera")
+            .fixedSize()
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface2.opacity(0.92)))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+    }
+
+    private func cameraModeButton(_ label: String, isSelected: Bool, wholeOfficeValue: Bool) -> some View {
+        Button {
+            guard wholeOffice != wholeOfficeValue else { return }
+            wholeOffice = wholeOfficeValue
+            onViewChange()
+        } label: {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.dockOnAccentText : Color.dockSecondaryText)
+                .padding(.horizontal, 9)
+                .frame(height: 26)
+                .background {
+                    if isSelected {
+                        Capsule().fill(Color.dockAccent)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Show \(label)")
     }
 }
 
 private struct OfficePreviewInspector<Content: View>: View {
     let title: String
+    let subtitle: String
     let avatarBot: BotSummary?
     let avatarData: Data?
     let width: CGFloat
@@ -244,24 +289,35 @@ private struct OfficePreviewInspector<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(alignment: .top, spacing: 10) {
                 if let avatarBot {
-                    BotAvatarView(bot: avatarBot, imageData: avatarData, size: 28)
+                    BotAvatarView(bot: avatarBot, imageData: avatarData, size: 32)
                 }
-                Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(2)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
                 Spacer()
                 Button(action: onClose) {
-                    Image(systemName: "xmark").frame(width: 44, height: 44)
+                    Image(systemName: "xmark").frame(width: 32, height: 32)
                 }
                 .buttonStyle(.borderless)
                 .help("Close details")
                 .accessibilityLabel("Close details")
-            }.padding(.horizontal, 12)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(Color.dockSurface2.opacity(0.72))
             Divider()
             ScrollView {
                 content()
                     .font(.system(size: 12))
-                    .padding(14)
+                    .multilineTextAlignment(.leading)
+                    .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -269,6 +325,7 @@ private struct OfficePreviewInspector<Content: View>: View {
         .background(Color.dockCanvas)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.dockAccent.opacity(0.3), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
     }
 }
 

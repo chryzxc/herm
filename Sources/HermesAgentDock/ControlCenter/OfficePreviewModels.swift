@@ -332,7 +332,9 @@ enum OfficePreviewResolver {
     static func agents(bots: [BotSummary], tasks: [KanbanTaskSummary]) -> [OfficePreviewAgentPresentation] {
         let byAssignee = Dictionary(grouping: tasks.map(OfficePreviewTaskData.init), by: { $0.assignee ?? "" })
         var seen = Set<String>()
-        return bots.filter { !$0.isHidden && !$0.isDefault && seen.insert($0.id).inserted }.sorted { $0.id < $1.id }.map {
+        // The office is a roster view: hidden profiles remain intentionally
+        // absent from selectors but keep their physical desk here.
+        return bots.filter { !$0.isDefault && seen.insert($0.id).inserted }.sorted { $0.id < $1.id }.map {
             OfficePreviewAgentPresentation(id: $0.id, name: $0.name, tasks: ordered(byAssignee[$0.id] ?? []))
         }
     }

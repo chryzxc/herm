@@ -99,6 +99,20 @@ struct BotServiceTests {
         #expect(!client.methods.contains("profiles.set_asset"))
     }
 
+    @Test func inventoryReplacementsBumpRosterRevision() async {
+        let client = BotFixtureClient(result: ["profiles": [["name": "research", "has_avatar": false]]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+
+        let before = model.rosterRevision
+        await model.refreshNow()
+        let afterFirst = model.rosterRevision
+        #expect(afterFirst > before)
+
+        await model.refreshNow()
+        #expect(model.rosterRevision > afterFirst)
+    }
+
     @Test func createParsesHermesCreateResultWithoutTitleParam() async throws {
         let client = BotFixtureClient(result: ["ok": true, "name": "writer", "path": "/private", "mirrored": ["env": true]])
         let details = try await BotService(client: client).create(name: "writer", title: nil, description: nil)

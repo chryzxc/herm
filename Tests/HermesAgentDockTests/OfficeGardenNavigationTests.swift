@@ -6,6 +6,18 @@ struct OfficeGardenNavigationTests {
     @MainActor @Test func compactWingsAndRoomsConnectToMainEntrance() throws {
         let root = Entity()
         var authored = OfficeDesignSceneBuilder().build(in: root)
+        #expect(root.findEntity(named: "investigation-board") != nil)
+        #expect(root.findEntity(named: "investigation-board-cork") != nil)
+        #expect(root.findEntity(named: "investigation-thread-a") != nil)
+        #expect(root.findEntity(named: "investigation-pin-a") != nil)
+        #expect(root.findEntity(named: "bike-rack") != nil)
+        #expect(root.findEntity(named: "entry-directory") != nil)
+        #expect(root.findEntity(named: "landscape-planter") != nil)
+        func countWestWallWindows(in node: Entity) -> Int {
+            let ownCount = node.name == "window" && node.visualBounds(relativeTo: root).center.x < -20 ? 1 : 0
+            return ownCount + node.children.reduce(0) { $0 + countWestWallWindows(in: $1) }
+        }
+        #expect(countWestWallWindows(in: root) == 4)
         #expect(root.findEntity(named: "staircase") == nil)
         #expect(root.findEntity(named: "reception-desk") == nil)
         let west = try #require(root.findEntity(named: "west-wing-floor")).visualBounds(relativeTo: root)
@@ -14,14 +26,23 @@ struct OfficeGardenNavigationTests {
         #expect(abs(east.min.x - west.max.x - 3) < 0.01)
         #expect(abs(east.max.z - 16) < 0.01)
         #expect(root.findEntity(named: "east-wing-floor") != nil)
+        let exteriorTrees = root.findEntity(named: "exterior-landscape")?.children.filter { $0.name == "garden-tree" } ?? []
+        #expect(exteriorTrees.count == 4)
+        for tree in exteriorTrees {
+            let bounds = tree.visualBounds(relativeTo: root)
+            #expect(bounds.max.x < west.min.x || bounds.min.x > east.max.x || bounds.max.z < west.min.z || bounds.min.z > east.max.z)
+        }
         #expect(authored.stations[.desk]?.filter { $0.position.x < 0 }.count == 14)
-        #expect(authored.stations[.desk]?.filter { $0.position.x > 0 }.count == 12)
+        #expect(authored.stations[.desk]?.filter { $0.position.x > 0 }.count == 9)
         #expect(authored.stations[.reviewTable]?.count == 10)
-        for slot in 0..<26 { #expect(root.findEntity(named: "work-screen-\(slot)") != nil) }
+        for slot in 0..<23 { #expect(root.findEntity(named: "work-screen-\(slot)") != nil) }
         let destinations: [SIMD3<Float>] = [
             [-23, 0, 1.75], [-23, 0, 7.25], [-23.25, 0, 10], [-19, 0, 11],
             [-17, 0, -1], [0, 0, 3.5], [0, 0, -1.5], [16, 0, 3],
-            [12, 0, 10], [22, 0, 10], [21.5, 0, 4], [17, 0, 15]
+            [12, 0, 10], [22, 0, 10], [21.5, 0, 4], [17, 0, 15],
+            // Reach the usable interior of each converted specialist room,
+            // not only its doorway: studio, QA, server aisle and operations.
+            [-23.5, 0, 0.5], [-24, 0, 6], [-25, 0, 11], [-19, 0, 11.6]
         ].map { p in p + SIMD3<Float>(p.x <= -8 ? 6.5 : (p.x >= 8 ? -6.5 : 0), 0, 0) }
         authored.stations[.waitingArea] = destinations.map { .init(position: $0, approach: $0, yaw: 0, seated: false) }
         var layout = OfficePreviewLayout()
@@ -82,8 +103,9 @@ struct OfficeGardenNavigationTests {
     @MainActor @Test func desksConnectToOutdoorSeatingThroughRenderedDoorway() throws {
         var layout = OfficePreviewLayout()
         layout.authored = OfficeDesignSceneBuilder().build(in: Entity(), capacity: 26)
-        #expect(layout.authored?.stations[.desk]?.count == 26)
-        for slot in 0..<26 {
+        #expect(layout.authored?.stations[.desk]?.count == 23)
+        #expect(layout.authored?.stations[.lounge]?.count == 2)
+        for slot in 0..<2 {
             let desk = layout.node(slot: slot, location: .desk)
             let patio = layout.node(slot: slot, location: .lounge)
             for (from, to) in [(desk, patio), (patio, desk)] {
@@ -109,7 +131,7 @@ struct OfficeGardenNavigationTests {
     @MainActor @Test func meetingSeatsHaveAnUnblockedExitToThePatio() {
         var layout = OfficePreviewLayout()
         layout.authored = OfficeDesignSceneBuilder().build(in: Entity(), capacity: 12)
-        for slot in 0..<10 {
+        for slot in 0..<2 {
             let start = layout.node(slot: slot, location: .reviewTable)
             let end = layout.node(slot: slot, location: .lounge)
             let route = layout.route(from: start, to: end)

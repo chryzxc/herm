@@ -1,0 +1,193 @@
+import AppKit
+import SwiftUI
+
+/// One transcript bubble, isolating per-message SwiftUI work behind an O(1)
+/// equality boundary. DockPopover rebuilds row values on every publication;
+/// when nothing about the message or its bot attribution changed, SwiftUI
+/// skips this body entirely and never touches the Markdown render cache.
+struct ConversationMessageRow: View, Equatable {
+    let message: ChatMessage
+    let isStreamingMessage: Bool
+    let streamingText: StreamingText?
+    let activeBotProfileID: String?
+    let botsByID: [String: BotSummary]
+    let avatarImages: [String: Data]
+    let botRosterRevision: Int
+    let onImagePreview: (NSImage) -> Void
+
+    nonisolated static func == (lhs: ConversationMessageRow, rhs: ConversationMessageRow) -> Bool {
+        lhs.message.id == rhs.message.id
+            && lhs.message.contentRevision == rhs.message.contentRevision
+            && lhs.message.role == rhs.message.role
+            && lhs.message.images.count == rhs.message.images.count
+            && lhs.message.isSteering == rhs.message.isSteering
+            && lhs.message.steeringStatus == rhs.message.steeringStatus
+            && lhs.message.isError == rhs.message.isError
+            && lhs.message.botProfileID == rhs.message.botProfileID
+            && lhs.message.botDisplayName == rhs.message.botDisplayName
+            && lhs.message.responseDuration == rhs.message.responseDuration
+            && lhs.isStreamingMessage == rhs.isStreamingMessage
+            && lhs.activeBotProfileID == rhs.activeBotProfileID
+            && lhs.botRosterRevision == rhs.botRosterRevision
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            if message.role == .user {
+                let userText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                Spacer(minLength: 40)
+                VStack(alignment: .trailing, spacing: 4) {
+                    // Attachments sit above the text surface instead of inside
+                    // the bubble, keeping media visually distinct from copy.
+                    if !message.images.isEmpty {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            ForEach(Array(message.images.enumerated()), id: \.offset) { index, image in
+                                let thumbnailKey = ConversationThumbnailCache.key(
+                                    messageID: message.id,
+                                    index: index,
+                                    imageCount: message.images.count,
+                                    contentRevision: message.contentRevision
+                                )
+                                Button {
+                                    onImagePreview(image)
+                                } label: {
+                                    Image(nsImage: ConversationThumbnailCache.image(image, key: thumbnailKey))
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxWidth: 220, maxHeight: 220)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .help("Open image preview")
+                            }
+                        }
+                    }
+                    if message.isSteering || !userText.isEmpty {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            if message.isSteering {
+                                Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(Color.dockAccent)
+                            }
+                            if !userText.isEmpty {
+                                MarkdownMessageView(markdown: userText)
+                                    .equatable()
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        // Use opaque slate-navy user message bubble background to eliminate eye strain
+                        .background(Color.dockUserMessageBubble)
+                        .clipShape(MessageBubbleShape(isUser: true))
+                        .overlay(
+                            MessageBubbleShape(isUser: true)
+                                .stroke(Color.dockBorderStrong, lineWidth: 0.5)
+                        )
+                        .shadow(color: Color.black.opacity(0.12), radius: 4)
+                    }
+
+                    Text(message.timeLabel)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .padding(.horizontal, 4)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    let attributedBotID = message.botProfileID ?? activeBotProfileID
+                    if let botProfileID = attributedBotID {
+                        let bot = botsByID[botProfileID]
+                        HStack(spacing: 7) {
+                            if let bot {
+                                BotAvatarView(
+                                    bot: bot,
+                                    imageData: avatarImages[bot.id],
+                                    size: 24
+                                )
+                            } else {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: BotAvatarPresentation.palette(for: botProfileID),
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                    Circle()
+                                        .stroke(.white.opacity(0.20), lineWidth: 0.6)
+                                        .frame(width: 15, height: 15)
+                                    LucideImage(systemName: BotAvatarPresentation.symbol(for: botProfileID))
+                                        .font(.system(size: 8, weight: .semibold))
+                                        .symbolRenderingMode(.hierarchical)
+                                        .foregroundStyle(.white.opacity(0.96))
+                                }
+                                .frame(width: 24, height: 24)
+                                .clipShape(RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous))
+                            }
+                            Text(bot?.name ?? message.botDisplayName ?? botProfileID)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.dockAccent)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 4)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
+                    }
+
+                    if !message.text.isEmpty || isStreamingMessage {
+                        Group {
+                            if isStreamingMessage, let streamingText {
+                                StreamingMessageText(streaming: streamingText)
+                            } else if message.isError {
+                                HStack(alignment: .top, spacing: 10) {
+                                    LucideImage(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(Color.dockWarning)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Request could not be completed")
+                                            .font(.system(size: 13, weight: .semibold))
+                                        Text(message.text)
+                                            .font(.system(size: 13))
+                                            .textSelection(.enabled)
+                                    }
+                                }
+                            } else {
+                                MarkdownMessageView(markdown: message.text)
+                                    .equatable()
+                            }
+                        }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            // Use opaque charcoal-indigo AI message bubble (DESIGN.md) to eliminate high-contrast glare
+                            .background(message.isError ? Color.dockWarning.opacity(0.10) : Color.dockMessageBubble)
+                            .clipShape(MessageBubbleShape(isUser: false))
+                            .overlay(
+                                MessageBubbleShape(isUser: false)
+                                    .stroke(message.isError ? Color.dockWarning.opacity(0.55) : Color.dockBorder, lineWidth: 0.5)
+                            )
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(message.timeLabel)
+                        if let durationLabel = message.durationLabel {
+                            LucideLabel(durationLabel, icon: "stopwatch")
+                        }
+                        if let modelName = message.modelName {
+                            Text("· \(modelName)")
+                        }
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .padding(.horizontal, 4)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+    }
+}

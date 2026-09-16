@@ -51,6 +51,41 @@ final class ConversationScrollMetricsTests: XCTestCase {
         )
     }
 
+    func testRepinningCompactsExpandedHistory() {
+        XCTAssertTrue(ConversationMessageWindow.shouldCompactAfterRepinning(
+            wasAtBottom: false,
+            isAtBottom: true,
+            currentLimit: 120,
+            totalCount: 500
+        ))
+        XCTAssertEqual(ConversationMessageWindow.compactedLimit(totalCount: 500), 12)
+    }
+
+    func testPinnedOrUnexpandedHistoryDoesNotCompact() {
+        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
+            wasAtBottom: true,
+            isAtBottom: true,
+            currentLimit: 120,
+            totalCount: 500
+        ))
+        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
+            wasAtBottom: false,
+            isAtBottom: true,
+            currentLimit: 12,
+            totalCount: 500
+        ))
+        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
+            wasAtBottom: false,
+            isAtBottom: false,
+            currentLimit: 120,
+            totalCount: 500
+        ))
+    }
+
+    func testCompactedLimitDoesNotExceedShortTranscript() {
+        XCTAssertEqual(ConversationMessageWindow.compactedLimit(totalCount: 5), 5)
+    }
+
     func testAppendWhileReadingEarlierPreservesVisibleStartIndex() {
         let oldCount = 500
         let oldLimit = 120
@@ -95,6 +130,38 @@ final class ConversationScrollMetricsTests: XCTestCase {
             ConversationUnreadMessagePolicy.rendersMessageBubble(
                 emptyActivity,
                 streamingID: emptyActivity.id
+            )
+        )
+    }
+
+    func testBodyTextFlagMatchesLegacyTrimmedEmptiness() {
+        XCTAssertTrue(ChatMessage(role: .hermes, text: "visible").hasBodyText)
+        XCTAssertFalse(ChatMessage(role: .hermes, text: "").hasBodyText)
+        XCTAssertFalse(ChatMessage(role: .hermes, text: "  \n\t ").hasBodyText)
+    }
+
+    func testUnreadSemanticsWithWhitespaceAndImageOnlyMessages() {
+        let whitespaceOnly = ChatMessage(role: .hermes, text: " \n\t ")
+        let imageOnly = ChatMessage(role: .user, text: "", images: [NSImage()])
+        let streamingPlaceholder = ChatMessage(role: .hermes, text: "")
+
+        XCTAssertEqual(
+            ConversationUnreadMessagePolicy.renderedMessageCount(
+                [whitespaceOnly, imageOnly, streamingPlaceholder],
+                streamingID: nil
+            ),
+            1
+        )
+        XCTAssertTrue(
+            ConversationUnreadMessagePolicy.rendersMessageBubble(
+                imageOnly,
+                streamingID: nil
+            )
+        )
+        XCTAssertTrue(
+            ConversationUnreadMessagePolicy.rendersMessageBubble(
+                streamingPlaceholder,
+                streamingID: streamingPlaceholder.id
             )
         )
     }

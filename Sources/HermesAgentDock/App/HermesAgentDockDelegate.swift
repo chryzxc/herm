@@ -40,11 +40,13 @@ struct CommandDoubleTapDetector {
 final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let model = DockModel()
     private var dockPanel: DockPanelController?
+    private var edgeDock: EdgeDockController?
     private var commandDoubleTapDetector = CommandDoubleTapDetector()
     private var commandEventMonitors: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         dockPanel = DockPanelController(model: model)
+        edgeDock = EdgeDockController(model: model)
         // The panel is intentionally created lazily, but its menu-bar identity
         // must still reflect the configured SOUL.md name at launch.
         model.refreshRuntimeConfiguration()
@@ -165,11 +167,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         static let height: CGFloat = 720
         static let screenInset: CGFloat = 12
         static let menuGap: CGFloat = 8
-        /// The shortcut begins as a compact capsule, then opens horizontally
-        /// from the left edge before settling into the normal Dock workspace.
-        static let shortcutIslandWidth: CGFloat = 56
-        static let shortcutIslandHeight: CGFloat = 56
-        static let shortcutAnimationDuration: TimeInterval = 0.42
     }
 
     private let model: DockModel
@@ -409,13 +406,14 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func show(fromShortcut: Bool = false) {
         installPanelContentIfNeeded()
-        panelPresentation.isEdgeAttached = fromShortcut && !isFullscreen
+        panelPresentation.isEdgeAttached = false
         if isFullscreen {
             guard let screen = NSScreen.main else { return }
             panel.setFrame(screen.visibleFrame, display: true)
-        } else if fromShortcut {
-            showWithShortcutIslandAnimation()
         } else {
+            // Both the menu-bar click and the global shortcut use the same
+            // status-item-relative placement. The shortcut must not introduce
+            // a separate left-edge presentation.
             resizePanel(to: desiredWidth, animated: false)
         }
         // `swift run` leaves Terminal as the active app. A status-bar panel can
@@ -428,36 +426,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             guard let self else { return }
             let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"
             DebugLog.write("panel: shown (app active: \(NSApp.isActive), frontmost: \(frontmost), key: \(self.panel.isKeyWindow), responder: \(self.panel.responderDescription))")
-        }
-    }
-
-    /// A double-Command invocation should have an immediate visual origin even
-    /// when the menu-bar item is far away. Start with a small top-left capsule
-    /// and let it grow across the workspace rather than dropping down from the
-    /// status item. The final geometry is still the same usable Dock panel.
-    private func showWithShortcutIslandAnimation() {
-        guard let screen = shortcutScreen else {
-            resizePanel(to: desiredWidth, animated: false)
-            return
-        }
-
-        let target = shortcutPanelFrame(in: screen)
-        let origin = NSRect(
-            x: target.minX,
-            y: target.maxY - Metrics.shortcutIslandHeight,
-            width: Metrics.shortcutIslandWidth,
-            height: Metrics.shortcutIslandHeight
-        )
-
-        panel.setFrame(origin, display: true)
-        panel.alphaValue = 0.96
-        panel.orderFrontRegardless()
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Metrics.shortcutAnimationDuration
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
-            panel.animator().setFrame(target, display: true)
-            panel.animator().alphaValue = 1
         }
     }
 
@@ -594,27 +562,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             ?? NSScreen.main
         guard let screen else { return .greatestFiniteMagnitude }
         return max(Metrics.compactWidth, screen.visibleFrame.width - Metrics.screenInset * 2)
-    }
-
-    /// The display hosting the status item is the display the Dock belongs to;
-    /// do not use `NSScreen.main` because the active app may be elsewhere.
-    private var shortcutScreen: NSScreen? {
-        guard let button = statusItem.button else { return NSScreen.main }
-        let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil))
-        return buttonRect.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } }
-            ?? button.window?.screen
-            ?? NSScreen.main
-    }
-
-    private func shortcutPanelFrame(in screen: NSScreen) -> NSRect {
-        let visibleFrame = screen.visibleFrame
-        let width = min(desiredWidth, visibleFrame.width)
-        return NSRect(
-            x: visibleFrame.minX,
-            y: max(visibleFrame.minY, visibleFrame.maxY - Metrics.height),
-            width: width,
-            height: Metrics.height
-        )
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

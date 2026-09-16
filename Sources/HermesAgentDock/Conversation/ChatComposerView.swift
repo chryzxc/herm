@@ -490,8 +490,12 @@ struct ChatComposerView: View {
     }
 
     private func updateMentionPicker(for text: String) {
+        let wasPickerVisible = showingBotMentionPicker
         showingBotMentionPicker = ComposerMentionPresentation.activeToken(in: text) != nil
-        guard showingBotMentionPicker else { return }
+        guard ComposerMentionRefreshPolicy.shouldRefresh(
+            wasPickerVisible: wasPickerVisible,
+            isPickerVisible: showingBotMentionPicker
+        ) else { return }
         Task { @MainActor in
             await botMode.refreshNow(force: true)
         }

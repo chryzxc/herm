@@ -396,6 +396,14 @@ struct ChatMessage: Identifiable, Equatable {
     /// Transcript descriptors can then compare revisions without re-hashing
     /// the full Markdown body during unrelated view updates.
     let contentRevision: Int
+    /// Presentation emptiness, computed once at init. Row guards and the
+    /// unread-badge policy consult this flag instead of re-trimming the full
+    /// body on every SwiftUI evaluation.
+    let hasBodyText: Bool
+    /// Metadata labels, formatted once at init: the timestamp and duration are
+    /// immutable per message, so row rendering must not re-run DateFormatter.
+    let timeLabel: String
+    let durationLabel: String?
 
     init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil) {
         self.id = id
@@ -411,6 +419,9 @@ struct ChatMessage: Identifiable, Equatable {
         self.botProfileID = botProfileID
         self.botDisplayName = botDisplayName
         self.contentRevision = contentRevision ?? Self.revision(for: text)
+        self.hasBodyText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        self.timeLabel = timestamp.formatted(date: .omitted, time: .shortened)
+        self.durationLabel = responseDuration.map { ResponseDurationFormatting.string(seconds: $0) }
     }
 
     var image: NSImage? { images.first }
@@ -422,6 +433,24 @@ struct ChatMessage: Identifiable, Equatable {
             value &*= 1099511628211
         }
         return Int(truncatingIfNeeded: value)
+    }
+
+    func attachingImages(_ added: [NSImage]) -> ChatMessage {
+        ChatMessage(
+            id: id,
+            role: role,
+            text: text,
+            images: images + added,
+            timestamp: timestamp,
+            modelName: modelName,
+            responseDuration: responseDuration,
+            isSteering: isSteering,
+            steeringStatus: steeringStatus,
+            isError: isError,
+            botProfileID: botProfileID,
+            botDisplayName: botDisplayName,
+            contentRevision: contentRevision
+        )
     }
 
     enum Role { case user, hermes }

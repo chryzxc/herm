@@ -111,10 +111,11 @@ struct OfficePreviewSimulationTests {
             task("hidden-owner", status: "running", assignee: "hidden")
         ]
         let agents = OfficePreviewResolver.agents(bots: bots, tasks: tasks)
-        #expect(agents.map(\.id) == ["profile-atlas", "profile-nova"])
-        let atlas = try #require(agents.first)
+        #expect(agents.map(\.id) == ["hidden", "profile-atlas", "profile-nova"])
+        let atlas = try #require(agents.first(where: { $0.id == "profile-atlas" }))
         #expect(atlas.name == "Atlas")
         #expect(atlas.tasks.map(\.id) == ["owned"])
+        #expect(agents.first(where: { $0.id == "hidden" })?.tasks.map(\.id) == ["hidden-owner"])
         #expect(agents.last?.tasks.isEmpty == true)
         #expect(agents.last?.location == .lounge)
         let reordered = OfficePreviewResolver.agents(bots: Array(bots.reversed()), tasks: Array(tasks.reversed()))

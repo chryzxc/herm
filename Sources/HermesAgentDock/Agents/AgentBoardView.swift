@@ -449,16 +449,11 @@ struct AgentBoardView: View {
     }
 
     private func pipelineList(_ items: [PipelineItem]) -> some View {
-        let timeColumnWidth: CGFloat = 68
-        let durationColumnWidth: CGFloat = 72
-
         return LazyVStack(spacing: 0) {
             HStack(spacing: 10) {
                 pipelineHeader("STATUS", width: 76)
                 pipelineHeader("TASK", width: nil)
                 pipelineHeader("AGENT", width: 88)
-                pipelineHeader("TIME", width: timeColumnWidth)
-                pipelineHeader("DURATION", width: durationColumnWidth, alignment: .trailing)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 4)
@@ -477,15 +472,14 @@ struct AgentBoardView: View {
                                 Text(item.status)
                             }
                             .frame(width: 76, alignment: .leading)
-                            Text(item.task).frame(maxWidth: .infinity, alignment: .leading).lineLimit(1)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.task)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .lineLimit(1)
+                                pipelineMetadata(item)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading).lineLimit(1)
-                            Text(item.time)
-                                .foregroundStyle(Color.dockSecondaryText)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .frame(width: timeColumnWidth, alignment: .trailing)
-                            pipelineDuration(item)
-                                .frame(width: durationColumnWidth, alignment: .trailing)
                             LucideImage(systemName: expandedPipelineItemID == item.id ? "chevron.up" : "chevron.down")
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(Color.dockMetadataText)
@@ -504,6 +498,27 @@ struct AgentBoardView: View {
                 .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
             }
         }
+    }
+
+    private func pipelineMetadata(_ item: PipelineItem) -> some View {
+        HStack(spacing: 5) {
+            Text(item.time)
+            Text("·")
+            pipelineDuration(item)
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(Color.dockMetadataText)
+        .monospacedDigit()
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Started at \(item.time), \(durationAccessibilityText(for: item))")
+    }
+
+    private func durationAccessibilityText(for item: PipelineItem) -> String {
+        guard let duration = elapsedDuration(for: item, at: Date()) else {
+            return item.isActive ? "duration running" : "duration unavailable"
+        }
+        return "duration \(Self.accessibleDuration(duration))"
     }
 
     @ViewBuilder

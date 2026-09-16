@@ -10,9 +10,9 @@ struct PlanArtifactCommandTests {
         #expect(unavailable?.unavailableReason == nil)
     }
 
-    @Test func artifactSearchMatchesPlansCommentsAndRevisions() {
+    @Test func artifactSearchMatchesGeneratedOutputs() {
         let descriptors = DockActionRegistry.make(repositoryAvailable: true, isWorking: false)
-        let results = DockActionRegistry.search("plan comments", descriptors: descriptors, recentIDs: [])
+        let results = DockActionRegistry.search("images outputs", descriptors: descriptors, recentIDs: [])
         #expect(results.map(\.action.id) == ["artifacts"])
     }
 }

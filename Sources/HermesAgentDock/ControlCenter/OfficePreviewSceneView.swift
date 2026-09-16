@@ -310,7 +310,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             self.view = view
             let room = AnchorEntity(world: .zero)
             anchor = room
-            roomLayout.reconcile(ids: agents.map(\.id))
+            roomLayout.reconcile(ids: agents.map(\.id), mainAgentID: mainOfficeOwner(in: agents), reserveMainOffice: true)
             rebuildRoom()
             addCameraAndLight(to: room)
             view.scene.anchors.append(room)
@@ -401,6 +401,11 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             }
         }
 
+        private func mainOfficeOwner(in agents: [OfficePreviewAgentPresentation]) -> String? {
+            let main = agents.filter { $0.mainSession != nil }
+            return main.first(where: { $0.mainSession?.isCurrent == true })?.id ?? main.map(\.id).sorted().first
+        }
+
         func update(agents: [OfficePreviewAgentPresentation], reduceMotion: Bool) {
             guard let anchor else { return }
             let visibleAgents = showsAgents ? agents : []
@@ -408,7 +413,8 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             lastDataCurrent = isDataCurrent
             lastPresentations = visibleAgents
             let oldCapacity = roomLayout.capacity
-            roomLayout.reconcile(ids: visibleAgents.map(\.id))
+            let oldSlots = roomLayout.slots
+            roomLayout.reconcile(ids: visibleAgents.map(\.id), mainAgentID: mainOfficeOwner(in: visibleAgents), reserveMainOffice: true)
             if oldCapacity != roomLayout.capacity {
                 rebuildRoom()
                 if wholeOfficePreset && !manuallyMovedCamera { resetCamera(reduceMotion: true, wholeOffice: true) }
@@ -437,7 +443,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     avatarRoots[agent.id] = root
                     anchor.addChild(root)
                 }
-                if isNew || reduceMotion {
+                if isNew || reduceMotion || oldSlots[agent.id] != slot {
                     movementTasks.removeValue(forKey: agent.id)?.cancel()
                     root.stopAllAnimations()
                     currentNodes[agent.id] = destination
@@ -459,6 +465,12 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
         private func destination(for agent: OfficePreviewAgentPresentation, slot: Int) -> OfficePreviewLayout.Node {
             if agent.canWander, let target = leisureTargets[agent.id] { return target }
+            if agent.canWander, let authored = roomLayout.authored, !authored.leisureSpots.isEmpty {
+                // Taskless bots begin with a distinct indoor activity instead
+                // of filling the small patio's lounge seats.
+                let index = Int(agent.identitySeed % UInt64(authored.leisureSpots.count))
+                return OfficePreviewLayout.Node(slot: slot, index: 0, isStation: true, leisureIndex: index)
+            }
             return roomLayout.node(slot: slot, location: agent.location)
         }
 
@@ -477,7 +489,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 // has left. Leisure never changes Hermes tasks or their ordering.
                 let reserved = Set(leisureTargets.filter { $0.key != agent.id }.values.compactMap(\.leisureIndex)
                     + currentNodes.filter { $0.key != agent.id }.values.compactMap(\.leisureIndex))
-                var target = roomLayout.node(slot: slot, location: .lounge)
+                var target = destination(for: agent, slot: slot)
                 if current.leisureIndex == nil || agent.identitySeed % 3 != UInt64(Int(animationTime) % 3) {
                     let count = authored.leisureSpots.count
                     if count > 0 {
@@ -508,6 +520,9 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             for (slot, screen) in screens {
                 let color = active.contains(slot) ? NSColor(srgbRed: 0.24, green: 0.62, blue: 0.78, alpha: 1) : NSColor(srgbRed: 0.13, green: 0.17, blue: 0.23, alpha: 1)
                 screen.model?.materials = [UnlitMaterial(color: color)]
+                if slot == 22, let extended = roomGeometry?.findEntity(named: "main-office-extended-screen") as? ModelEntity {
+                    extended.model?.materials = [UnlitMaterial(color: color)]
+                }
             }
         }
 

@@ -37,14 +37,110 @@ struct ResponseDurationLabel: View {
     }
 }
 
+struct StreamingPresentationChunk: Identifiable, Equatable {
+    let id: Int
+    let text: String
+    let revision: Int
+    let isMutableTail: Bool
+
+    nonisolated static func == (
+        lhs: StreamingPresentationChunk,
+        rhs: StreamingPresentationChunk
+    ) -> Bool {
+        lhs.id == rhs.id && lhs.revision == rhs.revision
+    }
+}
+
+enum StreamingChunkPolicy {
+    static let targetStableChunkBytes = 4_096
+    static let maxMutableTailBytes = 8_192
+
+    static func promotionBoundary(in tail: String) -> String.Index? {
+        guard tail.utf8.count > maxMutableTailBytes else { return nil }
+
+        var searchStart = tail.startIndex
+        while let range = tail.range(of: "\n\n", range: searchStart..<tail.endIndex) {
+            if tail[..<range.upperBound].utf8.count >= targetStableChunkBytes {
+                return range.upperBound
+            }
+            searchStart = range.upperBound
+        }
+        return nil
+    }
+}
+
 /// Holds the live text of the single in-flight Hermes response. Streaming
 /// updates publish here instead of mutating DockModel.messages so a 30fps
 /// re-render is confined to the one streaming row rather than the whole
 /// popover (conversation, sidebar, and composer all observe DockModel).
 @MainActor
 final class StreamingText: ObservableObject {
-    @Published var text = ""
+    private(set) var text = ""
+    @Published private(set) var chunks: [StreamingPresentationChunk] = []
     @Published var reasoning = ""
+
+    private var stableChunks: [StreamingPresentationChunk] = []
+    private var mutableTail = ""
+    private var nextStableChunkID = 0
+    private var tailRevision = 0
+
+    func appendPresentation(_ delta: String) {
+        guard !delta.isEmpty else { return }
+        text.append(delta)
+        mutableTail.append(delta)
+        promoteStableChunks()
+        tailRevision &+= 1
+        publishChunks()
+    }
+
+    func replacePresentation(with value: String) {
+        text = ""
+        stableChunks = []
+        mutableTail = ""
+        nextStableChunkID = 0
+        tailRevision = 0
+        text = value
+        mutableTail = value
+        promoteStableChunks()
+        tailRevision = 1
+        publishChunks()
+    }
+
+    func clearPresentation() {
+        text = ""
+        stableChunks = []
+        mutableTail = ""
+        nextStableChunkID = 0
+        tailRevision = 0
+        chunks = []
+    }
+
+    private func promoteStableChunks() {
+        while let boundary = StreamingChunkPolicy.promotionBoundary(in: mutableTail) {
+            let stableText = String(mutableTail[..<boundary])
+            stableChunks.append(StreamingPresentationChunk(
+                id: nextStableChunkID,
+                text: stableText,
+                revision: 0,
+                isMutableTail: false
+            ))
+            nextStableChunkID += 1
+            mutableTail = String(mutableTail[boundary...])
+        }
+    }
+
+    private func publishChunks() {
+        var published = stableChunks
+        if !mutableTail.isEmpty {
+            published.append(StreamingPresentationChunk(
+                id: Int.max,
+                text: mutableTail,
+                revision: tailRevision,
+                isMutableTail: true
+            ))
+        }
+        chunks = published
+    }
 }
 
 /// Renders the in-flight response. Observing only StreamingText keeps the
@@ -53,7 +149,24 @@ struct StreamingMessageText: View {
     @ObservedObject var streaming: StreamingText
 
     var body: some View {
-        Text(streaming.text)
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(streaming.chunks) { chunk in
+                StreamingChunkText(chunk: chunk)
+                    .equatable()
+            }
+        }
+    }
+}
+
+private struct StreamingChunkText: View, Equatable {
+    let chunk: StreamingPresentationChunk
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.chunk == rhs.chunk
+    }
+
+    var body: some View {
+        Text(chunk.text)
             .font(.system(size: 14))
             .lineSpacing(3)
             .fixedSize(horizontal: false, vertical: true)

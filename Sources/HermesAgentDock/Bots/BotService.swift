@@ -401,12 +401,23 @@ private extension BotDetails {
 
 @MainActor
 final class BotModeModel: ObservableObject {
-    @Published private(set) var inventory = BotInventory(availability: .unavailable, bots: [], diagnostic: "Bot inventory is unavailable.")
+    @Published private(set) var inventory = BotInventory(availability: .unavailable, bots: [], diagnostic: "Bot inventory is unavailable.") {
+        didSet { rebuildRosterIndex() }
+    }
+    /// O(1) roster lookup for per-row transcript rendering; rebuilt whenever
+    /// the inventory is replaced.
+    private(set) var botsByID: [String: BotSummary] = [:]
+    /// Bumped on every roster or avatar change so transcript rows can compare
+    /// bot attribution with an O(1) integer instead of dictionary contents.
+    private(set) var rosterRevision = 0
     @Published private(set) var isRefreshing = false
     @Published private(set) var isCreatingBot = false
     @Published var searchText = ""
     @Published var botCreationError: String?
     @Published private(set) var selectedProfileID: String?
+    @Published private(set) var avatarImages: [String: Data] = [:] {
+        didSet { rosterRevision &+= 1 }
+    }
     private var service: BotService?
     private var capabilityAvailable = false
     private let selectedProfileKey = "hermes.dock.selected-profile.v1"
@@ -418,6 +429,11 @@ final class BotModeModel: ObservableObject {
         } else {
             selectedProfileID = nil
         }
+    }
+
+    private func rebuildRosterIndex() {
+        botsByID = Dictionary(inventory.bots.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
+        rosterRevision &+= 1
     }
 
     var bots: [BotSummary] { inventory.bots }
@@ -516,7 +532,6 @@ final class BotModeModel: ObservableObject {
 
     // MARK: Parity state: avatars, detail editing, routines
 
-    @Published private(set) var avatarImages: [String: Data] = [:]
     @Published private(set) var routines: [BotRoutine] = []
     @Published private(set) var isLoadingRoutines = false
     @Published private(set) var isImageGenerationAvailable = false

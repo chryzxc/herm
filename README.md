@@ -54,6 +54,7 @@ swift run
 - **Today**: current focus, approvals, failures, due Apple Reminders, active Hermes work, scheduled jobs, and setup cards for unavailable providers (with copy-only recovery commands).
 - **Inbox**: actionable approvals, clarifications, failures, and completed work — dismissed items persist, snoozed items return after an hour, due Reminders project into the same stream.
 - **Activity**: live delegated agents by name with event history, an animated agent-to-agent handoff map, background task tracking, and a per-session Now view synced to live execution.
+- **Artifacts**: indexes generated outputs from recent Hermes sessions and presents images in a preview grid plus files and links in a searchable list. Filters show live counts; each item retains its source session and supports copying or opening the original URL/path.
 - **Core**: session cockpit (token usage, context breakdown, prompt budget, steering, rollback checkpoints with confirmed restore), runtime inventories (skills, MCP servers, plugins), session/runtime controls (rename, branch, compress, undo, delegation pause, interrupt), read-only Hermes health, and opt-in completion notifications.
 
 ### Developer command center
@@ -78,12 +79,17 @@ swift run
 
 ### Office Preview
 
+- The private Main Agent office behind Mission Control replaces the northeast four-desk pod. A cool gray floor contrasts with its charcoal desk, laptop computer, two synchronized external monitors and high-back chair. Reference-inspired accessories include a detailed keyboard, camera, drawing tablet, speakers, microphone boom, copier and articulated task lamp. The current main session owns its reserved desk (otherwise the first visible main session by ID); bots use shared desks. The office has 22 shared desks plus this private desk, with existing standing overflow behavior for larger rosters.
+- The office renders every non-default Bot profile, including profiles hidden from normal selectors, so the physical roster remains complete. The outdoor footprint is fixed around the building and a short two-chair patio with one table. The lower entrance garden adds deterministic varied trees, shrubs, stones, planters, lighting, and a bike rack so the exterior feels populated without blocking indoor navigation. Taskless bots begin at one of four indoor activities—coffee, reading, strolling, or socializing—and continue to rotate among those reachable locations. The patio remains a small optional lounge destination rather than the default idle area.
+
 - Control → More → Office Preview renders a furnished 3D office and garden built locally from original RealityKit geometry (no purchased assets). Every visible bot gets one stable chibi character matched to Kanban tasks by profile ID: running work goes to the computers, review to the boardroom, planning to the Kanban room; idle bots take patio breaks, coffee, and walks. Task ownership and status are live; office actions are simulated.
+- Specialist interiors replace the small meeting rooms with a Design Studio and QA / Verification lab, and the quiet-room/phone-booth area with Server / Operations. The former boardroom is Mission Control, retaining review seating. The east-side Bot Workshop uses open modular desks. Room identity comes from physical models (drafting tools, material samples, test devices, racks, cooling and consoles); these accessories do not report runtime telemetry or automatically assign bots by specialty. The corkboard lives in the studio and the shared planning sofa provides the reading spot.
 - Live Nexus avatars render for working or attention-needed conversations. Status icons, hover details, a task board, workspace/whole-office camera presets, and full keyboard camera navigation (WASD/arrows, Q/E, R/F, +/−, Shift; Home resets). Reduce Motion disables travel, pulses, and decorative animation.
 
 ### Presentation
 
 - Native macOS menu-bar presentation: appearance-aware navy surface, system typography, native controls, restrained selection, divider-led sections, and a deliberate compact type scale.
+- Optional right-edge Dock notch: a separate hover/click launcher expands into the Dock without replacing the menu-bar icon; click pins it open and Escape/close collapses it.
 - Status colors are reserved for meaning (blue active, green healthy, amber warning, red failure).
 - Menu-bar unread badge for hidden completed/attention work; narrow-screen mode swaps Ask/Control as a single pane; adaptive composer grows to six lines then scrolls.
 

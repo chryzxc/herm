@@ -481,11 +481,36 @@ struct SessionConversationIsolationTests {
             ["role": "user", "content": raw, "timestamp": 1.0]
         ])
 
-        #expect(parsed.count == 1)
-        #expect(parsed[0].text == "what is in this photo?")
-        #expect(parsed[0].images.count == 1)
-        #expect(parsed[0].images[0].size.width > 0)
-        #expect(parsed[0].images[0].size.height > 0)
+        #expect(parsed.messages.count == 1)
+        #expect(parsed.messages[0].text == "what is in this photo?")
+        #expect(parsed.messages[0].images.isEmpty)
+        #expect(parsed.pendingImages.count == 1)
+        #expect(parsed.pendingImages[0].messageID == parsed.messages[0].id)
+        #expect(parsed.pendingImages[0].fileURLs == [imageURL])
+
+        let loaded = parsed.pendingImages[0].fileURLs.compactMap { NSImage(contentsOf: $0) }
+        #expect(loaded.count == 1)
+        let attached = parsed.messages[0].attachingImages(loaded)
+        #expect(attached.id == parsed.messages[0].id)
+        #expect(attached.images.count == 1)
+        #expect(attached.images[0].size.width > 0)
+        #expect(attached.images[0].size.height > 0)
+    }
+
+    @Test func pendingImageRehydrationDropsPayloadForSessionMismatch() async {
+        let model = DockModel(rpcClient: SessionIsolationRPCClient())
+        let pending = [RestoredTranscript.PendingImages(
+            messageID: UUID(),
+            fileURLs: [FileManager.default.temporaryDirectory.appendingPathComponent("missing-\(UUID().uuidString).png")]
+        )]
+
+        await model.rehydratePendingTranscriptImages(
+            pending,
+            requestedSessionID: "session-that-was-never-opened",
+            loadData: { _ in Data(count: 16) }
+        ).value
+
+        #expect(model.messages.isEmpty)
     }
 
     @Test func restoredAssistantMarkdownPreservesLineBreaksForTheTranscriptRenderer() {
@@ -500,9 +525,9 @@ struct SessionConversationIsolationTests {
             ["role": "assistant", "content": markdown, "timestamp": 1.0]
         ])
 
-        #expect(parsed.count == 1)
-        #expect(parsed[0].text == markdown)
-        #expect(parsed[0].text.contains("\\n") == false)
+        #expect(parsed.messages.count == 1)
+        #expect(parsed.messages[0].text == markdown)
+        #expect(parsed.messages[0].text.contains("\\n") == false)
     }
 
     @Test func canonicalBotChatDoesNotAdoptAnUnrelatedResumeResponse() async throws {

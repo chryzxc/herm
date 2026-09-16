@@ -26,6 +26,32 @@ struct ComposerTextTests {
         #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
     }
 
+    @Test func multiLineJSONObjectWithinBudgetStillBecomesACodeBlock() {
+        let payload = (0..<50).map { index in
+            "\"key\(index)\":\"value \(index)\""
+        }.joined(separator: ",\n")
+        let message = "Result:\n\n{\(payload)\n}"
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
+    }
+
+    @Test func unterminatedJSONObjectBeyondLineBudgetStopsScanning() {
+        let opening = "{\n\"started\": true"
+        let filler = (0..<5_000).map { index in
+            "\"pending\(index)\": [1, 2, 3"
+        }.joined(separator: "\n")
+        let message = opening + "\n" + filler
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: message).isEmpty)
+    }
+
+    @Test func jsonObjectBeyondByteBudgetIsNotDetected() {
+        let filler = String(repeating: "a", count: MarkdownJSONScanPolicy.maxScanBytes + 1)
+        let message = "{\"payload\": \"\(filler)\"}"
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: message).isEmpty)
+    }
+
     private let history = ["first prompt", "second prompt", "third prompt"]
 
     @Test func upArrowEntersHistoryAtNewestPrompt() {

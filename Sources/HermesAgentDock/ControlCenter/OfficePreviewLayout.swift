@@ -41,9 +41,22 @@ struct OfficePreviewLayout {
     var depth: Float { front - back }
     var center: SIMD3<Float> { [(minX + maxX) / 2, 0.55, (front + back) / 2] }
 
-    mutating func reconcile(ids: [String]) {
-        var next = (slots.values.max() ?? -1) + 1
+    /// The authored office reserves its final physical desk for one main
+    /// session. Other sessions/bots retain unique shared or overflow slots.
+    mutating func reconcile(ids: [String], mainAgentID: String? = nil, reserveMainOffice: Bool = false) {
+        var next = reserveMainOffice ? 0 : (slots.values.max() ?? -1) + 1
+        if reserveMainOffice {
+            for id in Array(slots.keys) where slots[id] == 22 && id != mainAgentID {
+                while next == 22 || slots.values.contains(next) { next += 1 }
+                slots[id] = next
+                next += 1
+            }
+            if let mainAgentID, ids.contains(mainAgentID) { slots[mainAgentID] = 22 }
+        }
         for id in Set(ids).sorted() where slots[id] == nil {
+            if reserveMainOffice {
+                while next == 22 || slots.values.contains(next) { next += 1 }
+            }
             slots[id] = next
             next += 1
         }

@@ -158,4 +158,81 @@ struct StreamingPerformanceTests {
         #expect(first.displayedSubagents.count == 8)
         #expect(first.activeAgentIDs.count == 4)
     }
+
+    @Test func smallPresentationAppendRemainsOneMutableTail() {
+        let streaming = StreamingText()
+        streaming.appendPresentation("short response")
+
+        #expect(streaming.chunks.count == 1)
+        #expect(streaming.chunks[0].isMutableTail)
+        #expect(streaming.chunks.map(\.text).joined() == streaming.text)
+    }
+
+    @Test func paragraphBoundaryPromotesStablePrefixWithoutChangingText() {
+        let streaming = StreamingText()
+        let prefix = String(repeating: "a", count: 4_096)
+        let value = prefix + "\n\n" + String(repeating: "b", count: 5_000)
+        streaming.appendPresentation(value)
+
+        #expect(streaming.chunks.count == 2)
+        #expect(streaming.chunks[0].isMutableTail == false)
+        #expect(streaming.chunks[1].isMutableTail)
+        #expect(streaming.chunks.map(\.text).joined() == value)
+    }
+
+    @Test func stableChunksRemainStableWhenTailGrows() {
+        let streaming = StreamingText()
+        streaming.appendPresentation(
+            String(repeating: "a", count: 4_096) + "\n\n" + String(repeating: "b", count: 5_000)
+        )
+        let stable = streaming.chunks[0]
+        let oldTailRevision = streaming.chunks[1].revision
+
+        streaming.appendPresentation(" and more")
+
+        #expect(streaming.chunks[0] == stable)
+        #expect(streaming.chunks[1].revision > oldTailRevision)
+        #expect(streaming.chunks.map(\.text).joined() == streaming.text)
+    }
+
+    @Test func LargeTextWithoutParagraphBoundaryRemainsOneExactTail() {
+        let streaming = StreamingText()
+        let value = String(repeating: "a", count: 20_000)
+        streaming.appendPresentation(value)
+
+        #expect(streaming.chunks.count == 1)
+        #expect(streaming.chunks[0].isMutableTail)
+        #expect(streaming.chunks[0].text == value)
+        #expect(streaming.text == value)
+    }
+
+    @Test func replacementResetsPreviousChunks() {
+        let streaming = StreamingText()
+        streaming.appendPresentation(String(repeating: "a", count: 4_096) + "\n\nold")
+
+        streaming.replacePresentation(with: "replacement")
+
+        #expect(streaming.chunks.count == 1)
+        #expect(streaming.chunks[0].isMutableTail)
+        #expect(streaming.chunks[0].text == "replacement")
+        #expect(streaming.text == "replacement")
+    }
+
+    @Test func clearPresentationResetsCanonicalTextAndChunks() {
+        let streaming = StreamingText()
+        streaming.appendPresentation("response")
+
+        streaming.clearPresentation()
+
+        #expect(streaming.text.isEmpty)
+        #expect(streaming.chunks.isEmpty)
+    }
+
+    @Test func chunkPromotionUsesStrictMutableTailThreshold() {
+        let exact = String(repeating: "a", count: StreamingChunkPolicy.maxMutableTailBytes)
+        #expect(StreamingChunkPolicy.promotionBoundary(in: exact) == nil)
+
+        let promoted = exact + "\n\nmore"
+        #expect(StreamingChunkPolicy.promotionBoundary(in: promoted) != nil)
+    }
 }

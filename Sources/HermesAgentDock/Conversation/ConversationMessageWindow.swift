@@ -26,6 +26,22 @@ enum ConversationMessageWindow {
     /// mount hundreds of rich rows before the reader requests them.
     static func limitForSessionReplacement() -> Int { initialLimit }
 
+    static func shouldCompactAfterRepinning(
+        wasAtBottom: Bool,
+        isAtBottom: Bool,
+        currentLimit: Int,
+        totalCount: Int
+    ) -> Bool {
+        !wasAtBottom
+            && isAtBottom
+            && totalCount > initialLimit
+            && currentLimit > initialLimit
+    }
+
+    static func compactedLimit(totalCount: Int) -> Int {
+        min(totalCount, initialLimit)
+    }
+
     static func limitAfterCountChange(
         currentLimit: Int,
         oldCount: Int,
@@ -60,7 +76,7 @@ enum ConversationUnreadMessagePolicy {
         if message.id == streamingID { return true }
         if message.isSteering { return true }
         if !message.images.isEmpty { return true }
-        return !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return message.hasBodyText
     }
 
     static func renderedMessageCount(_ messages: [ChatMessage], streamingID: UUID?) -> Int {

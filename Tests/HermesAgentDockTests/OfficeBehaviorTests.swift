@@ -3,6 +3,30 @@ import Testing
 @testable import HermesAgentDock
 
 struct OfficeBehaviorTests {
+    @Test func personalOfficeRemainsExclusiveAcrossMainSessionChanges() {
+        var layout = OfficePreviewLayout()
+        let bots = (0..<24).map { "bot-\($0)" }
+        layout.reconcile(ids: bots, reserveMainOffice: true)
+        #expect(!layout.slots.values.contains(22))
+        layout.reconcile(ids: bots + ["main-a", "main-b"], mainAgentID: "main-a", reserveMainOffice: true)
+        #expect(layout.slots["main-a"] == 22)
+        let botSlots = bots.map { layout.slots[$0] }
+        layout.reconcile(ids: bots + ["main-a", "main-b"], mainAgentID: "main-b", reserveMainOffice: true)
+        #expect(layout.slots["main-b"] == 22)
+        #expect(layout.slots["main-a"] != 22)
+        #expect(botSlots == bots.map { layout.slots[$0] })
+        #expect(Set(layout.slots.values).count == layout.slots.count)
+        layout.reconcile(ids: bots, reserveMainOffice: true)
+        #expect(!layout.slots.values.contains(22))
+    }
+
+    @Test func mainOfficeReservationDoesNotSkipSharedDesks() {
+        var layout = OfficePreviewLayout()
+        layout.reconcile(ids: ["main"], mainAgentID: "main", reserveMainOffice: true)
+        layout.reconcile(ids: ["main", "bot"], mainAgentID: "main", reserveMainOffice: true)
+        #expect(layout.slots["bot"] == 0)
+    }
+
     private func agent(_ statuses: [String], step: String? = nil) -> OfficePreviewAgentPresentation {
         let tasks = statuses.enumerated().map { index, status in
             OfficePreviewTaskData(KanbanTaskSummary(id: "task-\(index)", title: "Task", status: status,
@@ -50,6 +74,20 @@ struct OfficeBehaviorTests {
                 #expect(route.last == end)
                 for node in route where !node.isStation { #expect(layout.isWalkable(layout.position(node))) }
             }
+        }
+    }
+
+    @MainActor @Test func indoorLeisureSpotsAndSmallPatioHaveReachableCapacity() throws {
+        let root = Entity()
+        let authored = OfficeDesignSceneBuilder().build(in: root)
+        #expect(Set(authored.leisureSpots.map(\.action)) == [.coffee, .reading, .strolling, .socializing])
+        #expect(authored.stations[.lounge]?.count == 2)
+        var layout = OfficePreviewLayout()
+        layout.authored = authored
+        let desk = layout.node(slot: 0, location: .desk)
+        for index in authored.leisureSpots.indices {
+            let activity = OfficePreviewLayout.Node(slot: 0, index: 0, isStation: true, leisureIndex: index)
+            #expect(!layout.route(from: desk, to: activity).isEmpty)
         }
     }
 }

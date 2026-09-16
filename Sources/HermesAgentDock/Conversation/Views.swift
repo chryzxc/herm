@@ -102,6 +102,7 @@ struct DockPopover: View {
     @State private var isStreamingTailScrollScheduled = false
     @State private var isTransientTailAdjustmentScheduled = false
     @State private var isPastEndRepairScheduled = false
+    @State private var isHistoryCompactionScheduled = false
     @State private var conversationPerformance = ConversationPerformanceMonitor()
     @State private var isWorkspaceManuallyExpanded = true
     @State private var isNarrowLayout = false
@@ -790,7 +791,7 @@ struct DockPopover: View {
                 )
                 .id("fullscreen-pull-requests")
             } else if fullscreenSurface == .artifacts {
-                PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
+                ArtifactsInspectorView(model: model)
                     .id("fullscreen-artifacts")
             } else if fullscreenSurface == .bots {
                 BotRosterPage(model: botMode, dockModel: model, onSelectBot: openBotChat)
@@ -873,7 +874,7 @@ struct DockPopover: View {
                              showsHeader: false
                          )
                     case .artifacts:
-                        PlanArtifactsInspectorView(plansRoot: PlanArtifactService.defaultPlansRoot)
+                        ArtifactsInspectorView(model: model)
                     }
                 }
                 .transition(.opacity)
@@ -1724,100 +1725,7 @@ struct DockPopover: View {
     }
 
     private var chatScroll: some View {
-        // Keep the exact renderer active while the native table's AppKit row
-        // height transaction is repaired. The native implementation remains
-        // isolated and must not be allowed to take down the menu-bar app.
         legacyChatScroll
-    }
-
-    private var nativeChatScroll: some View {
-        ZStack(alignment: .bottom) {
-            ConversationVirtualizedTranscript(
-                rows: nativeTranscriptProjection.rows,
-                sessionID: model.sessionID,
-                scrollRequest: model.scrollToLatestMessageRequest &+ conversationScrollRequest,
-                streamingText: model.streamingText,
-                nativeSnapshots: nativeTranscriptProjection.nativeSnapshots,
-                onImagePreview: { image in selectedChatImage = ChatImagePreview(image: image) },
-                onTopReached: { _ in revealEarlierMessages() },
-                onPinnedChange: { pinned in
-                    isConversationAtBottom = pinned
-                    if pinned { unseenMessageCount = 0 }
-                },
-                makeRow: makeNativeTranscriptRow
-            )
-            .id(model.sessionID)
-            .onAppear {
-                isConversationAtBottom = true
-                unseenMessageCount = 0
-                renderedMessageLimit = ConversationMessageWindow.limitForSessionReplacement()
-                lastRenderedMessageBubbleCount = renderedMessageBubbleCount
-            }
-            .onChange(of: model.messages.count) { oldCount, newCount in
-                renderedMessageLimit = ConversationMessageWindow.limitAfterCountChange(
-                    currentLimit: renderedMessageLimit, oldCount: oldCount, newCount: newCount,
-                    isAtBottom: isConversationAtBottom
-                )
-                let previous = lastRenderedMessageBubbleCount
-                let current = renderedMessageBubbleCount
-                lastRenderedMessageBubbleCount = current
-                guard newCount > oldCount else { return }
-                let added = max(0, current - previous)
-                guard !isConversationAtBottom, added > 0 else { return }
-                unseenMessageCount += added
-            }
-
-            if unseenMessageCount > 0 {
-                Button {
-                    unseenMessageCount = 0
-                    isConversationAtBottom = true
-                    renderedMessageLimit = ConversationMessageWindow.limitForSessionReplacement()
-                    conversationScrollRequest &+= 1
-                } label: {
-                    HStack(spacing: 7) {
-                        LucideIcon(name: .arrowDown, size: 11, color: Color.dockOnAccentText)
-                        Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .foregroundStyle(Color.dockOnAccentText)
-                    .padding(.horizontal, 14).frame(height: 34)
-                    .background(Capsule().fill(Color.dockAccent))
-                }
-                .buttonStyle(.borderless).padding(.bottom, 12)
-            }
-        }
-    }
-
-    private var nativeTranscriptProjection: ConversationTranscriptProjection {
-        ConversationTranscriptProjection(
-            messages: model.messages,
-            limit: renderedMessageLimit,
-            streamingID: model.streamingMessageIDForPresentation,
-            streamingText: model.streamingText.text,
-            hasApproval: model.approvalText != nil,
-            approvalRevision: (model.approvalText ?? "").hashValue ^ (model.approvalTitle ?? "").hashValue,
-            hasActivity: isConversationActivityVisible,
-            activityRevision: model.activeToolCalls.count ^ model.activeSubagents.count,
-            isIdle: model.status != .working
-        )
-    }
-
-    private func makeNativeTranscriptRow(_ descriptor: ConversationTranscriptRowDescriptor) -> AnyView {
-        switch descriptor.kind {
-        case .startup: return AnyView(StartupAssistantView(agentName: model.agentDisplayName))
-        case .historyPlaceholder: return AnyView(EmptyView())
-        case .message, .streaming:
-            guard let id = UUID(uuidString: descriptor.id), let message = model.messages.first(where: { $0.id == id }) else { return AnyView(EmptyView()) }
-            return AnyView(messageRow(message))
-        case .approval: return AnyView(approvalRow(
-            title: model.approvalTitle ?? "Review requested action",
-            detail: model.approvalText ?? "",
-            alwaysAllowCaption: ApprovalPresentation.alwaysAllowCaption(
-                title: model.approvalTitle ?? "Review requested action",
-                detail: model.approvalText ?? "")
-        ))
-        case .activity: return AnyView(activityView)
-        }
     }
 
     private var legacyChatScroll: some View {
@@ -1926,6 +1834,7 @@ struct DockPopover: View {
                         isStreamingTailScrollScheduled = false
                         isTransientTailAdjustmentScheduled = false
                         isPastEndRepairScheduled = false
+                        isHistoryCompactionScheduled = false
                         scrollConversationToBottom(proxy)
                     }
                     .onPreferenceChange(ConversationContentBoundsPreferenceKey.self) { bounds in
@@ -1979,7 +1888,7 @@ struct DockPopover: View {
                         guard isConversationAtBottom else { return }
                         scheduleTransientTailAdjustment(proxy)
                     }
-                    .onReceive(model.streamingText.$text) { _ in
+                    .onReceive(model.streamingText.$chunks) { _ in
                         conversationPerformance.recordStreamingUpdate()
                         guard isConversationAtBottom else { return }
                         scheduleStreamingTailScroll(proxy)
@@ -2035,6 +1944,7 @@ struct DockPopover: View {
         viewportHeight: CGFloat,
         proxy: ScrollViewProxy
     ) {
+        let wasAtBottom = isConversationAtBottom
         let atBottom = ConversationScrollMetrics.isAtBottom(
             topMinY: bounds.topMinY,
             bottomMaxY: bounds.bottomMaxY,
@@ -2043,6 +1953,14 @@ struct DockPopover: View {
         if atBottom != isConversationAtBottom {
             isConversationAtBottom = atBottom
             if atBottom { unseenMessageCount = 0 }
+            if ConversationMessageWindow.shouldCompactAfterRepinning(
+                wasAtBottom: wasAtBottom,
+                isAtBottom: atBottom,
+                currentLimit: renderedMessageLimit,
+                totalCount: model.messages.count
+            ) {
+                scheduleHistoryCompaction(proxy)
+            }
         }
 
         // This is deliberately independent of the pinned/browsing transition
@@ -2056,6 +1974,33 @@ struct DockPopover: View {
             viewportHeight: viewportHeight
         ) {
             schedulePastEndRepair(proxy)
+        }
+    }
+
+    private func scheduleHistoryCompaction(_ proxy: ScrollViewProxy) {
+        guard !isHistoryCompactionScheduled else { return }
+        isHistoryCompactionScheduled = true
+        let owningSessionID = model.sessionID
+
+        Task { @MainActor in
+            await Task.yield()
+            guard owningSessionID == model.sessionID, isConversationAtBottom else {
+                isHistoryCompactionScheduled = false
+                return
+            }
+
+            renderedMessageLimit = ConversationMessageWindow.compactedLimit(
+                totalCount: model.messages.count
+            )
+
+            await Task.yield()
+            guard owningSessionID == model.sessionID, isConversationAtBottom else {
+                isHistoryCompactionScheduled = false
+                return
+            }
+
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
+            isHistoryCompactionScheduled = false
         }
     }
 
@@ -2132,8 +2077,6 @@ struct DockPopover: View {
 
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
-        let userText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-
         if message.id == model.streamingMessageIDForPresentation {
             StreamingAssistantMessageRow(
                 streaming: model.streamingText,
@@ -2141,159 +2084,20 @@ struct DockPopover: View {
                 modelName: message.modelName,
                 responseDuration: message.responseDuration
             )
-        } else if message.role == .hermes && message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && message.images.isEmpty {
+        } else if message.role == .hermes && !message.hasBodyText && message.images.isEmpty {
             EmptyView()
         } else {
-            HStack(alignment: .top, spacing: 0) {
-                if message.role == .user {
-                    Spacer(minLength: 40)
-                    VStack(alignment: .trailing, spacing: 4) {
-                        // Attachments sit above the text surface instead of inside
-                        // the bubble, keeping media visually distinct from copy.
-                        if !message.images.isEmpty {
-                            VStack(alignment: .trailing, spacing: 6) {
-                                ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
-                                    Button {
-                                        selectedChatImage = ChatImagePreview(image: image)
-                                    } label: {
-                                        Image(nsImage: image)
-                                            .resizable()
-                                            .scaledToFit()
-                                            .frame(maxWidth: 220, maxHeight: 220)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                    }
-                                    .buttonStyle(.plain)
-                                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                    .help("Open image preview")
-                                }
-                            }
-                        }
-                        if message.isSteering || !userText.isEmpty {
-                            VStack(alignment: .trailing, spacing: 6) {
-                                if message.isSteering {
-                                    Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(Color.dockAccent)
-                                }
-                                if !userText.isEmpty {
-                                    MarkdownMessageView(markdown: userText)
-                                        .equatable()
-                                }
-                            }
-                            .fixedSize(horizontal: false, vertical: true)
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            // Use opaque slate-navy user message bubble background to eliminate eye strain
-                            .background(Color.dockUserMessageBubble)
-                            .clipShape(MessageBubbleShape(isUser: true))
-                            .overlay(
-                                MessageBubbleShape(isUser: true)
-                                    .stroke(Color.dockBorderStrong, lineWidth: 0.5)
-                            )
-                            .shadow(color: Color.black.opacity(0.12), radius: 4)
-                        }
-
-                        Text(HumanDateFormatting.timeOnly(message.timestamp))
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockMetadataText)
-                            .padding(.horizontal, 4)
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        let attributedBotID = message.botProfileID ?? model.activeBotProfileID
-                        if let botProfileID = attributedBotID {
-                            let bot = botMode.bots.first(where: { $0.id == botProfileID })
-                            HStack(spacing: 7) {
-                                if let bot {
-                                    BotAvatarView(
-                                        bot: bot,
-                                        imageData: botMode.avatarImages[bot.id],
-                                        size: 24
-                                    )
-                                } else {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous)
-                                            .fill(
-                                                LinearGradient(
-                                                    colors: BotAvatarPresentation.palette(for: botProfileID),
-                                                    startPoint: .topLeading,
-                                                    endPoint: .bottomTrailing
-                                                )
-                                            )
-                                        Circle()
-                                            .stroke(.white.opacity(0.20), lineWidth: 0.6)
-                                            .frame(width: 15, height: 15)
-                                        LucideImage(systemName: BotAvatarPresentation.symbol(for: botProfileID))
-                                            .font(.system(size: 8, weight: .semibold))
-                                            .symbolRenderingMode(.hierarchical)
-                                            .foregroundStyle(.white.opacity(0.96))
-                                    }
-                                    .frame(width: 24, height: 24)
-                                    .clipShape(RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous))
-                                }
-                                Text(bot?.name ?? message.botDisplayName ?? botProfileID)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.dockAccent)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 4)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
-                        }
-
-                        if !message.text.isEmpty || message.id == model.streamingMessageIDForPresentation {
-                            Group {
-                                if message.id == model.streamingMessageIDForPresentation {
-                                    StreamingMessageText(streaming: model.streamingText)
-                                } else if message.isError {
-                                    HStack(alignment: .top, spacing: 10) {
-                                        LucideImage(systemName: "exclamationmark.triangle.fill")
-                                            .foregroundStyle(Color.dockWarning)
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Request could not be completed")
-                                                .font(.system(size: 13, weight: .semibold))
-                                            Text(message.text)
-                                                .font(.system(size: 13))
-                                                .textSelection(.enabled)
-                                        }
-                                    }
-                                } else {
-                                    MarkdownMessageView(markdown: message.text)
-                                        .equatable()
-                                }
-                            }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .foregroundStyle(Color.dockPrimaryText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                // Use opaque charcoal-indigo AI message bubble (DESIGN.md) to eliminate high-contrast glare
-                                .background(message.isError ? Color.dockWarning.opacity(0.10) : Color.dockMessageBubble)
-                                .clipShape(MessageBubbleShape(isUser: false))
-                                .overlay(
-                                    MessageBubbleShape(isUser: false)
-                                        .stroke(message.isError ? Color.dockWarning.opacity(0.55) : Color.dockBorder, lineWidth: 0.5)
-                                )
-                        }
-
-                        HStack(spacing: 6) {
-                            Text(HumanDateFormatting.timeOnly(message.timestamp))
-                            if let responseDuration = message.responseDuration {
-                                ResponseDurationLabel(startedAt: message.timestamp, finishedDuration: responseDuration)
-                            }
-                            if let modelName = message.modelName {
-                                Text("· \(modelName)")
-                            }
-                        }
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .padding(.horizontal, 4)
-                    }
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            ConversationMessageRow(
+                message: message,
+                isStreamingMessage: false,
+                streamingText: model.streamingText,
+                activeBotProfileID: model.activeBotProfileID,
+                botsByID: botMode.botsByID,
+                avatarImages: botMode.avatarImages,
+                botRosterRevision: botMode.rosterRevision,
+                onImagePreview: { image in selectedChatImage = ChatImagePreview(image: image) }
+            )
+            .equatable()
         }
     }
 

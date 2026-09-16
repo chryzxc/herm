@@ -274,7 +274,7 @@ struct WorkspaceActivitySidebar: View {
     private var officePreviewContent: some View {
         OfficePreviewView(
             kanbanTasks: control.globalKanbanTasks,
-            bots: botMode.visibleBots,
+            bots: botMode.bots,
             mainSessions: officeMainSessions,
             onOpenSession: { id in
                 if let session = model.sessions.first(where: { $0.id == id }) { model.resumeSession(session) }
@@ -295,7 +295,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var officeMainSessions: [OfficeMainSession] {
-        let botIDs = Set(botMode.visibleBots.filter { !$0.isDefault }.map(\.id))
+        let botIDs = Set(botMode.bots.filter { !$0.isDefault }.map(\.id))
         let sessionsCurrent: Bool
         if case .ready = control.projectionState(for: "sessions") { sessionsCurrent = true }
         else { sessionsCurrent = false }
@@ -360,7 +360,7 @@ struct WorkspaceActivitySidebar: View {
         case .stale:
             return "Refreshing workspace…"
         case .empty:
-            return "No workspace data yet"
+            return fallback
         case .unavailable, .failed:
             return "Workspace status is unavailable"
         case .ready:
@@ -5668,6 +5668,33 @@ struct WorkspaceActivitySidebar: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .disabled(control.isActionPending(control.reloadMCPActionID))
+                }
+
+                Divider().overlay(Color.dockBorderLight)
+                sectionLabel("COMMAND ALLOWLIST  ·  \(control.commandAllowlistEntries?.count ?? 0)")
+                if let entries = control.commandAllowlistEntries {
+                    if entries.isEmpty {
+                        Text("No always-allowed commands.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockMetadataText)
+                    } else {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(entries, id: \.self) { pattern in
+                                Text(pattern)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    Text("Manage with: hermes config edit")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .textSelection(.enabled)
+                } else {
+                    Text("Command allowlist is temporarily unavailable.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
                 }
 
                 if !configuration.plugins.isEmpty {
