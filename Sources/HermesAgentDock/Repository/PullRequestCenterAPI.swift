@@ -82,8 +82,35 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     }
 
     func files(_ record: PullRequestRecord) async -> [PullRequestFile]? {
-        guard let payload = try? await request(path: record.repository.apiRepositoryPath + "/pulls/\(record.number)/files", query: ["per_page": "100"]) as? [[String: Any]] else { return nil }
-        return payload.compactMap { row in guard let path = row["filename"] as? String else { return nil }; return PullRequestFile(path: path, status: row["status"] as? String ?? "modified", additions: row["additions"] as? Int ?? 0, deletions: row["deletions"] as? Int ?? 0, patch: row["patch"] as? String, webURL: (row["blob_url"] as? String).flatMap(URL.init)) }
+        do {
+            var page = 1
+            var files: [PullRequestFile] = []
+            while !Task.isCancelled {
+                let payload = try await request(path: record.repository.apiRepositoryPath + "/pulls/\(record.number)/files", query: ["per_page": "100", "page": "\(page)"])
+                guard let batch = Self.parseFilesPayload(payload) else { throw GitHubCodeHostError.malformedResponse }
+                files.append(contentsOf: batch)
+                guard batch.count == 100 else { break }
+                page += 1
+            }
+            return files
+        } catch {
+            return nil
+        }
+    }
+
+    nonisolated static func parseFilesPayload(_ payload: Any) -> [PullRequestFile]? {
+        guard let rows = payload as? [[String: Any]] else { return nil }
+        return rows.compactMap { row in
+            guard let path = row["filename"] as? String else { return nil }
+            return PullRequestFile(
+                path: path,
+                status: row["status"] as? String ?? "modified",
+                additions: (row["additions"] as? NSNumber)?.intValue ?? 0,
+                deletions: (row["deletions"] as? NSNumber)?.intValue ?? 0,
+                patch: row["patch"] as? String,
+                webURL: (row["blob_url"] as? String).flatMap(URL.init)
+            )
+        }
     }
 
     func comments(_ record: PullRequestRecord) async -> [PullRequestComment]? {

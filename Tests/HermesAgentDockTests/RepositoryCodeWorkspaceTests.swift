@@ -68,6 +68,33 @@ struct RepositoryCodeWorkspaceTests {
         #expect(!center.isLoadingDetail)
     }
 
+    @Test func githubPullRequestFilesResponsePreservesChangedFiles() {
+        let payload: Any = [
+            [
+                "filename": "Sources/App/Main.swift",
+                "status": "modified",
+                "additions": 4,
+                "deletions": 2,
+                "patch": "@@ -1 +1 @@\\n-old\\n+new",
+                "blob_url": "https://github.com/owner/repo/blob/main/Sources/App/Main.swift"
+            ]
+        ]
+
+        let files = PullRequestCenterAPI.parseFilesPayload(payload)
+
+        #expect(files?.count == 1)
+        #expect(files?.first?.path == "Sources/App/Main.swift")
+        #expect(files?.first?.additions == 4)
+        #expect(files?.first?.deletions == 2)
+        #expect(files?.first?.patch?.contains("+new") == true)
+    }
+
+    @Test func pullRequestFilesProjectionDistinguishesUnavailableFromEmpty() {
+        #expect(PullRequestFilesProjection.state(files: nil, isLoading: false) == .unavailable)
+        #expect(PullRequestFilesProjection.state(files: [], isLoading: false) == .empty)
+        #expect(PullRequestFilesProjection.state(files: nil, isLoading: true) == .loading)
+    }
+
     @Test func pullRequestFileTreeGroupsNestedPaths() {
         let files = [
             PullRequestFile(path: "Sources/App/Main.swift", status: "modified", additions: 1, deletions: 2, patch: nil, webURL: nil),

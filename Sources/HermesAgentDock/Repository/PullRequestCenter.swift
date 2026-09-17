@@ -32,6 +32,18 @@ struct PullRequestFile: Identifiable, Equatable {
     var id: String { path }
 }
 
+enum PullRequestFilesProjection: Equatable {
+    case loading
+    case unavailable
+    case empty
+    case loaded([PullRequestFile])
+
+    static func state(files: [PullRequestFile]?, isLoading: Bool) -> Self {
+        guard let files else { return isLoading ? .loading : .unavailable }
+        return files.isEmpty ? .empty : .loaded(files)
+    }
+}
+
 struct PullRequestComment: Identifiable, Equatable, Sendable {
     let id: String
     let body: String
@@ -750,7 +762,7 @@ final class PullRequestCenterModel: ObservableObject {
         async let comments = api.comments(selected)
         async let commits = api.commits(selected)
         if let updated = await detail, let index = records.firstIndex(where: { $0.id == selected.id }) { records[index] = updated }
-        filesByID[selected.id] = await files ?? []
+        if let files = await files { filesByID[selected.id] = files }
         commentsByID[selected.id] = await comments ?? []
         commitsByID[selected.id] = await commits ?? []
     }
@@ -1454,14 +1466,18 @@ struct PullRequestDetailView: View {
         .buttonStyle(.plain)
     }
     private func code(_ pr: PullRequestRecord) -> some View {
-        let files = center.filesByID[pr.id] ?? []
+        let projection = PullRequestFilesProjection.state(files: center.filesByID[pr.id], isLoading: center.isLoadingDetail)
         return VStack(alignment: .leading, spacing: 10) {
-            if files.isEmpty && center.isLoadingDetail {
+            switch projection {
+            case .loading:
                 ProgressView("Loading changed files…").foregroundStyle(Color.dockMetadataText)
-            } else if files.isEmpty {
+            case .unavailable:
+                Text("Changed files are unavailable. Refresh or open this pull request on GitHub to inspect its changes.")
+                    .foregroundStyle(Color.dockMetadataText)
+            case .empty:
                 Text("No patch data is available. Open this pull request on GitHub to inspect its changes.")
                     .foregroundStyle(Color.dockMetadataText)
-            } else {
+            case .loaded(let files):
                 HStack(alignment: .top, spacing: 12) {
                     if reviewPreferences.showsFileTree { fileTree(files) }
                     ScrollViewReader { proxy in
