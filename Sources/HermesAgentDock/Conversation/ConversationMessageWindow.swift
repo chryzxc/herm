@@ -1,6 +1,11 @@
 import CoreGraphics
 import Foundation
 
+struct ConversationMessageJumpPlan: Equatable {
+    let messageID: UUID
+    let renderedLimit: Int
+}
+
 /// Bounded presentation window for the canonical transcript. Hermes remains
 /// the owner of every message; this policy only limits how many exact SwiftUI
 /// rows are mounted at once.
@@ -46,6 +51,23 @@ enum ConversationMessageWindow {
             ? safeTotal
             : safeTotal - safeOrdinal + 1
         return min(safeTotal, max(initialLimit, currentLimit, requiredSuffixLimit))
+    }
+
+    static func jumpPlan(
+        for item: MessageNavigatorItem,
+        sessionID: String,
+        totalCount: Int,
+        currentLimit: Int
+    ) -> ConversationMessageJumpPlan? {
+        guard item.sessionID == sessionID else { return nil }
+        return ConversationMessageJumpPlan(
+            messageID: item.messageID,
+            renderedLimit: limitToReveal(
+                messageOrdinal: item.ordinal,
+                totalCount: totalCount,
+                currentLimit: currentLimit
+            )
+        )
     }
 
     /// A session owns no transcript presentation state. Never carry an
