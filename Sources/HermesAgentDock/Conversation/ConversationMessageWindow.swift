@@ -37,6 +37,12 @@ enum ConversationMessageWindow {
         min(totalCount, max(initialLimit, currentLimit) + pageSize)
     }
 
+    static func limitToReveal(messageOrdinal: Int, totalCount: Int, currentLimit: Int) -> Int {
+        let safeTotal = max(0, totalCount)
+        let safeOrdinal = max(0, messageOrdinal)
+        return min(safeTotal, max(initialLimit, currentLimit, safeOrdinal))
+    }
+
     /// A session owns no transcript presentation state. Never carry an
     /// expanded page from one session into another, where it would silently
     /// mount hundreds of rich rows before the reader requests them.
