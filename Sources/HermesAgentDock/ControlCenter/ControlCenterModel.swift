@@ -1895,7 +1895,11 @@ final class ControlCenterModel: ObservableObject {
         refreshCheckpoints(sessionID: sessionID)
     }
 
-    func refreshCheckpoints(sessionID: String? = nil) {
+    func refreshCheckpoints(
+        sessionID: String? = nil,
+        projectID requestedProjectID: String? = nil,
+        selectionID requestedSelectionID: String? = nil
+    ) {
         guard let rpc, let resolvedSessionID = sessionID ?? dockModel?.sessionID, !resolvedSessionID.isEmpty else {
             checkpoints = []
             restoreCheckpoints = []
@@ -1917,13 +1921,14 @@ final class ControlCenterModel: ObservableObject {
                   isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
                   (sessionID != nil || dockModel?.sessionID == resolvedSessionID) else { return }
             checkpoints = Self.parseCheckpoints(result)
-            let projectID = projectIDBySessionID[resolvedSessionID]
+            let projectID = requestedProjectID ?? projectIDBySessionID[resolvedSessionID]
+            let selectionID = requestedSelectionID ?? currentFocus?.sourceID
             restoreCheckpoints = RestoreCheckpointEligibility.eligible(
                 checkpoints.compactMap { row in
                     RestoreCheckpoint(
                         sessionID: resolvedSessionID,
                         projectID: projectID,
-                        selectionID: currentFocus?.sourceID,
+                        selectionID: selectionID,
                         hash: row.hash,
                         timestamp: row.timestamp,
                         message: row.message
@@ -1931,7 +1936,7 @@ final class ControlCenterModel: ObservableObject {
                 },
                 sessionID: resolvedSessionID,
                 projectID: projectID,
-                selectionID: currentFocus?.sourceID
+                selectionID: selectionID
             )
             if checkpoints.isEmpty { checkpointDiff = nil }
         }
@@ -1959,14 +1964,18 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    func restoreCheckpoint(_ checkpoint: RestoreCheckpoint) async -> Bool {
+    func restoreCheckpoint(
+        _ checkpoint: RestoreCheckpoint,
+        projectID requestedProjectID: String? = nil,
+        selectionID requestedSelectionID: String? = nil
+    ) async -> Bool {
         guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty,
               dockModel?.status != .working,
               RestoreCheckpointEligibility.isEligible(
                   checkpoint,
                   sessionID: sessionID,
-                  projectID: projectIDBySessionID[sessionID],
-                  selectionID: currentFocus?.sourceID
+                  projectID: requestedProjectID ?? projectIDBySessionID[sessionID],
+                  selectionID: requestedSelectionID ?? currentFocus?.sourceID
               ),
               restoreCheckpointCoordinator.begin(checkpoint) else { return false }
         restoreCheckpointState = restoreCheckpointCoordinator.state
@@ -1981,7 +1990,11 @@ final class ControlCenterModel: ObservableObject {
             }
             restoreCheckpointCoordinator.succeed()
             restoreCheckpointState = restoreCheckpointCoordinator.state
-            refreshCheckpoints(sessionID: sessionID)
+            refreshCheckpoints(
+                sessionID: sessionID,
+                projectID: checkpoint.projectID,
+                selectionID: checkpoint.selectionID
+            )
             return true
         } catch {
             let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))

@@ -162,7 +162,7 @@ struct RestoreCheckpointTests {
         harness.renderList(sessionID: "session-a", projectID: "project-a", selectionID: "selection-a")
         await eventually { !model.restoreCheckpoints.isEmpty }
         #expect(model.restoreCheckpoints.allSatisfy {
-            $0.sessionID == "session-a" && $0.projectID == nil && $0.selectionID == "session-a"
+            $0.sessionID == "session-a" && $0.projectID == "project-a" && $0.selectionID == "selection-a"
         })
         guard let selected = model.restoreCheckpoints.first else { return }
 
@@ -183,8 +183,23 @@ struct RestoreCheckpointTests {
         #expect(client.restoreParams?["session_id"] as? String == "session-a")
         #expect(client.restoreParams?["hash"] as? String == selected.hash)
 
+        harness.renderList(sessionID: "session-b", projectID: "project-b", selectionID: "selection-b")
+        await eventually {
+            model.restoreCheckpoints.allSatisfy {
+                $0.sessionID == "session-b"
+                    && $0.projectID == "project-b"
+                    && $0.selectionID == "selection-b"
+            }
+        }
+        #expect(model.restoreCheckpoints.allSatisfy {
+            $0.sessionID == "session-b"
+                && $0.projectID == "project-b"
+                && $0.selectionID == "selection-b"
+        })
+
         client.result = ["success": false, "error": "retryable"]
         let retry = checkpoint("retry", session: "session-a")
+        harness.renderList(sessionID: "session-a", projectID: "project-a", selectionID: "selection-a")
         harness.tapRestore(retry)
         #expect(!(await harness.confirmRestore().value))
         #expect(model.restoreCheckpointState == .failed(retry, message: "retryable"))
@@ -201,12 +216,16 @@ struct RestoreCheckpointTests {
 private final class RestoreCheckpointRenderedActionHarness {
     let model: ControlCenterModel
     private(set) var confirmation: RestoreCheckpoint?
+    private var renderedProjectID: String?
+    private var renderedSelectionID: String?
 
     init(model: ControlCenterModel) { self.model = model }
 
-    func renderList(sessionID: String, projectID _: String, selectionID _: String) {
+    func renderList(sessionID: String, projectID: String, selectionID: String) {
+        renderedProjectID = projectID
+        renderedSelectionID = selectionID
         model.focus(sessionID: sessionID)
-        model.refreshCheckpoints(sessionID: sessionID)
+        model.refreshCheckpoints(sessionID: sessionID, projectID: projectID, selectionID: selectionID)
     }
 
     func tapRestore(_ checkpoint: RestoreCheckpoint) { confirmation = checkpoint }
@@ -219,7 +238,13 @@ private final class RestoreCheckpointRenderedActionHarness {
     func confirmRestore() -> Task<Bool, Never> {
         guard let checkpoint = confirmation else { return Task { false } }
         confirmation = nil
-        return Task { await model.restoreCheckpoint(checkpoint) }
+        return Task {
+            await model.restoreCheckpoint(
+                checkpoint,
+                projectID: self.renderedProjectID,
+                selectionID: self.renderedSelectionID
+            )
+        }
     }
 }
 
