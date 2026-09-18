@@ -57,7 +57,7 @@ swift run
 - **Inbox**: actionable approvals, clarifications, failures, and completed work — dismissed items persist, snoozed items return after an hour, due Reminders project into the same stream.
 - **Activity**: live delegated agents by name with event history, an animated agent-to-agent handoff map, background task tracking, and a per-session Now view synced to live execution.
 - **Artifacts**: indexes generated outputs from recent Hermes sessions and presents images in a preview grid plus files and links in a searchable list. Filters show live counts; each item retains its source session and supports copying or opening the original URL/path.
-- **Core**: session cockpit (token usage, context breakdown, prompt budget, steering, rollback checkpoints with confirmed restore), runtime inventories (skills, MCP servers, plugins), session/runtime controls (rename, branch, compress, undo, delegation pause, interrupt), read-only Hermes health, and opt-in completion notifications.
+- **Core**: session cockpit (token usage, context breakdown, prompt budget, steering, session-scoped rollback checkpoints with confirmed restore and honest pending/failure states), runtime inventories (skills, MCP servers, plugins), session/runtime controls (rename, branch, compress, undo, delegation pause, interrupt), read-only Hermes health, and opt-in completion notifications.
 
 ### Developer command center
 
