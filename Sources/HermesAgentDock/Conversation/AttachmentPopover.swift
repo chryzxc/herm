@@ -63,8 +63,46 @@ enum AttachmentPopoverPresentation {
     static func insertingURL(_ rawValue: String, into draft: String) -> String? {
         guard let url = validatedURL(from: rawValue) else { return nil }
         let value = url.absoluteString
-        let existing = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        return existing.isEmpty ? value : "\(existing)\n\(value)"
+        return draft.isEmpty ? value : "\(draft)\n\(value)"
+    }
+
+    static func insertingSnippet(_ snippet: String, into draft: String) -> String {
+        draft.isEmpty ? snippet : "\(draft)\n\(snippet)"
+    }
+
+    static func importerErrorMessage(_ error: Error) -> String? {
+        let nsError = error as NSError
+        guard nsError.code != NSUserCancelledError else { return nil }
+        return "Could not choose attachments: \(error.localizedDescription)"
+    }
+}
+
+enum AttachmentPopoverFileSelection {
+    private static let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "heic", "webp"])
+
+    static func process(
+        _ urls: [URL],
+        stageImage: (URL) -> Void,
+        stagePDF: (URL) -> Void,
+        reportError: (String) -> Void
+    ) {
+        var pdfURLs: [URL] = []
+        for url in urls {
+            let pathExtension = url.pathExtension.lowercased()
+            if pathExtension == "pdf" {
+                pdfURLs.append(url)
+            } else if imageExtensions.contains(pathExtension) {
+                stageImage(url)
+            } else {
+                reportError("Unsupported attachment: \(url.lastPathComponent)")
+            }
+        }
+
+        if pdfURLs.count == 1, let pdfURL = pdfURLs.first {
+            stagePDF(pdfURL)
+        } else if pdfURLs.count > 1 {
+            reportError("Select one PDF at a time. Multiple images can still be selected together.")
+        }
     }
 }
 

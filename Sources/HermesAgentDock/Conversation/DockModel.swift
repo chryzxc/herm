@@ -37,6 +37,7 @@ final class DockModel: ObservableObject {
     @Published var pendingImages: [ImageAttachment] = []
     @Published private(set) var pendingPDFURL: URL?
     @Published private(set) var pendingPDFError: String?
+    @Published private(set) var pendingAttachmentError: String?
     @Published var isSending = false
     @Published private(set) var isSteering = false
     @Published private(set) var steeringError: String?
@@ -631,9 +632,11 @@ final class DockModel: ObservableObject {
     }
 
     func stageImageFile(at url: URL) {
+        pendingAttachmentError = nil
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard let nsImage = NSImage(contentsOf: url) else {
+            pendingAttachmentError = "Could not attach image: \(url.lastPathComponent) could not be read."
             DebugLog.write("model: could not load image at \(url.path)")
             return
         }
@@ -642,6 +645,7 @@ final class DockModel: ObservableObject {
     }
 
     func stagePDFFile(at url: URL) {
+        pendingAttachmentError = nil
         pendingPDFError = nil
         guard url.pathExtension.lowercased() == "pdf" else {
             pendingPDFError = "Only PDF files can be attached as documents."
@@ -661,6 +665,10 @@ final class DockModel: ObservableObject {
 
     func reportPDFError(_ message: String) {
         pendingPDFError = message
+    }
+
+    func reportAttachmentError(_ message: String) {
+        pendingAttachmentError = message
     }
 
     func removePendingPDF() {

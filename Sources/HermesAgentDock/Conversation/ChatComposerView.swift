@@ -25,22 +25,20 @@ struct ChatComposerView: View {
 
     var body: some View {
         composerContent
-            .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.png, .jpeg, .gif, .heic, .webP, .pdf], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
                     stageAttachmentFiles(urls)
+                } else if case .failure(let error) = result,
+                          let message = AttachmentPopoverPresentation.importerErrorMessage(error) {
+                    model.reportAttachmentError(message)
                 }
             }
             .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image, .pdf], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
-                    let pdfURLs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
-                    urls.filter { $0.pathExtension.lowercased() != "pdf" }.forEach { url in
-                        model.stageImageFile(at: url)
-                    }
-                    if pdfURLs.count == 1, let pdfURL = pdfURLs.first {
-                        model.stagePDFFile(at: pdfURL)
-                    } else if pdfURLs.count > 1 {
-                        model.reportPDFError("Select one PDF at a time. Multiple images can still be selected together.")
-                    }
+                    stageAttachmentFiles(urls)
+                } else if case .failure(let error) = result,
+                          let message = AttachmentPopoverPresentation.importerErrorMessage(error) {
+                    model.reportAttachmentError(message)
                 }
             }
             .onChange(of: model.composerFocusRequest) { _, _ in
@@ -246,6 +244,12 @@ struct ChatComposerView: View {
             }
             if let pdfError = model.pendingPDFError {
                 Text(pdfError)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let attachmentError = model.pendingAttachmentError {
+                Text(attachmentError)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockWarning)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -527,15 +531,12 @@ struct ChatComposerView: View {
     }
 
     private func stageAttachmentFiles(_ urls: [URL]) {
-        let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "heic", "webp"])
-        let imageURLs = urls.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
-        let pdfURLs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
-        imageURLs.forEach { model.stageImageFile(at: $0) }
-        if pdfURLs.count == 1, let pdfURL = pdfURLs.first {
-            model.stagePDFFile(at: pdfURL)
-        } else if pdfURLs.count > 1 {
-            model.reportPDFError("Select one PDF at a time. Multiple images can still be selected together.")
-        }
+        AttachmentPopoverFileSelection.process(
+            urls,
+            stageImage: model.stageImageFile,
+            stagePDF: model.stagePDFFile,
+            reportError: model.reportAttachmentError
+        )
         isComposerFocused = true
     }
 
@@ -547,8 +548,7 @@ struct ChatComposerView: View {
     }
 
     private func insertSnippet(_ text: String) {
-        let existing = composer.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        composer.text = existing.isEmpty ? text : "\(existing)\n\(text)"
+        composer.text = AttachmentPopoverPresentation.insertingSnippet(text, into: composer.text)
         showingAttachmentPopover = false
         isComposerFocused = true
     }
