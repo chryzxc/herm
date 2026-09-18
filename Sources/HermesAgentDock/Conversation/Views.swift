@@ -1985,7 +1985,10 @@ struct DockPopover: View {
             sessionID: sessionID,
             messages: messages,
             currentLimit: currentLimit,
-            onEffect: onEffect,
+            onEffect: { effect in
+                guard currentSessionID() == sessionID else { return }
+                onEffect(effect)
+            },
             onScroll: { messageID, anchor in
                 Task { @MainActor in
                     await Task.yield()
