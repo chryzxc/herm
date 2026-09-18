@@ -35,6 +35,7 @@ swift run
 - **Session surfaces**: the session header switches the conversation column between **Chat**, **Talk**, **Explorer**, **Source Control**, and **Pull Requests** — Explorer browses the session repository with a blame-aware editor, Source Control shows staged/unstaged/untracked files with bounded diffs, and Pull Requests lists open PRs scoped to the session's repository.
 - **Context guardrails**: Hermes-reported context use is labelled normal/warning/critical (80% / 90% thresholds) with explicit branch, confirmed compression, and no-edit background handoff actions.
 - **Approval choices with persistence**: dangerous-command approvals render Deny / Allow once / Always allow. "Always allow" persists the command pattern into Hermes' allowlist for future sessions (content-level findings are session-only by design); Core shows the current allowlist read-only with copy-only management guidance.
+- **Model picker**: composer model selection is grouped by provider, searchable, refreshable, and scrollable through native menus. The editor supports stable-ID enable/disable preferences that persist locally; Hermes remains authoritative for the available catalog and active model.
 
 ### Voice
 

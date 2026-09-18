@@ -259,38 +259,21 @@ struct ChatComposerView: View {
                     .buttonStyle(.borderless)
                     .help("Attach image or file")
 
-                    // Model Selector Dropdown Menu
-                    Menu {
-                        if model.runtimeModelOptions.isEmpty {
-                            Text("Loading model catalog…")
-                        } else {
-                            ForEach(model.runtimeModelOptions) { option in
-                                Button {
-                                    if model.sessionID == nil {
-                                        model.updateRuntimeModel(option)
-                                    } else {
-                                        model.updateSessionModel(option)
-                                    }
-                                } label: {
-                                    HStack {
-                                        Text(option.displayName)
-                                        if option.id == selectedModelOptionID {
-                                            LucideImage(systemName: "checkmark")
-                                        }
-                                    }
-                                }
+                    ModelPickerView(
+                        options: model.runtimeModelOptions,
+                        selectedID: selectedModelOptionID,
+                        isRefreshing: model.isLoadingRuntimeConfiguration,
+                        refreshError: model.runtimeConfigurationError,
+                        onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID) },
+                        onSelect: { option in
+                            if model.sessionID == nil {
+                                model.updateRuntimeModel(option)
+                            } else {
+                                model.updateSessionModel(option)
                             }
                         }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(sessionModelDisplayName)
-                                .font(.system(size: 12, weight: .regular))
-                                .lineLimit(1)
-                                .foregroundStyle(Color.dockSecondaryText)
-                        }
-                    }
-                    .menuStyle(.borderlessButton)
-                    .buttonStyle(.borderless)
+                    )
+                    .font(.system(size: 12, weight: .regular))
                     .frame(minHeight: isFullscreen ? 34 : 28, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
                     .help("Select model")
