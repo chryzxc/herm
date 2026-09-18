@@ -29,6 +29,7 @@ swift run
 ### Conversations
 
 - **Streaming chat** with bottom-anchored transcript, bounded history paging, native Markdown links, and in-turn steering — typed guidance is submitted to the running turn at its next tool boundary.
+- Long transcripts expose stable, session-scoped message navigation metadata with bounded previews and search-safe matching across Markdown, image-only, tool, and clarification messages; stale viewport targets are ignored after a session switch.
 - **Attachments**: multiple images (reviewable and removable before sending) and PDFs through Hermes' dedicated attachment RPC, with the 25 MB limit enforced again before upload.
 - **Explicit session lifecycle**: selecting or restoring a session never creates a replacement implicitly; new chats are created only on request, guarded against races. Session data stays isolated to its owning session and fails closed on identity mismatch.
 - **Clarification requests** render as action-needed states with editable responses submitted through `clarify.respond`.
