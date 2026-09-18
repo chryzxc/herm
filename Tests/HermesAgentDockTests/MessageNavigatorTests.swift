@@ -137,20 +137,23 @@ final class MessageNavigatorTests: XCTestCase {
         }
         let selected = MessageNavigator.items(messages: messages, sessionID: sessionID)[19]
         var receivedEffect: ConversationMessageJumpEffect?
+        var scrolledMessageID: UUID?
 
-        MessageNavigatorView.dispatchSelection(selected) { item in
-            receivedEffect = ConversationMessageWindow.jumpEffect(
-                for: item,
-                sessionID: sessionID,
-                messages: messages,
-                currentLimit: ConversationMessageWindow.initialLimit
-            )
-        }
+        let productionHandler = ConversationMessageWindow.transcriptSelectionHandler(
+            sessionID: sessionID,
+            messages: messages,
+            currentLimit: { ConversationMessageWindow.initialLimit },
+            onEffect: { effect in receivedEffect = effect },
+            onScroll: { messageID in scrolledMessageID = messageID }
+        )
+
+        MessageNavigatorView.dispatchSelection(selected, onSelect: productionHandler)
 
         XCTAssertEqual(receivedEffect?.messageID, selected.messageID)
         XCTAssertEqual(receivedEffect?.renderedLimit, 21)
         XCTAssertFalse(receivedEffect?.isAtBottom ?? true)
         XCTAssertEqual(receivedEffect?.unseenMessageCount, 0)
+        XCTAssertEqual(scrolledMessageID, selected.messageID)
         XCTAssertTrue(
             ConversationMessageWindow.visibleMessages(messages, limit: receivedEffect?.renderedLimit ?? 0)
                 .contains { $0.id == receivedEffect?.messageID }
