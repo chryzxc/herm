@@ -108,21 +108,82 @@ struct RestoreCheckpointTests {
         model.cancelRestoreCheckpoint()
         #expect(model.restoreCheckpointState == .idle)
     }
+
+    @Test func checkpointProjectionDrivesListConfirmationRestoreAndCanonicalRefresh() async {
+        let client = RestoreCheckpointClient(result: ["success": true])
+        client.listResult = [
+            "enabled": true,
+            "checkpoints": [["hash": "live-hash", "timestamp": "now", "message": "Before restore"]]
+        ]
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        model.refreshCheckpoints(sessionID: "session-a")
+
+        await eventually { !model.restoreCheckpoints.isEmpty }
+        #expect(!model.restoreCheckpoints.isEmpty)
+        guard let selected = model.restoreCheckpoints.first else { return }
+        #expect(selected.sessionID == "session-a")
+        #expect(await model.restoreCheckpoint(selected))
+        #expect(client.methods.contains("rollback.list"))
+        #expect(client.methods.contains("rollback.restore"))
+        #expect(client.restoreParams?["session_id"] as? String == "session-a")
+        #expect(client.restoreParams?["hash"] as? String == "live-hash")
+        #expect(model.restoreCheckpointState == .completed(selected))
+
+        await eventually { client.methods.filter { $0 == "rollback.list" }.count >= 2 }
+        #expect(client.lastMethod == "rollback.list")
+        let listCountAfterRestore = client.methods.filter { $0 == "rollback.list" }.count
+        #expect(listCountAfterRestore >= 2)
+        #expect(!(await model.restoreCheckpoint(selected)))
+
+        let second = checkpoint("second-hash")
+        client.restoreDelayNanoseconds = 100_000_000
+        let pendingRestore = Task { await model.restoreCheckpoint(second) }
+        await eventually { model.restoreCheckpointState == .pending(second) }
+        #expect(model.restoreCheckpointState == .pending(second))
+        #expect(!(await model.restoreCheckpoint(second)))
+        #expect(await pendingRestore.value)
+
+        model.cancelRestoreCheckpoint()
+        #expect(model.restoreCheckpointState == .completed(second))
+    }
 }
 
 @MainActor
 private final class RestoreCheckpointClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     let result: [String: Any]
+    var listResult: [String: Any] = ["enabled": true, "checkpoints": []]
+    var restoreDelayNanoseconds: UInt64 = 0
+    private(set) var methods: [String] = []
     private(set) var lastMethod: String?
     private(set) var lastParams: [String: Any]?
+    private(set) var restoreParams: [String: Any]?
 
     init(result: [String: Any]) { self.result = result }
     func connect() async throws {}
     func close() {}
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        methods.append(method)
         lastMethod = method
         lastParams = params
+        if method == "rollback.list" { return listResult }
+        if method == "rollback.restore" {
+            restoreParams = params
+            if restoreDelayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: restoreDelayNanoseconds)
+            }
+        }
         return result
+    }
+}
+
+@MainActor
+private func eventually(
+    timeoutNanoseconds: UInt64 = 2_000_000_000,
+    condition: @escaping @MainActor () -> Bool
+) async {
+    let deadline = ContinuousClock.now + .nanoseconds(Int64(timeoutNanoseconds))
+    while !condition(), ContinuousClock.now < deadline {
+        try? await Task.sleep(for: .milliseconds(10))
     }
 }
