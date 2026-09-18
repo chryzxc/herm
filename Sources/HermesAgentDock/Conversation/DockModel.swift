@@ -116,6 +116,8 @@ final class DockModel: ObservableObject {
     @Published var runtimeConfiguration: HermesRuntimeConfiguration?
     @Published var isLoadingRuntimeConfiguration = false
     @Published var runtimeConfigurationError: String?
+    @Published var runtimeModelOptionsError: String?
+    @Published var isLoadingRuntimeModelOptions = false
     @Published private(set) var runtimeConfigurationProjectionState: HermesProjectionState<HermesRuntimeConfiguration> = .empty
     @Published var runtimeModelOptions: [HermesModelOption] = []
     @Published private(set) var sessionModelOptionID: String?
@@ -3818,18 +3820,17 @@ final class DockModel: ObservableObject {
     }
 
     func refreshRuntimeModelOptions(sessionID: String? = nil) {
+        isLoadingRuntimeModelOptions = true
+        runtimeModelOptionsError = nil
         Task {
             do {
-                var params: [String: Any] = ["explicit_only": true]
-                if let sessionID, !sessionID.isEmpty { params["session_id"] = sessionID }
+                let params = Self.runtimeModelOptionsRequest(sessionID: sessionID)
                 let result = try await gateway.request(HermesFeatureIDs.ID.modelOptions.rawValue, params: params)
-                guard sessionID == nil || sessionID == self.sessionID else { return }
-                let providers = result["providers"] as? [[String: Any]] ?? []
-                runtimeModelOptions = providers.flatMap { provider -> [HermesModelOption] in
-                    guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String) else { return [] }
-                    let models = provider["models"] as? [String] ?? []
-                    return models.map { HermesModelOption(provider: name, model: $0) }
+                guard sessionID == nil || sessionID == self.sessionID else {
+                    isLoadingRuntimeModelOptions = false
+                    return
                 }
+                runtimeModelOptions = Self.runtimeModelOptions(from: result)
                 if let sessionID, sessionID == self.sessionID,
                    let provider = result["provider"] as? String,
                    let model = result["model"] as? String {
@@ -3840,8 +3841,24 @@ final class DockModel: ObservableObject {
                     sessionModelValue = model
                 }
             } catch {
-                runtimeConfigurationError = "Hermes could not load its model catalog."
+                runtimeModelOptionsError = "Hermes could not load its model catalog."
             }
+            isLoadingRuntimeModelOptions = false
+        }
+    }
+
+    nonisolated static func runtimeModelOptionsRequest(sessionID: String?) -> [String: Any] {
+        var params: [String: Any] = ["explicit_only": true]
+        if let sessionID, !sessionID.isEmpty { params["session_id"] = sessionID }
+        return params
+    }
+
+    nonisolated static func runtimeModelOptions(from result: [String: Any]) -> [HermesModelOption] {
+        let providers = result["providers"] as? [[String: Any]] ?? []
+        return providers.flatMap { provider -> [HermesModelOption] in
+            guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String) else { return [] }
+            let models = provider["models"] as? [String] ?? []
+            return models.map { HermesModelOption(provider: name, model: $0) }
         }
     }
 

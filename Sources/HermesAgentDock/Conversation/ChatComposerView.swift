@@ -262,8 +262,8 @@ struct ChatComposerView: View {
                     ModelPickerView(
                         options: model.runtimeModelOptions,
                         selectedID: selectedModelOptionID,
-                        isRefreshing: model.isLoadingRuntimeConfiguration,
-                        refreshError: model.runtimeConfigurationError,
+                        isRefreshing: model.isLoadingRuntimeModelOptions,
+                        refreshError: model.runtimeModelOptionsError,
                         onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID) },
                         onSelect: { option in
                             if model.sessionID == nil {

@@ -52,4 +52,35 @@ struct ModelPickerTests {
         #expect(ModelPickerRefreshState.empty.isEmpty)
         #expect(ModelPickerRefreshState.unavailable.isUnavailable)
     }
+
+    @Test
+    func refreshFailureRetainsCatalogAsStaleWhenOptionsExist() {
+        #expect(ModelPickerView.refreshState(isRefreshing: false, error: "offline", optionCount: 1) == .stale)
+        #expect(ModelPickerView.refreshState(isRefreshing: false, error: "offline", optionCount: 0) == .unavailable)
+    }
+
+    @Test
+    func activeModelRemainsVisibleAndEnabledAfterItWasDisabled() {
+        let options = [HermesModelOption(provider: "openai", model: "gpt-5")]
+        let groups = ModelPickerCatalog(options: options).groups(
+            matching: "",
+            disabledIDs: [options[0].id],
+            activeID: options[0].id
+        )
+
+        #expect(groups.flatMap(\.models).map(\.id) == [options[0].id])
+        #expect(ModelPickerCatalog.isEnabled(options[0].id, disabledIDs: [options[0].id], activeID: options[0].id))
+    }
+
+    @Test
+    func modelOptionsPayloadPreservesRequestAndProviderModelShape() {
+        let request = DockModel.runtimeModelOptionsRequest(sessionID: "session-7")
+        #expect(request["explicit_only"] as? Bool == true)
+        #expect(request["session_id"] as? String == "session-7")
+
+        let options = DockModel.runtimeModelOptions(from: [
+            "providers": [["slug": "openai", "models": ["gpt-5"]]]
+        ])
+        #expect(options.map(\.id) == ["openai|gpt-5"])
+    }
 }

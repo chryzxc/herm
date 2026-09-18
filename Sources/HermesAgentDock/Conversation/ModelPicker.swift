@@ -16,6 +16,10 @@ struct ModelPickerCatalog: Equatable {
     }
 
     func groups(matching query: String = "") -> [ModelPickerProviderGroup] {
+        groups(matching: query, disabledIDs: [], activeID: nil)
+    }
+
+    func groups(matching query: String = "", disabledIDs: Set<String>, activeID: String?) -> [ModelPickerProviderGroup] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = normalizedQuery.isEmpty
             ? options
@@ -23,7 +27,9 @@ struct ModelPickerCatalog: Equatable {
                 $0.provider.localizedCaseInsensitiveContains(normalizedQuery)
                     || $0.model.localizedCaseInsensitiveContains(normalizedQuery)
             }
-        let grouped = Dictionary(grouping: filtered, by: \.provider)
+        let grouped = Dictionary(grouping: filtered.filter {
+            Self.isEnabled($0.id, disabledIDs: disabledIDs, activeID: activeID)
+        }, by: \.provider)
         return grouped.keys.sorted().compactMap { provider in
             guard let models = grouped[provider]?.sorted(by: { $0.model.localizedStandardCompare($1.model) == .orderedAscending }) else { return nil }
             return ModelPickerProviderGroup(provider: provider, models: models)
@@ -34,6 +40,10 @@ struct ModelPickerCatalog: Equatable {
         guard let selectedID, options.contains(where: { $0.id == selectedID }) else { return nil }
         return selectedID
     }
+
+    static func isEnabled(_ id: String, disabledIDs: Set<String>, activeID: String?) -> Bool {
+        id == activeID || !disabledIDs.contains(id)
+    }
 }
 
 enum ModelPickerRefreshState: Equatable {
@@ -41,6 +51,7 @@ enum ModelPickerRefreshState: Equatable {
     case success
     case empty
     case unavailable
+    case stale
 
     var isPending: Bool { self == .pending }
     var isAvailable: Bool { self == .success }
@@ -69,6 +80,10 @@ struct ModelPickerPreferences {
         }
         defaults.set(disabled.sorted(), forKey: Self.disabledKey)
     }
+
+    var disabledIDs: Set<String> {
+        Set(defaults.stringArray(forKey: Self.disabledKey) ?? [])
+    }
 }
 
 struct ModelPickerView: View {
@@ -81,13 +96,17 @@ struct ModelPickerView: View {
 
     @State private var query = ""
     @State private var showingEditor = false
-    @State private var preferences = ModelPickerPreferences()
+    @State private var disabledModelIDs = ModelPickerPreferences().disabledIDs
 
     private var catalog: ModelPickerCatalog { ModelPickerCatalog(options: options) }
-    private var refreshState: ModelPickerRefreshState {
+    nonisolated static func refreshState(isRefreshing: Bool, error: String?, optionCount: Int) -> ModelPickerRefreshState {
         if isRefreshing { return .pending }
-        if refreshError != nil { return .unavailable }
-        return options.isEmpty ? .empty : .success
+        if error != nil { return optionCount == 0 ? .unavailable : .stale }
+        return optionCount == 0 ? .empty : .success
+    }
+
+    private var refreshState: ModelPickerRefreshState {
+        Self.refreshState(isRefreshing: isRefreshing, error: refreshError, optionCount: options.count)
     }
 
     var body: some View {
@@ -101,7 +120,7 @@ struct ModelPickerView: View {
         .buttonStyle(.borderless)
         .accessibilityLabel("Select model, currently \(selectedOption?.displayName ?? "none")")
         .sheet(isPresented: $showingEditor) {
-            ModelPickerEditorView(options: options, activeID: selectedID, preferences: $preferences)
+            ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
         }
     }
 
@@ -124,16 +143,27 @@ struct ModelPickerView: View {
             Label("Model catalog unavailable", systemImage: "exclamationmark.triangle")
         case .empty:
             Label("No models available", systemImage: "tray")
+        case .stale:
+            Label("Model catalog unavailable; showing last results", systemImage: "exclamationmark.triangle")
+            modelRows
         case .success:
-            let groups = catalog.groups(matching: query).filter { group in
-                group.models.contains { preferences.isEnabled($0.id) }
-            }
+            modelRows
+        }
+        Divider()
+        Button("Edit available models…") {
+            showingEditor = true
+        }
+    }
+
+    @ViewBuilder
+    private var modelRows: some View {
+        let groups = catalog.groups(matching: query, disabledIDs: disabledModelIDs, activeID: selectedID)
             if groups.isEmpty {
                 Label("No matching models", systemImage: "magnifyingglass")
             } else {
                 ForEach(groups) { group in
                     Section(group.provider) {
-                        ForEach(group.models.filter { preferences.isEnabled($0.id) }) { option in
+                        ForEach(group.models) { option in
                             Button {
                                 onSelect(option)
                             } label: {
@@ -150,11 +180,6 @@ struct ModelPickerView: View {
                     }
                 }
             }
-        }
-        Divider()
-        Button("Edit available models…") {
-            showingEditor = true
-        }
     }
 
     private var selectedOption: HermesModelOption? {
@@ -165,7 +190,7 @@ struct ModelPickerView: View {
 private struct ModelPickerEditorView: View {
     let options: [HermesModelOption]
     let activeID: String?
-    @Binding var preferences: ModelPickerPreferences
+    @Binding var disabledIDs: Set<String>
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -180,8 +205,12 @@ private struct ModelPickerEditorView: View {
                     Section(group.provider) {
                         ForEach(group.models) { option in
                             Toggle(isOn: Binding(
-                                get: { preferences.isEnabled(option.id) },
-                                set: { preferences.setEnabled($0, for: option.id) }
+                                get: { ModelPickerCatalog.isEnabled(option.id, disabledIDs: disabledIDs, activeID: activeID) },
+                                set: { enabled in
+                                    guard option.id != activeID else { return }
+                                    if enabled { disabledIDs.remove(option.id) } else { disabledIDs.insert(option.id) }
+                                    ModelPickerPreferences().setEnabled(enabled, for: option.id)
+                                }
                             )) {
                                 Text(option.id == activeID ? "\(option.model) (active)" : option.model)
                             }
@@ -199,5 +228,8 @@ private struct ModelPickerEditorView: View {
         }
         .padding(16)
         .frame(width: 360, height: 420)
+        .onAppear {
+            disabledIDs = ModelPickerPreferences().disabledIDs
+        }
     }
 }
