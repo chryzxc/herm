@@ -101,6 +101,13 @@ struct MessageNavigatorView: View {
         MessageNavigator.search(items: items, query: query)
     }
 
+    static func dispatchSelection(
+        _ item: MessageNavigatorItem,
+        onSelect: (MessageNavigatorItem) -> Void
+    ) {
+        onSelect(item)
+    }
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             Button {
@@ -131,7 +138,7 @@ struct MessageNavigatorView: View {
                                     ForEach(filteredItems) { item in
                                         Button {
                                             selectedTarget = item.target
-                                            onSelect(item)
+                                            Self.dispatchSelection(item, onSelect: onSelect)
                                         } label: {
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text("\(item.ordinal) · \(item.roleLabel)")
@@ -180,7 +187,7 @@ struct MessageNavigatorView: View {
             }
             let item = filteredItems[nextIndex]
             selectedTarget = item.target
-            onSelect(item)
+            Self.dispatchSelection(item, onSelect: onSelect)
         }
     }
 
@@ -193,6 +200,6 @@ struct MessageNavigatorView: View {
     private func selectFirstMatch() {
         guard let item = filteredItems.first else { return }
         selectedTarget = item.target
-        onSelect(item)
+        Self.dispatchSelection(item, onSelect: onSelect)
     }
 }

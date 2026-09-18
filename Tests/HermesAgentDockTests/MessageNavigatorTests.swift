@@ -128,4 +128,30 @@ final class MessageNavigatorTests: XCTestCase {
                 .contains { $0.id == plan?.messageID }
         )
     }
+
+    @MainActor
+    func testNavigatorSelectionDispatchesTranscriptHandoffWithExactTarget() {
+        let sessionID = "session-a"
+        let messages = (1...40).map { index in
+            ChatMessage(role: .user, text: "message \(index)")
+        }
+        let selected = MessageNavigator.items(messages: messages, sessionID: sessionID)[19]
+        var receivedPlan: ConversationMessageJumpPlan?
+
+        MessageNavigatorView.dispatchSelection(selected) { item in
+            receivedPlan = ConversationMessageWindow.jumpPlan(
+                for: item,
+                sessionID: sessionID,
+                totalCount: messages.count,
+                currentLimit: ConversationMessageWindow.initialLimit
+            )
+        }
+
+        XCTAssertEqual(receivedPlan?.messageID, selected.messageID)
+        XCTAssertEqual(receivedPlan?.renderedLimit, 21)
+        XCTAssertTrue(
+            ConversationMessageWindow.visibleMessages(messages, limit: receivedPlan?.renderedLimit ?? 0)
+                .contains { $0.id == selected.messageID }
+        )
+    }
 }
