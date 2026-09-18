@@ -108,6 +108,23 @@ struct MessageNavigatorView: View {
         onSelect(item)
     }
 
+    static func nextSelectionIndex(
+        direction: MoveCommandDirection,
+        currentIndex: Int?,
+        count: Int
+    ) -> Int? {
+        guard count > 0 else { return nil }
+        let index = currentIndex ?? 0
+        switch direction {
+        case .up:
+            return max(0, index - 1)
+        case .down:
+            return currentIndex == nil ? 0 : min(count - 1, index + 1)
+        default:
+            return nil
+        }
+    }
+
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             Button {
@@ -123,7 +140,7 @@ struct MessageNavigatorView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
                     TextField("Find a message", text: $query)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.dockGlass)
                         .focused($isSearchFocused)
                         .onSubmit(selectFirstMatch)
 
@@ -178,13 +195,12 @@ struct MessageNavigatorView: View {
         }
         .onMoveCommand { direction in
             guard isExpanded, !filteredItems.isEmpty else { return }
-            let currentIndex = filteredItems.firstIndex { $0.target == selectedTarget } ?? 0
-            let nextIndex: Int
-            switch direction {
-            case .up: nextIndex = max(0, currentIndex - 1)
-            case .down: nextIndex = min(filteredItems.count - 1, currentIndex + 1)
-            default: return
-            }
+            let currentIndex = filteredItems.firstIndex { $0.target == selectedTarget }
+            guard let nextIndex = Self.nextSelectionIndex(
+                direction: direction,
+                currentIndex: currentIndex,
+                count: filteredItems.count
+            ) else { return }
             let item = filteredItems[nextIndex]
             selectedTarget = item.target
             Self.dispatchSelection(item, onSelect: onSelect)
