@@ -13,6 +13,22 @@ enum ConversationMessageWindow {
     static let topLoadThreshold: CGFloat = 24
     static let topRearmDistance: CGFloat = 80
 
+    /// Builds navigation metadata from the same canonical messages and
+    /// session identity used by the mounted transcript window. Keeping this
+    /// hook here prevents a navigator from accidentally indexing a different
+    /// projection or retaining state across session replacement.
+    static func navigatorItems(
+        messages: [ChatMessage],
+        sessionID: String,
+        previewLimit: Int = MessageNavigator.defaultPreviewLimit
+    ) -> [MessageNavigatorItem] {
+        MessageNavigator.items(
+            messages: messages,
+            sessionID: sessionID,
+            previewLimit: previewLimit
+        )
+    }
+
     static func visibleMessages<Element>(_ messages: [Element], limit: Int) -> ArraySlice<Element> {
         messages.suffix(max(initialLimit, limit))
     }

@@ -29,6 +29,7 @@ swift run
 ### Conversations
 
 - **Streaming chat** with bottom-anchored transcript, bounded history paging, native Markdown links, and in-turn steering — typed guidance is submitted to the running turn at its next tool boundary.
+- Long transcripts expose stable, session-scoped message navigation metadata with bounded previews and search-safe matching across Markdown, image-only, tool, and clarification messages; stale viewport targets are ignored after a session switch.
 - **Attachments**: the composer’s accessible **Attach** popover supports native file/image selection, pasted images, validated http(s) URLs, and prompt snippets while preserving the draft and focus. Multiple images and one PDF remain reviewable and removable before sending; folder attachments are shown as unavailable until Hermes exposes a folder contract, and the 25 MB PDF limit is enforced again before upload. Automated coverage verifies the action/model callback contract and failure states; the native macOS manual path (open Attach with keyboard, traverse actions, cancel/fail native pickers, paste an image, and confirm focus restoration) remains to be exercised in a live app session.
 - **Explicit session lifecycle**: selecting or restoring a session never creates a replacement implicitly; new chats are created only on request, guarded against races. Session data stays isolated to its owning session and fails closed on identity mismatch.
 - **Clarification requests** render as action-needed states with editable responses submitted through `clarify.respond`.
