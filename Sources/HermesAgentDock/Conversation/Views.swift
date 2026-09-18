@@ -1956,24 +1956,47 @@ struct DockPopover: View {
 
     private func jumpToMessage(_ item: MessageNavigatorItem, proxy: ScrollViewProxy) {
         let sessionID = model.sessionID ?? ""
-        let handler = ConversationMessageWindow.transcriptSelectionHandler(
+        let handler = Self.transcriptSelectionHandler(
             sessionID: sessionID,
             messages: model.messages,
             currentLimit: { renderedMessageLimit },
+            currentSessionID: { model.sessionID },
             onEffect: { effect in
                 renderedMessageLimit = effect.renderedLimit
                 isConversationAtBottom = effect.isAtBottom
                 unseenMessageCount = effect.unseenMessageCount
             },
-            onScroll: { messageID in
-                Task { @MainActor in
-                    await Task.yield()
-                    guard model.sessionID == sessionID else { return }
-                    proxy.scrollTo(messageID, anchor: .center)
-                }
+            onScroll: { messageID, anchor in
+                proxy.scrollTo(messageID, anchor: anchor)
             }
         )
         handler(item)
+    }
+
+    static func transcriptSelectionHandler(
+        sessionID: String,
+        messages: [ChatMessage],
+        currentLimit: @escaping () -> Int,
+        currentSessionID: @escaping () -> String?,
+        onEffect: @escaping (ConversationMessageJumpEffect) -> Void,
+        onScroll: @escaping (UUID, UnitPoint) -> Void
+    ) -> (MessageNavigatorItem) -> Void {
+        ConversationMessageWindow.transcriptSelectionHandler(
+            sessionID: sessionID,
+            messages: messages,
+            currentLimit: currentLimit,
+            onEffect: onEffect,
+            onScroll: { messageID, anchor in
+                Task { @MainActor in
+                    await Task.yield()
+                    guard currentSessionID() == sessionID else { return }
+                    switch anchor {
+                    case .center:
+                        onScroll(messageID, .center)
+                    }
+                }
+            }
+        )
     }
 
     private func revealEarlierMessages() {
