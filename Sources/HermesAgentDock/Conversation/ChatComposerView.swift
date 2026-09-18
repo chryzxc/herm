@@ -17,12 +17,19 @@ struct ChatComposerView: View {
     @State private var composerHeight: CGFloat = 44
     @State private var isComposerPulsing = false
     @State private var pasteMonitor: Any?
+    @State private var showingAttachmentPopover = false
+    @State private var showingFilePicker = false
     @State private var showingImagePicker = false
     @State private var showingBotMentionPicker = false
     @FocusState private var isComposerFocused: Bool
 
     var body: some View {
         composerContent
+            .fileImporter(isPresented: $showingFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+                if case .success(let urls) = result {
+                    stageAttachmentFiles(urls)
+                }
+            }
             .fileImporter(isPresented: $showingImagePicker, allowedContentTypes: [.png, .jpeg, .image, .pdf], allowsMultipleSelection: true) { result in
                 if case .success(let urls) = result {
                     let pdfURLs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
@@ -248,16 +255,30 @@ struct ChatComposerView: View {
             HStack(alignment: .center, spacing: 8) {
                 // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
                 HStack(alignment: .center, spacing: 6) {
-                    // Attachment Paperclip Button
-                    Button(action: { showingImagePicker = true }) {
-                        LucideImage(systemName: "paperclip")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
+                    // Attachment popover keeps secondary actions discoverable
+                    // without changing the composer’s stable footprint.
+                    Button { showingAttachmentPopover = true } label: {
+                        HStack(spacing: 4) {
+                            LucideImage(systemName: "plus")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Attach")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(minWidth: 44, minHeight: 28)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
-                    .help("Attach image or file")
+                    .help("Attach or insert content")
+                    .accessibilityLabel("Attach")
+                    .popover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
+                        AttachmentPopover(
+                            pasteImageAvailable: pasteImageAvailable,
+                            onSelect: handleAttachmentAction,
+                            onInsertURL: insertURL,
+                            onSelectSnippet: insertSnippet
+                        )
+                    }
 
                     ModelPickerView(
                         options: model.runtimeModelOptions,
@@ -482,6 +503,54 @@ struct ChatComposerView: View {
         Task { @MainActor in
             await botMode.refreshNow(force: true)
         }
+    }
+
+    private var pasteImageAvailable: Bool {
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.string(forType: .string) == nil else { return false }
+        return pasteboard.types?.contains(where: { $0 == .png || $0 == .tiff }) == true
+    }
+
+    private func handleAttachmentAction(_ action: AttachmentPopoverAction) {
+        showingAttachmentPopover = false
+        switch action {
+        case .files:
+            showingFilePicker = true
+        case .images:
+            showingImagePicker = true
+        case .pasteImage:
+            _ = model.pasteImageFromPasteboard()
+            isComposerFocused = true
+        case .folder, .url, .promptSnippets:
+            break
+        }
+    }
+
+    private func stageAttachmentFiles(_ urls: [URL]) {
+        let imageExtensions = Set(["png", "jpg", "jpeg", "gif", "heic", "webp"])
+        let imageURLs = urls.filter { imageExtensions.contains($0.pathExtension.lowercased()) }
+        let pdfURLs = urls.filter { $0.pathExtension.lowercased() == "pdf" }
+        imageURLs.forEach { model.stageImageFile(at: $0) }
+        if pdfURLs.count == 1, let pdfURL = pdfURLs.first {
+            model.stagePDFFile(at: pdfURL)
+        } else if pdfURLs.count > 1 {
+            model.reportPDFError("Select one PDF at a time. Multiple images can still be selected together.")
+        }
+        isComposerFocused = true
+    }
+
+    private func insertURL(_ rawValue: String) {
+        guard let updated = AttachmentPopoverPresentation.insertingURL(rawValue, into: composer.text) else { return }
+        composer.text = updated
+        showingAttachmentPopover = false
+        isComposerFocused = true
+    }
+
+    private func insertSnippet(_ text: String) {
+        let existing = composer.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        composer.text = existing.isEmpty ? text : "\(existing)\n\(text)"
+        showingAttachmentPopover = false
+        isComposerFocused = true
     }
 
     private func keepEditorCaretVisible() {

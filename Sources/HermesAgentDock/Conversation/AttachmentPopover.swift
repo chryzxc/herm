@@ -1,0 +1,189 @@
+import AppKit
+import SwiftUI
+
+/// Actions exposed by the composer attachment menu. The order is part of the
+/// compact popover contract so keyboard users get a predictable traversal.
+enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
+    case files
+    case folder
+    case images
+    case pasteImage = "paste-image"
+    case url
+    case promptSnippets = "prompt-snippets"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .files: "Files"
+        case .folder: "Folder"
+        case .images: "Images"
+        case .pasteImage: "Paste image"
+        case .url: "URL"
+        case .promptSnippets: "Prompt snippets"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .files: "doc"
+        case .folder: "folder"
+        case .images: "photo"
+        case .pasteImage: "doc.on.clipboard"
+        case .url: "link"
+        case .promptSnippets: "text.quote"
+        }
+    }
+}
+
+struct AttachmentPromptSnippet: Equatable, Identifiable {
+    let label: String
+    let text: String
+
+    var id: String { label }
+}
+
+enum AttachmentPopoverPresentation {
+    static let promptSnippets = [
+        AttachmentPromptSnippet(label: "Summarize", text: "Summarize this attachment."),
+        AttachmentPromptSnippet(label: "Extract action items", text: "Extract the action items from this attachment."),
+        AttachmentPromptSnippet(label: "Review this", text: "Review this attachment and call out anything that needs attention.")
+    ]
+
+    static func validatedURL(from rawValue: String) -> URL? {
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: value),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = url.host,
+              !host.isEmpty else { return nil }
+        return url
+    }
+
+    static func insertingURL(_ rawValue: String, into draft: String) -> String? {
+        guard let url = validatedURL(from: rawValue) else { return nil }
+        let value = url.absoluteString
+        let existing = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        return existing.isEmpty ? value : "\(existing)\n\(value)"
+    }
+}
+
+struct AttachmentPopover: View {
+    let pasteImageAvailable: Bool
+    let onSelect: (AttachmentPopoverAction) -> Void
+    let onInsertURL: (String) -> Void
+    let onSelectSnippet: (String) -> Void
+
+    @State private var urlText = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ATTACH OR INSERT")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .tracking(0.7)
+                .foregroundStyle(Color.dockAccent)
+
+            ForEach(AttachmentPopoverAction.allCases) { action in
+                if action == .url {
+                    urlRow
+                } else if action == .promptSnippets {
+                    snippetsRow
+                } else {
+                    actionRow(action)
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 250)
+        .background(Color.dockSurface2)
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Attachment actions")
+    }
+
+    private func actionRow(_ action: AttachmentPopoverAction) -> some View {
+        let unavailable = action == .folder || (action == .pasteImage && !pasteImageAvailable)
+        return Button {
+            onSelect(action)
+        } label: {
+            HStack(spacing: 9) {
+                LucideImage(systemName: action.systemImage)
+                    .frame(width: 16)
+                Text(action.title)
+                Spacer()
+                if action == .folder {
+                    Text("Unavailable")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(unavailable ? Color.dockMetadataText : Color.dockPrimaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(unavailable)
+        .help(unavailable ? "Folder attachments are not supported by Hermes" : action.title)
+        .accessibilityLabel(unavailable ? "\(action.title), unavailable" : action.title)
+    }
+
+    private var urlRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 9) {
+                LucideImage(systemName: AttachmentPopoverAction.url.systemImage)
+                    .frame(width: 16)
+                Text("URL")
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+            }
+            HStack(spacing: 6) {
+                TextField("https://…", text: $urlText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                    .onSubmit(insertURL)
+                Button("Insert", action: insertURL)
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 11, weight: .semibold))
+                    .disabled(AttachmentPopoverPresentation.validatedURL(from: urlText) == nil)
+            }
+            Text("Only http:// and https:// URLs are accepted.")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.dockMetadataText)
+        }
+    }
+
+    private var snippetsRow: some View {
+        Menu {
+            ForEach(AttachmentPopoverPresentation.promptSnippets) { snippet in
+                Button(snippet.label) { onSelectSnippet(snippet.text) }
+            }
+        } label: {
+            HStack(spacing: 9) {
+                LucideImage(systemName: AttachmentPopoverAction.promptSnippets.systemImage)
+                    .frame(width: 16)
+                Text(AttachmentPopoverAction.promptSnippets.title)
+                Spacer()
+                LucideImage(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color.dockPrimaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.borderless)
+        .accessibilityLabel("Prompt snippets")
+    }
+
+    private func insertURL() {
+        guard AttachmentPopoverPresentation.validatedURL(from: urlText) != nil else { return }
+        onInsertURL(urlText)
+        urlText = ""
+    }
+}

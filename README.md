@@ -29,7 +29,7 @@ swift run
 ### Conversations
 
 - **Streaming chat** with bottom-anchored transcript, bounded history paging, native Markdown links, and in-turn steering — typed guidance is submitted to the running turn at its next tool boundary.
-- **Attachments**: multiple images (reviewable and removable before sending) and PDFs through Hermes' dedicated attachment RPC, with the 25 MB limit enforced again before upload.
+- **Attachments**: the composer’s accessible **Attach** popover supports native file/image selection, pasted images, validated http(s) URLs, and prompt snippets while preserving the draft and focus. Multiple images and one PDF remain reviewable and removable before sending; folder attachments are shown as unavailable until Hermes exposes a folder contract, and the 25 MB PDF limit is enforced again before upload.
 - **Explicit session lifecycle**: selecting or restoring a session never creates a replacement implicitly; new chats are created only on request, guarded against races. Session data stays isolated to its owning session and fails closed on identity mismatch.
 - **Clarification requests** render as action-needed states with editable responses submitted through `clarify.respond`.
 - **Session surfaces**: the session header switches the conversation column between **Chat**, **Talk**, **Explorer**, **Source Control**, and **Pull Requests** — Explorer browses the session repository with a blame-aware editor, Source Control shows staged/unstaged/untracked files with bounded diffs, and Pull Requests lists open PRs scoped to the session's repository.
