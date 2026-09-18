@@ -97,6 +97,25 @@ enum ConversationMessageWindow {
         )
     }
 
+    static func transcriptSelectionHandler(
+        sessionID: String,
+        messages: [ChatMessage],
+        currentLimit: @escaping () -> Int,
+        onEffect: @escaping (ConversationMessageJumpEffect) -> Void,
+        onScroll: @escaping (UUID) -> Void
+    ) -> (MessageNavigatorItem) -> Void {
+        { item in
+            guard let effect = jumpEffect(
+                for: item,
+                sessionID: sessionID,
+                messages: messages,
+                currentLimit: currentLimit()
+            ) else { return }
+            onEffect(effect)
+            onScroll(effect.messageID)
+        }
+    }
+
     /// A session owns no transcript presentation state. Never carry an
     /// expanded page from one session into another, where it would silently
     /// mount hundreds of rich rows before the reader requests them.

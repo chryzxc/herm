@@ -1955,20 +1955,25 @@ struct DockPopover: View {
     }
 
     private func jumpToMessage(_ item: MessageNavigatorItem, proxy: ScrollViewProxy) {
-        guard let effect = ConversationMessageWindow.jumpEffect(
-            for: item,
-            sessionID: model.sessionID ?? "",
+        let sessionID = model.sessionID ?? ""
+        let handler = ConversationMessageWindow.transcriptSelectionHandler(
+            sessionID: sessionID,
             messages: model.messages,
-            currentLimit: renderedMessageLimit
-        ) else { return }
-        renderedMessageLimit = effect.renderedLimit
-        isConversationAtBottom = effect.isAtBottom
-        unseenMessageCount = effect.unseenMessageCount
-        Task { @MainActor in
-            await Task.yield()
-            guard item.sessionID == (model.sessionID ?? "") else { return }
-            proxy.scrollTo(effect.messageID, anchor: .center)
-        }
+            currentLimit: { renderedMessageLimit },
+            onEffect: { effect in
+                renderedMessageLimit = effect.renderedLimit
+                isConversationAtBottom = effect.isAtBottom
+                unseenMessageCount = effect.unseenMessageCount
+            },
+            onScroll: { messageID in
+                Task { @MainActor in
+                    await Task.yield()
+                    guard model.sessionID == sessionID else { return }
+                    proxy.scrollTo(messageID, anchor: .center)
+                }
+            }
+        )
+        handler(item)
     }
 
     private func revealEarlierMessages() {

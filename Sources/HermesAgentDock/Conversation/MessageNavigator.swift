@@ -103,7 +103,7 @@ struct MessageNavigatorView: View {
 
     static func dispatchSelection(
         _ item: MessageNavigatorItem,
-        onSelect: (MessageNavigatorItem) -> Void
+        onSelect: @escaping (MessageNavigatorItem) -> Void
     ) {
         onSelect(item)
     }
