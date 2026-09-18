@@ -176,7 +176,7 @@ final class MessageNavigatorTests: XCTestCase {
         rejectedScrollExpectation.isInverted = true
         MessageNavigatorView.dispatchSelection(selected, onSelect: productionHandler)
         await fulfillment(of: [rejectedScrollExpectation], timeout: 0.2)
-        XCTAssertNotNil(receivedEffect)
+        XCTAssertNil(receivedEffect)
         XCTAssertNil(scrolledMessageID)
         XCTAssertFalse(scrolledAnchorIsCenter)
     }
