@@ -106,4 +106,26 @@ final class MessageNavigatorTests: XCTestCase {
         let visible = ConversationMessageWindow.visibleMessages(messages, limit: revealedLimit)
         XCTAssertTrue(visible.contains { $0.id == messages[19].id })
     }
+
+    func testNavigatorSelectionPlansTranscriptRevealAndExactScrollTarget() {
+        let sessionID = "session-a"
+        let messages = (1...40).map { index in
+            ChatMessage(role: .user, text: "message \(index)")
+        }
+        let selected = MessageNavigator.items(messages: messages, sessionID: sessionID)[19]
+
+        let plan = ConversationMessageWindow.jumpPlan(
+            for: selected,
+            sessionID: sessionID,
+            totalCount: messages.count,
+            currentLimit: ConversationMessageWindow.initialLimit
+        )
+
+        XCTAssertEqual(plan?.messageID, selected.messageID)
+        XCTAssertEqual(plan?.renderedLimit, 21)
+        XCTAssertTrue(
+            ConversationMessageWindow.visibleMessages(messages, limit: plan?.renderedLimit ?? 0)
+                .contains { $0.id == plan?.messageID }
+        )
+    }
 }
