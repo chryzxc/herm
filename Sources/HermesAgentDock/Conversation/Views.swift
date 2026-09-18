@@ -1955,19 +1955,19 @@ struct DockPopover: View {
     }
 
     private func jumpToMessage(_ item: MessageNavigatorItem, proxy: ScrollViewProxy) {
-        guard let plan = ConversationMessageWindow.jumpPlan(
+        guard let effect = ConversationMessageWindow.jumpEffect(
             for: item,
             sessionID: model.sessionID ?? "",
-            totalCount: model.messages.count,
+            messages: model.messages,
             currentLimit: renderedMessageLimit
         ) else { return }
-        renderedMessageLimit = plan.renderedLimit
-        isConversationAtBottom = false
-        unseenMessageCount = 0
+        renderedMessageLimit = effect.renderedLimit
+        isConversationAtBottom = effect.isAtBottom
+        unseenMessageCount = effect.unseenMessageCount
         Task { @MainActor in
             await Task.yield()
             guard item.sessionID == (model.sessionID ?? "") else { return }
-            proxy.scrollTo(plan.messageID, anchor: .center)
+            proxy.scrollTo(effect.messageID, anchor: .center)
         }
     }
 

@@ -6,6 +6,13 @@ struct ConversationMessageJumpPlan: Equatable {
     let renderedLimit: Int
 }
 
+struct ConversationMessageJumpEffect: Equatable {
+    let messageID: UUID
+    let renderedLimit: Int
+    let isAtBottom: Bool
+    let unseenMessageCount: Int
+}
+
 /// Bounded presentation window for the canonical transcript. Hermes remains
 /// the owner of every message; this policy only limits how many exact SwiftUI
 /// rows are mounted at once.
@@ -67,6 +74,26 @@ enum ConversationMessageWindow {
                 totalCount: totalCount,
                 currentLimit: currentLimit
             )
+        )
+    }
+
+    static func jumpEffect(
+        for item: MessageNavigatorItem,
+        sessionID: String,
+        messages: [ChatMessage],
+        currentLimit: Int
+    ) -> ConversationMessageJumpEffect? {
+        guard let plan = jumpPlan(
+            for: item,
+            sessionID: sessionID,
+            totalCount: messages.count,
+            currentLimit: currentLimit
+        ) else { return nil }
+        return ConversationMessageJumpEffect(
+            messageID: plan.messageID,
+            renderedLimit: plan.renderedLimit,
+            isAtBottom: false,
+            unseenMessageCount: 0
         )
     }
 

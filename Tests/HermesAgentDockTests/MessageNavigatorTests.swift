@@ -130,28 +130,38 @@ final class MessageNavigatorTests: XCTestCase {
     }
 
     @MainActor
-    func testNavigatorSelectionDispatchesTranscriptHandoffWithExactTarget() {
+    func testNavigatorSelectionDispatchesProductionTranscriptHandoff() {
         let sessionID = "session-a"
         let messages = (1...40).map { index in
             ChatMessage(role: .user, text: "message \(index)")
         }
         let selected = MessageNavigator.items(messages: messages, sessionID: sessionID)[19]
-        var receivedPlan: ConversationMessageJumpPlan?
+        var receivedEffect: ConversationMessageJumpEffect?
 
         MessageNavigatorView.dispatchSelection(selected) { item in
-            receivedPlan = ConversationMessageWindow.jumpPlan(
+            receivedEffect = ConversationMessageWindow.jumpEffect(
                 for: item,
                 sessionID: sessionID,
-                totalCount: messages.count,
+                messages: messages,
                 currentLimit: ConversationMessageWindow.initialLimit
             )
         }
 
-        XCTAssertEqual(receivedPlan?.messageID, selected.messageID)
-        XCTAssertEqual(receivedPlan?.renderedLimit, 21)
+        XCTAssertEqual(receivedEffect?.messageID, selected.messageID)
+        XCTAssertEqual(receivedEffect?.renderedLimit, 21)
+        XCTAssertFalse(receivedEffect?.isAtBottom ?? true)
+        XCTAssertEqual(receivedEffect?.unseenMessageCount, 0)
         XCTAssertTrue(
-            ConversationMessageWindow.visibleMessages(messages, limit: receivedPlan?.renderedLimit ?? 0)
-                .contains { $0.id == selected.messageID }
+            ConversationMessageWindow.visibleMessages(messages, limit: receivedEffect?.renderedLimit ?? 0)
+                .contains { $0.id == receivedEffect?.messageID }
+        )
+        XCTAssertNil(
+            ConversationMessageWindow.jumpEffect(
+                for: selected,
+                sessionID: "different-session",
+                messages: messages,
+                currentLimit: ConversationMessageWindow.initialLimit
+            )
         )
     }
 }
