@@ -44,6 +44,13 @@ struct ModelPickerCatalog: Equatable {
     static func isEnabled(_ id: String, disabledIDs: Set<String>, activeID: String?) -> Bool {
         id == activeID || !disabledIDs.contains(id)
     }
+
+    static func reconciledDisabledIDs(_ disabledIDs: Set<String>, activeID: String?) -> Set<String> {
+        guard let activeID else { return disabledIDs }
+        var reconciled = disabledIDs
+        reconciled.remove(activeID)
+        return reconciled
+    }
 }
 
 enum ModelPickerRefreshState: Equatable {
@@ -122,6 +129,8 @@ struct ModelPickerView: View {
         .sheet(isPresented: $showingEditor) {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
         }
+        .onAppear { reconcileActiveModelPreference() }
+        .onChange(of: selectedID) { _, _ in reconcileActiveModelPreference() }
     }
 
     @ViewBuilder
@@ -184,6 +193,15 @@ struct ModelPickerView: View {
 
     private var selectedOption: HermesModelOption? {
         options.first { $0.id == selectedID }
+    }
+
+    private func reconcileActiveModelPreference() {
+        let reconciled = ModelPickerCatalog.reconciledDisabledIDs(disabledModelIDs, activeID: selectedID)
+        guard reconciled != disabledModelIDs else { return }
+        disabledModelIDs = reconciled
+        if let selectedID {
+            ModelPickerPreferences().setEnabled(true, for: selectedID)
+        }
     }
 }
 

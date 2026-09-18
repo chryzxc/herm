@@ -927,6 +927,7 @@ final class DockModel: ObservableObject {
         // click in the session queue.
         if !isRefreshingActiveSession {
             resetComposerForSessionChange()
+            invalidateRuntimeModelOptionsRefresh()
             if profileID == nil {
                 detachInFlightBotActivities(as: .canceled)
             }
@@ -1298,6 +1299,7 @@ final class DockModel: ObservableObject {
             cacheAgentState(for: sessionStorageID)
         }
         resetComposerForSessionChange()
+        invalidateRuntimeModelOptionsRefresh()
         sessionResumeGeneration &+= 1
         restoreGeneration &+= 1
         interruptGeneration &+= 1
@@ -3820,6 +3822,16 @@ final class DockModel: ObservableObject {
         configuration.agentName != nil || configuration.model != nil || configuration.provider != nil || configuration.configPath != nil || configuration.maxTurns != nil || configuration.terminalTimeout != nil || !configuration.skills.isEmpty || !configuration.mcpServers.isEmpty || !configuration.plugins.isEmpty
     }
 
+    enum RuntimeModelOptionsParseError: Error {
+        case malformedResponse
+    }
+
+    private func invalidateRuntimeModelOptionsRefresh() {
+        runtimeModelOptionsRefreshGeneration &+= 1
+        isLoadingRuntimeModelOptions = false
+        runtimeModelOptionsError = nil
+    }
+
     func refreshRuntimeModelOptions(sessionID: String? = nil) {
         runtimeModelOptionsRefreshGeneration += 1
         let generation = runtimeModelOptionsRefreshGeneration
@@ -3834,7 +3846,7 @@ final class DockModel: ObservableObject {
                       sessionID == nil || sessionID == self.sessionID else {
                     return
                 }
-                runtimeModelOptions = Self.runtimeModelOptions(from: result)
+                runtimeModelOptions = try Self.runtimeModelOptions(from: result)
                 if let sessionID, sessionID == self.sessionID,
                    let provider = result["provider"] as? String,
                    let model = result["model"] as? String {
@@ -3865,11 +3877,17 @@ final class DockModel: ObservableObject {
         return params
     }
 
-    nonisolated static func runtimeModelOptions(from result: [String: Any]) -> [HermesModelOption] {
-        let providers = result["providers"] as? [[String: Any]] ?? []
-        return providers.flatMap { provider -> [HermesModelOption] in
-            guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String) else { return [] }
-            let models = provider["models"] as? [String] ?? []
+    nonisolated static func runtimeModelOptions(from result: [String: Any]) throws -> [HermesModelOption] {
+        guard let providers = result["providers"] as? [[String: Any]] else {
+            throw RuntimeModelOptionsParseError.malformedResponse
+        }
+        return try providers.flatMap { provider -> [HermesModelOption] in
+            guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String),
+                  !name.isEmpty,
+                  let models = provider["models"] as? [String],
+                  models.allSatisfy({ !$0.isEmpty }) else {
+                throw RuntimeModelOptionsParseError.malformedResponse
+            }
             return models.map { HermesModelOption(provider: name, model: $0) }
         }
     }

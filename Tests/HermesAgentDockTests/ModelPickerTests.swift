@@ -110,15 +110,29 @@ struct ModelPickerTests {
     }
 
     @Test
-    func modelOptionsPayloadPreservesRequestAndProviderModelShape() {
+    func activeModelIsRemovedFromPersistedDisabledIDsWhenItBecomesActive() {
+        let activeID = "openai|gpt-5"
+
+        #expect(ModelPickerCatalog.reconciledDisabledIDs([activeID, "anthropic|claude"], activeID: activeID) == ["anthropic|claude"])
+    }
+
+    @Test
+    func modelOptionsPayloadPreservesRequestAndProviderModelShape() throws {
         let request = DockModel.runtimeModelOptionsRequest(sessionID: "session-7")
         #expect(request["explicit_only"] as? Bool == true)
         #expect(request["session_id"] as? String == "session-7")
 
-        let options = DockModel.runtimeModelOptions(from: [
+        let options = try DockModel.runtimeModelOptions(from: [
             "providers": [["slug": "openai", "models": ["gpt-5"]]]
         ])
         #expect(options.map(\.id) == ["openai|gpt-5"])
+    }
+
+    @Test
+    func malformedModelOptionsEnvelopeFailsClosed() {
+        #expect(throws: DockModel.RuntimeModelOptionsParseError.self) {
+            try DockModel.runtimeModelOptions(from: ["providers": ["not-an-object"]])
+        }
     }
 
     @Test
@@ -167,5 +181,25 @@ struct ModelPickerTests {
         #expect(model.runtimeModelOptions.map(\.id) == ["anthropic|claude-sonnet"])
         #expect(model.runtimeModelOptionsError == nil)
         #expect(!model.isLoadingRuntimeModelOptions)
+    }
+
+    @Test
+    @MainActor
+    func switchingToNewChatInvalidatesPendingModelRefresh() async {
+        let client = ModelPickerRefreshRPCClient()
+        let model = DockModel(initialSessionID: "session-old", rpcClient: client)
+
+        model.refreshRuntimeModelOptions(sessionID: "session-old")
+        while client.requests.isEmpty { await Task.yield() }
+
+        model.newChat()
+        #expect(model.isLoadingRuntimeModelOptions == false)
+        #expect(model.runtimeModelOptionsError == nil)
+
+        client.releaseNext(with: [
+            "providers": [["slug": "openai", "models": ["stale-model"]]]
+        ])
+        await Task.yield()
+        #expect(model.runtimeModelOptions.isEmpty)
     }
 }
