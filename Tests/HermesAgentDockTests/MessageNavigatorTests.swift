@@ -69,4 +69,31 @@ final class MessageNavigatorTests: XCTestCase {
             MessageNavigator.items(messages: messages, sessionID: "session-a")
         )
     }
+
+    func testJumpLimitRevealsTargetWhileKeepingWindowBounded() {
+        XCTAssertEqual(
+            ConversationMessageWindow.limitToReveal(
+                messageOrdinal: 3,
+                totalCount: 40,
+                currentLimit: 12
+            ),
+            12
+        )
+        XCTAssertEqual(
+            ConversationMessageWindow.limitToReveal(
+                messageOrdinal: 20,
+                totalCount: 40,
+                currentLimit: 12
+            ),
+            20
+        )
+        XCTAssertEqual(
+            ConversationMessageWindow.limitToReveal(
+                messageOrdinal: 99,
+                totalCount: 40,
+                currentLimit: 12
+            ),
+            40
+        )
+    }
 }

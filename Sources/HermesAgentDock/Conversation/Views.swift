@@ -99,6 +99,7 @@ struct DockPopover: View {
     @State private var lastRenderedMessageBubbleCount = 0
     @State private var conversationScrollRequest = 0
     @State private var renderedMessageLimit = ConversationMessageWindow.initialLimit
+    @State private var visibleNavigatorTargets: Set<MessageNavigatorTarget> = []
     @State private var isStreamingTailScrollScheduled = false
     @State private var isTransientTailAdjustmentScheduled = false
     @State private var isPastEndRepairScheduled = false
@@ -1778,6 +1779,18 @@ struct DockPopover: View {
 
                                 ForEach(messages) { message in
                                     messageRow(message)
+                                        .background {
+                                            GeometryReader { geometry in
+                                                Color.clear.preference(
+                                                    key: MessageNavigatorViewportPreferenceKey.self,
+                                                    value: [MessageNavigatorViewport(
+                                                        target: MessageNavigatorTarget(sessionID: model.sessionID ?? "", messageID: message.id),
+                                                        minY: geometry.frame(in: .named("conversation-scroll")).minY,
+                                                        maxY: geometry.frame(in: .named("conversation-scroll")).maxY
+                                                    )]
+                                                )
+                                            }
+                                        }
                                         .id(message.id)
                                 }
                                 if let approval = model.approvalText {
@@ -1843,6 +1856,14 @@ struct DockPopover: View {
                             bounds,
                             viewportHeight: viewport.size.height,
                             proxy: proxy
+                        )
+                    }
+                    .onPreferenceChange(MessageNavigatorViewportPreferenceKey.self) { viewports in
+                        let viewportHeight = viewport.size.height
+                        visibleNavigatorTargets = Set(
+                            viewports
+                                .filter { $0.maxY >= 0 && $0.minY <= viewportHeight }
+                                .map(\.target)
                         )
                     }
                     .onChange(of: model.scrollToLatestMessageRequest) { _, _ in
@@ -1919,8 +1940,33 @@ struct DockPopover: View {
                         .buttonStyle(.borderless)
                         .padding(.bottom, 12)
                     }
+
+                    MessageNavigatorView(
+                        items: ConversationMessageWindow.navigatorItems(messages: model.messages, sessionID: model.sessionID ?? ""),
+                        sessionID: model.sessionID ?? "",
+                        visibleTargets: visibleNavigatorTargets,
+                        onSelect: { item in jumpToMessage(item, proxy: proxy) }
+                    )
+                    .padding(.top, 10)
+                    .padding(.trailing, 10)
                 }
             }
+        }
+    }
+
+    private func jumpToMessage(_ item: MessageNavigatorItem, proxy: ScrollViewProxy) {
+        guard item.sessionID == (model.sessionID ?? "") else { return }
+        renderedMessageLimit = ConversationMessageWindow.limitToReveal(
+            messageOrdinal: item.ordinal,
+            totalCount: model.messages.count,
+            currentLimit: renderedMessageLimit
+        )
+        isConversationAtBottom = false
+        unseenMessageCount = 0
+        Task { @MainActor in
+            await Task.yield()
+            guard item.sessionID == (model.sessionID ?? "") else { return }
+            proxy.scrollTo(item.messageID, anchor: .center)
         }
     }
 
