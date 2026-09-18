@@ -623,16 +623,18 @@ final class DockModel: ObservableObject {
             return false
         }
         let imageType = pasteboard.types?.first { $0 == .png || $0 == .tiff }
-        guard let imageType,
-              let data = pasteboard.data(forType: imageType),
+        guard let imageType else {
+            return false
+        }
+        guard let data = pasteboard.data(forType: imageType),
               let nsImage = NSImage(data: data) else {
+            pendingAttachmentError = "Could not paste image: the clipboard image could not be read."
             return false
         }
         return stageImage(nsImage)
     }
 
     func stageImageFile(at url: URL) {
-        pendingAttachmentError = nil
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard let nsImage = NSImage(contentsOf: url) else {
@@ -645,7 +647,6 @@ final class DockModel: ObservableObject {
     }
 
     func stagePDFFile(at url: URL) {
-        pendingAttachmentError = nil
         pendingPDFError = nil
         guard url.pathExtension.lowercased() == "pdf" else {
             pendingPDFError = "Only PDF files can be attached as documents."
@@ -671,6 +672,11 @@ final class DockModel: ObservableObject {
         pendingAttachmentError = message
     }
 
+    func clearAttachmentErrors() {
+        pendingAttachmentError = nil
+        pendingPDFError = nil
+    }
+
     func removePendingPDF() {
         pendingPDFURL = nil
         pendingPDFError = nil
@@ -691,6 +697,7 @@ final class DockModel: ObservableObject {
         guard let tiff = nsImage.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else {
+            pendingAttachmentError = "Could not paste image: the image could not be encoded."
             DebugLog.write("model: failed to encode pasted image as PNG")
             return false
         }
@@ -700,6 +707,7 @@ final class DockModel: ObservableObject {
             try png.write(to: tempURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
         } catch {
+            pendingAttachmentError = "Could not paste image: the image could not be saved."
             DebugLog.write("model: failed to write image temp file: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }

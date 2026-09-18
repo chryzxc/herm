@@ -95,6 +95,53 @@ struct AttachmentPopoverTests {
         #expect(model.pendingAttachmentError == "Could not attach image: attachment-popover-corrupt.png could not be read.")
     }
 
+    @Test @MainActor func mixedSelectionKeepsEarlierAttachmentFailureVisible() throws {
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: "AttachmentPopoverTests-mixed")!,
+            approvalSoundPlayer: {}
+        )
+        let imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("attachment-popover-valid.png")
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(x: 0, y: 0, width: 1, height: 1).fill()
+        image.unlockFocus()
+        guard let tiff = image.tiffRepresentation,
+              let representation = NSBitmapImageRep(data: tiff),
+              let data = representation.representation(using: .png, properties: [:]) else {
+            Issue.record("Could not create test image")
+            return
+        }
+        try data.write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+
+        AttachmentPopoverFileSelection.process(
+            [URL(fileURLWithPath: "/tmp/rejected.txt"), imageURL],
+            stageImage: model.stageImageFile,
+            stagePDF: model.stagePDFFile,
+            reportError: model.reportAttachmentError,
+            clearErrors: model.clearAttachmentErrors
+        )
+
+        #expect(model.pendingImages.count == 1)
+        #expect(model.pendingAttachmentError == "Unsupported attachment: rejected.txt")
+    }
+
+    @Test @MainActor func invalidClipboardImagePublishesAnActionableError() {
+        let model = DockModel(
+            defaults: UserDefaults(suiteName: "AttachmentPopoverTests-paste")!,
+            approvalSoundPlayer: {}
+        )
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setData(Data("not an image".utf8), forType: .png)
+        defer { pasteboard.clearContents() }
+
+        #expect(model.pasteImageFromPasteboard() == false)
+        #expect(model.pendingAttachmentError == "Could not paste image: the clipboard image could not be read.")
+    }
+
     @Test func promptSnippetsAreNonEmptyAndHaveStableLabels() {
         #expect(AttachmentPopoverPresentation.promptSnippets.map(\.label) == ["Summarize", "Extract action items", "Review this"])
         #expect(AttachmentPopoverPresentation.promptSnippets.allSatisfy { !$0.text.isEmpty })

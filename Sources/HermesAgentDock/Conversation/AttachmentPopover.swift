@@ -84,8 +84,10 @@ enum AttachmentPopoverFileSelection {
         _ urls: [URL],
         stageImage: (URL) -> Void,
         stagePDF: (URL) -> Void,
-        reportError: (String) -> Void
+        reportError: (String) -> Void,
+        clearErrors: () -> Void = {}
     ) {
+        clearErrors()
         var pdfURLs: [URL] = []
         for url in urls {
             let pathExtension = url.pathExtension.lowercased()

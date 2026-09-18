@@ -535,7 +535,8 @@ struct ChatComposerView: View {
             urls,
             stageImage: model.stageImageFile,
             stagePDF: model.stagePDFFile,
-            reportError: model.reportAttachmentError
+            reportError: model.reportAttachmentError,
+            clearErrors: model.clearAttachmentErrors
         )
         isComposerFocused = true
     }
