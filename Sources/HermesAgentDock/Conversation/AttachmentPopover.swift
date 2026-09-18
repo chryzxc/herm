@@ -183,7 +183,7 @@ struct AttachmentPopover: View {
             }
             HStack(spacing: 6) {
                 TextField("https://…", text: $urlText)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.dockGlass)
                     .font(.system(size: 11))
                     .onSubmit(insertURL)
                 Button("Insert", action: insertURL)
