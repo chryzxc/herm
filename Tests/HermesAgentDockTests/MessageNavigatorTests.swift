@@ -71,13 +71,15 @@ final class MessageNavigatorTests: XCTestCase {
     }
 
     func testJumpLimitRevealsTargetWhileKeepingWindowBounded() {
+        let messages = (1...40).map { _ in ChatMessage(role: .user, text: "message") }
+
         XCTAssertEqual(
             ConversationMessageWindow.limitToReveal(
                 messageOrdinal: 3,
                 totalCount: 40,
                 currentLimit: 12
             ),
-            12
+            38
         )
         XCTAssertEqual(
             ConversationMessageWindow.limitToReveal(
@@ -85,7 +87,7 @@ final class MessageNavigatorTests: XCTestCase {
                 totalCount: 40,
                 currentLimit: 12
             ),
-            20
+            21
         )
         XCTAssertEqual(
             ConversationMessageWindow.limitToReveal(
@@ -95,5 +97,13 @@ final class MessageNavigatorTests: XCTestCase {
             ),
             40
         )
+
+        let revealedLimit = ConversationMessageWindow.limitToReveal(
+            messageOrdinal: 20,
+            totalCount: messages.count,
+            currentLimit: 12
+        )
+        let visible = ConversationMessageWindow.visibleMessages(messages, limit: revealedLimit)
+        XCTAssertTrue(visible.contains { $0.id == messages[19].id })
     }
 }

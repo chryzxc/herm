@@ -40,7 +40,12 @@ enum ConversationMessageWindow {
     static func limitToReveal(messageOrdinal: Int, totalCount: Int, currentLimit: Int) -> Int {
         let safeTotal = max(0, totalCount)
         let safeOrdinal = max(0, messageOrdinal)
-        return min(safeTotal, max(initialLimit, currentLimit, safeOrdinal))
+        // The mounted window is a suffix. An oldest-first ordinal therefore
+        // needs the number of rows from that ordinal through the newest row.
+        let requiredSuffixLimit = safeOrdinal > safeTotal
+            ? safeTotal
+            : safeTotal - safeOrdinal + 1
+        return min(safeTotal, max(initialLimit, currentLimit, requiredSuffixLimit))
     }
 
     /// A session owns no transcript presentation state. Never carry an
