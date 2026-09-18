@@ -45,6 +45,14 @@ final class MessageNavigatorTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testKeyboardDownFromNoSelectionChoosesFirstFilteredMessage() {
+        XCTAssertEqual(
+            MessageNavigatorView.nextSelectionIndex(direction: .down, currentIndex: nil, count: 3),
+            0
+        )
+    }
+
     func testSelectionAndViewportUpdatesCannotCrossSessions() {
         let messageID = UUID()
         let targetA = MessageNavigatorTarget(sessionID: "session-a", messageID: messageID)
