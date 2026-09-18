@@ -85,4 +85,44 @@ struct RestoreCheckpointTests {
         #expect(coordinator.state == .failed(selected, message: "Restore failed"))
         #expect(coordinator.begin(selected))
     }
+
+    @Test func restoreCheckpointCarriesExactSessionAndHashToHermes() async {
+        let client = RestoreCheckpointClient(result: ["success": true])
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let selected = checkpoint("abc123")
+
+        #expect(await model.restoreCheckpoint(selected))
+        #expect(client.lastMethod == "rollback.restore")
+        #expect(client.lastParams?["session_id"] as? String == "session-a")
+        #expect(client.lastParams?["hash"] as? String == "abc123")
+        #expect(model.restoreCheckpointState == .completed(selected))
+    }
+
+    @Test func restoreCheckpointFailureRetainsRetryableStateAndCancelClearsIt() async {
+        let client = RestoreCheckpointClient(result: ["success": false, "error": "restore rejected"])
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let selected = checkpoint("abc123")
+
+        #expect(!(await model.restoreCheckpoint(selected)))
+        #expect(model.restoreCheckpointState == .failed(selected, message: "restore rejected"))
+        model.cancelRestoreCheckpoint()
+        #expect(model.restoreCheckpointState == .idle)
+    }
+}
+
+@MainActor
+private final class RestoreCheckpointClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    let result: [String: Any]
+    private(set) var lastMethod: String?
+    private(set) var lastParams: [String: Any]?
+
+    init(result: [String: Any]) { self.result = result }
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        lastMethod = method
+        lastParams = params
+        return result
+    }
 }

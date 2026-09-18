@@ -70,6 +70,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var appearanceProjectionAvailable = false
     @Published private(set) var insightsSummary: HermesInsightsSummary?
     @Published private(set) var checkpoints: [HermesCheckpointSummary] = []
+    @Published private(set) var restoreCheckpoints: [RestoreCheckpoint] = []
+    @Published private(set) var restoreCheckpointState: RestoreCheckpointState = .idle
     @Published private(set) var checkpointDiff: String?
     @Published private(set) var isLoadingCheckpoints = false
     @Published private(set) var emergencyStopActive: Bool?
@@ -128,6 +130,7 @@ final class ControlCenterModel: ObservableObject {
     private var verificationGeneration = UUID()
     private var appearanceProjectionGeneration = UUID()
     private var checkpointsGeneration = UUID()
+    private let restoreCheckpointCoordinator = RestoreCheckpointCoordinator()
     private var projectSessionsGeneration = UUID()
     private var projectNavigationRefreshGeneration: UUID?
     private var pendingProjectNavigationSessions: [String: [SessionSummary]] = [:]
@@ -443,6 +446,8 @@ final class ControlCenterModel: ObservableObject {
             appearanceProjectionAvailable = false
             insightsSummary = nil
             checkpoints = []
+            restoreCheckpoints = []
+            restoreCheckpointState = .idle
             checkpointDiff = nil
             isLoadingCheckpoints = false
             emergencyStopActive = nil
@@ -1869,6 +1874,8 @@ final class ControlCenterModel: ObservableObject {
             sessionUsage = nil
             sessionContext = nil
             checkpoints = []
+            restoreCheckpoints = []
+            restoreCheckpointState = .idle
             checkpointDiff = nil
         }
         sessionCockpitSessionID = sessionID
@@ -1891,6 +1898,8 @@ final class ControlCenterModel: ObservableObject {
     func refreshCheckpoints(sessionID: String? = nil) {
         guard let rpc, let resolvedSessionID = sessionID ?? dockModel?.sessionID, !resolvedSessionID.isEmpty else {
             checkpoints = []
+            restoreCheckpoints = []
+            restoreCheckpointState = .idle
             checkpointDiff = nil
             return
         }
@@ -1903,11 +1912,27 @@ final class ControlCenterModel: ObservableObject {
             defer {
                 if generation == checkpointsGeneration { isLoadingCheckpoints = false }
             }
-            guard let result = try? await rpc.rollbackList(sessionID: resolvedSessionID),
+            guard let result = try? await rpc.listRestoreCheckpoints(sessionID: resolvedSessionID),
                   generation == checkpointsGeneration,
                   isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration),
                   (sessionID != nil || dockModel?.sessionID == resolvedSessionID) else { return }
             checkpoints = Self.parseCheckpoints(result)
+            let projectID = projectIDBySessionID[resolvedSessionID]
+            restoreCheckpoints = RestoreCheckpointEligibility.eligible(
+                checkpoints.compactMap { row in
+                    RestoreCheckpoint(
+                        sessionID: resolvedSessionID,
+                        projectID: projectID,
+                        selectionID: currentFocus?.sourceID,
+                        hash: row.hash,
+                        timestamp: row.timestamp,
+                        message: row.message
+                    )
+                },
+                sessionID: resolvedSessionID,
+                projectID: projectID,
+                selectionID: currentFocus?.sourceID
+            )
             if checkpoints.isEmpty { checkpointDiff = nil }
         }
     }
@@ -1923,16 +1948,53 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    func restoreCheckpoint(_ checkpoint: HermesCheckpointSummary) async -> Bool {
-        guard let rpc, let sessionID = dockModel?.sessionID, !sessionID.isEmpty, dockModel?.status != .working else { return false }
+    func loadCheckpointDiff(_ checkpoint: RestoreCheckpoint) {
+        guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty else { return }
+        let generation = checkpointsGeneration
+        Task {
+            guard let result = try? await rpc.rollbackDiff(sessionID: sessionID, hash: checkpoint.hash),
+                  generation == checkpointsGeneration,
+                  let diff = result["diff"] as? String, diff.utf8.count <= 4_096 else { return }
+            checkpointDiff = diff
+        }
+    }
+
+    func restoreCheckpoint(_ checkpoint: RestoreCheckpoint) async -> Bool {
+        guard let rpc, let sessionID = dockModel?.sessionID ?? Optional(checkpoint.sessionID), !sessionID.isEmpty,
+              dockModel?.status != .working,
+              RestoreCheckpointEligibility.isEligible(
+                  checkpoint,
+                  sessionID: sessionID,
+                  projectID: projectIDBySessionID[sessionID],
+                  selectionID: currentFocus?.sourceID
+              ),
+              restoreCheckpointCoordinator.begin(checkpoint) else { return false }
+        restoreCheckpointState = restoreCheckpointCoordinator.state
         do {
-            _ = try await rpc.rollbackRestore(sessionID: sessionID, hash: checkpoint.hash)
+            let result = try await rpc.restoreCheckpoint(sessionID: sessionID, hash: checkpoint.hash)
+            if result["success"] as? Bool == false {
+                let message = Self.safeUserDiagnostic(result["error"] as? String ?? "Hermes rejected the checkpoint restore.")
+                restoreCheckpointCoordinator.fail(message)
+                restoreCheckpointState = restoreCheckpointCoordinator.state
+                lastError = message
+                return false
+            }
+            restoreCheckpointCoordinator.succeed()
+            restoreCheckpointState = restoreCheckpointCoordinator.state
             refreshCheckpoints(sessionID: sessionID)
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            restoreCheckpointCoordinator.fail(message)
+            restoreCheckpointState = restoreCheckpointCoordinator.state
+            lastError = message
             return false
         }
+    }
+
+    func cancelRestoreCheckpoint() {
+        restoreCheckpointCoordinator.cancel()
+        restoreCheckpointState = restoreCheckpointCoordinator.state
     }
 
     func steerActiveSession(_ text: String) async -> SessionTextActionResult? {

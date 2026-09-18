@@ -103,8 +103,13 @@ final class RestoreCheckpointCoordinator {
     }
 
     func cancel() {
-        guard state.isPending else { return }
+        guard state.isPending || isFailed else { return }
         state = .idle
+    }
+
+    private var isFailed: Bool {
+        if case .failed = state { return true }
+        return false
     }
 
     func succeed() {
