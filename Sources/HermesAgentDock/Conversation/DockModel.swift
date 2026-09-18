@@ -120,6 +120,7 @@ final class DockModel: ObservableObject {
     @Published var isLoadingRuntimeModelOptions = false
     @Published private(set) var runtimeConfigurationProjectionState: HermesProjectionState<HermesRuntimeConfiguration> = .empty
     @Published var runtimeModelOptions: [HermesModelOption] = []
+    private var runtimeModelOptionsRefreshGeneration = 0
     @Published private(set) var sessionModelOptionID: String?
     /// The canonical session response can provide a model before the optional
     /// catalog has resolved its provider/model option identity.
@@ -3820,14 +3821,17 @@ final class DockModel: ObservableObject {
     }
 
     func refreshRuntimeModelOptions(sessionID: String? = nil) {
+        runtimeModelOptionsRefreshGeneration += 1
+        let generation = runtimeModelOptionsRefreshGeneration
         isLoadingRuntimeModelOptions = true
         runtimeModelOptionsError = nil
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 let params = Self.runtimeModelOptionsRequest(sessionID: sessionID)
-                let result = try await gateway.request(HermesFeatureIDs.ID.modelOptions.rawValue, params: params)
-                guard sessionID == nil || sessionID == self.sessionID else {
-                    isLoadingRuntimeModelOptions = false
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.modelOptions.rawValue, params: params)
+                guard generation == runtimeModelOptionsRefreshGeneration,
+                      sessionID == nil || sessionID == self.sessionID else {
                     return
                 }
                 runtimeModelOptions = Self.runtimeModelOptions(from: result)
@@ -3841,7 +3845,15 @@ final class DockModel: ObservableObject {
                     sessionModelValue = model
                 }
             } catch {
+                guard generation == runtimeModelOptionsRefreshGeneration,
+                      sessionID == nil || sessionID == self.sessionID else {
+                    return
+                }
                 runtimeModelOptionsError = "Hermes could not load its model catalog."
+            }
+            guard generation == runtimeModelOptionsRefreshGeneration,
+                  sessionID == nil || sessionID == self.sessionID else {
+                return
             }
             isLoadingRuntimeModelOptions = false
         }

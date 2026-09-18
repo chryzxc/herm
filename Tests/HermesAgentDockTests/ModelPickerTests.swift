@@ -2,6 +2,43 @@ import Foundation
 import Testing
 @testable import HermesAgentDock
 
+@MainActor
+private final class ModelPickerRefreshRPCClient: HermesRPCClientProtocol {
+    enum TestError: Error { case rejected }
+    private final class Response: @unchecked Sendable {
+        let value: [String: Any]
+        init(_ value: [String: Any]) { self.value = value }
+    }
+
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var requests: [(method: String, params: [String: Any])] = []
+    private var waiters: [CheckedContinuation<Response, Error>] = []
+
+    func connect() async throws {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requests.append((method, params))
+        let response = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Response, Error>) in
+            waiters.append(continuation)
+        }
+        return response.value
+    }
+
+    func releaseNext(with response: [String: Any]) {
+        guard !waiters.isEmpty else { return }
+        let waiter = waiters.removeFirst()
+        waiter.resume(returning: Response(response))
+    }
+
+    func releaseLatest(with response: [String: Any]) {
+        guard !waiters.isEmpty else { return }
+        let waiter = waiters.removeLast()
+        waiter.resume(returning: Response(response))
+    }
+
+    func close() {}
+}
+
 struct ModelPickerTests {
     @Test
     func groupsModelsByProviderAndFiltersWithoutLosingProviderContext() {
@@ -82,5 +119,53 @@ struct ModelPickerTests {
             "providers": [["slug": "openai", "models": ["gpt-5"]]]
         ])
         #expect(options.map(\.id) == ["openai|gpt-5"])
+    }
+
+    @Test
+    @MainActor
+    func refreshUsesGatewayBoundaryAndPublishesSessionCatalog() async throws {
+        let client = ModelPickerRefreshRPCClient()
+        let model = DockModel(initialSessionID: "session-7", rpcClient: client)
+
+        model.refreshRuntimeModelOptions(sessionID: "session-7")
+        while client.requests.isEmpty { await Task.yield() }
+        client.releaseNext(with: [
+            "provider": "openai",
+            "model": "gpt-5",
+            "providers": [["slug": "openai", "models": ["gpt-5"]]]
+        ])
+        while model.isLoadingRuntimeModelOptions { await Task.yield() }
+
+        let request = try #require(client.requests.first)
+        #expect(request.method == HermesFeatureIDs.ID.modelOptions.rawValue)
+        #expect(request.params["explicit_only"] as? Bool == true)
+        #expect(request.params["session_id"] as? String == "session-7")
+        #expect(model.runtimeModelOptions.map(\.id) == ["openai|gpt-5"])
+        #expect(model.sessionModelOptionID == "openai|gpt-5")
+        #expect(model.runtimeModelOptionsError == nil)
+    }
+
+    @Test
+    @MainActor
+    func latestRefreshWinsWhenGatewayResponsesCompleteOutOfOrder() async {
+        let client = ModelPickerRefreshRPCClient()
+        let model = DockModel(initialSessionID: "session-race", rpcClient: client)
+
+        model.refreshRuntimeModelOptions(sessionID: "session-race")
+        model.refreshRuntimeModelOptions(sessionID: "session-race")
+        while client.requests.count < 2 { await Task.yield() }
+
+        client.releaseLatest(with: [
+            "providers": [["slug": "anthropic", "models": ["claude-sonnet"]]]
+        ])
+        while model.isLoadingRuntimeModelOptions { await Task.yield() }
+        client.releaseNext(with: [
+            "providers": [["slug": "openai", "models": ["gpt-5"]]]
+        ])
+        await Task.yield()
+
+        #expect(model.runtimeModelOptions.map(\.id) == ["anthropic|claude-sonnet"])
+        #expect(model.runtimeModelOptionsError == nil)
+        #expect(!model.isLoadingRuntimeModelOptions)
     }
 }
