@@ -130,7 +130,7 @@ final class MessageNavigatorTests: XCTestCase {
     }
 
     @MainActor
-    func testNavigatorSelectionDispatchesProductionTranscriptHandoff() {
+    func testNavigatorSelectionDispatchesProductionTranscriptHandoff() async {
         let sessionID = "session-a"
         let messages = (1...40).map { index in
             ChatMessage(role: .user, text: "message \(index)")
@@ -138,33 +138,46 @@ final class MessageNavigatorTests: XCTestCase {
         let selected = MessageNavigator.items(messages: messages, sessionID: sessionID)[19]
         var receivedEffect: ConversationMessageJumpEffect?
         var scrolledMessageID: UUID?
+        var scrolledAnchorIsCenter = false
+        var currentSessionID: String? = sessionID
+        let scrollExpectation = expectation(description: "production transcript scroll")
 
-        let productionHandler = ConversationMessageWindow.transcriptSelectionHandler(
+        let productionHandler = DockPopover.transcriptSelectionHandler(
             sessionID: sessionID,
             messages: messages,
             currentLimit: { ConversationMessageWindow.initialLimit },
+            currentSessionID: { currentSessionID },
             onEffect: { effect in receivedEffect = effect },
-            onScroll: { messageID in scrolledMessageID = messageID }
+            onScroll: { messageID, anchor in
+                scrolledMessageID = messageID
+                scrolledAnchorIsCenter = anchor == .center
+                scrollExpectation.fulfill()
+            }
         )
 
         MessageNavigatorView.dispatchSelection(selected, onSelect: productionHandler)
+        await fulfillment(of: [scrollExpectation], timeout: 1)
 
         XCTAssertEqual(receivedEffect?.messageID, selected.messageID)
         XCTAssertEqual(receivedEffect?.renderedLimit, 21)
         XCTAssertFalse(receivedEffect?.isAtBottom ?? true)
         XCTAssertEqual(receivedEffect?.unseenMessageCount, 0)
         XCTAssertEqual(scrolledMessageID, selected.messageID)
+        XCTAssertTrue(scrolledAnchorIsCenter)
         XCTAssertTrue(
             ConversationMessageWindow.visibleMessages(messages, limit: receivedEffect?.renderedLimit ?? 0)
                 .contains { $0.id == receivedEffect?.messageID }
         )
-        XCTAssertNil(
-            ConversationMessageWindow.jumpEffect(
-                for: selected,
-                sessionID: "different-session",
-                messages: messages,
-                currentLimit: ConversationMessageWindow.initialLimit
-            )
-        )
+        currentSessionID = "different-session"
+        receivedEffect = nil
+        scrolledMessageID = nil
+        scrolledAnchorIsCenter = false
+        let rejectedScrollExpectation = expectation(description: "stale transcript scroll rejected")
+        rejectedScrollExpectation.isInverted = true
+        MessageNavigatorView.dispatchSelection(selected, onSelect: productionHandler)
+        await fulfillment(of: [rejectedScrollExpectation], timeout: 0.2)
+        XCTAssertNotNil(receivedEffect)
+        XCTAssertNil(scrolledMessageID)
+        XCTAssertFalse(scrolledAnchorIsCenter)
     }
 }

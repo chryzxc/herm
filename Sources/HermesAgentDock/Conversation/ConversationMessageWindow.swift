@@ -13,6 +13,10 @@ struct ConversationMessageJumpEffect: Equatable {
     let unseenMessageCount: Int
 }
 
+enum ConversationMessageScrollAnchor: Equatable {
+    case center
+}
+
 /// Bounded presentation window for the canonical transcript. Hermes remains
 /// the owner of every message; this policy only limits how many exact SwiftUI
 /// rows are mounted at once.
@@ -102,7 +106,7 @@ enum ConversationMessageWindow {
         messages: [ChatMessage],
         currentLimit: @escaping () -> Int,
         onEffect: @escaping (ConversationMessageJumpEffect) -> Void,
-        onScroll: @escaping (UUID) -> Void
+        onScroll: @escaping (UUID, ConversationMessageScrollAnchor) -> Void
     ) -> (MessageNavigatorItem) -> Void {
         { item in
             guard let effect = jumpEffect(
@@ -112,7 +116,7 @@ enum ConversationMessageWindow {
                 currentLimit: currentLimit()
             ) else { return }
             onEffect(effect)
-            onScroll(effect.messageID)
+            onScroll(effect.messageID, .center)
         }
     }
 
