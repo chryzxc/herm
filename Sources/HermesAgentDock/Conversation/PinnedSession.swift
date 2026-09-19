@@ -137,20 +137,6 @@ enum PinnedSessionRowInteraction {
     ) {
         selectedSessionID = sessionID
     }
-
-    static func controls(
-        store: PinnedSessionStore,
-        profileID: String,
-        sessionID: String,
-        onSelect: @escaping () -> Void
-    ) -> PinnedSessionRowControls {
-        PinnedSessionRowControls(
-            select: onSelect,
-            togglePin: {
-                store.toggle(profileID: profileID, sessionID: sessionID)
-            }
-        )
-    }
 }
 
 enum PinnedSessionReconciliation {

@@ -224,7 +224,7 @@ final class PinnedSessionTests: XCTestCase {
         let store = PinnedSessionStore(defaults: defaults)
         var selectedSessionID: String? = "already-selected"
 
-        let controls = PinnedSessionRowInteraction.controls(
+        let controls = MissionControlConversationSessionRow.controls(
             store: store,
             profileID: "default",
             sessionID: "pinned-session",

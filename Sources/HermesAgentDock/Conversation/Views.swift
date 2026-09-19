@@ -2400,7 +2400,7 @@ private struct MissionControlConversationGroup: Identifiable, Equatable {
     let isLinked: Bool
 }
 
-private enum SessionAttentionDot: Equatable {
+enum SessionAttentionDot: Equatable {
     case warning, failure, success, activity
 
     var color: Color {
@@ -3208,7 +3208,7 @@ private struct MissionControlQueue: View {
     }
 
     private func sessionRow(_ session: HermesSession) -> some View {
-        let controls = PinnedSessionRowInteraction.controls(
+        let controls = MissionControlConversationSessionRow.controls(
             store: pinnedSessionStore,
             profileID: session.profileID ?? model.profileScopeID ?? "",
             sessionID: session.id,
@@ -3297,7 +3297,7 @@ private struct MissionControlQueue: View {
     }
 }
 
-private struct MissionControlConversationSessionRow: View, Equatable {
+struct MissionControlConversationSessionRow: View, Equatable {
     let session: HermesSession
     let isSelected: Bool
     let isProjectLinked: Bool
@@ -3306,6 +3306,20 @@ private struct MissionControlConversationSessionRow: View, Equatable {
     let isPinned: Bool
     let onSelect: () -> Void
     let onTogglePin: () -> Void
+
+    nonisolated static func controls(
+        store: PinnedSessionStore,
+        profileID: String,
+        sessionID: String,
+        onSelect: @escaping () -> Void
+    ) -> PinnedSessionRowControls {
+        PinnedSessionRowControls(
+            select: onSelect,
+            togglePin: {
+                store.toggle(profileID: profileID, sessionID: sessionID)
+            }
+        )
+    }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.session == rhs.session
