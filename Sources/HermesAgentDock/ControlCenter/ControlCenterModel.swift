@@ -211,6 +211,10 @@ final class ControlCenterModel: ObservableObject {
         projectionRefreshStates[projection]
     }
 
+    func projectSessionsProjectionKey(for projectID: String) -> String {
+        "projects.sessions.\(projectID)"
+    }
+
     func projectionState(for projection: String) -> HermesProjectionState<Int>? {
         projectionStates[projection]
     }
@@ -295,6 +299,7 @@ final class ControlCenterModel: ObservableObject {
     private func projectionCount(_ projection: String) -> Int {
         switch projection {
         case "sessions": return activeSessions.count
+        case "projects.sessions": return projectSessions.count
         case "projects": return projects.count
         case "agents": return activeAgents.count
         case "processes": return processes.count
@@ -1223,7 +1228,11 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func openProject(_ project: ProjectSummary) {
-        guard rpc != nil else { return }
+        let projectionKey = projectSessionsProjectionKey(for: project.id)
+        guard let rpc else {
+            recordProjectionUnavailable(projectionKey)
+            return
+        }
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -1231,17 +1240,18 @@ final class ControlCenterModel: ObservableObject {
         currentFocus = ControlReference(source: .hermesProject, sourceID: project.id, projectID: project.id)
         selectedProjectID = project.id
         selectedProject = project
-        projectSessions = []
+        projectSessions = projectSessionsByProjectID[project.id] ?? []
+        beginProjectionRefresh(projectionKey)
         let profileID = projectProfileID
         Task {
             do {
-                let result = try await rpc?.projectSessions(projectID: project.id, profileID: profileID)
-                guard let result else { throw HermesGateway.GatewayError.malformedResponse }
+                let result = try await rpc.projectSessions(projectID: project.id, profileID: profileID)
                 guard generation == projectSessionsGeneration,
                       selectedProjectID == project.id,
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 projectSessions = Self.parseProjectSessions(result)
                 projectSessionsByProjectID[project.id] = projectSessions
+                recordProjectionSuccess(projectionKey, count: projectSessions.count)
                 for session in projectSessions {
                     projectIDBySessionID[session.id] = project.id
                     resolvedProjectIDBySessionID[session.id] = project.id
@@ -1250,6 +1260,7 @@ final class ControlCenterModel: ObservableObject {
                 guard generation == projectSessionsGeneration,
                       selectedProjectID == project.id,
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                recordProjectionFailure(projectionKey, error: error.localizedDescription)
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }

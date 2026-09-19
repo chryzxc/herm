@@ -297,6 +297,59 @@ struct SessionSummary: Identifiable, Codable, Equatable {
     }
 }
 
+/// Stable, user-facing lifecycle semantics for session rows. Hermes may add
+/// transport states over time; unknown or missing attribution must never look
+/// like an idle/completed session.
+enum SessionLifecycleStatus: String, CaseIterable, Equatable, Sendable {
+    case active
+    case completed
+    case failed
+    case stale
+    case unavailable
+
+    var label: String { rawValue.capitalized }
+}
+
+enum SessionLifecyclePresentation {
+    static func status(for session: SessionSummary, refresh: ProjectionRefreshState? = nil) -> SessionLifecycleStatus {
+        guard !session.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return .unavailable }
+        if refresh?.isStale == true { return .stale }
+        if refresh?.lastSuccess == nil, refresh?.error != nil { return .unavailable }
+
+        switch session.state
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_") {
+        case "running", "active", "working", "busy", "streaming", "pending", "queued",
+             "starting", "needs_approval", "needs_clarification", "waiting", "waiting_for_input":
+            return .active
+        case "completed", "complete", "done", "idle", "finished", "archived":
+            return .completed
+        case "failed", "failure", "error", "errored":
+            return .failed
+        default:
+            return .unavailable
+        }
+    }
+
+    static func detail(for session: SessionSummary, refresh: ProjectionRefreshState? = nil) -> String {
+        status(for: session, refresh: refresh).label
+    }
+
+    static func rowLabel(for session: SessionSummary, isCurrent: Bool, refresh: ProjectionRefreshState? = nil) -> String {
+        let lifecycle = detail(for: session, refresh: refresh)
+        return isCurrent ? "Current · \(lifecycle)" : lifecycle
+    }
+
+    static func accessibilityLabel(for session: SessionSummary, refresh: ProjectionRefreshState? = nil) -> String {
+        "\(detail(for: session, refresh: refresh)): \(session.title)"
+    }
+
+    static func accessibilityLabel(for session: SessionSummary, isCurrent: Bool, refresh: ProjectionRefreshState? = nil) -> String {
+        "\(rowLabel(for: session, isCurrent: isCurrent, refresh: refresh)): \(session.title)"
+    }
+}
+
 /// Session list rows are an operational summary, not a transport log. Hermes
 /// can return the last response as a JSON envelope (for example a failed shell
 /// command), which is useful in Activity but noisy and potentially sensitive in

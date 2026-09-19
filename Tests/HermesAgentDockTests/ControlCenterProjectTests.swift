@@ -4,6 +4,51 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func sessionLifecycleProjectionUsesTextualAccessibleStates() {
+        #expect(SessionLifecyclePresentation.status(for: SessionSummary(id: "active", title: "Active", state: "running", preview: nil)) == .active)
+        #expect(SessionLifecyclePresentation.status(for: SessionSummary(id: "done", title: "Done", state: "completed", preview: nil)) == .completed)
+        #expect(SessionLifecyclePresentation.status(for: SessionSummary(id: "failed", title: "Failed", state: "error", preview: nil)) == .failed)
+        #expect(SessionLifecyclePresentation.status(for: SessionSummary(id: "unknown", title: "Unknown", state: "mystery", preview: nil)) == .unavailable)
+        #expect(SessionLifecycleStatus.allCases.map(\.label) == ["Active", "Completed", "Failed", "Stale", "Unavailable"])
+    }
+
+    @Test func sessionLifecycleProjectionKeepsLastSnapshotStaleOnRefreshFailure() {
+        let session = SessionSummary(id: "session-a", title: "Session", state: "running", preview: nil)
+        let refresh = ProjectionRefreshState(lastSuccess: Date(), error: "connection lost", isStale: true, isRefreshing: false)
+
+        #expect(SessionLifecyclePresentation.status(for: session, refresh: refresh) == .stale)
+        #expect(SessionLifecyclePresentation.detail(for: session, refresh: refresh) == "Stale")
+    }
+
+    @Test func projectSessionRefreshFailureIsUnavailableWithoutSnapshotAndStaleWithSnapshot() {
+        let withoutSnapshot = ControlCenterModel()
+        withoutSnapshot.recordProjectionFailure("projects.sessions", error: "connection lost")
+        let session = SessionSummary(id: "session-a", title: "Session", state: "running", preview: nil)
+
+        #expect(SessionLifecyclePresentation.status(for: session, refresh: withoutSnapshot.refreshState(for: "projects.sessions")) == .unavailable)
+
+        let withSnapshot = ControlCenterModel()
+        withSnapshot.recordProjectionSuccess("projects.sessions", count: 1)
+        withSnapshot.recordProjectionFailure("projects.sessions", error: "connection lost")
+
+        #expect(SessionLifecyclePresentation.status(for: session, refresh: withSnapshot.refreshState(for: "projects.sessions")) == .stale)
+    }
+
+    @Test func currentSessionRowKeepsIdentityAlongsideLifecycleStatus() {
+        let session = SessionSummary(id: "session-a", title: "Session", state: "running", preview: nil)
+
+        #expect(SessionLifecyclePresentation.rowLabel(for: session, isCurrent: true) == "Current · Active")
+        #expect(SessionLifecyclePresentation.rowLabel(for: session, isCurrent: false) == "Active")
+        #expect(SessionLifecyclePresentation.accessibilityLabel(for: session, isCurrent: true) == "Current · Active: Session")
+    }
+
+    @Test func sessionWithoutAnAttributionIDIsUnavailable() {
+        let session = SessionSummary(id: "", title: "Unattributed", state: "running", preview: nil)
+
+        #expect(SessionLifecyclePresentation.status(for: session) == .unavailable)
+        #expect(SessionLifecyclePresentation.accessibilityLabel(for: session) == "Unavailable: Unattributed")
+    }
+
     @Test func projectDisclosureToggleUpdatesCollapsedStateImmediately() {
         var state = ProjectDisclosureState()
 
@@ -759,6 +804,42 @@ struct ControlCenterProjectTests {
         #expect(model.projectSessions.isEmpty)
     }
 
+    @Test func projectSessionRefreshStateDoesNotLeakAcrossProjects() async throws {
+        let client = ProjectSessionIsolationClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let projectA = ProjectSummary(id: "project-a", name: "A", repoCount: 0, sessionCount: 1, sessionIDs: [], preview: nil, isActive: false)
+        let projectB = ProjectSummary(id: "project-b", name: "B", repoCount: 0, sessionCount: 1, sessionIDs: [], preview: nil, isActive: false)
+
+        model.openProject(projectA)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(model.refreshState(for: model.projectSessionsProjectionKey(for: projectA.id))?.lastSuccess != nil)
+        #expect(model.projectSessions.map(\.id) == ["project-a-session"])
+
+        client.failingProjectID = projectA.id
+        model.openProject(projectA)
+        try await Task.sleep(for: .milliseconds(50))
+        let projectARefresh = model.refreshState(for: model.projectSessionsProjectionKey(for: projectA.id))
+        #expect(client.requestedProjectIDs == [projectA.id, projectA.id])
+        #expect(model.projectSessions.map(\.id) == ["project-a-session"])
+        #expect(model.projectionState(for: model.projectSessionsProjectionKey(for: projectA.id)) == .stale(1, safeMessage: "Hermes projection is unavailable. Refresh to try again."))
+        #expect(SessionLifecyclePresentation.status(for: model.projectSessions[0], refresh: projectARefresh) == .stale)
+
+        client.failingProjectID = projectB.id
+        model.openProject(projectB)
+        try await Task.sleep(for: .milliseconds(50))
+
+        let projectBRefresh = model.refreshState(for: model.projectSessionsProjectionKey(for: projectB.id))
+        let projectBKey = model.projectSessionsProjectionKey(for: projectB.id)
+        #expect(client.requestedProjectIDs == [projectA.id, projectA.id, projectB.id])
+        #expect(model.refreshState(for: model.projectSessionsProjectionKey(for: projectA.id))?.isStale == true)
+        #expect(projectBRefresh?.isStale == false)
+        #expect(projectBRefresh?.error != nil)
+        #expect(model.selectedProjectID == projectB.id)
+        #expect(model.projectSessions.isEmpty)
+        #expect(model.projectionState(for: projectBKey) == .failed(safeMessage: "Hermes projection is unavailable. Refresh to try again."))
+        #expect(SessionLifecyclePresentation.status(for: SessionSummary(id: "project-b-session", title: "B", state: "active", preview: nil), refresh: projectBRefresh) == .unavailable)
+    }
+
     @Test func verifiedSessionProjectSurvivesCompactProjectRefresh() async throws {
         let client = SessionProjectMembershipClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
@@ -868,6 +949,26 @@ private final class ProjectSessionRaceClient: HermesRPCClientProtocol {
               let projectID = params["project_id"] as? String else { return [:] }
         if projectID == "slow" {
             try await Task.sleep(for: .milliseconds(40))
+        }
+        return ["sessions": [["id": "\(projectID)-session", "title": projectID, "state": "active"]]]
+    }
+}
+
+@MainActor
+private final class ProjectSessionIsolationClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var failingProjectID: String?
+    private(set) var requestedProjectIDs: [String] = []
+
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        guard method == "projects.project_sessions",
+              let projectID = params["project_id"] as? String else { return [:] }
+        requestedProjectIDs.append(projectID)
+        if projectID == failingProjectID {
+            throw NSError(domain: "ProjectSessionIsolationClient", code: 1, userInfo: [NSLocalizedDescriptionKey: "project session refresh failed"])
         }
         return ["sessions": [["id": "\(projectID)-session", "title": projectID, "state": "active"]]]
     }
