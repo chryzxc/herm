@@ -3208,7 +3208,21 @@ private struct MissionControlQueue: View {
     }
 
     private func sessionRow(_ session: HermesSession) -> some View {
-        MissionControlConversationSessionRow(
+        let controls = PinnedSessionRowInteraction.controls(
+            store: pinnedSessionStore,
+            profileID: session.profileID ?? model.profileScopeID ?? "",
+            sessionID: session.id,
+            onSelect: {
+                PinnedSessionRowInteraction.select(
+                    session.id,
+                    selectedSessionID: &navigationState.selectedSessionID
+                )
+                navigationState.selectedTaskID = nil
+                onSelectSession(session)
+            }
+        )
+
+        return MissionControlConversationSessionRow(
             session: session,
             isSelected: isSessionSelected(session),
             isProjectLinked: projectLinkedSessionIDs.contains(session.id),
@@ -3218,21 +3232,8 @@ private struct MissionControlQueue: View {
                 profileID: session.profileID ?? model.profileScopeID ?? "",
                 sessionID: session.id
             ),
-            onSelect: {
-                PinnedSessionRowInteraction.select(
-                    session.id,
-                    selectedSessionID: &navigationState.selectedSessionID
-                )
-                navigationState.selectedTaskID = nil
-                onSelectSession(session)
-            },
-            onTogglePin: {
-                PinnedSessionRowInteraction.togglePin(
-                    store: pinnedSessionStore,
-                    profileID: session.profileID ?? model.profileScopeID ?? "",
-                    sessionID: session.id
-                )
-            }
+            onSelect: controls.select,
+            onTogglePin: controls.togglePin
         )
         .equatable()
     }

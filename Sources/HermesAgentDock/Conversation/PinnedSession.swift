@@ -125,6 +125,11 @@ struct PinnedSessionPresentation: Equatable {
     var count: Int { status == .ready || status == .empty ? sessions.count : storedCount }
 }
 
+struct PinnedSessionRowControls {
+    let select: () -> Void
+    let togglePin: () -> Void
+}
+
 enum PinnedSessionRowInteraction {
     static func select(
         _ sessionID: String,
@@ -133,12 +138,18 @@ enum PinnedSessionRowInteraction {
         selectedSessionID = sessionID
     }
 
-    static func togglePin(
+    static func controls(
         store: PinnedSessionStore,
         profileID: String,
-        sessionID: String
-    ) {
-        store.toggle(profileID: profileID, sessionID: sessionID)
+        sessionID: String,
+        onSelect: @escaping () -> Void
+    ) -> PinnedSessionRowControls {
+        PinnedSessionRowControls(
+            select: onSelect,
+            togglePin: {
+                store.toggle(profileID: profileID, sessionID: sessionID)
+            }
+        )
     }
 }
 

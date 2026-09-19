@@ -218,24 +218,28 @@ final class PinnedSessionTests: XCTestCase {
         defaults.removePersistentDomain(forName: "PinnedSessionTests.loading")
     }
 
-    func testPinnedRowActionPersistsWithoutChangingCanonicalSelection() {
+    func testRenderedPinnedRowControlsPersistWithoutChangingCanonicalSelection() {
         let defaults = UserDefaults(suiteName: "PinnedSessionTests.row-action")!
         defaults.removePersistentDomain(forName: "PinnedSessionTests.row-action")
         let store = PinnedSessionStore(defaults: defaults)
         var selectedSessionID: String? = "already-selected"
 
-        PinnedSessionRowInteraction.select("pinned-session", selectedSessionID: &selectedSessionID)
-        PinnedSessionRowInteraction.togglePin(
+        let controls = PinnedSessionRowInteraction.controls(
             store: store,
             profileID: "default",
-            sessionID: "pinned-session"
+            sessionID: "pinned-session",
+            onSelect: { selectedSessionID = "pinned-session" }
         )
+        controls.togglePin()
 
-        XCTAssertEqual(selectedSessionID, "pinned-session")
+        XCTAssertEqual(selectedSessionID, "already-selected")
         XCTAssertTrue(PinnedSessionStore(defaults: defaults).state.contains(
             profileID: "default",
             sessionID: "pinned-session"
         ))
+
+        controls.select()
+        XCTAssertEqual(selectedSessionID, "pinned-session")
         defaults.removePersistentDomain(forName: "PinnedSessionTests.row-action")
     }
 }
