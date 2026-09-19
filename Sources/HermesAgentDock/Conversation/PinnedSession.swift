@@ -88,10 +88,12 @@ struct PinnedSessionPresentation: Equatable {
         sessions: [HermesSession],
         state: PinnedSessionState,
         profileID: String,
-        projection: HermesProjectionState<[HermesSession]>
+        projection: HermesProjectionState<[HermesSession]>,
+        hasRequestedSessionIndex: Bool = true
     ) {
         let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
         let references = state.references(for: profileID)
+        let isInitialProjection = !hasRequestedSessionIndex && projection == .empty
         let projectedSessions: [HermesSession]
         switch projection {
         case .ready, .empty:
@@ -108,7 +110,7 @@ struct PinnedSessionPresentation: Equatable {
         case .ready:
             self.status = .ready
         case .empty:
-            self.status = .empty
+            self.status = isInitialProjection ? .loading : .empty
         case .loading:
             self.status = .loading
         case .stale(_, let safeMessage):
@@ -121,6 +123,23 @@ struct PinnedSessionPresentation: Equatable {
     }
 
     var count: Int { status == .ready || status == .empty ? sessions.count : storedCount }
+}
+
+enum PinnedSessionRowInteraction {
+    static func select(
+        _ sessionID: String,
+        selectedSessionID: inout String?
+    ) {
+        selectedSessionID = sessionID
+    }
+
+    static func togglePin(
+        store: PinnedSessionStore,
+        profileID: String,
+        sessionID: String
+    ) {
+        store.toggle(profileID: profileID, sessionID: sessionID)
+    }
 }
 
 enum PinnedSessionReconciliation {

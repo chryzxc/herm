@@ -148,6 +148,24 @@ final class PinnedSessionTests: XCTestCase {
         XCTAssertEqual(empty.count, 0)
     }
 
+    func testPresentationTreatsUnrequestedEmptyProjectionAsLoading() {
+        let state = PinnedSessionState(references: [
+            PinnedSessionReference(profileID: "default", sessionID: "persisted")
+        ])
+
+        let initial = PinnedSessionPresentation(
+            sessions: [],
+            state: state,
+            profileID: "default",
+            projection: .empty,
+            hasRequestedSessionIndex: false
+        )
+
+        XCTAssertEqual(initial.status, .loading)
+        XCTAssertEqual(initial.count, 1)
+        XCTAssertTrue(initial.sessions.isEmpty)
+    }
+
     func testStorePersistsPinsAcrossInstancesAndReconcilesUnavailableReferences() {
         let defaults = UserDefaults(suiteName: "PinnedSessionTests.persistence")!
         defaults.removePersistentDomain(forName: "PinnedSessionTests.persistence")
@@ -198,5 +216,26 @@ final class PinnedSessionTests: XCTestCase {
         XCTAssertTrue(store.reconcile(available: loaded, profileID: "bot-b"))
         XCTAssertFalse(store.state.contains(profileID: "bot-b", sessionID: "still-loading"))
         defaults.removePersistentDomain(forName: "PinnedSessionTests.loading")
+    }
+
+    func testPinnedRowActionPersistsWithoutChangingCanonicalSelection() {
+        let defaults = UserDefaults(suiteName: "PinnedSessionTests.row-action")!
+        defaults.removePersistentDomain(forName: "PinnedSessionTests.row-action")
+        let store = PinnedSessionStore(defaults: defaults)
+        var selectedSessionID: String? = "already-selected"
+
+        PinnedSessionRowInteraction.select("pinned-session", selectedSessionID: &selectedSessionID)
+        PinnedSessionRowInteraction.togglePin(
+            store: store,
+            profileID: "default",
+            sessionID: "pinned-session"
+        )
+
+        XCTAssertEqual(selectedSessionID, "pinned-session")
+        XCTAssertTrue(PinnedSessionStore(defaults: defaults).state.contains(
+            profileID: "default",
+            sessionID: "pinned-session"
+        ))
+        defaults.removePersistentDomain(forName: "PinnedSessionTests.row-action")
     }
 }

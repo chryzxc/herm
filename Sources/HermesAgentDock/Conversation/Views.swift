@@ -2495,7 +2495,8 @@ private struct MissionControlQueue: View {
             sessions: allConversationSessions,
             state: pinnedSessionStore.state,
             profileID: model.profileScopeID ?? "",
-            projection: model.sessionProjectionState
+            projection: model.sessionProjectionState,
+            hasRequestedSessionIndex: navigationState.hasRequestedSessionIndex
         )
     }
 
@@ -3218,12 +3219,16 @@ private struct MissionControlQueue: View {
                 sessionID: session.id
             ),
             onSelect: {
-                navigationState.selectedSessionID = session.id
+                PinnedSessionRowInteraction.select(
+                    session.id,
+                    selectedSessionID: &navigationState.selectedSessionID
+                )
                 navigationState.selectedTaskID = nil
                 onSelectSession(session)
             },
             onTogglePin: {
-                pinnedSessionStore.toggle(
+                PinnedSessionRowInteraction.togglePin(
+                    store: pinnedSessionStore,
                     profileID: session.profileID ?? model.profileScopeID ?? "",
                     sessionID: session.id
                 )
