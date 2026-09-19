@@ -2682,7 +2682,10 @@ private struct MissionControlQueue: View {
             model.loadSessions()
         }
         .onChange(of: availablePinnedReferences) { _, references in
-            pinnedSessionStore.reconcile(available: references)
+            pinnedSessionStore.reconcile(
+                available: references,
+                profileID: model.profileScopeID ?? ""
+            )
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes control queue")
@@ -3282,59 +3285,68 @@ private struct MissionControlConversationSessionRow: View, Equatable {
     }
 
     var body: some View {
-        Button(action: onSelect) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(session.displayTitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if let attentionDot {
-                        Circle().fill(attentionDot.color).frame(width: 6, height: 6)
-                    }
-                    Button(action: onTogglePin) {
-                        LucideIcon(
-                            name: isPinned ? .xmark : .link,
-                            size: 13,
-                            color: isPinned ? Color.dockAccent : Color.dockMetadataText
-                        )
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
-                    .help(isPinned ? "Unpin conversation" : "Pin conversation")
-                }
-                if let projectName {
-                    LucideLabel(projectName, icon: "folder.fill")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Color.dockAccent)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help("Project or repository: \(projectName)")
-                }
-                if let preview = session.displayPreview {
-                    Text(preview)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1)
-                }
-                if let timestamp = session.lastUpdatedAt {
-                    HStack(spacing: 4) {
-                        Text("Updated")
-                        Text(timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                    }
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
+        HStack(spacing: 0) {
+            Button(action: onSelect) {
+                sessionDetails
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+
+            Button(action: onTogglePin) {
+                LucideIcon(
+                    name: isPinned ? .xmark : .link,
+                    size: 13,
+                    color: isPinned ? Color.dockAccent : Color.dockMetadataText
+                )
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
+            .help(isPinned ? "Unpin conversation" : "Pin conversation")
+        }
+        .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private var sessionDetails: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(session.displayTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
+                Spacer(minLength: 4)
+                if let attentionDot {
+                    Circle().fill(attentionDot.color).frame(width: 6, height: 6)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            if let projectName {
+                LucideLabel(projectName, icon: "folder.fill")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Color.dockAccent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help("Project or repository: \(projectName)")
+            }
+            if let preview = session.displayPreview {
+                Text(preview)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+            }
+            if let timestamp = session.lastUpdatedAt {
+                HStack(spacing: 4) {
+                    Text("Updated")
+                    Text(timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
+                }
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
+            }
         }
-        .buttonStyle(.borderless)
+        .padding(.leading, 12)
+        .padding(.vertical, 7)
     }
 }
 

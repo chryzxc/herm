@@ -3,7 +3,7 @@ import XCTest
 
 final class PinnedSessionTests: XCTestCase {
     func testStateDeduplicatesReferencesAndPreservesPinOrder() {
-        var state = PinnedSessionState(references: [
+        let state = PinnedSessionState(references: [
             PinnedSessionReference(profileID: "default", sessionID: "session-b"),
             PinnedSessionReference(profileID: "default", sessionID: "session-a"),
             PinnedSessionReference(profileID: "default", sessionID: "session-b")
@@ -49,6 +49,25 @@ final class PinnedSessionTests: XCTestCase {
         XCTAssertEqual(state.references.map(\.sessionID), ["available"])
     }
 
+    func testReconcileOnlyCleansTheAuthoritativeProfileScope() {
+        var state = PinnedSessionState(references: [
+            PinnedSessionReference(profileID: "bot-a", sessionID: "kept-a"),
+            PinnedSessionReference(profileID: "bot-a", sessionID: "gone-a"),
+            PinnedSessionReference(profileID: "bot-b", sessionID: "kept-b")
+        ])
+
+        let changed = state.reconcile(
+            available: [PinnedSessionReference(profileID: "bot-a", sessionID: "kept-a")],
+            profileID: "bot-a"
+        )
+
+        XCTAssertTrue(changed)
+        XCTAssertEqual(state.references, [
+            PinnedSessionReference(profileID: "bot-a", sessionID: "kept-a"),
+            PinnedSessionReference(profileID: "bot-b", sessionID: "kept-b")
+        ])
+    }
+
     func testPresentationKeepsPinnedOrderAndAccurateCount() {
         let sessions = [
             HermesSession(id: "session-a", profileID: "default", title: "A", preview: "", startedAt: nil, messageCount: 1, source: ""),
@@ -74,14 +93,19 @@ final class PinnedSessionTests: XCTestCase {
         let first = PinnedSessionStore(defaults: defaults)
         first.toggle(profileID: "default", sessionID: "kept")
         first.toggle(profileID: "default", sessionID: "gone")
+        first.toggle(profileID: "bot", sessionID: "other-profile")
 
         let second = PinnedSessionStore(defaults: defaults)
-        XCTAssertEqual(second.state.references.map(\.sessionID), ["kept", "gone"])
+        XCTAssertEqual(second.state.references.map(\.sessionID), ["kept", "gone", "other-profile"])
 
-        XCTAssertTrue(second.reconcile(available: [
-            PinnedSessionReference(profileID: "default", sessionID: "kept")
-        ]))
-        XCTAssertEqual(PinnedSessionStore(defaults: defaults).state.references.map(\.sessionID), ["kept"])
+        XCTAssertTrue(second.reconcile(
+            available: [PinnedSessionReference(profileID: "default", sessionID: "kept")],
+            profileID: "default"
+        ))
+        XCTAssertEqual(
+            PinnedSessionStore(defaults: defaults).state.references.map(\.sessionID),
+            ["kept", "other-profile"]
+        )
 
         defaults.removePersistentDomain(forName: "PinnedSessionTests.persistence")
     }

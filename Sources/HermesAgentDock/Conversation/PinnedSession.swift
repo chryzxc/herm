@@ -46,6 +46,20 @@ struct PinnedSessionState: Equatable, Codable, Sendable {
         return true
     }
 
+    @discardableResult
+    mutating func reconcile(
+        available: [PinnedSessionReference],
+        profileID: String
+    ) -> Bool {
+        let availableSet = Set(available)
+        let reconciled = references.filter { reference in
+            reference.profileID != profileID || availableSet.contains(reference)
+        }
+        guard reconciled != references else { return false }
+        references = reconciled
+        return true
+    }
+
     private static func deduplicated(_ references: [PinnedSessionReference]) -> [PinnedSessionReference] {
         var seen = Set<PinnedSessionReference>()
         return references.filter { seen.insert($0).inserted }
@@ -87,6 +101,16 @@ final class PinnedSessionStore: ObservableObject {
     @discardableResult
     func reconcile(available: [PinnedSessionReference]) -> Bool {
         guard state.reconcile(available: available) else { return false }
+        save()
+        return true
+    }
+
+    @discardableResult
+    func reconcile(
+        available: [PinnedSessionReference],
+        profileID: String
+    ) -> Bool {
+        guard state.reconcile(available: available, profileID: profileID) else { return false }
         save()
         return true
     }
