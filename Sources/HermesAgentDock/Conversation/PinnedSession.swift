@@ -66,15 +66,61 @@ struct PinnedSessionState: Equatable, Codable, Sendable {
     }
 }
 
+enum PinnedSessionPresentationStatus: Equatable {
+    case ready
+    case empty
+    case loading
+    case stale(String)
+    case unavailable(String)
+    case failed(String)
+}
+
 struct PinnedSessionPresentation: Equatable {
     let sessions: [HermesSession]
+    let status: PinnedSessionPresentationStatus
+    private let storedCount: Int
 
     init(sessions: [HermesSession], state: PinnedSessionState, profileID: String) {
-        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
-        self.sessions = state.references(for: profileID).compactMap { byID[$0.sessionID] }
+        self.init(sessions: sessions, state: state, profileID: profileID, projection: .ready(sessions))
     }
 
-    var count: Int { sessions.count }
+    init(
+        sessions: [HermesSession],
+        state: PinnedSessionState,
+        profileID: String,
+        projection: HermesProjectionState<[HermesSession]>
+    ) {
+        let byID = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, $0) })
+        let references = state.references(for: profileID)
+        let projectedSessions: [HermesSession]
+        switch projection {
+        case .ready, .empty:
+            projectedSessions = projection == .empty ? [] : references.compactMap { byID[$0.sessionID] }
+        case .stale(let previousSessions, _):
+            let previousByID = Dictionary(uniqueKeysWithValues: previousSessions.map { ($0.id, $0) })
+            projectedSessions = references.compactMap { previousByID[$0.sessionID] }
+        case .loading, .unavailable, .failed:
+            projectedSessions = []
+        }
+        self.sessions = projectedSessions
+        self.storedCount = references.count
+        switch projection {
+        case .ready:
+            self.status = .ready
+        case .empty:
+            self.status = .empty
+        case .loading:
+            self.status = .loading
+        case .stale(_, let safeMessage):
+            self.status = .stale(safeMessage)
+        case .unavailable(let safeMessage):
+            self.status = .unavailable(safeMessage)
+        case .failed(let safeMessage):
+            self.status = .failed(safeMessage)
+        }
+    }
+
+    var count: Int { status == .ready || status == .empty ? sessions.count : storedCount }
 }
 
 enum PinnedSessionReconciliation {

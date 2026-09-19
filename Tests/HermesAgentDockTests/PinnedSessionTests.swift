@@ -86,6 +86,68 @@ final class PinnedSessionTests: XCTestCase {
         XCTAssertEqual(presentation.sessions.map(\.id), ["session-b", "session-a"])
     }
 
+    func testPresentationKeepsStoredCountWhenSessionProjectionIsUnavailable() {
+        let state = PinnedSessionState(references: [
+            PinnedSessionReference(profileID: "default", sessionID: "still-loading")
+        ])
+
+        let loading = PinnedSessionPresentation(
+            sessions: [],
+            state: state,
+            profileID: "default",
+            projection: .loading
+        )
+        XCTAssertEqual(loading.status, .loading)
+        XCTAssertEqual(loading.count, 1)
+        XCTAssertTrue(loading.sessions.isEmpty)
+
+        let unavailable = PinnedSessionPresentation(
+            sessions: [],
+            state: state,
+            profileID: "default",
+            projection: .unavailable(safeMessage: "Session data is unavailable.")
+        )
+        XCTAssertEqual(unavailable.status, .unavailable("Session data is unavailable."))
+        XCTAssertEqual(unavailable.count, 1)
+
+        let failed = PinnedSessionPresentation(
+            sessions: [],
+            state: state,
+            profileID: "default",
+            projection: .failed(safeMessage: "Session data failed.")
+        )
+        XCTAssertEqual(failed.status, .failed("Session data failed."))
+        XCTAssertEqual(failed.count, 1)
+
+        let staleSession = HermesSession(
+            id: "still-loading",
+            profileID: "default",
+            title: "Previous session",
+            preview: "",
+            startedAt: nil,
+            messageCount: 1,
+            source: ""
+        )
+        let stale = PinnedSessionPresentation(
+            sessions: [],
+            state: state,
+            profileID: "default",
+            projection: .stale([staleSession], safeMessage: "Showing the last session index.")
+        )
+        XCTAssertEqual(stale.status, .stale("Showing the last session index."))
+        XCTAssertEqual(stale.count, 1)
+        XCTAssertEqual(stale.sessions.map(\.id), ["still-loading"])
+
+        let empty = PinnedSessionPresentation(
+            sessions: [],
+            state: state,
+            profileID: "default",
+            projection: .empty
+        )
+        XCTAssertEqual(empty.status, .empty)
+        XCTAssertEqual(empty.count, 0)
+    }
+
     func testStorePersistsPinsAcrossInstancesAndReconcilesUnavailableReferences() {
         let defaults = UserDefaults(suiteName: "PinnedSessionTests.persistence")!
         defaults.removePersistentDomain(forName: "PinnedSessionTests.persistence")

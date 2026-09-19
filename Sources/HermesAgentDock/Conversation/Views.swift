@@ -2490,12 +2490,13 @@ private struct MissionControlQueue: View {
         return names
     }
 
-    private var pinnedSessions: [HermesSession] {
+    private var pinnedSessionPresentation: PinnedSessionPresentation {
         PinnedSessionPresentation(
             sessions: allConversationSessions,
             state: pinnedSessionStore.state,
-            profileID: model.profileScopeID ?? ""
-        ).sessions
+            profileID: model.profileScopeID ?? "",
+            projection: model.sessionProjectionState
+        )
     }
 
     private var availablePinnedReferences: [PinnedSessionReference] {
@@ -2929,6 +2930,7 @@ private struct MissionControlQueue: View {
 
     private var pinnedSessionsDestinationRow: some View {
         VStack(alignment: .leading, spacing: 2) {
+            let presentation = pinnedSessionPresentation
             HStack(spacing: 8) {
                 LucideIcon(name: .link, size: 16, color: Color.dockSecondaryText)
                     .frame(width: 22, alignment: .center)
@@ -2936,18 +2938,30 @@ private struct MissionControlQueue: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockSecondaryText)
                 Spacer(minLength: 0)
-                Text(compactCount(pinnedSessions.count))
+                Text(compactCount(presentation.count))
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockMetadataText)
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-            if pinnedSessions.isEmpty {
-                queueEmpty("No pinned conversations").padding(.leading, 24)
-            } else {
-                ForEach(pinnedSessions) { session in
+            if !presentation.sessions.isEmpty {
+                ForEach(presentation.sessions) { session in
                     sessionRow(session).padding(.leading, 24)
                 }
+            }
+            switch presentation.status {
+            case .ready, .empty:
+                if presentation.sessions.isEmpty {
+                    queueEmpty("No pinned conversations").padding(.leading, 24)
+                }
+            case .loading:
+                queueEmpty("Pinned conversations are loading").padding(.leading, 24)
+            case .stale:
+                queueEmpty("Pinned conversations may be out of date").padding(.leading, 24)
+            case .unavailable:
+                queueEmpty("Pinned conversations are unavailable").padding(.leading, 24)
+            case .failed:
+                queueEmpty("Pinned conversations could not be loaded").padding(.leading, 24)
             }
         }
     }
