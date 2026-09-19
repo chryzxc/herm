@@ -244,6 +244,7 @@ struct DockPopover: View {
     @State private var selectedChatImage: ChatImagePreview?
     @StateObject private var speechInput = SpeechInput()
     @StateObject private var voiceOutput = VoiceOutput()
+    @StateObject private var messageActionState = ConversationMessageActionState()
     @StateObject private var workspaceStore = WorkspaceStore()
     @StateObject private var controlCenter = ControlCenterModel()
     @StateObject private var agentUpdateService = HermesUpdateService()
@@ -2352,7 +2353,21 @@ struct DockPopover: View {
                 botsByID: botMode.botsByID,
                 avatarImages: botMode.avatarImages,
                 botRosterRevision: botMode.rosterRevision,
-                onImagePreview: { image in selectedChatImage = ChatImagePreview(image: image) }
+                onImagePreview: { image in selectedChatImage = ChatImagePreview(image: image) },
+                isActionPending: messageActionState.isPending(message.id),
+                isSpeaking: voiceOutput.speakingMessageID == message.id,
+                onCopy: { messageActionState.copy(message) },
+                onBranch: {
+                    messageActionState.run(message.id) {
+                        await model.branchConversation(from: message)
+                    }
+                },
+                onReadAloud: { voiceOutput.toggle(messageID: message.id, text: message.text) },
+                onRefresh: {
+                    messageActionState.run(message.id) {
+                        await model.refreshCurrentSession()
+                    }
+                }
             )
             .equatable()
         }

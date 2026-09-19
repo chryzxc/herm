@@ -14,6 +14,44 @@ struct ConversationMessageRow: View, Equatable {
     let avatarImages: [String: Data]
     let botRosterRevision: Int
     let onImagePreview: (NSImage) -> Void
+    let isActionPending: Bool
+    let isSpeaking: Bool
+    let onCopy: () -> Void
+    let onBranch: () -> Void
+    let onReadAloud: () -> Void
+    let onRefresh: () -> Void
+
+    init(
+        message: ChatMessage,
+        isStreamingMessage: Bool,
+        streamingText: StreamingText?,
+        activeBotProfileID: String?,
+        botsByID: [String: BotSummary],
+        avatarImages: [String: Data],
+        botRosterRevision: Int,
+        onImagePreview: @escaping (NSImage) -> Void,
+        isActionPending: Bool = false,
+        isSpeaking: Bool = false,
+        onCopy: @escaping () -> Void = {},
+        onBranch: @escaping () -> Void = {},
+        onReadAloud: @escaping () -> Void = {},
+        onRefresh: @escaping () -> Void = {}
+    ) {
+        self.message = message
+        self.isStreamingMessage = isStreamingMessage
+        self.streamingText = streamingText
+        self.activeBotProfileID = activeBotProfileID
+        self.botsByID = botsByID
+        self.avatarImages = avatarImages
+        self.botRosterRevision = botRosterRevision
+        self.onImagePreview = onImagePreview
+        self.isActionPending = isActionPending
+        self.isSpeaking = isSpeaking
+        self.onCopy = onCopy
+        self.onBranch = onBranch
+        self.onReadAloud = onReadAloud
+        self.onRefresh = onRefresh
+    }
 
     nonisolated static func == (lhs: ConversationMessageRow, rhs: ConversationMessageRow) -> Bool {
         lhs.message.id == rhs.message.id
@@ -29,6 +67,8 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.isStreamingMessage == rhs.isStreamingMessage
             && lhs.activeBotProfileID == rhs.activeBotProfileID
             && lhs.botRosterRevision == rhs.botRosterRevision
+            && lhs.isActionPending == rhs.isActionPending
+            && lhs.isSpeaking == rhs.isSpeaking
     }
 
     var body: some View {
@@ -184,10 +224,41 @@ struct ConversationMessageRow: View, Equatable {
                     .font(.system(size: 12))
                     .foregroundStyle(Color.dockMetadataText)
                     .padding(.horizontal, 4)
+                    if !message.isError, message.hasBodyText {
+                        messageActions
+                    }
                 }
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
+    }
+
+    private var messageActions: some View {
+        HStack(spacing: 2) {
+            actionButton("arrow.triangle.branch", label: "Branch from this message", action: onBranch)
+            actionButton("doc.on.doc", label: "Copy message", action: onCopy)
+            actionButton(isSpeaking ? "stop.fill" : "speaker.wave.2", label: isSpeaking ? "Stop reading aloud" : "Read message aloud", action: onReadAloud)
+            actionButton("arrow.clockwise", label: "Refresh this response", action: onRefresh)
+        }
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Message actions")
+    }
+
+    private func actionButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            if isActionPending {
+                ProgressView().controlSize(.small)
+            } else {
+                LucideImage(systemName: icon).font(.system(size: 12, weight: .semibold))
+            }
+        }
+        .buttonStyle(DockPressButtonStyle())
+        .frame(width: 44, height: 32)
+        .contentShape(Rectangle())
+        .help(label)
+        .accessibilityLabel(label)
+        .disabled(isActionPending)
     }
 }

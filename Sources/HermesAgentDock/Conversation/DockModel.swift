@@ -932,6 +932,63 @@ final class DockModel: ObservableObject {
         Task { _ = await resumeSession(session, reportFailure: true) }
     }
 
+    /// Reloads the selected transcript from Hermes rather than patching the
+    /// local array. Hermes remains authoritative for completed responses.
+    func refreshCurrentSession() async {
+        guard let sessionID, !sessionID.isEmpty else { return }
+        _ = await resumeSession(
+            HermesSession(
+                id: sessionID,
+                profileID: sessionProfileID ?? profileScopeID,
+                title: currentSessionTitle ?? "",
+                preview: "",
+                startedAt: nil,
+                messageCount: messages.count,
+                source: "hermes-agent-dock"
+            ),
+            reportFailure: true
+        )
+    }
+
+    /// Creates a bounded Hermes branch from one completed message. The
+    /// source message ID is sent to Hermes so the source conversation remains
+    /// unchanged and the returned branch is the only conversation selected.
+    func branchConversation(from message: ChatMessage) async {
+        guard let sessionID, !sessionID.isEmpty,
+              message.role == .hermes,
+              message.hasBodyText else { return }
+        do {
+            var params: [String: Any] = [
+                "session_id": sessionID,
+                "message_id": message.id.uuidString
+            ]
+            if let profileID = sessionProfileID ?? profileScopeID, !profileID.isEmpty {
+                params["profile"] = profileID
+            }
+            let result = try await sessionRPCClient.request(
+                HermesFeatureIDs.ID.sessionBranch.rawValue,
+                params: params
+            )
+            let branchID = (result["session_id"] as? String)
+                ?? (result["branch_session_id"] as? String)
+                ?? (result["id"] as? String)
+            guard let branchID, !branchID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            await MainActor.run {
+                self.resumeSession(HermesSession(
+                    id: branchID,
+                    profileID: self.sessionProfileID ?? self.profileScopeID,
+                    title: "",
+                    preview: "",
+                    startedAt: nil,
+                    messageCount: 0,
+                    source: "hermes-agent-dock"
+                ))
+            }
+        } catch {
+            DebugLog.write("model: message branch failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+        }
+    }
+
     @discardableResult
     private func resumeSession(_ session: HermesSession, reportFailure: Bool, profileID: String? = nil) async -> Bool {
         let owningProfileID = profileID ?? session.profileID ?? profileScopeID
