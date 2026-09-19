@@ -87,8 +87,9 @@ struct MessageBubbleShape: Shape {
 }
 
 /// Caps the unmarked-JSON detection scan in `MarkdownMessageView`. The scan
-/// re-attempts a full parse per accumulated line, so without a cap a single
-/// large message can monopolize the main actor on first render.
+/// walks up to this many lines/bytes seeking a brace-balanced boundary, so
+/// without a cap a single large message can monopolize the main actor on
+/// first render.
 enum MarkdownJSONScanPolicy {
     static let maxScanLines = 400
     static let maxScanBytes = 1_048_576
@@ -347,11 +348,15 @@ struct MarkdownMessageView: View, Equatable {
       return nil
     }
 
-    // Each attempt re-parses the whole growing candidate, so an unbounded
-    // scan is quadratic in message length. Cap both dimensions; anything
-    // past the budget renders as prose.
+    // A JSON object can only parse where braces balance outside string
+    // literals, so track depth in a single pass and attempt the validating
+    // JSONSerialization call only at those boundaries instead of re-parsing
+    // the whole growing candidate after every accumulated line.
     var candidate = ""
     var candidateBytes = 0
+    var depth = 0
+    var inString = false
+    var escaped = false
     let lastLine = min(lines.count, start + MarkdownJSONScanPolicy.maxScanLines)
     for end in start..<lastLine {
       let line = lines[end]
@@ -362,6 +367,27 @@ struct MarkdownMessageView: View, Equatable {
       candidate.append(line)
       candidateBytes += line.utf8.count
       if candidateBytes > MarkdownJSONScanPolicy.maxScanBytes { return nil }
+      for character in line {
+        if inString {
+          if escaped {
+            escaped = false
+          } else if character == "\\" {
+            escaped = true
+          } else if character == "\"" {
+            inString = false
+          }
+          continue
+        }
+        switch character {
+        case "\"": inString = true
+        case "{": depth += 1
+        case "}":
+          depth -= 1
+          if depth < 0 { return nil }
+        default: continue
+        }
+      }
+      guard depth == 0 else { continue }
       guard let data = candidate.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data),
             object is [String: Any] else {

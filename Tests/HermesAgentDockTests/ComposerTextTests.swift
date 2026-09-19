@@ -83,6 +83,37 @@ struct ComposerTextTests {
         #expect(MarkdownMessageView.codeBlockLanguages(in: message).isEmpty)
     }
 
+    @Test func nestedMultiLineJSONWithBracesInsideStringsBecomesACodeBlock() {
+        let message = """
+        Worker finished.
+
+        {
+          "note": "braces } and { inside a string",
+          "nested": {
+            "inner": true
+          }
+        }
+        """
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
+    }
+
+    @Test func escapedQuotesInsideDetectedJSONObjectStillParse() {
+        let message = "Done.\n\n{\"note\": \"quoted \\\"inner\\\" text\"}"
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
+    }
+
+    @Test func unmatchedClosingBraceKeepsStatusTextAsProse() {
+        let message = """
+        Summary text.
+
+        { "a": 1 } }
+        """
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: message).isEmpty)
+    }
+
     private let history = ["first prompt", "second prompt", "third prompt"]
 
     @Test func upArrowEntersHistoryAtNewestPrompt() {

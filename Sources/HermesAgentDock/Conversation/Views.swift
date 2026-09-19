@@ -1860,11 +1860,18 @@ struct DockPopover: View {
                     }
                     .onPreferenceChange(MessageNavigatorViewportPreferenceKey.self) { viewports in
                         let viewportHeight = viewport.size.height
-                        visibleNavigatorTargets = Set(
+                        let next = Set(
                             viewports
                                 .filter { $0.maxY >= 0 && $0.minY <= viewportHeight }
                                 .map(\.target)
                         )
+                        // Row frames move in the scroll coordinate space, so
+                        // this preference fires on every scroll frame. A state
+                        // write with an unchanged value would still invalidate
+                        // the whole popover body between row-edge crossings.
+                        if next != visibleNavigatorTargets {
+                            visibleNavigatorTargets = next
+                        }
                     }
                     .onChange(of: model.scrollToLatestMessageRequest) { _, _ in
                         unseenMessageCount = 0

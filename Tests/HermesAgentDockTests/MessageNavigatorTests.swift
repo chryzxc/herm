@@ -78,6 +78,39 @@ final class MessageNavigatorTests: XCTestCase {
         )
     }
 
+    func testBoundedPreviewMatchesUnboundedNormalizationForWhitespaceHeavyOpenings() {
+        let whitespaceOpening = String(repeating: "\n\t ", count: 600)
+        let text = whitespaceOpening + String(repeating: "content ", count: 80)
+        let unbounded = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        XCTAssertEqual(MessageNavigator.boundedPreview(text, limit: 32), String(unbounded.prefix(31)) + "…")
+    }
+
+    func testBoundedPreviewTruncatesIndentedCodeStyleBodies() {
+        let text = "    indented code line one\n    indented code line two\n"
+            + String(repeating: "plain continuation line\n", count: 100)
+        let unbounded = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        XCTAssertEqual(MessageNavigator.boundedPreview(text, limit: 40), String(unbounded.prefix(39)) + "…")
+    }
+
+    func testItemsProjectionIsMemoizedUntilContentChanges() {
+        let messages = [ChatMessage(role: .hermes, text: "first response")]
+
+        let initial = MessageNavigator.items(messages: messages, sessionID: "memo-session")
+        XCTAssertEqual(MessageNavigator.items(messages: messages, sessionID: "memo-session"), initial)
+
+        let updated = MessageNavigator.items(
+            messages: messages + [ChatMessage(role: .user, text: "follow-up")],
+            sessionID: "memo-session"
+        )
+        XCTAssertEqual(updated.count, 2)
+        XCTAssertEqual(updated.first, initial.first)
+        XCTAssertEqual(updated[1].roleLabel, "You")
+    }
+
     func testJumpLimitRevealsTargetWhileKeepingWindowBounded() {
         let messages = (1...40).map { _ in ChatMessage(role: .user, text: "message") }
 

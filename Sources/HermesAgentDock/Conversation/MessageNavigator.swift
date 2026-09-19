@@ -30,7 +30,15 @@ enum MessageNavigator {
 
     static func items(messages: [ChatMessage], sessionID: String, previewLimit: Int = defaultPreviewLimit) -> [MessageNavigatorItem] {
         let limit = max(minimumPreviewLimit, previewLimit)
-        return messages.enumerated().map { index, message in
+        // The transcript rebuilds this projection inside its body, which the
+        // popover re-evaluates on every scroll frame and model publication.
+        // Serve the unchanged projection from the memo instead of
+        // re-normalizing a preview for every message in the session.
+        let fingerprint = projectionFingerprint(messages: messages, sessionID: sessionID, previewLimit: limit)
+        if let memoized = memo.itemsIfFresh(fingerprint: fingerprint) {
+            return memoized
+        }
+        let projected = messages.enumerated().map { index, message in
             MessageNavigatorItem(
                 target: MessageNavigatorTarget(sessionID: sessionID, messageID: message.id),
                 ordinal: index + 1,
@@ -40,6 +48,8 @@ enum MessageNavigator {
                 hasImages: !message.images.isEmpty
             )
         }
+        memo.store(items: projected, fingerprint: fingerprint)
+        return projected
     }
 
     static func search(items: [MessageNavigatorItem], query: String) -> [MessageNavigatorItem] {
@@ -50,6 +60,58 @@ enum MessageNavigator {
             item.preview.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).contains(foldedQuery)
                 || item.roleLabel.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).contains(foldedQuery)
         }
+    }
+
+    /// Single-entry memo for the last projection. Lock-guarded rather than
+    /// `@MainActor` because tests and SwiftUI both call `items` synchronously
+    /// from different isolation domains.
+    private static let memo = ItemMemo()
+
+    private final class ItemMemo: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fingerprint: UInt64 = 0
+        private var cachedItems: [MessageNavigatorItem] = []
+
+        func itemsIfFresh(fingerprint: UInt64) -> [MessageNavigatorItem]? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard fingerprint == self.fingerprint else { return nil }
+            return cachedItems
+        }
+
+        func store(items: [MessageNavigatorItem], fingerprint: UInt64) {
+            lock.lock()
+            defer { lock.unlock() }
+            self.fingerprint = fingerprint
+            self.cachedItems = items
+        }
+    }
+
+    /// FNV-1a over the projection inputs: O(messages) with no string
+    /// formatting or body scanning. `ChatMessage.contentRevision` already
+    /// stands in for the full Markdown body in row-equality checks, so it is
+    /// an equally safe fingerprint component here.
+    private static func projectionFingerprint(
+        messages: [ChatMessage], sessionID: String, previewLimit: Int
+    ) -> UInt64 {
+        var value: UInt64 = 1_469_598_103_934_665_603
+        func mix(_ byte: UInt8) {
+            value ^= UInt64(byte)
+            value &*= 1_099_511_628_211
+        }
+        func mix(_ integer: UInt64) {
+            withUnsafeBytes(of: integer.littleEndian) { $0.forEach(mix) }
+        }
+        sessionID.utf8.forEach(mix)
+        mix(UInt64(previewLimit))
+        mix(UInt64(messages.count))
+        for message in messages {
+            withUnsafeBytes(of: message.id) { $0.forEach(mix) }
+            mix(UInt64(bitPattern: Int64(message.contentRevision)))
+            mix(message.role == .user ? UInt64(1) : 0)
+            mix(UInt64(message.images.count))
+        }
+        return value
     }
 
     static func target(for messageID: UUID, sessionID: String, visibleIn visibleTargets: [MessageNavigatorTarget]? = nil) -> MessageNavigatorTarget? {
@@ -64,11 +126,33 @@ enum MessageNavigator {
     }
 
     static func boundedPreview(_ text: String, limit: Int = defaultPreviewLimit) -> String {
-        let normalized = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
         let safeLimit = max(minimumPreviewLimit, limit)
+        // Previews stop at `safeLimit` normalized characters, so normalizing
+        // the full transcript-sized body is wasted work that scales with
+        // total message bytes on every projection rebuild. Normalizing a
+        // bounded head reaches the same truncation verdict whenever it holds
+        // enough content; only whitespace-dominated openings that exhaust the
+        // head fall back to the full body, keeping the output identical to
+        // an unbounded normalization.
+        let head = text.prefix(previewHeadScanLimit(for: safeLimit))
+        let normalizedHead = normalizePreviewWhitespace(head)
+        if normalizedHead.count > safeLimit {
+            return String(normalizedHead.prefix(safeLimit - 1)) + "…"
+        }
+        guard head.endIndex != text.endIndex else { return normalizedHead }
+        let normalized = normalizePreviewWhitespace(text)
         guard normalized.count > safeLimit else { return normalized }
         return String(normalized.prefix(safeLimit - 1)) + "…"
+    }
+
+    private static func normalizePreviewWhitespace<S: StringProtocol>(_ text: S) -> String {
+        String(text)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func previewHeadScanLimit(for safeLimit: Int) -> Int {
+        safeLimit * 8 + 64
     }
 }
 
