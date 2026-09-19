@@ -8,6 +8,7 @@ private final class MessageActionRPCClient: HermesRPCClientProtocol {
     private(set) var requests: [(method: String, params: [String: Any])] = []
     var branchResponse: [String: Any] = [:]
     var resumeResponse: [String: Any] = [:]
+    var resumeDelay: Duration = .zero
 
     func connect() async throws {}
 
@@ -15,7 +16,9 @@ private final class MessageActionRPCClient: HermesRPCClientProtocol {
         requests.append((method, params))
         switch method {
         case "session.branch": return branchResponse
-        case "session.resume": return resumeResponse.isEmpty
+        case "session.resume":
+            if resumeDelay != .zero { try await Task.sleep(for: resumeDelay) }
+            return resumeResponse.isEmpty
             ? ["session_id": params["session_id"] as? String ?? "", "messages": []]
             : resumeResponse
         default: return [:]
@@ -97,8 +100,32 @@ struct ConversationMessageActionsTests {
 
         rpc.resumeResponse = ["session_id": "source-session", "messages": "malformed"]
         await model.refreshCurrentSession()
-        try await waitUntil { model.status == .idle }
+        try await waitUntil { model.status == .offline }
         #expect(model.sessionID == "source-session")
+        #expect(model.messages.count == 1)
+        #expect(model.messages[0].text == "authoritative answer")
+    }
+
+    @Test func branchPendingStateCoversResumeAndSuppressesDuplicateBranch() async throws {
+        let rpc = MessageActionRPCClient()
+        rpc.branchResponse = ["session_id": "branch-session"]
+        rpc.resumeDelay = .milliseconds(50)
+        rpc.resumeResponse = [
+            "session_id": "branch-session",
+            "messages": [["role": "assistant", "content": "branched answer"]]
+        ]
+        let model = DockModel(initialSessionID: "source-session", rpcClient: rpc)
+        let state = ConversationMessageActionState()
+        let message = ChatMessage(id: UUID(), role: .hermes, text: "source answer")
+
+        state.run(message.id) { await model.branchConversation(from: message) }
+        try await waitUntil { state.isPending(message.id) }
+        state.run(message.id) { await model.branchConversation(from: message) }
+        try await waitUntil { !state.isPending(message.id) && model.status == .idle }
+
+        #expect(rpc.requests.filter { $0.method == "session.branch" }.count == 1)
+        #expect(model.sessionID == "branch-session")
+        #expect(model.messages.last?.text == "branched answer")
     }
 
     @Test func readAloudCanBeStoppedAndDuplicateToggleDoesNotLeaveActiveState() {

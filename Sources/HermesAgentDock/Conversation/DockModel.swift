@@ -973,17 +973,15 @@ final class DockModel: ObservableObject {
                 ?? (result["branch_session_id"] as? String)
                 ?? (result["id"] as? String)
             guard let branchID, !branchID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            await MainActor.run {
-                self.resumeSession(HermesSession(
-                    id: branchID,
-                    profileID: self.sessionProfileID ?? self.profileScopeID,
-                    title: "",
-                    preview: "",
-                    startedAt: nil,
-                    messageCount: 0,
-                    source: "hermes-agent-dock"
-                ))
-            }
+            _ = await resumeSession(HermesSession(
+                id: branchID,
+                profileID: sessionProfileID ?? profileScopeID,
+                title: "",
+                preview: "",
+                startedAt: nil,
+                messageCount: 0,
+                source: "hermes-agent-dock"
+            ), reportFailure: true)
         } catch {
             DebugLog.write("model: message branch failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
         }
@@ -1023,7 +1021,9 @@ final class DockModel: ObservableObject {
         // left. Clear the visible projection before awaiting the new session's
         // resume response; otherwise the old conversation is rendered under
         // the new session ID during that request's loading window.
-        messages = []
+        if !isRefreshingActiveSession {
+            messages = []
+        }
         streamingText.clearPresentation()
         newSessionCreationAuthorized = false
         clarificationQuestion = nil
@@ -1098,6 +1098,9 @@ final class DockModel: ObservableObject {
             }
             refreshSessionModelOptions()
             refreshSessionReasoningVariant()
+            guard result["messages"] is [[String: Any]] else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
             let restored = Self.parseMessages(
                 result["messages"],
                 defaultBotProfileID: profileID,
@@ -1123,10 +1126,12 @@ final class DockModel: ObservableObject {
         } catch {
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
             sessionProjectionState = Self.failedOrStale(sessionProjectionState, safeMessage: "Hermes session data is unavailable. Try refreshing.")
-            if reportFailure {
+            if reportFailure, !isRefreshingActiveSession {
                 status = .offline
                 messages = [ChatMessage(role: .hermes, text: "I couldn't load that conversation: \(Self.safeUserDiagnostic(error.localizedDescription))", modelName: currentModelName)]
                 scrollToLatestMessageRequest &+= 1
+            } else if reportFailure {
+                status = .offline
             }
             DebugLog.write("model: session resume failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
