@@ -100,7 +100,7 @@ struct MarkdownMessageView: View, Equatable {
 
   /// Fully-rendered row payloads. Inline `AttributedString` parsing happens
   /// once per distinct message, not on every body evaluation.
-  private enum RenderBlock {
+  enum RenderBlock {
     case heading(level: Int, text: AttributedString)
     case paragraph(AttributedString)
     case listItem(text: AttributedString, marker: String)
@@ -150,8 +150,7 @@ struct MarkdownMessageView: View, Equatable {
       // cheap-looking plain-text shortcut can miss inline Markdown (for
       // example `*italic*`, `_emphasis_`, or backticks), which makes resumed
       // assistant replies display their source syntax instead of formatting.
-      let blocks = MarkdownMessageView.renderBlocks(
-        from: MarkdownMessageView.parseBlocks(markdown))
+      let blocks = MarkdownMessageView.renderBlocks(for: markdown)
       cache.setObject(Entry(blocks: blocks), forKey: key)
       return blocks
     }
@@ -196,14 +195,28 @@ struct MarkdownMessageView: View, Equatable {
   }
 
   private func renderedText(_ value: AttributedString) -> some View {
-    // Explicitly apply soft dockPrimaryText text color to eliminate pure white glare
-    Text(value)
+    // Explicitly apply soft dockPrimaryText text color to eliminate pure white glare.
+    // Native AttributedString links retain AppKit/SwiftUI pointer and keyboard
+    // focus behavior; styling only their ranges keeps safe URL opening intact.
+    Text(Self.linkAffordances(in: value))
       .foregroundStyle(Color.dockPrimaryText)
-      // Keep Markdown links native so AppKit/SwiftUI can provide the link
-      // cursor and hover underline without breaking paragraph wrapping.
       .tint(Color.dockAccent)
       .fixedSize(horizontal: false, vertical: true)
   }
+
+  static func linkAffordances(in value: AttributedString) -> AttributedString {
+    var styled = value
+    for run in styled.runs where run.link != nil {
+      styled[run.range].foregroundColor = Color.dockAccent
+      styled[run.range].underlineStyle = .single
+    }
+    return styled
+  }
+
+  static func renderBlocks(for markdown: String) -> [RenderBlock] {
+    renderBlocks(from: parseBlocks(markdown))
+  }
+
   private func codeBlock(_ code: String, language: String?) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       if let language {
