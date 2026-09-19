@@ -73,6 +73,19 @@ struct ControlCenterProjectTests {
         #expect(badge?.label.hasSuffix("…") == true)
     }
 
+    @Test func wiredProjectSessionAssociationDrivesLinkedAndUnlinkedBadges() {
+        let projection = ConversationRepositoryBadgeAssociationProjection(
+            groups: [
+                .init(sessionIDs: ["linked-session"], title: "/workspace/linked-repository", isLinked: true),
+                .init(sessionIDs: ["unlinked-session"], title: "Unlinked conversations", isLinked: false)
+            ]
+        )
+
+        #expect(projection.badge(for: "linked-session")?.label == "linked-repository")
+        #expect(projection.badge(for: "linked-session")?.accessibilityLabel == "Repository linked-repository")
+        #expect(projection.badge(for: "unlinked-session") == nil)
+    }
+
     @Test func projectDisclosureToggleUpdatesCollapsedStateImmediately() {
         var state = ProjectDisclosureState()
 
