@@ -2639,7 +2639,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func respond(to item: AttentionItem, action: AttentionAction, response: String? = nil) {
-        guard let dockModel else { return }
+        guard dockModel != nil || rpc != nil else { return }
         let reference = item.reference
         let actionID = attentionActionID(action, item: item)
         guard beginAction(actionID) else { return }
@@ -2648,18 +2648,19 @@ final class ControlCenterModel: ObservableObject {
             do {
                 switch action {
                 case .approve:
-                    guard let rpc, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
+                    guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
                     _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "once")
                     dockModel.resolveApproval(for: sessionID)
                 case .deny:
-                    guard let rpc, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
+                    guard let rpc, let dockModel, let sessionID = reference.sessionID, !sessionID.isEmpty else { return }
                     _ = try await rpc.respondToApproval(sessionID: sessionID, choice: "deny")
                     dockModel.resolveApproval(for: sessionID)
                 case .respond:
                     let response = response?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     guard !response.isEmpty else { return }
-                    guard let rpc else { return }
-                    _ = try await rpc.respondToClarification(sessionID: reference.sessionID ?? reference.sourceID, response: response)
+                    let requestID = reference.clarificationRequestID?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let rpc, let requestID, !requestID.isEmpty else { return }
+                    _ = try await rpc.respondToClarification(requestID: requestID, answer: response)
                 case .stop:
                     guard let rpc else { return }
                     _ = try await rpc.interrupt(
@@ -2670,7 +2671,7 @@ final class ControlCenterModel: ObservableObject {
                     guard let rpc else { return }
                     _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
                 case .open:
-                    guard let rpc else { return }
+                    guard let rpc, let dockModel else { return }
                     _ = try await rpc.activate(sessionID: reference.sessionID ?? reference.sourceID)
                     currentFocus = reference
                     dockModel.requestComposerFocus()
@@ -2763,9 +2764,16 @@ final class ControlCenterModel: ObservableObject {
                 ?? (params["options"] as? [String]))?.filter {
                 !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             }
+            let requestID = (payload["request_id"] as? String)
+                ?? (params["request_id"] as? String)
             upsertAttention(AttentionItem(
                 id: "clarification:\(sessionID)",
-                reference: ControlReference(source: .hermesClarification, sourceID: sessionID, sessionID: sessionID),
+                reference: ControlReference(
+                    source: .hermesClarification,
+                    sourceID: sessionID,
+                    sessionID: sessionID,
+                    clarificationRequestID: requestID
+                ),
                 kind: .clarification,
                 title: "Hermes needs clarification",
                 detail: detail,

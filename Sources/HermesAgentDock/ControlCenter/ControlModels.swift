@@ -214,12 +214,14 @@ struct ControlReference: Identifiable, Codable, Hashable, Equatable {
     let sourceID: String
     var sessionID: String?
     var projectID: String?
+    var clarificationRequestID: String?
 
-    init(source: ControlSource, sourceID: String, sessionID: String? = nil, projectID: String? = nil) {
+    init(source: ControlSource, sourceID: String, sessionID: String? = nil, projectID: String? = nil, clarificationRequestID: String? = nil) {
         self.source = source
         self.sourceID = sourceID
         self.sessionID = sessionID
         self.projectID = projectID
+        self.clarificationRequestID = clarificationRequestID
         self.id = "\(source.rawValue):\(sourceID)"
     }
 }
