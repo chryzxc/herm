@@ -2355,6 +2355,7 @@ struct DockPopover: View {
                 botRosterRevision: botMode.rosterRevision,
                 onImagePreview: { image in selectedChatImage = ChatImagePreview(image: image) },
                 isActionPending: messageActionState.isPending(message.id),
+                areSessionActionsAvailable: !(model.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true),
                 isSpeaking: voiceOutput.speakingMessageID == message.id,
                 onCopy: { messageActionState.copy(message) },
                 onBranch: {

@@ -42,6 +42,12 @@ struct ConversationMessageActionsTests {
         #expect(text == "Use foo_bar and snake_case.")
     }
 
+    @Test func readableTextPreservesBoundaryIdentifiersAndCodeOperators() {
+        let text = ConversationMessageActionState.readableText("Use _private and `a * b`.")
+
+        #expect(text == "Use _private and a * b.")
+    }
+
     @Test func pendingActionsAreScopedAndDuplicateRunsAreIgnored() async throws {
         let state = ConversationMessageActionState()
         let firstID = UUID()

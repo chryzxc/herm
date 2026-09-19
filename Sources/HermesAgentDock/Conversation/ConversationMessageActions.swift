@@ -30,14 +30,25 @@ final class ConversationMessageActionState: ObservableObject {
 
     static func readableText(_ markdown: String) -> String {
         var result = markdown
-        result = result.replacingOccurrences(of: "```", with: "")
+        var codeSpans: [String] = []
+        if let codeRegex = try? NSRegularExpression(pattern: #"(?s)`{1,3}(.*?)`{1,3}"#) {
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            for match in codeRegex.matches(in: result, range: range).reversed() {
+                guard let codeRange = Range(match.range(at: 1), in: result),
+                      let fullRange = Range(match.range, in: result) else { continue }
+                codeSpans.append(String(result[codeRange]))
+                result.replaceSubrange(fullRange, with: "\u{001E}\(codeSpans.count - 1)\u{001F}")
+            }
+        }
         result = result.replacingOccurrences(of: #"(?m)^#{1,6}\s*"#, with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: #"\[([^\]]+)\]\([^\)]+\)"#, with: "$1", options: .regularExpression)
         result = result.replacingOccurrences(of: "**", with: "")
         result = result.replacingOccurrences(of: "__", with: "")
-        result = result.replacingOccurrences(of: #"(?m)(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])"#, with: "", options: .regularExpression)
-        result = result.replacingOccurrences(of: "*", with: "")
-        result = result.replacingOccurrences(of: "`", with: "")
+        result = result.replacingOccurrences(of: #"\*([^*\n]+)\*"#, with: "$1", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"_([^_\n]+)_"#, with: "$1", options: .regularExpression)
+        for (index, code) in codeSpans.enumerated() {
+            result = result.replacingOccurrences(of: "\u{001E}\(index)\u{001F}", with: code)
+        }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

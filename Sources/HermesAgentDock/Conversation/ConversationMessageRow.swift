@@ -15,6 +15,7 @@ struct ConversationMessageRow: View, Equatable {
     let botRosterRevision: Int
     let onImagePreview: (NSImage) -> Void
     let isActionPending: Bool
+    let areSessionActionsAvailable: Bool
     let isSpeaking: Bool
     let onCopy: () -> Void
     let onBranch: () -> Void
@@ -31,6 +32,7 @@ struct ConversationMessageRow: View, Equatable {
         botRosterRevision: Int,
         onImagePreview: @escaping (NSImage) -> Void,
         isActionPending: Bool = false,
+        areSessionActionsAvailable: Bool = true,
         isSpeaking: Bool = false,
         onCopy: @escaping () -> Void = {},
         onBranch: @escaping () -> Void = {},
@@ -46,6 +48,7 @@ struct ConversationMessageRow: View, Equatable {
         self.botRosterRevision = botRosterRevision
         self.onImagePreview = onImagePreview
         self.isActionPending = isActionPending
+        self.areSessionActionsAvailable = areSessionActionsAvailable
         self.isSpeaking = isSpeaking
         self.onCopy = onCopy
         self.onBranch = onBranch
@@ -68,6 +71,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.activeBotProfileID == rhs.activeBotProfileID
             && lhs.botRosterRevision == rhs.botRosterRevision
             && lhs.isActionPending == rhs.isActionPending
+            && lhs.areSessionActionsAvailable == rhs.areSessionActionsAvailable
             && lhs.isSpeaking == rhs.isSpeaking
     }
 
@@ -236,17 +240,17 @@ struct ConversationMessageRow: View, Equatable {
 
     private var messageActions: some View {
         HStack(spacing: 2) {
-            actionButton("arrow.triangle.branch", label: "Branch from this message", action: onBranch)
+            actionButton("arrow.triangle.branch", label: "Branch from this message", action: onBranch, isAvailable: areSessionActionsAvailable)
             actionButton("doc.on.doc", label: "Copy message", action: onCopy)
             actionButton(isSpeaking ? "stop.fill" : "speaker.wave.2", label: isSpeaking ? "Stop reading aloud" : "Read message aloud", action: onReadAloud)
-            actionButton("arrow.clockwise", label: "Refresh this response", action: onRefresh)
+            actionButton("arrow.clockwise", label: "Refresh this response", action: onRefresh, isAvailable: areSessionActionsAvailable)
         }
         .padding(.horizontal, 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Message actions")
     }
 
-    private func actionButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ icon: String, label: String, action: @escaping () -> Void, isAvailable: Bool = true) -> some View {
         Button(action: action) {
             if isActionPending {
                 ProgressView().controlSize(.small)
@@ -259,6 +263,7 @@ struct ConversationMessageRow: View, Equatable {
         .contentShape(Rectangle())
         .help(label)
         .accessibilityLabel(label)
-        .disabled(isActionPending)
+        .accessibilityValue(isAvailable ? "Available" : "Unavailable until a conversation session is selected")
+        .disabled(isActionPending || !isAvailable)
     }
 }

@@ -47,6 +47,23 @@ struct ConversationMessageRowTests {
         #expect(makeRow(message: base) != makeRow(message: base, botRosterRevision: 1))
     }
 
+    @Test func incompleteSessionMarksSessionActionsUnavailable() {
+        let message = ChatMessage(role: .hermes, text: "hello")
+        let row = ConversationMessageRow(
+            message: message,
+            isStreamingMessage: false,
+            streamingText: nil,
+            activeBotProfileID: nil,
+            botsByID: [:],
+            avatarImages: [:],
+            botRosterRevision: 0,
+            onImagePreview: { _ in },
+            areSessionActionsAvailable: false
+        )
+
+        #expect(!row.areSessionActionsAvailable)
+    }
+
     @Test func metadataLabelsAreComputedOnceAtInit() {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let message = ChatMessage(role: .hermes, text: "body", timestamp: timestamp, responseDuration: 95)
