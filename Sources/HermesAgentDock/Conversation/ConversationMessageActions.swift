@@ -33,7 +33,11 @@ final class ConversationMessageActionState: ObservableObject {
         result = result.replacingOccurrences(of: "```", with: "")
         result = result.replacingOccurrences(of: #"(?m)^#{1,6}\s*"#, with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: #"\[([^\]]+)\]\([^\)]+\)"#, with: "$1", options: .regularExpression)
-        result = result.replacingOccurrences(of: #"[`*_]"#, with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "**", with: "")
+        result = result.replacingOccurrences(of: "__", with: "")
+        result = result.replacingOccurrences(of: #"(?m)(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])"#, with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: "*", with: "")
+        result = result.replacingOccurrences(of: "`", with: "")
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
