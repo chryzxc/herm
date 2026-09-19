@@ -2504,6 +2504,18 @@ private struct MissionControlQueue: View {
         }
     }
 
+    private func reconcilePinnedSessionsIfAuthoritative() {
+        guard let references = PinnedSessionReconciliation.authoritativeReferences(
+            sessions: allConversationSessions,
+            projection: model.sessionProjectionState,
+            profileID: model.profileScopeID ?? ""
+        ) else { return }
+        pinnedSessionStore.reconcile(
+            available: references,
+            profileID: model.profileScopeID ?? ""
+        )
+    }
+
     private var sessionAttentionDots: [String: SessionAttentionDot] {
         var dots: [String: SessionAttentionDot] = [:]
         for item in controlCenter.attention {
@@ -2681,11 +2693,11 @@ private struct MissionControlQueue: View {
             navigationState.hasRequestedSessionIndex = true
             model.loadSessions()
         }
-        .onChange(of: availablePinnedReferences) { _, references in
-            pinnedSessionStore.reconcile(
-                available: references,
-                profileID: model.profileScopeID ?? ""
-            )
+        .onChange(of: availablePinnedReferences) { _, _ in
+            reconcilePinnedSessionsIfAuthoritative()
+        }
+        .onChange(of: model.sessionProjectionState) { _, _ in
+            reconcilePinnedSessionsIfAuthoritative()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes control queue")

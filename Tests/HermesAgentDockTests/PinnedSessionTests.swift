@@ -109,4 +109,32 @@ final class PinnedSessionTests: XCTestCase {
 
         defaults.removePersistentDomain(forName: "PinnedSessionTests.persistence")
     }
+
+    func testReconciliationPreservesPinsWhileIndexIsLoadingAndCleansAfterAuthoritativeLoad() {
+        let defaults = UserDefaults(suiteName: "PinnedSessionTests.loading")!
+        defaults.removePersistentDomain(forName: "PinnedSessionTests.loading")
+        let store = PinnedSessionStore(defaults: defaults)
+        store.toggle(profileID: "bot-b", sessionID: "still-loading")
+
+        let loading = PinnedSessionReconciliation.authoritativeReferences(
+            sessions: [],
+            projection: .loading,
+            profileID: "bot-b"
+        )
+        XCTAssertNil(loading)
+        XCTAssertTrue(store.state.contains(profileID: "bot-b", sessionID: "still-loading"))
+
+        let loaded = PinnedSessionReconciliation.authoritativeReferences(
+            sessions: [],
+            projection: .empty,
+            profileID: "bot-b"
+        )
+        guard let loaded else {
+            return XCTFail("an empty projection is authoritative")
+        }
+        XCTAssertEqual(loaded, [])
+        XCTAssertTrue(store.reconcile(available: loaded, profileID: "bot-b"))
+        XCTAssertFalse(store.state.contains(profileID: "bot-b", sessionID: "still-loading"))
+        defaults.removePersistentDomain(forName: "PinnedSessionTests.loading")
+    }
 }

@@ -77,6 +77,23 @@ struct PinnedSessionPresentation: Equatable {
     var count: Int { sessions.count }
 }
 
+enum PinnedSessionReconciliation {
+    static func authoritativeReferences(
+        sessions: [HermesSession],
+        projection: HermesProjectionState<[HermesSession]>,
+        profileID: String
+    ) -> [PinnedSessionReference]? {
+        switch projection {
+        case .ready, .empty:
+            return sessions.map {
+                PinnedSessionReference(profileID: $0.profileID ?? profileID, sessionID: $0.id)
+            }
+        case .loading, .stale, .unavailable, .failed:
+            return nil
+        }
+    }
+}
+
 final class PinnedSessionStore: ObservableObject {
     @Published private(set) var state: PinnedSessionState
 
