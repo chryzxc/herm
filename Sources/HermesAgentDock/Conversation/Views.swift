@@ -2444,6 +2444,7 @@ private struct MissionControlQueue: View {
     let onFullscreenToggle: () -> Void
     let onSelectProfile: (String) -> Void
     @State private var isProfileSelectorPresented = false
+    @StateObject private var pinnedSessionStore = PinnedSessionStore()
 
     private var readyTasks: [WorkspaceTask] {
         workspaceStore.tasks.filter { $0.status == .readyForReview || $0.status == .todo }
@@ -2487,6 +2488,20 @@ private struct MissionControlQueue: View {
             }
         }
         return names
+    }
+
+    private var pinnedSessions: [HermesSession] {
+        PinnedSessionPresentation(
+            sessions: allConversationSessions,
+            state: pinnedSessionStore.state,
+            profileID: model.profileScopeID ?? ""
+        ).sessions
+    }
+
+    private var availablePinnedReferences: [PinnedSessionReference] {
+        allConversationSessions.map {
+            PinnedSessionReference(profileID: $0.profileID ?? model.profileScopeID ?? "", sessionID: $0.id)
+        }
     }
 
     private var sessionAttentionDots: [String: SessionAttentionDot] {
@@ -2666,6 +2681,9 @@ private struct MissionControlQueue: View {
             navigationState.hasRequestedSessionIndex = true
             model.loadSessions()
         }
+        .onChange(of: availablePinnedReferences) { _, references in
+            pinnedSessionStore.reconcile(available: references)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes control queue")
     }
@@ -2812,6 +2830,7 @@ private struct MissionControlQueue: View {
                 onOpenArtifacts()
             }
             botsDestinationRow
+            pinnedSessionsDestinationRow
 
             if showsProjectsForSelectedBot {
                 MissionControlProjectList(
@@ -2890,6 +2909,31 @@ private struct MissionControlQueue: View {
             isSelected: isBotsActive
         ) {
             onOpenBots()
+        }
+    }
+
+    private var pinnedSessionsDestinationRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                LucideIcon(name: .link, size: 16, color: Color.dockSecondaryText)
+                    .frame(width: 22, alignment: .center)
+                Text("Pinned")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockSecondaryText)
+                Spacer(minLength: 0)
+                Text(compactCount(pinnedSessions.count))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+            if pinnedSessions.isEmpty {
+                queueEmpty("No pinned conversations").padding(.leading, 24)
+            } else {
+                ForEach(pinnedSessions) { session in
+                    sessionRow(session).padding(.leading, 24)
+                }
+            }
         }
     }
 
@@ -3140,10 +3184,20 @@ private struct MissionControlQueue: View {
             isProjectLinked: projectLinkedSessionIDs.contains(session.id),
             projectName: projectNameBySessionID[session.id],
             attentionDot: sessionAttentionDots[session.id],
+            isPinned: pinnedSessionStore.state.contains(
+                profileID: session.profileID ?? model.profileScopeID ?? "",
+                sessionID: session.id
+            ),
             onSelect: {
                 navigationState.selectedSessionID = session.id
                 navigationState.selectedTaskID = nil
                 onSelectSession(session)
+            },
+            onTogglePin: {
+                pinnedSessionStore.toggle(
+                    profileID: session.profileID ?? model.profileScopeID ?? "",
+                    sessionID: session.id
+                )
             }
         )
         .equatable()
@@ -3214,7 +3268,9 @@ private struct MissionControlConversationSessionRow: View, Equatable {
     let isProjectLinked: Bool
     let projectName: String?
     let attentionDot: SessionAttentionDot?
+    let isPinned: Bool
     let onSelect: () -> Void
+    let onTogglePin: () -> Void
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.session == rhs.session
@@ -3222,6 +3278,7 @@ private struct MissionControlConversationSessionRow: View, Equatable {
             && lhs.isProjectLinked == rhs.isProjectLinked
             && lhs.projectName == rhs.projectName
             && lhs.attentionDot == rhs.attentionDot
+            && lhs.isPinned == rhs.isPinned
     }
 
     var body: some View {
@@ -3236,6 +3293,16 @@ private struct MissionControlConversationSessionRow: View, Equatable {
                     if let attentionDot {
                         Circle().fill(attentionDot.color).frame(width: 6, height: 6)
                     }
+                    Button(action: onTogglePin) {
+                        LucideIcon(
+                            name: isPinned ? .xmark : .link,
+                            size: 13,
+                            color: isPinned ? Color.dockAccent : Color.dockMetadataText
+                        )
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
+                    .help(isPinned ? "Unpin conversation" : "Pin conversation")
                 }
                 if let projectName {
                     LucideLabel(projectName, icon: "folder.fill")
