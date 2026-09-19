@@ -99,7 +99,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingDockRestartConfirmation = false
     @State private var isShowingEmergencyStopConfirmation = false
     @State private var isShowingEmergencyResumeConfirmation = false
-    @State private var checkpointForRestore: HermesCheckpointSummary?
+    @State private var checkpointForRestore: RestoreCheckpoint?
     @State private var pendingProjectMutation: ProjectMutation?
     @State private var isShowingProjectMutationConfirmation = false
     @State private var pendingProjectFolder: URL?
@@ -649,7 +649,7 @@ struct WorkspaceActivitySidebar: View {
         } message: {
             Text("Hermes will resume accepting new cron, Kanban, and gateway turns globally.")
         }
-        .confirmationDialog("Restore Session Checkpoint?", isPresented: Binding(get: { checkpointForRestore != nil }, set: { if !$0 { checkpointForRestore = nil } })) {
+        .confirmationDialog("Restore Session Checkpoint?", isPresented: Binding(get: { checkpointForRestore != nil }, set: { if !$0 { control.cancelRestoreCheckpoint(); checkpointForRestore = nil } })) {
             if let checkpoint = checkpointForRestore {
                 Button("Restore Checkpoint", role: .destructive) {
                     Task {
@@ -658,7 +658,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
-            Button("Cancel", role: .cancel) { checkpointForRestore = nil }
+            Button("Cancel", role: .cancel) { control.cancelRestoreCheckpoint(); checkpointForRestore = nil }
         } message: {
             if let checkpoint = checkpointForRestore {
                 Text("Hermes will restore this session to checkpoint \(checkpoint.hash). Changes after that checkpoint cannot be recovered through the Dock.")
@@ -5228,7 +5228,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             let canSteerSession = model.status == .working && model.sessionID != nil
-            if control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.checkpoints.isEmpty || control.isLoadingCheckpoints {
+            if control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.restoreCheckpoints.isEmpty || control.isLoadingCheckpoints {
                 settingsDisclosure(title: "Session cockpit", subtitle: "Context, usage, and active-turn controls", icon: "waveform.path.ecg", isExpanded: $isSessionCockpitExpanded) {
                     if let usage = control.sessionUsage {
                     diagnosticRow(label: "TOKENS", value: "\(usage.totalTokens) total  ·  \(usage.inputTokens) in  ·  \(usage.outputTokens) out", color: Color.dockAccent)
@@ -5262,10 +5262,10 @@ struct WorkspaceActivitySidebar: View {
                     if control.isLoadingCheckpoints {
                         Text("Loading session checkpoints…")
                             .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-                    } else if !control.checkpoints.isEmpty {
+                    } else if !control.restoreCheckpoints.isEmpty {
                         Text("CHECKPOINTS")
                             .font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
-                        ForEach(control.checkpoints) { checkpoint in
+                        ForEach(control.restoreCheckpoints) { checkpoint in
                             HStack(spacing: 8) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(checkpoint.message.isEmpty ? checkpoint.hash : checkpoint.message)
@@ -5278,7 +5278,7 @@ struct WorkspaceActivitySidebar: View {
                                     .buttonStyle(.borderless).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
                                 Button("RESTORE") { checkpointForRestore = checkpoint }
                                     .buttonStyle(.borderless).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
-                                    .disabled(model.status == .working)
+                                    .disabled(model.status == .working || control.restoreCheckpointState.isPending)
                             }
                         }
                         if let checkpointDiff = control.checkpointDiff, !checkpointDiff.isEmpty {

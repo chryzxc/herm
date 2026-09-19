@@ -230,6 +230,14 @@ final class HermesControlRPC {
         if let filePath, !filePath.isEmpty { params["file_path"] = filePath }
         return try await client.request(HermesFeatureIDs.ID.rollbackRestore.rawValue, params: params)
     }
+    /// Checkpoint-specific names keep restore flows explicit while preserving
+    /// the verified Hermes rollback.* wire contract.
+    func listRestoreCheckpoints(sessionID: String) async throws -> [String: Any] {
+        try await rollbackList(sessionID: sessionID)
+    }
+    func restoreCheckpoint(sessionID: String, hash: String) async throws -> [String: Any] {
+        try await rollbackRestore(sessionID: sessionID, hash: hash)
+    }
     /// Authenticated, read-only gateway HTTP request used for structured Hermes projections.
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         try await client.fetchHTTP(path)

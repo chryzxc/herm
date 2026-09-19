@@ -29,12 +29,15 @@ swift run
 ### Conversations
 
 - **Streaming chat** with bottom-anchored transcript, bounded history paging, native Markdown links, and in-turn steering — typed guidance is submitted to the running turn at its next tool boundary.
-- **Attachments**: multiple images (reviewable and removable before sending) and PDFs through Hermes' dedicated attachment RPC, with the 25 MB limit enforced again before upload.
+- Long transcripts expose stable, session-scoped message navigation metadata with bounded previews and search-safe matching across Markdown, image-only, tool, and clarification messages; stale viewport targets are ignored after a session switch.
+- **Attachments**: the composer’s accessible **Attach** popover supports native file/image selection, pasted images, validated http(s) URLs, and prompt snippets while preserving the draft and focus. Multiple images and one PDF remain reviewable and removable before sending; folder attachments are shown as unavailable until Hermes exposes a folder contract, and the 25 MB PDF limit is enforced again before upload. Automated coverage verifies the action/model callback contract and failure states; the native macOS manual path (open Attach with keyboard, traverse actions, cancel/fail native pickers, paste an image, and confirm focus restoration) remains to be exercised in a live app session.
 - **Explicit session lifecycle**: selecting or restoring a session never creates a replacement implicitly; new chats are created only on request, guarded against races. Session data stays isolated to its owning session and fails closed on identity mismatch.
+- **Pinned conversations**: use the labelled pin/unpin control on any conversation row to keep it in the Pinned section. Pins preserve their order across refreshes, relaunches, and bot-profile switches; unavailable sessions are removed only when their own profile index confirms they are gone. The native menu-bar path is Dock → Conversations → Pinned → conversation row → labelled pin/unpin button. The package target covers the row action, profile identity, selection, and UserDefaults handoff; live macOS VoiceOver and keyboard traversal on that native path remain unexercised.
 - **Clarification requests** render as action-needed states with editable responses submitted through `clarify.respond`.
 - **Session surfaces**: the session header switches the conversation column between **Chat**, **Talk**, **Explorer**, **Source Control**, and **Pull Requests** — Explorer browses the session repository with a blame-aware editor, Source Control shows staged/unstaged/untracked files with bounded diffs, and Pull Requests lists open PRs scoped to the session's repository.
 - **Context guardrails**: Hermes-reported context use is labelled normal/warning/critical (80% / 90% thresholds) with explicit branch, confirmed compression, and no-edit background handoff actions.
 - **Approval choices with persistence**: dangerous-command approvals render Deny / Allow once / Always allow. "Always allow" persists the command pattern into Hermes' allowlist for future sessions (content-level findings are session-only by design); Core shows the current allowlist read-only with copy-only management guidance.
+- **Model picker**: composer model selection is grouped by provider, searchable, refreshable, and scrollable through native menus. The editor supports stable-ID enable/disable preferences that persist locally; Hermes remains authoritative for the available catalog and active model.
 
 ### Voice
 
@@ -55,7 +58,7 @@ swift run
 - **Inbox**: actionable approvals, clarifications, failures, and completed work — dismissed items persist, snoozed items return after an hour, due Reminders project into the same stream.
 - **Activity**: live delegated agents by name with event history, an animated agent-to-agent handoff map, background task tracking, and a per-session Now view synced to live execution.
 - **Artifacts**: indexes generated outputs from recent Hermes sessions and presents images in a preview grid plus files and links in a searchable list. Filters show live counts; each item retains its source session and supports copying or opening the original URL/path.
-- **Core**: session cockpit (token usage, context breakdown, prompt budget, steering, rollback checkpoints with confirmed restore), runtime inventories (skills, MCP servers, plugins), session/runtime controls (rename, branch, compress, undo, delegation pause, interrupt), read-only Hermes health, and opt-in completion notifications.
+- **Core**: session cockpit (token usage, context breakdown, prompt budget, steering, session-scoped rollback checkpoints with confirmed restore and honest pending/failure states), runtime inventories (skills, MCP servers, plugins), session/runtime controls (rename, branch, compress, undo, delegation pause, interrupt), read-only Hermes health, and opt-in completion notifications.
 
 ### Developer command center
 

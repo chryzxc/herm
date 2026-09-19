@@ -1,6 +1,22 @@
 import CoreGraphics
 import Foundation
 
+struct ConversationMessageJumpPlan: Equatable {
+    let messageID: UUID
+    let renderedLimit: Int
+}
+
+struct ConversationMessageJumpEffect: Equatable {
+    let messageID: UUID
+    let renderedLimit: Int
+    let isAtBottom: Bool
+    let unseenMessageCount: Int
+}
+
+enum ConversationMessageScrollAnchor: Equatable {
+    case center
+}
+
 /// Bounded presentation window for the canonical transcript. Hermes remains
 /// the owner of every message; this policy only limits how many exact SwiftUI
 /// rows are mounted at once.
@@ -13,12 +29,95 @@ enum ConversationMessageWindow {
     static let topLoadThreshold: CGFloat = 24
     static let topRearmDistance: CGFloat = 80
 
+    /// Builds navigation metadata from the same canonical messages and
+    /// session identity used by the mounted transcript window. Keeping this
+    /// hook here prevents a navigator from accidentally indexing a different
+    /// projection or retaining state across session replacement.
+    static func navigatorItems(
+        messages: [ChatMessage],
+        sessionID: String,
+        previewLimit: Int = MessageNavigator.defaultPreviewLimit
+    ) -> [MessageNavigatorItem] {
+        MessageNavigator.items(
+            messages: messages,
+            sessionID: sessionID,
+            previewLimit: previewLimit
+        )
+    }
+
     static func visibleMessages<Element>(_ messages: [Element], limit: Int) -> ArraySlice<Element> {
         messages.suffix(max(initialLimit, limit))
     }
 
     static func revealedLimit(currentLimit: Int, totalCount: Int) -> Int {
         min(totalCount, max(initialLimit, currentLimit) + pageSize)
+    }
+
+    static func limitToReveal(messageOrdinal: Int, totalCount: Int, currentLimit: Int) -> Int {
+        let safeTotal = max(0, totalCount)
+        let safeOrdinal = max(0, messageOrdinal)
+        // The mounted window is a suffix. An oldest-first ordinal therefore
+        // needs the number of rows from that ordinal through the newest row.
+        let requiredSuffixLimit = safeOrdinal > safeTotal
+            ? safeTotal
+            : safeTotal - safeOrdinal + 1
+        return min(safeTotal, max(initialLimit, currentLimit, requiredSuffixLimit))
+    }
+
+    static func jumpPlan(
+        for item: MessageNavigatorItem,
+        sessionID: String,
+        totalCount: Int,
+        currentLimit: Int
+    ) -> ConversationMessageJumpPlan? {
+        guard item.sessionID == sessionID else { return nil }
+        return ConversationMessageJumpPlan(
+            messageID: item.messageID,
+            renderedLimit: limitToReveal(
+                messageOrdinal: item.ordinal,
+                totalCount: totalCount,
+                currentLimit: currentLimit
+            )
+        )
+    }
+
+    static func jumpEffect(
+        for item: MessageNavigatorItem,
+        sessionID: String,
+        messages: [ChatMessage],
+        currentLimit: Int
+    ) -> ConversationMessageJumpEffect? {
+        guard let plan = jumpPlan(
+            for: item,
+            sessionID: sessionID,
+            totalCount: messages.count,
+            currentLimit: currentLimit
+        ) else { return nil }
+        return ConversationMessageJumpEffect(
+            messageID: plan.messageID,
+            renderedLimit: plan.renderedLimit,
+            isAtBottom: false,
+            unseenMessageCount: 0
+        )
+    }
+
+    static func transcriptSelectionHandler(
+        sessionID: String,
+        messages: [ChatMessage],
+        currentLimit: @escaping () -> Int,
+        onEffect: @escaping (ConversationMessageJumpEffect) -> Void,
+        onScroll: @escaping (UUID, ConversationMessageScrollAnchor) -> Void
+    ) -> (MessageNavigatorItem) -> Void {
+        { item in
+            guard let effect = jumpEffect(
+                for: item,
+                sessionID: sessionID,
+                messages: messages,
+                currentLimit: currentLimit()
+            ) else { return }
+            onEffect(effect)
+            onScroll(effect.messageID, .center)
+        }
     }
 
     /// A session owns no transcript presentation state. Never carry an

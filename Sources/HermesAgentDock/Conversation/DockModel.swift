@@ -37,6 +37,7 @@ final class DockModel: ObservableObject {
     @Published var pendingImages: [ImageAttachment] = []
     @Published private(set) var pendingPDFURL: URL?
     @Published private(set) var pendingPDFError: String?
+    @Published private(set) var pendingAttachmentError: String?
     @Published var isSending = false
     @Published private(set) var isSteering = false
     @Published private(set) var steeringError: String?
@@ -116,8 +117,11 @@ final class DockModel: ObservableObject {
     @Published var runtimeConfiguration: HermesRuntimeConfiguration?
     @Published var isLoadingRuntimeConfiguration = false
     @Published var runtimeConfigurationError: String?
+    @Published var runtimeModelOptionsError: String?
+    @Published var isLoadingRuntimeModelOptions = false
     @Published private(set) var runtimeConfigurationProjectionState: HermesProjectionState<HermesRuntimeConfiguration> = .empty
     @Published var runtimeModelOptions: [HermesModelOption] = []
+    private var runtimeModelOptionsRefreshGeneration = 0
     @Published private(set) var sessionModelOptionID: String?
     /// The canonical session response can provide a model before the optional
     /// catalog has resolved its provider/model option identity.
@@ -619,9 +623,12 @@ final class DockModel: ObservableObject {
             return false
         }
         let imageType = pasteboard.types?.first { $0 == .png || $0 == .tiff }
-        guard let imageType,
-              let data = pasteboard.data(forType: imageType),
+        guard let imageType else {
+            return false
+        }
+        guard let data = pasteboard.data(forType: imageType),
               let nsImage = NSImage(data: data) else {
+            pendingAttachmentError = "Could not paste image: the clipboard image could not be read."
             return false
         }
         return stageImage(nsImage)
@@ -631,6 +638,7 @@ final class DockModel: ObservableObject {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
         guard let nsImage = NSImage(contentsOf: url) else {
+            pendingAttachmentError = "Could not attach image: \(url.lastPathComponent) could not be read."
             DebugLog.write("model: could not load image at \(url.path)")
             return
         }
@@ -660,6 +668,15 @@ final class DockModel: ObservableObject {
         pendingPDFError = message
     }
 
+    func reportAttachmentError(_ message: String) {
+        pendingAttachmentError = message
+    }
+
+    func clearAttachmentErrors() {
+        pendingAttachmentError = nil
+        pendingPDFError = nil
+    }
+
     func removePendingPDF() {
         pendingPDFURL = nil
         pendingPDFError = nil
@@ -680,6 +697,7 @@ final class DockModel: ObservableObject {
         guard let tiff = nsImage.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else {
+            pendingAttachmentError = "Could not paste image: the image could not be encoded."
             DebugLog.write("model: failed to encode pasted image as PNG")
             return false
         }
@@ -689,6 +707,7 @@ final class DockModel: ObservableObject {
             try png.write(to: tempURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempURL.path)
         } catch {
+            pendingAttachmentError = "Could not paste image: the image could not be saved."
             DebugLog.write("model: failed to write image temp file: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
@@ -924,6 +943,7 @@ final class DockModel: ObservableObject {
         // click in the session queue.
         if !isRefreshingActiveSession {
             resetComposerForSessionChange()
+            invalidateRuntimeModelOptionsRefresh()
             if profileID == nil {
                 detachInFlightBotActivities(as: .canceled)
             }
@@ -1295,6 +1315,7 @@ final class DockModel: ObservableObject {
             cacheAgentState(for: sessionStorageID)
         }
         resetComposerForSessionChange()
+        invalidateRuntimeModelOptionsRefresh()
         sessionResumeGeneration &+= 1
         restoreGeneration &+= 1
         interruptGeneration &+= 1
@@ -3817,19 +3838,31 @@ final class DockModel: ObservableObject {
         configuration.agentName != nil || configuration.model != nil || configuration.provider != nil || configuration.configPath != nil || configuration.maxTurns != nil || configuration.terminalTimeout != nil || !configuration.skills.isEmpty || !configuration.mcpServers.isEmpty || !configuration.plugins.isEmpty
     }
 
+    enum RuntimeModelOptionsParseError: Error {
+        case malformedResponse
+    }
+
+    private func invalidateRuntimeModelOptionsRefresh() {
+        runtimeModelOptionsRefreshGeneration &+= 1
+        isLoadingRuntimeModelOptions = false
+        runtimeModelOptionsError = nil
+    }
+
     func refreshRuntimeModelOptions(sessionID: String? = nil) {
-        Task {
+        runtimeModelOptionsRefreshGeneration += 1
+        let generation = runtimeModelOptionsRefreshGeneration
+        isLoadingRuntimeModelOptions = true
+        runtimeModelOptionsError = nil
+        Task { [weak self] in
+            guard let self else { return }
             do {
-                var params: [String: Any] = ["explicit_only": true]
-                if let sessionID, !sessionID.isEmpty { params["session_id"] = sessionID }
-                let result = try await gateway.request(HermesFeatureIDs.ID.modelOptions.rawValue, params: params)
-                guard sessionID == nil || sessionID == self.sessionID else { return }
-                let providers = result["providers"] as? [[String: Any]] ?? []
-                runtimeModelOptions = providers.flatMap { provider -> [HermesModelOption] in
-                    guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String) else { return [] }
-                    let models = provider["models"] as? [String] ?? []
-                    return models.map { HermesModelOption(provider: name, model: $0) }
+                let params = Self.runtimeModelOptionsRequest(sessionID: sessionID)
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.modelOptions.rawValue, params: params)
+                guard generation == runtimeModelOptionsRefreshGeneration,
+                      sessionID == nil || sessionID == self.sessionID else {
+                    return
                 }
+                runtimeModelOptions = try Self.runtimeModelOptions(from: result)
                 if let sessionID, sessionID == self.sessionID,
                    let provider = result["provider"] as? String,
                    let model = result["model"] as? String {
@@ -3840,8 +3873,38 @@ final class DockModel: ObservableObject {
                     sessionModelValue = model
                 }
             } catch {
-                runtimeConfigurationError = "Hermes could not load its model catalog."
+                guard generation == runtimeModelOptionsRefreshGeneration,
+                      sessionID == nil || sessionID == self.sessionID else {
+                    return
+                }
+                runtimeModelOptionsError = "Hermes could not load its model catalog."
             }
+            guard generation == runtimeModelOptionsRefreshGeneration,
+                  sessionID == nil || sessionID == self.sessionID else {
+                return
+            }
+            isLoadingRuntimeModelOptions = false
+        }
+    }
+
+    nonisolated static func runtimeModelOptionsRequest(sessionID: String?) -> [String: Any] {
+        var params: [String: Any] = ["explicit_only": true]
+        if let sessionID, !sessionID.isEmpty { params["session_id"] = sessionID }
+        return params
+    }
+
+    nonisolated static func runtimeModelOptions(from result: [String: Any]) throws -> [HermesModelOption] {
+        guard let providers = result["providers"] as? [[String: Any]] else {
+            throw RuntimeModelOptionsParseError.malformedResponse
+        }
+        return try providers.flatMap { provider -> [HermesModelOption] in
+            guard let name = (provider["slug"] as? String) ?? (provider["name"] as? String),
+                  !name.isEmpty,
+                  let models = provider["models"] as? [String],
+                  models.allSatisfy({ !$0.isEmpty }) else {
+                throw RuntimeModelOptionsParseError.malformedResponse
+            }
+            return models.map { HermesModelOption(provider: name, model: $0) }
         }
     }
 
