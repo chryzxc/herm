@@ -4,6 +4,19 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func projectDisclosureToggleUpdatesCollapsedStateImmediately() {
+        var state = ProjectDisclosureState()
+
+        state.toggle(projectID: "project-a")
+
+        #expect(state.isCollapsed(projectID: "project-a"))
+        #expect(!state.isCollapsed(projectID: "project-b"))
+
+        state.toggle(projectID: "project-a")
+
+        #expect(!state.isCollapsed(projectID: "project-a"))
+    }
+
     @Test func clearingSelectedProfileDisablesProjectHydration() {
         let model = ControlCenterModel()
 

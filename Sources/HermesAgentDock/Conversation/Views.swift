@@ -3398,7 +3398,23 @@ struct MissionControlConversationSessionRow: View, Equatable {
 
 /// Project navigation is isolated from DockModel so high-frequency activity
 /// updates do not rebuild the project hierarchy.
-private struct MissionControlProjectList: View, Equatable {
+struct ProjectDisclosureState: Equatable {
+    private var collapsedProjectIDs: Set<String> = []
+
+    mutating func toggle(projectID: String) {
+        if collapsedProjectIDs.contains(projectID) {
+            collapsedProjectIDs.remove(projectID)
+        } else {
+            collapsedProjectIDs.insert(projectID)
+        }
+    }
+
+    func isCollapsed(projectID: String) -> Bool {
+        collapsedProjectIDs.contains(projectID)
+    }
+}
+
+private struct MissionControlProjectList: View {
     let groups: [MissionControlConversationGroup]
     let activeSessionID: String?
     let selectedSessionID: String?
@@ -3410,19 +3426,9 @@ private struct MissionControlProjectList: View, Equatable {
     let onSelectSession: (HermesSession) -> Void
     let onRefresh: () -> Void
     let onNewChatInProject: (String) -> Void
-    @State private var collapsedProjectIDs: Set<String> = []
+    @State private var disclosureState = ProjectDisclosureState()
     @State private var isExpanded = true
 
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.groups == rhs.groups
-            && lhs.activeSessionID == rhs.activeSessionID
-            && lhs.selectedSessionID == rhs.selectedSessionID
-            && lhs.attentionDots == rhs.attentionDots
-            && lhs.showsAllConversations == rhs.showsAllConversations
-            && lhs.isLoadingProjects == rhs.isLoadingProjects
-            && lhs.isRefreshing == rhs.isRefreshing
-            && lhs.isCreatingChat == rhs.isCreatingChat
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -3488,7 +3494,7 @@ private struct MissionControlProjectList: View, Equatable {
 
     private func projectGroup(_ group: MissionControlConversationGroup) -> some View {
         let sessionCount = max(group.declaredSessionCount, group.sessions.count)
-        let isCollapsed = sessionCount == 0 || collapsedProjectIDs.contains(group.id)
+        let isCollapsed = sessionCount == 0 || disclosureState.isCollapsed(projectID: group.id)
         let sessions = (showsAllConversations ? group.sessions : Array(group.sessions.prefix(10)))
             .sorted { lhs, rhs in
                 let lhsDate = lhs.lastUpdatedAt ?? .distantPast
@@ -3501,8 +3507,7 @@ private struct MissionControlProjectList: View, Equatable {
             HStack(spacing: 4) {
                 Button {
                     withAnimation(.dockEase(duration: 0.18)) {
-                        if collapsedProjectIDs.contains(group.id) { collapsedProjectIDs.remove(group.id) }
-                        else { collapsedProjectIDs.insert(group.id) }
+                        disclosureState.toggle(projectID: group.id)
                     }
                 } label: {
                     HStack(spacing: 8) {
