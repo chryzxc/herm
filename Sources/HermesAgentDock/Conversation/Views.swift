@@ -2592,6 +2592,37 @@ enum SessionAttentionDot: Equatable {
     }
 }
 
+struct ConversationRepositoryBadgePresentation: Equatable {
+    static let maximumLabelLength = 24
+
+    let label: String
+    let accessibilityLabel: String
+
+    static func make(projectName: String?, isProjectLinked: Bool) -> Self? {
+        guard isProjectLinked,
+              let projectName,
+              !projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        let trimmedName = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lastPathComponent = URL(fileURLWithPath: trimmedName).lastPathComponent
+        let normalizedName = lastPathComponent.isEmpty ? trimmedName : lastPathComponent
+        guard !normalizedName.isEmpty else { return nil }
+
+        let label: String
+        if normalizedName.count > maximumLabelLength {
+            label = String(normalizedName.prefix(maximumLabelLength - 1)) + "…"
+        } else {
+            label = normalizedName
+        }
+        return Self(
+            label: label,
+            accessibilityLabel: "Repository \(normalizedName)"
+        )
+    }
+}
+
 private struct MissionControlQueue: View {
     private struct QueueTaskGroup: Identifiable {
         let key: String
@@ -3548,13 +3579,25 @@ struct MissionControlConversationSessionRow: View, Equatable {
                     Circle().fill(attentionDot.color).frame(width: 6, height: 6)
                 }
             }
-            if let projectName {
-                LucideLabel(projectName, icon: "folder.fill")
-                    .font(.system(size: 10, weight: .medium))
+            if let badge = ConversationRepositoryBadgePresentation.make(
+                projectName: projectName,
+                isProjectLinked: isProjectLinked
+            ) {
+                LucideLabel(badge.label, icon: "arrow.triangle.branch")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.dockAccent)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.dockSurface4)
+                            .stroke(Color.dockBorderLight, lineWidth: 0.5)
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help("Project or repository: \(projectName)")
+                    .help(badge.accessibilityLabel)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(badge.accessibilityLabel)
             }
             if let preview = session.displayPreview {
                 Text(preview)

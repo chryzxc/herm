@@ -48,6 +48,30 @@ struct ControlCenterProjectTests {
         #expect(SessionLifecyclePresentation.status(for: session) == .unavailable)
         #expect(SessionLifecyclePresentation.accessibilityLabel(for: session) == "Unavailable: Unattributed")
     }
+    @Test func conversationBadgeNormalizesRepositoryNameAndHonorsAssociation() {
+        let badge = ConversationRepositoryBadgePresentation.make(
+            projectName: "/Users/christian/Projects/hermes-agent-dock",
+            isProjectLinked: true
+        )
+
+        #expect(badge?.label == "hermes-agent-dock")
+        #expect(badge?.accessibilityLabel == "Repository hermes-agent-dock")
+
+        #expect(ConversationRepositoryBadgePresentation.make(
+            projectName: "/Users/christian/Projects/unlinked",
+            isProjectLinked: false
+        ) == nil)
+    }
+
+    @Test func conversationBadgeBoundsLongRepositoryNames() {
+        let badge = ConversationRepositoryBadgePresentation.make(
+            projectName: "/workspace/\(String(repeating: "repository", count: 20))",
+            isProjectLinked: true
+        )
+
+        #expect(badge?.label.count == ConversationRepositoryBadgePresentation.maximumLabelLength)
+        #expect(badge?.label.hasSuffix("…") == true)
+    }
 
     @Test func projectDisclosureToggleUpdatesCollapsedStateImmediately() {
         var state = ProjectDisclosureState()
