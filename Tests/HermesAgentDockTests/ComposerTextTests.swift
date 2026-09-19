@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 @testable import HermesAgentDock
 
@@ -6,6 +7,36 @@ struct ComposerTextTests {
     @Test func markdownMessagesUseTheirSourceAsTheRenderEqualityBoundary() {
         #expect(MarkdownMessageView(markdown: "- One") == MarkdownMessageView(markdown: "- One"))
         #expect(MarkdownMessageView(markdown: "- One") != MarkdownMessageView(markdown: "- Two"))
+    }
+
+    @Test func markdownLinksUseDockAffordancesWithoutStylingSurroundingText() throws {
+        let source = try AttributedString(
+            markdown: "Read [the guide](https://example.com) for details.",
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        )
+        let styled = MarkdownMessageView.linkAffordances(in: source)
+        let linkRun = try #require(styled.runs.first { $0.link != nil })
+        let plainRun = try #require(styled.runs.first { $0.link == nil })
+
+        #expect(linkRun.foregroundColor == Color.dockAccent)
+        #expect(linkRun.underlineStyle == .single)
+        #expect(plainRun.foregroundColor == nil)
+        #expect(plainRun.underlineStyle == nil)
+    }
+
+    @Test func markdownRenderPathPreservesLinkIdentityAndAffordances() throws {
+        let markdown = "Read [the guide](https://example.com) for details."
+        let blocks = MarkdownMessageView.renderBlocks(for: markdown)
+        let paragraph = try #require(blocks.compactMap { block in
+            if case .paragraph(let text) = block { return text }
+            return nil
+        }.first)
+        let styled = MarkdownMessageView.linkAffordances(in: paragraph)
+        let linkRun = try #require(styled.runs.first { $0.link != nil })
+
+        #expect(linkRun.link == URL(string: "https://example.com"))
+        #expect(linkRun.foregroundColor == Color.dockAccent)
+        #expect(linkRun.underlineStyle == .single)
     }
 
     @Test func markdownOrderedListsIncrementNumbers() {
