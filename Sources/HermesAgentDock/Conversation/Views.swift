@@ -10,16 +10,132 @@ final class DockPanelPresentation: ObservableObject {
     @Published var isEdgeAttached = false
 }
 
+enum MissionControlNavigationSelection: Equatable {
+    case session(String)
+    case task(UUID)
+    case global(ControlTab)
+    case artifacts
+    case bots
+    case pullRequests
+}
+
+@MainActor
+final class MissionControlNavigationSelectionState: ObservableObject {
+    @Published private(set) var selection: MissionControlNavigationSelection?
+
+    func clear() { selection = nil }
+    func selectSession(_ id: String) { selection = .session(id) }
+    func selectTask(_ id: UUID) { selection = .task(id) }
+    func selectGlobal(_ tab: ControlTab) { selection = .global(tab) }
+    func selectArtifacts() { selection = .artifacts }
+    func selectBots() { selection = .bots }
+    func selectPullRequests() { selection = .pullRequests }
+
+    func isTaskSelected(_ id: UUID, sessionID: String? = nil) -> Bool {
+        if case .task(id) = selection { return true }
+        return false
+    }
+
+    func isSessionSelected(_ id: String) -> Bool {
+        if case .session(id) = selection { return true }
+        return false
+    }
+
+    func isGlobalSelected(_ tab: ControlTab) -> Bool {
+        if case .global(tab) = selection { return true }
+        return false
+    }
+}
+
 /// Presentation state owned by the left navigation rail, rather than a
 /// particular split-view host. Global destinations replace their trailing
 /// content host, so keeping this state here lets the rail retain its expanded
 /// sections and local selection while the user moves between pages.
-private final class MissionControlNavigationState: ObservableObject {
+@MainActor
+final class MissionControlNavigationState: ObservableObject {
+    let selection = MissionControlNavigationSelectionState()
     @Published var showsAllConversations = false
     @Published var selectedTaskID: UUID?
     @Published var selectedSessionID: String?
     @Published var areConversationsExpanded = true
     var hasRequestedSessionIndex = false
+
+    func selectSession(_ id: String) {
+        selection.selectSession(id)
+        selectedTaskID = nil
+        selectedSessionID = id
+    }
+
+    /// Route every callback that opens an existing or newly resolved session
+    /// through the same owner so the prior task/global destination cannot
+    /// remain selected alongside the conversation.
+    func openSession(_ id: String) {
+        selectSession(id)
+    }
+
+    func openBotChat(sessionID: String) {
+        openSession(sessionID)
+    }
+
+    func openProjectSession(sessionID: String) {
+        openSession(sessionID)
+    }
+
+    func openPullRequestChat(sessionID: String?) {
+        if let sessionID {
+            openSession(sessionID)
+        } else {
+            clearSelection()
+        }
+    }
+
+    func beginProjectChat(sessionID: String? = nil) {
+        if let sessionID {
+            openSession(sessionID)
+        } else {
+            beginNewConversation()
+        }
+    }
+
+    func beginNewConversation() {
+        clearSelection()
+    }
+
+    func clearSelection() {
+        selection.clear()
+        selectedTaskID = nil
+        selectedSessionID = nil
+    }
+
+    func selectTask(_ id: UUID) {
+        selection.selectTask(id)
+        selectedSessionID = nil
+        selectedTaskID = id
+    }
+
+    func selectGlobal(_ tab: ControlTab) {
+        selection.selectGlobal(tab)
+        selectedTaskID = nil
+        selectedSessionID = nil
+    }
+
+    func selectArtifacts() {
+        selection.selectArtifacts()
+        selectedTaskID = nil
+        selectedSessionID = nil
+    }
+
+    func selectBots() {
+        selection.selectBots()
+        selectedTaskID = nil
+        selectedSessionID = nil
+    }
+
+    func selectPullRequests() {
+        selection.selectPullRequests()
+        selectedTaskID = nil
+        selectedSessionID = nil
+    }
 }
 
 private struct DockPanelSurfaceShape: Shape {
@@ -698,17 +814,20 @@ struct DockPopover: View {
             isBotsActive: fullscreenSurface == .bots,
             isPullRequestsActive: fullscreenSurface == .pullRequests,
             onNewConversation: {
+                missionControlNavigation.beginNewConversation()
                 fullscreenSurface = .conversation
                 inspectorScope = .session
                 model.newChat()
                 model.requestComposerFocus()
             },
             onSelectSession: { session in
+                missionControlNavigation.selectSession(session.id)
                 fullscreenSurface = .conversation
                 inspectorScope = .session
                 model.resumeSession(session)
             },
             onSelectTask: { task in
+                missionControlNavigation.selectTask(task.id)
                 if let sessionID = task.sessionID,
                    let session = model.sessions.first(where: { $0.id == sessionID }) {
                     fullscreenSurface = .conversation
@@ -722,17 +841,21 @@ struct DockPopover: View {
                 }
             },
             onOpenGlobal: { tab in
+                missionControlNavigation.selectGlobal(tab)
                 fullscreenGlobalTab = tab
                 fullscreenSurface = .global
             },
             onOpenArtifacts: {
+                missionControlNavigation.selectArtifacts()
                 fullscreenSurface = .artifacts
             },
             onOpenBots: {
+                missionControlNavigation.selectBots()
                 Task { await botMode.refreshNow(force: true) }
                 fullscreenSurface = .bots
             },
             onOpenPullRequests: {
+                missionControlNavigation.selectPullRequests()
                 fullscreenSurface = .pullRequests
             },
             showsFullscreenToggle: true,
@@ -767,7 +890,8 @@ struct DockPopover: View {
                 agentUpdateService.restartDock()
             },
             onOpenArtifacts: { },
-            onSessionOpened: { _ in
+            onSessionOpened: { sessionID in
+                missionControlNavigation.openProjectSession(sessionID: sessionID)
                 // Global surfaces (such as Projects) own discovery; after a
                 // session is chosen, return the user to the shared chat
                 // workspace where that session is visible.
@@ -805,6 +929,8 @@ struct DockPopover: View {
     }
 
     private func openBotChat(_ bot: BotSummary) {
+        let chat = bot.chat ?? BotChatReference(sessionID: BotService.canonicalBotChatTitle, profileID: bot.id)
+        missionControlNavigation.openBotChat(sessionID: chat.sessionID)
         fullscreenSurface = .conversation
         inspectorScope = .session
         model.resumeBotChat(bot)
@@ -821,11 +947,15 @@ struct DockPopover: View {
         Task {
             if let linkedID = pullRequestChatLinks.sessionID(for: pullRequest.id),
                let linkedSession = model.sessions.first(where: { $0.id == linkedID }) {
+                missionControlNavigation.openPullRequestChat(sessionID: linkedSession.id)
                 model.resumeSession(linkedSession)
             } else {
                 pullRequestChatLinks.remove(pullRequestID: pullRequest.id)
                 await model.startNewChat(in: pullRequest.localPath)
-                if let createdID = model.sessionID { pullRequestChatLinks.save(sessionID: createdID, for: pullRequest.id) }
+                if let createdID = model.sessionID {
+                    pullRequestChatLinks.save(sessionID: createdID, for: pullRequest.id)
+                }
+                missionControlNavigation.openPullRequestChat(sessionID: model.sessionID)
             }
             model.draft = prompt
             fullscreenSurface = .conversation
@@ -2869,7 +2999,7 @@ private struct MissionControlQueue: View {
             pullRequestsDestinationRow
             globalRailDestination(.automations)
             globalRailDestination(.officePreview)
-            queueRailDestination("Artifacts", icon: "doc.text.magnifyingglass", isSelected: isArtifactsActive) {
+            queueRailDestination("Artifacts", icon: "doc.text.magnifyingglass", isSelected: navigationState.selection.selection == .artifacts) {
                 onOpenArtifacts()
             }
             botsDestinationRow
@@ -2886,16 +3016,19 @@ private struct MissionControlQueue: View {
                     isRefreshing: controlCenter.isRefreshingProjectNavigation,
                     isCreatingChat: model.isCreatingSession,
                     onSelectSession: { session in
-                        navigationState.selectedSessionID = session.id
-                        navigationState.selectedTaskID = nil
+                        navigationState.selectSession(session.id)
                         onSelectSession(session)
                     },
                     onRefresh: {
                         controlCenter.refreshProjectNavigation()
                     },
                     onNewChatInProject: { projectPath in
+                        navigationState.beginProjectChat()
                         Task {
                             await model.startNewChat(in: projectPath)
+                            if let createdID = model.sessionID {
+                                navigationState.beginProjectChat(sessionID: createdID)
+                            }
                             model.loadSessions()
                             controlCenter.refreshProjectNavigation()
                             model.requestComposerFocus()
@@ -2949,7 +3082,7 @@ private struct MissionControlQueue: View {
         queueRailDestination(
             "Bots",
             icon: "bot",
-            isSelected: isBotsActive
+            isSelected: navigationState.selection.selection == .bots
         ) {
             onOpenBots()
         }
@@ -3004,12 +3137,12 @@ private struct MissionControlQueue: View {
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
             }
-            .foregroundStyle(isPullRequestsActive ? Color.dockPrimaryText : Color.dockSecondaryText)
+            .foregroundStyle(navigationState.selection.selection == .pullRequests ? Color.dockPrimaryText : Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 34)
             .contentShape(Rectangle())
-            .background(isPullRequestsActive ? Color.dockAccent.opacity(0.14) : Color.clear)
+            .background(navigationState.selection.selection == .pullRequests ? Color.dockAccent.opacity(0.14) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.borderless)
@@ -3019,9 +3152,10 @@ private struct MissionControlQueue: View {
         queueRailDestination(
             tab.globalRailLabel,
             icon: tab.icon,
-            isSelected: activeGlobalTab == tab,
+            isSelected: navigationState.selection.isGlobalSelected(tab),
             showsUpdateBadge: tab == .core && agentUpdateService.phase == .updateAvailable
         ) {
+            navigationState.selectGlobal(tab)
             onOpenGlobal(tab)
         }
     }
@@ -3196,8 +3330,7 @@ private struct MissionControlQueue: View {
 
     private func taskRow(_ task: WorkspaceTask, duplicateCount: Int = 1) -> some View {
         Button {
-            navigationState.selectedTaskID = task.id
-            navigationState.selectedSessionID = nil
+            navigationState.selectTask(task.id)
             onSelectTask(task)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
@@ -3243,7 +3376,7 @@ private struct MissionControlQueue: View {
                     session.id,
                     selectedSessionID: &navigationState.selectedSessionID
                 )
-                navigationState.selectedTaskID = nil
+                navigationState.selectSession(session.id)
                 onSelectSession(session)
             }
         )
@@ -3276,12 +3409,12 @@ private struct MissionControlQueue: View {
 
     private func isTaskSelected(_ task: WorkspaceTask) -> Bool {
         guard activeGlobalTab == nil, !isArtifactsActive else { return false }
-        return navigationState.selectedTaskID == task.id || (task.sessionID != nil && task.sessionID == activeSessionID)
+        return navigationState.selection.isTaskSelected(task.id)
     }
 
     private func isSessionSelected(_ session: HermesSession) -> Bool {
         guard activeGlobalTab == nil, !isArtifactsActive else { return false }
-        return navigationState.selectedSessionID == session.id || session.id == activeSessionID
+        return navigationState.selection.isSessionSelected(session.id)
     }
 
     private func taskDisplayTitle(_ task: WorkspaceTask) -> String {
