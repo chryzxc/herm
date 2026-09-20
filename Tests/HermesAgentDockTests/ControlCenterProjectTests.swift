@@ -103,6 +103,8 @@ struct ControlCenterProjectTests {
 
         #expect(refreshed.map(\.id) == ["b", "a"])
         #expect(refreshed.last?.name == "A renamed")
+    }
+
     @Test func createdProjectSelectionMatchesTheAuthoritativeProjectPath() {
         let projects = [
             ProjectSummary(id: "other", name: "/work/other", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false),
