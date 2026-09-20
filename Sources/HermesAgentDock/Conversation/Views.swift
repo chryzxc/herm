@@ -3611,7 +3611,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
 
             Button(action: onTogglePin) {
                 LucideIcon(
-                    name: isPinned ? .xmark : .link,
+                    name: .pin,
                     size: 13,
                     color: isPinned ? Color.dockAccent : Color.dockMetadataText
                 )
