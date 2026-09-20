@@ -150,6 +150,24 @@ struct ControlCenterAttentionTests {
         #expect(model.attention.first?.reference.clarificationRequestID == "clarify-42")
     }
 
+    @Test func partialClarificationEventPreservesExistingRequestIdentity() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("clarify.request", params: [
+            "session_id": "session-clarify-partial",
+            "payload": [
+                "request_id": "clarify-preserved-42",
+                "question": "Which environment?"
+            ]
+        ])
+        model.ingestEvent("clarification.request", params: [
+            "session_id": "session-clarify-partial",
+            "payload": ["message": "Please choose an environment."]
+        ])
+
+        #expect(model.attention.first?.reference.clarificationRequestID == "clarify-preserved-42")
+    }
+
     @Test func respondingToClarificationUsesRequestIdentityAndResolvesAfterRPC() async {
         let client = ClarificationResponseRPCClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))

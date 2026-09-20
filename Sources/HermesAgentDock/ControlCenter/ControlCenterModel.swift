@@ -2825,6 +2825,11 @@ final class ControlCenterModel: ObservableObject {
             if item.actions.isEmpty {
                 enriched.actions = existing.actions
             }
+            let incomingRequestID = item.reference.clarificationRequestID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let existingRequestID = existing.reference.clarificationRequestID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if incomingRequestID.isEmpty, !existingRequestID.isEmpty {
+                enriched.reference.clarificationRequestID = existingRequestID
+            }
             knownAttention[item.id] = enriched
         } else {
             knownAttention[item.id] = item

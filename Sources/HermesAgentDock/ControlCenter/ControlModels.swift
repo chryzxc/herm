@@ -254,7 +254,7 @@ enum AttentionAction: String, Codable, CaseIterable {
 
 struct AttentionItem: Identifiable, Codable, Equatable {
     let id: String
-    let reference: ControlReference
+    var reference: ControlReference
     let kind: AttentionKind
     var title: String
     var detail: String
