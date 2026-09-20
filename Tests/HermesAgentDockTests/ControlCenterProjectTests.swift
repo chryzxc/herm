@@ -17,6 +17,26 @@ struct ControlCenterProjectTests {
         #expect(!state.isCollapsed(projectID: "project-a"))
     }
 
+    @Test func unchangedProjectRefreshPreservesNavigationOrder() {
+        let first = ProjectSummary(id: "a", name: "A", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        let second = ProjectSummary(id: "b", name: "B", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+
+        let refreshed = ControlCenterModel.reconcileProjectRefresh(current: [first, second], incoming: [second, first])
+
+        #expect(refreshed.map(\.id) == ["a", "b"])
+    }
+
+    @Test func changedProjectRowsAcceptAuthoritativeReorder() {
+        let first = ProjectSummary(id: "a", name: "A", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        let second = ProjectSummary(id: "b", name: "B", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        let changedFirst = ProjectSummary(id: "a", name: "A renamed", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+
+        let refreshed = ControlCenterModel.reconcileProjectRefresh(current: [first, second], incoming: [second, changedFirst])
+
+        #expect(refreshed.map(\.id) == ["b", "a"])
+        #expect(refreshed.last?.name == "A renamed")
+    }
+
     @Test func clearingSelectedProfileDisablesProjectHydration() {
         let model = ControlCenterModel()
 

@@ -791,7 +791,7 @@ final class DockModel: ObservableObject {
         sessionLoadGeneration &+= 1
         let generation = sessionLoadGeneration
         let previousProjectionState = sessionProjectionState
-        sessionProjectionState = .loading
+        sessionProjectionState = Self.refreshingProjectionState(sessionProjectionState)
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { isLoadingSessions = false }
@@ -1387,6 +1387,17 @@ final class DockModel: ObservableObject {
         switch state {
         case .ready(let value), .stale(let value, _): return .stale(value, safeMessage: safeMessage)
         default: return .failed(safeMessage: safeMessage)
+        }
+    }
+
+    /// Background session refreshes keep the last authoritative list visible.
+    /// Only a projection without a successful value may enter the loading state.
+    static func refreshingProjectionState<Value: Equatable & Sendable>(_ state: HermesProjectionState<Value>) -> HermesProjectionState<Value> {
+        switch state {
+        case .ready(let value), .stale(let value, _):
+            return .stale(value, safeMessage: "Refreshing conversations…")
+        default:
+            return .loading
         }
     }
 

@@ -673,17 +673,7 @@ final class ControlCenterModel: ObservableObject {
                 do {
                     let result = try await rpc.projectsTree(profileID: projectProfileID)
                     let parsedProjects = Self.parseProjects(result)
-                    // The gateway does not guarantee ordering. Preserve the
-                    // current navigation order for existing projects and
-                    // append genuinely new projects deterministically, so a
-                    // refresh cannot make the rail visibly shuffle.
-                    // projects.tree may repeat a row; keep the first occurrence.
-                    let parsedByID = Dictionary(parsedProjects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-                    let existingOrder = projects.map(\.id)
-                    let refreshedProjects = existingOrder.compactMap { parsedByID[$0] }
-                        + parsedProjects
-                            .filter { !existingOrder.contains($0.id) }
-                            .sorted { $0.id < $1.id }
+                    let refreshedProjects = Self.reconcileProjectRefresh(current: projects, incoming: parsedProjects)
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
                     projects = refreshedProjects
                     let validProjectIDs = Set(refreshedProjects.map(\.id))
@@ -1333,6 +1323,9 @@ final class ControlCenterModel: ObservableObject {
         // Publish one complete snapshot after every request has finished. This
         // prevents the visible list from being rebuilt once per project.
         projectSessionsByProjectID = projectSessionsByProjectID.merging(pendingProjectNavigationSessions) { _, new in new }
+        if let selectedProjectID, let refreshedSessions = projectSessionsByProjectID[selectedProjectID] {
+            projectSessions = refreshedSessions
+        }
         pendingProjectNavigationSessions = [:]
         completedProjectNavigationIDs = []
         projectNavigationRefreshIDs = []
@@ -1587,6 +1580,27 @@ final class ControlCenterModel: ObservableObject {
         var global = filter
         global.sessionID = nil
         return global
+    }
+
+    static func reconcileProjectRefresh(current: [ProjectSummary], incoming: [ProjectSummary]) -> [ProjectSummary] {
+        var seen = Set<String>()
+        let deduplicated = incoming.filter { seen.insert($0.id).inserted }
+        guard !current.isEmpty else { return deduplicated }
+
+        let currentIDs = current.map(\.id)
+        let incomingIDs = deduplicated.map(\.id)
+        let incomingByID = Dictionary(deduplicated.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let rowsUnchanged = current.count == deduplicated.count
+            && current.allSatisfy { incomingByID[$0.id] == $0 }
+        if rowsUnchanged {
+            return current
+        }
+        if Set(currentIDs) == Set(incomingIDs) {
+            return incomingIDs == currentIDs
+                ? currentIDs.compactMap { incomingByID[$0] }
+                : deduplicated
+        }
+        return deduplicated
     }
 
     /// Refreshes the global Kanban projection. Board inventory and board
