@@ -2268,6 +2268,10 @@ struct WorkspaceActivitySidebar: View {
         selectedMode = .today
         Task { @MainActor in
             await model.startNewChat(in: path)
+            if let sessionID = model.sessionID {
+                control.selectProject(forPath: path)
+                control.focus(sessionID: sessionID)
+            }
             model.requestComposerFocus()
         }
     }

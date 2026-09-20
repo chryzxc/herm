@@ -105,6 +105,92 @@ struct ControlCenterProjectTests {
         #expect(refreshed.last?.name == "A renamed")
     }
 
+    @Test func createdProjectSelectionMatchesTheAuthoritativeProjectPath() {
+        let projects = [
+            ProjectSummary(id: "other", name: "/work/other", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false),
+            ProjectSummary(id: "created", name: "/work/app", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        ]
+
+        #expect(ControlCenterModel.projectMatchingPath("/work/app/", projects: projects)?.id == "created")
+        #expect(ControlCenterModel.projectMatchingPath("/work/missing", projects: projects) == nil)
+    }
+
+    @Test func completedProjectRefreshPublishesAuthoritativeRowsForTheSelectedProject() {
+        let createdSession = SessionSummary(id: "created-session", title: "New chat", state: "active", preview: nil)
+
+        #expect(ControlCenterModel.projectSessionsAfterNavigationRefresh(
+            projectID: "created-project",
+            selectedProjectID: "created-project",
+            refreshedSessions: [createdSession]
+        ) == [createdSession])
+        #expect(ControlCenterModel.projectSessionsAfterNavigationRefresh(
+            projectID: "other-project",
+            selectedProjectID: "created-project",
+            refreshedSessions: []
+        ) == nil)
+    }
+
+    @Test func selectedProjectRefreshPublishesCreatedSessionWhenAnotherProjectFinishesLast() async throws {
+        let client = ProjectNavigationOrderingClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        model.setProjectProfile("profile-a")
+
+        for _ in 0..<1_000 where model.projects.count < 2 {
+            await Task.yield()
+        }
+        #expect(model.projects.count == 2)
+
+        try await Task.sleep(for: .milliseconds(100))
+        model.selectProject(forPath: "/work/created")
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(model.selectedProjectID == "created")
+        #expect(model.projectSessions.map(\.id) == ["created-session"])
+    }
+
+    @Test func projectNewChatCreationClearsOldSelectionAndFocusesAuthoritativeSession() async throws {
+        let client = ProjectNewChatHandoffClient()
+        let control = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let conversation = DockModel(rpcClient: client)
+        control.setProjectProfile("profile-a")
+
+        for _ in 0..<1_000 where control.projects.count < 2 {
+            await Task.yield()
+        }
+        #expect(control.projects.count == 2)
+
+        control.openProject(control.projects.first { $0.id == "other" }!)
+        #expect(control.selectedProjectID == "other")
+
+        // This is the same handoff used by WorkspaceActivitySidebar's
+        // project-new-chat action: clear the old project, create the
+        // authoritative session, select its owning project, then focus it.
+        control.closeProject()
+        #expect(control.selectedProjectID == nil)
+        #expect(control.projectSessions.isEmpty)
+        await conversation.startNewChat(in: "/work/created")
+        guard let createdSessionID = conversation.sessionID else {
+            Issue.record("project new chat did not return an authoritative session ID")
+            return
+        }
+        control.selectProject(forPath: "/work/created")
+        control.focus(sessionID: createdSessionID)
+
+        for _ in 0..<1_000 {
+            if control.projectSessions.contains(where: { $0.id == createdSessionID }) {
+                break
+            }
+            await Task.yield()
+        }
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(control.selectedProjectID == "created")
+        #expect(control.currentFocus?.sessionID == createdSessionID)
+        #expect(control.projectSessions.map(\.id) == [createdSessionID])
+        #expect(client.createdSessionPath == "/work/created")
+    }
+
     @Test func clearingSelectedProfileDisablesProjectHydration() {
         let model = ControlCenterModel()
 
@@ -971,6 +1057,63 @@ private final class ProjectSessionIsolationClient: HermesRPCClientProtocol {
             throw NSError(domain: "ProjectSessionIsolationClient", code: 1, userInfo: [NSLocalizedDescriptionKey: "project session refresh failed"])
         }
         return ["sessions": [["id": "\(projectID)-session", "title": projectID, "state": "active"]]]
+    }
+}
+
+@MainActor
+private final class ProjectNavigationOrderingClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        switch method {
+        case "projects.tree":
+            return ["projects": [
+                ["id": "created", "name": "/work/created", "session_count": 1],
+                ["id": "other", "name": "/work/other", "session_count": 1]
+            ]]
+        case "projects.project_sessions":
+            guard let projectID = params["project_id"] as? String else { return [:] }
+            if projectID == "other" {
+                try await Task.sleep(for: .milliseconds(40))
+            }
+            return ["sessions": [["id": "\(projectID)-session", "title": projectID, "state": "active"]]]
+        default:
+            return [:]
+        }
+    }
+}
+
+@MainActor
+private final class ProjectNewChatHandoffClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var createdSessionPath: String?
+
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        switch method {
+        case "projects.tree":
+            return ["projects": [
+                ["id": "created", "name": "/work/created", "session_count": 1],
+                ["id": "other", "name": "/work/other", "session_count": 1]
+            ]]
+        case "projects.project_sessions":
+            guard let projectID = params["project_id"] as? String else { return [:] }
+            if projectID == "other" {
+                try await Task.sleep(for: .milliseconds(40))
+            }
+            let sessionID = projectID == "created" ? "created-session" : "other-session"
+            return ["sessions": [["id": sessionID, "title": projectID, "state": "active"]]]
+        case HermesFeatureIDs.ID.sessionCreate.rawValue:
+            createdSessionPath = params["cwd"] as? String
+            return ["session_id": "created-session"]
+        default:
+            return [:]
+        }
     }
 }
 
