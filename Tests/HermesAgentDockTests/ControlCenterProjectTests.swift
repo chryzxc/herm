@@ -113,6 +113,21 @@ struct ControlCenterProjectTests {
         #expect(ControlCenterModel.projectMatchingPath("/work/missing", projects: projects) == nil)
     }
 
+    @Test func completedProjectRefreshPublishesAuthoritativeRowsForTheSelectedProject() {
+        let createdSession = SessionSummary(id: "created-session", title: "New chat", state: "active", preview: nil)
+
+        #expect(ControlCenterModel.projectSessionsAfterNavigationRefresh(
+            projectID: "created-project",
+            selectedProjectID: "created-project",
+            refreshedSessions: [createdSession]
+        ) == [createdSession])
+        #expect(ControlCenterModel.projectSessionsAfterNavigationRefresh(
+            projectID: "other-project",
+            selectedProjectID: "created-project",
+            refreshedSessions: []
+        ) == nil)
+    }
+
     @Test func clearingSelectedProfileDisablesProjectHydration() {
         let model = ControlCenterModel()
 

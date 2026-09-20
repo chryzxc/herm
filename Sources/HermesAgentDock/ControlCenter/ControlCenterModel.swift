@@ -1287,6 +1287,15 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    static func projectSessionsAfterNavigationRefresh(
+        projectID: String,
+        selectedProjectID: String?,
+        refreshedSessions: [SessionSummary]
+    ) -> [SessionSummary]? {
+        guard selectedProjectID == projectID else { return nil }
+        return refreshedSessions
+    }
+
     /// Explicit user action for the navigation rail. Automatic message and
     /// activity events must not replace the visible project projection.
     func refreshProjectNavigation() {
@@ -1365,6 +1374,13 @@ final class ControlCenterModel: ObservableObject {
         projectSessionsByProjectID = projectSessionsByProjectID.merging(pendingProjectNavigationSessions) { _, new in new }
         if let selectedProjectID, let refreshedSessions = projectSessionsByProjectID[selectedProjectID] {
             projectSessions = refreshedSessions
+        } else if let refreshedSessions = pendingProjectNavigationSessions[projectID],
+                  let selectedSessions = Self.projectSessionsAfterNavigationRefresh(
+                      projectID: projectID,
+                      selectedProjectID: selectedProjectID,
+                      refreshedSessions: refreshedSessions
+                  ) {
+            projectSessions = selectedSessions
         }
         pendingProjectNavigationSessions = [:]
         completedProjectNavigationIDs = []
