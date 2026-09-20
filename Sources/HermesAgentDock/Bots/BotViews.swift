@@ -849,9 +849,7 @@ struct MissionControlBotRow: View, Equatable {
 
     private var metadata: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            Text(bot.provider.map { provider in
-                bot.model.map { "\(provider) / \($0)" } ?? provider
-            } ?? bot.model ?? "Model unavailable")
+            Text(KanbanModelMetadataPresentation.make(taskModel: nil, taskProvider: nil, bot: bot).label)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)

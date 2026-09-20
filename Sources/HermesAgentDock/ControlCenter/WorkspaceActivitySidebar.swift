@@ -3083,8 +3083,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private func kanbanBot(for assignee: String?) -> BotSummary? {
-        guard let assignee else { return nil }
-        return botMode.visibleBots.first { $0.id.caseInsensitiveCompare(assignee) == .orderedSame }
+        KanbanModelMetadataPresentation.bot(for: assignee, in: botMode.bots)
     }
 
     private func kanbanModelMetadataRow(_ metadata: KanbanModelMetadataPresentation) -> some View {

@@ -4,6 +4,11 @@ struct KanbanModelMetadataPresentation: Equatable {
     let label: String
     let isOverride: Bool
 
+    static func bot(for assignee: String?, in bots: [BotSummary]) -> BotSummary? {
+        guard let assignee else { return nil }
+        return bots.first { $0.id.caseInsensitiveCompare(assignee) == .orderedSame }
+    }
+
     static func make(taskModel: String?, taskProvider: String?, bot: BotSummary?) -> Self {
         let model = clean(taskModel)
         let provider = clean(taskProvider)
