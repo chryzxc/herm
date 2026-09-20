@@ -3,6 +3,8 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 struct WorkspaceActivitySidebar: View {
+    static let kanbanScrollAxes: Axis.Set = [.vertical, .horizontal]
+
     @ObservedObject var model: DockModel
     @ObservedObject var botMode: BotModeModel
     @ObservedObject var store: WorkspaceStore
@@ -2426,7 +2428,7 @@ struct WorkspaceActivitySidebar: View {
 
     private var kanbanContent: some View {
         HSplitView {
-            ScrollView(.vertical) {
+            ScrollView(Self.kanbanScrollAxes, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     pageHeader
                         .padding(.horizontal, 16)
@@ -2522,19 +2524,14 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
-            // Keep the complete board in one scan line. Each lane owns its
-            // vertical content while the board itself scrolls horizontally,
-            // so cards remain visible from the top of the board to the bottom
-            // without creating a second row of lanes.
-            ScrollView(.horizontal, showsIndicators: true) {
-                LazyHStack(alignment: .top, spacing: 12) {
-                    ForEach(KanbanLane.allCases) { lane in
-                        kanbanLane(lane)
-                    }
+            // Keep the complete board in one scan line while allowing the
+            // containing pane to reach every card and trailing action.
+            LazyHStack(alignment: .top, spacing: 12) {
+                ForEach(KanbanLane.allCases) { lane in
+                    kanbanLane(lane)
                 }
-                .padding(.vertical, 1)
             }
-            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .padding(.vertical, 1)
             if let state = control.refreshState(for: "kanban.board"), let error = state.error {
                 HStack(alignment: .top, spacing: 8) {
                     LucideImage(systemName: "exclamationmark.triangle")

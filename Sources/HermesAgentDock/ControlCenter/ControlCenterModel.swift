@@ -186,6 +186,14 @@ final class ControlCenterModel: ObservableObject {
         refreshVerification()
     }
 
+    #if DEBUG
+    /// Test-only injection point for exercising rendered Kanban states without
+    /// starting the gateway refresh loop.
+    internal func setKanbanTasksForTesting(_ tasks: [KanbanTaskSummary]) {
+        kanbanTasks = tasks
+    }
+    #endif
+
     var isKanbanRefreshPending: Bool {
         pendingActionIDs.contains(visibleKanbanRefreshActionID)
             || pendingActionIDs.contains(aggregateKanbanRefreshActionID)
