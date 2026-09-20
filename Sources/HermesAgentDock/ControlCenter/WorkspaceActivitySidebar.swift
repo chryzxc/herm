@@ -2126,8 +2126,15 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 selectedProjectSummary(project)
+                let projectSessionsProjectionKey = control.projectSessionsProjectionKey(for: project.id)
                 if control.projectSessions.isEmpty {
-                    emptyState(icon: "bubble.left.and.bubble.right", title: "No sessions in this project", detail: "No grouped sessions were found for this project.")
+                    if let refresh = control.refreshState(for: projectSessionsProjectionKey), refresh.isStale {
+                        emptyState(icon: "exclamationmark.triangle", title: "Sessions stale", detail: "The last project session snapshot could not be refreshed. Retry to update it.")
+                    } else if let refresh = control.refreshState(for: projectSessionsProjectionKey), refresh.error != nil {
+                        emptyState(icon: "exclamationmark.triangle", title: "Sessions unavailable", detail: "Hermes could not load this project's sessions. Retry to try again.")
+                    } else {
+                        emptyState(icon: "bubble.left.and.bubble.right", title: "No sessions in this project", detail: "No grouped sessions were found for this project.")
+                    }
                 } else {
                     HStack {
                         sectionLabel("SESSIONS")
@@ -2137,21 +2144,22 @@ struct WorkspaceActivitySidebar: View {
                             .foregroundStyle(Color.dockAccent)
                     }
                     ForEach(control.projectSessions) { session in
+                        let lifecycle = SessionLifecyclePresentation.status(for: session, refresh: control.refreshState(for: projectSessionsProjectionKey))
                         Button {
                             selectedProjectSessionID = session.id
-                        openProjectSession(session)
+                            openProjectSession(session)
                         } label: {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack {
-                                    Circle().fill(Color.dockAccent).frame(width: 6, height: 6)
+                                    Circle().fill(sessionLifecycleColor(lifecycle)).frame(width: 6, height: 6)
                                     Text(session.title)
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(Color.dockPrimaryText)
                                         .lineLimit(2)
                                     Spacer()
-                                    Text(session.state.uppercased())
+                                    Text(lifecycle.label.uppercased())
                                         .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.dockSecondaryText)
+                                        .foregroundStyle(sessionLifecycleColor(lifecycle))
                                     LucideImage(systemName: "chevron.right")
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockAccent)
@@ -2168,6 +2176,7 @@ struct WorkspaceActivitySidebar: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityLabel(SessionLifecyclePresentation.accessibilityLabel(for: session, refresh: control.refreshState(for: projectSessionsProjectionKey)))
                     }
                 }
                 if selectedProjectSessionID != nil {
@@ -3802,13 +3811,14 @@ struct WorkspaceActivitySidebar: View {
             if !activeSessions.isEmpty {
                 sectionLabel("ACTIVE SESSIONS  ·  \(activeSessions.count)")
                 ForEach(activeSessions.prefix(4)) { session in
+                    let lifecycle = SessionLifecyclePresentation.status(for: session, refresh: control.refreshState(for: "sessions"))
                     Button {
                         if session.id != model.sessionID {
                             openProjectSession(session)
                         }
                     } label: {
                         HStack(spacing: 8) {
-                            Circle().fill(session.id == model.sessionID ? Color.dockAccent : sessionStateColor(session.state)).frame(width: 5, height: 5)
+                            Circle().fill(sessionLifecycleColor(lifecycle)).frame(width: 5, height: 5)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                                 HStack(spacing: 6) {
@@ -3817,18 +3827,17 @@ struct WorkspaceActivitySidebar: View {
                                             .font(.system(size: 10, weight: .semibold))
                                             .foregroundStyle(Color.dockAccent)
                                     }
-                                    Text(session.displayPreview ?? session.state.uppercased()).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                                    Text(session.displayPreview ?? lifecycle.label).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
                                 }
                             }
                             Spacer(minLength: 0)
-                            if session.id == model.sessionID {
-                                Text("CURRENT").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
-                            } else {
-                                Text(session.state.uppercased()).font(.system(size: 10, weight: .semibold)).foregroundStyle(sessionStateColor(session.state))
-                            }
+                            Text(SessionLifecyclePresentation.rowLabel(for: session, isCurrent: session.id == model.sessionID, refresh: control.refreshState(for: "sessions")).uppercased())
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(sessionLifecycleColor(lifecycle))
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .dockListRow()
+                        .accessibilityLabel(SessionLifecyclePresentation.accessibilityLabel(for: session, isCurrent: session.id == model.sessionID, refresh: control.refreshState(for: "sessions")))
                     }
                     .buttonStyle(.borderless)
                 }
@@ -4330,6 +4339,16 @@ struct WorkspaceActivitySidebar: View {
         case "blocked", "error", "failed": Color.dockWarning
         case "completed", "idle", "done": Color.dockSuccess
         default: Color.dockSecondaryText
+        }
+    }
+
+    private func sessionLifecycleColor(_ status: SessionLifecycleStatus) -> Color {
+        switch status {
+        case .active: Color.dockAccent
+        case .completed: Color.dockSuccess
+        case .failed: Color.dockDestructive
+        case .stale: Color.dockWarning
+        case .unavailable: Color.dockSecondaryText
         }
     }
 
