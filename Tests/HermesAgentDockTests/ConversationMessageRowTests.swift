@@ -59,6 +59,7 @@ struct ConversationMessageRowTests {
             "Read message aloud",
             "Refresh this response"
         ])
+        #expect(LucideIconName.from(systemName: "speaker.wave.2") == .audioLines)
     }
 
     @Test func incompleteSessionMarksSessionActionsUnavailable() {

@@ -238,6 +238,7 @@ enum LucideIconName {
         case "stopwatch": return .clock
         case "waveform.path.ecg": return .activity
         case "audio-lines": return .audioLines
+        case "speaker.wave.2", "speaker.wave.2.fill": return .audioLines
         case "bot": return .bot
         case "doc.text.magnifyingglass": return .fileSearch
         case "person.2", "person.2.fill", "person.2.slash", "person.badge.key": return .users
@@ -1770,7 +1771,21 @@ struct PullRequestWorkspace: View {
     var onOpenIssueChat: (GitHubIssueRecord) -> Void = { _ in }
     @State private var loadingPulse = false
     @StateObject private var issueCenter = IssueCenterModel()
-    @State private var showsIssues = false
+    @State private var showsIssues: Bool
+
+    init(
+        center: PullRequestCenterModel,
+        projects: [ProjectSummary],
+        onOpenChat: @escaping (PullRequestRecord) -> Void,
+        onOpenIssueChat: @escaping (GitHubIssueRecord) -> Void = { _ in },
+        startsWithIssues: Bool = false
+    ) {
+        self.center = center
+        self.projects = projects
+        self.onOpenChat = onOpenChat
+        self.onOpenIssueChat = onOpenIssueChat
+        _showsIssues = State(initialValue: startsWithIssues)
+    }
 
     var body: some View {
         VStack(spacing: 0) {

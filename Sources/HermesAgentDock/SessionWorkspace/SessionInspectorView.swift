@@ -10,14 +10,13 @@ struct SessionInspector: View {
     let sessionRepositoryPath: String?
     let sessionProjectIsBound: Bool
     var showsHeader = true
-    @State private var selectedSection = Section.overview
+    @State private var selectedSection = Section.activity
     @State private var isSwitchingBranch = false
     @StateObject private var preferences = CommandCenterPreferencesStore()
 
     private let sessionTabFont = Font.system(size: 12, weight: .semibold)
 
     private enum Section: String, CaseIterable, Identifiable {
-        case overview = "Overview"
         case activity = "Activity"
         case files = "Files"
         case changes = "Source Control"
@@ -30,12 +29,10 @@ struct SessionInspector: View {
             case .terminal: "Terminal"
             case .activity: "Activity"
             case .changes: "Source Control"
-            case .overview: "Overview"
             }
         }
         var icon: String {
             switch self {
-            case .overview: "bubble.left.and.bubble.right"
             case .activity: "waveform.path.ecg"
             case .files: "folder"
             case .changes: "arrow.triangle.branch"
@@ -86,7 +83,7 @@ struct SessionInspector: View {
         // There is no overflow menu competing with the same navigation model.
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                ForEach([Section.overview, .files, .terminal, .activity, .changes]) { section in
+                ForEach([Section.files, .terminal, .activity, .changes]) { section in
                     sectionButton(section)
                 }
             }
@@ -164,149 +161,9 @@ struct SessionInspector: View {
         return name.isEmpty ? nil : name
     }
 
-    private var latestSessionActivities: [AgentActivityPresentation.PipelineActivity] {
-        // Reuse DockModel's cached projection: calling pipeline() directly here
-        // rebuilt the full history on every inspector render and stalled the
-        // UI while streaming events kept invalidating the body.
-        Array(model.agentPresentationSnapshot.pipeline.prefix(3))
-    }
-
-    private var latestSessionEvents: [AgentEvent] {
-        Array(model.recentEvents.sorted { $0.timestamp > $1.timestamp }.prefix(3))
-    }
-
     @ViewBuilder
     private var inspectorContent: some View {
         switch selectedSection {
-        case .overview:
-            // Build the unified session mission control snapshot. Repository
-            // telemetry is only meaningful when this session owns a repository;
-            // the workflow model can otherwise still contain a prior snapshot
-            // while the session-scoped refresh is catching up.
-            let sessionRepository = model.sessionID == nil || !sessionProjectIsBound ? nil : self.sessionRepository
-            let mission = MissionControlSnapshotBuilder.make(
-                sessionTitle: model.currentSessionTitle,
-                repository: sessionRepository,
-                model: model.runtimeConfiguration?.model,
-                context: control.sessionContext,
-                attention: control.attention(for: model.sessionID),
-                sessions: control.activeSessions,
-                activeSessionID: model.sessionID,
-                agents: control.activeAgents.filter { $0.sessionID == model.sessionID },
-                processes: control.processes,
-                backgroundTasks: model.currentSessionBackgroundTasks,
-                activities: model.agentActivities,
-                cronRuns: control.cronRuns,
-                verification: control.verification
-            )
-            let openAttention = control.openAttention(for: model.sessionID)
-            let sessionActiveAgents = control.activeAgents.filter { $0.sessionID == model.sessionID }
-            let activeSubagentCount = model.activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.count
-
-            VStack(alignment: .leading, spacing: 14) {
-                // Section Header
-                inspectorLabel("SESSION OVERVIEW")
-
-                // Compact repository telemetry bar. The active model is shown in
-                // the composer, which is the authoritative session model control.
-                if sessionRepository != nil {
-                    sessionTelemetryStrip(focus: mission.focus)
-                }
-
-                // Interactive Metrics Bar
-                HStack(spacing: 8) {
-                    inspectorMetric("AGENTS", value: sessionActiveAgents.count, color: .dockAccent)
-                    inspectorMetric("RUNNING", value: activeSubagentCount, color: activeSubagentCount > 0 ? .dockAccent : .dockSecondaryText)
-                    inspectorMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? .dockSuccess : .dockWarning)
-                }
-
-                // Pre-flight Readiness & Health Card
-                sessionReadinessCard(readiness: mission.readiness)
-                AgentOperationsRadarView(agents: model.sessionAgents)
-
-                // Session Action Items requiring user attention
-                if !openAttention.isEmpty {
-                    inspectorLabel("NEEDS ME")
-                    ForEach(openAttention.prefix(2)) { attention in
-                        attentionRow(attention)
-                    }
-                }
-
-                // Latest Session Activity section displaying recent agent activities or events
-                inspectorLabel("LATEST ACTIVITY")
-                if !latestSessionActivities.isEmpty {
-                    VStack(spacing: 8) {
-                        ForEach(latestSessionActivities, id: \.id) { (activity: AgentActivityPresentation.PipelineActivity) in
-                            HStack(alignment: .top, spacing: 10) {
-                                Circle()
-                                    .fill(Color.dockAccent)
-                                    .frame(width: 6, height: 6)
-                                    .padding(.top, 4)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack(spacing: 6) {
-                                        Text(activity.task)
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                        Spacer()
-                                        Text(HumanDateFormatting.timeOnly(activity.timestamp))
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(Color.dockMetadataText)
-                                    }
-                                    Text(activity.detail ?? "")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.dockSecondaryText)
-                                        .lineLimit(2)
-                                }
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface4))
-                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
-                        }
-                    }
-                } else if !latestSessionEvents.isEmpty {
-                    VStack(spacing: 8) {
-                        ForEach(latestSessionEvents, id: \.id) { (event: AgentEvent) in
-                            HStack(alignment: .top, spacing: 10) {
-                                Circle()
-                                    .fill(Color.dockAccent)
-                                    .frame(width: 6, height: 6)
-                                    .padding(.top, 4)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack(spacing: 6) {
-                                        Text(event.type.uppercased())
-                                            .font(.system(size: 11, weight: .semibold))
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                        Spacer()
-                                        Text(HumanDateFormatting.timeOnly(event.timestamp))
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(Color.dockMetadataText)
-                                    }
-                                    Text(event.detail)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.dockSecondaryText)
-                                        .lineLimit(2)
-                                }
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface4))
-                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
-                        }
-                    }
-                } else {
-                    inspectorCard(title: "NO RECENT ACTIVITY", value: "Activity events will be recorded here as Hermes executes tool calls or subagent tasks.")
-                }
-
-                // Verification Summary Card
-                if let verification = control.verification {
-                    inspectorLabel("VERIFICATION")
-                    let color: Color = verification.state == .passed ? .dockSuccess : verification.state == .failed ? .dockDestructive : .dockWarning
-                    inspectorCard(
-                        title: "STATUS  ·  \(verification.state.rawValue.uppercased())",
-                        value: verification.evidence?.canonicalCommand ?? verification.evidence?.command ?? "Verification reported for active session.",
-                        accent: color
-                    )
-                }
-            }
         case .activity:
             VStack(alignment: .leading, spacing: 12) {
                 SessionKanbanActivityView(
@@ -344,49 +201,11 @@ struct SessionInspector: View {
         }
     }
 
-    private var sessionRepository: RepositorySnapshot? {
-        guard sessionRepositoryPath != nil else { return nil }
-        return workflow.repository.isGitRepository ? workflow.repository : nil
-    }
-
     private func inspectorLabel(_ text: String) -> some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold))
             .tracking(0.8)
             .foregroundStyle(Color.dockSecondaryText)
-    }
-
-    /// Renders a metric card matching the DESIGN.md glass pane specifications.
-    private func inspectorMetric(_ label: String, value: Int, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(value)")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(color)
-            Text(label)
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.55)
-                .foregroundStyle(Color.dockMetadataText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .dockGlassPane()
-    }
-
-    /// Renders a glass card pane matching DESIGN.md rules.
-    private func inspectorCard(title: String, value: String, accent: Color = .dockPrimaryText) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.75)
-                .foregroundStyle(Color.dockMetadataText)
-            Text(value)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(accent)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .dockGlassPane()
     }
 
     /// Renders repository telemetry without duplicating the model selector from the composer.

@@ -141,67 +141,6 @@ struct WorkspaceActivitySidebar: View {
         _selectedMode = State(initialValue: initialMode)
     }
 
-    private enum KanbanLane: String, CaseIterable, Identifiable {
-        case triage = "Triage"
-        case todo = "Todo"
-        case ready = "Ready"
-        case running = "Running"
-        case review = "Review"
-        case scheduled = "Scheduled"
-        case blocked = "Blocked"
-        case done = "Done"
-
-        var id: String { rawValue }
-        var emptyTitle: String {
-            switch self {
-            case .triage: "Nothing awaiting triage"
-            case .todo: "No queued work"
-            case .ready: "Nothing ready to start"
-            case .running: "No active work"
-            case .review: "Nothing awaiting review"
-            case .scheduled: "Nothing scheduled"
-            case .blocked: "No blocked work"
-            case .done: "No completed work"
-            }
-        }
-        var emptyDetail: String {
-            switch self {
-            case .triage: "New tasks will appear here for routing."
-            case .todo: "Tasks waiting for an owner or next step appear here."
-            case .ready: "Assigned tasks ready for execution appear here."
-            case .running: "Tasks currently being worked will appear here."
-            case .review: "Tasks submitted for review appear here."
-            case .scheduled: "Tasks with a future dispatch time appear here."
-            case .blocked: "Tasks needing attention or a dependency appear here."
-            case .done: "Completed tasks remain visible here when reported."
-            }
-        }
-        var icon: String {
-            switch self {
-            case .triage: "scope"
-            case .todo: "circle.dashed"
-            case .ready: "circle"
-            case .running: "refresh-cw"
-            case .review: "eye"
-            case .scheduled: "clock"
-            case .blocked: "exclamationmark.octagon"
-            case .done: "checkmark.circle"
-            }
-        }
-        var color: Color {
-            switch self {
-            case .triage: Color.dockWarning
-            case .todo: Color.dockSecondaryText
-            case .ready: Color.dockAccent
-            case .running: Color.dockAccent
-            case .review: Color.dockSecondaryText
-            case .scheduled: Color.dockAccent
-            case .blocked: Color.dockWarning
-            case .done: Color.dockSuccess
-            }
-        }
-    }
-
     private enum ProjectMutation: String, Identifiable {
         case activate, archive, delete
         var id: Self { self }
@@ -473,7 +412,7 @@ struct WorkspaceActivitySidebar: View {
             // event. The task may not carry a durable session_id, so waiting
             // for a session-filtered list would leave the board falsely empty.
             if selectedMode == .officePreview { control.refreshGlobalKanban() }
-            else if selectedMode == .kanban { applyKanbanFilters() }
+            else if selectedMode == .kanban { applyKanbanFilters(trigger: .background) }
         }
         .task(id: selectedMode == .quota) {
             guard selectedMode == .quota else { return }
@@ -1470,7 +1409,7 @@ struct WorkspaceActivitySidebar: View {
                 }
                 try? await Task.sleep(for: hasLiveCards ? .seconds(5) : .seconds(15))
                 guard !Task.isCancelled, selectedMode == .kanban else { return }
-                applyKanbanFilters()
+                applyKanbanFilters(trigger: .background)
             }
         }
     }
@@ -2440,14 +2379,19 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var kanbanContent: some View {
-        HSplitView {
+        let presentation = KanbanBoardPresentation.makeSnapshot(
+            tasks: control.kanbanTasks,
+            bots: botMode.bots,
+            visibleBots: botMode.visibleBots
+        )
+        return HSplitView {
             ScrollView(Self.kanbanScrollAxes, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     pageHeader
                         .padding(.horizontal, 16)
 
                     VStack(alignment: .leading, spacing: 18) {
-                        kanbanOverviewMetrics
+                        kanbanOverviewMetrics(presentation)
 
             if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly {
                 HStack {
@@ -2541,7 +2485,7 @@ struct WorkspaceActivitySidebar: View {
             // containing pane to reach every card and trailing action.
             LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(KanbanLane.allCases) { lane in
-                    kanbanLane(lane)
+                    kanbanLane(lane, presentation: presentation)
                 }
             }
             .padding(.vertical, 1)
@@ -2568,21 +2512,21 @@ struct WorkspaceActivitySidebar: View {
             .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
 
             if let task = selectedKanbanTask {
-                kanbanDetailPanel(task)
+                kanbanDetailPanel(task, presentation: presentation)
+                    .animation(.dockEase(duration: 0.2), value: selectedKanbanTask?.id)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.dockEase(duration: 0.2), value: selectedKanbanTask?.id)
     }
 
-    private var kanbanOverviewMetrics: some View {
-        let readyCount = control.kanbanTasks.filter { kanbanLane(for: $0) == .ready }.count
-        let runningCount = control.kanbanTasks.filter { kanbanLane(for: $0) == .running }.count
-        let blockedCount = control.kanbanTasks.filter { kanbanLane(for: $0) == .blocked }.count
+    private func kanbanOverviewMetrics(_ presentation: KanbanBoardPresentation.Snapshot) -> some View {
+        let readyCount = presentation.tasks(in: .ready).count
+        let runningCount = presentation.tasks(in: .running).count
+        let blockedCount = presentation.tasks(in: .blocked).count
 
         return HStack(spacing: 0) {
-            kanbanMetric(value: "\(control.kanbanTasks.count)", label: "TOTAL", tint: .dockAccent)
+            kanbanMetric(value: "\(presentation.totalCount)", label: "TOTAL", tint: .dockAccent)
             kanbanMetric(value: "\(readyCount)", label: "READY", tint: readyCount > 0 ? .dockAccent : .dockSecondaryText)
             kanbanMetric(value: "\(runningCount)", label: "RUNNING", tint: runningCount > 0 ? .dockAccent : .dockSecondaryText)
             kanbanMetric(value: "\(blockedCount)", label: "BLOCKED", tint: blockedCount > 0 ? .dockWarning : .dockSuccess)
@@ -2847,14 +2791,16 @@ struct WorkspaceActivitySidebar: View {
         .frame(width: size, height: size)
     }
 
-    private func applyKanbanFilters() {
+    private func applyKanbanFilters(
+        trigger: ControlCenterModel.KanbanRefreshTrigger = .user
+    ) {
         control.refreshVisibleKanban(filter: KanbanListFilter(
             status: kanbanStatusFilter == "All" ? nil : kanbanStatusFilter.lowercased(),
             assignee: kanbanAssigneeFilter == "All" ? nil : kanbanAssigneeFilter,
             mine: kanbanMineOnly,
             sessionID: kanbanCurrentSessionOnly ? model.kanbanSessionID : nil,
             sort: kanbanSort
-        ))
+        ), trigger: trigger)
     }
 
     private var createKanbanTaskForm: some View {
@@ -2904,8 +2850,8 @@ struct WorkspaceActivitySidebar: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
-    private func kanbanLane(_ lane: KanbanLane) -> some View {
-        let laneTasks = control.kanbanTasks.filter { kanbanLane(for: $0) == lane }
+    private func kanbanLane(_ lane: KanbanLane, presentation: KanbanBoardPresentation.Snapshot) -> some View {
+        let laneTasks = presentation.tasks(in: lane)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 LucideImage(systemName: lane.icon)
@@ -2940,7 +2886,7 @@ struct WorkspaceActivitySidebar: View {
             } else {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     ForEach(laneTasks) { task in
-                        kanbanTaskCard(task, lane: lane)
+                        kanbanTaskCard(task, lane: lane, presentation: presentation)
                     }
                 }
             }
@@ -2953,7 +2899,11 @@ struct WorkspaceActivitySidebar: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
-    private func kanbanTaskCard(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
+    private func kanbanTaskCard(
+        _ task: KanbanTaskSummary,
+        lane: KanbanLane,
+        presentation: KanbanBoardPresentation.Snapshot
+    ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Circle()
@@ -2963,7 +2913,7 @@ struct WorkspaceActivitySidebar: View {
                     kanbanMetadataPill("P\(priority)", tint: Color.dockWarning)
                 }
                 if let assignee = task.assignee, !assignee.isEmpty {
-                    kanbanAssigneePill(assignee)
+                    kanbanAssigneePill(assignee, presentation: presentation)
                 }
                 Spacer(minLength: 4)
                 Text(task.id)
@@ -2979,10 +2929,10 @@ struct WorkspaceActivitySidebar: View {
                 KanbanModelMetadataPresentation.make(
                     taskModel: task.modelOverride,
                     taskProvider: task.providerOverride,
-                    bot: kanbanBot(for: task.assignee)
+                    bot: presentation.bot(for: task.assignee)
                 )
             )
-            if let detail = kanbanCardDetail(task.detail) {
+            if let detail = presentation.detail(for: task.id) {
                 Text(detail)
                     .font(.system(size: 11.5))
                     .foregroundStyle(Color.dockSecondaryText)
@@ -3032,13 +2982,13 @@ struct WorkspaceActivitySidebar: View {
                             title: "Details",
                             icon: "doc.text",
                             pendingTitle: "Loading…",
-                            isPending: control.isLoadingKanbanDetail,
+                            isPending: control.loadingKanbanDetailTaskID == task.id,
                             tint: Color.dockSecondaryText,
                             filled: false
                         )
                     }
                     .buttonStyle(.plain)
-                    .disabled(control.isLoadingKanbanDetail)
+                    .disabled(control.loadingKanbanDetailTaskID == task.id)
                 }
                 if lane == .done, control.capabilityAvailable("kanban.archive") {
                     kanbanActionButton("ARCHIVE", task: task, action: .archive)
@@ -3071,11 +3021,12 @@ struct WorkspaceActivitySidebar: View {
             .clipShape(Capsule())
     }
 
-    private func kanbanAssigneePill(_ assignee: String) -> some View {
+    private func kanbanAssigneePill(
+        _ assignee: String,
+        presentation: KanbanBoardPresentation.Snapshot
+    ) -> some View {
         HStack(spacing: 5) {
-            if let bot = botMode.visibleBots.first(where: {
-                $0.id.caseInsensitiveCompare(assignee) == .orderedSame
-            }) {
+            if let bot = presentation.visibleBot(for: assignee) {
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 18)
             } else {
                 kanbanAssigneeAvatar(assignee, size: 18)
@@ -3090,10 +3041,6 @@ struct WorkspaceActivitySidebar: View {
         .padding(.vertical, 3)
         .background(Color.dockSecondaryText.opacity(0.10))
         .clipShape(Capsule())
-    }
-
-    private func kanbanBot(for assignee: String?) -> BotSummary? {
-        KanbanModelMetadataPresentation.bot(for: assignee, in: botMode.bots)
     }
 
     private func kanbanModelMetadataRow(_ metadata: KanbanModelMetadataPresentation) -> some View {
@@ -3152,23 +3099,11 @@ struct WorkspaceActivitySidebar: View {
             || (lane == .blocked && ["failed", "error"].contains(normalizedEvent))
     }
 
-    private func kanbanCardDetail(_ detail: String?) -> String? {
-        guard let detail else { return nil }
-        let lines = detail
-            .components(separatedBy: .newlines)
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased().hasPrefix("TASK_ID:") }
-            .map { line in
-                line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "OBJECTIVE:", with: "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            .filter { !$0.isEmpty }
-        let normalized = lines.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? nil : normalized
-    }
-
-    private func kanbanDetailPanel(_ task: KanbanTaskSummary) -> some View {
-        let lane = kanbanLane(for: task)
+    private func kanbanDetailPanel(
+        _ task: KanbanTaskSummary,
+        presentation: KanbanBoardPresentation.Snapshot
+    ) -> some View {
+        let lane = KanbanBoardPresentation.lane(for: task.status)
         let laneColor: Color = switch lane {
         case .triage: .dockWarning
         case .todo: .dockSecondaryText
@@ -3213,7 +3148,7 @@ struct WorkspaceActivitySidebar: View {
 
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 16) {
-                    if control.isLoadingKanbanDetail {
+                    if control.loadingKanbanDetailTaskID == task.id {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
                             Text("LOADING HERMES TASK…")
@@ -3241,7 +3176,7 @@ struct WorkspaceActivitySidebar: View {
                                 KanbanModelMetadataPresentation.make(
                                     taskModel: detail.modelOverride ?? task.modelOverride,
                                     taskProvider: detail.providerOverride ?? task.providerOverride,
-                                    bot: kanbanBot(for: detail.assignee ?? task.assignee)
+                                    bot: presentation.bot(for: detail.assignee ?? task.assignee)
                                 )
                             )
 
@@ -3339,21 +3274,6 @@ struct WorkspaceActivitySidebar: View {
                 .stroke(Color.dockBorder, lineWidth: 0.5)
         }
         .background(Color.dockCanvas)
-    }
-
-    private func kanbanLane(for task: KanbanTaskSummary) -> KanbanLane {
-        let status = task.status.lowercased().replacingOccurrences(of: "-", with: "_").replacingOccurrences(of: " ", with: "_")
-        if ["done", "completed", "complete", "archived"].contains(status) { return .done }
-        if ["blocked", "failed", "error"].contains(status) { return .blocked }
-        switch status {
-        case "triage": return .triage
-        case "todo": return .todo
-        case "ready": return .ready
-        case "running", "active", "in_progress", "inprogress", "working": return .running
-        case "review": return .review
-        case "scheduled": return .scheduled
-        default: return .todo
-        }
     }
 
     private var canCreateKanbanTask: Bool {

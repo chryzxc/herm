@@ -2,7 +2,12 @@ import Foundation
 
 @MainActor
 final class ControlCenterModel: ObservableObject {
-    private enum KanbanRefreshScope {
+    enum KanbanRefreshTrigger {
+        case user
+        case background
+    }
+
+    private enum KanbanRefreshScope: Hashable {
         case aggregate
         case visible
 
@@ -77,7 +82,7 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var emergencyStopActive: Bool?
     @Published private(set) var emergencyStopMessage: String?
     @Published private(set) var developmentContext: RepositorySnapshot?
-    @Published private(set) var isLoadingKanbanDetail = false
+    @Published private(set) var loadingKanbanDetailTaskID: String?
     @Published private(set) var isCreatingKanbanTask = false
     @Published private(set) var projectSessions: [SessionSummary] = []
     /// Authoritative session rows keyed by project. Unlike `projects.tree`,
@@ -115,6 +120,7 @@ final class ControlCenterModel: ObservableObject {
     private var searchGeneration = UUID()
     private var aggregateKanbanRefreshGeneration = UUID()
     private var visibleKanbanRefreshGeneration = UUID()
+    private var kanbanRefreshInFlight: Set<KanbanRefreshScope> = []
     private var sessionKanbanRefreshGeneration = UUID()
     private var sessionKanbanTask: Task<Void, Never>?
     private var sessionKanbanRequest: SessionKanbanProjectionRequest?
@@ -1515,10 +1521,14 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func refreshKanban(filter: KanbanListFilter? = nil) {
-        refreshKanban(filter: filter, scope: .visible)
+        refreshKanban(filter: filter, scope: .visible, trigger: .user)
     }
 
-    private func refreshKanban(filter: KanbanListFilter?, scope: KanbanRefreshScope) {
+    private func refreshKanban(
+        filter: KanbanListFilter?,
+        scope: KanbanRefreshScope,
+        trigger: KanbanRefreshTrigger
+    ) {
         // A capability probe is advisory and can still be in flight when the
         // Kanban tab first appears. The list request itself is authoritative;
         // do not make the initial load (or an explicit retry) silently fail
@@ -1529,10 +1539,20 @@ final class ControlCenterModel: ObservableObject {
             return
         }
         let actionID = scope.isAggregate ? aggregateKanbanRefreshActionID : visibleKanbanRefreshActionID
-        guard beginAction(actionID) else {
-            return
+        switch trigger {
+        case .user:
+            guard beginAction(actionID) else { return }
+        case .background:
+            // A poll must not replace the generation for an explicit refresh.
+            // User refreshes are allowed to supersede a poll, but not vice versa.
+            guard !pendingActionIDs.contains(actionID) else { return }
+            guard kanbanRefreshInFlight.insert(scope).inserted else { return }
         }
-        beginProjectionRefresh("kanban.board")
+        let hasProjectionState = projectionRefreshStates["kanban.board"] != nil
+        let shouldPublishRefreshState = trigger == .user || !hasProjectionState
+        if shouldPublishRefreshState {
+            beginProjectionRefresh("kanban.board")
+        }
         if scope.isAggregate { globalKanbanIsCurrent = false }
         let requestedBoardSlug = scope.isAggregate ? nil : selectedKanbanBoardSlug
         // Global aggregation deliberately omits --board; session activity has
@@ -1540,13 +1560,20 @@ final class ControlCenterModel: ObservableObject {
         // loading. Clearing here turns a transient refresh race into the
         // false "This board is clear" state seen in the UI; the published
         // replacement below remains generation-checked.
-        if let filter, !scope.isAggregate { kanbanFilter = filter }
+        if let filter, !scope.isAggregate, kanbanFilter != filter {
+            kanbanFilter = filter
+        }
         let activeFilter = scope.isAggregate ? (filter ?? KanbanListFilter()) : kanbanFilter
         let generation = UUID()
         if scope.isAggregate { aggregateKanbanRefreshGeneration = generation }
         else { visibleKanbanRefreshGeneration = generation }
         Task {
-            defer { finishAction(actionID) }
+            defer {
+                switch trigger {
+                case .user: finishAction(actionID)
+                case .background: kanbanRefreshInFlight.remove(scope)
+                }
+            }
             do {
                 // `hermes kanban list --json` is the canonical complete board
                 // projection. Query it once: splitting an unfiltered board
@@ -1588,19 +1615,29 @@ final class ControlCenterModel: ObservableObject {
                 // publishing an unchanged array: the Kanban surface observes
                 // this model, so an unnecessary publish forces SwiftUI to
                 // re-diff every visible lane while the user is scrolling.
+                var taskDataChanged = false
                 if scope.isAggregate {
-                    if globalKanbanTasks != refreshedTasks { globalKanbanTasks = refreshedTasks }
+                    if globalKanbanTasks != refreshedTasks {
+                        globalKanbanTasks = refreshedTasks
+                        taskDataChanged = true
+                    }
                     globalKanbanIsCurrent = true
                     // Before board inventory has selected a board, the
                     // aggregate is the only valid visible projection.
                     if selectedKanbanBoardSlug == nil, kanbanTasks != refreshedTasks {
                         kanbanTasks = refreshedTasks
+                        taskDataChanged = true
                     }
                 } else if kanbanTasks != refreshedTasks {
                     kanbanTasks = refreshedTasks
+                    taskDataChanged = true
                 }
-                recordProjectionSuccess("kanban.board")
-                refreshKanbanSupportingProjections()
+                if shouldPublishRefreshState || taskDataChanged {
+                    recordProjectionSuccess("kanban.board")
+                }
+                if trigger == .user {
+                    refreshKanbanSupportingProjections()
+                }
             } catch {
                 guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
                 let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
@@ -1664,15 +1701,19 @@ final class ControlCenterModel: ObservableObject {
     func refreshGlobalKanban(filter: KanbanListFilter? = nil) {
         refreshKanban(
             filter: Self.globalKanbanFilter(filter ?? KanbanListFilter()),
-            scope: .aggregate
+            scope: .aggregate,
+            trigger: .user
         )
     }
 
     /// Refreshes the user-visible Kanban list using the selected board and
     /// explicit UI filters. Unlike aggregate hydration, this preserves a
     /// deliberate session-only filter.
-    func refreshVisibleKanban(filter: KanbanListFilter? = nil) {
-        refreshKanban(filter: filter ?? kanbanFilter, scope: .visible)
+    func refreshVisibleKanban(
+        filter: KanbanListFilter? = nil,
+        trigger: KanbanRefreshTrigger = .user
+    ) {
+        refreshKanban(filter: filter ?? kanbanFilter, scope: .visible, trigger: trigger)
     }
 
     /// Refreshes the Kanban projection for the currently focused session without
@@ -1839,7 +1880,7 @@ final class ControlCenterModel: ObservableObject {
                 if inventoryRefreshPlan.refreshBoard {
                     // Keep eager aggregate hydration separate from the
                     // visible board-scoped list.
-                    refreshVisibleKanban()
+                    refreshVisibleKanban(trigger: .background)
                 }
                 if inventoryRefreshPlan.refreshSession {
                     refreshSessionKanban(for: dockModel?.kanbanSessionID)
@@ -1866,7 +1907,7 @@ final class ControlCenterModel: ObservableObject {
         kanbanAssignees = []
         kanbanDiagnostics = []
         kanbanAttachments = []
-        isLoadingKanbanDetail = false
+        loadingKanbanDetailTaskID = nil
         refreshVisibleKanban()
         refreshSessionKanban(for: dockModel?.kanbanSessionID)
         refreshKanbanDiagnostics()
@@ -2380,7 +2421,7 @@ final class ControlCenterModel: ObservableObject {
         guard let cli else { return }
         let generation = UUID()
         kanbanDetailGeneration = generation
-        isLoadingKanbanDetail = true
+        loadingKanbanDetailTaskID = task.id
         kanbanDetail = nil
         let requestedBoardSlug = task.boardSlug ?? selectedKanbanBoardSlug
         kanbanAttachmentsGeneration = UUID()
@@ -2389,7 +2430,7 @@ final class ControlCenterModel: ObservableObject {
         Task {
             defer {
                 if generation == kanbanDetailGeneration {
-                    isLoadingKanbanDetail = false
+                    loadingKanbanDetailTaskID = nil
                 }
             }
             do {

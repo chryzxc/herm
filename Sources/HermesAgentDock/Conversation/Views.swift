@@ -17,6 +17,7 @@ enum MissionControlNavigationSelection: Equatable {
     case artifacts
     case bots
     case pullRequests
+    case issues
 }
 
 @MainActor
@@ -30,6 +31,7 @@ final class MissionControlNavigationSelectionState: ObservableObject {
     func selectArtifacts() { selection = .artifacts }
     func selectBots() { selection = .bots }
     func selectPullRequests() { selection = .pullRequests }
+    func selectIssues() { selection = .issues }
 
     func isTaskSelected(_ id: UUID, sessionID: String? = nil) -> Bool {
         if case .task(id) = selection { return true }
@@ -150,6 +152,12 @@ final class MissionControlNavigationState: ObservableObject {
 
     func selectPullRequests() {
         selection.selectPullRequests()
+        selectedTaskID = nil
+        selectedSessionID = nil
+    }
+
+    func selectIssues() {
+        selection.selectIssues()
         selectedTaskID = nil
         selectedSessionID = nil
     }
@@ -278,7 +286,7 @@ struct DockPopover: View {
     @State private var isMissionInspectorVisible = true
 
     private enum FullscreenSurface {
-        case conversation, pullRequests
+        case conversation, pullRequests, issues
         case global
         case artifacts
         case bots
@@ -566,7 +574,7 @@ struct DockPopover: View {
 
     private var isGlobalSurfaceActive: Bool {
         switch fullscreenSurface {
-        case .global, .artifacts, .bots, .pullRequests: true
+        case .global, .artifacts, .bots, .pullRequests, .issues: true
         case .conversation: false
         }
     }
@@ -618,6 +626,8 @@ struct DockPopover: View {
     }
 
     private var desktopRequiredWidth: CGFloat { 1_040 }
+    private var conversationMessageMaxWidth: CGFloat { 760 }
+    private var navigatorMinimumConversationWidth: CGFloat { 820 }
 
     private var conversationColumn: some View {
         VStack(spacing: 0) {
@@ -833,6 +843,7 @@ struct DockPopover: View {
             isArtifactsActive: fullscreenSurface == .artifacts,
             isBotsActive: fullscreenSurface == .bots,
             isPullRequestsActive: fullscreenSurface == .pullRequests,
+            isIssuesActive: fullscreenSurface == .issues,
             onNewConversation: {
                 missionControlNavigation.beginNewConversation()
                 fullscreenSurface = .conversation
@@ -877,6 +888,10 @@ struct DockPopover: View {
             onOpenPullRequests: {
                 missionControlNavigation.selectPullRequests()
                 fullscreenSurface = .pullRequests
+            },
+            onOpenIssues: {
+                missionControlNavigation.selectIssues()
+                fullscreenSurface = .issues
             },
             showsFullscreenToggle: true,
             isFullscreen: isFullscreen,
@@ -928,14 +943,15 @@ struct DockPopover: View {
 
     private var fullscreenGlobalSurface: some View {
         Group {
-            if fullscreenSurface == .pullRequests {
+            if fullscreenSurface == .pullRequests || fullscreenSurface == .issues {
                 PullRequestWorkspace(
                     center: pullRequestCenter,
                     projects: controlCenter.projects,
                     onOpenChat: openPullRequestChat,
-                    onOpenIssueChat: openIssueChat
+                    onOpenIssueChat: openIssueChat,
+                    startsWithIssues: fullscreenSurface == .issues
                 )
-                .id("fullscreen-pull-requests")
+                .id(fullscreenSurface == .issues ? "fullscreen-issues" : "fullscreen-pull-requests")
             } else if fullscreenSurface == .artifacts {
                 ArtifactsInspectorView(model: model)
                     .id("fullscreen-artifacts")
@@ -1982,6 +1998,9 @@ struct DockPopover: View {
                                 }
                             }
                             .padding(.vertical, 8)
+                            .padding(.horizontal, 8)
+                            .frame(maxWidth: conversationMessageMaxWidth)
+                            .frame(maxWidth: .infinity)
 
                             Color.clear
                                 .frame(height: 1)
@@ -2121,14 +2140,18 @@ struct DockPopover: View {
                         .padding(.bottom, 12)
                     }
 
-                    MessageNavigatorView(
-                        items: ConversationMessageWindow.navigatorItems(messages: model.messages, sessionID: model.sessionID ?? ""),
-                        sessionID: model.sessionID ?? "",
-                        visibleTargets: visibleNavigatorTargets,
-                        onSelect: { item in jumpToMessage(item, proxy: proxy) }
-                    )
-                    .padding(.top, 10)
-                    .padding(.trailing, 10)
+                    if model.messages.count >= MessageNavigator.minimumMessagesToShowNavigator,
+                       viewport.size.width >= navigatorMinimumConversationWidth {
+                        MessageNavigatorView(
+                            items: ConversationMessageWindow.navigatorItems(messages: model.messages, sessionID: model.sessionID ?? ""),
+                            sessionID: model.sessionID ?? "",
+                            visibleTargets: visibleNavigatorTargets,
+                            onSelect: { item in jumpToMessage(item, proxy: proxy) }
+                        )
+                        .frame(width: 286, height: viewport.size.height)
+                        .padding(.trailing, 24)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    }
                 }
             }
         }
@@ -2703,6 +2726,7 @@ private struct MissionControlQueue: View {
     let isArtifactsActive: Bool
     let isBotsActive: Bool
     let isPullRequestsActive: Bool
+    let isIssuesActive: Bool
     let onNewConversation: () -> Void
     let onSelectSession: (HermesSession) -> Void
     let onSelectTask: (WorkspaceTask) -> Void
@@ -2710,6 +2734,7 @@ private struct MissionControlQueue: View {
     let onOpenArtifacts: () -> Void
     let onOpenBots: () -> Void
     let onOpenPullRequests: () -> Void
+    let onOpenIssues: () -> Void
     let showsFullscreenToggle: Bool
     let isFullscreen: Bool
     let onFullscreenToggle: () -> Void
@@ -3110,6 +3135,7 @@ private struct MissionControlQueue: View {
             globalRailDestination(.kanban)
             globalRailDestination(.quota)
             pullRequestsDestinationRow
+            issuesDestinationRow
             globalRailDestination(.automations)
             globalRailDestination(.officePreview)
             queueRailDestination("Artifacts", icon: "doc.text.magnifyingglass", isSelected: navigationState.selection.selection == .artifacts) {
@@ -3258,6 +3284,27 @@ private struct MissionControlQueue: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.borderless)
+    }
+
+    private var issuesDestinationRow: some View {
+        Button(action: onOpenIssues) {
+            HStack(spacing: 8) {
+                LucideIcon(name: .fileText, size: 15, color: Color.dockSecondaryText)
+                    .frame(width: 20, height: 22)
+                Text("Issues")
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isIssuesActive ? Color.dockPrimaryText : Color.dockSecondaryText)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 34)
+            .contentShape(Rectangle())
+            .background(isIssuesActive ? Color.dockAccent.opacity(0.14) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.borderless)
+        .help("GitHub issues across your repositories")
     }
 
     private func globalRailDestination(_ tab: ControlTab) -> some View {
