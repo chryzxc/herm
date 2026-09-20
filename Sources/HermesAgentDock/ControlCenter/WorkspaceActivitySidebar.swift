@@ -3643,20 +3643,32 @@ struct WorkspaceActivitySidebar: View {
                                             .font(.system(size: 12, weight: .semibold))
                                             .foregroundStyle(Color.dockPrimaryText)
                                             .lineLimit(1)
-                                        Text(activity.sessionTitle)
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(Color.dockMetadataText)
-                                            .lineLimit(1)
-                                    } else {
-                                        Text(activity.sessionTitle)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                            .lineLimit(1)
-                                    }
-                                    Text(activity.activityName)
-                                        .font(.system(size: 12))
+                                        MarkdownMessageView(
+                                            markdown: LatestActivityPresentation.boundedMarkdown(activity.sessionTitle)
+                                        )
+                                        .font(.system(size: 12, weight: .medium))
                                         .foregroundStyle(Color.dockMetadataText)
-                                        .lineLimit(2)
+                                        .frame(maxHeight: 20, alignment: .top)
+                                        .clipped()
+                                        .accessibilityLabel(activity.sessionTitle)
+                                    } else {
+                                        MarkdownMessageView(
+                                            markdown: LatestActivityPresentation.boundedMarkdown(activity.sessionTitle)
+                                        )
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.dockPrimaryText)
+                                        .frame(maxHeight: 20, alignment: .top)
+                                        .clipped()
+                                        .accessibilityLabel(activity.sessionTitle)
+                                    }
+                                    MarkdownMessageView(
+                                        markdown: LatestActivityPresentation.boundedMarkdown(activity.activityName)
+                                    )
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Color.dockMetadataText)
+                                    .frame(maxHeight: 42, alignment: .top)
+                                    .clipped()
+                                    .accessibilityLabel(activity.activityName)
                                 }
                                 Spacer(minLength: 0)
                                 LucideImage(systemName: "chevron.right")
