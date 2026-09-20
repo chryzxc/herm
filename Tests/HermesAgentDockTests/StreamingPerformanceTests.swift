@@ -1,10 +1,123 @@
 import Combine
+import AppKit
 import Foundation
 import Testing
 @testable import HermesAgentDock
 
 @MainActor
+private final class StreamingAttachmentRPCClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var requests: [(method: String, params: [String: Any])] = []
+
+    func connect() async throws {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requests.append((method, params))
+        if method == "session.steer" { return ["status": "queued"] }
+        return [:]
+    }
+
+    func close() {}
+}
+
+@MainActor
 struct StreamingPerformanceTests {
+    @Test func acceptedSteeringMessageRetainsImageAndClearsComposerAttachment() async throws {
+        let client = StreamingAttachmentRPCClient()
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("steering-image-(UUID().uuidString).json"),
+            initialSessionID: "steering-image-session",
+            rpcClient: client
+        )
+        let image = NSImage(size: NSSize(width: 2, height: 2))
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("steering-image-(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+        model.pendingImages = [ImageAttachment(image: image, fileURL: imageURL)]
+        model.draft = "Use this image"
+        model.status = .working
+        model.isSending = true
+
+        model.steerDraft()
+        let deadline = Date().addingTimeInterval(2)
+        while !(model.messages.count == 1 && model.pendingImages.isEmpty), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(model.messages.last?.role == .user)
+        #expect(model.messages.last?.text == "Use this image")
+        #expect(model.messages.last?.images.count == 1)
+        #expect(model.pendingImages.isEmpty)
+        #expect(client.requests.contains { $0.method == "session.steer" })
+    }
+
+    @Test func responseStartAfterAcceptedSteeringCannotReuseOutgoingImageRow() {
+        let model = DockModel(initialSessionID: "steering-boundary-session")
+        let image = NSImage(size: NSSize(width: 2, height: 2))
+        model.messages = [ChatMessage(role: .hermes, text: "Earlier response")]
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "steering-boundary-session",
+            "payload": [:]
+        ])
+        model.messages.append(ChatMessage(role: .user, text: "Use this image", image: image))
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "steering-boundary-session",
+            "payload": [:]
+        ])
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "steering-boundary-session",
+            "payload": [:]
+        ])
+
+        #expect(model.messages.last?.role == .hermes)
+        #expect(model.messages.dropLast().last?.images.count == 1)
+        #expect(model.streamingMessageIDForPresentation == model.messages.last?.id)
+    }
+
+    @Test func duplicateResponseStartAfterAcceptedSteeringKeepsActiveStreamBoundary() {
+        let model = DockModel(initialSessionID: "steering-duplicate-start-session")
+        model.messages = [ChatMessage(role: .hermes, text: "Earlier response")]
+
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "steering-duplicate-start-session",
+            "payload": [:]
+        ])
+        let activeResponseID = model.streamingMessageIDForPresentation
+        model.messages.append(ChatMessage(
+            role: .user,
+            text: "Use this image",
+            image: NSImage(size: NSSize(width: 2, height: 2)),
+            isSteering: true,
+            steeringStatus: "QUEUED"
+        ))
+
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "steering-duplicate-start-session",
+            "payload": [:]
+        ])
+
+        #expect(model.streamingMessageIDForPresentation == activeResponseID)
+        #expect(model.messages.filter { $0.role == .hermes }.count == 2)
+        #expect(model.messages.last?.isSteering == true)
+        #expect(model.messages.last?.steeringStatus == "QUEUED")
+        #expect(model.messages.firstIndex(where: { $0.id == activeResponseID }) ?? -1 < model.messages.count - 1)
+
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "steering-duplicate-start-session",
+            "payload": [:]
+        ])
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "steering-duplicate-start-session",
+            "payload": [:]
+        ])
+
+        #expect(model.messages.filter { $0.role == .hermes }.count == 3)
+        #expect(model.streamingMessageIDForPresentation != activeResponseID)
+        let newResponseIndex = model.messages.lastIndex(where: { $0.role == .hermes }) ?? -1
+        let appliedSteerIndex = model.messages.firstIndex(where: { $0.isSteering && $0.steeringStatus == "APPLIED" }) ?? -1
+        #expect(appliedSteerIndex >= 0)
+        #expect(appliedSteerIndex < newResponseIndex)
+    }
+
     @Test func sendingWithoutAnExplicitNewChatDoesNotCreateOrMutateASession() {
         let model = DockModel(sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("session-creation-(UUID().uuidString).json"))
         model.draft = "This must not implicitly create a session"
