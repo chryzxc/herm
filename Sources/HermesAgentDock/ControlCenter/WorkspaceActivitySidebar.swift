@@ -2965,6 +2965,13 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(3)
+            kanbanModelMetadataRow(
+                KanbanModelMetadataPresentation.make(
+                    taskModel: task.modelOverride,
+                    taskProvider: task.providerOverride,
+                    bot: kanbanBot(for: task.assignee)
+                )
+            )
             if let detail = kanbanCardDetail(task.detail) {
                 Text(detail)
                     .font(.system(size: 11.5))
@@ -3073,6 +3080,24 @@ struct WorkspaceActivitySidebar: View {
         .padding(.vertical, 3)
         .background(Color.dockSecondaryText.opacity(0.10))
         .clipShape(Capsule())
+    }
+
+    private func kanbanBot(for assignee: String?) -> BotSummary? {
+        guard let assignee else { return nil }
+        return botMode.visibleBots.first { $0.id.caseInsensitiveCompare(assignee) == .orderedSame }
+    }
+
+    private func kanbanModelMetadataRow(_ metadata: KanbanModelMetadataPresentation) -> some View {
+        HStack(spacing: 5) {
+            LucideImage(systemName: metadata.isOverride ? "arrow.triangle.2.circlepath" : "cpu")
+                .font(.system(size: 9, weight: .semibold))
+            Text(metadata.isOverride ? "OVERRIDE · \(metadata.label)" : metadata.label)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .foregroundStyle(metadata.isOverride ? Color.dockWarning : Color.dockMetadataText)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func kanbanActionChip(
@@ -3203,6 +3228,13 @@ struct WorkspaceActivitySidebar: View {
                                     kanbanMetadataPill(assignee, tint: Color.dockSecondaryText)
                                 }
                             }
+                            kanbanModelMetadataRow(
+                                KanbanModelMetadataPresentation.make(
+                                    taskModel: detail.modelOverride ?? task.modelOverride,
+                                    taskProvider: detail.providerOverride ?? task.providerOverride,
+                                    bot: kanbanBot(for: detail.assignee ?? task.assignee)
+                                )
+                            )
 
                             if let body = detail.body, !body.isEmpty {
                                 MarkdownMessageView(markdown: body)

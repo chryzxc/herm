@@ -253,6 +253,40 @@ struct ControlCenterProjectTests {
         #expect(tasks.first?.boardSlug == "client-board")
     }
 
+    @Test func presentsConfiguredBotModelAndProviderForKanbanAssignee() {
+        let bot = BotSummary(id: "forge", name: "Forge", title: nil, description: nil, model: "gpt-5", provider: "openai", isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+
+        let metadata = KanbanModelMetadataPresentation.make(taskModel: nil, taskProvider: nil, bot: bot)
+
+        #expect(metadata.label == "openai / gpt-5")
+        #expect(!metadata.isOverride)
+    }
+
+    @Test func marksKanbanCardModelOverrideDistinctFromBotConfiguration() {
+        let bot = BotSummary(id: "forge", name: "Forge", title: nil, description: nil, model: "gpt-5", provider: "openai", isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+
+        let metadata = KanbanModelMetadataPresentation.make(taskModel: "claude-sonnet", taskProvider: "anthropic", bot: bot)
+
+        #expect(metadata.label == "anthropic / claude-sonnet")
+        #expect(metadata.isOverride)
+    }
+
+    @Test func reportsMissingKanbanModelHonestly() {
+        let metadata = KanbanModelMetadataPresentation.make(taskModel: nil, taskProvider: nil, bot: nil)
+
+        #expect(metadata.label == "Model unavailable")
+        #expect(!metadata.isOverride)
+    }
+
+    @Test func parsesKanbanModelOverrideMetadata() {
+        let task = ControlCenterModel.parseKanbanTasks("""
+        [{"id":"k-model","title":"Use alternate model","status":"ready","assignee":"forge","model_override":"claude-sonnet","provider_override":"anthropic"}]
+        """).first
+
+        #expect(task?.modelOverride == "claude-sonnet")
+        #expect(task?.providerOverride == "anthropic")
+    }
+
     @Test func strictKanbanParserDistinguishesEmptyBoardFromMalformedOutput() {
         let empty = ControlCenterModel.parseKanbanTasksStrict("[]", boardSlug: "default")
         #expect(empty != nil)

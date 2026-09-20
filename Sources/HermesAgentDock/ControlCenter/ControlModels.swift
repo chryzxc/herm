@@ -455,8 +455,10 @@ struct KanbanTaskSummary: Identifiable, Equatable {
     let latestEventKind: String?
     let latestEventNote: String?
     let latestEventAt: Date?
+    let modelOverride: String?
+    let providerOverride: String?
 
-    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil) {
+    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil, modelOverride: String? = nil, providerOverride: String? = nil) {
         self.id = id
         self.boardSlug = boardSlug
         self.title = title
@@ -471,6 +473,8 @@ struct KanbanTaskSummary: Identifiable, Equatable {
         self.latestEventKind = latestEventKind
         self.latestEventNote = latestEventNote
         self.latestEventAt = latestEventAt
+        self.modelOverride = modelOverride
+        self.providerOverride = providerOverride
     }
 }
 
@@ -503,8 +507,10 @@ struct KanbanTaskDetail: Identifiable, Equatable {
     let priority: String?
     let assignee: String?
     let runs: [KanbanRunSummary]
+    let modelOverride: String?
+    let providerOverride: String?
 
-    init(id: String, boardSlug: String? = nil, title: String, body: String?, status: String, priority: String?, assignee: String?, runs: [KanbanRunSummary]) {
+    init(id: String, boardSlug: String? = nil, title: String, body: String?, status: String, priority: String?, assignee: String?, runs: [KanbanRunSummary], modelOverride: String? = nil, providerOverride: String? = nil) {
         self.id = id
         self.boardSlug = boardSlug
         self.title = title
@@ -513,6 +519,8 @@ struct KanbanTaskDetail: Identifiable, Equatable {
         self.priority = priority
         self.assignee = assignee
         self.runs = runs
+        self.modelOverride = modelOverride
+        self.providerOverride = providerOverride
     }
 }
 

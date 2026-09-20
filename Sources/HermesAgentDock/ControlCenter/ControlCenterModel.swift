@@ -3561,7 +3561,9 @@ final class ControlCenterModel: ObservableObject {
             currentStepKey: base.currentStepKey,
             latestEventKind: event.kind,
             latestEventNote: event.note,
-            latestEventAt: event.date
+            latestEventAt: event.date,
+            modelOverride: base.modelOverride,
+            providerOverride: base.providerOverride
         )
     }
 
@@ -3586,7 +3588,9 @@ final class ControlCenterModel: ObservableObject {
             sessionID: sessionID ?? (row["session_id"] as? String) ?? (row["sessionID"] as? String),
             startedAt: activityDate(row["started_at"] ?? row["startedAt"]),
             completedAt: activityDate(row["completed_at"] ?? row["completedAt"]),
-            currentStepKey: (row["current_step_key"] as? String) ?? (row["currentStepKey"] as? String)
+            currentStepKey: (row["current_step_key"] as? String) ?? (row["currentStepKey"] as? String),
+            modelOverride: (row["model_override"] as? String) ?? (row["modelOverride"] as? String) ?? (row["model"] as? String),
+            providerOverride: (row["provider_override"] as? String) ?? (row["providerOverride"] as? String) ?? (row["provider"] as? String)
         )
     }
 
@@ -3626,7 +3630,9 @@ final class ControlCenterModel: ObservableObject {
             status: (source["status"] as? String) ?? fallback.status,
             priority: Self.stringValue(source["priority"]) ?? fallback.priority,
             assignee: (source["assignee"] as? String) ?? (source["assigned_to"] as? String) ?? fallback.assignee,
-            runs: []
+            runs: [],
+            modelOverride: (source["model_override"] as? String) ?? (source["modelOverride"] as? String) ?? (source["model"] as? String) ?? fallback.modelOverride,
+            providerOverride: (source["provider_override"] as? String) ?? (source["providerOverride"] as? String) ?? (source["provider"] as? String) ?? fallback.providerOverride
         )
     }
 

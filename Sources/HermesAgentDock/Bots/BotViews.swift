@@ -849,7 +849,9 @@ struct MissionControlBotRow: View, Equatable {
 
     private var metadata: some View {
         VStack(alignment: .trailing, spacing: 3) {
-            Text(bot.model ?? "Model unavailable")
+            Text(bot.provider.map { provider in
+                bot.model.map { "\(provider) / \($0)" } ?? provider
+            } ?? bot.model ?? "Model unavailable")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)

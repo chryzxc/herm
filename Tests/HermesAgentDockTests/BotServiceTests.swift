@@ -32,6 +32,8 @@ struct BotServiceTests {
         #expect(inventory.bots.first?.name == "Research Buddy")
         #expect(inventory.bots.first?.chat?.sessionID == "tip")
         #expect(inventory.bots.first?.title == "Paper Finder")
+        #expect(inventory.bots.first?.provider == "openai")
+        #expect(inventory.bots.first?.model == "gpt-5")
         // A worker session without a heartbeat is historical metadata, not
         // proof that the Bot is currently working.
         #expect(inventory.bots.first?.isActive == false)
