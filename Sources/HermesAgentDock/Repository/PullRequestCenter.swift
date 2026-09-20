@@ -1764,24 +1764,33 @@ struct PullRequestWorkspace: View {
     @ObservedObject var center: PullRequestCenterModel
     let projects: [ProjectSummary]
     let onOpenChat: (PullRequestRecord) -> Void
+    var onOpenIssueChat: (GitHubIssueRecord) -> Void = { _ in }
     @State private var loadingPulse = false
+    @StateObject private var issueCenter = IssueCenterModel()
+    @State private var showsIssues = false
 
     var body: some View {
         VStack(spacing: 0) {
-            DockPageHeader(
-                icon: "git.pull.request",
-                title: "Pull requests",
-                subtitle: "Review open changes across your repositories",
-                onRefresh: { Task { await center.refresh(projects: projects) } },
-                isRefreshing: center.isRefreshing
-            )
-
-            HSplitView {
-                listPane.frame(minWidth: 300, idealWidth: 390, maxWidth: 460, maxHeight: .infinity)
-                PullRequestDetailView(center: center, onOpenChat: onOpenChat)
-                    .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+            HStack(spacing: 0) {
+                Button(showsIssues ? "Pull requests" : "Issues") { showsIssues.toggle() }
+                    .buttonStyle(.borderless).foregroundStyle(Color.dockAccent).padding(.horizontal, 18)
+                DockPageHeader(
+                    icon: "git.pull.request",
+                    title: showsIssues ? "Issues" : "Pull requests",
+                    subtitle: showsIssues ? "GitHub issues across your repositories" : "Review open changes across your repositories",
+                    onRefresh: { Task { if showsIssues { await issueCenter.refresh(projects: projects) } else { await center.refresh(projects: projects) } } },
+                    isRefreshing: showsIssues ? issueCenter.isRefreshing : center.isRefreshing
+                )
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if showsIssues {
+                IssueWorkspace(center: issueCenter, projects: projects, onOpenChat: onOpenIssueChat)
+            } else {
+                HSplitView {
+                    listPane.frame(minWidth: 300, idealWidth: 390, maxWidth: 460, maxHeight: .infinity)
+                    PullRequestDetailView(center: center, onOpenChat: onOpenChat)
+                        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.dockCanvas)
