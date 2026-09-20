@@ -1,28 +1,64 @@
+import AppKit
 import SwiftUI
 import Testing
 @testable import HermesAgentDock
 
 struct WorkspaceActivitySidebarTests {
     @MainActor
-    @Test func kanbanBoardScrollContractReachesTrailingCardsAndActions() {
-        #expect(WorkspaceActivitySidebar.kanbanScrollAxes.contains(.vertical))
-        #expect(WorkspaceActivitySidebar.kanbanScrollAxes.contains(.horizontal))
-    }
-
-    @MainActor
-    @Test func kanbanModeBuildsTheProductionSidebarViewPath() {
+    @Test func kanbanBoardHostsTwoAxisScrollForTrailingCardsAndActions() throws {
+        let capabilities = [
+            "kanban.taskDetails", "kanban.complete", "kanban.block", "kanban.archive", "kanban.unblock"
+        ].map {
+            CapabilityState(id: $0, title: $0, detail: "test", isAvailable: true, recovery: nil)
+        }
+        let control = ControlCenterModel(capabilities: capabilities)
+        control.setKanbanTasksForTesting((0..<24).map { index in
+            KanbanTaskSummary(
+                id: "task-\(index)",
+                title: "Trailing card \(index)",
+                status: index == 23 ? "done" : "running",
+                detail: "Representative card content that must remain reachable.",
+                priority: "1",
+                assignee: "forge"
+            )
+        })
         let sidebar = WorkspaceActivitySidebar(
             model: DockModel(),
             botMode: BotModeModel(),
             store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/hermes-agent-dock-kanban-tests.json")),
-            control: ControlCenterModel(),
+            control: control,
             workflow: DeveloperWorkflowModel(),
             initialMode: .kanban,
             agentUpdateService: HermesUpdateService()
         )
 
-        let bodyType = String(reflecting: type(of: sidebar.body))
-        #expect(bodyType.contains("ScrollView<SwiftUI.VStack"))
+        let hostingView = NSHostingView(rootView: sidebar)
+        hostingView.frame = NSRect(x: 0, y: 0, width: 700, height: 520)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.display()
+        window.layoutIfNeeded()
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        hostingView.layoutSubtreeIfNeeded()
+
+        let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
+        let boardScrollView = try #require(scrollViews.first {
+            $0.hasVerticalScroller && $0.hasHorizontalScroller
+        })
+
+        #expect(boardScrollView.documentView != nil)
+        #expect(boardScrollView.documentView!.frame.width > boardScrollView.contentView.bounds.width)
         #expect(WorkspaceActivitySidebar.kanbanScrollAxes == [.vertical, .horizontal])
+        window.close()
+    }
+
+    @MainActor
+    private func descendants(of view: NSView) -> [NSView] {
+        view.subviews + view.subviews.flatMap(descendants)
     }
 }
