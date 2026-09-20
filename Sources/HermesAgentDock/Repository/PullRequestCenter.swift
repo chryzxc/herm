@@ -225,7 +225,7 @@ final class PullRequestDiffPresentationCache: ObservableObject {
 
 enum LucideIconName {
     case gitPullRequest, gitBranch, refreshCw, search, arrowRight, arrowUp, arrowDown, pencil, check, checkCircle, xmark, fileText, braces, image
-    case sun, inbox, kanban, cube, gauge, clock, activity, audioLines, bot, fileSearch, users, user, folder, messages, messageCircle, messageCirclePlus, settings, panelOpen, panelClosed, chevronDown, chevronUp, chevronRight, chevronLeft, arrowDownUp, fileDiff, plus, ellipsis, circle, triangleAlert, trash, terminal, paperclip, mic, stop, pause, calendar, link, externalLink, sliders, radio, cpu, brain, flame, eye, download, upload, expand, minimize, fullscreen, sparkles
+    case sun, inbox, kanban, cube, gauge, clock, activity, audioLines, bot, fileSearch, users, user, folder, messages, messageCircle, messageCirclePlus, settings, panelOpen, panelClosed, chevronDown, chevronUp, chevronRight, chevronLeft, arrowDownUp, fileDiff, plus, ellipsis, circle, triangleAlert, trash, terminal, paperclip, mic, stop, pause, calendar, link, pin, externalLink, sliders, radio, cpu, brain, flame, eye, download, upload, expand, minimize, fullscreen, sparkles
 
     static func from(systemName: String) -> Self {
         switch systemName {
@@ -280,6 +280,7 @@ enum LucideIconName {
         case "pause.circle.fill": return .pause
         case "calendar.badge.clock": return .calendar
         case "link", "link.badge.plus", "key.horizontal": return .link
+        case "pin", "pin.fill": return .pin
         case "line.3.horizontal.decrease.circle": return .sliders
         case "dot.radiowaves.left.and.right": return .radio
         case "cpu.fill": return .cpu
@@ -487,6 +488,8 @@ private struct LucideIconShape: Shape {
             path.addRoundedRect(in: CGRect(x: 3 * s, y: 5 * s, width: 18 * s, height: 16 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.move(to: p(3, 10)); path.addLine(to: p(21, 10)); path.move(to: p(8, 3)); path.addLine(to: p(8, 7)); path.move(to: p(16, 3)); path.addLine(to: p(16, 7))
         case .link:
             path.addRoundedRect(in: CGRect(x: 2 * s, y: 9 * s, width: 10 * s, height: 6 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s)); path.addRoundedRect(in: CGRect(x: 12 * s, y: 9 * s, width: 10 * s, height: 6 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s)); path.move(to: p(8, 12)); path.addLine(to: p(16, 12))
+        case .pin:
+            path.move(to: p(8, 3)); path.addLine(to: p(16, 3)); path.move(to: p(9, 3)); path.addLine(to: p(9, 8)); path.addLine(to: p(5, 12)); path.addLine(to: p(19, 12)); path.addLine(to: p(15, 8)); path.addLine(to: p(15, 3)); path.move(to: p(12, 12)); path.addLine(to: p(12, 21))
         case .externalLink:
             path.move(to: p(15, 3)); path.addLine(to: p(21, 3)); path.addLine(to: p(21, 9)); path.move(to: p(10, 14)); path.addLine(to: p(21, 3)); path.move(to: p(21, 14)); path.addLine(to: p(21, 19)); path.addCurve(to: p(19, 21), control1: p(21, 20), control2: p(20, 21)); path.addLine(to: p(5, 21)); path.addCurve(to: p(3, 19), control1: p(4, 21), control2: p(3, 20)); path.addLine(to: p(3, 5)); path.addCurve(to: p(5, 3), control1: p(3, 4), control2: p(4, 3)); path.addLine(to: p(10, 3))
         case .sliders:
