@@ -2313,6 +2313,13 @@ final class DockModel: ObservableObject {
             scheduleStreamingMessageFlush()
         case "message.complete":
             isAwaitingClarificationResume = false
+            if let completedText = Self.completedMessageText(from: payload),
+               !completedText.isEmpty {
+                if streamingMessageID == nil {
+                    beginStreamingMessage()
+                }
+                streamingMessageBuffer = completedText
+            }
             let wasInterrupting = interruptState == .requesting
             interruptState = .idle
             if wasInterrupting {
@@ -2601,6 +2608,19 @@ final class DockModel: ObservableObject {
             modelName: currentModelName,
             isError: true
         ))
+    }
+
+    private static func completedMessageText(from payload: [String: Any]) -> String? {
+        if let text = payload["text"] as? String {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let message = payload["message"] as? [String: Any] {
+            return completedMessageText(from: message)
+        }
+        if let content = payload["content"] as? String {
+            return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return nil
     }
 
     private func beginStreamingMessage() {
