@@ -3,6 +3,8 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 struct WorkspaceActivitySidebar: View {
+    static let kanbanScrollAxes: Axis.Set = [.vertical, .horizontal]
+
     @ObservedObject var model: DockModel
     @ObservedObject var botMode: BotModeModel
     @ObservedObject var store: WorkspaceStore
@@ -2426,7 +2428,7 @@ struct WorkspaceActivitySidebar: View {
 
     private var kanbanContent: some View {
         HSplitView {
-            ScrollView([.vertical, .horizontal], showsIndicators: true) {
+            ScrollView(Self.kanbanScrollAxes, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 0) {
                     pageHeader
                         .padding(.horizontal, 16)
