@@ -92,6 +92,27 @@ struct GitHubIssueTests {
         #expect(model.errorMessage?.contains("unavailable") == true)
     }
 
+    @MainActor @Test func issueCenterKeepsViewerFailureUnavailableEvenWhenSearchSucceeds() async {
+        let transport = IssueTestTransport(
+            responses: [
+                "/search/issues": ["items": [[
+                    "number": 21, "title": "Unscoped result", "state": "open",
+                    "repository": ["full_name": "owner/repo"], "user": ["login": "ada"]
+                ]]]
+            ],
+            failingPaths: ["/user"]
+        )
+        let model = IssueCenterModel(api: GitHubIssueCenterAPI(transport: transport))
+
+        await model.refresh(projects: [])
+
+        #expect(model.viewerLogin == nil)
+        #expect(model.records.isEmpty)
+        #expect(model.hasLoaded == false)
+        #expect(model.errorMessage?.contains("unavailable") == true)
+        #expect(transport.paths == ["/user"])
+    }
+
     @Test func issueContextIsStableAndExplicit() {
         let context = IssueContext(repositoryID: "owner/repo", number: 19, title: "Add issue workspace", webURL: URL(string: "https://github.com/owner/repo/issues/19"))
         #expect(context.id == "github:owner/repo#19")
@@ -103,16 +124,19 @@ struct GitHubIssueTests {
 private final class IssueTestTransport: GitHubIssueTransport, @unchecked Sendable {
     private let responses: [String: Any]
     private let failing: Bool
+    private let failingPaths: Set<String>
     private(set) var paths: [String] = []
 
-    init(responses: [String: Any] = [:], failing: Bool = false) {
+    init(responses: [String: Any] = [:], failing: Bool = false, failingPaths: Set<String> = []) {
         self.responses = responses
         self.failing = failing
+        self.failingPaths = failingPaths
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        paths.append(request.url?.path ?? "")
-        if failing { throw GitHubCodeHostError.unavailable }
+        let path = request.url?.path ?? ""
+        paths.append(path)
+        if failing || failingPaths.contains(path) { throw GitHubCodeHostError.unavailable }
         let payload = responses[request.url?.path ?? ""] ?? [String: Any]()
         let data = try JSONSerialization.data(withJSONObject: payload)
         return (data, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)

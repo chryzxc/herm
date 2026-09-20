@@ -110,9 +110,15 @@ struct GitHubIssueCenterAPI: Sendable {
 
     init(transport: any GitHubIssueTransport = URLSession(configuration: .ephemeral)) { self.transport = transport }
 
-    func viewer() async -> String? {
-        guard let row = try? await request(path: "/user") as? [String: Any] else { return nil }
-        return row["login"] as? String
+    func viewer() async -> Result<String, PullRequestCenterFailure> {
+        do {
+            guard let row = try await request(path: "/user") as? [String: Any],
+                  let login = row["login"] as? String,
+                  !login.isEmpty else { throw GitHubCodeHostError.malformedResponse }
+            return .success(login)
+        } catch {
+            return .failure(PullRequestCenterFailure(repository: "GitHub account"))
+        }
     }
 
     func searchIssues(viewerLogin: String?, localPaths: [String: String]) async -> Result<[GitHubIssueRecord], PullRequestCenterFailure> {
@@ -194,8 +200,15 @@ final class IssueCenterModel: ObservableObject {
             return output
         }
         let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
-        let viewer = await api.viewer()
+        let viewerResult = await api.viewer()
         guard token == generation else { return }
+        guard case .success(let viewer) = viewerResult else {
+            viewerLogin = nil
+            errorMessage = hasLoaded ? "Using last known GitHub issues. Refresh to retry." : "GitHub issues are unavailable. Check your sign-in or try again."
+            isRefreshing = false
+            repairSelection()
+            return
+        }
         viewerLogin = viewer
         let result = await api.searchIssues(viewerLogin: viewer, localPaths: remotes)
         guard token == generation else { return }
