@@ -53,6 +53,19 @@ struct WorkspaceActivitySidebarTests {
 
         #expect(boardScrollView.documentView != nil)
         #expect(boardScrollView.documentView!.frame.width > boardScrollView.contentView.bounds.width)
+        let trailingOrigin = NSPoint(
+            x: max(0, boardScrollView.documentView!.frame.width - boardScrollView.contentView.bounds.width),
+            y: max(0, boardScrollView.documentView!.frame.height - boardScrollView.contentView.bounds.height)
+        )
+        boardScrollView.contentView.scroll(to: trailingOrigin)
+        boardScrollView.reflectScrolledClipView(boardScrollView.contentView)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        boardScrollView.documentView!.layoutSubtreeIfNeeded()
+        let archiveAction = try #require(descendants(of: boardScrollView.documentView!).first {
+            guard let button = $0 as? NSButton else { return false }
+            return button.frame.minX >= boardScrollView.documentView!.frame.width - 260
+        })
+        #expect(boardScrollView.contentView.documentVisibleRect.intersects(archiveAction.convert(archiveAction.bounds, to: boardScrollView.documentView)))
         #expect(WorkspaceActivitySidebar.kanbanScrollAxes == [.vertical, .horizontal])
         window.close()
     }
