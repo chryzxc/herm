@@ -366,6 +366,15 @@ struct LatestActivityItem: Identifiable, Equatable {
     let timestamp: Date
 }
 
+enum LatestActivityPresentation {
+    static let maxMarkdownCharacters = 4_000
+
+    static func boundedMarkdown(_ source: String) -> String {
+        guard source.count > maxMarkdownCharacters else { return source }
+        return String(source.prefix(maxMarkdownCharacters)) + "…"
+    }
+}
+
 /// The Global overview's LATEST ACTIVITY strip is a cross-session activity
 /// feed. A session may contribute multiple rows when several of its steps are
 /// newer than the latest step from other sessions.

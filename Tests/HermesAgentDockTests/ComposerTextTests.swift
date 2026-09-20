@@ -57,6 +57,56 @@ struct ComposerTextTests {
         #expect(MarkdownMessageView.codeBlockLanguages(in: message) == ["json"])
     }
 
+    @Test func latestActivityMarkdownIsBoundedBeforeRendering() {
+        let source = String(repeating: "activity ", count: 1_000)
+
+        let bounded = LatestActivityPresentation.boundedMarkdown(source)
+
+        #expect(bounded.count == LatestActivityPresentation.maxMarkdownCharacters + 1)
+        #expect(bounded.hasSuffix("…"))
+        #expect(MarkdownMessageView.renderBlocks(for: bounded).isEmpty == false)
+    }
+
+    @Test func latestActivityMarkdownPreservesCommandsListsAndJSONSafely() {
+        let source = """
+        Run `swift test`
+
+        - **Build** completed
+
+        {"state":"done","command":"rm -rf -- .cache"}
+
+        <script>alert('unsafe')</script>
+        """
+
+        let blocks = MarkdownMessageView.renderBlocks(for: LatestActivityPresentation.boundedMarkdown(source))
+
+        #expect(MarkdownMessageView.codeBlockLanguages(in: source) == ["json"])
+        #expect(blocks.isEmpty == false)
+
+        let renderedText = blocks.compactMap { block -> String? in
+            switch block {
+            case .heading(_, let text), .paragraph(let text), .listItem(let text, _), .quote(let text):
+                return String(text.characters)
+            case .code(let code, _):
+                return code
+            case .tableRow(let columns):
+                return columns.map { String($0.characters) }.joined(separator: " ")
+            }
+        }.joined(separator: "\n")
+
+        #expect(renderedText.contains("<script>alert('unsafe')</script>"))
+        #expect(blocks.flatMap { block -> [AttributedString.Runs.Run] in
+            switch block {
+            case .heading(_, let text), .paragraph(let text), .listItem(let text, _), .quote(let text):
+                return Array(text.runs)
+            case .tableRow(let columns):
+                return columns.flatMap { Array($0.runs) }
+            case .code:
+                return []
+            }
+        }.allSatisfy { $0.link == nil })
+    }
+
     @Test func multiLineJSONObjectWithinBudgetStillBecomesACodeBlock() {
         let payload = (0..<50).map { index in
             "\"key\(index)\":\"value \(index)\""
