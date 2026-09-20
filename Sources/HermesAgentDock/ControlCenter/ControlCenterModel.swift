@@ -2360,16 +2360,11 @@ final class ControlCenterModel: ObservableObject {
 
                 let runsResult = capabilityAvailable("kanban.taskRuns") ? try await cli.kanbanRuns(boardSlug: requestedBoardSlug, taskID: task.id) : nil
                 if let runsResult, runsResult.succeeded {
-                    detail = KanbanTaskDetail(
-                        id: detail.id,
-                        boardSlug: requestedBoardSlug,
-                        title: detail.title,
-                        body: detail.body,
-                        status: detail.status,
-                        priority: detail.priority,
-                        assignee: detail.assignee,
-                        runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: requestedBoardSlug)
-                    )
+                    detail = Self.enrichedKanbanTaskDetail(
+                        detail,
+                        runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: requestedBoardSlug),
+                        boardSlug: requestedBoardSlug
+                    ) ?? detail
                 }
                 guard generation == kanbanDetailGeneration,
                       requestedBoardSlug == selectedKanbanBoardSlug else { return }
@@ -3580,7 +3575,9 @@ final class ControlCenterModel: ObservableObject {
             currentStepKey: base.currentStepKey,
             latestEventKind: event.kind,
             latestEventNote: event.note,
-            latestEventAt: event.date
+            latestEventAt: event.date,
+            modelOverride: base.modelOverride,
+            providerOverride: base.providerOverride
         )
     }
 
@@ -3605,7 +3602,9 @@ final class ControlCenterModel: ObservableObject {
             sessionID: sessionID ?? (row["session_id"] as? String) ?? (row["sessionID"] as? String),
             startedAt: activityDate(row["started_at"] ?? row["startedAt"]),
             completedAt: activityDate(row["completed_at"] ?? row["completedAt"]),
-            currentStepKey: (row["current_step_key"] as? String) ?? (row["currentStepKey"] as? String)
+            currentStepKey: (row["current_step_key"] as? String) ?? (row["currentStepKey"] as? String),
+            modelOverride: (row["model_override"] as? String) ?? (row["modelOverride"] as? String) ?? (row["model"] as? String),
+            providerOverride: (row["provider_override"] as? String) ?? (row["providerOverride"] as? String) ?? (row["provider"] as? String)
         )
     }
 
@@ -3645,7 +3644,9 @@ final class ControlCenterModel: ObservableObject {
             status: (source["status"] as? String) ?? fallback.status,
             priority: Self.stringValue(source["priority"]) ?? fallback.priority,
             assignee: (source["assignee"] as? String) ?? (source["assigned_to"] as? String) ?? fallback.assignee,
-            runs: []
+            runs: [],
+            modelOverride: (source["model_override"] as? String) ?? (source["modelOverride"] as? String) ?? (source["model"] as? String) ?? fallback.modelOverride,
+            providerOverride: (source["provider_override"] as? String) ?? (source["providerOverride"] as? String) ?? (source["provider"] as? String) ?? fallback.providerOverride
         )
     }
 
@@ -3658,7 +3659,29 @@ final class ControlCenterModel: ObservableObject {
             status: task.status,
             priority: task.priority,
             assignee: task.assignee,
-            runs: []
+            runs: [],
+            modelOverride: task.modelOverride,
+            providerOverride: task.providerOverride
+        )
+    }
+
+    static func enrichedKanbanTaskDetail(
+        _ detail: KanbanTaskDetail?,
+        runs: [KanbanRunSummary],
+        boardSlug: String?
+    ) -> KanbanTaskDetail? {
+        guard let detail else { return nil }
+        return KanbanTaskDetail(
+            id: detail.id,
+            boardSlug: boardSlug,
+            title: detail.title,
+            body: detail.body,
+            status: detail.status,
+            priority: detail.priority,
+            assignee: detail.assignee,
+            runs: runs,
+            modelOverride: detail.modelOverride,
+            providerOverride: detail.providerOverride
         )
     }
 

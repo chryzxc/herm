@@ -43,6 +43,7 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     let title: String?
     let description: String?
     let model: String?
+    let provider: String?
     let isActive: Bool
     let chat: BotChatReference?
     let worker: BotWorkerReference?
@@ -54,12 +55,13 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     let hasCustomAvatar: Bool
     let isDefault: Bool
 
-    init(id: String, name: String, title: String?, description: String?, model: String?, isActive: Bool, chat: BotChatReference?, worker: BotWorkerReference? = nil, avatarURL: URL?, preview: String?, lastActive: Date?, isHidden: Bool, hasAvatar: Bool, hasCustomAvatar: Bool = false, isDefault: Bool) {
+    init(id: String, name: String, title: String?, description: String?, model: String?, provider: String? = nil, isActive: Bool, chat: BotChatReference?, worker: BotWorkerReference? = nil, avatarURL: URL?, preview: String?, lastActive: Date?, isHidden: Bool, hasAvatar: Bool, hasCustomAvatar: Bool = false, isDefault: Bool) {
         self.id = id
         self.name = name
         self.title = title
         self.description = description
         self.model = model
+        self.provider = provider
         self.isActive = isActive
         self.chat = chat
         self.worker = worker

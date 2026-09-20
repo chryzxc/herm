@@ -296,6 +296,58 @@ struct ControlCenterProjectTests {
         #expect(tasks.first?.boardSlug == "client-board")
     }
 
+    @Test func presentsConfiguredBotModelAndProviderForKanbanAssignee() {
+        let bot = BotSummary(id: "forge", name: "Forge", title: nil, description: nil, model: "gpt-5", provider: "openai", isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+
+        let metadata = KanbanModelMetadataPresentation.make(taskModel: nil, taskProvider: nil, bot: bot)
+
+        #expect(metadata.label == "openai / gpt-5")
+        #expect(!metadata.isOverride)
+    }
+
+    @Test func marksKanbanCardModelOverrideDistinctFromBotConfiguration() {
+        let bot = BotSummary(id: "forge", name: "Forge", title: nil, description: nil, model: "gpt-5", provider: "openai", isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+
+        let metadata = KanbanModelMetadataPresentation.make(taskModel: "claude-sonnet", taskProvider: "anthropic", bot: bot)
+
+        #expect(metadata.label == "anthropic / claude-sonnet")
+        #expect(metadata.isOverride)
+    }
+
+    @Test func reportsMissingKanbanModelHonestly() {
+        let metadata = KanbanModelMetadataPresentation.make(taskModel: nil, taskProvider: nil, bot: nil)
+
+        #expect(metadata.label == "Model unavailable")
+        #expect(!metadata.isOverride)
+    }
+
+    @Test func normalizesEmptyKanbanModelMetadata() {
+        let bot = BotSummary(id: "forge", name: "Forge", title: nil, description: nil, model: "  gpt-5  ", provider: " \n", isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)
+
+        let metadata = KanbanModelMetadataPresentation.make(taskModel: " \t", taskProvider: " ", bot: bot)
+
+        #expect(metadata.label == "gpt-5")
+        #expect(!metadata.isOverride)
+    }
+
+    @Test func resolvesKanbanMetadataFromHiddenAssignedBot() {
+        let bot = BotSummary(id: "forge", name: "Forge", title: nil, description: nil, model: "gpt-5", provider: "openai", isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: true, hasAvatar: false, isDefault: false)
+
+        let resolved = KanbanModelMetadataPresentation.bot(for: "FORGE", in: [bot])
+
+        #expect(resolved == bot)
+        #expect(KanbanModelMetadataPresentation.make(taskModel: nil, taskProvider: nil, bot: resolved).label == "openai / gpt-5")
+    }
+
+    @Test func parsesKanbanModelOverrideMetadata() {
+        let task = ControlCenterModel.parseKanbanTasks("""
+        [{"id":"k-model","title":"Use alternate model","status":"ready","assignee":"forge","model_override":"claude-sonnet","provider_override":"anthropic"}]
+        """).first
+
+        #expect(task?.modelOverride == "claude-sonnet")
+        #expect(task?.providerOverride == "anthropic")
+    }
+
     @Test func strictKanbanParserDistinguishesEmptyBoardFromMalformedOutput() {
         let empty = ControlCenterModel.parseKanbanTasksStrict("[]", boardSlug: "default")
         #expect(empty != nil)
@@ -340,6 +392,20 @@ struct ControlCenterProjectTests {
         #expect(detail?.status == "review")
         #expect(runs.first?.outcome == "success")
         #expect(runs.first?.elapsed == "4s")
+    }
+
+    @Test func preservesShownKanbanModelOverrideWhenRunsEnrichTheDetail() {
+        let fallback = KanbanTaskSummary(id: "k-model", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let detail = ControlCenterModel.parseKanbanTaskDetail("""
+        {"id":"k-model","title":"Use alternate model","status":"running","assignee":"forge","model_override":"claude-sonnet","provider_override":"anthropic"}
+        """, fallback: fallback)
+        let runs = ControlCenterModel.parseKanbanRuns("[]")
+
+        let enriched = ControlCenterModel.enrichedKanbanTaskDetail(detail, runs: runs, boardSlug: "default")
+
+        #expect(enriched?.modelOverride == "claude-sonnet")
+        #expect(enriched?.providerOverride == "anthropic")
+        #expect(enriched?.runs.isEmpty == true)
     }
 
     @Test func parsesWrappedKanbanTaskDetailResponses() {

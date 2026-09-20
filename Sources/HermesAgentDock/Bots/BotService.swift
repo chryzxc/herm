@@ -255,7 +255,14 @@ final class BotService {
         let fallbackChat = try parseChat(raw["last_session"], profileID: id)
         let title = try optionalString(raw, key: "title") ?? rosterTitle(raw)
         let description = try optionalString(raw, key: "description")
-        let model = try optionalString(raw, key: "model")
+        let modelValue = raw["model"]
+        let model = try modelValue.flatMap { value -> String? in
+            if let string = value as? String { return string }
+            if let dictionary = value as? [String: Any] { return try optionalString(dictionary, key: "default") }
+            throw ParseError.invalid
+        }
+        let provider = (raw["provider"] as? String)
+            ?? (raw["model"] as? [String: Any])?["provider"] as? String
         let worker = try parseWorker(raw["worker_session"])
         let isActive: Bool
         if let value = raw["is_active"] { guard let value = value as? Bool else { throw ParseError.invalid }; isActive = value } else { isActive = worker?.isLive == true }
@@ -264,7 +271,7 @@ final class BotService {
         let lastActive = [chat?.lastActive, fallbackChat?.lastActive, workerLastActive].compactMap { $0 }.max()
         let botsMeta = rosterMeta(raw)
         return BotSummary(
-            id: id, name: name, title: title, description: description, model: model,
+            id: id, name: name, title: title, description: description, model: model, provider: provider,
             isActive: isActive, chat: chat, worker: worker, avatarURL: avatarURL(raw), preview: preview,
             lastActive: lastActive, isHidden: botsMeta?.hidden == true,
             hasAvatar: (raw["has_avatar"] as? Bool) == true,
