@@ -1585,7 +1585,7 @@ final class ControlCenterModel: ObservableObject {
     static func reconcileProjectRefresh(current: [ProjectSummary], incoming: [ProjectSummary]) -> [ProjectSummary] {
         var seen = Set<String>()
         let deduplicated = incoming.filter { seen.insert($0.id).inserted }
-        guard !current.isEmpty else { return deduplicated }
+        guard !current.isEmpty else { return deduplicated.sorted { $0.id < $1.id } }
 
         let currentIDs = current.map(\.id)
         let incomingIDs = deduplicated.map(\.id)
@@ -1600,7 +1600,12 @@ final class ControlCenterModel: ObservableObject {
                 ? currentIDs.compactMap { incomingByID[$0] }
                 : deduplicated
         }
-        return deduplicated
+        let currentIDSet = Set(currentIDs)
+        let retained = currentIDs.compactMap { incomingByID[$0] }
+        let newProjects = deduplicated
+            .filter { !currentIDSet.contains($0.id) }
+            .sorted { $0.id < $1.id }
+        return retained + newProjects
     }
 
     /// Refreshes the global Kanban projection. Board inventory and board

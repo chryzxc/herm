@@ -26,6 +26,29 @@ struct ControlCenterProjectTests {
         #expect(refreshed.map(\.id) == ["a", "b"])
     }
 
+    @Test func initialProjectRefreshUsesDeterministicStableIDOrder() {
+        let first = ProjectSummary(id: "b", name: "B", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        let second = ProjectSummary(id: "a", name: "A", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+
+        let refreshed = ControlCenterModel.reconcileProjectRefresh(current: [], incoming: [first, second])
+
+        #expect(refreshed.map(\.id) == ["a", "b"])
+    }
+
+    @Test func projectMembershipChangesPreserveExistingOrderAndSortNewProjects() {
+        let first = ProjectSummary(id: "a", name: "A", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        let second = ProjectSummary(id: "b", name: "B", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        let newFirst = ProjectSummary(id: "d", name: "D", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        let newSecond = ProjectSummary(id: "c", name: "C", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+
+        let refreshed = ControlCenterModel.reconcileProjectRefresh(
+            current: [first, second],
+            incoming: [newFirst, second, newSecond]
+        )
+
+        #expect(refreshed.map(\.id) == ["b", "c", "d"])
+    }
+
     @Test func changedProjectRowsAcceptAuthoritativeReorder() {
         let first = ProjectSummary(id: "a", name: "A", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
         let second = ProjectSummary(id: "b", name: "B", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
