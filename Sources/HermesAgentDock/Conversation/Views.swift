@@ -94,6 +94,14 @@ final class MissionControlNavigationState: ObservableObject {
         }
     }
 
+    func synchronizeActiveSession(_ sessionID: String?) {
+        if let sessionID, !sessionID.isEmpty {
+            openSession(sessionID)
+        } else {
+            clearSelection()
+        }
+    }
+
     func openIssueChat(sessionID: String?) {
         openPullRequestChat(sessionID: sessionID)
     }
@@ -741,6 +749,7 @@ struct DockPopover: View {
         DebugLog.writeDiagnostic("session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")")
         synchronizeWorkspace()
         controlCenter.focus(sessionID: newValue)
+        missionControlNavigation.synchronizeActiveSession(newValue)
         synchronizePanelLayout()
 
         guard oldValue != newValue else { return }
@@ -787,6 +796,7 @@ struct DockPopover: View {
     private func configureWorkspaceOnAppear() {
         synchronizePanelLayout()
         synchronizeWorkspace()
+        missionControlNavigation.synchronizeActiveSession(model.sessionID)
         controlCenter.bind(to: model)
         // The session Activity child can mount before this root lifecycle hook.
         // Reissue its durable, read-only projection after binding so an early
