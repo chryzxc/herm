@@ -17,10 +17,17 @@ struct GitHubIssueRecord: Identifiable, Equatable, Sendable {
     var state: String
     var author: String
     var assignee: String?
+    var assignees: [String]
     var updatedAt: Date?
     var webURL: URL?
     var id: String { "github:\(repository.id)#\(number)" }
     var displayNumber: String { String(number) }
+
+    init(repository: GitHubRepositoryReference, localPath: String, number: Int, title: String, body: String, state: String, author: String, assignee: String?, assignees: [String] = [], updatedAt: Date?, webURL: URL?) {
+        self.repository = repository; self.localPath = localPath; self.number = number; self.title = title; self.body = body; self.state = state; self.author = author; self.assignee = assignee
+        self.assignees = assignees.isEmpty ? (assignee.map { [$0] } ?? []) : assignees
+        self.updatedAt = updatedAt; self.webURL = webURL
+    }
 }
 
 enum GitHubIssueParser {
@@ -31,7 +38,9 @@ enum GitHubIssueParser {
               let state = bounded(payload["state"] as? String),
               let repository = repositoryReference(from: payload) else { return nil }
         let user = payload["user"] as? [String: Any]
-        let assignee = ((payload["assignee"] as? [String: Any])?["login"] as? String).flatMap(bounded)
+        let primaryAssignee = ((payload["assignee"] as? [String: Any])?["login"] as? String).flatMap(bounded)
+        let assignees = (payload["assignees"] as? [[String: Any] ])?.compactMap { bounded($0["login"] as? String) } ?? []
+        let allAssignees = assignees.isEmpty ? (primaryAssignee.map { [$0] } ?? []) : assignees
         return GitHubIssueRecord(
             repository: repository,
             localPath: localPaths[repository.id] ?? "",
@@ -40,7 +49,8 @@ enum GitHubIssueParser {
             body: payload["body"] as? String ?? "",
             state: state,
             author: bounded(user?["login"] as? String) ?? "Unknown",
-            assignee: assignee,
+            assignee: primaryAssignee,
+            assignees: allAssignees,
             updatedAt: (payload["updated_at"] as? String).flatMap { try? Date($0, strategy: .iso8601) },
             webURL: (payload["html_url"] as? String).flatMap(URL.init)
         )
@@ -89,8 +99,16 @@ struct IssueContext: Equatable, Sendable {
     }
 }
 
+protocol GitHubIssueTransport: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+extension URLSession: GitHubIssueTransport {}
+
 struct GitHubIssueCenterAPI: Sendable {
-    private let session = URLSession(configuration: .ephemeral)
+    private let transport: any GitHubIssueTransport
+
+    init(transport: any GitHubIssueTransport = URLSession(configuration: .ephemeral)) { self.transport = transport }
 
     func viewer() async -> String? {
         guard let row = try? await request(path: "/user") as? [String: Any] else { return nil }
@@ -127,7 +145,7 @@ struct GitHubIssueCenterAPI: Sendable {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token = GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await transport.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }
         return try JSONSerialization.jsonObject(with: data)
     }
@@ -135,6 +153,7 @@ struct GitHubIssueCenterAPI: Sendable {
 
 @MainActor
 final class IssueCenterModel: ObservableObject {
+    private let api: GitHubIssueCenterAPI
     @Published var records: [GitHubIssueRecord] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var errorMessage: String?
@@ -147,6 +166,8 @@ final class IssueCenterModel: ObservableObject {
     @Published var repositoryScope: String?
     private var generation = UUID()
 
+    init(api: GitHubIssueCenterAPI = GitHubIssueCenterAPI()) { self.api = api }
+
     var selected: GitHubIssueRecord? { records.first { $0.id == selectedIssueID } }
     var visible: [GitHubIssueRecord] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -156,7 +177,7 @@ final class IssueCenterModel: ObservableObject {
             switch filter {
             case .all: matchesFilter = true
             case .authored: matchesFilter = viewerLogin.map { issue.author.caseInsensitiveCompare($0) == .orderedSame } ?? false
-            case .assigned: matchesFilter = viewerLogin.map { issue.assignee?.caseInsensitiveCompare($0) == .orderedSame } ?? false
+            case .assigned: matchesFilter = viewerLogin.map { viewer in issue.assignees.contains { assignee in assignee.caseInsensitiveCompare(viewer) == .orderedSame } } ?? false
             }
             guard matchesFilter else { return false }
             guard !needle.isEmpty else { return true }
@@ -173,7 +194,7 @@ final class IssueCenterModel: ObservableObject {
             return output
         }
         let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
-        let api = GitHubIssueCenterAPI(); let viewer = await api.viewer()
+        let viewer = await api.viewer()
         guard token == generation else { return }
         viewerLogin = viewer
         let result = await api.searchIssues(viewerLogin: viewer, localPaths: remotes)
@@ -187,7 +208,7 @@ final class IssueCenterModel: ObservableObject {
 
     func loadSelectedDetail() async {
         guard let issue = selected, detailByID[issue.id] == nil else { return }
-        if let detail = await GitHubIssueCenterAPI().detail(issue) { detailByID[issue.id] = detail }
+        if let detail = await api.detail(issue) { detailByID[issue.id] = detail }
     }
 
     func repairSelection() { if !visible.contains(where: { $0.id == selectedIssueID }) { selectedIssueID = visible.first?.id } }
@@ -287,6 +308,11 @@ struct IssueWorkspace: View {
                     if center.isRefreshing && center.records.isEmpty {
                         VStack(spacing: 12) { ProgressView().controlSize(.small); Text("Loading issues…").font(.system(size: 12)) }
                             .foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity).padding(.vertical, 32)
+                    } else if !center.hasLoaded && center.errorMessage != nil {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Issues unavailable").font(.system(size: 12, weight: .semibold))
+                            Text("Check your GitHub sign-in and try again.").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                        }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     } else if center.visible.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("No issues match this view").font(.system(size: 12, weight: .semibold))
