@@ -51,6 +51,7 @@ Running an AI agent team from a terminal means juggling sessions, task boards, c
 
 - **Streaming chat** — bottom-anchored transcript, bounded history paging, native Markdown links, and in-turn steering: typed guidance is submitted to the running turn at its next tool boundary.
 - **Message navigator** — session-scoped jump navigation with bounded previews across Markdown, image, tool, and clarification messages.
+- **Completed-message actions** — accessible, message-scoped actions can branch from the source message, copy readable text, read aloud with a stop toggle, or refresh from Hermes' authoritative transcript. Branch and refresh remain unavailable while message/session identity or response context is incomplete; malformed runtime responses fail closed without replacing the source conversation.
 - **Attachments** — accessible Attach popover with native file/image pickers, pasted images, validated http(s) URLs, and prompt snippets; multi-image and single-PDF review before sending (25 MB PDF cap).
 - **Explicit session lifecycle** — selecting or restoring a session never creates a replacement implicitly; new chats are created only on request. Session data stays isolated and fails closed on identity mismatch.
 - **Pinned conversations** — labelled pin/unpin keeps important chats in a Pinned section that survives refreshes, relaunches, and bot-profile switches.
