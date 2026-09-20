@@ -333,6 +333,20 @@ struct ControlCenterProjectTests {
         #expect(runs.first?.elapsed == "4s")
     }
 
+    @Test func preservesShownKanbanModelOverrideWhenRunsEnrichTheDetail() {
+        let fallback = KanbanTaskSummary(id: "k-model", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let detail = ControlCenterModel.parseKanbanTaskDetail("""
+        {"id":"k-model","title":"Use alternate model","status":"running","assignee":"forge","model_override":"claude-sonnet","provider_override":"anthropic"}
+        """, fallback: fallback)
+        let runs = ControlCenterModel.parseKanbanRuns("[]")
+
+        let enriched = ControlCenterModel.enrichedKanbanTaskDetail(detail, runs: runs, boardSlug: "default")
+
+        #expect(enriched?.modelOverride == "claude-sonnet")
+        #expect(enriched?.providerOverride == "anthropic")
+        #expect(enriched?.runs.isEmpty == true)
+    }
+
     @Test func parsesWrappedKanbanTaskDetailResponses() {
         let fallback = KanbanTaskSummary(id: "k1", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
         let detail = ControlCenterModel.parseKanbanTaskDetail(

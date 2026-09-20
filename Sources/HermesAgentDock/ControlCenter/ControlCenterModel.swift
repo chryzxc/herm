@@ -2341,16 +2341,11 @@ final class ControlCenterModel: ObservableObject {
 
                 let runsResult = capabilityAvailable("kanban.taskRuns") ? try await cli.kanbanRuns(boardSlug: requestedBoardSlug, taskID: task.id) : nil
                 if let runsResult, runsResult.succeeded {
-                    detail = KanbanTaskDetail(
-                        id: detail.id,
-                        boardSlug: requestedBoardSlug,
-                        title: detail.title,
-                        body: detail.body,
-                        status: detail.status,
-                        priority: detail.priority,
-                        assignee: detail.assignee,
-                        runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: requestedBoardSlug)
-                    )
+                    detail = Self.enrichedKanbanTaskDetail(
+                        detail,
+                        runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: requestedBoardSlug),
+                        boardSlug: requestedBoardSlug
+                    ) ?? detail
                 }
                 guard generation == kanbanDetailGeneration,
                       requestedBoardSlug == selectedKanbanBoardSlug else { return }
@@ -3645,7 +3640,29 @@ final class ControlCenterModel: ObservableObject {
             status: task.status,
             priority: task.priority,
             assignee: task.assignee,
-            runs: []
+            runs: [],
+            modelOverride: task.modelOverride,
+            providerOverride: task.providerOverride
+        )
+    }
+
+    static func enrichedKanbanTaskDetail(
+        _ detail: KanbanTaskDetail?,
+        runs: [KanbanRunSummary],
+        boardSlug: String?
+    ) -> KanbanTaskDetail? {
+        guard let detail else { return nil }
+        return KanbanTaskDetail(
+            id: detail.id,
+            boardSlug: boardSlug,
+            title: detail.title,
+            body: detail.body,
+            status: detail.status,
+            priority: detail.priority,
+            assignee: detail.assignee,
+            runs: runs,
+            modelOverride: detail.modelOverride,
+            providerOverride: detail.providerOverride
         )
     }
 

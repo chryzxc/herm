@@ -72,6 +72,7 @@ swift run
 ### Kanban
 
 - Reads the authoritative Hermes board and supports confirmed task creation plus complete, block/unblock, archive, comment, schedule, assign/reassign, promote, and reclaim — each individually capability-gated against the installed Hermes CLI contract.
+- Kanban cards and task details show the assigned Bot's configured provider/model, while per-card model overrides are labeled distinctly; unavailable model metadata remains explicit.
 - Native status/assignee/mine/sort/session filters are forwarded to Hermes; board selection is local view state scoped per call with `--board <slug>` and never moves Hermes' shared current-board pointer. Read-only diagnostics and attachments use Hermes JSON output.
 
 ### Automations and quota
