@@ -1,6 +1,32 @@
 import AppKit
 import SwiftUI
 
+enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
+    case branch
+    case copy
+    case readAloud
+    case refresh
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .branch: "arrow.triangle.branch"
+        case .copy: "doc.on.doc"
+        case .readAloud: "speaker.wave.2"
+        case .refresh: "arrow.clockwise"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .branch: "Branch from this message"
+        case .copy: "Copy message"
+        case .readAloud: "Read message aloud"
+        case .refresh: "Refresh this response"
+        }
+    }
+}
 /// One transcript bubble, isolating per-message SwiftUI work behind an O(1)
 /// equality boundary. DockPopover rebuilds row values on every publication;
 /// when nothing about the message or its bot attribution changed, SwiftUI
@@ -239,31 +265,51 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     private var messageActions: some View {
-        HStack(spacing: 2) {
-            actionButton("arrow.triangle.branch", label: "Branch from this message", action: onBranch, isAvailable: areSessionActionsAvailable)
-            actionButton("doc.on.doc", label: "Copy message", action: onCopy)
-            actionButton(isSpeaking ? "stop.fill" : "speaker.wave.2", label: isSpeaking ? "Stop reading aloud" : "Read message aloud", action: onReadAloud)
-            actionButton("arrow.clockwise", label: "Refresh this response", action: onRefresh, isAvailable: areSessionActionsAvailable)
+        HStack(spacing: 0) {
+            ForEach(ConversationMessageActionKind.allCases) { kind in
+                actionButton(
+                    kind,
+                    action: { perform(kind) },
+                    isAvailable: kind == .copy || areSessionActionsAvailable
+                )
+            }
         }
         .padding(.horizontal, 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Message actions")
     }
 
-    private func actionButton(_ icon: String, label: String, action: @escaping () -> Void, isAvailable: Bool = true) -> some View {
-        Button(action: action) {
+    private func perform(_ kind: ConversationMessageActionKind) {
+        switch kind {
+        case .branch: onBranch()
+        case .copy: onCopy()
+        case .readAloud: onReadAloud()
+        case .refresh: onRefresh()
+        }
+    }
+
+    private func actionButton(
+        _ kind: ConversationMessageActionKind,
+        action: @escaping () -> Void,
+        isAvailable: Bool = true
+    ) -> some View {
+        let icon = kind == .readAloud && isSpeaking ? "stop.fill" : kind.icon
+        let label = kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
+        return Button(action: action) {
             if isActionPending {
                 ProgressView().controlSize(.small)
             } else {
-                LucideImage(systemName: icon).font(.system(size: 12, weight: .semibold))
+                LucideImage(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
             }
         }
         .buttonStyle(DockPressButtonStyle())
-        .frame(width: 44, height: 32)
+        .frame(width: 44, height: 44)
         .contentShape(Rectangle())
         .help(label)
         .accessibilityLabel(label)
         .accessibilityValue(isAvailable ? "Available" : "Unavailable until a conversation session is selected")
         .disabled(isActionPending || !isAvailable)
     }
+
 }
