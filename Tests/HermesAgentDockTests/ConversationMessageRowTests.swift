@@ -47,6 +47,20 @@ struct ConversationMessageRowTests {
         #expect(makeRow(message: base) != makeRow(message: base, botRosterRevision: 1))
     }
 
+    @Test func messageActionsAreUniqueAndHaveHoverLabels() {
+        let actions = ConversationMessageActionKind.allCases
+
+        #expect(actions.count == 4)
+        #expect(Set(actions.map(\.id)).count == actions.count)
+        #expect(Set(actions.map(\.icon)).count == actions.count)
+        #expect(actions.map(\.label) == [
+            "Branch from this message",
+            "Copy message",
+            "Read message aloud",
+            "Refresh this response"
+        ])
+    }
+
     @Test func incompleteSessionMarksSessionActionsUnavailable() {
         let message = ChatMessage(role: .hermes, text: "hello")
         let row = ConversationMessageRow(
