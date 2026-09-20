@@ -2618,7 +2618,7 @@ struct ConversationRepositoryBadgePresentation: Equatable {
         }
         return Self(
             label: label,
-            accessibilityLabel: "Repository \(normalizedName)"
+            accessibilityLabel: "Repository \(label)"
         )
     }
 }

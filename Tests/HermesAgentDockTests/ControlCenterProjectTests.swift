@@ -71,6 +71,8 @@ struct ControlCenterProjectTests {
 
         #expect(badge?.label.count == ConversationRepositoryBadgePresentation.maximumLabelLength)
         #expect(badge?.label.hasSuffix("…") == true)
+        #expect(badge?.accessibilityLabel == "Repository \(badge?.label ?? "")")
+        #expect(badge?.accessibilityLabel.count == "Repository ".count + ConversationRepositoryBadgePresentation.maximumLabelLength)
     }
 
     @Test func wiredProjectSessionAssociationDrivesLinkedAndUnlinkedBadges() {
