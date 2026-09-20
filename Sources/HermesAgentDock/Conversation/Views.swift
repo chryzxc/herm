@@ -788,7 +788,8 @@ struct DockPopover: View {
                 PullRequestWorkspace(
                     center: pullRequestCenter,
                     projects: controlCenter.projects,
-                    onOpenChat: openPullRequestChat
+                    onOpenChat: openPullRequestChat,
+                    onOpenIssueChat: openIssueChat
                 )
                 .id("fullscreen-pull-requests")
             } else if fullscreenSurface == .artifacts {
@@ -827,6 +828,24 @@ struct DockPopover: View {
                 if let createdID = model.sessionID { pullRequestChatLinks.save(sessionID: createdID, for: pullRequest.id) }
             }
             model.draft = prompt
+            fullscreenSurface = .conversation
+            inspectorScope = .session
+            model.requestComposerFocus()
+        }
+    }
+
+    private func openIssueChat(_ issue: GitHubIssueRecord) {
+        let context = IssueContext(issue: issue)
+        Task {
+            if let linkedID = pullRequestChatLinks.sessionID(for: context.id),
+               let linkedSession = model.sessions.first(where: { $0.id == linkedID }) {
+                model.resumeSession(linkedSession)
+            } else {
+                pullRequestChatLinks.remove(pullRequestID: context.id)
+                if issue.localPath.isEmpty { model.newChat() } else { await model.startNewChat(in: issue.localPath) }
+                if let createdID = model.sessionID { pullRequestChatLinks.save(sessionID: createdID, for: context.id) }
+            }
+            model.draft = context.prompt
             fullscreenSurface = .conversation
             inspectorScope = .session
             model.requestComposerFocus()
