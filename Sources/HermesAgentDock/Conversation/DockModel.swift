@@ -2318,9 +2318,7 @@ final class DockModel: ObservableObject {
                 if streamingMessageID == nil {
                     beginStreamingMessage()
                 }
-                if streamingMessageBuffer.isEmpty {
-                    streamingMessageBuffer = completedText
-                }
+                streamingMessageBuffer = completedText
             }
             let wasInterrupting = interruptState == .requesting
             interruptState = .idle

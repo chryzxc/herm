@@ -214,6 +214,25 @@ struct DockNotificationTests {
         #expect(model.status == .idle)
     }
 
+    @Test func completedAssistantMessageReplacesPartialStreamWithAuthoritativeText() {
+        let model = DockModel(initialSessionID: "session-complete")
+
+        model.receiveGatewayEvent("message.start", params: [
+            "session_id": "session-complete", "payload": [:]
+        ])
+        model.receiveGatewayEvent("message.delta", params: [
+            "session_id": "session-complete",
+            "payload": ["delta": "Partial answer"]
+        ])
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "session-complete",
+            "payload": ["text": "The complete authoritative answer."]
+        ])
+
+        #expect(model.messages.map(\.text) == ["The complete authoritative answer."])
+        #expect(model.messages.filter { $0.role == .hermes }.count == 1)
+    }
+
     @Test func replayedClarificationRequestDoesNotAppendItsQuestionAgain() {
         let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
         let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
