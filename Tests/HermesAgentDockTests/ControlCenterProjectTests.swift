@@ -103,6 +103,14 @@ struct ControlCenterProjectTests {
 
         #expect(refreshed.map(\.id) == ["b", "a"])
         #expect(refreshed.last?.name == "A renamed")
+    @Test func createdProjectSelectionMatchesTheAuthoritativeProjectPath() {
+        let projects = [
+            ProjectSummary(id: "other", name: "/work/other", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false),
+            ProjectSummary(id: "created", name: "/work/app", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: false)
+        ]
+
+        #expect(ControlCenterModel.projectMatchingPath("/work/app/", projects: projects)?.id == "created")
+        #expect(ControlCenterModel.projectMatchingPath("/work/missing", projects: projects) == nil)
     }
 
     @Test func clearingSelectedProfileDisablesProjectHydration() {

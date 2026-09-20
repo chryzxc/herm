@@ -1266,6 +1266,27 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    /// Selects the project that owns a newly-created project chat without
+    /// depending on a later tree refresh to restore the user's navigation.
+    /// The path is the same authoritative directory sent to Hermes when the
+    /// session was created; matching by path avoids changing other projects.
+    func selectProject(forPath path: String) {
+        guard let project = Self.projectMatchingPath(path, projects: projects) else { return }
+        selectedProjectID = project.id
+        selectedProject = project
+        projectSessions = projectSessionsByProjectID[project.id] ?? []
+        refreshProjectNavigation(refreshProjects: false)
+    }
+
+    static func projectMatchingPath(_ path: String, projects: [ProjectSummary]) -> ProjectSummary? {
+        let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard !normalizedPath.isEmpty else { return nil }
+        return projects.first {
+            $0.isRenderableProject
+                && URL(fileURLWithPath: $0.name).standardizedFileURL.path == normalizedPath
+        }
+    }
+
     /// Explicit user action for the navigation rail. Automatic message and
     /// activity events must not replace the visible project projection.
     func refreshProjectNavigation() {
