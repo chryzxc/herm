@@ -60,6 +60,11 @@ final class MissionControlNavigationState: ObservableObject {
     @Published var areConversationsExpanded = true
     var hasRequestedSessionIndex = false
 
+    var selectedProjectSessionID: String? {
+        if case let .session(id) = selection.selection { return id }
+        return nil
+    }
+
     func selectSession(_ id: String) {
         selection.selectSession(id)
         selectedTaskID = nil
@@ -3008,8 +3013,7 @@ private struct MissionControlQueue: View {
             if showsProjectsForSelectedBot {
                 MissionControlProjectList(
                     groups: projects,
-                    activeSessionID: activeSessionID,
-                    selectedSessionID: navigationState.selectedSessionID,
+                    selectedSessionID: navigationState.selectedProjectSessionID,
                     attentionDots: sessionAttentionDots,
                     showsAllConversations: navigationState.showsAllConversations,
                     isLoadingProjects: controlCenter.isRefreshing && projects.isEmpty,
@@ -3575,7 +3579,6 @@ struct ProjectDisclosureState: Equatable {
 
 private struct MissionControlProjectList: View {
     let groups: [MissionControlConversationGroup]
-    let activeSessionID: String?
     let selectedSessionID: String?
     let attentionDots: [String: SessionAttentionDot]
     let showsAllConversations: Bool
@@ -3661,7 +3664,7 @@ private struct MissionControlProjectList: View {
                 if lhsDate != rhsDate { return lhsDate > rhsDate }
                 return lhs.id < rhs.id
             }
-        let isActiveProject = group.sessions.contains { $0.id == activeSessionID }
+        let isActiveProject = group.sessions.contains { $0.id == selectedSessionID }
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Button {
@@ -3738,7 +3741,6 @@ private struct MissionControlProjectList: View {
     private func sessionRow(_ session: HermesSession) -> some View {
         MissionControlProjectSessionRow(
             session: session,
-            activeSessionID: activeSessionID,
             selectedSessionID: selectedSessionID,
             attentionDot: attentionDots[session.id],
             onSelect: onSelectSession
@@ -3751,14 +3753,12 @@ private struct MissionControlProjectList: View {
 
 private struct MissionControlProjectSessionRow: View, Equatable {
     let session: HermesSession
-    let activeSessionID: String?
     let selectedSessionID: String?
     let attentionDot: SessionAttentionDot?
     let onSelect: (HermesSession) -> Void
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.session == rhs.session
-            && lhs.activeSessionID == rhs.activeSessionID
             && lhs.selectedSessionID == rhs.selectedSessionID
             && lhs.attentionDot == rhs.attentionDot
     }
@@ -3798,7 +3798,7 @@ private struct MissionControlProjectSessionRow: View, Equatable {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(
-                session.id == activeSessionID || session.id == selectedSessionID
+                session.id == selectedSessionID
                     ? Color.dockAccent.opacity(0.12)
                     : Color.clear
             )

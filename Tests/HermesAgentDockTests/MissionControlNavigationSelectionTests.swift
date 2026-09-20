@@ -103,4 +103,15 @@ struct MissionControlNavigationSelectionTests {
         #expect(state.selectedTaskID == nil)
         #expect(state.selectedSessionID == "project-session")
     }
+
+    @Test func globalSelectionDoesNotProjectTheActiveSessionIntoProjects() {
+        let state = MissionControlNavigationState()
+
+        state.openSession("active-session")
+        state.selectGlobal(.today)
+
+        #expect(state.selection.selection == .global(.today))
+        #expect(state.selectedSessionID == nil)
+        #expect(state.selectedProjectSessionID == nil)
+    }
 }
