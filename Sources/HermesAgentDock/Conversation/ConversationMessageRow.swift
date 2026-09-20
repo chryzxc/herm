@@ -47,6 +47,7 @@ struct ConversationMessageRow: View, Equatable {
     let onBranch: () -> Void
     let onReadAloud: () -> Void
     let onRefresh: () -> Void
+    @State private var hoveredAction: ConversationMessageActionKind?
 
     init(
         message: ChatMessage,
@@ -242,20 +243,10 @@ struct ConversationMessageRow: View, Equatable {
                             )
                     }
 
-                    HStack(spacing: 6) {
-                        Text(message.timeLabel)
-                        if let durationLabel = message.durationLabel {
-                            LucideLabel(durationLabel, icon: "stopwatch")
-                        }
-                        if let modelName = message.modelName {
-                            Text("· \(modelName)")
-                        }
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .padding(.horizontal, 4)
                     if !message.isError, message.hasBodyText {
                         messageActions
+                    } else if message.isError {
+                        messageMetadata
                     }
                 }
             }
@@ -265,7 +256,7 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     private var messageActions: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: -8) {
             ForEach(ConversationMessageActionKind.allCases) { kind in
                 actionButton(
                     kind,
@@ -273,10 +264,26 @@ struct ConversationMessageRow: View, Equatable {
                     isAvailable: kind == .copy || areSessionActionsAvailable
                 )
             }
+            messageMetadata
         }
         .padding(.horizontal, 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Message actions")
+    }
+
+    private var messageMetadata: some View {
+        HStack(spacing: 6) {
+            Text(message.timeLabel)
+            if let durationLabel = message.durationLabel {
+                LucideLabel(durationLabel, icon: "stopwatch")
+            }
+            if let modelName = message.modelName {
+                Text("· \(modelName)")
+            }
+        }
+        .font(.system(size: 12, design: .monospaced))
+        .foregroundStyle(Color.dockMetadataText)
+        .padding(.leading, 4)
     }
 
     private func perform(_ kind: ConversationMessageActionKind) {
@@ -299,14 +306,37 @@ struct ConversationMessageRow: View, Equatable {
             if isActionPending {
                 ProgressView().controlSize(.small)
             } else {
-                LucideImage(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
+                LucideIcon(
+                    name: .from(systemName: icon),
+                    size: 13,
+                    color: Color.dockMetadataText
+                )
             }
         }
         .buttonStyle(DockPressButtonStyle())
-        .frame(width: 44, height: 44)
+        // Compact the action strip while retaining a 44pt interactive area.
+        .frame(width: 36, height: 36)
+        .padding(4)
         .contentShape(Rectangle())
         .help(label)
+        .overlay(alignment: .top) {
+            if hoveredAction == kind {
+                Text(label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(Color.dockControlSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .fixedSize()
+                    .offset(y: -25)
+                    .allowsHitTesting(false)
+                    .zIndex(2)
+            }
+        }
+        .onHover { hovering in
+            hoveredAction = hovering ? kind : nil
+        }
         .accessibilityLabel(label)
         .accessibilityValue(isAvailable ? "Available" : "Unavailable until a conversation session is selected")
         .disabled(isActionPending || !isAvailable)

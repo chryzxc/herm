@@ -49,6 +49,11 @@ struct HermesCLIResult: Equatable {
 /// named Hermes operations rather than a public arbitrary-command API.
 @MainActor
 final class HermesCLIAdapter {
+    private struct KanbanBoardRows: @unchecked Sendable {
+        let index: Int
+        let rows: [[String: Any]]
+    }
+
     private let rpc: HermesControlRPC
 
     init(rpc: HermesControlRPC) {
@@ -87,25 +92,43 @@ final class HermesCLIAdapter {
     private func kanbanList(forBoardSlugs boardSlugs: [String], filter: KanbanListFilter) async throws -> HermesCLIResult {
         let boardPaths = try boardSlugs.map(Self.kanbanBoardPath)
 
-        var rows: [[String: Any]] = []
-        for (boardSlug, path) in zip(boardSlugs, boardPaths) {
-            let response = try await rpc.fetchHTTP(path)
-            let columns = response["columns"] as? [[String: Any]] ?? []
-            rows += columns.flatMap { $0["tasks"] as? [[String: Any]] ?? [] }.map { task in
-                var task = task
-                // The aggregate endpoint does not consistently include the
-                // owning board on each card. Preserve the request scope so
-                // actions on a card can be routed back to the right board.
-                if task["board_slug"] == nil {
-                    task["board_slug"] = boardSlug
+        let fetchedBoards = try await withThrowingTaskGroup(of: KanbanBoardRows.self, returning: [KanbanBoardRows].self) { group in
+            for (index, pair) in zip(boardSlugs.indices, zip(boardSlugs, boardPaths)) {
+                let (boardSlug, path) = pair
+                group.addTask {
+                    try await self.fetchKanbanBoardRows(index: index, boardSlug: boardSlug, path: path)
                 }
-                return task
             }
+            var results: [KanbanBoardRows] = []
+            for try await result in group {
+                results.append(result)
+            }
+            return results.sorted { $0.index < $1.index }
+        }
+
+        var rows: [[String: Any]] = []
+        for board in fetchedBoards {
+            rows += board.rows
         }
         rows = rows.filter { Self.matches($0, filter: filter) }
         if let sort = filter.sort { rows = Self.sorted(rows, by: sort) }
         let data = try JSONSerialization.data(withJSONObject: rows)
         return HermesCLIResult(stdout: String(decoding: data, as: UTF8.self), stderr: "", succeeded: true)
+    }
+
+    private func fetchKanbanBoardRows(index: Int, boardSlug: String, path: String) async throws -> KanbanBoardRows {
+        let response = try await rpc.fetchHTTP(path)
+        let columns = response["columns"] as? [[String: Any]] ?? []
+        let rows = columns.flatMap { $0["tasks"] as? [[String: Any]] ?? [] }.map { task in
+            var task = task
+            // The aggregate endpoint does not consistently include the owning
+            // board on each card. Preserve the request scope for task actions.
+            if task["board_slug"] == nil {
+                task["board_slug"] = boardSlug
+            }
+            return task
+        }
+        return KanbanBoardRows(index: index, rows: rows)
     }
 
     private static func kanbanBoardPath(_ slug: String) throws -> String {
