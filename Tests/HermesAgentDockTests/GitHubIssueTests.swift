@@ -113,6 +113,22 @@ struct GitHubIssueTests {
         #expect(transport.paths == ["/user"])
     }
 
+    @MainActor @Test func issueCenterPublishesLoadingBeforeRepositoryDiscoveryCompletes() async {
+        let model = IssueCenterModel(
+            api: GitHubIssueCenterAPI(transport: IssueTestTransport(failing: true)),
+            repositoryRemote: { _ in
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                return nil
+            }
+        )
+        let project = ProjectSummary(id: "project", name: "repo", repoCount: 1, sessionCount: 0, sessionIDs: [], preview: nil, isActive: true)
+        let refresh = Task { await model.refresh(projects: [project]) }
+
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        #expect(model.isRefreshing)
+        await refresh.value
+    }
+
     @Test func issueContextIsStableAndExplicit() {
         let context = IssueContext(repositoryID: "owner/repo", number: 19, title: "Add issue workspace", webURL: URL(string: "https://github.com/owner/repo/issues/19"))
         #expect(context.id == "github:owner/repo#19")

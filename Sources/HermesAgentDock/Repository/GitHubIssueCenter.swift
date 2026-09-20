@@ -160,6 +160,7 @@ struct GitHubIssueCenterAPI: Sendable {
 @MainActor
 final class IssueCenterModel: ObservableObject {
     private let api: GitHubIssueCenterAPI
+    private let repositoryRemote: @Sendable (String) async -> GitHubRepositoryReference?
     @Published var records: [GitHubIssueRecord] = []
     @Published private(set) var isRefreshing = false
     @Published private(set) var errorMessage: String?
@@ -172,7 +173,15 @@ final class IssueCenterModel: ObservableObject {
     @Published var repositoryScope: String?
     private var generation = UUID()
 
-    init(api: GitHubIssueCenterAPI = GitHubIssueCenterAPI()) { self.api = api }
+    init(
+        api: GitHubIssueCenterAPI = GitHubIssueCenterAPI(),
+        repositoryRemote: @escaping @Sendable (String) async -> GitHubRepositoryReference? = { path in
+            await RepositoryService.githubRemote(path: path)
+        }
+    ) {
+        self.api = api
+        self.repositoryRemote = repositoryRemote
+    }
 
     var selected: GitHubIssueRecord? { records.first { $0.id == selectedIssueID } }
     var visible: [GitHubIssueRecord] {
@@ -192,14 +201,14 @@ final class IssueCenterModel: ObservableObject {
     }
 
     func refresh(projects: [ProjectSummary]) async {
+        let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
         let paths = Array(Set(projects.filter(\.isRenderableProject).map(\.name))).filter { !$0.isEmpty }
         let remotes = await withTaskGroup(of: (String, GitHubRepositoryReference?).self, returning: [String: String].self) { group in
-            for path in paths { group.addTask { (path, await RepositoryService.githubRemote(path: path)) } }
+            for path in paths { group.addTask { (path, await self.repositoryRemote(path)) } }
             var output: [String: String] = [:]
             for await (path, remote) in group { if let remote { output[remote.id] = path } }
             return output
         }
-        let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
         let viewerResult = await api.viewer()
         guard token == generation else { return }
         guard case .success(let viewer) = viewerResult else {
