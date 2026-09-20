@@ -214,12 +214,14 @@ struct ControlReference: Identifiable, Codable, Hashable, Equatable {
     let sourceID: String
     var sessionID: String?
     var projectID: String?
+    var clarificationRequestID: String?
 
-    init(source: ControlSource, sourceID: String, sessionID: String? = nil, projectID: String? = nil) {
+    init(source: ControlSource, sourceID: String, sessionID: String? = nil, projectID: String? = nil, clarificationRequestID: String? = nil) {
         self.source = source
         self.sourceID = sourceID
         self.sessionID = sessionID
         self.projectID = projectID
+        self.clarificationRequestID = clarificationRequestID
         self.id = "\(source.rawValue):\(sourceID)"
     }
 }
@@ -252,7 +254,7 @@ enum AttentionAction: String, Codable, CaseIterable {
 
 struct AttentionItem: Identifiable, Codable, Equatable {
     let id: String
-    let reference: ControlReference
+    var reference: ControlReference
     let kind: AttentionKind
     var title: String
     var detail: String

@@ -162,7 +162,9 @@ final class HermesControlRPC {
         try await client.request(HermesFeatureIDs.ID.processKill.rawValue, params: ["session_id": sessionID, "process_id": processID])
     }
     func respondToApproval(sessionID: String, choice: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: ["session_id": sessionID, "choice": choice]) }
-    func respondToClarification(sessionID: String, response: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: ["session_id": sessionID, "response": response]) }
+    func respondToClarification(requestID: String, answer: String) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: ["request_id": requestID, "answer": answer])
+    }
     func delegationStatus() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.delegationStatus.rawValue, params: [:]) }
     func cron(action: String, jobID: String? = nil) async throws -> [String: Any] {
         var params: [String: Any] = ["action": action]

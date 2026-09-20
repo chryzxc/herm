@@ -192,6 +192,19 @@ struct HermesControlTransportTests {
         #expect(client.calls.last?.params["text"] as? String == "focus on the auth module")
     }
 
+    @Test func clarificationRPCUsesRequestIdentityAndAnswerValue() async throws {
+        let client = RecordingRPCClient()
+        let rpc = HermesControlRPC(client: client)
+
+        _ = try await rpc.respondToClarification(requestID: "clarify-1", answer: "Work")
+
+        #expect(client.calls.last?.method == "clarify.respond")
+        #expect(client.calls.last?.params["request_id"] as? String == "clarify-1")
+        #expect(client.calls.last?.params["answer"] as? String == "Work")
+        #expect(client.calls.last?.params["session_id"] == nil)
+        #expect(client.calls.last?.params["response"] == nil)
+    }
+
     @Test func workflowRPCsUseHermesContracts() async throws {
         let client = RecordingRPCClient()
         let rpc = HermesControlRPC(client: client)

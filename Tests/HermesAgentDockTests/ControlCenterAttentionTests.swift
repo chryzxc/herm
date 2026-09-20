@@ -3,6 +3,26 @@ import Testing
 @testable import HermesAgentDock
 
 @MainActor
+private final class ClarificationResponseRPCClient: HermesRPCClientProtocol {
+    struct Call {
+        let method: String
+        let params: [String: Any]
+    }
+
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var calls: [Call] = []
+
+    func connect() async throws {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        calls.append(Call(method: method, params: params))
+        return [:]
+    }
+
+    func close() {}
+}
+
+@MainActor
 struct ControlCenterAttentionTests {
     @Test func restoredCompletedItemTargetsItsSession() {
         let reference = ControlCenterModel.restoredAttentionReference(for: "completed:session-42")
@@ -113,6 +133,99 @@ struct ControlCenterAttentionTests {
         ])
 
         #expect(model.attention.first?.choices == ["Use the first approach", "Use the second approach"])
+    }
+
+    @Test func clarificationEventsPreserveHermesRequestIdentity() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("clarify.request", params: [
+            "session_id": "session-clarify-request",
+            "payload": [
+                "request_id": "clarify-42",
+                "question": "Which environment?"
+            ]
+        ])
+
+        #expect(model.attention.first?.reference.sessionID == "session-clarify-request")
+        #expect(model.attention.first?.reference.clarificationRequestID == "clarify-42")
+    }
+
+    @Test func partialClarificationEventPreservesExistingRequestIdentity() {
+        let model = ControlCenterModel()
+
+        model.ingestEvent("clarify.request", params: [
+            "session_id": "session-clarify-partial",
+            "payload": [
+                "request_id": "clarify-preserved-42",
+                "question": "Which environment?"
+            ]
+        ])
+        model.ingestEvent("clarification.request", params: [
+            "session_id": "session-clarify-partial",
+            "payload": ["message": "Please choose an environment."]
+        ])
+
+        #expect(model.attention.first?.reference.clarificationRequestID == "clarify-preserved-42")
+    }
+
+    @Test func respondingToClarificationUsesRequestIdentityAndResolvesAfterRPC() async {
+        let client = ClarificationResponseRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let sessionID = "session-clarify-response-\(UUID().uuidString)"
+        model.ingestEvent("clarify.request", params: [
+            "session_id": sessionID,
+            "payload": [
+                "request_id": "clarify-response-42",
+                "question": "Which environment?"
+            ]
+        ])
+        let item = try! #require(model.attention.first)
+
+        model.respond(to: item, action: .respond, response: "production")
+        for _ in 0..<20 { await Task.yield() }
+
+        let clarificationCalls = client.calls.filter { $0.method == "clarify.respond" }
+        #expect(clarificationCalls.count == 1)
+        #expect(clarificationCalls.first?.params["request_id"] as? String == "clarify-response-42")
+        #expect(clarificationCalls.first?.params["answer"] as? String == "production")
+        #expect(model.attention.first?.state == .resolved)
+    }
+
+    @Test func respondingToClarificationWithoutUsableRequestIdentityFailsSafely() async {
+        let client = ClarificationResponseRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let sessionID = "session-clarify-invalid-\(UUID().uuidString)"
+        model.ingestEvent("clarify.request", params: [
+            "session_id": sessionID,
+            "payload": ["question": "Which environment?"]
+        ])
+        let item = try! #require(model.attention.first)
+
+        model.respond(to: item, action: .respond, response: "production")
+        for _ in 0..<20 { await Task.yield() }
+
+        #expect(client.calls.filter { $0.method == "clarify.respond" }.isEmpty)
+        #expect(model.attention.first?.state == .open)
+    }
+
+    @Test func respondingToClarificationWithWhitespaceRequestIdentityFailsSafely() async {
+        let client = ClarificationResponseRPCClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        let sessionID = "session-clarify-whitespace-\(UUID().uuidString)"
+        model.ingestEvent("clarify.request", params: [
+            "session_id": sessionID,
+            "payload": [
+                "request_id": "   ",
+                "question": "Which environment?"
+            ]
+        ])
+        let item = try! #require(model.attention.first)
+
+        model.respond(to: item, action: .respond, response: "production")
+        for _ in 0..<20 { await Task.yield() }
+
+        #expect(client.calls.filter { $0.method == "clarify.respond" }.isEmpty)
+        #expect(model.attention.first?.state == .open)
     }
 
     @Test func partialAttentionEventsPreserveExistingDetail() {
