@@ -500,6 +500,13 @@ struct DockNotificationTests {
         #expect(model.sessionProjectionState == .stale(previousSessions, safeMessage: "Hermes session data is unavailable. Try refreshing."))
     }
 
+    @Test func backgroundSessionRefreshKeepsLoadedProjectionVisible() {
+        let session = HermesSession(id: "session-1", title: "Project", preview: "Latest", startedAt: nil, messageCount: 1, source: "")
+
+        #expect(DockModel.refreshingProjectionState(.ready([session])) == .stale([session], safeMessage: "Refreshing conversations…"))
+        #expect(DockModel.refreshingProjectionState(HermesProjectionState<[HermesSession]>.empty) == .loading)
+    }
+
     @Test func completedMessageRefreshesTheSessionIndex() async {
         let latestSession: [String: Any] = [
             "id": "session-1",
