@@ -554,6 +554,7 @@ final class DockModel: ObservableObject {
 
         let steeringSessionID = sessionID
         let steeringGeneration = sessionResumeGeneration
+        let attachedImages = pendingImages
         isSteering = true
         steeringError = nil
         Task {
@@ -564,7 +565,7 @@ final class DockModel: ObservableObject {
                 }
             }
             do {
-                let result = try await gateway.request(
+                let result = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.sessionSteer.rawValue,
                     params: ["session_id": steeringSessionID, "text": text]
                 )
@@ -579,9 +580,14 @@ final class DockModel: ObservableObject {
                 messages.append(ChatMessage(
                     role: .user,
                     text: text,
+                    images: attachedImages.map(\.image),
                     isSteering: true,
                     steeringStatus: "QUEUED"
                 ))
+                cleanupImageAttachments(attachedImages)
+                pendingImages.removeAll { attachedImage in
+                    attachedImages.contains { $0.id == attachedImage.id }
+                }
                 DebugLog.write("model: steering guidance queued")
             } catch {
                 steeringError = Self.safeUserDiagnostic(error.localizedDescription)
@@ -2287,12 +2293,12 @@ final class DockModel: ObservableObject {
                 isAwaitingClarificationResume = false
             } else {
                 beginStreamingMessage()
+                // A queued steer belongs to the next turn, not the response that
+                // was already in flight when it was submitted. Once Hermes opens
+                // that next response, mark and place the steer immediately before
+                // its response row.
+                markQueuedSteeringMessagesApplied()
             }
-            // A queued steer belongs to the next turn, not the response that
-            // was already in flight when it was submitted. Once Hermes opens
-            // that next response, mark and place the steer immediately before
-            // its response row.
-            markQueuedSteeringMessagesApplied()
             conversationActivityPhase = .responding
             streamingMessageIsVisionNotice = false
             reasoningState = nil
