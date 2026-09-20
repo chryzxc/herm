@@ -94,6 +94,10 @@ final class MissionControlNavigationState: ObservableObject {
         }
     }
 
+    func openIssueChat(sessionID: String?) {
+        openPullRequestChat(sessionID: sessionID)
+    }
+
     func beginProjectChat(sessionID: String? = nil) {
         if let sessionID {
             openSession(sessionID)
@@ -972,14 +976,18 @@ struct DockPopover: View {
     private func openIssueChat(_ issue: GitHubIssueRecord) {
         let context = IssueContext(issue: issue)
         Task {
+            var sessionID: String?
             if let linkedID = pullRequestChatLinks.sessionID(for: context.id),
                let linkedSession = model.sessions.first(where: { $0.id == linkedID }) {
+                sessionID = linkedSession.id
                 model.resumeSession(linkedSession)
             } else {
                 pullRequestChatLinks.remove(pullRequestID: context.id)
                 if issue.localPath.isEmpty { model.newChat() } else { await model.startNewChat(in: issue.localPath) }
-                if let createdID = model.sessionID { pullRequestChatLinks.save(sessionID: createdID, for: context.id) }
+                sessionID = model.sessionID
+                if let sessionID { pullRequestChatLinks.save(sessionID: sessionID, for: context.id) }
             }
+            missionControlNavigation.openIssueChat(sessionID: sessionID)
             model.draft = context.prompt
             fullscreenSurface = .conversation
             inspectorScope = .session

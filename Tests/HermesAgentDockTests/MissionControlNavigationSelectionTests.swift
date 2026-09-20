@@ -82,6 +82,28 @@ struct MissionControlNavigationSelectionTests {
         #expect(state.selectedSessionID == "review-session")
     }
 
+    @Test func issueChatHandoffReplacesThePreviousDestination() {
+        let state = MissionControlNavigationState()
+        state.selectPullRequests()
+
+        state.openIssueChat(sessionID: "issue-session")
+
+        #expect(state.selection.selection == .session("issue-session"))
+        #expect(state.selectedTaskID == nil)
+        #expect(state.selectedSessionID == "issue-session")
+    }
+
+    @Test func issueChatHandoffWithoutASessionClearsThePreviousDestination() {
+        let state = MissionControlNavigationState()
+        state.openSession("stale-session")
+
+        state.openIssueChat(sessionID: nil)
+
+        #expect(state.selection.selection == nil)
+        #expect(state.selectedTaskID == nil)
+        #expect(state.selectedSessionID == nil)
+    }
+
     @Test func projectSessionHandoffReplacesTheGlobalDestination() {
         let state = MissionControlNavigationState()
         state.selectGlobal(.today)
