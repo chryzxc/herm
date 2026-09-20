@@ -1372,15 +1372,9 @@ final class ControlCenterModel: ObservableObject {
         // Publish one complete snapshot after every request has finished. This
         // prevents the visible list from being rebuilt once per project.
         projectSessionsByProjectID = projectSessionsByProjectID.merging(pendingProjectNavigationSessions) { _, new in new }
-        if let selectedProjectID, let refreshedSessions = projectSessionsByProjectID[selectedProjectID] {
+        if let selectedProjectID,
+           let refreshedSessions = projectSessionsByProjectID[selectedProjectID] {
             projectSessions = refreshedSessions
-        } else if let refreshedSessions = pendingProjectNavigationSessions[projectID],
-                  let selectedSessions = Self.projectSessionsAfterNavigationRefresh(
-                      projectID: projectID,
-                      selectedProjectID: selectedProjectID,
-                      refreshedSessions: refreshedSessions
-                  ) {
-            projectSessions = selectedSessions
         }
         pendingProjectNavigationSessions = [:]
         completedProjectNavigationIDs = []
