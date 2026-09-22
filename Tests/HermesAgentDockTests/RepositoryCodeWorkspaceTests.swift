@@ -208,6 +208,37 @@ struct RepositoryCodeWorkspaceTests {
         #expect(!entries.contains { $0.path == "linked/secret.txt" })
     }
 
+    @Test func projectExplorerHidesGeneratedTreesUntilRequested() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-project-generated-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("Sources"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".cache"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("node_modules"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try "let value = 1".write(to: root.appendingPathComponent("Sources/App.swift"), atomically: true, encoding: .utf8)
+        try "generated".write(to: root.appendingPathComponent(".cache/state.json"), atomically: true, encoding: .utf8)
+        try "dependency".write(to: root.appendingPathComponent("node_modules/package.json"), atomically: true, encoding: .utf8)
+
+        let defaultEntries = await RepositoryService.projectFiles(path: root.path)
+        #expect(defaultEntries.contains { $0.path == "Sources/App.swift" })
+        #expect(!defaultEntries.contains { $0.path.hasPrefix(".cache") })
+        #expect(!defaultEntries.contains { $0.path.hasPrefix("node_modules") })
+        #expect(!defaultEntries.contains { $0.path.hasPrefix(".git") })
+
+        let generatedEntries = await RepositoryService.projectFiles(path: root.path, includeGenerated: true)
+        #expect(generatedEntries.contains { $0.path == ".cache/state.json" })
+        #expect(generatedEntries.contains { $0.path == "node_modules" })
+        #expect(!generatedEntries.contains { $0.path.hasPrefix(".git") })
+    }
+
+    @Test func explorerWorkspaceUsesBoundedNavigatorSizing() {
+        #expect(ExplorerWorkspaceMetrics.initialNavigatorWidth == 280)
+        #expect(ExplorerWorkspaceMetrics.minimumNavigatorWidth == 220)
+        #expect(ExplorerWorkspaceMetrics.maximumNavigatorWidth == 360)
+        #expect(ExplorerWorkspaceMetrics.minimumEditorWidth == 480)
+    }
+
     @Test func loadAndSaveDocumentRejectSymlinkEscapes() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-load-save-\(UUID().uuidString)")
         let outside = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-document-load-save-outside-\(UUID().uuidString)")

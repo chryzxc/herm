@@ -2,7 +2,29 @@ import AppKit
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
+
 struct WorkspaceActivitySidebar: View {
+enum AutomationHistoryScope: String, CaseIterable, Identifiable {
+        case selected
+        case all
+
+        var id: Self { self }
+        var title: String { self == .selected ? "Selected" : "All runs" }
+    }
+
+    struct AutomationHistoryPresentation {
+        static func selectedJobID(currentID: String?, jobs: [CronSummary]) -> String? {
+            guard !jobs.isEmpty else { return nil }
+            if let currentID, jobs.contains(where: { $0.id == currentID }) { return currentID }
+            return jobs.first?.id
+        }
+
+        static func runs(_ runs: [CronRunSummary], scope: AutomationHistoryScope, selectedJobID: String?) -> [CronRunSummary] {
+            guard scope == .selected, let selectedJobID else { return runs }
+            return runs.filter { $0.jobID == selectedJobID }
+        }
+    }
+
     static let kanbanScrollAxes: Axis.Set = [.vertical, .horizontal]
 
     @ObservedObject var model: DockModel
@@ -10,6 +32,7 @@ struct WorkspaceActivitySidebar: View {
     @ObservedObject var store: WorkspaceStore
     @ObservedObject var control: ControlCenterModel
     @ObservedObject var workflow: DeveloperWorkflowModel
+    @ObservedObject var dockThemeStore: DockThemeStore
     var onClose: () -> Void = {}
     var onOpenArtifacts: () -> Void = {}
     var onRestartDock: () -> Void = {}
@@ -42,6 +65,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingAutomationComposer = false
     @State private var connectTarget: QuotaProviderDescriptor?
     @State private var selectedCronJobID: String?
+    @State private var automationHistoryScope: AutomationHistoryScope = .selected
     @State private var automationName = ""
     @State private var automationSchedule = ""
     @State private var automationPrompt = ""
@@ -54,6 +78,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var kanbanChangeRequest: KanbanChangeRequest?
     @State private var isShowingKanbanChangeConfirmation = false
     @State private var selectedKanbanTask: KanbanTaskSummary?
+    @State private var kanbanInspectorTab: KanbanInspectorTab = .overview
     @State private var kanbanMutationRequest: KanbanMutationRequest?
     @State private var cronEditJob: CronSummary?
     @State private var cronReportRequest: CronReportRequest?
@@ -81,6 +106,9 @@ struct WorkspaceActivitySidebar: View {
     @State private var kanbanCurrentSessionOnly = false
     @State private var kanbanSort = "updated"
     @State private var kanbanDiagnosticSeverity = "ALL"
+    @State private var expandedEmptyKanbanLanes: Set<KanbanLane> = []
+    @State private var hoveredKanbanTaskID: String?
+    @State private var isKanbanHealthExpanded = false
     @State private var sessionSteerText = ""
     @State private var sessionSteerFeedback: String?
     @State private var backgroundTaskPrompt = ""
@@ -100,14 +128,13 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingAgentUpdateConfirmation = false
     @State private var isShowingDockRestartConfirmation = false
     @State private var isShowingEmergencyStopConfirmation = false
+    @State private var selectedSettingsCategory: SettingsCategory = .general
     @State private var isShowingEmergencyResumeConfirmation = false
     @State private var checkpointForRestore: RestoreCheckpoint?
     @State private var pendingProjectMutation: ProjectMutation?
     @State private var isShowingProjectMutationConfirmation = false
     @State private var pendingProjectFolder: URL?
     @State private var isShowingProjectCreationConfirmation = false
-    @State private var quotaProviderOrder = QuotaProviderCatalog.orderedProviderIDs()
-    @State private var draggingQuotaProviderID: String?
     @StateObject private var commandCenterPreferences = CommandCenterPreferencesStore()
     @ObservedObject var agentUpdateService: HermesUpdateService
 
@@ -117,6 +144,7 @@ struct WorkspaceActivitySidebar: View {
         store: WorkspaceStore,
         control: ControlCenterModel,
         workflow: DeveloperWorkflowModel,
+        dockThemeStore: DockThemeStore = DockThemeStore(),
         onClose: @escaping () -> Void = {},
         onRestartDock: @escaping () -> Void = {},
         onOpenArtifacts: @escaping () -> Void = {},
@@ -131,6 +159,7 @@ struct WorkspaceActivitySidebar: View {
         self.store = store
         self.control = control
         self.workflow = workflow
+        self.dockThemeStore = dockThemeStore
         self.onClose = onClose
         self.onRestartDock = onRestartDock
         self.onOpenArtifacts = onOpenArtifacts
@@ -155,10 +184,14 @@ struct WorkspaceActivitySidebar: View {
             if showsModePicker {
                 modePicker
             }
-            if selectedMode == .kanban {
+            if selectedMode == .core {
+                settingsWorkspaceContent
+            } else if selectedMode == .kanban {
                 kanbanContent
             } else if selectedMode == .officePreview {
                 officePreviewContent
+            } else if selectedMode == .automations {
+                AutomationWorkspaceView(control: control)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -192,19 +225,176 @@ struct WorkspaceActivitySidebar: View {
 
     private var pageHeader: some View {
         if selectedMode == .kanban {
-            DockPageHeader(
+            AnyView(DockPageHeader(
                 icon: selectedMode.pageHeaderIcon,
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
                 onRefresh: { applyKanbanFilters() },
                 isRefreshing: control.isKanbanRefreshPending
-            )
+            ))
+        } else if selectedMode == .automations {
+            AnyView(DockPageHeader(
+                icon: selectedMode.pageHeaderIcon,
+                title: selectedMode.pageHeaderTitle,
+                subtitle: pageHeaderSubtitle,
+                onRefresh: refreshAutomations,
+                isRefreshing: automationIsRefreshing,
+                trailing: {
+                Button(action: { isShowingAutomationComposer = true }) {
+                    LucideLabel("New automation", icon: "plus", iconColor: .dockOnAccentText)
+                }
+                .buttonStyle(.dockPrimary)
+                .font(.system(size: 12, weight: .semibold))
+                }
+            ))
+        } else if selectedMode == .core {
+            AnyView(DockPageHeader(
+                icon: selectedMode.pageHeaderIcon,
+                title: selectedMode.pageHeaderTitle,
+                subtitle: pageHeaderSubtitle,
+                onRefresh: { control.refresh() },
+                isRefreshing: control.isRefreshing
+            ))
         } else {
-            DockPageHeader(
+            AnyView(DockPageHeader(
                 icon: selectedMode.pageHeaderIcon,
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle
+            ))
+        }
+    }
+
+    private var settingsWorkspaceContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageHeader
+            GeometryReader { geometry in
+                let layout = SettingsLayoutMode.forWidth(geometry.size.width)
+                Group {
+                    if layout == .rail {
+                        HStack(spacing: 0) {
+                            settingsCategoryRail
+                                .frame(width: 208)
+                            Divider().overlay(Color.dockBorderLight)
+                            settingsDetailScroll
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 0) {
+                            settingsCategoryMenu
+                            Divider().overlay(Color.dockBorderLight)
+                            settingsDetailScroll
+                        }
+                    }
+                }
+            }
+        }
+        .task {
+            model.refreshRuntimeConfiguration()
+            model.refreshRuntimeModelOptions()
+        }
+    }
+
+    private var settingsCategoryRail: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(SettingsCategory.allCases) { category in
+                    settingsCategoryRow(category)
+                }
+            }
+            .padding(10)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var settingsCategoryMenu: some View {
+        Picker("Settings category", selection: $selectedSettingsCategory) {
+            ForEach(SettingsCategory.allCases) { category in
+                Text(category.title).tag(category)
+            }
+        }
+        .pickerStyle(.menu)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func settingsCategoryRow(_ category: SettingsCategory) -> some View {
+        Button {
+            withAnimation(.dockEase(duration: 0.18)) {
+                selectedSettingsCategory = category
+            }
+        } label: {
+            HStack(spacing: 10) {
+                LucideImage(systemName: category.icon)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(selectedSettingsCategory == category ? Color.dockAccent : Color.dockSecondaryText)
+                    .frame(width: 22, height: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(category.title)
+                        .font(.system(size: 12, weight: selectedSettingsCategory == category ? .medium : .regular))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text(category.subtitle)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if let badge = settingsCategoryBadge(for: category) {
+                    settingsCategoryBadgeView(badge)
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 48)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(selectedSettingsCategory == category ? Color.dockSurface2 : Color.clear)
             )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(category.title), \(selectedSettingsCategory == category ? "selected" : "")")
+    }
+
+    @ViewBuilder
+    private func settingsCategoryBadgeView(_ badge: SettingsCategoryBadge) -> some View {
+        switch badge.kind {
+        case .dot:
+            Circle()
+                .fill(badge.isWarning ? Color.dockWarning : Color.dockAccent)
+                .frame(width: 7, height: 7)
+        case .count(let count):
+            Text("\(count)")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(badge.isWarning ? Color.dockWarning : Color.dockMetadataText)
+        }
+    }
+
+    private func settingsCategoryBadge(for category: SettingsCategory) -> SettingsCategoryBadge? {
+        switch category {
+        case .general:
+            return agentUpdateService.phase == .updateAvailable
+                ? SettingsCategoryBadge(kind: .dot, isWarning: true)
+                : nil
+        case .integrations:
+            let count = unavailableSetupCapabilities.count
+            return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
+        case .session:
+            let count = control.attention.filter { $0.state == .open }.count
+            return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
+        case .runtime, .project, .diagnostics:
+            return nil
+        }
+    }
+
+    private var settingsDetailScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                coreContent
+                    .frame(maxWidth: 920, alignment: .leading)
+                    .padding(.top, 20)
+                    .padding(.bottom, 24)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
         }
     }
 
@@ -278,14 +468,33 @@ struct WorkspaceActivitySidebar: View {
                 model.sessionProjectionState,
                 fallback: selectedMode.pageHeaderSubtitle
             )
+        case .kanban:
+            return projectionHeaderSubtitle(
+                control.projectionState(for: "kanban.board"),
+                fallback: kanbanHeaderSubtitle
+            )
         case .core:
             return projectionHeaderSubtitle(
                 model.runtimeConfigurationProjectionState,
                 fallback: selectedMode.pageHeaderSubtitle
             )
+        case .automations:
+            return projectionHeaderSubtitle(
+                control.projectionState(for: "cron.jobs"),
+                fallback: selectedMode.pageHeaderSubtitle
+            )
         default:
             return selectedMode.pageHeaderSubtitle
         }
+    }
+
+    private var kanbanHeaderSubtitle: String {
+        let boardName = control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name
+            ?? control.selectedKanbanBoardSlug
+            ?? "Current board"
+        let total = control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.total
+            ?? control.kanbanTasks.count
+        return "\(boardName) · \(control.kanbanTasks.count) of \(total) tasks"
     }
 
     /// A page header reserves one subtitle line, so projection transitions
@@ -382,6 +591,9 @@ struct WorkspaceActivitySidebar: View {
             guard let path = selectedProjectFolderPath, !sessions.isEmpty else { return }
             store.attachProject(at: path, toSessions: sessions)
         }
+        .onChange(of: control.cronJobs) { _, _ in
+            reconcileSelectedCronJob()
+        }
         .onChange(of: control.capabilities) { _, _ in
             guard selectedMode == .kanban, control.capabilityAvailable("kanban") else { return }
             applyKanbanFilters()
@@ -399,6 +611,10 @@ struct WorkspaceActivitySidebar: View {
                 // The office reads the same global Kanban projection as the
                 // Kanban page; it never creates or mutates a second task store.
                 control.refreshGlobalKanban()
+            case .automations:
+                control.refresh()
+                control.refreshCronRuns()
+                reconcileSelectedCronJob()
             default:
                 break
             }
@@ -454,6 +670,12 @@ struct WorkspaceActivitySidebar: View {
         .sheet(item: $cronReportRequest) { request in
             CronReportDetailSheet(request: request, control: control)
         }
+        .sheet(isPresented: $isShowingAutomationComposer) {
+            automationComposer
+                .frame(width: 520)
+                .padding(20)
+                .background(Color.dockCanvas)
+        }
         .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
             if let reminder = reminderForConfirmation {
                 Button("Complete Reminder") { control.completeReminder(reminder) }
@@ -492,6 +714,9 @@ struct WorkspaceActivitySidebar: View {
                         automationSchedule = ""
                         automationPrompt = ""
                         isShowingAutomationComposer = false
+                        control.refresh()
+                        control.refreshCronRuns()
+                        reconcileSelectedCronJob()
                     }
                 }
             }
@@ -1415,108 +1640,68 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var automationsContent: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            projectionRefreshNotice("cron.jobs")
-
-            HStack(spacing: 8) {
-                Spacer()
-                Button {
-                    control.refresh()
-                    control.refreshCronRuns()
-                } label: {
-                    LucideImage(systemName: "refresh-cw")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockSecondaryText)
-                .help("Refresh schedules and run history")
-                Button {
-                    withAnimation(.dockEase(duration: 0.2)) {
-                        isShowingAutomationComposer.toggle()
-                    }
-                } label: {
-                    LucideLabel(
-                        isShowingAutomationComposer ? "Close" : "New automation",
-                        icon: isShowingAutomationComposer ? "xmark" : "plus",
-                        iconColor: .dockOnAccentText
-                    )
-                }
-                .buttonStyle(.dockPrimary)
-                .font(.system(size: 12, weight: .semibold))
-            }
-
-            cronOverviewMetrics
-
-            if isShowingAutomationComposer {
-                automationComposer
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-
+        VStack(alignment: .leading, spacing: 14) {
+            cronStatusLine
             cronWorkspace
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear { reconcileSelectedCronJob() }
     }
 
-    private var cronOverviewMetrics: some View {
+    private var automationIsRefreshing: Bool {
+        control.isRefreshing || control.refreshState(for: "cron.history")?.isRefreshing == true
+    }
+
+    private func refreshAutomations() {
+        control.refresh()
+        control.refreshCronRuns()
+    }
+
+    private func reconcileSelectedCronJob() {
+        selectedCronJobID = AutomationHistoryPresentation.selectedJobID(
+            currentID: selectedCronJobID,
+            jobs: control.cronJobs
+        )
+    }
+
+    private var cronStatusLine: some View {
         let activeCount = control.cronJobs.filter(\.enabled).count
         let successfulRuns = control.cronRuns.filter(cronRunIsSuccessful).count
-        let successRate = control.cronRuns.isEmpty ? "—" : "\(Int((Double(successfulRuns) / Double(control.cronRuns.count)) * 100))%"
-        let nextJob = control.cronJobs.first(where: { $0.nextRun != nil })
+        let failedRuns = control.cronRuns.count - successfulRuns
+        let successText = control.cronRuns.isEmpty
+            ? "No run history"
+            : "\(Int((Double(successfulRuns) / Double(control.cronRuns.count)) * 100))% success"
+        let nextRun = control.cronJobs.first(where: { $0.nextRun != nil })?.nextRun.map(HumanDateFormatting.dateAndTime)
 
-        return HStack(spacing: 0) {
-            cronMetric(value: "\(activeCount)", label: "ACTIVE", tint: activeCount > 0 ? .dockSuccess : .dockSecondaryText)
-            cronMetric(value: "\(control.cronRuns.count)", label: "RUNS", tint: .dockAccent)
-            cronMetric(value: successRate, label: "SUCCESS RATE", tint: successfulRuns > 0 ? .dockSuccess : .dockSecondaryText)
-            cronMetric(
-                value: nextJob?.nextRun.map(HumanDateFormatting.dateAndTime) ?? "No next run",
-                label: "NEXT UP",
-                tint: nextJob == nil ? .dockSecondaryText : .dockAccent,
-                isCompactValue: true
-            )
+        return HStack(spacing: 8) {
+            Text("\(activeCount) active")
+            Text("·")
+            Text(successText)
+                .foregroundStyle(failedRuns > 0 ? Color.dockWarning : Color.dockMetadataText)
+            if let nextRun {
+                Text("·")
+                Text("Next \(nextRun)")
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.dockSurface.opacity(0.34))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-        }
-    }
-
-    private func cronMetric(value: String, label: String, tint: Color, isCompactValue: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.system(size: isCompactValue ? 11 : 19, weight: .semibold, design: isCompactValue ? .monospaced : .default))
-                .foregroundStyle(tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Text(label)
-                .font(.system(size: 9, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(Color.dockMetadataText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .overlay(alignment: .trailing) {
-            Color.dockBorderLight.frame(width: 0.5, height: 28)
-        }
+        .font(.system(size: 11, design: .monospaced))
+        .foregroundStyle(Color.dockMetadataText)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(minHeight: 24, alignment: .leading)
     }
 
     private var cronWorkspace: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .top, spacing: 22) {
                 cronSchedulesColumn
-                    .frame(minWidth: 320, maxWidth: .infinity, alignment: .topLeading)
-                cronHistoryColumn
+                    .frame(width: 350, alignment: .topLeading)
+                cronDetailColumn
                     .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
             }
             VStack(alignment: .leading, spacing: 22) {
                 cronSchedulesColumn
-                cronHistoryColumn
+                cronDetailColumn
             }
         }
     }
@@ -1530,13 +1715,169 @@ struct WorkspaceActivitySidebar: View {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(control.cronJobs) { job in
-                            cronScheduleRow(job, isExpanded: selectedCronJobID == job.id)
+                            cronScheduleRow(job, isSelected: selectedCronJobID == job.id)
                         }
                     }
                 }
-                .frame(maxHeight: 360)
+                .frame(maxHeight: 520)
             }
         }
+    }
+
+    private var cronDetailColumn: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let selectedCronJobID,
+               let job = control.cronJobs.first(where: { $0.id == selectedCronJobID }) {
+                cronDetailSummary(job)
+                cronHistorySection
+            } else {
+                emptyState(icon: "cursorarrow.click.2", title: "Select a schedule", detail: "Choose a schedule to inspect its cadence, latest result, and run history.")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func cronDetailSummary(_ job: CronSummary) -> some View {
+        let health = AutomationHealthPresentation.make(
+            job: job,
+            runs: control.cronRuns,
+            capabilityAvailable: true,
+            mcpErrorObserved: false
+        )
+        let latestRun = control.cronRuns.first { $0.jobID == job.id }
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(job.name)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                Text(health.state.rawValue.uppercased())
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText)
+            }
+            Text(job.enabled ? "Enabled and scheduled" : "Paused")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
+
+            Divider().overlay(Color.dockBorderLight)
+            cronDetailRow("Schedule", value: CronScheduleFormatting.humanReadable(job.schedule))
+            cronDetailRow("Expression", value: job.schedule, monospaced: true)
+            cronDetailRow("Next run", value: job.nextRun.map(HumanDateFormatting.dateAndTime) ?? "Not reported by Hermes")
+            cronDetailRow("Job ID", value: job.id, monospaced: true)
+            if let delivery = job.delivery, !delivery.isEmpty {
+                cronDetailRow("Delivery", value: delivery.uppercased())
+            }
+            if let prompt = job.prompt, !prompt.isEmpty {
+                cronDetailRow("Request", value: prompt)
+            }
+            if let latestRun {
+                cronDetailRow("Last run", value: latestRun.claimedAt.map(HumanDateFormatting.dateAndTime) ?? latestRun.id)
+                HStack(spacing: 6) {
+                    Circle().fill(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning).frame(width: 5, height: 5)
+                    Text("Last status")
+                    Text(latestRun.status.uppercased())
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(cronRunIsSuccessful(latestRun) ? Color.dockSuccess : Color.dockWarning)
+                if let error = latestRun.error, !error.isEmpty {
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockWarning)
+                        .lineLimit(3)
+                }
+            }
+            if let latestRun, let request = control.cronReportRequest(for: latestRun) {
+                Divider().overlay(Color.dockBorderLight)
+                Button("Open latest report") { cronReportRequest = request }
+                    .buttonStyle(.borderless)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
+            }
+        }
+        .padding(.bottom, 6)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private func cronDetailRow(_ label: String, value: String, monospaced: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .frame(width: 72, alignment: .leading)
+                .foregroundStyle(Color.dockMetadataText)
+            Text(value)
+                .font(monospaced ? .system(size: 11, design: .monospaced) : .system(size: 12))
+                .foregroundStyle(Color.dockSecondaryText)
+                .lineLimit(3)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var cronHistorySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                LucideImage(systemName: "waveform.path.ecg")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
+                Text("Run history")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                Text("\(filteredCronRuns.count)")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.dockMetadataText)
+                Spacer()
+                Picker("History scope", selection: $automationHistoryScope) {
+                    ForEach(AutomationHistoryScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+            }
+            .padding(.bottom, 5)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            if let state = control.refreshState(for: "cron.history"), state.isStale {
+                Text("Showing the last successful history while Hermes reconnects.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
+            }
+            if !control.cronHistoryAvailable && control.cronRuns.isEmpty {
+                Text("Hermes automation history is unavailable through the installed CLI.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if filteredCronRuns.isEmpty {
+                Text(automationHistoryScope == .selected ? "No runs recorded for this schedule." : "No automation runs recorded.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filteredCronRuns) { run in
+                            if let request = control.cronReportRequest(for: run) {
+                                Button { cronReportRequest = request } label: {
+                                    cronRunRow(run, canViewReport: true)
+                                }
+                                .buttonStyle(.plain)
+                                .help("View this run's report")
+                            } else {
+                                cronRunRow(run, canViewReport: false)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 420)
+            }
+        }
+    }
+
+    private var filteredCronRuns: [CronRunSummary] {
+        AutomationHistoryPresentation.runs(
+            control.cronRuns,
+            scope: automationHistoryScope,
+            selectedJobID: selectedCronJobID
+        )
     }
 
     private var cronHistoryColumn: some View {
@@ -1662,7 +2003,7 @@ struct WorkspaceActivitySidebar: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockAccent.opacity(0.28), lineWidth: 0.5))
     }
 
-    private func cronScheduleRow(_ job: CronSummary, isExpanded: Bool) -> some View {
+    private func cronScheduleRow(_ job: CronSummary, isSelected: Bool) -> some View {
         let health = AutomationHealthPresentation.make(
             job: job,
             runs: control.cronRuns,
@@ -1670,86 +2011,107 @@ struct WorkspaceActivitySidebar: View {
             capabilityAvailable: true,
             mcpErrorObserved: false
         )
-        return VStack(spacing: 0) {
+        return HStack(spacing: 10) {
+            Circle()
+                .fill(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
+                .frame(width: 8, height: 8)
             Button {
-                withAnimation(.dockEase(duration: 0.2)) {
-                    selectedCronJobID = isExpanded ? nil : job.id
-                }
+                selectedCronJobID = job.id
             } label: {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(spacing: 0) {
-                        Circle()
-                            .fill(job.enabled ? Color.dockSuccess : Color.dockMetadataText)
-                            .frame(width: 8, height: 8)
-                            .padding(.top, 4)
-                        Rectangle()
-                            .fill(Color.dockBorderLight)
-                            .frame(width: 1)
-                            .padding(.top, 6)
-                    }
-                    .frame(width: 8)
-                    .frame(maxHeight: .infinity, alignment: .top)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 7) {
-                            Text(job.name)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color.dockPrimaryText)
-                                .lineLimit(1)
-                            if !job.enabled {
-                                Text("PAUSED")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .tracking(0.5)
-                                    .foregroundStyle(Color.dockWarning)
-                            }
-                        }
-                        Text(CronScheduleFormatting.humanReadable(job.schedule))
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.dockSecondaryText)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 7) {
+                        Text(job.name)
+                            .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                            .foregroundStyle(Color.dockPrimaryText)
                             .lineLimit(1)
-                        Text(job.schedule)
+                        if !job.enabled {
+                            Text("PAUSED")
+                                .font(.system(size: 9, weight: .bold))
+                                .tracking(0.5)
+                                .foregroundStyle(Color.dockWarning)
+                        }
+                    }
+                    Text(CronScheduleFormatting.humanReadable(job.schedule))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
+                    if let nextRun = job.nextRun {
+                        Text("Next \(HumanDateFormatting.dateAndTime(nextRun))")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(Color.dockMetadataText)
                             .lineLimit(1)
                     }
-                    Spacer(minLength: 12)
-                    if let nextRun = job.nextRun {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("NEXT RUN")
-                                .font(.system(size: 9, weight: .bold))
-                                .tracking(0.6)
-                            Text(HumanDateFormatting.dateAndTime(nextRun))
-                                .font(.system(size: 11))
-                        }
-                        .foregroundStyle(Color.dockMetadataText)
-                    }
-                    Text(health.state.rawValue.uppercased())
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockSecondaryText)
-                    LucideImage(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 13)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
 
-            if isExpanded {
-                Divider().overlay(Color.dockBorderLight)
-                VStack(alignment: .leading, spacing: 12) {
-                    cronReportCard(job)
-                    cronJobActions(job)
+            Text(health.state.rawValue.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(health.state == .healthy ? Color.dockSuccess : health.state == .degraded ? Color.dockWarning : Color.dockMetadataText)
+                .lineLimit(1)
+
+            if control.capabilityAvailable("cron.runNow") {
+                Button {
+                    cronRunRequest = job
+                    isShowingCronRunConfirmation = true
+                } label: {
+                    Group {
+                        if control.isActionPending(control.cronActionID("run", job: job)) {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            LucideImage(systemName: "play.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                    }
+                    .foregroundStyle(Color.dockAccent)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 14)
-                .padding(.bottom, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .buttonStyle(.borderless)
+                .disabled(control.isActionPending(control.cronActionID("run", job: job)))
+                .help("Run \(job.name) now")
+                .accessibilityLabel("Run \(job.name) now")
+            }
+
+            Menu { cronContextActions(job) } label: {
+                LucideImage(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .help("More actions for \(job.name)")
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 2)
+        .frame(minHeight: 66)
+        .background(isSelected ? Color.dockAccent.opacity(0.12) : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+        .contextMenu { cronContextActions(job) }
+    }
+
+    @ViewBuilder
+    private func cronContextActions(_ job: CronSummary) -> some View {
+        if control.capabilityAvailable("cron.runNow") {
+            Button("Run now", systemImage: "play.fill") {
+                cronRunRequest = job
+                isShowingCronRunConfirmation = true
             }
         }
-        .background(isExpanded ? Color.dockAccent.opacity(0.08) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+        if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
+            Button("Edit", systemImage: "pencil") { cronEditJob = job }
+        }
+        if control.capabilityAvailable("rpc-scheduling") {
+            Divider()
+            Button("Remove", systemImage: "trash", role: .destructive) {
+                cronRemovalRequest = job
+                isShowingCronRemovalConfirmation = true
+            }
+        }
     }
 
     private func cronJobActions(_ job: CronSummary) -> some View {
@@ -1930,24 +2292,15 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private func cronRunRow(_ run: CronRunSummary, canViewReport: Bool) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(spacing: 0) {
-                Circle()
-                    .fill(cronRunIsSuccessful(run) ? Color.dockSuccess : Color.dockWarning)
-                    .frame(width: 8, height: 8)
-                    .padding(.top, 4)
-                Rectangle()
-                    .fill(Color.dockBorderLight)
-                    .frame(width: 1)
-                    .padding(.top, 6)
-            }
-            .frame(width: 8)
-            .frame(maxHeight: .infinity, alignment: .top)
-
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(cronRunIsSuccessful(run) ? Color.dockSuccess : Color.dockWarning)
+                .frame(width: 7, height: 7)
+                .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(run.status.uppercased())
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockPrimaryText)
                     Spacer(minLength: 4)
                     if canViewReport {
@@ -1966,6 +2319,12 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 if let jobID = run.jobID {
+                    if let job = control.cronJobs.first(where: { $0.id == jobID }) {
+                        Text(job.name)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(1)
+                    }
                     Text(jobID)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Color.dockMetadataText)
@@ -1979,10 +2338,10 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
         }
-        .padding(.vertical, 11)
-        .padding(.horizontal, 3)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 4)
         .contentShape(Rectangle())
-        .dockGlassPane()
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private func dockTextField(_ placeholder: String, text: Binding<String>) -> some View {
@@ -2391,50 +2750,54 @@ struct WorkspaceActivitySidebar: View {
                         .padding(.horizontal, 16)
 
                     VStack(alignment: .leading, spacing: 18) {
-                        kanbanOverviewMetrics(presentation)
+                        kanbanToolbar
 
-            if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly {
-                HStack {
-                    Button {
-                        withAnimation(.dockEase(duration: 0.2)) {
-                            isShowingKanbanComposer.toggle()
+                        if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly, isShowingKanbanComposer {
+                            createKanbanTaskForm
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        } else if kanbanCurrentSessionOnly {
+                            LucideLabel("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", icon: "link.badge.plus")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.dockMetadataText)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                    } label: {
-                        LucideLabel(isShowingKanbanComposer ? "Close task composer" : "Add task", icon: isShowingKanbanComposer ? "xmark" : "plus")
-                    }
-                    .buttonStyle(.dockPrimary)
-                    .font(.system(size: 12, weight: .semibold))
-                    Spacer()
-                }
-
-                if isShowingKanbanComposer {
-                    createKanbanTaskForm
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            } else if kanbanCurrentSessionOnly {
-                LucideLabel("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", icon: "link.badge.plus")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if control.capabilityAvailable("kanban.filters"), !control.kanbanTasks.isEmpty {
-                HStack(spacing: 9) {
-                    LucideImage(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
-                    kanbanFilterControls
-                    Spacer()
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface.opacity(0.28)))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
-            }
             if !control.kanbanDiagnostics.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        sectionLabel("KANBAN HEALTH")
+                DisclosureGroup(isExpanded: $isKanbanHealthExpanded) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(control.kanbanDiagnostics) { diagnostic in
+                            Button {
+                                if let taskID = diagnostic.taskID,
+                                   let task = control.kanbanTasks.first(where: { $0.id == taskID }) {
+                                    selectKanbanTask(task)
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text(diagnostic.severity.uppercased())
+                                        .foregroundStyle(diagnostic.severity.lowercased() == "error" ? Color.dockDestructive : Color.dockWarning)
+                                    Text(diagnostic.title)
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    if diagnostic.taskID != nil { LucideImage(systemName: "chevron.right") }
+                                }
+                                .font(.system(size: 11))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 5)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(diagnostic.taskID == nil)
+                        }
+                    }
+                    .padding(.top, 5)
+                } label: {
+                    HStack(spacing: 7) {
+                        LucideImage(systemName: "stethoscope")
+                            .foregroundStyle(Color.dockWarning)
+                        Text("Kanban health")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("\(control.kanbanDiagnostics.count)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Color.dockMetadataText)
                         Spacer()
                         Menu(kanbanDiagnosticSeverity) {
                             ForEach(["ALL", "ERROR", "WARNING", "INFO"], id: \.self) { severity in
@@ -2453,32 +2816,11 @@ struct WorkspaceActivitySidebar: View {
                         .buttonStyle(.borderless)
                         .foregroundStyle(Color.dockAccent)
                     }
-                    ForEach(control.kanbanDiagnostics) { diagnostic in
-                        Button {
-                            if let taskID = diagnostic.taskID,
-                               let task = control.kanbanTasks.first(where: { $0.id == taskID }) {
-                                selectedKanbanTask = task
-                                control.loadKanbanTask(task)
-                            }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack {
-                                    Text(diagnostic.severity.uppercased())
-                                        .foregroundStyle(diagnostic.severity.lowercased() == "error" ? Color.dockDestructive : Color.dockWarning)
-                                    Text(diagnostic.title).foregroundStyle(Color.dockSecondaryText)
-                                    Spacer()
-                                    if diagnostic.taskID != nil { LucideImage(systemName: "chevron.right") }
-                                }
-                                Text(diagnostic.detail).foregroundStyle(Color.dockSecondaryText).lineLimit(2)
-                            }
-                            .font(.system(size: 11))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .dockListRow()
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(diagnostic.taskID == nil)
-                    }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(Color.dockWarning.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
             // Keep the complete board in one scan line while allowing the
@@ -2510,6 +2852,11 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+            .onChange(of: control.kanbanTasks.map(\.id)) { _, ids in
+                if let selectedKanbanTask, !ids.contains(selectedKanbanTask.id) {
+                    self.selectedKanbanTask = nil
+                }
+            }
 
             if let task = selectedKanbanTask {
                 kanbanDetailPanel(task, presentation: presentation)
@@ -2520,47 +2867,102 @@ struct WorkspaceActivitySidebar: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func kanbanOverviewMetrics(_ presentation: KanbanBoardPresentation.Snapshot) -> some View {
-        let readyCount = presentation.tasks(in: .ready).count
-        let runningCount = presentation.tasks(in: .running).count
-        let blockedCount = presentation.tasks(in: .blocked).count
+    private var kanbanToolbar: some View {
+        HStack(spacing: 8) {
+            Menu {
+                if control.kanbanBoards.isEmpty {
+                    Text("Board inventory unavailable")
+                } else {
+                    ForEach(control.kanbanBoards.filter { !$0.archived }) { board in
+                        Button {
+                            control.selectKanbanBoard(board)
+                            selectedKanbanTask = nil
+                        } label: {
+                            HStack {
+                                Text(board.name)
+                                if board.slug == control.selectedKanbanBoardSlug {
+                                    Spacer()
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                kanbanToolbarChip(
+                    control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name
+                        ?? control.selectedKanbanBoardSlug
+                        ?? "Current board",
+                    icon: "rectangle.3.group"
+                )
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
+            .disabled(control.kanbanBoards.count < 2 || control.isKanbanRefreshPending)
+            .help("Select Kanban board")
 
-        return HStack(spacing: 0) {
-            kanbanMetric(value: "\(presentation.totalCount)", label: "TOTAL", tint: .dockAccent)
-            kanbanMetric(value: "\(readyCount)", label: "READY", tint: readyCount > 0 ? .dockAccent : .dockSecondaryText)
-            kanbanMetric(value: "\(runningCount)", label: "RUNNING", tint: runningCount > 0 ? .dockAccent : .dockSecondaryText)
-            kanbanMetric(value: "\(blockedCount)", label: "BLOCKED", tint: blockedCount > 0 ? .dockWarning : .dockSuccess)
+            kanbanFilterControls
+
+            if kanbanFiltersAreActive {
+                Button {
+                    kanbanStatusFilter = "All"
+                    kanbanAssigneeFilter = "All"
+                    kanbanMineOnly = false
+                    kanbanSort = "updated"
+                    applyKanbanFilters()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle.fill")
+                        Text("Clear")
+                    }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
+                }
+                .buttonStyle(.plain)
+                .help("Clear Kanban filters")
+            }
+
+            Spacer(minLength: 8)
+
+            if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly {
+                Button {
+                    withAnimation(.dockEase(duration: 0.2)) {
+                        isShowingKanbanComposer.toggle()
+                    }
+                } label: {
+                    LucideLabel(isShowingKanbanComposer ? "Close" : "Add task", icon: isShowingKanbanComposer ? "xmark" : "plus")
+                }
+                .buttonStyle(.dockPrimary)
+                .font(.system(size: 11, weight: .semibold))
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.dockSurface.opacity(0.34))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.dockSurface.opacity(0.28))
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private func kanbanMetric(value: String, label: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.system(size: 19, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tint)
+    private var kanbanFiltersAreActive: Bool {
+        kanbanStatusFilter != "All" || kanbanAssigneeFilter != "All" || kanbanMineOnly || kanbanSort != "updated"
+    }
+
+    private func kanbanToolbarChip(_ title: String, icon: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(title)
                 .lineLimit(1)
-            Text(label)
-                .font(.system(size: 9, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(Color.dockMetadataText)
+                .truncationMode(.middle)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .bold))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .overlay(alignment: .trailing) {
-            Color.dockBorderLight.frame(width: 0.5, height: 28)
-        }
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(Color.dockSecondaryText)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.dockSurface2.opacity(0.76))
+        .clipShape(Capsule())
     }
-
 
     private var kanbanFilterControls: some View {
         HStack(spacing: 6) {
@@ -2588,22 +2990,31 @@ struct WorkspaceActivitySidebar: View {
             }
             Menu {
                 ForEach(["updated", "created-desc", "priority-desc", "title"], id: \.self) { value in
-                    Button(value.uppercased()) { kanbanSort = value; applyKanbanFilters() }
+                    Button(kanbanSortLabel(value)) { kanbanSort = value; applyKanbanFilters() }
                 }
             } label: {
-                kanbanFilterChip(kanbanSort == "updated" ? "Sort" : kanbanSort, icon: "arrow.up.arrow.down")
+                kanbanFilterChip(kanbanSort == "updated" ? "Sort" : kanbanSortLabel(kanbanSort), icon: "arrow.up.arrow.down")
             }
         }
         .buttonStyle(.plain)
         .font(.system(size: 11, weight: .semibold))
-        .padding(6)
-        .background(Color.dockSurface2.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-        }
         .disabled(control.isKanbanRefreshPending)
+    }
+
+    private var kanbanAssigneeOptions: [String] {
+        Set(control.kanbanAssignees + control.kanbanTasks.compactMap { task in
+            guard let assignee = task.assignee?.trimmingCharacters(in: .whitespacesAndNewlines), !assignee.isEmpty else { return nil }
+            return assignee
+        }).sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private func kanbanSortLabel(_ value: String) -> String {
+        switch value {
+        case "created-desc": "Created"
+        case "priority-desc": "Priority"
+        case "title": "Title"
+        default: "Updated"
+        }
     }
 
     private func kanbanFilterChip(_ title: String, icon: String, isSelected: Bool = false) -> some View {
@@ -2710,7 +3121,7 @@ struct WorkspaceActivitySidebar: View {
                     .tracking(0.9)
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
-                Text("\(control.kanbanAssignees.count)")
+                Text("\(kanbanAssigneeOptions.count)")
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockMetadataText)
             }
@@ -2721,7 +3132,7 @@ struct WorkspaceActivitySidebar: View {
             ScrollView {
                 LazyVStack(spacing: 3) {
                     kanbanAssigneeRow("All", isSelected: kanbanAssigneeFilter == "All")
-                    ForEach(control.kanbanAssignees, id: \.self) { assignee in
+                    ForEach(kanbanAssigneeOptions, id: \.self) { assignee in
                         kanbanAssigneeRow(assignee, isSelected: kanbanAssigneeFilter == assignee)
                     }
                 }
@@ -2852,7 +3263,40 @@ struct WorkspaceActivitySidebar: View {
 
     private func kanbanLane(_ lane: KanbanLane, presentation: KanbanBoardPresentation.Snapshot) -> some View {
         let laneTasks = presentation.tasks(in: lane)
-        return VStack(alignment: .leading, spacing: 8) {
+        if laneTasks.isEmpty && !expandedEmptyKanbanLanes.contains(lane) {
+            return AnyView(
+                Button {
+                    withAnimation(.dockEase(duration: 0.18)) {
+                        _ = expandedEmptyKanbanLanes.insert(lane)
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        LucideImage(systemName: lane.icon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(lane.color)
+                        Text(lane.rawValue)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text("0")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(lane.color)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    .frame(width: 84, height: 44, alignment: .center)
+                    .background(Color.dockSurface.opacity(0.20))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Expand empty \(lane.rawValue) lane")
+                .accessibilityLabel("Expand empty \(lane.rawValue) lane")
+            )
+        }
+
+        return AnyView(VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
                 LucideImage(systemName: lane.icon)
                     .font(.system(size: 11, weight: .semibold))
@@ -2867,6 +3311,22 @@ struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(lane.color)
             }
             .padding(.horizontal, 3)
+            .contentShape(Rectangle())
+            if laneTasks.isEmpty {
+                Button {
+                    withAnimation(.dockEase(duration: 0.18)) {
+                        _ = expandedEmptyKanbanLanes.remove(lane)
+                    }
+                } label: {
+                    Image(systemName: "chevron.up.circle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("Collapse empty \(lane.rawValue) lane")
+                .accessibilityLabel("Collapse empty \(lane.rawValue) lane")
+            }
             Rectangle().fill(lane.color.opacity(0.55)).frame(height: 1)
 
             if laneTasks.isEmpty {
@@ -2894,9 +3354,10 @@ struct WorkspaceActivitySidebar: View {
         .padding(10)
         .frame(width: 260, alignment: .topLeading)
         .frame(minHeight: 178, alignment: .topLeading)
-        .background(Color.black.opacity(0.14))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .background(Color.dockSurface.opacity(0.20))
+        .onChange(of: laneTasks.map(\.id)) { _, ids in
+            if !ids.isEmpty { expandedEmptyKanbanLanes.insert(lane) }
+        })
     }
 
     private func kanbanTaskCard(
@@ -2906,108 +3367,126 @@ struct WorkspaceActivitySidebar: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(lane.color)
-                    .frame(width: 8, height: 8)
                 if let priority = task.priority, !priority.isEmpty {
                     kanbanMetadataPill("P\(priority)", tint: Color.dockWarning)
                 }
                 if let assignee = task.assignee, !assignee.isEmpty {
                     kanbanAssigneePill(assignee, presentation: presentation)
                 }
+                if task.priority == nil && task.assignee == nil {
+                    Text("Unassigned")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
                 Spacer(minLength: 4)
-                Text(task.id)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
+                if hoveredKanbanTaskID == task.id || selectedKanbanTask?.id == task.id {
+                    Menu { kanbanTaskActionMenu(task, lane: lane) } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .frame(width: 44, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.plain)
+                    .help("More Kanban actions")
+                    .accessibilityLabel("More actions for \(task.title)")
+                }
             }
             Text(task.title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.dockSecondaryText)
-                .lineLimit(3)
-            kanbanModelMetadataRow(
-                KanbanModelMetadataPresentation.make(
-                    taskModel: task.modelOverride,
-                    taskProvider: task.providerOverride,
-                    bot: presentation.bot(for: task.assignee)
-                )
-            )
+                .font(.system(size: 14, weight: selectedKanbanTask?.id == task.id ? .medium : .regular))
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(2)
             if let detail = presentation.detail(for: task.id) {
                 Text(detail)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11))
                     .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(2)
-            }
-
-            if let step = task.currentStepKey, !step.isEmpty {
-                Text("STEP · \(step)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.dockAccent)
                     .lineLimit(1)
-            }
-            if let event = task.latestEventKind,
-               !event.isEmpty,
-               !isRedundantKanbanStatus(event, for: lane) {
-                HStack(spacing: 5) {
-                    Text(event.replacingOccurrences(of: "_", with: " ").uppercased())
-                    if let eventAt = task.latestEventAt {
-                        Text(eventAt, style: .relative)
-                    }
-                }
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.dockMetadataText)
-                if let note = task.latestEventNote, !note.isEmpty {
-                    Text(note)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(2)
-                }
-            } else if let startedAt = task.startedAt {
-                Text("STARTED \(startedAt, style: .relative)")
-                    .font(.system(size: 10, weight: .semibold))
+            } else if let detail = task.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+            } else {
+                Text("No summary available")
+                    .font(.system(size: 11))
                     .foregroundStyle(Color.dockMetadataText)
             }
-
-            Rectangle()
-                .fill(Color.dockBorderLight)
-                .frame(height: 0.5)
-
-            HStack(spacing: 10) {
-                if control.capabilityAvailable("kanban.taskDetails") {
-                    Button {
-                        selectedKanbanTask = task
-                        control.loadKanbanTask(task)
-                    } label: {
-                        kanbanActionChip(
-                            title: "Details",
-                            icon: "doc.text",
-                            pendingTitle: "Loading…",
-                            isPending: control.loadingKanbanDetailTaskID == task.id,
-                            tint: Color.dockSecondaryText,
-                            filled: false
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(control.loadingKanbanDetailTaskID == task.id)
-                }
-                if lane == .done, control.capabilityAvailable("kanban.archive") {
-                    kanbanActionButton("ARCHIVE", task: task, action: .archive)
-                } else if lane == .blocked, control.capabilityAvailable("kanban.unblock") {
-                    kanbanActionButton("UNBLOCK", task: task, action: .unblock)
+            HStack(spacing: 6) {
+                if let eventAt = task.latestEventAt ?? task.startedAt {
+                    Text(eventAt, style: .relative)
                 } else {
-                    if control.capabilityAvailable("kanban.complete") {
-                        kanbanActionButton("DONE", task: task, action: .complete)
-                    }
-                    if control.capabilityAvailable("kanban.block") {
-                        kanbanActionButton("BLOCK", task: task, action: .block)
-                    }
+                    Text("No recent activity")
+                }
+                Text("·")
+                Text(task.id)
+                    .fontDesign(.monospaced)
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(Color.dockMetadataText)
+        }
+        .padding(10)
+        .background(selectedKanbanTask?.id == task.id ? Color.dockAccent.opacity(0.13) : (hoveredKanbanTaskID == task.id ? Color.dockSurface2.opacity(0.62) : Color.dockSurface))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(alignment: .leading) {
+            if selectedKanbanTask?.id == task.id {
+                Color.dockAccent.frame(width: 2)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .onTapGesture {
+            selectKanbanTask(task)
+        }
+        .onHover { isHovered in
+            hoveredKanbanTaskID = isHovered ? task.id : (hoveredKanbanTaskID == task.id ? nil : hoveredKanbanTaskID)
+        }
+        .contextMenu { kanbanTaskActionMenu(task, lane: lane) }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("\(task.title), \(lane.rawValue)")
+    }
+
+    private func selectKanbanTask(_ task: KanbanTaskSummary) {
+        selectedKanbanTask = task
+        kanbanInspectorTab = .overview
+        control.loadKanbanTask(task)
+    }
+
+    @ViewBuilder
+    private func kanbanTaskActionMenu(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
+        if control.capabilityAvailable("kanban.taskDetails") {
+            Button("Details", systemImage: "doc.text") {
+                selectKanbanTask(task)
+            }
+            .disabled(control.loadingKanbanDetailTaskID == task.id)
+        }
+        if lane == .done, control.capabilityAvailable("kanban.archive") {
+            Button("Archive", systemImage: kanbanActionIcon(for: .archive)) {
+                requestKanbanAction(task, action: .archive)
+            }
+            .disabled(control.isActionPending(control.kanbanActionID(.archive, task: task)))
+        } else if lane == .blocked, control.capabilityAvailable("kanban.unblock") {
+            Button("Unblock", systemImage: kanbanActionIcon(for: .unblock)) {
+                requestKanbanAction(task, action: .unblock)
+            }
+            .disabled(control.isActionPending(control.kanbanActionID(.unblock, task: task)))
+        } else {
+            if control.capabilityAvailable("kanban.complete") {
+                Button("Done", systemImage: kanbanActionIcon(for: .complete)) {
+                    requestKanbanAction(task, action: .complete)
+                }
+            }
+            if control.capabilityAvailable("kanban.block") {
+                Button("Block", systemImage: kanbanActionIcon(for: .block)) {
+                    requestKanbanAction(task, action: .block)
                 }
             }
         }
-        .padding(10)
-        .background(Color.dockSurface)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+    }
+
+    private func requestKanbanAction(_ task: KanbanTaskSummary, action: KanbanTaskAction) {
+        kanbanChangeRequest = KanbanChangeRequest(task: task, action: action)
+        isShowingKanbanChangeConfirmation = true
     }
 
     private func kanbanMetadataPill(_ value: String, tint: Color) -> some View {
@@ -3115,165 +3594,211 @@ struct WorkspaceActivitySidebar: View {
         case .done: .dockSuccess
         }
 
+        let detail = control.kanbanDetail ?? ControlCenterModel.fallbackKanbanTaskDetail(task, boardSlug: task.boardSlug)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("KANBAN TASK")
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(1.1)
-                        .foregroundStyle(Color.dockAccent)
-                    Text(task.id)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(detail.title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(3)
+                    HStack(spacing: 7) {
+                        Text(detail.status.capitalized)
+                            .foregroundStyle(laneColor)
+                        Text("·")
+                        Text(detail.id)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    .font(.system(size: 11, weight: .medium))
                 }
-                Spacer()
+                Spacer(minLength: 8)
+                Menu {
+                    ForEach(KanbanMutationKind.allCases) { kind in
+                        if control.capabilityAvailable(kind.capabilityID) {
+                            Button(kind.title) {
+                                kanbanMutationRequest = KanbanMutationRequest(task: task, kind: kind, value: "", reclaimFirst: false)
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 36, height: 32)
+                }
+                .menuStyle(.borderlessButton)
+                .buttonStyle(.plain)
                 Button {
                     selectedKanbanTask = nil
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 28, height: 28)
-                        .background(Color.dockSurface2)
-                        .clipShape(Circle())
+                        .frame(width: 36, height: 32)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close task details")
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            .foregroundStyle(Color.dockSecondaryText)
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            HStack(spacing: 0) {
+                ForEach(KanbanInspectorTab.allCases) { tab in
+                    Button(tab.rawValue) { kanbanInspectorTab = tab }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(kanbanInspectorTab == tab ? Color.dockPrimaryText : Color.dockMetadataText)
+                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .overlay(alignment: .bottom) {
+                            if kanbanInspectorTab == tab { Color.dockAccent.frame(height: 2) }
+                        }
+                        .buttonStyle(.plain)
+                }
+            }
+            .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
 
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 16) {
-                    if control.loadingKanbanDetailTaskID == task.id {
+                    if let error = control.kanbanDetailError, !error.isEmpty {
                         HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("LOADING HERMES TASK…")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.dockSecondaryText)
+                            Image(systemName: "exclamationmark.triangle")
+                            Text(error).lineLimit(3)
+                            Spacer()
+                            Button("Retry") { control.loadKanbanTask(task) }
+                                .buttonStyle(.borderless)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    } else if let detail = control.kanbanDetail {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(detail.title)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(Color.dockSecondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockWarning)
+                    }
+                    if control.loadingKanbanDetailTaskID == task.id {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small)
+                            Text("Refreshing task details…")
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                    }
 
+                    if kanbanInspectorTab == .overview {
+                        VStack(alignment: .leading, spacing: 14) {
                             HStack(spacing: 7) {
-                                kanbanMetadataPill(detail.status.uppercased(), tint: laneColor)
-                                if let priority = detail.priority {
-                                    kanbanMetadataPill("P\(priority)", tint: Color.dockWarning)
-                                }
-                                if let assignee = detail.assignee {
-                                    kanbanMetadataPill(assignee, tint: Color.dockSecondaryText)
-                                }
+                                kanbanMetadataPill(detail.status.capitalized, tint: laneColor)
+                                if let priority = detail.priority { kanbanMetadataPill("P\(priority)", tint: .dockWarning) }
+                                if let assignee = detail.assignee { kanbanAssigneePill(assignee, presentation: presentation) }
                             }
-                            kanbanModelMetadataRow(
-                                KanbanModelMetadataPresentation.make(
-                                    taskModel: detail.modelOverride ?? task.modelOverride,
-                                    taskProvider: detail.providerOverride ?? task.providerOverride,
-                                    bot: presentation.bot(for: detail.assignee ?? task.assignee)
-                                )
-                            )
-
+                            kanbanModelMetadataRow(KanbanModelMetadataPresentation.make(
+                                taskModel: detail.modelOverride ?? task.modelOverride,
+                                taskProvider: detail.providerOverride ?? task.providerOverride,
+                                bot: presentation.bot(for: detail.assignee ?? task.assignee)
+                            ))
                             if let body = detail.body, !body.isEmpty {
                                 MarkdownMessageView(markdown: body)
-                                    .padding(12)
+                                    .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(Color.dockSurface2.opacity(0.55))
-                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            }
-                        }
-
-                        if !control.kanbanAttachments.isEmpty {
-                            DisclosureGroup("ATTACHMENTS  ·  \(control.kanbanAttachments.count)") {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    ForEach(control.kanbanAttachments) { attachment in
-                                        HStack {
-                                            LucideImage(systemName: "paperclip")
-                                            Text(attachment.name).lineLimit(1)
-                                            Spacer()
-                                            if let kind = attachment.kind { Text(kind) }
-                                            if let size = attachment.sizeBytes {
-                                                Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
-                                            }
-                                        }
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.dockSecondaryText)
-                                        .padding(.vertical, 4)
-                                    }
-                                }
-                                .padding(.top, 5)
-                            }
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                        }
-
-                        Menu {
-                            ForEach(KanbanMutationKind.allCases) { kind in
-                                if control.capabilityAvailable(kind.capabilityID) {
-                                    Button(kind.title) {
-                                        kanbanMutationRequest = KanbanMutationRequest(task: task, kind: kind, value: "", reclaimFirst: false)
-                                    }
-                                }
-                            }
-                        } label: {
-                            kanbanActionChip(title: "Task actions", icon: "ellipsis.circle", pendingTitle: "Task actions", isPending: false, tint: Color.dockAccent)
-                        }
-                        .menuStyle(.borderlessButton)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("RUN HISTORY  ·  \(detail.runs.count)")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.dockSecondaryText)
-                            if detail.runs.isEmpty {
-                                Text("No run history returned by Hermes.")
+                            } else {
+                                Text("No task description returned.")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Color.dockMetadataText)
-                            } else {
-                                ForEach(detail.runs) { run in
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        HStack {
-                                            Text(run.status.uppercased())
-                                            if let outcome = run.outcome { Text(outcome) }
-                                            Spacer()
-                                            if let elapsed = run.elapsed { Text(elapsed) }
-                                        }
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.dockAccent)
-                                        if let summary = run.summary {
-                                            Text(summary)
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(Color.dockSecondaryText)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                    }
-                                    .padding(.vertical, 7)
-                                    .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-                                }
                             }
+                            kanbanAttachmentSection
                         }
                     } else {
-                        Text("Hermes did not return structured details for this task.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockWarning)
+                        kanbanActivitySection(detail)
                     }
                 }
-                .padding(20)
+                .padding(16)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
-        .frame(minWidth: 340, idealWidth: 360, maxWidth: 420, maxHeight: .infinity, alignment: .topLeading)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.dockBorder, lineWidth: 0.5)
-        }
+        .frame(minWidth: 360, idealWidth: 400, maxWidth: 460, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
+        .overlay(alignment: .leading) { Color.dockBorderLight.frame(width: 0.5) }
+    }
+
+    private var kanbanAttachmentSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("ATTACHMENTS")
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.7)
+                .foregroundStyle(Color.dockMetadataText)
+            if control.kanbanAttachments.isEmpty {
+                Text("No attachments")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+            } else {
+                ForEach(control.kanbanAttachments) { attachment in
+                    HStack(spacing: 7) {
+                        Image(systemName: "paperclip")
+                        Text(attachment.name).lineLimit(1)
+                        Spacer(minLength: 4)
+                        if let kind = attachment.kind { Text(kind) }
+                        if let size = attachment.sizeBytes {
+                            Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                        }
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .padding(.vertical, 5)
+                    .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+                }
+            }
+        }
+    }
+
+    private func kanbanActivitySection(_ detail: KanbanTaskDetail) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let step = selectedKanbanTask?.currentStepKey, !step.isEmpty {
+                kanbanInspectorSection("CURRENT STEP") {
+                    Text(step)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.dockAccent)
+                }
+            }
+            if let event = selectedKanbanTask?.latestEventKind, !event.isEmpty {
+                kanbanInspectorSection("LATEST EVENT") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(event.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(.system(size: 13, weight: .medium))
+                        if let note = selectedKanbanTask?.latestEventNote, !note.isEmpty {
+                            Text(note).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+                        }
+                    }
+                }
+            }
+            kanbanInspectorSection("RUN HISTORY · \(detail.runs.count)") {
+                if detail.runs.isEmpty {
+                    Text("No run history returned by Hermes.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                } else {
+                    ForEach(detail.runs) { run in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(run.status.capitalized)
+                                if let outcome = run.outcome { Text("· \(outcome)") }
+                                Spacer()
+                                if let elapsed = run.elapsed { Text(elapsed) }
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
+                            if let profile = run.profile { Text(profile).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText) }
+                            if let summary = run.summary { Text(summary).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText) }
+                        }
+                        .padding(.vertical, 7)
+                        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func kanbanInspectorSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.7)
+                .foregroundStyle(Color.dockMetadataText)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var canCreateKanbanTask: Bool {
@@ -5104,18 +5629,17 @@ struct WorkspaceActivitySidebar: View {
 
     private var coreContent: some View {
         VStack(alignment: .leading, spacing: 17) {
-            coreOverview
-            settingsCommandBar
-
-            settingsDisclosure(title: "Agent update", subtitle: "Installed version and update channel", icon: "refresh-cw", isExpanded: $isAgentUpdateExpanded) {
-                agentUpdateSection
+            if selectedSettingsCategory == .general {
+                settingsDisclosure(title: "Appearance & pets", subtitle: appearanceSubtitle, icon: "sparkles", isExpanded: $isAppearanceExpanded) {
+                    appearanceSection
+                }
+                settingsDisclosure(title: "Agent update", subtitle: "Installed version and update channel", icon: "refresh-cw", isExpanded: $isAgentUpdateExpanded) {
+                    agentUpdateSection
+                }
+                generalPreferencesSection
             }
 
-            settingsDisclosure(title: "Appearance & pets", subtitle: appearanceSubtitle, icon: "sparkles", isExpanded: $isAppearanceExpanded) {
-                appearanceSection
-            }
-
-            if let insights = control.insightsSummary {
+            if selectedSettingsCategory == .diagnostics, let insights = control.insightsSummary {
                 settingsDisclosure(title: "Usage insights", subtitle: "Last \(insights.days) days", icon: "chart.bar", isExpanded: $isInsightsExpanded) {
                     VStack(alignment: .leading, spacing: 8) {
                         diagnosticRow(label: "SESSIONS", value: "\(insights.sessions)", color: .dockAccent)
@@ -5124,9 +5648,11 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
-            emergencyStopSection
+            if selectedSettingsCategory == .runtime {
+                emergencyStopSection
+            }
 
-            if !unavailableSetupCapabilities.isEmpty {
+            if selectedSettingsCategory == .integrations, !unavailableSetupCapabilities.isEmpty {
                 settingsDisclosure(title: "Setup needed", subtitle: "\(unavailableSetupCapabilities.count) integrations need attention", icon: "exclamationmark.triangle", isExpanded: $isSetupExpanded, tint: .dockWarning) {
                     ForEach(unavailableSetupCapabilities) { capability in
                         providerSetupCard(capability)
@@ -5134,6 +5660,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
+            if selectedSettingsCategory == .integrations {
             settingsDisclosure(title: "Capabilities", subtitle: "Permission and integration readiness", icon: "checkmark.shield", isExpanded: $isCapabilitiesExpanded) {
                 projectionRefreshNotice("core")
                 capabilityInventorySummary
@@ -5158,6 +5685,8 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
+            }
+            if selectedSettingsCategory == .project {
             if control.projectFacts != nil || control.verification != nil {
                 settingsDisclosure(title: "Verification", subtitle: "Project facts and delivery evidence", icon: "checkmark.seal", isExpanded: $isVerificationExpanded) {
                     if let facts = control.projectFacts {
@@ -5210,8 +5739,9 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
+            }
             let canSteerSession = model.status == .working && model.sessionID != nil
-            if control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.restoreCheckpoints.isEmpty || control.isLoadingCheckpoints {
+            if selectedSettingsCategory == .session, control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.restoreCheckpoints.isEmpty || control.isLoadingCheckpoints {
                 settingsDisclosure(title: "Session cockpit", subtitle: "Context, usage, and active-turn controls", icon: "waveform.path.ecg", isExpanded: $isSessionCockpitExpanded) {
                     if let usage = control.sessionUsage {
                     diagnosticRow(label: "TOKENS", value: "\(usage.totalTokens) total  ·  \(usage.inputTokens) in  ·  \(usage.outputTokens) out", color: Color.dockAccent)
@@ -5302,7 +5832,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
-            if let budget = control.promptBudget {
+            if selectedSettingsCategory == .session, let budget = control.promptBudget {
                 Divider().overlay(Color.dockBorderLight)
                 sectionLabel("PROMPT BUDGET")
                 let percent = budget.percent ?? 0
@@ -5311,6 +5841,7 @@ struct WorkspaceActivitySidebar: View {
                 if budget.percent != nil { diagnosticRow(label: "USED", value: String(format: "%.1f%%", percent), color: color) }
                 if let model = budget.model { diagnosticRow(label: "MODEL", value: model, color: Color.dockMetadataText) }
             }
+            if selectedSettingsCategory == .session {
             settingsDisclosure(title: "Session actions", subtitle: "Rename, redirect, branch, or pause the active session", icon: "bolt.horizontal", isExpanded: $isSessionActionsExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
@@ -5362,7 +5893,8 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }
-            if !control.activeAgents.isEmpty || !control.processes.isEmpty {
+            }
+            if selectedSettingsCategory == .session, !control.activeAgents.isEmpty || !control.processes.isEmpty {
                 Divider().overlay(Color.dockBorderLight)
                 sectionLabel("RUNTIME CONTROLS")
                 ForEach(control.activeAgents) { agent in
@@ -5393,7 +5925,7 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11))
                 }
             }
-            if !control.diagnostics.isEmpty {
+            if selectedSettingsCategory == .diagnostics, !control.diagnostics.isEmpty {
                 settingsDisclosure(title: "Read-only diagnostics", subtitle: "Observed runtime detail", icon: "stethoscope", isExpanded: $isDiagnosticsExpanded) {
                     ForEach(control.diagnostics) { diagnostic in
                     HStack(alignment: .top, spacing: 8) {
@@ -5415,7 +5947,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
-            if !control.journeyNodes.isEmpty || control.sessionStoreStatus != nil || control.memoryHealthStatus != nil {
+            if selectedSettingsCategory == .diagnostics, !control.journeyNodes.isEmpty || control.sessionStoreStatus != nil || control.memoryHealthStatus != nil {
                 settingsDisclosure(title: "Learning & storage", subtitle: "Session store, memory, and journey state", icon: "internaldrive", isExpanded: $isLearningExpanded) {
                     ForEach([control.sessionStoreStatus, control.memoryHealthStatus].compactMap { $0 }) { status in
                     diagnosticRow(label: status.title.uppercased(), value: status.detail, color: status.isAvailable ? Color.dockSuccess : Color.dockWarning)
@@ -5436,45 +5968,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
-            Divider().overlay(Color.dockBorderLight)
-            sectionLabel("NOTIFICATIONS")
-            // Notifications toggle row with space-between layout so the switch is placed at the far right end
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Completion alerts")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("Notify when Hermes finishes a request while the Dock is hidden.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 16)
-                Toggle("", isOn: Binding(
-                    get: { model.completionNotificationsEnabled },
-                    set: { model.setCompletionNotificationsEnabled($0) }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(Color.dockAccent)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Divider().overlay(Color.dockBorderLight)
-            sectionLabel("QUICK CAPTURE")
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Open Hermes Control")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("Double-press Command to focus Ask from any app.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockMetadataText)
-                }
-                Spacer()
-                Text("⌘  ⌘")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockAccent)
-            }
+            if selectedSettingsCategory == .runtime {
             settingsDisclosure(title: "Runtime configuration", subtitle: "Default model, tools, skills, and plugins", icon: "gearshape.2", isExpanded: $isRuntimeConfigurationExpanded) {
             HStack {
                 Text("HERMES RUNTIME")
@@ -5689,6 +6183,30 @@ struct WorkspaceActivitySidebar: View {
                 emptyState(icon: "exclamationmark.triangle", title: "Runtime unavailable", detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
             }
             }
+            }
+
+            if selectedSettingsCategory == .session,
+               control.sessionUsage == nil,
+               control.sessionContext == nil,
+               control.restoreCheckpoints.isEmpty,
+               control.activeAgents.isEmpty,
+               control.processes.isEmpty,
+               model.sessionID == nil {
+                emptyState(icon: "waveform.path.ecg", title: "Session data unavailable", detail: "Open a Hermes session or refresh Settings to load session controls.")
+            }
+            if selectedSettingsCategory == .project,
+               control.projectFacts == nil,
+               control.verification == nil {
+                emptyState(icon: "checkmark.seal", title: "Project data unavailable", detail: "Select a repository and refresh Settings to load project facts and verification evidence.")
+            }
+            if selectedSettingsCategory == .diagnostics,
+               control.insightsSummary == nil,
+               control.diagnostics.isEmpty,
+               control.journeyNodes.isEmpty,
+               control.sessionStoreStatus == nil,
+               control.memoryHealthStatus == nil {
+                emptyState(icon: "stethoscope", title: "Diagnostics unavailable", detail: "Refresh Settings or reconnect Hermes to request read-only diagnostics.")
+            }
         }
         .task {
             model.refreshRuntimeConfiguration()
@@ -5700,55 +6218,201 @@ struct WorkspaceActivitySidebar: View {
             selectedModelID = matching.id
         }
         .onChange(of: model.runtimeModelOptions) { _, options in
-            guard let configuration = model.runtimeConfiguration,
-                  let matching = options.first(where: { $0.model == configuration.model && $0.provider == configuration.provider }) else { return }
+            guard let configuration = model.runtimeConfiguration else { return }
+            let matching = options.first { option in
+                option.model == configuration.model && option.provider == configuration.provider
+            }
+            guard let matching else { return }
             selectedModelID = matching.id
+        }
+    }
+
+    private var generalPreferencesSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sectionLabel("NOTIFICATIONS")
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Repository watch notifications")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text("Notify when watched repository state changes.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: Binding(
+                    get: { commandCenterPreferences.repositoryNotificationsEnabled },
+                    set: { enabled in
+                        commandCenterPreferences.setRepositoryNotificationsEnabled(enabled)
+                        workflow.setRepositoryNotificationsEnabled(enabled)
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Color.dockAccent)
+            }
+            .frame(minHeight: 52)
+            Divider().overlay(Color.dockBorderLight)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Completion alerts")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text("Notify when Hermes finishes a request while the Dock is hidden.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                Spacer(minLength: 12)
+                Toggle("", isOn: Binding(
+                    get: { model.completionNotificationsEnabled },
+                    set: { model.setCompletionNotificationsEnabled($0) }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Color.dockAccent)
+            }
+            .frame(minHeight: 52)
+            Divider().overlay(Color.dockBorderLight)
+            sectionLabel("QUICK CAPTURE")
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Open Hermes Control")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text("Double-press Command to focus Ask from any app.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                Spacer(minLength: 12)
+                Text("⌘  ⌘")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.dockAccent)
+            }
+            .frame(minHeight: 52)
         }
     }
 
     private var appearanceSubtitle: String {
         guard let projection = control.appearanceProjection,
               control.appearanceProjectionAvailable else {
-            return "Skin and installed-pet inventory unavailable"
+            return "Dock themes and Hermes skin status unavailable"
         }
-        return "\(projection.skins.count) skins · \(projection.installedPets.count) installed pets"
+        let mapped = projection.skins.filter { skin in DockThemeID.allCases.contains { $0.hermesSkinID == skin.id } }.count
+        return "\(DockThemeID.allCases.count) Dock skins · \(mapped) Hermes skins detected"
     }
 
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            Text("Skins")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            Text("Choose a skin for the Dock and see its Hermes status in one place.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10)], spacing: 10) {
+                let skins = control.appearanceProjection?.skins ?? []
+                let nativeOption = DockAppearanceOption(themeID: .nativeMacOS, hermesSkin: nil)
+                ForEach([nativeOption] + DockAppearanceCatalog.installedOptions(installedSkins: skins)) { option in
+                    themeOption(option)
+                }
+            }
+            Text("Dock skin selection and Hermes skin activation are independent.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
+
             if !control.appearanceProjectionAvailable {
-                emptyState(
-                    icon: "sparkles",
-                    title: "Appearance inventory unavailable",
-                    detail: "Hermes did not return a readable skin and installed-pet projection. Refresh Settings to retry."
-                )
+                SettingsInlineNotice(text: "Hermes skin status unavailable. Refresh Settings to retry.", tint: Color.dockWarning)
             } else if let projection = control.appearanceProjection {
-                if !projection.skins.isEmpty {
-                    settingsCategoryDisclosure(title: "SKINS", count: projection.skins.count, readyCount: projection.skins.filter(\.isActive).count, isExpanded: .constant(true)) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(projection.skins, id: \.id) { skin in
-                                diagnosticRow(label: skin.isActive ? "ACTIVE" : "SKIN", value: skin.name, color: skin.isActive ? .dockSuccess : .dockMetadataText)
-                            }
-                        }
-                    }
-                }
                 if !projection.installedPets.isEmpty {
-                    settingsCategoryDisclosure(title: "INSTALLED PETS", count: projection.installedPets.count, readyCount: projection.installedPets.count, isExpanded: .constant(true)) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(projection.installedPets, id: \.id) { pet in
-                                diagnosticRow(label: "PET", value: pet.name, color: .dockMetadataText)
+                    SettingsSection(title: "Installed companion", subtitle: "Read-only Hermes companion inventory", tint: Color.dockSecondaryText) {
+                        ForEach(projection.installedPets, id: \.id) { pet in
+                            HStack(spacing: 8) {
+                                Circle().fill(pet.isActive ? Color.dockSuccess : Color.dockMetadataText).frame(width: 6, height: 6)
+                                Text(pet.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+                                Spacer()
+                                Text(pet.isActive ? "ACTIVE" : "INSTALLED")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(pet.isActive ? Color.dockSuccess : Color.dockMetadataText)
                             }
+                            .frame(minHeight: 36)
                         }
                     }
                 }
-                if projection.skins.isEmpty && projection.installedPets.isEmpty {
-                    emptyState(icon: "sparkles", title: "No installed appearance items", detail: "Hermes reported no readable skins or installed pets.")
+                let unknownSkins = DockAppearanceCatalog.unknownSkins(projection.skins)
+                if !unknownSkins.isEmpty {
+                    SettingsSection(title: "Other Hermes skins", subtitle: "Dock palette unavailable", tint: Color.dockMetadataText) {
+                        ForEach(unknownSkins, id: \.id) { skin in
+                            HStack(spacing: 8) {
+                                Circle().fill(skin.isActive ? Color.dockSuccess : Color.dockMetadataText).frame(width: 6, height: 6)
+                                Text(skin.name).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                                Spacer()
+                                Text("UNAVAILABLE")
+                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
+                            .frame(minHeight: 36)
+                        }
+                    }
                 }
-                Text("Switching skins or pets remains copy-only until Hermes publishes a verified mutation contract.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
             }
         }
+    }
+
+    private func themeOption(_ option: DockAppearanceOption) -> some View {
+        let theme = option.themeID
+        let selected = dockThemeStore.selectedThemeID == theme
+        return Button {
+            withAnimation(.dockEase(duration: 0.16)) { dockThemeStore.selectedThemeID = theme }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    HStack(spacing: 3) {
+                        ForEach(Array(DockThemePalette(theme: theme).swatches.enumerated()), id: \.offset) { _, color in
+                            Circle().fill(color).frame(width: 9, height: 9)
+                        }
+                    }
+                    Spacer()
+                    if selected { LucideImage(systemName: "checkmark.circle.fill").foregroundStyle(Color.dockAccent) }
+                }
+                HStack(spacing: 6) {
+                    Text(option.hermesSkin?.name ?? theme.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(theme.appearance == .light ? "LIGHT" : theme.appearance == .dark ? "DARK" : "SYSTEM")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                }
+                if let skin = option.hermesSkin {
+                    Text("Hermes \(skin.source ?? "skin") · \(skin.id)")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                }
+                Text(theme.detail).font(.system(size: 10)).foregroundStyle(Color.dockSecondaryText).lineLimit(2).multilineTextAlignment(.leading)
+                HStack(spacing: 6) {
+                    if theme == .nativeMacOS {
+                        Text("DOCK DEFAULT")
+                            .foregroundStyle(Color.dockMetadataText)
+                    } else if option.isHermesActive {
+                        Text("HERMES ACTIVE")
+                            .foregroundStyle(Color.dockSuccess)
+                    } else if option.isHermesInstalled {
+                        Text("HERMES INSTALLED")
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, minHeight: option.hermesSkin == nil ? 96 : 112, alignment: .leading)
+            .background((selected ? Color.dockSurface4 : Color.dockSurface2).opacity(selected ? 1 : 0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(selected ? Color.dockAccent.opacity(0.55) : Color.dockBorderLight, lineWidth: selected ? 1 : 0.5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(theme.title), \(selected ? "selected" : "select theme")")
     }
 
     private var emergencyStopSection: some View {
@@ -5862,47 +6526,9 @@ struct WorkspaceActivitySidebar: View {
         tint: Color = .dockAccent,
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.dockEase(duration: 0.18)) {
-                    isExpanded.wrappedValue.toggle()
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    LucideImage(systemName: icon)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(tint)
-                        .frame(width: 24, height: 24)
-                        .background(tint.opacity(isExpanded.wrappedValue ? 0.13 : 0.07), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.dockPrimaryText)
-                        Text(subtitle)
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.dockMetadataText)
-                    }
-                    Spacer(minLength: 10)
-                    LucideImage(systemName: isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 20, height: 28)
-                }
-                .contentShape(Rectangle())
-                .padding(.vertical, 12)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(title), \(isExpanded.wrappedValue ? "expanded" : "collapsed")")
-
-            if isExpanded.wrappedValue {
-                Divider().overlay(Color.dockBorderLight)
-            VStack(alignment: .leading, spacing: 12) {
-                content()
-            }
-            .padding(.vertical, 14)
-            }
+        SettingsSection(title: title, subtitle: subtitle, tint: tint) {
+            content()
         }
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private func settingsCategoryDisclosure<Content: View>(
@@ -5959,134 +6585,110 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var quotaContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                sectionLabel("PROVIDER QUOTA")
-                Spacer()
-                if control.refreshState(for: "provider.quota")?.isRefreshing == true {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Refreshing…")
-                    }
-                    .font(.caption.monospaced())
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .transition(.opacity)
-                }
-                if let lastSuccess = control.refreshState(for: "provider.quota")?.lastSuccess {
-                    Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
-                        .font(.caption.monospaced())
+        let state = control.refreshState(for: "provider.quota")
+        let isRefreshing = state?.isRefreshing == true
+        let connected = quotaConnectedSnapshots
+        let available = quotaAvailableDescriptors
+
+        return VStack(alignment: .leading, spacing: 0) {
+            quotaToolbar(state: state)
+
+            if isRefreshing && control.providerQuotas.isEmpty {
+                Text("Loading provider quota…")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+            } else {
+                if connected.isEmpty {
+                    Text("No connected provider quota is available.")
+                        .font(.system(size: 12))
                         .foregroundStyle(Color.dockMetadataText)
-                }
-                Button { control.refreshProviderQuota() } label: {
-                LucideImage(systemName: "refresh-cw")
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockAccent)
-                .help("Refresh provider quota")
-                .accessibilityLabel("Refresh provider quota")
-            }
-
-            quotaOverviewMetrics
-
-            if !control.providerQuotas.isEmpty || control.refreshState(for: "provider.quota")?.isRefreshing != true {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(orderedQuotaProviders) { descriptor in
-                        quotaProviderRow(descriptor)
+                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                } else {
+                    ForEach(connected, id: \.provider) { snapshot in
+                        quotaProviderSection(snapshot)
                     }
                 }
+
+                if !available.isEmpty {
+                    quotaAvailableSection(available)
+                }
             }
 
-            if let state = control.refreshState(for: "provider.quota"), let error = state.error {
+            if let state, let error = state.error {
                 Text(state.isStale ? "Showing last successful data. \(error)" : error)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockWarning)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 12)
             }
         }
+        .frame(maxWidth: 960, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
         .sheet(item: $connectTarget) { descriptor in
             ProviderConnectSheet(descriptor: descriptor, control: control)
         }
     }
 
-    private var quotaOverviewMetrics: some View {
-        let connected = control.providerQuotas.count
-        let attention = control.providerQuotas.filter { snapshot in
-            snapshot.windows.contains { $0.threshold == .warning || $0.threshold == .critical }
-        }.count
-        let offline = max(0, orderedQuotaProviders.count - connected)
+    private func quotaToolbar(state: ProjectionRefreshState?) -> some View {
+        HStack(spacing: 8) {
+            Text(QuotaWorkspacePresentation.overviewSentence(
+                providerCount: QuotaProviderCatalog.all.count,
+                connectedCount: control.providerQuotas.count,
+                attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
+            ))
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Color.dockSecondaryText)
+            .lineLimit(1)
+            .truncationMode(.tail)
 
-        return HStack(spacing: 0) {
-            quotaMetric(value: "\(orderedQuotaProviders.count)", label: "PROVIDERS", tint: .dockAccent)
-            quotaMetric(value: "\(connected)", label: "CONNECTED", tint: connected > 0 ? .dockAccent : .dockSecondaryText)
-            quotaMetric(value: "\(attention)", label: "ATTENTION", tint: attention > 0 ? .dockWarning : .dockSuccess)
-            quotaMetric(value: "\(offline)", label: "OFFLINE", tint: offline > 0 ? .dockSecondaryText : .dockSuccess)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.dockSurface.opacity(0.34))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-        }
-    }
+            Spacer(minLength: 8)
 
-    private func quotaMetric(value: String, label: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(value)
-                .font(.system(size: 19, weight: .semibold, design: .monospaced))
-                .foregroundStyle(tint)
-            Text(label)
-                .font(.system(size: 9, weight: .bold))
-                .tracking(0.8)
-                .foregroundStyle(Color.dockMetadataText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .overlay(alignment: .trailing) {
-            Color.dockBorderLight.frame(width: 0.5, height: 28)
-        }
-    }
-
-    private var orderedQuotaProviders: [QuotaProviderDescriptor] {
-        quotaProviderOrder.compactMap(QuotaProviderCatalog.descriptor(for:))
-    }
-
-    @ViewBuilder
-    private func quotaProviderRow(_ descriptor: QuotaProviderDescriptor) -> some View {
-        Group {
-            if let snapshot = control.providerQuotas.first(where: { $0.provider == descriptor.id }) {
-                quotaProviderCard(snapshot)
-            } else {
-                quotaDisconnectedCard(descriptor)
+            if let lastSuccess = state?.lastSuccess {
+                Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
             }
+
+            Button { control.refreshProviderQuota() } label: {
+                Group {
+                    if state?.isRefreshing == true {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        LucideImage(systemName: "refresh-cw")
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.dockAccent)
+            .disabled(state?.isRefreshing == true)
+            .help(state?.isRefreshing == true ? "Refreshing provider quota…" : "Refresh provider quota")
+            .accessibilityLabel(state?.isRefreshing == true ? "Refreshing provider quota" : "Refresh provider quota")
         }
-        .onDrag {
-            draggingQuotaProviderID = descriptor.id
-            return NSItemProvider(object: descriptor.id as NSString)
-        }
-        .onDrop(
-            of: [.text],
-            delegate: QuotaProviderDropDelegate(
-                targetID: descriptor.id,
-                order: $quotaProviderOrder,
-                draggingID: $draggingQuotaProviderID
-            )
-        )
-        .help("Drag to reorder providers")
+        .frame(minHeight: 44)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private func quotaProviderCard(_ snapshot: ProviderQuotaSnapshot) -> some View {
+    private var quotaConnectedSnapshots: [ProviderQuotaSnapshot] {
+        QuotaWorkspacePresentation.sortedConnected(control.providerQuotas)
+    }
+
+    private var quotaAvailableDescriptors: [QuotaProviderDescriptor] {
+        let connectedIDs = Set(control.providerQuotas.map(\.provider))
+        return QuotaProviderCatalog.all.filter { !connectedIDs.contains($0.id) }
+    }
+
+    private func quotaProviderSection(_ snapshot: ProviderQuotaSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Circle()
                     .fill(quotaProviderColor(snapshot))
                     .frame(width: 8, height: 8)
                 Text(snapshot.displayName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
                 if let modelName = snapshot.model {
                     Text(modelName)
@@ -6094,78 +6696,91 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 if let detail = snapshot.safeDetail {
                     Text(detail.uppercased())
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.dockAccent)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.dockAccent.opacity(0.10)))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
                 }
             }
+
             if snapshot.windows.isEmpty {
                 Text("No quota windows were reported.")
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
                     .foregroundStyle(Color.dockSecondaryText)
             } else {
                 ForEach(snapshot.windows) { window in quotaWindow(window) }
             }
         }
-        .padding(10)
-        .modifier(QuotaCardSurfaceModifier())
+        .padding(.vertical, 14)
         .textSelection(.enabled)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private func quotaProviderColor(_ snapshot: ProviderQuotaSnapshot) -> Color {
         guard !snapshot.windows.isEmpty else { return .dockMetadataText }
         if snapshot.windows.contains(where: { $0.threshold == .critical }) { return .dockDestructive }
         if snapshot.windows.contains(where: { $0.threshold == .warning }) { return .dockWarning }
+        if snapshot.windows.contains(where: { $0.threshold == .unknown }) { return .dockMetadataText }
         return .dockSuccess
     }
 
-    private func quotaDisconnectedCard(_ descriptor: QuotaProviderDescriptor) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(descriptor.displayName)
-                    .font(.system(size: 13, weight: .semibold))
+    private func quotaAvailableSection(_ descriptors: [QuotaProviderDescriptor]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 7) {
+                Text("Available providers")
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color.dockSecondaryText)
-                Spacer()
-                Text("NOT CONNECTED")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                Text("\(descriptors.count)")
+                    .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(Color.dockMetadataText)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.dockSurface4))
-            }
-            Text(descriptor.summary)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
-            if let diagnostic = control.providerQuotaDiagnostics[descriptor.id] {
-                Text(diagnostic)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 10) {
-                Button {
-                    connectTarget = descriptor
-                } label: {
-                    LucideLabel("Connect…", icon: "key.horizontal")
-                        .font(.system(size: 11, weight: .medium))
-                }
-                .buttonStyle(.bordered)
-                if let website = descriptor.website {
-                    Link("Website", destination: website)
-                        .font(.system(size: 11))
-                }
                 Spacer()
+            }
+            .frame(minHeight: 40, alignment: .leading)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            ForEach(descriptors) { descriptor in
+                quotaAvailableRow(descriptor)
             }
         }
-        .padding(10)
-        .modifier(QuotaCardSurfaceModifier())
-        .opacity(0.78)
+        .padding(.top, 8)
+    }
+
+    private func quotaAvailableRow(_ descriptor: QuotaProviderDescriptor) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(descriptor.displayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+                Text(control.providerQuotaDiagnostics[descriptor.id] ?? descriptor.summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(control.providerQuotaDiagnostics[descriptor.id] == nil ? Color.dockMetadataText : Color.dockWarning)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button { connectTarget = descriptor } label: {
+                Text("Connect…")
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(minWidth: 76, minHeight: 30)
+            }
+            .buttonStyle(.bordered)
+            if let website = descriptor.website {
+                Link(destination: website) {
+                    LucideImage(systemName: "arrow.up.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockSecondaryText)
+                .help("Open \(descriptor.displayName) website")
+                .accessibilityLabel("Open \(descriptor.displayName) website")
+            }
+        }
+        .frame(minHeight: 56)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.opacity(0.6).frame(height: 0.5) }
     }
 
     private func quotaWindow(_ window: ProviderQuotaWindow) -> some View {
@@ -6183,27 +6798,25 @@ struct WorkspaceActivitySidebar: View {
             if let percent = window.remainingPercent {
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2, style: .continuous).fill(Color.dockSurface4)
-                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        RoundedRectangle(cornerRadius: 3, style: .continuous).fill(Color.dockSurface4)
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .fill(quotaColor(window.threshold))
                             .frame(width: max(3, geometry.size.width * percent / 100))
                     }
                 }
-                .frame(height: 4)
+                .frame(height: 6)
                 .overlay(alignment: .leading) {
                     if let daily = QuotaForecasting.dailyAllowance(for: window) {
                         GeometryReader { geometry in
                             let marker = QuotaForecasting.dailyBudgetMarker(for: window) ?? Double(daily)
                             Rectangle()
                                 .fill(Color.dockWarning)
-                                .frame(width: 2, height: 12)
+                                .frame(width: 2, height: 14)
                                 .offset(
-                                    // The marker shows the expected remaining
-                                    // balance at this point in the quota cycle.
                                     x: min(max(0, geometry.size.width * CGFloat(marker) / 100), geometry.size.width - 2),
                                     y: -4
                                 )
-                                    .accessibilityLabel("Remaining balance target after today's budget: \(Int(marker)) percent")
+                                .accessibilityLabel("Remaining balance target after today's budget: \(Int(marker)) percent")
                         }
                     }
                 }
@@ -6211,7 +6824,6 @@ struct WorkspaceActivitySidebar: View {
             }
             if let forecast = QuotaForecasting.limitForecast(for: window) {
                 HStack(spacing: 4) {
-                    Spacer()
                     LucideImage(systemName: "flame.fill")
                     Text("Limit forecast: \(RelativeDateTimeFormatter().localizedString(for: forecast, relativeTo: Date()))")
                 }
@@ -6229,11 +6841,9 @@ struct WorkspaceActivitySidebar: View {
                 }
                 Spacer()
                 if let reset = window.resetsAt {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(RelativeDateTimeFormatter().localizedString(for: reset, relativeTo: Date()) + " · " + reset.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
-                            .foregroundStyle(Color.dockSecondaryText)
-                    }
-                    .multilineTextAlignment(.trailing)
+                    Text(RelativeDateTimeFormatter().localizedString(for: reset, relativeTo: Date()) + " · " + reset.formatted(.dateTime.month(.abbreviated).day().year().hour().minute()))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .multilineTextAlignment(.trailing)
                 } else if let reset = window.resetsDisplay {
                     Text(reset).foregroundStyle(Color.dockSecondaryText)
                 }
@@ -6242,10 +6852,6 @@ struct WorkspaceActivitySidebar: View {
         }
         .accessibilityElement(children: .combine)
         .padding(.vertical, 3)
-        .overlay(alignment: .bottom) {
-            Color.dockBorderLight.opacity(0.6)
-                .frame(height: 0.5)
-        }
     }
 
     private func quotaColor(_ threshold: ProviderQuotaThreshold) -> Color {
@@ -6254,22 +6860,6 @@ struct WorkspaceActivitySidebar: View {
         case .warning: .dockWarning.opacity(0.78)
         case .critical: .dockDestructive
         case .unknown: .dockMetadataText
-        }
-    }
-
-    private struct QuotaCardSurfaceModifier: ViewModifier {
-        func body(content: Content) -> some View {
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.dockSurface2.opacity(0.72))
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.dockBorderLight, lineWidth: 0.5)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
@@ -6471,37 +7061,225 @@ struct WorkspaceActivitySidebar: View {
     }
 }
 
+enum SettingsCategory: String, CaseIterable, Identifiable {
+    case general
+    case runtime
+    case integrations
+    case session
+    case project
+    case diagnostics
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .runtime: "Runtime"
+        case .integrations: "Integrations"
+        case .session: "Session"
+        case .project: "Project"
+        case .diagnostics: "Diagnostics"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: "Dock preferences and appearance"
+        case .runtime: "Models, dispatch, and tools"
+        case .integrations: "Permissions and connected services"
+        case .session: "Active session controls and context"
+        case .project: "Repository facts and verification"
+        case .diagnostics: "Observed health and storage"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .general: "slider.horizontal.3"
+        case .runtime: "gearshape.2"
+        case .integrations: "checkmark.shield"
+        case .session: "waveform.path.ecg"
+        case .project: "checkmark.seal"
+        case .diagnostics: "stethoscope"
+        }
+    }
+}
+
+enum SettingsLayoutMode: Equatable {
+    case rail
+    case menu
+
+    static func forWidth(_ width: CGFloat) -> Self {
+        width >= 760 ? .rail : .menu
+    }
+}
+
+struct SettingsCategoryBadge: Equatable {
+    enum Kind: Equatable {
+        case dot
+        case count(Int)
+    }
+
+    let kind: Kind
+    let isWarning: Bool
+}
+
+private struct SettingsSection<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let tint: Color
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+            }
+            .padding(.top, 8)
+            .padding(.bottom, 9)
+            Divider().overlay(Color.dockBorderLight)
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .padding(.vertical, 12)
+        }
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+}
+
+private struct SettingsPreferenceRow<Control: View>: View {
+    let title: String
+    let detail: String
+    @ViewBuilder let control: () -> Control
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color.dockPrimaryText)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 12)
+            control()
+        }
+        .frame(minHeight: 52)
+    }
+}
+
+private struct SettingsStatusRow: View {
+    let title: String
+    let detail: String
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle().fill(color).frame(width: 7, height: 7).padding(.top, 4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+                if !detail.isEmpty {
+                    Text(detail).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(3)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: 44)
+    }
+}
+
+private struct SettingsActionRow<Content: View>: View {
+    let title: String
+    let detail: String
+    @ViewBuilder let actions: () -> Content
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+                if !detail.isEmpty { Text(detail).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(2) }
+            }
+            Spacer(minLength: 12)
+            actions()
+        }
+        .frame(minHeight: 52)
+    }
+}
+
+private struct SettingsInlineNotice: View {
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle().fill(tint).frame(width: 7, height: 7).padding(.top, 4)
+            Text(text).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+private struct SettingsInventoryList<Content: View>: View {
+    let emptyMessage: String?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let emptyMessage, !emptyMessage.isEmpty {
+                Text(emptyMessage).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+            } else {
+                content()
+            }
+        }
+    }
+}
+
+struct QuotaWorkspacePresentation {
+    static func needsAttention(_ snapshot: ProviderQuotaSnapshot) -> Bool {
+        snapshot.windows.contains { $0.threshold == .warning || $0.threshold == .critical }
+    }
+
+    static func severityRank(_ snapshot: ProviderQuotaSnapshot) -> Int {
+        if snapshot.windows.contains(where: { $0.threshold == .critical }) { return 0 }
+        if snapshot.windows.contains(where: { $0.threshold == .warning }) { return 1 }
+        if snapshot.windows.isEmpty || snapshot.windows.contains(where: { $0.threshold == .unknown }) { return 2 }
+        return 3
+    }
+
+    static func sortedConnected(_ snapshots: [ProviderQuotaSnapshot]) -> [ProviderQuotaSnapshot] {
+        let catalogOrder = Dictionary(uniqueKeysWithValues: QuotaProviderCatalog.all.enumerated().map { ($0.element.id, $0.offset) })
+        return snapshots.sorted { lhs, rhs in
+            let lhsRank = severityRank(lhs)
+            let rhsRank = severityRank(rhs)
+            if lhsRank != rhsRank { return lhsRank < rhsRank }
+            let lhsOrder = catalogOrder[lhs.provider] ?? Int.max
+            let rhsOrder = catalogOrder[rhs.provider] ?? Int.max
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            return lhs.provider < rhs.provider
+        }
+    }
+
+    static func overviewSentence(providerCount: Int, connectedCount: Int, attentionCount: Int) -> String {
+        let availableCount = max(0, providerCount - connectedCount)
+        let connected = connectedCount == 1 ? "1 connected" : "\(connectedCount) connected"
+        let attention = attentionCount == 1 ? "1 needs attention" : "\(attentionCount) need attention"
+        let available = availableCount == 1 ? "1 available to connect" : "\(availableCount) available to connect"
+        return "\(connected) · \(attention) · \(available)"
+    }
+}
+
 /// The session inspector is deliberately a separate surface from the workspace.
 /// Workspace navigation answers "what needs attention overall?"; this panel
 /// answers "what is happening in this conversation?".
-
-private struct QuotaProviderDropDelegate: DropDelegate {
-    let targetID: String
-    @Binding var order: [String]
-    @Binding var draggingID: String?
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingID,
-              draggingID != targetID,
-              let sourceIndex = order.firstIndex(of: draggingID),
-              let targetIndex = order.firstIndex(of: targetID) else {
-            return
-        }
-
-        withAnimation(.dockEase(duration: 0.18)) {
-            order.move(
-                fromOffsets: IndexSet(integer: sourceIndex),
-                toOffset: targetIndex > sourceIndex ? targetIndex + 1 : targetIndex
-            )
-        }
-        QuotaProviderCatalog.saveProviderOrder(order)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        QuotaProviderCatalog.saveProviderOrder(order)
-        draggingID = nil
-        return true
-    }
-
-    func dropExited(info: DropInfo) {}
-}

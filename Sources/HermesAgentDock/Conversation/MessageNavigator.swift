@@ -159,6 +159,7 @@ enum MessageNavigator {
 
 struct MessageNavigatorViewport: Equatable {
     let target: MessageNavigatorTarget
+    let index: Int
     let minY: CGFloat
     let maxY: CGFloat
 }

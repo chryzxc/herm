@@ -49,4 +49,19 @@ struct KanbanBoardPresentationTests {
         #expect(detail == "Ship it Check tests")
         #expect(KanbanBoardPresentation.cardDetail("TASK_ID: t_1") == nil)
     }
+
+    @Test func emptyLaneExpansionIsIndependentAndTasksAutoExpand() {
+        var state = KanbanLaneExpansionState()
+        #expect(!state.isExpanded(.todo, hasTasks: false))
+        #expect(!state.isExpanded(.ready, hasTasks: false))
+
+        state.expandedEmptyLanes.insert(.todo)
+        #expect(state.isExpanded(.todo, hasTasks: false))
+        #expect(!state.isExpanded(.ready, hasTasks: false))
+        #expect(state.isExpanded(.ready, hasTasks: true))
+    }
+
+    @Test func inspectorTabsAreStableAndReadable() {
+        #expect(KanbanInspectorTab.allCases.map(\.rawValue) == ["Overview", "Activity"])
+    }
 }

@@ -921,7 +921,7 @@ private struct PullRequestShimmerBlock: View {
     }
 }
 
-struct PullRequestFilterTabButton: View {
+struct RepositoryFilterTabButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
@@ -929,12 +929,15 @@ struct PullRequestFilterTabButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .padding(.horizontal, 12)
-                .frame(height: 30)
+                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
                 .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isSelected ? Color.dockAccent : Color.dockCanvas))
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isSelected ? Color.dockSurface4 : Color.clear))
         }
         .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -1764,43 +1767,51 @@ struct PullRequestDetailView: View {
     }
 }
 
+enum RepositoryReviewWorkspaceMode: Equatable {
+    case pullRequests
+    case issues
+
+    var isIssues: Bool { self == .issues }
+    var title: String { isIssues ? "Issues" : "Pull requests" }
+    var subtitle: String {
+        isIssues ? "GitHub issues across your repositories" : "Review open changes across your repositories"
+    }
+    var icon: String { isIssues ? "doc.text" : "git.pull.request" }
+}
+
 struct PullRequestWorkspace: View {
     @ObservedObject var center: PullRequestCenterModel
     let projects: [ProjectSummary]
     let onOpenChat: (PullRequestRecord) -> Void
     var onOpenIssueChat: (GitHubIssueRecord) -> Void = { _ in }
+    let mode: RepositoryReviewWorkspaceMode
     @State private var loadingPulse = false
     @StateObject private var issueCenter = IssueCenterModel()
-    @State private var showsIssues: Bool
 
     init(
         center: PullRequestCenterModel,
         projects: [ProjectSummary],
         onOpenChat: @escaping (PullRequestRecord) -> Void,
         onOpenIssueChat: @escaping (GitHubIssueRecord) -> Void = { _ in },
-        startsWithIssues: Bool = false
+        mode: RepositoryReviewWorkspaceMode = .pullRequests
     ) {
         self.center = center
         self.projects = projects
         self.onOpenChat = onOpenChat
         self.onOpenIssueChat = onOpenIssueChat
-        _showsIssues = State(initialValue: startsWithIssues)
+        self.mode = mode
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Button(showsIssues ? "Pull requests" : "Issues") { showsIssues.toggle() }
-                    .buttonStyle(.borderless).foregroundStyle(Color.dockAccent).padding(.horizontal, 18)
-                DockPageHeader(
-                    icon: "git.pull.request",
-                    title: showsIssues ? "Issues" : "Pull requests",
-                    subtitle: showsIssues ? "GitHub issues across your repositories" : "Review open changes across your repositories",
-                    onRefresh: { Task { if showsIssues { await issueCenter.refresh(projects: projects) } else { await center.refresh(projects: projects) } } },
-                    isRefreshing: showsIssues ? issueCenter.isRefreshing : center.isRefreshing
-                )
-            }
-            if showsIssues {
+            DockPageHeader(
+                icon: mode.icon,
+                title: mode.title,
+                subtitle: mode.subtitle,
+                onRefresh: { Task { await refreshActiveWorkspace() } },
+                isRefreshing: mode.isIssues ? issueCenter.isRefreshing : center.isRefreshing
+            )
+            if mode.isIssues {
                 IssueWorkspace(center: issueCenter, projects: projects, onOpenChat: onOpenIssueChat)
             } else {
                 HSplitView {
@@ -1812,7 +1823,9 @@ struct PullRequestWorkspace: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.dockCanvas)
-        .task { if center.records.isEmpty { await center.refresh(projects: projects) } }
+        .task {
+            if mode == .pullRequests, center.records.isEmpty { await center.refresh(projects: projects) }
+        }
         .onAppear {
             withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                 loadingPulse = true
@@ -1822,29 +1835,39 @@ struct PullRequestWorkspace: View {
         .onChange(of: center.query) { _, _ in center.repairSelection() }
     }
 
+    private func refreshActiveWorkspace() async {
+        if mode.isIssues {
+            await issueCenter.refresh(projects: projects)
+        } else {
+            await center.refresh(projects: projects)
+        }
+    }
+
     private var listPane: some View { VStack(spacing: 0) {
-        HStack(spacing: 10) {
-            HStack(spacing: 3) {
-                ForEach(PullRequestFilter.allCases) { filter in
-                    PullRequestFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
-                        center.filter = filter
-                    }
-                }
-            }
-            Divider().frame(height: 22)
+        VStack(spacing: 8) {
             HStack(spacing: 8) {
-                LucideIcon(name: .search, size: 16)
+                LucideIcon(name: .search, size: 15, color: Color.dockMetadataText)
                 TextField("Search pull requests", text: $center.query)
                     .textFieldStyle(.plain)
             }
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
-            .background(Color.dockCanvas.opacity(0.55))
+            .background(Color.dockControlSurface)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            HStack(spacing: 4) {
+                ForEach(PullRequestFilter.allCases) { filter in
+                    RepositoryFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
+                        center.filter = filter
+                    }
+                }
+                Spacer(minLength: 8)
+            }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 11)
-        .background(Color.dockSurface2.opacity(0.45))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.dockCanvas)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         if let error = center.errorMessage { Text(error).font(.system(size: 11)).foregroundStyle(Color.dockWarning).padding(.horizontal, 18).padding(.bottom, 8) }
         ScrollView {
             LazyVStack(spacing: 2) {

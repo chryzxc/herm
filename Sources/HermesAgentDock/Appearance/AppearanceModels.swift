@@ -7,10 +7,11 @@ public enum AppearanceInventoryState: String, Codable, CaseIterable, Equatable, 
 public struct AppearanceSkin: Codable, Equatable, Sendable {
     public let id: String
     public let name: String
+    public let source: String?
     public let isActive: Bool
 
-    public init(id: String, name: String, isActive: Bool) {
-        self.id = id; self.name = name; self.isActive = isActive
+    public init(id: String, name: String, isActive: Bool, source: String? = nil) {
+        self.id = id; self.name = name; self.source = source; self.isActive = isActive
     }
 }
 

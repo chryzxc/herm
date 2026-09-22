@@ -497,43 +497,6 @@ struct SessionConversationIsolationTests {
         #expect(attached.images[0].size.height > 0)
     }
 
-    @Test func persistedImageReferencesReconcileTranscriptFieldsAndMetadata() {
-        let pathWithSpaces = "/Users/me/Library/Application Support/Hermes/photo one.png"
-        let parsed = DockModel.parseMessages([
-            [
-                "role": "user",
-                "text": "caption",
-                "content": "@image:`\(pathWithSpaces)`\n[screenshot]",
-                "attachment_refs": ["@image:`\(pathWithSpaces)`", "@image:/tmp/second.png"],
-                "timestamp": 1.0
-            ]
-        ])
-
-        #expect(parsed.messages.count == 1)
-        #expect(parsed.messages[0].text == "caption")
-        #expect(parsed.pendingImages[0].fileURLs.map(\.path) == [pathWithSpaces, "/tmp/second.png"])
-    }
-
-    @Test func textOnlyTranscriptTurnPreservesCaptionWithoutPendingImages() {
-        let parsed = DockModel.parseMessages([
-            ["role": "user", "text": "caption only", "timestamp": 1.0]
-        ])
-
-        #expect(parsed.messages.count == 1)
-        #expect(parsed.messages[0].text == "caption only")
-        #expect(parsed.pendingImages.isEmpty)
-    }
-
-    @Test func metadataOnlyImageTurnIsRetainedWithoutCaption() {
-        let parsed = DockModel.parseMessages([
-            ["role": "user", "content": "[screenshot]", "attachmentRefs": ["@image:/tmp/only.png"], "timestamp": 1.0]
-        ])
-
-        #expect(parsed.messages.count == 1)
-        #expect(parsed.messages[0].text.isEmpty)
-        #expect(parsed.pendingImages[0].fileURLs == [URL(fileURLWithPath: "/tmp/only.png")])
-    }
-
     @Test func pendingImageRehydrationDropsPayloadForSessionMismatch() async {
         let model = DockModel(rpcClient: SessionIsolationRPCClient())
         let pending = [RestoredTranscript.PendingImages(

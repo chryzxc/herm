@@ -1,0 +1,282 @@
+import Combine
+import Foundation
+import SwiftUI
+
+/// One group of conversations in the left navigation rail: a project-backed
+/// bucket or the shared unlinked bucket.
+struct MissionControlConversationGroup: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let sessions: [HermesSession]
+    let declaredSessionCount: Int
+    let projectID: String?
+    /// The gateway project name is the repository path used as `cwd` when
+    /// creating a project-scoped chat.
+    let projectPath: String?
+    let isLinked: Bool
+}
+
+/// A deduplicated projection of everything the left navigation rail renders.
+///
+/// The rail previously re-derived conversation groups several times per body
+/// evaluation, so every high-frequency `DockModel` publication (streaming
+/// transcript flushes, activity revisions) repeated that whole pass. This
+/// snapshot splits the work: cheap-to-compare `Inputs` are diffed against the
+/// live models first, and the derived collections are rebuilt only when an
+/// input the rail renders actually changed.
+struct MissionControlSidebarSnapshot: Equatable {
+    struct Inputs: Equatable {
+        var activeSessionID: String?
+        var activeStatus: HermesStatus?
+        var profileScopeID: String?
+        var agentDisplayName: String
+        var isLoadingSessions: Bool
+        var isCreatingSession: Bool
+        var deletingSessionID: String?
+        var renamingSessionID: String?
+        var updatingSessionVisibilityID: String?
+        var sessions: [HermesSession]
+        var sessionProjectionState: HermesProjectionState<[HermesSession]>
+        var activeSessions: [SessionSummary]
+        var projects: [ProjectSummary]
+        var projectIDBySessionID: [String: String]
+        var projectSessionsByProjectID: [String: [SessionSummary]]
+        var projectProfileID: String?
+        var isRefreshing: Bool
+        var isRefreshingProjectNavigation: Bool
+        var attention: [AttentionItem]
+        var latestActivities: [LatestActivityItem]
+    }
+
+    let inputs: Inputs
+    let linkedProjectGroups: [MissionControlConversationGroup]
+    let conversations: [HermesSession]
+    let attentionDots: [String: SessionAttentionDot]
+    let linkedSessionIDs: Set<String>
+    let projectNameBySessionID: [String: String]
+    let pinnedReferences: [PinnedSessionReference]
+
+    init(inputs: Inputs) {
+        self.inputs = inputs
+        let groups = Self.conversationGroups(inputs: inputs)
+        self.linkedProjectGroups = groups.filter(\.isLinked)
+        self.conversations = Self.deduplicatedConversations(groups: groups)
+        self.attentionDots = Self.attentionDots(inputs: inputs)
+        var linkedSessionIDs = Set<String>()
+        var projectNameBySessionID: [String: String] = [:]
+        for group in self.linkedProjectGroups {
+            for session in group.sessions {
+                linkedSessionIDs.insert(session.id)
+                if projectNameBySessionID[session.id] == nil {
+                    projectNameBySessionID[session.id] = group.title
+                }
+            }
+        }
+        self.linkedSessionIDs = linkedSessionIDs
+        self.projectNameBySessionID = projectNameBySessionID
+        self.pinnedReferences = self.conversations.map {
+            PinnedSessionReference(profileID: $0.profileID ?? inputs.profileScopeID ?? "", sessionID: $0.id)
+        }
+    }
+
+    @MainActor
+    static func inputs(model: DockModel, control: ControlCenterModel) -> Inputs {
+        Inputs(
+            activeSessionID: model.sessionID,
+            activeStatus: model.status,
+            profileScopeID: model.profileScopeID,
+            agentDisplayName: model.agentDisplayName,
+            isLoadingSessions: model.isLoadingSessions,
+            isCreatingSession: model.isCreatingSession,
+            deletingSessionID: model.deletingSessionID,
+            renamingSessionID: model.renamingSessionID,
+            updatingSessionVisibilityID: model.updatingSessionVisibilityID,
+            sessions: model.sessions,
+            sessionProjectionState: model.sessionProjectionState,
+            activeSessions: control.activeSessions,
+            projects: control.projects,
+            projectIDBySessionID: control.projectIDBySessionID,
+            projectSessionsByProjectID: control.projectSessionsByProjectID,
+            projectProfileID: control.projectProfileID,
+            isRefreshing: control.isRefreshing,
+            isRefreshingProjectNavigation: control.isRefreshingProjectNavigation,
+            attention: control.attention,
+            latestActivities: control.latestActivities
+        )
+    }
+
+    static func projectDisplayName(_ rawName: String) -> String {
+        let name = URL(fileURLWithPath: rawName).lastPathComponent
+        return name.isEmpty ? rawName : name
+    }
+
+    private static func sessionDate(_ session: HermesSession) -> Date {
+        session.lastUpdatedAt ?? .distantPast
+    }
+
+    private static func sessionDate(_ session: HermesSession?) -> Date {
+        session.map(sessionDate) ?? .distantPast
+    }
+
+    private static func conversationGroups(inputs: Inputs) -> [MissionControlConversationGroup] {
+        let recentSessions = inputs.sessions.sorted { sessionDate($0) > sessionDate($1) }
+        var groups: [MissionControlConversationGroup] = []
+        var assigned = Set<String>()
+
+        for project in inputs.projects where project.isRenderableProject {
+            var sessionsByID = Dictionary(recentSessions.compactMap { session -> (String, HermesSession)? in
+                let isMember = project.sessionIDs.contains(session.id)
+                    || inputs.projectIDBySessionID[session.id] == project.id
+                guard isMember else { return nil }
+                assigned.insert(session.id)
+                return (session.id, session)
+            }, uniquingKeysWith: { first, _ in first })
+            for summary in inputs.projectSessionsByProjectID[project.id] ?? [] {
+                let savedSession = sessionsByID[summary.id]
+                let updatedAt = [summary.updatedAt, savedSession?.updatedAt].compactMap { $0 }.max()
+                let savedSessionIsNewer = sessionDate(savedSession) > (summary.updatedAt ?? .distantPast)
+                sessionsByID[summary.id] = HermesSession(
+                    id: summary.id,
+                    profileID: inputs.projectProfileID,
+                    title: savedSessionIsNewer ? savedSession?.title ?? summary.title : summary.title,
+                    preview: savedSessionIsNewer ? savedSession?.preview ?? summary.preview ?? "" : summary.preview ?? savedSession?.preview ?? "",
+                    startedAt: savedSession?.startedAt,
+                    updatedAt: updatedAt,
+                    messageCount: savedSession?.messageCount ?? 0,
+                    source: savedSession?.source ?? "project",
+                    isHidden: savedSession?.isHidden ?? false
+                )
+                assigned.insert(summary.id)
+            }
+            let sessions = sessionsByID.values.sorted { sessionDate($0) > sessionDate($1) }
+            groups.append(
+                MissionControlConversationGroup(
+                    id: "project:\(project.id)",
+                    title: projectDisplayName(project.name),
+                    sessions: sessions,
+                    declaredSessionCount: project.sessionCount,
+                    projectID: project.id,
+                    projectPath: project.name,
+                    isLinked: true
+                )
+            )
+        }
+
+        // session.list may repeat a row; keep the first occurrence.
+        var unlinkedByID = Dictionary(recentSessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        // Synthetic gateway buckets are not projects, but their session rows
+        // are still valid conversations. Move those rows into the unlinked
+        // group instead of dropping them with the bucket.
+        for project in inputs.projects where !project.isRenderableProject && project.name != "__no_project__" {
+            for summary in inputs.projectSessionsByProjectID[project.id] ?? [] {
+                let savedSession = unlinkedByID[summary.id]
+                let updatedAt = [summary.updatedAt, savedSession?.updatedAt].compactMap { $0 }.max()
+                let savedSessionIsNewer = sessionDate(savedSession) > (summary.updatedAt ?? .distantPast)
+                unlinkedByID[summary.id] = HermesSession(
+                    id: summary.id,
+                    profileID: inputs.projectProfileID,
+                    title: savedSessionIsNewer ? savedSession?.title ?? summary.title : summary.title,
+                    preview: savedSessionIsNewer ? savedSession?.preview ?? summary.preview ?? "" : summary.preview ?? savedSession?.preview ?? "",
+                    startedAt: savedSession?.startedAt,
+                    updatedAt: updatedAt,
+                    messageCount: savedSession?.messageCount ?? 0,
+                    source: savedSession?.source ?? "conversation",
+                    isHidden: savedSession?.isHidden ?? false
+                )
+            }
+        }
+        let unlinked = unlinkedByID.values
+            .filter { !assigned.contains($0.id) }
+            .sorted { lhs, rhs in
+                let lhsDate = sessionDate(lhs)
+                let rhsDate = sessionDate(rhs)
+                if lhsDate != rhsDate { return lhsDate > rhsDate }
+                return lhs.id < rhs.id
+            }
+        if !unlinked.isEmpty {
+            groups.append(
+                MissionControlConversationGroup(
+                    id: "unlinked",
+                    title: "Unlinked conversations",
+                    sessions: Array(unlinked),
+                    declaredSessionCount: unlinked.count,
+                    projectID: nil,
+                    projectPath: nil,
+                    isLinked: false
+                )
+            )
+        }
+        // Project-tree order is the canonical navigation order. Ordering this
+        // list by changing session activity made it visibly jump while a
+        // refresh populated project session details.
+        return groups
+    }
+
+    private static func deduplicatedConversations(groups: [MissionControlConversationGroup]) -> [HermesSession] {
+        Dictionary(
+            groups.flatMap(\.sessions).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        .values
+        .sorted { lhs, rhs in
+            let lhsDate = sessionDate(lhs)
+            let rhsDate = sessionDate(rhs)
+            if lhsDate != rhsDate { return lhsDate > rhsDate }
+            return lhs.id < rhs.id
+        }
+    }
+
+    private static func attentionDots(inputs: Inputs) -> [String: SessionAttentionDot] {
+        var dots: [String: SessionAttentionDot] = [:]
+        for item in inputs.attention {
+            guard let sessionID = item.reference.sessionID else { continue }
+            dots[sessionID] = item.kind == .approval || item.kind == .clarification
+                ? .warning
+                : item.kind == .failure ? .failure : .activity
+        }
+        for activity in inputs.latestActivities where dots[activity.sessionID] == nil {
+            let state = activity.state.lowercased()
+            let name = activity.activityName.lowercased()
+            if state.contains("fail") || state.contains("error") {
+                dots[activity.sessionID] = .failure
+            } else if state.contains("complete") || state.contains("success") || state == "done" {
+                dots[activity.sessionID] = .success
+            } else if name.contains("permission") || name.contains("approval") || name.contains("clarif") {
+                dots[activity.sessionID] = .warning
+            }
+        }
+        return dots
+    }
+}
+
+/// Owns the navigation-rail projection so streaming transcript churn and other
+/// high-frequency publications cannot rebuild the rail. Publications are
+/// diffed against the cheap `Inputs` first; the snapshot is republished only
+/// when an input the rail renders actually changed.
+@MainActor
+final class MissionControlSidebarModel: ObservableObject {
+    @Published private(set) var snapshot: MissionControlSidebarSnapshot
+
+    private let model: DockModel
+    private let control: ControlCenterModel
+    private var cancellables: Set<AnyCancellable> = []
+
+    init(model: DockModel, control: ControlCenterModel) {
+        self.model = model
+        self.control = control
+        self.snapshot = MissionControlSidebarSnapshot(inputs: MissionControlSidebarSnapshot.inputs(model: model, control: control))
+
+        Publishers.Merge(model.objectWillChange, control.objectWillChange)
+            // objectWillChange fires before the mutation lands; one main-queue
+            // hop reads the settled values and coalesces same-tick bursts.
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refresh() }
+            .store(in: &cancellables)
+    }
+
+    func refresh() {
+        let inputs = MissionControlSidebarSnapshot.inputs(model: model, control: control)
+        guard inputs != snapshot.inputs else { return }
+        snapshot = MissionControlSidebarSnapshot(inputs: inputs)
+    }
+}

@@ -130,6 +130,21 @@ struct HermesCLIAdapterTests {
 
         #expect(rows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
     }
+
+    @Test func createdAndPriorityKanbanSortsAreDescendingAndStable() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        let created = try await adapter.kanbanList(filter: KanbanListFilter(sort: "created-desc"))
+        let createdData = try #require(created.stdout.data(using: .utf8))
+        let createdRows = try #require(JSONSerialization.jsonObject(with: createdData) as? [[String: Any]])
+        #expect(createdRows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
+
+        let priority = try await adapter.kanbanList(filter: KanbanListFilter(sort: "priority-desc"))
+        let priorityData = try #require(priority.stdout.data(using: .utf8))
+        let priorityRows = try #require(JSONSerialization.jsonObject(with: priorityData) as? [[String: Any]])
+        #expect(priorityRows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
+    }
     @Test func kanbanDiagnosticsAndAttachmentsForwardBoardScope() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
@@ -176,8 +191,8 @@ private final class CLITestRPCClient: HermesRPCClientProtocol {
         }
         return ["columns": [["name": "ready", "tasks": [
             ["id": "ready-task", "title": "Ready task", "status": "ready"],
-            ["id": "new-task", "title": "New task", "status": "ready", "updated_at": 200],
-            ["id": "old-task", "title": "Old task", "status": "ready", "updated_at": 100],
+            ["id": "new-task", "title": "New task", "status": "ready", "updated_at": 200, "created_at": 200, "priority": 80],
+            ["id": "old-task", "title": "Old task", "status": "ready", "updated_at": 100, "created_at": 100, "priority": 10],
             ["id": "undated-task", "title": "Undated task", "status": "ready"]
         ]]]]
     }

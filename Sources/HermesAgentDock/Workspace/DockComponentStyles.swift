@@ -16,84 +16,32 @@ extension Color {
     )
     // Match the cool navy tint of macOS menu-bar popovers instead of allowing
     // the host window's warm/black material to determine the panel palette.
-    static let dockCanvas = dockAdaptiveColor(
-        light: NSColor(white: 0.98, alpha: 1),
-        dark: NSColor(red: 0.055, green: 0.07, blue: 0.12, alpha: 1)
-    )
-    static let dockSurface = dockAdaptiveColor(
-        light: NSColor(white: 0.96, alpha: 1),
-        dark: NSColor(red: 0.075, green: 0.09, blue: 0.15, alpha: 1)
-    )
-    static let dockSurface2 = dockAdaptiveColor(
-        light: NSColor(white: 0.985, alpha: 1),
-        dark: NSColor(red: 0.06, green: 0.075, blue: 0.125, alpha: 1)
-    )
-    static let dockSurface4 = dockAdaptiveColor(
-        light: NSColor(white: 0.94, alpha: 1),
-        dark: NSColor(red: 0.09, green: 0.105, blue: 0.17, alpha: 1)
-    )
-    static let dockSurface6 = dockAdaptiveColor(
-        light: NSColor(white: 0.92, alpha: 1),
-        dark: NSColor(red: 0.105, green: 0.12, blue: 0.19, alpha: 1)
-    )
-    static let dockSurface8 = dockAdaptiveColor(
-        light: NSColor(white: 0.90, alpha: 1),
-        dark: NSColor(red: 0.12, green: 0.14, blue: 0.22, alpha: 1)
-    )
-    static let dockMessageBubble = dockSurface
-    static let dockUserMessageBubble = dockAdaptiveColor(
-        light: NSColor.systemBlue.withAlphaComponent(0.10),
-        dark: NSColor.systemBlue.withAlphaComponent(0.20)
-    )
-    static let dockControlSurface = dockSurface4
-    static let dockBorderStrong = dockAdaptiveColor(
-        light: NSColor.separatorColor.withAlphaComponent(0.72),
-        dark: NSColor(white: 1, alpha: 0.16)
-    )
-    static let dockBorder = dockAdaptiveColor(
-        light: NSColor.separatorColor.withAlphaComponent(0.52),
-        dark: NSColor(white: 1, alpha: 0.11)
-    )
-    static let dockBorderLight = dockAdaptiveColor(
-        light: NSColor.separatorColor.withAlphaComponent(0.38),
-        dark: NSColor(white: 1, alpha: 0.075)
-    )
-    static let dockAccent = dockAdaptiveColor(
-        light: NSColor(red: 0.02, green: 0.36, blue: 0.82, alpha: 1),
-        dark: NSColor(red: 0.22, green: 0.54, blue: 0.96, alpha: 1)
-    )
-    static let dockAccentMuted = dockAccent.opacity(0.14)
+    static var dockCanvas: Color { DockThemePalette(theme: DockThemeRuntime.current).background }
+    static var dockSurface: Color { DockThemePalette(theme: DockThemeRuntime.current).surface }
+    static var dockSurface2: Color { DockThemePalette(theme: DockThemeRuntime.current).surface2 }
+    static var dockSurface4: Color { DockThemePalette(theme: DockThemeRuntime.current).surface4 }
+    static var dockSurface6: Color { DockThemePalette(theme: DockThemeRuntime.current).surface6 }
+    static var dockSurface8: Color { DockThemePalette(theme: DockThemeRuntime.current).surface8 }
+    static var dockMessageBubble: Color { dockSurface }
+    static var dockUserMessageBubble: Color { dockAccent.opacity(0.12) }
+    static var dockControlSurface: Color { dockSurface4 }
+    static var dockBorderStrong: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.95) }
+    static var dockBorder: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.72) }
+    static var dockBorderLight: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.48) }
+    static var dockAccent: Color { DockThemePalette(theme: DockThemeRuntime.current).accent }
+    static var dockAccentMuted: Color { dockAccent.opacity(0.14) }
     static let dockAccentGlow = Color.clear
-    static let dockPrimaryText = dockAdaptiveColor(
-        light: NSColor(white: 0.12, alpha: 1),
-        // Keep primary text readable without using an eye-straining near-white.
-        dark: NSColor(red: 0.82, green: 0.83, blue: 0.87, alpha: 1)
-    )
-    static let dockSecondaryText = dockAdaptiveColor(
-        light: NSColor(white: 0.35, alpha: 1),
-        dark: NSColor(red: 0.64, green: 0.66, blue: 0.71, alpha: 1)
-    )
-    static let dockMetadataText = dockAdaptiveColor(
-        light: NSColor(white: 0.46, alpha: 1),
-        dark: NSColor(red: 0.56, green: 0.58, blue: 0.64, alpha: 1)
-    )
-    static let dockSectionText = dockSecondaryText
+    static var dockPrimaryText: Color { DockThemePalette(theme: DockThemeRuntime.current).primaryText }
+    static var dockSecondaryText: Color { DockThemePalette(theme: DockThemeRuntime.current).secondaryText }
+    static var dockMetadataText: Color { DockThemePalette(theme: DockThemeRuntime.current).metadataText }
+    static var dockSectionText: Color { dockSecondaryText }
     // Kanban lifecycle accents shared by board and session-kanban surfaces.
     static let dockKanbanRunning = dockAccent
     static let dockKanbanReview = Color(nsColor: .secondaryLabelColor)
-    static let dockSuccess = dockAdaptiveColor(
-        light: NSColor(red: 0.13, green: 0.55, blue: 0.25, alpha: 1),
-        dark: NSColor(red: 0.20, green: 0.76, blue: 0.42, alpha: 1)
-    )
-    static let dockWarning = dockAdaptiveColor(
-        light: NSColor(red: 0.78, green: 0.43, blue: 0.05, alpha: 1),
-        dark: NSColor(red: 0.94, green: 0.60, blue: 0.16, alpha: 1)
-    )
-    static let dockFolder = Color(nsColor: .secondaryLabelColor)
-    static let dockDestructive = dockAdaptiveColor(
-        light: NSColor(red: 0.78, green: 0.16, blue: 0.20, alpha: 1),
-        dark: NSColor(red: 0.92, green: 0.30, blue: 0.34, alpha: 1)
-    )
+    static var dockSuccess: Color { DockThemePalette(theme: DockThemeRuntime.current).success }
+    static var dockWarning: Color { DockThemePalette(theme: DockThemeRuntime.current).warning }
+    static var dockFolder: Color { dockSecondaryText }
+    static var dockDestructive: Color { DockThemePalette(theme: DockThemeRuntime.current).destructive }
 }
 
 /// Layout values shared by the compact popover and its inspectors. Keeping
@@ -273,7 +221,7 @@ struct DockPageHeader<Trailing: View>: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             LucideImage(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.dockOnAccentText)
                 .frame(width: 30, height: 30)
                 .background(

@@ -3,7 +3,7 @@ import XCTest
 
 final class ComposerLayoutTests: XCTestCase {
     func testLargePastedContentIsCappedToComposerMaximumHeight() {
-        XCTAssertEqual(ComposerLayout.height(for: 4_000), ComposerLayout.maxHeight)
+        XCTAssertEqual(ComposerLayout.height(for: 4_000), 120)
     }
 
     func testComposerContentHeightPreservesNormalMeasuredHeight() {
@@ -11,6 +11,11 @@ final class ComposerLayoutTests: XCTestCase {
     }
 
     func testEmptyComposerUsesMinimumHeight() {
-        XCTAssertEqual(ComposerLayout.height(for: 0), ComposerLayout.minHeight)
+        XCTAssertEqual(ComposerLayout.height(for: 0), 34)
+    }
+
+    func testIdleComposerHeightFitsCompactTarget() {
+        XCTAssertEqual(ComposerLayout.idleHeight, 100)
+        XCTAssertTrue((92...100).contains(Int(ComposerLayout.idleHeight)))
     }
 }

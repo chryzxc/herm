@@ -104,15 +104,25 @@ struct MissionControlNavigationSelectionTests {
         #expect(state.selectedTaskID == nil)
     }
 
-    @Test func clearingTheActiveSessionRemovesRestoredSelection() {
+    @Test func transientActiveSessionClearingPreservesNavigationSelection() {
         let state = MissionControlNavigationState()
         state.synchronizeActiveSession("restored-session")
 
         state.synchronizeActiveSession(nil)
 
+        #expect(state.selection.selection == .session("restored-session"))
+        #expect(state.selectedSessionID == "restored-session")
+        #expect(state.selectedTaskID == nil)
+    }
+
+    @Test func explicitNewConversationStillClearsSelection() {
+        let state = MissionControlNavigationState()
+        state.synchronizeActiveSession("restored-session")
+
+        state.beginNewConversation()
+
         #expect(state.selection.selection == nil)
         #expect(state.selectedSessionID == nil)
-        #expect(state.selectedTaskID == nil)
     }
 
     @Test func issueChatHandoffWithoutASessionClearsThePreviousDestination() {

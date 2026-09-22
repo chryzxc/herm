@@ -3,12 +3,12 @@ import Foundation
 
 struct ConversationMessageJumpPlan: Equatable {
     let messageID: UUID
-    let renderedLimit: Int
+    let windowRange: Range<Int>
 }
 
 struct ConversationMessageJumpEffect: Equatable {
     let messageID: UUID
-    let renderedLimit: Int
+    let windowRange: Range<Int>
     let isAtBottom: Bool
     let unseenMessageCount: Int
 }
@@ -20,14 +20,23 @@ enum ConversationMessageScrollAnchor: Equatable {
 /// Bounded presentation window for the canonical transcript. Hermes remains
 /// the owner of every message; this policy only limits how many exact SwiftUI
 /// rows are mounted at once.
+///
+/// The window is a plain clamped `Range<Int>` over the canonical messages. It
+/// slides in bounded `pageSize` increments from either edge, so no interaction
+/// sequence — a navigator jump or any number of load-more taps — can grow the
+/// mounted transcript without bound. "Live tail" is derived, never stored:
+/// `range.upperBound == totalCount`.
 enum ConversationMessageWindow {
     // The active fallback renderer uses an exact SwiftUI stack, so keep its
-    // default mounted page small. Older history is revealed in the same
-    // bounded increment so a single tap cannot remount a huge transcript.
+    // default mounted page small. History is revealed in the same bounded
+    // increment from either edge of the window.
     static let initialLimit = 12
     static let pageSize = 12
-    static let topLoadThreshold: CGFloat = 24
-    static let topRearmDistance: CGFloat = 80
+    /// Context mounted above and below a jump target.
+    static let jumpContextAbove = pageSize
+    static let jumpContextBelow = pageSize
+    /// Hard backstop for the mounted row count under any reveal sequence.
+    static let maxMountedRowCount = 3 * pageSize
 
     /// Builds navigation metadata from the same canonical messages and
     /// session identity used by the mounted transcript window. Keeping this
@@ -45,57 +54,165 @@ enum ConversationMessageWindow {
         )
     }
 
-    static func visibleMessages<Element>(_ messages: [Element], limit: Int) -> ArraySlice<Element> {
-        messages.suffix(max(initialLimit, limit))
-    }
-
-    static func revealedLimit(currentLimit: Int, totalCount: Int) -> Int {
-        min(totalCount, max(initialLimit, currentLimit) + pageSize)
-    }
-
-    static func limitToReveal(messageOrdinal: Int, totalCount: Int, currentLimit: Int) -> Int {
+    /// The newest `limit` messages. Session presentation always starts here.
+    static func tailRange(totalCount: Int, limit: Int = initialLimit) -> Range<Int> {
         let safeTotal = max(0, totalCount)
-        let safeOrdinal = max(0, messageOrdinal)
-        // The mounted window is a suffix. An oldest-first ordinal therefore
-        // needs the number of rows from that ordinal through the newest row.
-        let requiredSuffixLimit = safeOrdinal > safeTotal
-            ? safeTotal
-            : safeTotal - safeOrdinal + 1
-        return min(safeTotal, max(initialLimit, currentLimit, requiredSuffixLimit))
+        let start = max(0, safeTotal - max(1, limit))
+        return start..<safeTotal
+    }
+
+    /// Clamps a stored window against the current transcript size. Every
+    /// projection flows through this, so a momentarily stale range (a
+    /// same-session refresh shrinking the transcript) can never index out of
+    /// bounds. An empty stored range passes through untouched; callers treat
+    /// it as "follow the tail".
+    static func visibleRange(_ range: Range<Int>, totalCount: Int) -> Range<Int> {
+        let safeTotal = max(0, totalCount)
+        guard safeTotal > 0 else { return 0..<0 }
+        guard !range.isEmpty else { return range }
+        let lower = min(max(0, range.lowerBound), safeTotal - 1)
+        let upper = min(max(range.upperBound, lower + 1), safeTotal)
+        return lower..<upper
+    }
+
+    /// A bounded window centered on a jump target: up to `jumpContextAbove`
+    /// rows above, the target, and up to `jumpContextBelow` rows below —
+    /// regardless of how far the target sits from either transcript edge.
+    static func jumpWindow(aroundIndex index: Int, totalCount: Int) -> Range<Int> {
+        let safeTotal = max(0, totalCount)
+        guard safeTotal > 0 else { return 0..<0 }
+        let clampedIndex = min(max(0, index), safeTotal - 1)
+        let lower = max(0, clampedIndex - jumpContextAbove)
+        let upper = min(safeTotal, clampedIndex + 1 + jumpContextBelow)
+        return lower..<max(upper, lower + 1)
+    }
+
+    /// Reveals one page of earlier history. The far edge retreats so repeated
+    /// reveals slide the window instead of accumulating rows: one page beyond
+    /// the last row the reader can see, never the visible rows themselves,
+    /// and never past `maxMountedRowCount` unless protecting visibility
+    /// demands more (a viewport wider than the backstop).
+    static func revealEarlier(
+        _ range: Range<Int>,
+        totalCount: Int,
+        visibleSpan: ClosedRange<Int>?
+    ) -> Range<Int> {
+        let bounds = visibleRange(range, totalCount: totalCount)
+        guard bounds.lowerBound > 0 else { return bounds }
+        let newLower = max(0, bounds.lowerBound - pageSize)
+        let visibleFloor = visibleSpan.map { min($0.upperBound + 1, max(0, totalCount)) }
+        if let visibleFloor {
+            let marginUpper = max(visibleFloor + pageSize, newLower + 1)
+            let backstop = max(newLower + maxMountedRowCount, visibleFloor)
+            return newLower..<max(min(bounds.upperBound, marginUpper, backstop), newLower + 1)
+        }
+        let backstop = newLower + maxMountedRowCount
+        return newLower..<max(min(bounds.upperBound, backstop), newLower + 1)
+    }
+
+    /// Reveals one page of later history with the symmetric sliding policy.
+    /// The window is already open to the newest message when
+    /// `upperBound == totalCount`, so this is a no-op there.
+    static func revealLater(
+        _ range: Range<Int>,
+        totalCount: Int,
+        visibleSpan: ClosedRange<Int>?
+    ) -> Range<Int> {
+        let bounds = visibleRange(range, totalCount: totalCount)
+        let safeTotal = max(0, totalCount)
+        guard !bounds.isEmpty, bounds.upperBound < safeTotal else { return bounds }
+        let newUpper = min(bounds.upperBound + pageSize, safeTotal)
+        let visibleCeiling = visibleSpan.map { max($0.lowerBound, 0) }
+        var newLower = bounds.lowerBound
+        if let visibleCeiling {
+            newLower = max(newLower, min(max(visibleCeiling - pageSize, 0), newUpper - 1))
+        }
+        newLower = max(newLower, newUpper - maxMountedRowCount)
+        if let visibleCeiling {
+            newLower = min(newLower, max(visibleCeiling, newUpper - 1))
+        }
+        return max(newLower, 0)..<newUpper
+    }
+
+    /// True only when the window is open to the very newest message. Reading
+    /// anywhere else is "not at bottom" even when the mounted window is
+    /// shorter than the viewport — streaming-scroll guards, unread counting,
+    /// and compaction all key off this.
+    static func isLiveTail(_ range: Range<Int>, totalCount: Int) -> Bool {
+        visibleRange(range, totalCount: totalCount).upperBound == max(0, totalCount)
+    }
+
+    /// Appended messages only shift indices upward at the tail. While the
+    /// reader sits on the live tail, the window slides forward preserving its
+    /// mounted count (today's same-limit suffix behavior). While they read
+    /// above the bottom, the window freezes: new rows mount on return to the
+    /// bottom, and the unread badge covers awareness in the meantime.
+    static func rangeAfterCountChange(
+        _ range: Range<Int>,
+        oldCount: Int,
+        newCount: Int,
+        isAtBottom: Bool
+    ) -> Range<Int> {
+        let bounds = visibleRange(range, totalCount: oldCount)
+        guard newCount > oldCount else { return bounds }
+        guard isAtBottom, bounds.upperBound == oldCount else { return bounds }
+        guard !bounds.isEmpty else { return tailRange(totalCount: newCount) }
+        let start = max(0, newCount - bounds.count)
+        return start..<newCount
+    }
+
+    /// Only a widened live tail compacts on repinning to the bottom. A
+    /// non-tail window is history browsing; it never auto-compacts, because
+    /// the geometry of a short window must not evict the jump target.
+    static func shouldCompactAfterRepinning(
+        wasAtBottom: Bool,
+        isAtBottom: Bool,
+        range: Range<Int>,
+        totalCount: Int
+    ) -> Bool {
+        guard !wasAtBottom, isAtBottom else { return false }
+        guard max(0, totalCount) > initialLimit else { return false }
+        return isLiveTail(range, totalCount: totalCount)
+            && visibleRange(range, totalCount: totalCount).count > initialLimit
+    }
+
+    static func compactedRange(totalCount: Int) -> Range<Int> {
+        tailRange(totalCount: totalCount, limit: initialLimit)
+    }
+
+    /// A session owns no transcript presentation state. Never carry an
+    /// expanded window from one session into another, where it would silently
+    /// mount hundreds of rich rows before the reader requests them.
+    static func rangeForSessionReplacement(totalCount: Int) -> Range<Int> {
+        tailRange(totalCount: totalCount, limit: initialLimit)
     }
 
     static func jumpPlan(
         for item: MessageNavigatorItem,
         sessionID: String,
-        totalCount: Int,
-        currentLimit: Int
+        totalCount: Int
     ) -> ConversationMessageJumpPlan? {
         guard item.sessionID == sessionID else { return nil }
+        // Navigator ordinals are 1-based over the canonical array.
         return ConversationMessageJumpPlan(
             messageID: item.messageID,
-            renderedLimit: limitToReveal(
-                messageOrdinal: item.ordinal,
-                totalCount: totalCount,
-                currentLimit: currentLimit
-            )
+            windowRange: jumpWindow(aroundIndex: item.ordinal - 1, totalCount: totalCount)
         )
     }
 
     static func jumpEffect(
         for item: MessageNavigatorItem,
         sessionID: String,
-        messages: [ChatMessage],
-        currentLimit: Int
+        messages: [ChatMessage]
     ) -> ConversationMessageJumpEffect? {
         guard let plan = jumpPlan(
             for: item,
             sessionID: sessionID,
-            totalCount: messages.count,
-            currentLimit: currentLimit
+            totalCount: messages.count
         ) else { return nil }
         return ConversationMessageJumpEffect(
             messageID: plan.messageID,
-            renderedLimit: plan.renderedLimit,
+            windowRange: plan.windowRange,
             isAtBottom: false,
             unseenMessageCount: 0
         )
@@ -104,7 +221,6 @@ enum ConversationMessageWindow {
     static func transcriptSelectionHandler(
         sessionID: String,
         messages: [ChatMessage],
-        currentLimit: @escaping () -> Int,
         onEffect: @escaping (ConversationMessageJumpEffect) -> Void,
         onScroll: @escaping (UUID, ConversationMessageScrollAnchor) -> Void
     ) -> (MessageNavigatorItem) -> Void {
@@ -112,59 +228,11 @@ enum ConversationMessageWindow {
             guard let effect = jumpEffect(
                 for: item,
                 sessionID: sessionID,
-                messages: messages,
-                currentLimit: currentLimit()
+                messages: messages
             ) else { return }
             onEffect(effect)
             onScroll(effect.messageID, .center)
         }
-    }
-
-    /// A session owns no transcript presentation state. Never carry an
-    /// expanded page from one session into another, where it would silently
-    /// mount hundreds of rich rows before the reader requests them.
-    static func limitForSessionReplacement() -> Int { initialLimit }
-
-    static func shouldCompactAfterRepinning(
-        wasAtBottom: Bool,
-        isAtBottom: Bool,
-        currentLimit: Int,
-        totalCount: Int
-    ) -> Bool {
-        !wasAtBottom
-            && isAtBottom
-            && totalCount > initialLimit
-            && currentLimit > initialLimit
-    }
-
-    static func compactedLimit(totalCount: Int) -> Int {
-        min(totalCount, initialLimit)
-    }
-
-    static func limitAfterCountChange(
-        currentLimit: Int,
-        oldCount: Int,
-        newCount: Int,
-        isAtBottom: Bool
-    ) -> Int {
-        let normalizedLimit = max(initialLimit, currentLimit)
-        guard newCount > oldCount, !isAtBottom else { return normalizedLimit }
-        // Preserve the visible start index while the user reads above the
-        // bottom; appended messages extend the window instead of evicting a
-        // row from the top of their viewport.
-        return normalizedLimit + (newCount - oldCount)
-    }
-
-    static func shouldLoadEarlier(
-        topMinY: CGFloat,
-        hiddenCount: Int,
-        isArmed: Bool
-    ) -> Bool {
-        isArmed && hiddenCount > 0 && topMinY >= -topLoadThreshold
-    }
-
-    static func shouldRearmTopTrigger(topMinY: CGFloat) -> Bool {
-        topMinY < -topRearmDistance
     }
 }
 

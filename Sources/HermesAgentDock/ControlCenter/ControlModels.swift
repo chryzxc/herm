@@ -433,7 +433,7 @@ enum LatestActivityPresentation {
 /// The Global overview's LATEST ACTIVITY strip is a cross-session activity
 /// feed. A session may contribute multiple rows when several of its steps are
 /// newer than the latest step from other sessions.
-enum SessionActivityPresentation {
+enum GlobalSessionActivityPresentation {
     static func latestActivity(
         _ sessions: [SessionSummary],
         stepsBySessionID: [String: [SessionActivityStep]],
@@ -457,6 +457,10 @@ enum SessionActivityPresentation {
         }.prefix(max(0, limit)))
     }
 }
+
+// Keep the original internal name available to existing projections and tests
+// while the global feed uses the more explicit type name above.
+typealias SessionActivityPresentation = GlobalSessionActivityPresentation
 
 struct AgentSummary: Identifiable, Codable, Equatable {
     let id: String
@@ -588,6 +592,18 @@ struct KanbanTaskDetail: Identifiable, Equatable {
     }
 }
 
+struct KanbanTaskIdentity: Hashable, Equatable {
+    let boardSlug: String?
+    let taskID: String
+}
+
+enum KanbanInspectorTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case activity = "Activity"
+
+    var id: String { rawValue }
+}
+
 struct KanbanStatsSummary: Equatable {
     let counts: [String: Int]
 }
@@ -613,6 +629,43 @@ struct KanbanListFilter: Equatable {
     var sessionID: String?
     var includeArchived = false
     var sort: String?
+}
+
+/// Human-readable ordering choices exposed by the Kanban toolbar.
+enum KanbanSortOption: String, CaseIterable, Identifiable {
+    case updated
+    case createdDesc = "created-desc"
+    case priorityDesc = "priority-desc"
+    case title
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .updated: "Updated"
+        case .createdDesc: "Created"
+        case .priorityDesc: "Priority"
+        case .title: "Title"
+        }
+    }
+}
+
+struct KanbanFilterPresentation: Equatable {
+    let status: String
+    let assignee: String
+    let mineOnly: Bool
+    let sort: KanbanSortOption
+
+    var isActive: Bool {
+        status != "All" || assignee != "All" || mineOnly || sort != .updated
+    }
+}
+
+struct KanbanLaneExpansionState: Equatable {
+    var expandedEmptyLanes: Set<KanbanLane> = []
+
+    func isExpanded(_ lane: KanbanLane, hasTasks: Bool) -> Bool {
+        hasTasks || expandedEmptyLanes.contains(lane)
+    }
 }
 
 /// Identifies the authoritative scope of an in-flight session Kanban query.

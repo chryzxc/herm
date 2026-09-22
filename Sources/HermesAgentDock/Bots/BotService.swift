@@ -272,7 +272,7 @@ final class BotService {
         let botsMeta = rosterMeta(raw)
         return BotSummary(
             id: id, name: name, title: title, description: description, model: model, provider: provider,
-            isActive: isActive, chat: chat, worker: worker, avatarURL: avatarURL(raw), preview: preview,
+            isActive: isActive, chat: chat, recentSession: fallbackChat, worker: worker, avatarURL: avatarURL(raw), preview: preview,
             lastActive: lastActive, isHidden: botsMeta?.hidden == true,
             hasAvatar: (raw["has_avatar"] as? Bool) == true,
             hasCustomAvatar: botsMeta?.custom == true,
@@ -541,6 +541,8 @@ final class BotModeModel: ObservableObject {
 
     @Published private(set) var routines: [BotRoutine] = []
     @Published private(set) var isLoadingRoutines = false
+    @Published private(set) var removingRoutineID: String?
+    @Published var routineRemovalError: String?
     @Published private(set) var isImageGenerationAvailable = false
 
     var visibleBots: [BotSummary] {
@@ -623,10 +625,24 @@ final class BotModeModel: ObservableObject {
         }
     }
 
-    func removeRoutine(_ routine: BotRoutine) async {
-        guard let service else { return }
-        _ = try? await service.removeRoutine(jobName: routine.jobName)
-        await loadRoutines()
+    @discardableResult
+    func removeRoutine(_ routine: BotRoutine) async -> Bool {
+        guard let service, removingRoutineID == nil else { return false }
+        removingRoutineID = routine.id
+        routineRemovalError = nil
+        defer { removingRoutineID = nil }
+        do {
+            try await service.removeRoutine(jobName: routine.jobName)
+            await loadRoutines()
+            return true
+        } catch {
+            routineRemovalError = Self.mutationDiagnostic(for: error, noun: "remove the routine")
+            return false
+        }
+    }
+
+    func clearRoutineRemovalError() {
+        routineRemovalError = nil
     }
 
     func profileDetail(for bot: BotSummary) async -> BotProfileDetail? {

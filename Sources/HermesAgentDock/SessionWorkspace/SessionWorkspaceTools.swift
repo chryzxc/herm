@@ -6,15 +6,19 @@ struct SessionFilesView: View {
     let projectPath: String?
     let onRefresh: () async -> Void
     var scope: SessionRepositoryScope? = nil
+    var isCompact = false
     var onOpenFile: ((SessionRepositoryScope, RepositoryFileDocument) -> Void)? = nil
     @State private var entries: [ProjectFileEntry] = []
     @State private var expandedDirectories = Set<String>()
     @State private var document: RepositoryFileDocument?
     @State private var isLoading = false
+    @State private var isRefreshing = false
     @State private var isOpeningFile = false
     @State private var error: String?
     @State private var filterText = ""
     @State private var selectedPath: String?
+    @State private var hoveredPath: String?
+    @State private var showsGeneratedFiles = false
     @State private var openRequestID = UUID()
 
     var body: some View {
@@ -37,17 +41,8 @@ struct SessionFilesView: View {
                 SessionProjectRequiredState()
             }
         }
-        .task(id: projectPath) {
-            guard let projectPath else { entries = []; return }
-            isLoading = true
-            selectedPath = nil
-            let loadedEntries = await RepositoryService.projectFiles(path: projectPath)
-            entries = loadedEntries
-            // Show the complete project tree on first load. Users can still
-            // collapse individual folders, but a newly opened project should
-            // not look empty while its files are hidden behind collapsed rows.
-            expandedDirectories = Set(loadedEntries.filter(\.isDirectory).map(\.path))
-            isLoading = false
+        .task(id: "\(projectPath ?? ""):\(showsGeneratedFiles)") {
+            await reload(resetDisclosure: true)
         }
         .onChange(of: scope?.identity ?? projectPath ?? "") { _, _ in
             openRequestID = UUID()
@@ -64,48 +59,13 @@ struct SessionFilesView: View {
 
     private var explorer: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TextField("Filter files…", text: $filterText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 12)
-                .frame(height: 34)
-                .background(Color.dockCanvas)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.dockBorderLight, lineWidth: 0.5)
-                }
-                .padding(.bottom, 8)
+            explorerHeader
+            filterField
+            statusSlot
 
-            if isLoading {
-                ProgressView("Loading files…")
-                    .font(.system(size: 12))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if entries.isEmpty {
-                empty("folder", "No readable files", "The selected project folder has no readable files.")
+            if !isLoading, entries.isEmpty {
+                empty("folder", "No files to show", showsGeneratedFiles ? "The selected project folder has no readable files." : "Generated folders are hidden. Use Explorer options to show them.")
             } else {
-                Button { } label: {
-                    explorerRow(
-                        icon: "folder.fill",
-                        title: projectName,
-                        path: nil,
-                        depth: 0,
-                        isDirectory: true,
-                        isExpanded: true,
-                        color: Color.dockFolder
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(true)
-
-                if let error {
-                    Text(error)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.dockWarning)
-                        .padding(.bottom, 6)
-                }
-
                 ForEach(visibleEntries) { entry in
                     if entry.isDirectory {
                         Button { toggle(entry.path) } label: {
@@ -116,7 +76,7 @@ struct SessionFilesView: View {
                                 depth: entry.depth + 1,
                                 isDirectory: true,
                                 isExpanded: expandedDirectories.contains(entry.path),
-                                color: Color.dockFolder
+                                color: Color.dockSecondaryText
                             )
                         }
                         .buttonStyle(.plain)
@@ -129,17 +89,19 @@ struct SessionFilesView: View {
                                 depth: entry.depth + 1,
                                 isDirectory: false,
                                 isExpanded: false,
-                                color: fileColor(for: entry)
+                                color: selectedPath == entry.path ? Color.dockAccent : Color.dockSecondaryText
                             )
                         }
                         .buttonStyle(.plain)
                         .disabled(isOpeningFile)
+                        .help(entry.path)
+                        .accessibilityLabel("Open \(entry.path)")
                     }
                 }
 
-                if visibleEntries.isEmpty {
+                if !isLoading, visibleEntries.isEmpty {
                     Text("No matching files")
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.system(size: 12))
                         .foregroundStyle(Color.dockMetadataText)
                         .padding(.vertical, 12)
                 }
@@ -152,7 +114,7 @@ struct SessionFilesView: View {
     }
 
     private func explorerRow(icon: String, title: String, path: String?, depth: Int, isDirectory: Bool, isExpanded: Bool, color: Color) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             if isDirectory {
                 LucideImage(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
@@ -163,21 +125,31 @@ struct SessionFilesView: View {
             }
 
             LucideImage(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(color)
-                .frame(width: 20)
+                .frame(width: 18)
             Text(title)
-                .font(.system(size: 12))
+                .font(.system(size: 12, weight: .regular))
                 .foregroundStyle(Color.dockPrimaryText)
                 .lineLimit(1)
+                .truncationMode(.middle)
             Spacer(minLength: 4)
             if isOpeningFile && selectedPath == path { ProgressView().controlSize(.mini) }
         }
         .padding(.leading, CGFloat(depth) * 14 + 8)
         .padding(.trailing, 8)
-        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28, alignment: .leading)
-        .background(selectedPath == path && !isDirectory ? Color.dockAccent.opacity(0.13) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: ExplorerWorkspaceMetrics.treeRowHeight, maxHeight: ExplorerWorkspaceMetrics.treeRowHeight, alignment: .leading)
+        .background {
+            if selectedPath == path, !isDirectory {
+                Color.dockAccent.opacity(0.14)
+            } else if hoveredPath == path {
+                Color.dockSurface4.opacity(0.55)
+            } else {
+                Color.clear
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { hoveredPath = $0 ? path : nil }
     }
 
     private var projectName: String {
@@ -257,12 +229,120 @@ struct SessionFilesView: View {
         }
     }
 
-    private func fileColor(for entry: ProjectFileEntry) -> Color {
-        switch entry.path.split(separator: ".").last.map(String.init)?.lowercased() {
-        case "json", "yaml", "yml", "toml": return .dockWarning
-        case "md", "txt": return .dockSecondaryText
-        default: return .dockAccent
+    private var explorerHeader: some View {
+        HStack(spacing: 8) {
+            LucideImage(systemName: "folder")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color.dockSecondaryText)
+            Text(projectName)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text("\(entries.filter { !$0.isDirectory }.count)")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color.dockMetadataText)
+            Spacer(minLength: 4)
+            Button { collapseAll() } label: {
+                LucideImage(systemName: "arrow.up.right.and.arrow.down.left")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.dockSecondaryText)
+            .help("Collapse all folders")
+            .accessibilityLabel("Collapse all folders")
+            Button { Task { await refresh() } } label: {
+                Group {
+                    if isRefreshing { ProgressView().controlSize(.small) }
+                    else { LucideImage(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
+                }
+                .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.dockSecondaryText)
+            .disabled(isRefreshing)
+            .help("Refresh project files")
+            .accessibilityLabel("Refresh project files")
+            Menu {
+                Toggle("Show Generated Files", isOn: $showsGeneratedFiles)
+            } label: {
+                LucideImage(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 44, height: 44)
+            }
+            .menuStyle(.borderlessButton)
+            .foregroundStyle(Color.dockSecondaryText)
+            .help("Explorer options")
+            .accessibilityLabel("Explorer options")
         }
+        .frame(height: ExplorerWorkspaceMetrics.headerHeight)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private var filterField: some View {
+        HStack(spacing: 7) {
+            LucideImage(systemName: "magnifyingglass")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockMetadataText)
+            TextField("Filter files…", text: $filterText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockPrimaryText)
+            if !filterText.isEmpty {
+                Button { filterText = "" } label: {
+                    LucideImage(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockMetadataText)
+                .accessibilityLabel("Clear file filter")
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 32)
+        .background(Color.dockSurface2.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .padding(.vertical, 8)
+    }
+
+    private var statusSlot: some View {
+        HStack(spacing: 7) {
+            if isLoading {
+                ProgressView().controlSize(.small)
+                Text("Loading files…")
+            } else if let error {
+                LucideImage(systemName: "exclamationmark.triangle")
+                Text(error)
+            } else {
+                Color.clear.frame(width: 1, height: 1)
+                Text(" ")
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(error == nil ? Color.dockMetadataText : Color.dockWarning)
+        .lineLimit(1)
+        .frame(height: 22, alignment: .leading)
+    }
+
+    private func collapseAll() { expandedDirectories.removeAll() }
+
+    private func refresh() async {
+        guard projectPath != nil else { return }
+        isRefreshing = true
+        await onRefresh()
+        await reload(resetDisclosure: false)
+        isRefreshing = false
+    }
+
+    private func reload(resetDisclosure: Bool) async {
+        guard let projectPath else { entries = []; return }
+        isLoading = true
+        selectedPath = nil
+        let loadedEntries = await RepositoryService.projectFiles(path: projectPath, includeGenerated: showsGeneratedFiles)
+        entries = loadedEntries
+        if resetDisclosure { expandedDirectories.removeAll() }
+        isLoading = false
     }
 
     private func empty(_ icon: String, _ title: String, _ detail: String) -> some View {
@@ -273,7 +353,7 @@ struct SessionFilesView: View {
         .foregroundStyle(Color.dockPrimaryText)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .dockGlassPane()
+        .background(Color.clear)
     }
 
 }

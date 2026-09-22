@@ -11,6 +11,7 @@ struct SessionInspector: View {
     let sessionProjectIsBound: Bool
     var showsHeader = true
     @State private var selectedSection = Section.activity
+    @State private var hoveredSection: Section?
     @State private var isSwitchingBranch = false
     @StateObject private var preferences = CommandCenterPreferencesStore()
 
@@ -89,9 +90,9 @@ struct SessionInspector: View {
             }
             .padding(.horizontal, 10)
         }
-        .padding(.vertical, 4)
-        .frame(height: 52)
-        .background(Color.dockSurface2.opacity(0.72))
+        .padding(.vertical, 2)
+        .frame(height: 44)
+        .background(Color.dockSurface2.opacity(0.58))
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
@@ -103,17 +104,14 @@ struct SessionInspector: View {
         } label: {
             HStack(spacing: 5) {
                 LucideImage(systemName: section.icon)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 14, weight: .medium))
                 Text(section.navigationTitle)
                     .lineLimit(1)
             }
                 .font(sessionTabFont)
                 .foregroundStyle(selectedSection == section ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .frame(minWidth: 88, minHeight: 36)
-                .background {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(selectedSection == section ? Color.dockAccent.opacity(0.10) : Color.clear)
-                }
+                .frame(minWidth: 82, minHeight: 40)
+                .background(hoveredSection == section && selectedSection != section ? Color.dockSurface2.opacity(0.45) : Color.clear)
                 .overlay(alignment: .bottom) {
                     if selectedSection == section {
                         Color.dockAccent.frame(height: 2)
@@ -123,6 +121,9 @@ struct SessionInspector: View {
         }
         .buttonStyle(.borderless)
         .fixedSize(horizontal: true, vertical: false)
+        .onHover { isHovering in
+            hoveredSection = isHovering ? section : nil
+        }
         .accessibilityLabel("Show \(section.rawValue)")
     }
 
@@ -165,15 +166,12 @@ struct SessionInspector: View {
     private var inspectorContent: some View {
         switch selectedSection {
         case .activity:
-            VStack(alignment: .leading, spacing: 12) {
-                SessionKanbanActivityView(
-                    model: model,
-                    control: control,
-                    botMode: botMode,
-                    sessionID: model.kanbanSessionID
-                )
-                AgentBoardView(model: model, embedded: true)
-            }
+            SessionActivityOverviewView(
+                model: model,
+                control: control,
+                botMode: botMode,
+                sessionID: model.kanbanSessionID
+            )
             .frame(maxWidth: .infinity, alignment: .topLeading)
         case .files:
             VStack(alignment: .leading, spacing: 14) {

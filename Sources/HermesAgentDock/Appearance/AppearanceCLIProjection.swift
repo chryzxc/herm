@@ -34,7 +34,7 @@ enum AppearanceCLIProjection {
             let description = String(columns[2]).trimmingCharacters(in: .whitespaces)
             guard ["builtin", "hub", "local"].contains(source) else { continue }
             guard safeLabel(slug), safeLabel(description) else { continue }
-            rows.append(AppearanceSkin(id: slug, name: description, isActive: isActive))
+            rows.append(AppearanceSkin(id: slug, name: description, isActive: isActive, source: source))
         }
         return rows
     }

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SessionExplorerSurface: View {
     let scope: SessionRepositoryScope?
+    var isCompact = false
     let onRefresh: () async -> Void
     let onOpenFile: (SessionRepositoryScope, RepositoryFileDocument) -> Void
 
@@ -14,9 +15,10 @@ struct SessionExplorerSurface: View {
                     projectPath: scope?.repositoryPath,
                     onRefresh: onRefresh,
                     scope: scope,
+                    isCompact: isCompact,
                     onOpenFile: onOpenFile
                 )
-                .padding(16)
+                .padding(.vertical, isCompact ? 4 : 8)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .background(Color.dockCanvas)
@@ -120,7 +122,7 @@ struct SessionPullRequestsSurface: View {
         HStack(spacing: 10) {
             HStack(spacing: 3) {
                 ForEach(PullRequestFilter.allCases) { filter in
-                    PullRequestFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
+                    RepositoryFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
                         center.filter = filter
                     }
                 }

@@ -11,6 +11,7 @@ struct AppearanceServiceTests {
         #expect(inventory.skins.map(\.id) == ["default", "slate"])
         #expect(inventory.skins.first?.isActive == true)
         #expect(inventory.skins.last?.name == "Cool blue")
+        #expect(inventory.skins.first?.source == "builtin")
         #expect(inventory.installedPets.map(\.id) == ["nukey"])
     }
 

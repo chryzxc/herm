@@ -19,6 +19,7 @@ struct RepositoryCodeWorkspaceView: View {
     @State private var blameGeneration = UUID()
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var showsDiscardConfirmation = false
 
     private enum BlameState {
         case loading
@@ -60,6 +61,15 @@ struct RepositoryCodeWorkspaceView: View {
                     .stroke(Color.dockBorderStrong, lineWidth: 0.5)
             }
         }
+        .confirmationDialog(
+            "Discard unsaved changes?",
+            isPresented: $showsDiscardConfirmation
+        ) {
+            Button("Discard Changes", role: .destructive, action: onClose)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your edits to \(document.path) have not been saved.")
+        }
         // Embedded usage keeps a finite viewport so the AppKit scroll view owns
         // scrolling instead of expanding with the inspector's outer ScrollView.
         .frame(maxWidth: .infinity, minHeight: isStandalonePane ? nil : 360, maxHeight: isStandalonePane ? .infinity : 620)
@@ -74,14 +84,14 @@ struct RepositoryCodeWorkspaceView: View {
     private var header: some View {
         HStack(spacing: 10) {
             if !isStandalonePane {
-                Button(action: onClose) {
-                        LucideImage(systemName: "chevron.left")
+                Button(action: requestClose) {
+                            LucideImage(systemName: "chevron.left")
                             .font(.system(size: 11, weight: .bold))
-                            .frame(width: 32, height: 32)
+                            .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.dockSecondaryText)
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .help("Back to files")
             }
 
@@ -100,17 +110,17 @@ struct RepositoryCodeWorkspaceView: View {
                     .help("Unsaved changes")
             }
             Button(action: save) {
-                LucideImage(systemName: isSaving ? "ellipsis" : "square.and.arrow.down")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(hasUnsavedChanges ? Color.dockAccent : Color.dockMetadataText)
-                    .frame(width: 28, height: 28)
+                    LucideImage(systemName: isSaving ? "ellipsis" : "square.and.arrow.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(hasUnsavedChanges ? Color.dockAccent : Color.dockMetadataText)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.borderless)
             .disabled(!hasUnsavedChanges || isSaving)
             .help(isSaving ? "Saving…" : "Save")
         }
         .padding(.horizontal, isStandalonePane ? 14 : 12)
-        .padding(.vertical, 10)
+        .frame(height: ExplorerWorkspaceMetrics.headerHeight)
     }
 
     private var editor: some View {
@@ -179,6 +189,11 @@ struct RepositoryCodeWorkspaceView: View {
             }
             if succeeded { await loadBlame() }
         }
+    }
+
+    private func requestClose() {
+        if hasUnsavedChanges { showsDiscardConfirmation = true }
+        else { onClose() }
     }
 
     private func blameDetail(_ line: RepositoryBlameLine) -> some View {

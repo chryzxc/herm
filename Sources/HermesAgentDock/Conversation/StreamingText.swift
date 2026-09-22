@@ -181,6 +181,7 @@ struct StreamingAssistantMessageRow: View {
     let timestamp: Date
     let modelName: String?
     let responseDuration: TimeInterval?
+    var metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false)
 
     var body: some View {
         if !streaming.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -188,16 +189,10 @@ struct StreamingAssistantMessageRow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     StreamingMessageText(streaming: streaming)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 6)
                         .foregroundStyle(Color.dockPrimaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.dockMessageBubble)
-                        .clipShape(MessageBubbleShape(isUser: false))
-                        .overlay(
-                            MessageBubbleShape(isUser: false)
-                                .stroke(Color.dockBorder, lineWidth: 0.5)
-                        )
 
                     HStack(spacing: 6) {
                         Text(HumanDateFormatting.timeOnly(timestamp))
@@ -211,8 +206,8 @@ struct StreamingAssistantMessageRow: View {
                     .padding(.horizontal, 4)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
+            .padding(.horizontal, metrics.contentInset)
+            .padding(.vertical, 8)
         }
     }
 }

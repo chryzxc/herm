@@ -6,10 +6,12 @@ import SwiftUI
 /// the transcript changes.
 @MainActor
 final class ConversationMessageActionState: ObservableObject {
-    @Published private(set) var pendingMessageIDs: Set<UUID> = []
+    @Published private(set) var pendingActions: [UUID: ConversationMessageActionKind] = [:]
     @Published private(set) var copiedMessageID: UUID?
 
-    func isPending(_ messageID: UUID) -> Bool { pendingMessageIDs.contains(messageID) }
+    func pendingAction(for messageID: UUID) -> ConversationMessageActionKind? {
+        pendingActions[messageID]
+    }
 
     func copy(_ message: ChatMessage) {
         let text = Self.readableText(message.text)
@@ -20,11 +22,16 @@ final class ConversationMessageActionState: ObservableObject {
         copiedMessageID = message.id
     }
 
-    func run(_ messageID: UUID, operation: @escaping @MainActor () async -> Void) {
-        guard pendingMessageIDs.insert(messageID).inserted else { return }
+    func run(
+        _ messageID: UUID,
+        action: ConversationMessageActionKind,
+        operation: @escaping @MainActor () async -> Void
+    ) {
+        guard pendingActions[messageID] == nil else { return }
+        pendingActions[messageID] = action
         Task { @MainActor [weak self] in
             await operation()
-            self?.pendingMessageIDs.remove(messageID)
+            self?.pendingActions.removeValue(forKey: messageID)
         }
     }
 

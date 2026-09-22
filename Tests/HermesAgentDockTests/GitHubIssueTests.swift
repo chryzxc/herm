@@ -40,6 +40,32 @@ struct GitHubIssueTests {
         #expect(model.visible.count == 2)
     }
 
+    @MainActor @Test func issueVisibleRowsRemainNewestFirstAndResetFiltersRepairsSelection() {
+        let repository = GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
+        let older = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 1, title: "Older", body: "", state: "open", author: "ada", assignee: nil, updatedAt: Date(timeIntervalSince1970: 10), webURL: nil)
+        let newer = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 2, title: "Newer", body: "", state: "open", author: "ada", assignee: nil, updatedAt: Date(timeIntervalSince1970: 20), webURL: nil)
+        let model = IssueCenterModel()
+        model.records = [older, newer]
+        model.selectedIssueID = older.id
+        model.query = "newer"
+        model.repairSelection()
+        #expect(model.selectedIssueID == newer.id)
+        model.filter = .assigned
+        model.resetFilters()
+        #expect(model.filter == .all)
+        #expect(model.query.isEmpty)
+        #expect(model.repositoryScope == nil)
+        #expect(model.visible.map(\.number) == [2, 1])
+        #expect(model.selectedIssueID == newer.id)
+    }
+
+    @Test func issueRowMetadataUsesSentenceCaseAssignmentAndOmitsMissingTime() {
+        let assigned = GitHubIssueRowMetadata.make(repository: "owner/repo", assignees: ["ada", "bob"], updated: "2 min ago")
+        #expect(assigned.values == ["owner/repo", "Assigned to ada, bob", "2 min ago"])
+        let unassigned = GitHubIssueRowMetadata.make(repository: "owner/repo", assignees: [], updated: nil)
+        #expect(unassigned.values == ["owner/repo", "Unassigned"])
+    }
+
     @MainActor @Test func parserPreservesSecondaryAssignees() {
         let issue = GitHubIssueParser.parse([
             "number": 20, "title": "Co-assigned", "state": "open",
@@ -82,6 +108,11 @@ struct GitHubIssueTests {
         #expect(transport.paths.contains("/user"))
         #expect(transport.paths.contains("/search/issues"))
         #expect(transport.paths.contains("/repos/owner/repo/issues/19"))
+        #expect(Set(transport.searchQueries) == [
+            "is:issue is:open author:ada",
+            "is:issue is:open assignee:ada"
+        ])
+        #expect(transport.searchQueries.contains("is:issue is:open") == false)
     }
 
     @MainActor @Test func issueCenterReportsInitialUnavailableInsteadOfEmptySuccess() async {
@@ -90,6 +121,18 @@ struct GitHubIssueTests {
         #expect(model.records.isEmpty)
         #expect(model.hasLoaded == false)
         #expect(model.errorMessage?.contains("unavailable") == true)
+    }
+
+    @MainActor @Test func issueDetailFailureRetainsSelectedSummaryAndPublishesInlineError() async {
+        let repository = GitHubRepositoryReference(owner: "owner", name: "repo", webURL: URL(string: "https://github.com/owner/repo")!)
+        let issue = GitHubIssueRecord(repository: repository, localPath: "/repo", number: 1, title: "Summary", body: "Search summary", state: "open", author: "ada", assignee: nil, updatedAt: nil, webURL: nil)
+        let model = IssueCenterModel(api: GitHubIssueCenterAPI(transport: IssueTestTransport(failing: true)))
+        model.records = [issue]
+        model.selectedIssueID = issue.id
+        await model.loadSelectedDetail()
+        #expect(model.selected?.title == "Summary")
+        #expect(model.detailErrorMessage?.contains("Could not refresh") == true)
+        #expect(model.loadingDetailID == nil)
     }
 
     @MainActor @Test func issueCenterKeepsViewerFailureUnavailableEvenWhenSearchSucceeds() async {
@@ -142,6 +185,7 @@ private final class IssueTestTransport: GitHubIssueTransport, @unchecked Sendabl
     private let failing: Bool
     private let failingPaths: Set<String>
     private(set) var paths: [String] = []
+    private(set) var searchQueries: [String] = []
 
     init(responses: [String: Any] = [:], failing: Bool = false, failingPaths: Set<String> = []) {
         self.responses = responses
@@ -152,6 +196,11 @@ private final class IssueTestTransport: GitHubIssueTransport, @unchecked Sendabl
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let path = request.url?.path ?? ""
         paths.append(path)
+        if path == "/search/issues",
+           let url = request.url,
+           let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "q" })?.value {
+            searchQueries.append(query)
+        }
         if failing || failingPaths.contains(path) { throw GitHubCodeHostError.unavailable }
         let payload = responses[request.url?.path ?? ""] ?? [String: Any]()
         let data = try JSONSerialization.data(withJSONObject: payload)

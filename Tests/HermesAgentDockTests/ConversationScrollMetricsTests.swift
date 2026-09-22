@@ -7,10 +7,11 @@ final class ConversationScrollMetricsTests: XCTestCase {
             ChatMessage(role: .hermes, text: "message \(index)")
         }
 
-        let visible = ConversationMessageWindow.visibleMessages(
-            messages,
-            limit: ConversationMessageWindow.initialLimit
+        let range = ConversationMessageWindow.visibleRange(
+            ConversationMessageWindow.tailRange(totalCount: messages.count),
+            totalCount: messages.count
         )
+        let visible = messages[range]
 
         XCTAssertEqual(visible.count, ConversationMessageWindow.initialLimit)
         XCTAssertEqual(visible.first?.text, "message 488")
@@ -27,90 +28,110 @@ final class ConversationScrollMetricsTests: XCTestCase {
     }
 
     func testRevealingHistoryAddsOneBoundedPage() {
-        XCTAssertEqual(
-            ConversationMessageWindow.revealedLimit(
-                currentLimit: ConversationMessageWindow.initialLimit,
-                totalCount: 500
-            ),
-            ConversationMessageWindow.initialLimit + ConversationMessageWindow.pageSize
-        )
-        XCTAssertEqual(
-            ConversationMessageWindow.revealedLimit(currentLimit: 420, totalCount: 500),
-            420 + ConversationMessageWindow.pageSize
-        )
+        let tail = ConversationMessageWindow.tailRange(totalCount: 500)
+
+        let firstReveal = ConversationMessageWindow.revealEarlier(tail, totalCount: 500, visibleSpan: nil)
+        XCTAssertEqual(firstReveal.lowerBound, tail.lowerBound - ConversationMessageWindow.pageSize)
+        XCTAssertEqual(firstReveal.count, ConversationMessageWindow.initialLimit + ConversationMessageWindow.pageSize)
+
+        var range = firstReveal
+        for _ in 0..<40 {
+            range = ConversationMessageWindow.revealEarlier(range, totalCount: 500, visibleSpan: nil)
+            XCTAssertLessThanOrEqual(range.count, ConversationMessageWindow.maxMountedRowCount)
+        }
+        XCTAssertEqual(range.lowerBound, 0)
     }
 
     func testSessionReplacementDropsExpandedHistoryWindow() {
-        XCTAssertEqual(
-            ConversationMessageWindow.limitForSessionReplacement(),
-            ConversationMessageWindow.initialLimit
-        )
+        let replacement = ConversationMessageWindow.rangeForSessionReplacement(totalCount: 500)
+        XCTAssertEqual(replacement, ConversationMessageWindow.tailRange(totalCount: 500))
         XCTAssertLessThan(
-            ConversationMessageWindow.limitForSessionReplacement(),
-            ConversationMessageWindow.revealedLimit(currentLimit: 440, totalCount: 500)
+            replacement.count,
+            ConversationMessageWindow.maxMountedRowCount
         )
     }
 
     func testRepinningCompactsExpandedHistory() {
+        let expandedTail = ConversationMessageWindow.tailRange(totalCount: 500, limit: 120)
         XCTAssertTrue(ConversationMessageWindow.shouldCompactAfterRepinning(
             wasAtBottom: false,
             isAtBottom: true,
-            currentLimit: 120,
+            range: expandedTail,
             totalCount: 500
         ))
-        XCTAssertEqual(ConversationMessageWindow.compactedLimit(totalCount: 500), 12)
+        XCTAssertEqual(
+            ConversationMessageWindow.compactedRange(totalCount: 500),
+            ConversationMessageWindow.tailRange(totalCount: 500)
+        )
     }
 
     func testPinnedOrUnexpandedHistoryDoesNotCompact() {
+        let expandedTail = ConversationMessageWindow.tailRange(totalCount: 500, limit: 120)
+        let narrowTail = ConversationMessageWindow.tailRange(totalCount: 500)
+        let historyWindow = ConversationMessageWindow.jumpWindow(aroundIndex: 200, totalCount: 500)
+
         XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
             wasAtBottom: true,
             isAtBottom: true,
-            currentLimit: 120,
+            range: expandedTail,
             totalCount: 500
         ))
         XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
             wasAtBottom: false,
             isAtBottom: true,
-            currentLimit: 12,
+            range: narrowTail,
             totalCount: 500
         ))
         XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
             wasAtBottom: false,
             isAtBottom: false,
-            currentLimit: 120,
+            range: expandedTail,
+            totalCount: 500
+        ))
+        XCTAssertFalse(ConversationMessageWindow.shouldCompactAfterRepinning(
+            wasAtBottom: false,
+            isAtBottom: true,
+            range: historyWindow,
             totalCount: 500
         ))
     }
 
-    func testCompactedLimitDoesNotExceedShortTranscript() {
-        XCTAssertEqual(ConversationMessageWindow.compactedLimit(totalCount: 5), 5)
+    func testCompactedRangeDoesNotExceedShortTranscript() {
+        XCTAssertEqual(
+            ConversationMessageWindow.compactedRange(totalCount: 5),
+            0..<5
+        )
     }
 
-    func testAppendWhileReadingEarlierPreservesVisibleStartIndex() {
-        let oldCount = 500
-        let oldLimit = 120
-        let oldStart = oldCount - oldLimit
-        let newCount = 503
-        let newLimit = ConversationMessageWindow.limitAfterCountChange(
-            currentLimit: oldLimit,
-            oldCount: oldCount,
-            newCount: newCount,
+    func testAppendWhileReadingHistoryFreezesWindowWithStartPreserved() {
+        let oldRange: Range<Int> = 380..<500
+        let newRange = ConversationMessageWindow.rangeAfterCountChange(
+            oldRange,
+            oldCount: 500,
+            newCount: 503,
             isAtBottom: false
         )
 
-        XCTAssertEqual(newCount - newLimit, oldStart)
+        XCTAssertEqual(newRange, oldRange)
     }
 
     func testAppendAtBottomKeepsWindowBounded() {
         XCTAssertEqual(
-            ConversationMessageWindow.limitAfterCountChange(
-                currentLimit: 120,
+            ConversationMessageWindow.rangeAfterCountChange(
+                380..<500,
                 oldCount: 500,
                 newCount: 501,
                 isAtBottom: true
             ),
-            120
+            381..<501
         )
+    }
+
+    func testLiveTailIsDerivedFromTheWindowEdge() {
+        XCTAssertTrue(ConversationMessageWindow.isLiveTail(488..<500, totalCount: 500))
+        XCTAssertFalse(ConversationMessageWindow.isLiveTail(380..<480, totalCount: 500))
+        XCTAssertTrue(ConversationMessageWindow.isLiveTail(0..<0, totalCount: 0))
+        XCTAssertFalse(ConversationMessageWindow.isLiveTail(380..<500, totalCount: 501))
     }
 
     func testUnreadCountIgnoresTransportOnlyAssistantEntries() {
@@ -164,31 +185,6 @@ final class ConversationScrollMetricsTests: XCTestCase {
                 streamingID: streamingPlaceholder.id
             )
         )
-    }
-
-    func testTopEdgeLoadsOnlyOneArmedPage() {
-        XCTAssertTrue(ConversationMessageWindow.shouldLoadEarlier(
-            topMinY: 0,
-            hiddenCount: 380,
-            isArmed: true
-        ))
-        XCTAssertFalse(ConversationMessageWindow.shouldLoadEarlier(
-            topMinY: 0,
-            hiddenCount: 380,
-            isArmed: false
-        ))
-        XCTAssertFalse(ConversationMessageWindow.shouldLoadEarlier(
-            topMinY: -ConversationMessageWindow.topLoadThreshold - 1,
-            hiddenCount: 380,
-            isArmed: true
-        ))
-    }
-
-    func testTopEdgeRearmsOnlyAfterScrollingAway() {
-        XCTAssertFalse(ConversationMessageWindow.shouldRearmTopTrigger(topMinY: -40))
-        XCTAssertTrue(ConversationMessageWindow.shouldRearmTopTrigger(
-            topMinY: -ConversationMessageWindow.topRearmDistance - 1
-        ))
     }
 
     func testSentinelAtViewportBottomCountsAsAtBottom() {

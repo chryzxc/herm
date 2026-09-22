@@ -6,19 +6,39 @@
 set -eu
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-BUILD_DIR="$PROJECT_DIR/.build/arm64-apple-macosx/debug"
-APP_PATH="$BUILD_DIR/HermesAgentDock.app"
-EXECUTABLE_PATH="$BUILD_DIR/HermesAgentDock"
 APP_IDENTIFIER="com.christian.HermesAgentDock"
 PROCESS_NAME="HermesAgentDock"
 
 cd "$PROJECT_DIR"
 
+# Keep debug builds independent from user-level Swift/Clang caches. This is
+# important in managed environments where ~/.cache may be read-only, and it
+# also makes the script reproducible when launched from Xcode or a terminal.
+DEBUG_CACHE_DIR="$PROJECT_DIR/.build/debug-cache"
+mkdir -p "$DEBUG_CACHE_DIR/clang-module-cache" "$DEBUG_CACHE_DIR/swiftpm-cache" "$DEBUG_CACHE_DIR/scratch"
+export CLANG_MODULE_CACHE_PATH="$DEBUG_CACHE_DIR/clang-module-cache"
+
 # Always ask SwiftPM to build. It is incremental, but it owns the full input
 # graph (including generated sources and package metadata), unlike a shell
 # timestamp probe that can incorrectly reuse an old executable after edits.
 echo "[1/4] Building Hermes Agent Dock..."
-swift build --disable-automatic-resolution
+swift build \
+    --disable-automatic-resolution \
+    --disable-sandbox \
+    --cache-path "$DEBUG_CACHE_DIR/swiftpm-cache" \
+    --scratch-path "$DEBUG_CACHE_DIR/scratch"
+
+# SwiftPM places products under the scratch path when one is supplied. Ask it
+# for the authoritative bin directory instead of assuming the default .build
+# location, which can otherwise leave the app bundle running an older binary.
+BUILD_DIR=$(swift build \
+    --disable-automatic-resolution \
+    --disable-sandbox \
+    --cache-path "$DEBUG_CACHE_DIR/swiftpm-cache" \
+    --scratch-path "$DEBUG_CACHE_DIR/scratch" \
+    --show-bin-path)
+APP_PATH="$BUILD_DIR/HermesAgentDock.app"
+EXECUTABLE_PATH="$BUILD_DIR/HermesAgentDock"
 
 echo "[2/4] Closing running Hermes Agent Dock instances..."
 existing_pids=$(pgrep -x "$PROCESS_NAME" 2>/dev/null || true)
@@ -59,6 +79,9 @@ echo "[3/4] Replacing and signing the debug app bundle..."
 mkdir -p "$APP_PATH/Contents/MacOS"
 cp "$EXECUTABLE_PATH" "$APP_PATH/Contents/MacOS/HermesAgentDock"
 cp "$PROJECT_DIR/Sources/HermesAgentDock/Info.plist" "$APP_PATH/Contents/Info.plist"
+# `cp` can retain a restrictive mode from an older bundle. Launch Services
+# requires the bundle executable to be discoverable as a normal app binary.
+chmod 755 "$APP_PATH/Contents/MacOS/HermesAgentDock"
 codesign --force --sign - --identifier "$APP_IDENTIFIER" "$APP_PATH"
 codesign --verify --strict "$APP_PATH"
 
@@ -66,7 +89,18 @@ echo "[4/4] Launching the newly-built app..."
 # Hermes is a menu-bar app. Explicitly request the panel for debug launches so
 # startup exercises the same presentation path users see when opening it.
 rm -f /private/tmp/hermes-status-item-diagnostic.txt
-open -n "$APP_PATH" --args --show-panel --status-item-diagnostics --perf-trace
+if ! open -n "$APP_PATH" --args --show-panel --status-item-diagnostics --perf-trace; then
+    # Launch Services is unavailable in some managed/headless environments.
+    # The signed bundle executable still has the same Bundle.main context, so
+    # use it as a deterministic fallback instead of reporting a false build
+    # failure.
+    echo "Launch Services unavailable; starting the bundle executable directly..."
+    "$APP_PATH/Contents/MacOS/HermesAgentDock" \
+        --show-panel \
+        --status-item-diagnostics \
+        --perf-trace \
+        >/private/tmp/hermes-debug-app.log 2>&1 &
+fi
 
 # `open` only confirms that Launch Services accepted the request; it returns
 # success even if the app crashes during its first layout pass. Wait for a

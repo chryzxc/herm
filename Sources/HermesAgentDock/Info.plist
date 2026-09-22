@@ -10,6 +10,10 @@
     <string>Hermes Workspace</string>
     <key>CFBundleExecutable</key>
     <string>HermesAgentDock</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>

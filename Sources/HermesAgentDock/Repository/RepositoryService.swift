@@ -372,16 +372,17 @@ enum RepositoryService {
         return entries
     }
 
-    static func projectFiles(path: String) async -> [ProjectFileEntry] {
+    static func projectFiles(path: String, includeGenerated: Bool = false) async -> [ProjectFileEntry] {
         let root = URL(fileURLWithPath: path).standardizedFileURL
         return await Task.detached(priority: .utility) {
             // Keep the project tree faithful to the filesystem. Hidden
             // project files such as .github, .husky, and dotfiles are useful
-            // source files. Skip only internal/generated trees entirely, and
-            // expose dependency folders as entries without enumerating their
-            // potentially enormous contents.
-            let skippedTrees = Set([".git", ".build", "DerivedData"])
-            let shallowTrees = Set(["node_modules"])
+            // source files. Generated/dependency trees are omitted by default
+            // and can be explicitly requested by the Explorer presentation;
+            // dependency folders remain shallow to avoid enormous scans.
+            let skippedTrees = Set([".git"])
+            let generatedTrees = Set([".cache", ".build", "DerivedData", "node_modules", "build", "dist", "coverage"])
+            let shallowTrees = Set(["node_modules", "build", "dist", "coverage"])
             var entries: [ProjectFileEntry] = []
 
             func visit(_ directory: URL, depth: Int, isRoot: Bool = false) {
@@ -402,6 +403,7 @@ enum RepositoryService {
                 for url in sortedChildren {
                     let name = url.lastPathComponent
                     if skippedTrees.contains(name) { continue }
+                    if !includeGenerated && generatedTrees.contains(name) { continue }
                     let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
                     if attributes?[.type] as? FileAttributeType == .typeSymbolicLink { continue }
                     let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])

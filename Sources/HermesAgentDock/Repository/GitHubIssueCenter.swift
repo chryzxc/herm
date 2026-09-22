@@ -123,10 +123,17 @@ struct GitHubIssueCenterAPI: Sendable {
 
     func searchIssues(viewerLogin: String?, localPaths: [String: String]) async -> Result<[GitHubIssueRecord], PullRequestCenterFailure> {
         do {
-            var queries = ["is:issue is:open"]
-            if let viewerLogin, !viewerLogin.isEmpty {
-                queries += ["is:issue is:open author:\(viewerLogin)", "is:issue is:open assignee:\(viewerLogin)"]
+            // The All view is intentionally scoped to the signed-in user's
+            // authored and assigned issues. Never fall back to a global open
+            // issue search, which can expose unrelated repository activity.
+            guard let viewerLogin = viewerLogin?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !viewerLogin.isEmpty else {
+                return .failure(PullRequestCenterFailure(repository: "GitHub issue search"))
             }
+            let queries = [
+                "is:issue is:open author:\(viewerLogin)",
+                "is:issue is:open assignee:\(viewerLogin)"
+            ]
             var unique: [String: GitHubIssueRecord] = [:]
             for query in queries {
                 let payload = try await request(path: "/search/issues", query: ["q": query, "per_page": "100"])
@@ -166,8 +173,14 @@ final class IssueCenterModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var hasLoaded = false
     @Published var viewerLogin: String?
-    @Published var selectedIssueID: String?
+    @Published var selectedIssueID: String? {
+        didSet {
+            if oldValue != selectedIssueID { detailErrorMessage = nil }
+        }
+    }
     @Published private(set) var detailByID: [String: GitHubIssueRecord] = [:]
+    @Published private(set) var loadingDetailID: String?
+    @Published private(set) var detailErrorMessage: String?
     @Published var filter: GitHubIssueFilter = .all
     @Published var query = ""
     @Published var repositoryScope: String?
@@ -184,6 +197,9 @@ final class IssueCenterModel: ObservableObject {
     }
 
     var selected: GitHubIssueRecord? { records.first { $0.id == selectedIssueID } }
+    var hasActiveFilters: Bool {
+        filter != .all || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || repositoryScope != nil
+    }
     var visible: [GitHubIssueRecord] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return records.filter { issue in
@@ -197,6 +213,11 @@ final class IssueCenterModel: ObservableObject {
             guard matchesFilter else { return false }
             guard !needle.isEmpty else { return true }
             return [issue.title, issue.repository.id, issue.author, issue.assignee ?? "", "#\(issue.number)"].joined(separator: " ").lowercased().contains(needle)
+        }.sorted { lhs, rhs in
+            let left = lhs.updatedAt ?? .distantPast
+            let right = rhs.updatedAt ?? .distantPast
+            if left != right { return left > right }
+            return lhs.id < rhs.id
         }
     }
 
@@ -230,49 +251,210 @@ final class IssueCenterModel: ObservableObject {
 
     func loadSelectedDetail() async {
         guard let issue = selected, detailByID[issue.id] == nil else { return }
-        if let detail = await api.detail(issue) { detailByID[issue.id] = detail }
+        loadingDetailID = issue.id
+        detailErrorMessage = nil
+        defer {
+            if loadingDetailID == issue.id { loadingDetailID = nil }
+        }
+        if let detail = await api.detail(issue) {
+            detailByID[issue.id] = detail
+        } else {
+            detailErrorMessage = "Could not refresh full issue details. Showing the latest available summary."
+        }
+    }
+
+    func resetFilters() {
+        filter = .all
+        query = ""
+        repositoryScope = nil
+        repairSelection()
     }
 
     func repairSelection() { if !visible.contains(where: { $0.id == selectedIssueID }) { selectedIssueID = visible.first?.id } }
 }
 
+struct GitHubIssueRowMetadata: Equatable {
+    let repository: String
+    let assignment: String
+    let updated: String?
+
+    var values: [String] {
+        [repository, assignment, updated]
+            .compactMap { value in
+                guard let value else { return nil }
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty ? nil : trimmed
+            }
+    }
+
+    static func make(repository: String, assignees: [String], updated: String?) -> Self {
+        let names = assignees.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let assignment = names.isEmpty ? "Unassigned" : "Assigned to \(names.joined(separator: ", "))"
+        return Self(repository: repository, assignment: assignment, updated: updated)
+    }
+}
+
 struct IssueRowView: View {
     let issue: GitHubIssueRecord
     let isSelected: Bool
+    @State private var isHovered = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("#\(issue.displayNumber)  \(issue.title)").font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
-            Text("\(issue.repository.id) · \(issue.author)").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
-            Text(issue.assignee.map { "ASSIGNED TO \($0)" } ?? "UNASSIGNED").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(issue.assignee == nil ? Color.dockMetadataText : Color.dockAccent)
+        let formatter = RelativeDateTimeFormatter()
+        let metadata = GitHubIssueRowMetadata.make(
+            repository: issue.repository.id,
+            assignees: issue.assignees,
+            updated: issue.updatedAt.map { formatter.localizedString(for: $0, relativeTo: .now) }
+        )
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("#\(issue.displayNumber)")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.dockAccent)
+                Text(issue.title)
+                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            HStack(spacing: 5) {
+                Text(metadata.repository)
+                Text("·")
+                Text(metadata.assignment)
+                if let updated = metadata.updated {
+                    Text("·")
+                    Text(updated)
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(Color.dockMetadataText)
+            .lineLimit(1)
         }
-        .padding(.horizontal, 12).padding(.vertical, 11).frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Color.dockAccent.opacity(0.16) : Color.clear))
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 68, maxHeight: 68, alignment: .leading)
+        .background(isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
     }
 }
 
 struct IssueDetailView: View {
     @ObservedObject var center: IssueCenterModel
     let onOpenChat: (GitHubIssueRecord) -> Void
+
     var body: some View {
         Group {
             if let issue = center.selected {
-                let displayedIssue = center.detailByID[issue.id] ?? issue
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Text("#\(displayedIssue.number)").font(.system(size: 16, weight: .semibold, design: .monospaced)).foregroundStyle(Color.dockAccent)
-                        Text(displayedIssue.title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(2)
-                        Spacer()
-                        Button("Open chat") { onOpenChat(displayedIssue) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent)
-                        if let url = displayedIssue.webURL { Link("Open on GitHub", destination: url).font(.system(size: 11)).foregroundStyle(Color.dockAccent) }
-                    }.padding(20).overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-                    ScrollView { MarkdownMessageView(markdown: displayedIssue.body.isEmpty ? "No description provided." : displayedIssue.body).frame(maxWidth: .infinity, alignment: .leading).padding(24) }
-                }.task(id: issue.id) { await center.loadSelectedDetail() }
+                issueContent(issue)
+                    .task(id: issue.id) { await center.loadSelectedDetail() }
             } else {
-                VStack(spacing: 10) { LucideIcon(name: .fileText, size: 28); Text(center.isRefreshing ? "Loading issues…" : "Select an issue") }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 10) {
+                    LucideIcon(name: .fileText, size: 28)
+                    Text(center.isRefreshing ? "Loading issues…" : "Select an issue")
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.dockMetadataText)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .background(Color.dockCanvas)
+    }
+
+    @ViewBuilder
+    private func issueContent(_ issue: GitHubIssueRecord) -> some View {
+        let displayedIssue = center.detailByID[issue.id] ?? issue
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayedIssue.repository.id)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                    Text("Issue #\(displayedIssue.number)")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.dockAccent)
+                }
+                Spacer(minLength: 12)
+                if center.loadingDetailID == issue.id {
+                    ProgressView().controlSize(.small)
+                }
+                if let url = displayedIssue.webURL {
+                    Link(destination: url) {
+                        LucideImage(systemName: "arrow.up.right.square")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .frame(width: 34, height: 32)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open on GitHub")
+                    .accessibilityLabel("Open issue on GitHub")
+                }
+                Button("Open in chat") { onOpenChat(displayedIssue) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockOnAccentText)
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockAccent))
+            }
+            .padding(.horizontal, 18)
+            .frame(height: 56)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            if let error = center.detailErrorMessage {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 10)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(displayedIssue.title)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 28)
+
+                    issueMetadata(displayedIssue)
+                        .padding(.top, 12)
+                        .padding(.bottom, 24)
+
+                    Color.dockBorderLight.frame(height: 0.5)
+
+                    MarkdownMessageView(markdown: displayedIssue.body.isEmpty ? "No description provided." : displayedIssue.body)
+                        .frame(maxWidth: 760, alignment: .leading)
+                        .padding(.top, 24)
+                        .padding(.bottom, 48)
+                }
+                .frame(maxWidth: 820, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 28)
+            }
+        }
+    }
+
+    private func issueMetadata(_ issue: GitHubIssueRecord) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(issue.state.caseInsensitiveCompare("open") == .orderedSame ? Color.dockSuccess : Color.dockMetadataText)
+                .frame(width: 7, height: 7)
+            Text(issue.state.capitalized)
+            Text("·")
+            Text("by \(issue.author)")
+            if !issue.assignees.isEmpty {
+                Text("·")
+                Text("Assigned to \(issue.assignees.joined(separator: ", "))")
+            }
+            if let updatedAt = issue.updatedAt {
+                Text("·")
+                Text(RelativeDateTimeFormatter().localizedString(for: updatedAt, relativeTo: .now))
+            }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(Color.dockMetadataText)
+        .lineLimit(1)
     }
 }
 
@@ -283,70 +465,121 @@ struct IssueWorkspace: View {
 
     var body: some View {
         HSplitView {
-            listPane.frame(minWidth: 300, idealWidth: 390, maxWidth: 460, maxHeight: .infinity)
+            listPane.frame(minWidth: 340, idealWidth: 390, maxWidth: 460, maxHeight: .infinity)
             IssueDetailView(center: center, onOpenChat: onOpenChat)
-                .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color.dockCanvas)
         .task { if center.records.isEmpty { await center.refresh(projects: projects) } }
         .onChange(of: center.filter) { _, _ in center.repairSelection() }
         .onChange(of: center.query) { _, _ in center.repairSelection() }
+        .onChange(of: center.repositoryScope) { _, _ in center.repairSelection() }
     }
 
     private var listPane: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                HStack(spacing: 3) {
-                    ForEach(GitHubIssueFilter.allCases) { filter in
-                        PullRequestFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) { center.filter = filter }
-                    }
-                }
-                Divider().frame(height: 22)
-                HStack(spacing: 8) {
-                    LucideIcon(name: .search, size: 16)
-                    TextField("Search issues", text: $center.query).textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 10).frame(maxWidth: .infinity, minHeight: 34)
-                .background(Color.dockCanvas.opacity(0.55)).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Menu {
-                    Button("All repositories") { center.repositoryScope = nil }
-                    ForEach(Array(Set(center.records.map(\.repository.id))).sorted(), id: \.self) { repository in
-                        Button(repository) { center.repositoryScope = repository }
-                    }
-                } label: {
-                    Text(center.repositoryScope ?? "Repositories")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1)
-                }
-                .menuStyle(.borderlessButton)
-            }
-            .padding(.horizontal, 18).padding(.vertical, 11).background(Color.dockSurface2.opacity(0.45))
-            if let error = center.errorMessage {
-                Text(error).font(.system(size: 11)).foregroundStyle(Color.dockWarning).padding(.horizontal, 18).padding(.bottom, 8)
-            }
+            issueToolbar
             ScrollView {
                 LazyVStack(spacing: 2) {
                     if center.isRefreshing && center.records.isEmpty {
-                        VStack(spacing: 12) { ProgressView().controlSize(.small); Text("Loading issues…").font(.system(size: 12)) }
-                            .foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity).padding(.vertical, 32)
+                        ForEach(0..<6, id: \.self) { _ in issueLoadingRow }
                     } else if !center.hasLoaded && center.errorMessage != nil {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Issues unavailable").font(.system(size: 12, weight: .semibold))
                             Text("Check your GitHub sign-in and try again.").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                            Button("Try again") { refresh() }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     } else if center.visible.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("No issues match this view").font(.system(size: 12, weight: .semibold))
-                            Text("Try another filter or search term.").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                            Text(center.hasActiveFilters ? "No issues match this view" : "No open issues")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(center.hasActiveFilters ? "Try another filter or search term." : "Issues from your repositories will appear here.")
+                                .font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                            if center.hasActiveFilters {
+                                Button("Clear filters") { center.resetFilters() }
+                                    .buttonStyle(.borderless)
+                                    .foregroundStyle(Color.dockAccent)
+                            }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     } else {
                         ForEach(center.visible) { issue in
                             Button { center.selectedIssueID = issue.id } label: { IssueRowView(issue: issue, isSelected: center.selectedIssueID == issue.id) }.buttonStyle(.plain)
                         }
                     }
-                }.padding(.horizontal, 10).padding(.vertical, 6)
+                }.padding(.horizontal, 8).padding(.vertical, 6)
             }
-        }.background(Color.dockSurface2.opacity(0.55))
+        }
+        .background(Color.dockSurface2.opacity(0.55))
+    }
+
+    private var issueToolbar: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                LucideIcon(name: .search, size: 15, color: Color.dockMetadataText)
+                TextField("Search issues", text: $center.query)
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .background(Color.dockControlSurface)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            HStack(spacing: 4) {
+                ForEach(GitHubIssueFilter.allCases) { filter in
+                    RepositoryFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
+                        center.filter = filter
+                    }
+                }
+                Spacer(minLength: 8)
+                Menu {
+                    Button("All repositories") { center.repositoryScope = nil }
+                    ForEach(Array(Set(center.records.map(\.repository.id))).sorted(), id: \.self) { repository in
+                        Button(repository) { center.repositoryScope = repository }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        LucideIcon(name: .folder, size: 12, color: Color.dockSecondaryText)
+                        Text(center.repositoryScope ?? "Repositories")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .lineLimit(1)
+                        LucideIcon(name: .chevronDown, size: 9, color: Color.dockMetadataText)
+                    }
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(minHeight: 30)
+                }
+                .menuStyle(.borderlessButton)
+            }
+
+            HStack(spacing: 6) {
+                if let error = center.errorMessage {
+                    LucideIcon(name: .triangleAlert, size: 12, color: Color.dockWarning)
+                    Text(error).foregroundStyle(Color.dockWarning)
+                } else {
+                    Text("\(center.visible.count) open issues")
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 10))
+            .lineLimit(1)
+            .frame(height: 18, alignment: .leading)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.dockCanvas)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private var issueLoadingRow: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.dockSurface4.opacity(0.6)).frame(height: 13)
+            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Color.dockSurface4.opacity(0.35)).frame(width: 190, height: 10)
+        }
+        .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
+        .padding(.horizontal, 14)
+    }
+
+    private func refresh() {
+        Task { await center.refresh(projects: projects) }
     }
 }

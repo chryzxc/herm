@@ -50,6 +50,8 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var sessionKanbanTasks: [KanbanTaskSummary] = []
     @Published private(set) var sessionKanbanSessionID: String?
     @Published private(set) var kanbanDetail: KanbanTaskDetail?
+    @Published private(set) var kanbanDetailTaskIdentity: KanbanTaskIdentity?
+    @Published private(set) var kanbanDetailError: String?
     @Published private(set) var kanbanStats: KanbanStatsSummary?
     @Published private(set) var kanbanAssignees: [String] = []
     @Published private(set) var kanbanBoards: [KanbanBoardSummary] = []
@@ -444,6 +446,8 @@ final class ControlCenterModel: ObservableObject {
             sessionKanbanTasks = []
             sessionKanbanSessionID = nil
             kanbanDetail = nil
+            kanbanDetailTaskIdentity = nil
+            kanbanDetailError = nil
             kanbanStats = nil
             kanbanAssignees = []
             kanbanBoards = []
@@ -1903,6 +1907,8 @@ final class ControlCenterModel: ObservableObject {
         kanbanAttachmentsGeneration = UUID()
         kanbanTasks = []
         kanbanDetail = nil
+        kanbanDetailTaskIdentity = nil
+        kanbanDetailError = nil
         kanbanStats = nil
         kanbanAssignees = []
         kanbanDiagnostics = []
@@ -2180,17 +2186,17 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    func refreshKanbanAttachments(for taskID: String) {
+    func refreshKanbanAttachments(for taskID: String, boardSlug: String? = nil) {
         guard let cli else { return }
         let generation = UUID()
-        let requestedBoardSlug = selectedKanbanBoardSlug
+        let requestedBoardSlug = boardSlug ?? selectedKanbanBoardSlug
         kanbanAttachmentsGeneration = generation
         beginProjectionRefresh("kanban.attachments")
         Task {
             do {
                 let result = try await cli.kanbanAttachments(boardSlug: requestedBoardSlug, taskID: taskID)
                 guard generation == kanbanAttachmentsGeneration,
-                      requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                      kanbanDetailTaskIdentity == KanbanTaskIdentity(boardSlug: requestedBoardSlug, taskID: taskID) else { return }
                 guard result.succeeded,
                       let data = result.stdout.data(using: .utf8),
                       let value = try? JSONSerialization.jsonObject(with: data) else {
@@ -2418,15 +2424,22 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func loadKanbanTask(_ task: KanbanTaskSummary) {
-        guard let cli else { return }
         let generation = UUID()
-        kanbanDetailGeneration = generation
-        loadingKanbanDetailTaskID = task.id
-        kanbanDetail = nil
         let requestedBoardSlug = task.boardSlug ?? selectedKanbanBoardSlug
+        let identity = KanbanTaskIdentity(boardSlug: requestedBoardSlug, taskID: task.id)
+        kanbanDetailGeneration = generation
+        kanbanDetailTaskIdentity = identity
+        loadingKanbanDetailTaskID = task.id
+        kanbanDetail = Self.fallbackKanbanTaskDetail(task, boardSlug: requestedBoardSlug)
+        kanbanDetailError = nil
         kanbanAttachmentsGeneration = UUID()
         kanbanAttachments = []
-        refreshKanbanAttachments(for: task.id)
+        refreshKanbanAttachments(for: task.id, boardSlug: requestedBoardSlug)
+        guard let cli else {
+            loadingKanbanDetailTaskID = nil
+            kanbanDetailError = "Hermes task details are unavailable. Showing the board summary."
+            return
+        }
         Task {
             defer {
                 if generation == kanbanDetailGeneration {
@@ -2438,7 +2451,7 @@ final class ControlCenterModel: ObservableObject {
                 guard taskResult.succeeded else {
                     guard generation == kanbanDetailGeneration else { return }
                     let safeError = HermesDiagnosticsService.safeSummary(taskResult.stderr)
-                    lastError = safeError.isEmpty ? "Hermes Kanban task details are unavailable." : safeError
+                    kanbanDetailError = safeError.isEmpty ? "Hermes task details are unavailable. Showing the board summary." : safeError
                     return
                 }
                 // A successful Hermes version may return a human-readable
@@ -2458,12 +2471,12 @@ final class ControlCenterModel: ObservableObject {
                     ) ?? detail
                 }
                 guard generation == kanbanDetailGeneration,
-                      requestedBoardSlug == selectedKanbanBoardSlug else { return }
+                      kanbanDetailTaskIdentity == identity else { return }
                 kanbanDetail = detail
             } catch {
                 guard generation == kanbanDetailGeneration,
-                      requestedBoardSlug == selectedKanbanBoardSlug else { return }
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                      kanbanDetailTaskIdentity == identity else { return }
+                kanbanDetailError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
     }
@@ -3232,7 +3245,7 @@ final class ControlCenterModel: ObservableObject {
             }
         }
 
-        let projectedActivities = SessionActivityPresentation.latestActivity(
+        let projectedActivities = GlobalSessionActivityPresentation.latestActivity(
             sessions,
             stepsBySessionID: stepsBySessionID
         )

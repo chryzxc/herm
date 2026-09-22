@@ -55,20 +55,20 @@ struct ConversationMessageActionsTests {
         var firstRuns = 0
         var secondRuns = 0
 
-        state.run(firstID) {
+        state.run(firstID, action: .branch) {
             firstRuns += 1
             try? await Task.sleep(for: .milliseconds(20))
         }
-        state.run(firstID) { firstRuns += 1 }
-        state.run(secondID) { secondRuns += 1 }
+        state.run(firstID, action: .branch) { firstRuns += 1 }
+        state.run(secondID, action: .branch) { secondRuns += 1 }
 
-        #expect(state.isPending(firstID))
-        #expect(state.isPending(secondID))
-        try await waitUntil { !state.isPending(firstID) && !state.isPending(secondID) }
+        #expect(state.pendingAction(for: firstID) != nil)
+        #expect(state.pendingAction(for: secondID) != nil)
+        try await waitUntil { state.pendingAction(for: firstID) == nil && state.pendingAction(for: secondID) == nil }
         #expect(firstRuns == 1)
         #expect(secondRuns == 1)
-        #expect(!state.isPending(firstID))
-        #expect(!state.isPending(secondID))
+        #expect(state.pendingAction(for: firstID) == nil)
+        #expect(state.pendingAction(for: secondID) == nil)
     }
 
     @Test func branchSendsSourceMessageAndSelectsReturnedBranch() async throws {
@@ -124,10 +124,10 @@ struct ConversationMessageActionsTests {
         let state = ConversationMessageActionState()
         let message = ChatMessage(id: UUID(), role: .hermes, text: "source answer")
 
-        state.run(message.id) { await model.branchConversation(from: message) }
-        try await waitUntil { state.isPending(message.id) }
-        state.run(message.id) { await model.branchConversation(from: message) }
-        try await waitUntil { !state.isPending(message.id) && model.status == .idle }
+        state.run(message.id, action: .branch) { await model.branchConversation(from: message) }
+        try await waitUntil { state.pendingAction(for: message.id) != nil }
+        state.run(message.id, action: .branch) { await model.branchConversation(from: message) }
+        try await waitUntil { state.pendingAction(for: message.id) == nil && model.status == .idle }
 
         #expect(rpc.requests.filter { $0.method == "session.branch" }.count == 1)
         #expect(model.sessionID == "branch-session")

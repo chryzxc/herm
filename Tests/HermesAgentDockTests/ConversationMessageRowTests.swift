@@ -54,12 +54,27 @@ struct ConversationMessageRowTests {
         #expect(Set(actions.map(\.id)).count == actions.count)
         #expect(Set(actions.map(\.icon)).count == actions.count)
         #expect(actions.map(\.label) == [
-            "Branch from this message",
             "Copy message",
             "Read message aloud",
+            "Branch from this message",
             "Refresh this response"
         ])
         #expect(LucideIconName.from(systemName: "speaker.wave.2") == .audioLines)
+    }
+
+    @Test func messageActionStateTracksOnlyTheInitiatingAction() async {
+        let state = ConversationMessageActionState()
+        let messageID = UUID()
+
+        #expect(state.pendingAction(for: messageID) == nil)
+        state.run(messageID, action: .refresh) {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(state.pendingAction(for: messageID) == .refresh)
+        #expect(state.pendingActions.count == 1)
+
+        try? await Task.sleep(for: .milliseconds(40))
+        #expect(state.pendingAction(for: messageID) == nil)
     }
 
     @Test func incompleteSessionMarksSessionActionsUnavailable() {

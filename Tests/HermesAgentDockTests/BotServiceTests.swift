@@ -31,6 +31,7 @@ struct BotServiceTests {
         #expect(inventory.bots.first?.id == "research")
         #expect(inventory.bots.first?.name == "Research Buddy")
         #expect(inventory.bots.first?.chat?.sessionID == "tip")
+        #expect(inventory.bots.first?.recentSession?.sessionID == "last")
         #expect(inventory.bots.first?.title == "Paper Finder")
         #expect(inventory.bots.first?.provider == "openai")
         #expect(inventory.bots.first?.model == "gpt-5")
@@ -426,6 +427,20 @@ struct BotServiceTests {
 
     @Test func botRosterPrimaryActionIsEditProfile() {
         #expect(BotRosterPresentation.primaryActionLabel == "Edit Profile")
+    }
+
+    @Test func botRosterSectionsAndResponsiveLayoutAreStable() {
+        #expect(BotRosterSection.allCases == [.bots, .routines])
+        #expect(BotRosterActivityFilter.allCases == [.all, .active, .working])
+        #expect(BotRosterRowLayout.columnCount(contentWidth: 500) == 1)
+        #expect(BotRosterRowLayout.columnCount(contentWidth: 700) == 2)
+        #expect(BotRosterRowLayout.columnCount(contentWidth: 900) == 3)
+    }
+
+    @Test func botRosterMetadataOmitsUnavailableValues() {
+        #expect(BotRosterMetadata(model: nil, lastActive: nil).values.isEmpty)
+        #expect(BotRosterMetadata(model: "  ", lastActive: "today").values == ["today"])
+        #expect(BotRosterMetadata(model: "openai / gpt-5", lastActive: "2 min ago").values.count == 2)
     }
 
     @Test func knownBotsHaveDistinctRoleAvatarSymbols() {

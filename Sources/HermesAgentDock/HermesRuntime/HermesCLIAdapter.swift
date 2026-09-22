@@ -153,12 +153,22 @@ final class HermesCLIAdapter {
 
     private static func sorted(_ rows: [[String: Any]], by key: String) -> [[String: Any]] {
         let indexed = rows.enumerated().map { (index: $0.offset, row: $0.element) }
-        guard key == "updated" || key == "title" || key == "status" || key == "assignee" else { return rows }
+        guard key == "updated" || key == "created-desc" || key == "priority-desc" || key == "title" || key == "status" || key == "assignee" else { return rows }
         return indexed.sorted { lhs, rhs in
-            if key == "updated" {
-                let leftDate = updatedDate(lhs.row)
-                let rightDate = updatedDate(rhs.row)
+            if key == "updated" || key == "created-desc" {
+                let leftDate = key == "updated" ? updatedDate(lhs.row) : createdDate(lhs.row)
+                let rightDate = key == "updated" ? updatedDate(rhs.row) : createdDate(rhs.row)
                 switch (leftDate, rightDate) {
+                case let (left?, right?) where left != right: return left > right
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: return lhs.index < rhs.index
+                }
+            }
+            if key == "priority-desc" {
+                let leftPriority = priority(lhs.row)
+                let rightPriority = priority(rhs.row)
+                switch (leftPriority, rightPriority) {
                 case let (left?, right?) where left != right: return left > right
                 case (_?, nil): return true
                 case (nil, _?): return false
@@ -179,6 +189,25 @@ final class HermesCLIAdapter {
                 if let date = ISO8601DateFormatter().date(from: value) { return date }
             }
         }
+        return nil
+    }
+
+    private static func createdDate(_ row: [String: Any]) -> Date? {
+        for key in ["created_at", "createdAt", "created"] {
+            if let number = row[key] as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
+            if let value = row[key] as? Double { return Date(timeIntervalSince1970: value) }
+            if let value = row[key] as? String {
+                if let timestamp = Double(value) { return Date(timeIntervalSince1970: timestamp) }
+                if let date = ISO8601DateFormatter().date(from: value) { return date }
+            }
+        }
+        return nil
+    }
+
+    private static func priority(_ row: [String: Any]) -> Int? {
+        if let number = row["priority"] as? NSNumber { return number.intValue }
+        if let value = row["priority"] as? Int { return value }
+        if let value = row["priority"] as? String { return Int(value) }
         return nil
     }
     func kanbanAssignees(boardSlug: String? = nil) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "assignees") + ["--json"]) }

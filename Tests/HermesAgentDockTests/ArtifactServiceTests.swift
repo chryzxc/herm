@@ -3,6 +3,29 @@ import Testing
 @testable import HermesAgentDock
 
 struct ArtifactServiceTests {
+    @Test func artifactSelectionPreservesVisibleSelectionOrFallsBackToFirst() {
+        #expect(ArtifactSelectionPresentation.reconciledID(current: "b", visibleIDs: ["a", "b"]) == "b")
+        #expect(ArtifactSelectionPresentation.reconciledID(current: "z", visibleIDs: ["a", "b"]) == "a")
+        #expect(ArtifactSelectionPresentation.reconciledID(current: nil, visibleIDs: []) == nil)
+    }
+
+    @Test func artifactActionsExposeContextAwareLocalFileAndSessionCapabilities() {
+        let file = ArtifactRecord(value: "/tmp/report.pdf", sessionID: "s1", sessionTitle: "Report", timestamp: .now)
+        let link = ArtifactRecord(value: "https://example.com/report", sessionID: "missing", sessionTitle: "Report", timestamp: .now)
+
+        let fileActions = ArtifactActionPresentation.make(record: file, hasSourceSession: true)
+        #expect(fileActions.canOpen)
+        #expect(fileActions.canCopy)
+        #expect(fileActions.canRevealInFinder)
+        #expect(fileActions.canOpenSession)
+
+        let linkActions = ArtifactActionPresentation.make(record: link, hasSourceSession: false)
+        #expect(linkActions.canOpen)
+        #expect(linkActions.canCopy)
+        #expect(!linkActions.canRevealInFinder)
+        #expect(!linkActions.canOpenSession)
+    }
+
     @Test func extractsImagesDocumentsAndLinksFromSessionMessages() {
         let session = HermesSession(id: "s1", title: "Quarterly report", preview: "", startedAt: nil, messageCount: 3, source: "hermes")
         let messages: [[String: Any]] = [

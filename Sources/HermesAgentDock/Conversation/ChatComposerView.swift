@@ -13,6 +13,7 @@ struct ChatComposerView: View {
     @ObservedObject var botMode: BotModeModel
     var onStop: () -> Void
     var isFullscreen = false
+    var metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false)
 
     @State private var composerHeight: CGFloat = 44
     @State private var isComposerPulsing = false
@@ -22,6 +23,7 @@ struct ChatComposerView: View {
     @State private var showingImagePicker = false
     @State private var showingBotMentionPicker = false
     @FocusState private var isComposerFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         composerContent
@@ -44,7 +46,11 @@ struct ChatComposerView: View {
             .onChange(of: model.composerFocusRequest) { _, _ in
                 isComposerFocused = true
             }
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isComposerPulsing)
+            .animation(
+                reduceMotion ? nil : .easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                value: isComposerPulsing
+            )
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: composerHeight)
             .onChange(of: speechInput.isRecording) { _, isRecording in
                 isComposerPulsing = isRecording
             }
@@ -103,15 +109,15 @@ struct ChatComposerView: View {
             && !speechInput.isRecording
             && !showStop
         // Leave room for TextEditor's native top and bottom insets.
-        let minimumComposerHeight = isFullscreen ? 64 : max(ComposerLayout.minHeight, 52)
+        let minimumComposerHeight = ComposerLayout.minHeight
         let effectiveComposerHeight = max(minimumComposerHeight, draftIsEmpty ? ComposerLayout.minHeight : composerHeight)
         // One visual gutter shared by the native editor and placeholder. Do
         // not counteract TextEditor's internal padding with nested offsets:
         // those offsets made the caret look detached from the input edge.
-        let textContentInset: CGFloat = 16
-        let textTopPadding: CGFloat = 8
+        let textContentInset: CGFloat = 12
+        let textTopPadding: CGFloat = 4
 
-        return VStack(spacing: 8) {
+        return VStack(spacing: 6) {
             if showingBotMentionPicker {
                 BotMentionPicker(
                     bots: mentionCandidates,
@@ -137,6 +143,8 @@ struct ChatComposerView: View {
                     }
                 )
             }
+
+            VStack(spacing: 6) {
 
             // Main multi-line text input area at top of card container.
             ZStack(alignment: .topLeading) {
@@ -186,15 +194,7 @@ struct ChatComposerView: View {
             // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
             // proposal while its intrinsic text height changes. Mask the
             // complete input surface as a final paint boundary.
-            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(Color.dockCanvas.opacity(0.72))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-                    }
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
             // Image Attachment Previews (if any images are pending)
             if !model.pendingImages.isEmpty {
@@ -205,7 +205,7 @@ struct ChatComposerView: View {
                                 Image(nsImage: image.image)
                                     .resizable()
                                     .scaledToFill()
-                                    .frame(width: 40, height: 40)
+                                    .frame(width: 32, height: 32)
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 Button(action: { model.removePendingImage(image) }) {
                                     LucideImage(systemName: "xmark")
@@ -260,16 +260,12 @@ struct ChatComposerView: View {
                 // Left Toolbar Group: Paperclip attachment button & Model selector dropdown menu
                 HStack(alignment: .center, spacing: 6) {
                     // Attachment popover keeps secondary actions discoverable
-                    // without changing the composer’s stable footprint.
+                    // without changing the composer's stable footprint.
                     Button { showingAttachmentPopover = true } label: {
-                        HStack(spacing: 4) {
-                            LucideImage(systemName: "plus")
-                                .font(.system(size: 14, weight: .medium))
-                            Text("Attach")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(minWidth: 44, minHeight: 28)
+                        LucideImage(systemName: "plus")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
@@ -299,7 +295,7 @@ struct ChatComposerView: View {
                         }
                     )
                     .font(.system(size: 12, weight: .regular))
-                    .frame(minHeight: isFullscreen ? 34 : 28, alignment: .center)
+                    .frame(minHeight: 44, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
                     .help("Select model")
                 }
@@ -330,8 +326,10 @@ struct ChatComposerView: View {
                         HStack(spacing: 5) {
                             LucideImage(systemName: "brain")
                                 .font(.system(size: 12, weight: .medium))
-                            Text(sessionReasoningDisplayName)
-                                .font(.system(size: 12, weight: .regular))
+                            if ComposerToolbarPresentation.showsReasoningLabel(for: metrics) {
+                                Text(sessionReasoningDisplayName)
+                                    .font(.system(size: 12, weight: .regular))
+                            }
                         }
                         .foregroundStyle(Color.dockSecondaryText)
                         .padding(.horizontal, 8)
@@ -343,7 +341,7 @@ struct ChatComposerView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .buttonStyle(.borderless)
-                    .frame(minHeight: isFullscreen ? 34 : 28, alignment: .center)
+                        .frame(minHeight: 44, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
                     .help("Select thinking depth")
 
@@ -376,8 +374,8 @@ struct ChatComposerView: View {
                         ZStack {
                             Circle()
                                 // Soft translucent fill for submit circle
-                                .fill(canSubmit && !model.isSteering && !model.isRestoringSession ? Color.dockPrimaryText.opacity(0.20) : Color.dockSurface6)
-                                .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
+                                .fill(canSubmit && !model.isSteering && !model.isRestoringSession ? Color.dockAccent : Color.dockSurface6)
+                                .frame(width: isFullscreen ? 36 : 32, height: isFullscreen ? 36 : 32)
 
                             if speechInput.isRecording {
                                 LucideImage(systemName: "stop.fill")
@@ -391,11 +389,12 @@ struct ChatComposerView: View {
                                 LucideImage(systemName: "arrow.up")
                                     .font(.system(size: 12, weight: .semibold))
                                     // Use soft dockPrimaryText instead of stark white to prevent eye strain
-                                    .foregroundStyle(canSubmit && !model.isSteering ? Color.dockPrimaryText : Color.dockSecondaryText.opacity(0.5))
+                                    .foregroundStyle(canSubmit && !model.isSteering ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
                             }
                         }
                     }
                     .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
                     .disabled(
                         model.isRestoringSession ||
                         model.isUpdatingSessionModel ||
@@ -411,7 +410,7 @@ struct ChatComposerView: View {
                     )
                 }
             }
-            .padding(.top, 4)
+            .padding(.top, 0)
 
             // Voice Recording & Steering Status Messages
             if let error = speechInput.errorMessage {
@@ -434,33 +433,29 @@ struct ChatComposerView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
-        }
-        .padding(.horizontal, isFullscreen ? 20 : DockLayout.compactInset)
-        // Keep a clear visual buffer below the transcript divider. A composer
-        // should feel anchored to the bottom of the workspace, not pressed
-        // directly against the last message.
-        .padding(.top, isFullscreen ? 22 : 16)
-        .padding(.bottom, isFullscreen ? 14 : 10)
-        // Native material keeps the composer attached to the popover while
-        // allowing the desktop behind it to softly show through.
-        .background(
-            Rectangle()
-                .fill(Color.dockSurface2)
-                .overlay {
-                    if speechInput.isRecording {
-                        Color.dockDestructive.opacity(isComposerPulsing ? 0.12 : 0.05)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.dockSurface2)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(
+                                speechInput.isRecording
+                                    ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
+                                    : (isComposerFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder),
+                                lineWidth: DockLayout.hairline
+                            )
                     }
-                }
-        )
-        // The composer joins the conversation with one top separator only.
-        // A full outline here doubled the chat boundary and made its side
-        // gutters look misaligned with the scrolling transcript.
-        .overlay(alignment: .top) {
-            (speechInput.isRecording
-                ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
-                : Color.dockBorderLight)
-                .frame(height: DockLayout.hairline)
+                    .shadow(color: Color.black.opacity(0.10), radius: 6, y: 2)
+            )
         }
+        .padding(.horizontal, metrics.composerInset)
+        .padding(.top, metrics.composerTopInset)
+        .padding(.bottom, metrics.composerBottomInset)
+        .frame(maxWidth: metrics.composerMaxWidth)
+        .frame(maxWidth: .infinity)
     }
 
     private var mentionCandidates: [BotSummary] {

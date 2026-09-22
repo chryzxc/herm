@@ -4,6 +4,161 @@ import Testing
 
 @MainActor
 struct ControlCenterProjectTests {
+    @Test func automationWorkspaceRowPresentationUsesTruthfulStates() {
+        let enabled = CronSummary(id: "job", name: "Job", schedule: "0 * * * *", enabled: true, nextRun: nil)
+        let paused = CronSummary(id: "paused", name: "Paused", schedule: "0 * * * *", enabled: false, nextRun: nil)
+        let success = CronRunSummary(id: "run", status: "completed", jobID: "job", source: nil, claimedAt: "today", error: nil)
+        let failure = CronRunSummary(id: "failed", status: "failed", jobID: "job", source: nil, claimedAt: "today", error: "timeout")
+
+        #expect(AutomationWorkspaceRowPresentation.make(job: enabled, latestRun: nil).result == .noRun)
+        #expect(AutomationWorkspaceRowPresentation.make(job: paused, latestRun: nil).result == .paused)
+        #expect(AutomationWorkspaceRowPresentation.make(job: enabled, latestRun: success).result == .succeeded)
+        #expect(AutomationWorkspaceRowPresentation.make(job: enabled, latestRun: failure).result == .failed)
+    }
+
+    @Test func automationWorkspaceUsesInspectorOnlyWhenThereIsRoom() {
+        #expect(AutomationWorkspaceLayout.usesPersistentInspector(width: 1_000))
+        #expect(AutomationWorkspaceLayout.usesPersistentInspector(width: 1_440))
+        #expect(!AutomationWorkspaceLayout.usesPersistentInspector(width: 999))
+    }
+
+    @Test func automationSelectionDefaultsPreservesAndFallsBackSafely() {
+        let jobs = [
+            CronSummary(id: "job-a", name: "First", schedule: "0 * * * *", enabled: true, nextRun: nil),
+            CronSummary(id: "job-b", name: "Second", schedule: "0 9 * * *", enabled: true, nextRun: nil)
+        ]
+
+        #expect(WorkspaceActivitySidebar.AutomationHistoryPresentation.selectedJobID(currentID: nil, jobs: jobs) == "job-a")
+        #expect(WorkspaceActivitySidebar.AutomationHistoryPresentation.selectedJobID(currentID: "job-b", jobs: jobs) == "job-b")
+        #expect(WorkspaceActivitySidebar.AutomationHistoryPresentation.selectedJobID(currentID: "removed", jobs: jobs) == "job-a")
+        #expect(WorkspaceActivitySidebar.AutomationHistoryPresentation.selectedJobID(currentID: "removed", jobs: []) == nil)
+    }
+
+    @Test func automationHistoryScopeFiltersSelectedJobAndKeepsGlobalRuns() {
+        let runs = [
+            CronRunSummary(id: "run-a", status: "completed", jobID: "job-a", source: nil, claimedAt: nil, error: nil),
+            CronRunSummary(id: "run-b", status: "failed", jobID: "job-b", source: nil, claimedAt: nil, error: "timeout"),
+            CronRunSummary(id: "run-unlinked", status: "completed", jobID: nil, source: nil, claimedAt: nil, error: nil)
+        ]
+
+        let selected = WorkspaceActivitySidebar.AutomationHistoryPresentation.runs(
+            runs,
+            scope: .selected,
+            selectedJobID: "job-a"
+        )
+        #expect(selected.map(\.id) == ["run-a"])
+
+        let all = WorkspaceActivitySidebar.AutomationHistoryPresentation.runs(
+            runs,
+            scope: .all,
+            selectedJobID: "job-a"
+        )
+        #expect(all.map(\.id) == ["run-a", "run-b", "run-unlinked"])
+    }
+
+    @Test func projectSessionActionPresentationKeepsPinDirectAndProtectsActiveDeletion() {
+        let active = ProjectSessionActionPresentation(
+            isPinned: true,
+            isActive: true,
+            isHidden: false,
+            pendingAction: nil
+        )
+        #expect(active.isPinned)
+        #expect(!active.canDelete)
+        #expect(active.visibilityTitle == "Hide")
+
+        let hidden = ProjectSessionActionPresentation(
+            isPinned: false,
+            isActive: false,
+            isHidden: true,
+            pendingAction: .visibility
+        )
+        #expect(hidden.canDelete)
+        #expect(hidden.visibilityTitle == "Show")
+        #expect(hidden.pendingAction == .visibility)
+    }
+
+    @Test func conversationSidebarMetadataOmitsMissingValuesWithoutDanglingSeparators() {
+        let complete = SidebarSessionMetadata.make(
+            relativeTime: "2 min ago",
+            repository: "climateRX",
+            preview: "Security audit"
+        )
+        #expect(complete.values == ["2 min ago", "climateRX", "Security audit"])
+
+        let previewOnly = SidebarSessionMetadata.make(
+            relativeTime: nil,
+            repository: nil,
+            preview: "Session activity updated"
+        )
+        #expect(previewOnly.values == ["Session activity updated"])
+
+        let empty = SidebarSessionMetadata.make(relativeTime: nil, repository: nil, preview: nil)
+        #expect(empty.values.isEmpty)
+    }
+
+    @Test func conversationRepositoryIdentityRemainsBoundedAndUnlinkedSessionsHaveNone() {
+        let linked = ConversationRepositoryBadgePresentation.make(
+            projectName: "/Users/example/Projects/a-very-long-repository-name-that-needs-truncation",
+            isProjectLinked: true
+        )
+        #expect(linked?.label.count == ConversationRepositoryBadgePresentation.maximumLabelLength)
+        #expect(ConversationRepositoryBadgePresentation.make(projectName: "repo", isProjectLinked: false) == nil)
+    }
+
+    @Test func conversationWorkspaceMetricsAdaptWithoutChangingReadingWidth() {
+        let fullscreen = ConversationWorkspaceMetrics.resolve(isFullscreen: true)
+        let compact = ConversationWorkspaceMetrics.resolve(isFullscreen: false)
+
+        #expect(fullscreen.readingWidth == 760)
+        #expect(compact.readingWidth == 760)
+        #expect(fullscreen.contentInset == 24)
+        #expect(compact.contentInset == 12)
+        #expect(fullscreen.composerMaxWidth == fullscreen.readingWidth)
+        #expect(compact.composerMaxWidth == compact.readingWidth)
+        #expect(fullscreen.userMessageWidthFraction == 0.72)
+        #expect(compact.userMessageWidthFraction == 0.84)
+        #expect(!fullscreen.usesCompactToolbarLabels)
+        #expect(compact.usesCompactToolbarLabels)
+    }
+
+    @Test func arbitraryProjectSessionRenameTrimsTitleAndUsesProfileScopedRPC() async {
+        let client = ProjectSessionActionRPCClient()
+        let model = DockModel(rpcClient: client)
+        let session = HermesSession(
+            id: "session-project",
+            profileID: "profile-a",
+            title: "Old title",
+            preview: "preview",
+            startedAt: nil,
+            messageCount: 1,
+            source: "test"
+        )
+
+        #expect(await model.renameSession(session, title: "  New title  "))
+        #expect(client.requests.first?.method == "session.title")
+        #expect(client.requests.first?.params["session_id"] as? String == "session-project")
+        #expect(client.requests.first?.params["profile"] as? String == "profile-a")
+        #expect(client.requests.first?.params["title"] as? String == "New title")
+    }
+
+    @Test func arbitraryProjectSessionRenameRejectsEmptyTitleWithoutRPC() async {
+        let client = ProjectSessionActionRPCClient()
+        let model = DockModel(rpcClient: client)
+        let session = HermesSession(
+            id: "session-project",
+            profileID: "profile-a",
+            title: "Old title",
+            preview: "preview",
+            startedAt: nil,
+            messageCount: 1,
+            source: "test"
+        )
+
+        #expect(!(await model.renameSession(session, title: "  \n ")))
+        #expect(client.requests.isEmpty)
+    }
+
     @Test func sessionLifecycleProjectionUsesTextualAccessibleStates() {
         #expect(SessionLifecyclePresentation.status(for: SessionSummary(id: "active", title: "Active", state: "running", preview: nil)) == .active)
         #expect(SessionLifecyclePresentation.status(for: SessionSummary(id: "done", title: "Done", state: "completed", preview: nil)) == .completed)
@@ -99,6 +254,36 @@ struct ControlCenterProjectTests {
         state.toggle(projectID: "project-a")
 
         #expect(!state.isCollapsed(projectID: "project-a"))
+    }
+
+    @Test func projectSessionOverflowIsLimitedSortedAndIndependentPerProject() {
+        let sessions = (0..<12).map { index in
+            HermesSession(
+                id: "session-\(index)",
+                title: "Session \(index)",
+                preview: "Preview \(index)",
+                startedAt: nil,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(index)),
+                messageCount: 1,
+                source: "project"
+            )
+        }
+        var state = ProjectDisclosureState()
+
+        let recent = state.visibleSessions(sessions, projectID: "project-a")
+        #expect(recent.count == 10)
+        #expect(recent.first?.id == "session-11")
+        #expect(recent.last?.id == "session-2")
+        #expect(!state.showsAllSessions(projectID: "project-b"))
+
+        state.toggleAllSessions(projectID: "project-a")
+        state.toggle(projectID: "project-a")
+        #expect(state.visibleSessions(sessions, projectID: "project-a").count == 12)
+        #expect(state.visibleSessions(sessions, projectID: "project-b").count == 10)
+        #expect(state.isCollapsed(projectID: "project-a"))
+
+        state.toggleAllSessions(projectID: "project-a")
+        #expect(state.visibleSessions(sessions, projectID: "project-a").count == 10)
     }
 
     @Test func unchangedProjectRefreshPreservesNavigationOrder() {
@@ -605,6 +790,32 @@ struct ControlCenterProjectTests {
         #expect(detail.body == "Waiting on a dependency")
         #expect(detail.status == "blocked")
         #expect(detail.assignee == "forge")
+    }
+
+    @Test func selectingKanbanTaskPublishesFallbackBeforeHermesIsAvailable() {
+        let control = ControlCenterModel()
+        let task = KanbanTaskSummary(
+            id: "fallback-live",
+            boardSlug: "default",
+            title: "Keep summary visible",
+            status: "ready",
+            detail: "Authoritative board summary",
+            priority: "2",
+            assignee: "forge"
+        )
+
+        control.loadKanbanTask(task)
+
+        #expect(control.kanbanDetail?.id == task.id)
+        #expect(control.kanbanDetail?.body == task.detail)
+        #expect(control.kanbanDetailTaskIdentity == KanbanTaskIdentity(boardSlug: "default", taskID: task.id))
+        #expect(control.kanbanDetailError != nil)
+        #expect(control.loadingKanbanDetailTaskID == nil)
+    }
+
+    @Test func kanbanTaskIdentitySeparatesSameTaskIDsAcrossBoards() {
+        #expect(KanbanTaskIdentity(boardSlug: "one", taskID: "same") != KanbanTaskIdentity(boardSlug: "two", taskID: "same"))
+        #expect(KanbanTaskIdentity(boardSlug: "one", taskID: "same") == KanbanTaskIdentity(boardSlug: "one", taskID: "same"))
     }
 
     @Test func parsesShownKanbanTaskAndCanAttributeExactObservedTaskToSession() {
@@ -1268,6 +1479,20 @@ private final class ProjectionRefreshClient: HermesRPCClientProtocol {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         if method == "projects.tree", failProjects { throw Failure.projects }
         if method == "shell.exec" { return ["code": 0, "stdout": ""] }
+        return [:]
+    }
+}
+
+@MainActor
+private final class ProjectSessionActionRPCClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    private(set) var requests: [(method: String, params: [String: Any])] = []
+
+    func connect() async throws {}
+    func close() {}
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        requests.append((method, params))
         return [:]
     }
 }

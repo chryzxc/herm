@@ -1,6 +1,38 @@
 import AppKit
 import SwiftUI
 
+enum ArtifactsPresentationMode {
+    case page
+    case inspector
+}
+
+struct ArtifactSelectionPresentation {
+    static func reconciledID(current: String?, visibleIDs: [String]) -> String? {
+        if let current, visibleIDs.contains(current) { return current }
+        return visibleIDs.first
+    }
+}
+
+struct ArtifactActionPresentation: Equatable {
+    let canOpen: Bool
+    let canCopy: Bool
+    let canRevealInFinder: Bool
+    let canOpenSession: Bool
+
+    static func make(record: ArtifactRecord, hasSourceSession: Bool) -> Self {
+        let isLocalFile = record.kind == .file
+            && !record.value.hasPrefix("http://")
+            && !record.value.hasPrefix("https://")
+            && !record.value.hasPrefix("data:")
+        return Self(
+            canOpen: !record.value.isEmpty,
+            canCopy: !record.value.isEmpty,
+            canRevealInFinder: isLocalFile,
+            canOpenSession: hasSourceSession
+        )
+    }
+}
+
 /// Cross-session generated-output library.
 ///
 /// This is intentionally separate from the Markdown plan inspector: Hermes
@@ -8,6 +40,12 @@ import SwiftUI
 /// provenance, and OS actions rather than as a document editor.
 struct ArtifactsInspectorView: View {
     @ObservedObject var model: DockModel
+    let presentation: ArtifactsPresentationMode
+
+    init(model: DockModel, presentation: ArtifactsPresentationMode = .inspector) {
+        self.model = model
+        self.presentation = presentation
+    }
 
     @State private var records: [ArtifactRecord] = []
     @State private var query = ""
@@ -16,6 +54,8 @@ struct ArtifactsInspectorView: View {
     @State private var filePage = 1
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var failedSessionCount = 0
+    @State private var selectedArtifactID: String?
 
     private let imagesPerPage = 24
     private let filesPerPage = 100
@@ -80,15 +120,37 @@ struct ArtifactsInspectorView: View {
     }
 
     var body: some View {
+        Group {
+            if presentation == .page {
+                pageBody
+            } else {
+                inspectorBody
+            }
+        }
+        .task(id: sessionRefreshKey) { await refresh() }
+        .onChange(of: query) { resetPages() }
+        .onChange(of: filter) { resetPages() }
+        .onChange(of: visibleRecords.map(\.id)) { _, _ in reconcileSelection() }
+    }
+
+    private var inspectorBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider().overlay(Color.dockBorderLight)
             content
         }
         .background(Color.dockCanvas)
-        .task(id: sessionRefreshKey) { await refresh() }
-        .onChange(of: query) { resetPages() }
-        .onChange(of: filter) { resetPages() }
+    }
+
+    private var pageBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageHeader
+            Divider().overlay(Color.dockBorderLight)
+            pageToolbar
+            Divider().overlay(Color.dockBorderLight)
+            pageContent
+        }
+        .background(Color.dockCanvas)
     }
 
     private var header: some View {
@@ -133,10 +195,294 @@ struct ArtifactsInspectorView: View {
         .padding(.vertical, 16)
     }
 
+    private var pageHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Artifacts")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                Text(pageSummaryText)
+                    .font(.system(size: 11))
+                    .foregroundStyle(failedSessionCount > 0 ? Color.dockWarning : Color.dockSecondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Button { Task { await refresh() } } label: {
+                Group {
+                    if isLoading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        LucideImage(systemName: "refresh-cw")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(Color.dockAccent)
+            .disabled(isLoading)
+            .help(isLoading ? "Refreshing artifacts…" : "Refresh artifacts")
+            .accessibilityLabel(isLoading ? "Refreshing artifacts" : "Refresh artifacts")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+    }
+
+    private var pageToolbar: some View {
+        HStack(spacing: 10) {
+            TextField("Search by name, path, URL, or session…", text: $query)
+                .textFieldStyle(.dockGlass)
+                .accessibilityLabel("Search artifacts")
+
+            Picker("Artifact type", selection: $filter) {
+                ForEach(ArtifactFilter.allCases) { item in
+                    Text("\(item.rawValue)  \(count(for: item))")
+                        .tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 330)
+            .accessibilityLabel("Artifact type")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
+        if let errorMessage, records.isEmpty {
+            pageState(title: "Artifacts unavailable", detail: errorMessage, icon: "exclamationmark.triangle", actionTitle: "Retry") {
+                Task { await refresh() }
+            }
+        } else if records.isEmpty && isLoading {
+            pageState(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: "hourglass", actionTitle: nil, action: nil)
+        } else if visibleRecords.isEmpty {
+            pageState(
+                title: query.isEmpty ? "No generated outputs" : "No matching artifacts",
+                detail: query.isEmpty ? "Generated images, files, and links will appear here as sessions produce them." : "Try another search or clear the current filter.",
+                icon: "square.grid.2x2",
+                actionTitle: query.isEmpty ? nil : "Clear search"
+            ) {
+                query = ""
+                filter = .all
+            }
+        } else {
+            HSplitView {
+                artifactBrowser
+                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 420)
+                artifactDetail
+                    .frame(minWidth: 360)
+            }
+        }
+    }
+
+    private var artifactBrowser: some View {
+        List(visibleRecords, selection: $selectedArtifactID) { record in
+            artifactBrowserRow(record)
+                .tag(record.id)
+                .listRowInsets(EdgeInsets(top: 2, leading: 10, bottom: 2, trailing: 10))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .contextMenu { artifactContextActions(record) }
+                .onTapGesture(count: 2) { open(record.value) }
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(Color.dockCanvas)
+    }
+
+    private func artifactBrowserRow(_ record: ArtifactRecord) -> some View {
+        HStack(spacing: 10) {
+            artifactRowIcon(record)
+                .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(record.label)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: 5) {
+                    Text(record.kind.rawValue.capitalized)
+                    Text("·")
+                    Text(record.sessionTitle)
+                        .lineLimit(1)
+                    Text("·")
+                    Text(record.timestamp, style: .relative)
+                        .monospacedDigit()
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func artifactRowIcon(_ record: ArtifactRecord) -> some View {
+        if record.kind == .image {
+            imagePreview(for: record)
+                .scaledToFill()
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        } else {
+            LucideImage(systemName: record.kind == .link ? "link" : fileIcon(for: record.label))
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private var artifactDetail: some View {
+        if let record = selectedRecord {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    detailPreview(record)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(record.label)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .textSelection(.enabled)
+                        Text(record.kind.rawValue.capitalized)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    detailActions(record)
+                    detailMetadata(record)
+                }
+                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(24)
+            }
+            .background(Color.dockCanvas)
+        } else {
+            pageState(title: "Select an artifact", detail: "Choose an output to preview its contents and actions.", icon: "doc.text.magnifyingglass", actionTitle: nil, action: nil)
+        }
+    }
+
+    private var selectedRecord: ArtifactRecord? {
+        visibleRecords.first { $0.id == selectedArtifactID }
+    }
+
+    @ViewBuilder
+    private func detailPreview(_ record: ArtifactRecord) -> some View {
+        if record.kind == .image {
+            imagePreview(for: record)
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 260, maxHeight: 440)
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            VStack(spacing: 10) {
+                LucideImage(systemName: record.kind == .link ? "link" : fileIcon(for: record.label))
+                    .font(.system(size: 32, weight: .light))
+                    .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
+                Text(record.kind == .link ? "Web link" : "File output")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
+            }
+            .frame(maxWidth: .infinity, minHeight: 260)
+            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
+    private func detailActions(_ record: ArtifactRecord) -> some View {
+        HStack(spacing: 8) {
+            Button("Open") { open(record.value) }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.dockAccent)
+                .frame(minHeight: 44)
+            Button("Copy") { copy(record.value) }
+                .buttonStyle(.bordered)
+                .frame(minHeight: 44)
+            if isLocalFile(record) {
+                Button("Reveal in Finder") { reveal(record.value) }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: 44)
+            }
+            if let session = model.sessions.first(where: { $0.id == record.sessionID }) {
+                Button("Open session") { model.resumeSession(session) }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockAccent)
+                    .frame(minHeight: 44)
+            }
+        }
+        .controlSize(.small)
+    }
+
+    private func detailMetadata(_ record: ArtifactRecord) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            metadataRow("Location", value: record.value)
+            metadataRow("Session", value: record.sessionTitle)
+            metadataRow("Created", value: record.timestamp.formatted(date: .abbreviated, time: .shortened))
+        }
+        .font(.system(size: 11))
+    }
+
+    private func metadataRow(_ label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.dockMetadataText)
+            Text(value)
+                .foregroundStyle(Color.dockSecondaryText)
+                .textSelection(.enabled)
+                .lineLimit(3)
+        }
+    }
+
+    @ViewBuilder
+    private func artifactContextActions(_ record: ArtifactRecord) -> some View {
+        Button("Open") { open(record.value) }
+        Button("Copy") { copy(record.value) }
+        if isLocalFile(record) {
+            Button("Reveal in Finder") { reveal(record.value) }
+        }
+        if let session = model.sessions.first(where: { $0.id == record.sessionID }) {
+            Button("Open session") { model.resumeSession(session) }
+        }
+    }
+
+    private func pageState(title: String, detail: String, icon: String, actionTitle: String?, action: (() -> Void)?) -> some View {
+        VStack(spacing: 10) {
+            LucideLabel(title, icon: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockSecondaryText)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.dockAccent)
+                    .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+    }
+
     private var summaryText: String {
         if isLoading && records.isEmpty { return "Indexing recent Hermes sessions…" }
         let count = visibleRecords.count
         return "\(count) \(count == 1 ? "output" : "outputs") from recent sessions"
+    }
+
+    private var pageSummaryText: String {
+        if isLoading && records.isEmpty { return "Indexing recent Hermes sessions…" }
+        let count = records.count
+        let output = "\(count) \(count == 1 ? "output" : "outputs") from recent sessions"
+        if failedSessionCount > 0 {
+            return "\(output) · \(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s") unavailable"
+        }
+        return output
     }
 
     private var content: some View {
@@ -395,9 +741,29 @@ struct ArtifactsInspectorView: View {
         NSWorkspace.shared.open(url)
     }
 
+    private func isLocalFile(_ record: ArtifactRecord) -> Bool {
+        ArtifactActionPresentation.make(
+            record: record,
+            hasSourceSession: model.sessions.contains { $0.id == record.sessionID }
+        ).canRevealInFinder && artifactURL(record.value)?.isFileURL == true
+    }
+
+    private func reveal(_ value: String) {
+        guard let url = artifactURL(value), url.isFileURL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
     private func resetPages() {
         imagePage = 1
         filePage = 1
+    }
+
+    private func reconcileSelection() {
+        guard presentation == .page else { return }
+        selectedArtifactID = ArtifactSelectionPresentation.reconciledID(
+            current: selectedArtifactID,
+            visibleIDs: visibleRecords.map(\.id)
+        )
     }
 
     private func refresh() async {
@@ -406,20 +772,30 @@ struct ArtifactsInspectorView: View {
         errorMessage = nil
         var next: [ArtifactRecord] = []
         var failures = 0
+        var failedSessionIDs = Set<String>()
+        let previous = records
         for session in model.sessions.prefix(50) {
             do {
                 next.append(contentsOf: ArtifactService.extract(session: session, messages: try await model.artifactMessages(for: session)))
             } catch {
                 failures += 1
+                failedSessionIDs.insert(session.id)
             }
         }
-        records = Dictionary(grouping: next, by: \.id)
+        // Keep the prior artifacts for sessions that could not be read this
+        // cycle, while allowing successful sessions and removed sessions to
+        // converge to the latest authoritative index.
+        next.append(contentsOf: previous.filter { failedSessionIDs.contains($0.sessionID) })
+        let refreshed = Dictionary(grouping: next, by: \.id)
             .compactMap(\.value.first)
             .sorted { $0.timestamp > $1.timestamp }
+        failedSessionCount = failures
+        records = refreshed
         if failures > 0 && records.isEmpty {
             errorMessage = "Some recent session outputs could not be read. Try refreshing."
         }
         resetPages()
+        reconcileSelection()
         isLoading = false
     }
 }

@@ -2,27 +2,27 @@ import AppKit
 import SwiftUI
 
 enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
-    case branch
     case copy
     case readAloud
+    case branch
     case refresh
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .branch: "arrow.triangle.branch"
         case .copy: "doc.on.doc"
         case .readAloud: "speaker.wave.2"
+        case .branch: "arrow.triangle.branch"
         case .refresh: "arrow.clockwise"
         }
     }
 
     var label: String {
         switch self {
-        case .branch: "Branch from this message"
         case .copy: "Copy message"
         case .readAloud: "Read message aloud"
+        case .branch: "Branch from this message"
         case .refresh: "Refresh this response"
         }
     }
@@ -40,15 +40,14 @@ struct ConversationMessageRow: View, Equatable {
     let avatarImages: [String: Data]
     let botRosterRevision: Int
     let onImagePreview: (NSImage) -> Void
-    let isActionPending: Bool
+    let pendingAction: ConversationMessageActionKind?
     let areSessionActionsAvailable: Bool
     let isSpeaking: Bool
+    let metrics: ConversationWorkspaceMetrics
     let onCopy: () -> Void
     let onBranch: () -> Void
     let onReadAloud: () -> Void
     let onRefresh: () -> Void
-    @State private var hoveredAction: ConversationMessageActionKind?
-
     init(
         message: ChatMessage,
         isStreamingMessage: Bool,
@@ -58,9 +57,10 @@ struct ConversationMessageRow: View, Equatable {
         avatarImages: [String: Data],
         botRosterRevision: Int,
         onImagePreview: @escaping (NSImage) -> Void,
-        isActionPending: Bool = false,
+        pendingAction: ConversationMessageActionKind? = nil,
         areSessionActionsAvailable: Bool = true,
         isSpeaking: Bool = false,
+        metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false),
         onCopy: @escaping () -> Void = {},
         onBranch: @escaping () -> Void = {},
         onReadAloud: @escaping () -> Void = {},
@@ -74,9 +74,10 @@ struct ConversationMessageRow: View, Equatable {
         self.avatarImages = avatarImages
         self.botRosterRevision = botRosterRevision
         self.onImagePreview = onImagePreview
-        self.isActionPending = isActionPending
+        self.pendingAction = pendingAction
         self.areSessionActionsAvailable = areSessionActionsAvailable
         self.isSpeaking = isSpeaking
+        self.metrics = metrics
         self.onCopy = onCopy
         self.onBranch = onBranch
         self.onReadAloud = onReadAloud
@@ -97,9 +98,10 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.isStreamingMessage == rhs.isStreamingMessage
             && lhs.activeBotProfileID == rhs.activeBotProfileID
             && lhs.botRosterRevision == rhs.botRosterRevision
-            && lhs.isActionPending == rhs.isActionPending
+            && lhs.pendingAction == rhs.pendingAction
             && lhs.areSessionActionsAvailable == rhs.areSessionActionsAvailable
             && lhs.isSpeaking == rhs.isSpeaking
+            && lhs.metrics == rhs.metrics
     }
 
     var body: some View {
@@ -138,7 +140,7 @@ struct ConversationMessageRow: View, Equatable {
                         VStack(alignment: .trailing, spacing: 6) {
                             if message.isSteering {
                                 Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .font(.system(size: 10, weight: .medium))
                                     .foregroundStyle(Color.dockAccent)
                             }
                             if !userText.isEmpty {
@@ -152,12 +154,11 @@ struct ConversationMessageRow: View, Equatable {
                         .padding(.vertical, 12)
                         // Use opaque slate-navy user message bubble background to eliminate eye strain
                         .background(Color.dockUserMessageBubble)
-                        .clipShape(MessageBubbleShape(isUser: true))
-                        .overlay(
-                            MessageBubbleShape(isUser: true)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(Color.dockBorderStrong, lineWidth: 0.5)
-                        )
-                        .shadow(color: Color.black.opacity(0.12), radius: 4)
+                        }
                     }
 
                     Text(message.timeLabel)
@@ -165,6 +166,7 @@ struct ConversationMessageRow: View, Equatable {
                         .foregroundStyle(Color.dockMetadataText)
                         .padding(.horizontal, 4)
                 }
+                .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     let attributedBotID = message.botProfileID ?? activeBotProfileID
@@ -199,8 +201,8 @@ struct ConversationMessageRow: View, Equatable {
                                 .clipShape(RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous))
                             }
                             Text(bot?.name ?? message.botDisplayName ?? botProfileID)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.dockAccent)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.dockSecondaryText)
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 4)
@@ -230,17 +232,18 @@ struct ConversationMessageRow: View, Equatable {
                             }
                         }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 6)
                             .foregroundStyle(Color.dockPrimaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            // Use opaque charcoal-indigo AI message bubble (DESIGN.md) to eliminate high-contrast glare
-                            .background(message.isError ? Color.dockWarning.opacity(0.10) : Color.dockMessageBubble)
-                            .clipShape(MessageBubbleShape(isUser: false))
-                            .overlay(
-                                MessageBubbleShape(isUser: false)
-                                    .stroke(message.isError ? Color.dockWarning.opacity(0.55) : Color.dockBorder, lineWidth: 0.5)
-                            )
+                            .background(message.isError ? Color.dockWarning.opacity(0.10) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .overlay {
+                                if message.isError {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5)
+                                }
+                            }
                     }
 
                     if !message.isError, message.hasBodyText {
@@ -251,12 +254,12 @@ struct ConversationMessageRow: View, Equatable {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
+        .padding(.horizontal, metrics.contentInset)
+        .padding(.vertical, 8)
     }
 
     private var messageActions: some View {
-        HStack(spacing: -8) {
+        HStack(spacing: 2) {
             ForEach(ConversationMessageActionKind.allCases) { kind in
                 actionButton(
                     kind,
@@ -264,9 +267,12 @@ struct ConversationMessageRow: View, Equatable {
                     isAvailable: kind == .copy || areSessionActionsAvailable
                 )
             }
+            Rectangle()
+                .fill(Color.dockBorderLight)
+                .frame(width: 1, height: 12)
+                .padding(.horizontal, 5)
             messageMetadata
         }
-        .padding(.horizontal, 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Message actions")
     }
@@ -302,44 +308,31 @@ struct ConversationMessageRow: View, Equatable {
     ) -> some View {
         let icon = kind == .readAloud && isSpeaking ? "stop.fill" : kind.icon
         let label = kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
+        let isPending = pendingAction == kind
+        let anotherMutationIsPending = pendingAction != nil
+            && (kind == .branch || kind == .refresh)
+            && !isPending
+        let iconColor = kind == .readAloud && isSpeaking
+            ? Color.dockAccent
+            : Color.dockSecondaryText
         return Button(action: action) {
-            if isActionPending {
+            if isPending {
                 ProgressView().controlSize(.small)
             } else {
                 LucideIcon(
                     name: .from(systemName: icon),
                     size: 13,
-                    color: Color.dockMetadataText
+                    color: iconColor
                 )
             }
         }
         .buttonStyle(DockPressButtonStyle())
-        // Compact the action strip while retaining a 44pt interactive area.
-        .frame(width: 36, height: 36)
-        .padding(4)
+        .frame(width: 28, height: 28)
         .contentShape(Rectangle())
         .help(label)
-        .overlay(alignment: .top) {
-            if hoveredAction == kind {
-                Text(label)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Color.dockControlSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-                    .fixedSize()
-                    .offset(y: -25)
-                    .allowsHitTesting(false)
-                    .zIndex(2)
-            }
-        }
-        .onHover { hovering in
-            hoveredAction = hovering ? kind : nil
-        }
         .accessibilityLabel(label)
         .accessibilityValue(isAvailable ? "Available" : "Unavailable until a conversation session is selected")
-        .disabled(isActionPending || !isAvailable)
+        .disabled(isPending || anotherMutationIsPending || !isAvailable)
     }
 
 }

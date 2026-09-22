@@ -92,6 +92,8 @@ final class DockModel: ObservableObject {
     @Published private(set) var deletingSessionID: String?
     @Published private(set) var sessionDeletionError: String?
     @Published private(set) var sessionVisibilityError: String?
+    @Published private(set) var updatingSessionVisibilityID: String?
+    @Published private(set) var renamingSessionID: String?
     @Published private(set) var isRestoringSession = false
     @Published private(set) var isCreatingSession = false
     @Published var currentSessionTitle: String?
@@ -829,41 +831,67 @@ final class DockModel: ObservableObject {
         return task
     }
 
-    func deleteSession(_ session: HermesSession) {
+    @discardableResult
+    func deleteSession(_ session: HermesSession) async -> Bool {
         guard session.id != sessionID else {
             sessionDeletionError = "The active session cannot be deleted."
-            return
+            return false
         }
-        guard deletingSessionID == nil else { return }
+        guard deletingSessionID == nil else { return false }
         sessionDeletionError = nil
         deletingSessionID = session.id
-        Task {
-            defer { deletingSessionID = nil }
-            do {
-                try await gateway.connect()
-                var params: [String: Any] = ["session_id": session.id]
-                if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
-                _ = try await gateway.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
-                sessions.removeAll { $0.id == session.id }
-                DebugLog.write("model: deleted saved session \(session.id)")
-            } catch {
-                sessionDeletionError = "Could not delete the session: \(Self.safeUserDiagnostic(error.localizedDescription))"
-                DebugLog.write("model: session delete failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
-            }
+        defer { deletingSessionID = nil }
+        do {
+            try await sessionRPCClient.connect()
+            var params: [String: Any] = ["session_id": session.id]
+            if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
+            _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
+            sessions.removeAll { $0.id == session.id }
+            DebugLog.write("model: deleted saved session \(session.id)")
+            return true
+        } catch {
+            sessionDeletionError = "Could not delete the session: \(Self.safeUserDiagnostic(error.localizedDescription))"
+            DebugLog.write("model: session delete failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            return false
         }
     }
 
-    func setSessionHidden(_ session: HermesSession, hidden: Bool) {
+    @discardableResult
+    func setSessionHidden(_ session: HermesSession, hidden: Bool) async -> Bool {
+        guard updatingSessionVisibilityID == nil else { return false }
         sessionVisibilityError = nil
-        Task {
-            do {
-                var params: [String: Any] = ["session_id": session.id, "hidden": hidden]
-                if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionSetHidden.rawValue, params: params)
-                loadSessions()
-            } catch {
-                sessionVisibilityError = Self.safeUserDiagnostic(error.localizedDescription)
-            }
+        updatingSessionVisibilityID = session.id
+        defer { updatingSessionVisibilityID = nil }
+        do {
+            try await sessionRPCClient.connect()
+            var params: [String: Any] = ["session_id": session.id, "hidden": hidden]
+            if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
+            _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionSetHidden.rawValue, params: params)
+            loadSessions()
+            return true
+        } catch {
+            sessionVisibilityError = Self.safeUserDiagnostic(error.localizedDescription)
+            return false
+        }
+    }
+
+    @discardableResult
+    func renameSession(_ session: HermesSession, title: String) async -> Bool {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty, renamingSessionID == nil else { return false }
+        renamingSessionID = session.id
+        defer { renamingSessionID = nil }
+        do {
+            try await sessionRPCClient.connect()
+            var params: [String: Any] = ["session_id": session.id, "title": cleanTitle]
+            if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
+            _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionTitle.rawValue, params: params)
+            if session.id == sessionID { currentSessionTitle = cleanTitle }
+            loadSessions()
+            return true
+        } catch {
+            DebugLog.write("model: session rename failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            return false
         }
     }
 
@@ -4377,10 +4405,7 @@ final class DockModel: ObservableObject {
         var pendingImages: [RestoredTranscript.PendingImages] = []
         for row in rows {
             guard let role = row["role"] as? String else { continue }
-            let persisted = persistedImageContent(
-                from: [row["text"], row["content"]].compactMap { $0 }.map(messageText),
-                attachmentReferences: imageAttachmentReferences(in: row)
-            )
+            let persisted = persistedImageContent(from: messageText(row["text"] ?? row["content"]))
             let text = persisted.text
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.imageFileURLs.isEmpty else { continue }
             let timestamp: Date
@@ -4418,25 +4443,9 @@ final class DockModel: ObservableObject {
     /// references are collected here; decoding happens off the main actor in
     /// `rehydratePendingTranscriptImages`.
     static func persistedImageContent(from rawText: String) -> (text: String, imageFileURLs: [URL]) {
-        persistedImageContent(from: [rawText], attachmentReferences: [])
-    }
-
-    /// Reconciles the two transcript shapes used by Hermes Desktop. Older
-    /// rows carry `@image:` directives in text/content; newer rows may also
-    /// expose the same references as attachment metadata. Keep the first
-    /// occurrence of each path so a row containing both shapes cannot render
-    /// one thumbnail twice.
-    static func persistedImageContent(
-        from rawTexts: [String],
-        attachmentReferences: [String]
-    ) -> (text: String, imageFileURLs: [URL]) {
-        let rawText = rawTexts.reduce(into: [String]()) { values, value in
-            guard !value.isEmpty, !values.contains(value) else { return }
-            values.append(value)
-        }.joined(separator: "\n")
         let lines = rawText.components(separatedBy: .newlines)
         var imageFileURLs: [URL] = []
-        var seenPaths = Set<String>()
+        var removedImageReference = false
         var remainingLines: [String] = []
 
         for line in lines {
@@ -4446,17 +4455,17 @@ final class DockModel: ObservableObject {
                 continue
             }
 
-            if let path = imagePath(from: trimmed), seenPaths.insert(path).inserted {
-                imageFileURLs.append(URL(fileURLWithPath: path))
+            removedImageReference = true
+            var path = String(trimmed.dropFirst("@image:".count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if path.count >= 2, path.first == "`", path.last == "`" {
+                path.removeFirst()
+                path.removeLast()
             }
-        }
-
-        for reference in attachmentReferences {
-            guard let path = imagePath(from: reference), seenPaths.insert(path).inserted else { continue }
             imageFileURLs.append(URL(fileURLWithPath: path))
         }
 
-        if !imageFileURLs.isEmpty {
+        if removedImageReference {
             remainingLines.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "[screenshot]" }
         }
         // This boundary feeds every restored transcript message, not only
@@ -4464,33 +4473,6 @@ final class DockModel: ObservableObject {
         // Markdown renderer receives the exact persisted body rather than
         // literal `\\n` source characters.
         return (remainingLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), imageFileURLs)
-    }
-
-    private static func imagePath(from reference: String) -> String? {
-        var path = reference.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard path.hasPrefix("@image:") else { return nil }
-        path = String(path.dropFirst("@image:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
-        if path.count >= 2, path.first == "`", path.last == "`" {
-            path.removeFirst()
-            path.removeLast()
-        }
-        return path.isEmpty ? nil : path
-    }
-
-    private static func imageAttachmentReferences(in row: [String: Any]) -> [String] {
-        let keys = ["attachmentRefs", "attachment_refs", "attachmentReferences", "attachment_references", "imageRefs", "image_refs"]
-        let containers = [row, row["display_metadata"] as? [String: Any] ?? [:]]
-        return containers.flatMap { container in
-            keys.flatMap { key -> [String] in
-                guard let value = container[key] else { return [] }
-                if let references = value as? [String] { return references }
-                if let reference = value as? String { return [reference] }
-                if let references = value as? [[String: Any]] {
-                    return references.compactMap { $0["ref"] as? String ?? $0["reference"] as? String }
-                }
-                return []
-            }
-        }
     }
 
     /// Hermes Bot Mode's documented delivery envelope is:

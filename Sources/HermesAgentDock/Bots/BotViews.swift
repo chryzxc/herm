@@ -1,21 +1,22 @@
 import AppKit
 import SwiftUI
 
-/// Full Bots destination page for the right workspace pane. Mirrors Hermes'
-/// documented Bot Mode roster: search, presence, latest-message previews,
-/// and a New Agent path built on the verified `profiles.*` contracts.
+/// Full Bots destination page for the right workspace pane. Bot profiles use
+/// an adaptive card grid; recurring jobs remain a compact schedule list.
 struct BotRosterPage: View {
     @ObservedObject var model: BotModeModel
     @ObservedObject var dockModel: DockModel
     let onSelectBot: (BotSummary) -> Void
+    let onOpenRecentSession: (BotSummary, BotChatReference) -> Void
     @State private var isShowingCreateSheet = false
     @State private var editingBot: BotSummary?
     @State private var duplicatingBot: BotSummary?
     @State private var isShowingRoutineForm = false
     @State private var showsHiddenBots = false
     @State private var activityBot: BotSummary?
-    // These are presentation-only preferences. The roster data remains Hermes-owned.
-    @State private var rosterColumns = BotRosterColumns()
+    @State private var selectedSection: BotRosterSection = .bots
+    @State private var activityFilter: BotRosterActivityFilter = .all
+    @State private var pendingRoutineRemoval: BotRoutine?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -51,6 +52,33 @@ struct BotRosterPage: View {
         .sheet(isPresented: $isShowingRoutineForm) {
             BotRoutineFormSheet(model: model, bots: model.visibleBots)
         }
+        .confirmationDialog(
+            "Remove Routine?",
+            isPresented: Binding(
+                get: { pendingRoutineRemoval != nil },
+                set: { if !$0 { pendingRoutineRemoval = nil } }
+            ),
+            presenting: pendingRoutineRemoval
+        ) { routine in
+            Button("Remove \(routine.name)", role: .destructive) {
+                pendingRoutineRemoval = nil
+                Task { await model.removeRoutine(routine) }
+            }
+            Button("Cancel", role: .cancel) { pendingRoutineRemoval = nil }
+        } message: { _ in
+            Text("This removes the recurring Hermes routine. Existing sessions and transcripts are not deleted.")
+        }
+        .alert(
+            "Could Not Remove Routine",
+            isPresented: Binding(
+                get: { model.routineRemovalError != nil },
+                set: { if !$0 { model.clearRoutineRemovalError() } }
+            )
+        ) {
+            Button("OK", role: .cancel) { model.clearRoutineRemovalError() }
+        } message: {
+            Text(model.routineRemovalError ?? "The routine could not be removed.")
+        }
         .task {
             // A failed roster from a transient launch race or a starved
             // capability probe self-heals here: the page verifies the
@@ -76,37 +104,30 @@ struct BotRosterPage: View {
         DockPageHeader(
             icon: "bot",
             title: "Bots",
-            subtitle: "Profiles and routines",
+            subtitle: "\(model.visibleBots.count) Bots · \(model.activeNowBots.count) active",
             onRefresh: { Task { await model.refreshNow(force: true) } },
             isRefreshing: model.isRefreshing
         ) {
             HStack(spacing: 10) {
-            if !model.hiddenBots.isEmpty {
-                Button {
-                    showsHiddenBots.toggle()
-                } label: {
-                    LucideImage(systemName: showsHiddenBots ? "eye" : "eye.slash")
+                if selectedSection == .bots {
+                    Button {
+                        isShowingCreateSheet = true
+                    } label: {
+                        LucideLabel("New Bot", icon: "plus")
+                    }
+                    .controlSize(.regular)
+                    .disabled(!model.canCreateBots)
+                    .help(model.canCreateBots ? "Create a new Hermes Bot profile" : "Bot creation requires a Hermes runtime with profile support")
+                } else {
+                    Button {
+                        isShowingRoutineForm = true
+                    } label: {
+                        LucideLabel("New Routine", icon: "plus")
+                    }
+                    .controlSize(.regular)
+                    .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
+                    .help("Attach a recurring routine to a Bot")
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockSecondaryText)
-                .help(showsHiddenBots ? "Hide hidden Bots" : "Reveal hidden Bots")
-            }
-            Button {
-                isShowingRoutineForm = true
-            } label: {
-                LucideLabel("Routine", icon: "clock.arrow.circlepath")
-            }
-            .controlSize(.regular)
-            .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
-            .help("Attach a recurring routine to a Bot")
-            Button {
-                isShowingCreateSheet = true
-            } label: {
-                LucideLabel("New Bot", icon: "plus")
-            }
-            .controlSize(.regular)
-            .disabled(!model.canCreateBots)
-            .help(model.canCreateBots ? "Create a Bot from a new Hermes profile" : "Bot creation requires a Hermes runtime with profile support")
             }
         }
     }
@@ -139,57 +160,157 @@ struct BotRosterPage: View {
 
     private var readyContent: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if selectedSection == .bots {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        sectionPicker.fixedSize(horizontal: true, vertical: false)
+                        botFilters
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionPicker.fixedSize(horizontal: true, vertical: false)
+                        botFilters
+                    }
+                }
+                .padding(.horizontal, DockLayout.contentInset)
+                .padding(.vertical, DockLayout.tight)
+            } else {
+                sectionPicker
+                    .fixedSize(horizontal: true, vertical: false)
+                    .padding(.horizontal, DockLayout.contentInset)
+                    .padding(.vertical, DockLayout.tight)
+            }
+            if selectedSection == .bots { botsContent } else { routinesContent }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var sectionPicker: some View {
+        Picker("Bot destination", selection: $selectedSection) {
+            ForEach(BotRosterSection.allCases) { section in
+                Text(section == .bots ? "Bots \(model.visibleBots.count)" : "Routines \(model.routines.count)").tag(section)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private var botFilters: some View {
+        HStack(spacing: 8) {
             HStack(spacing: 8) {
                 LucideImage(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockMetadataText)
                 TextField("Search Bots", text: $model.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.dockPrimaryText)
+                    .frame(minWidth: 140)
             }
             .padding(.horizontal, DockLayout.compactInset)
-            .frame(minHeight: DockLayout.controlHeight)
-            .background(
+            .frame(maxWidth: .infinity, minHeight: DockLayout.controlHeight)
+            .background(Color.dockControlSurface)
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .overlay {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(Color.dockControlSurface)
                     .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
-            )
-            .padding(.horizontal, DockLayout.contentInset)
-            .padding(.vertical, DockLayout.tight)
+            }
 
-            if model.filteredBots.isEmpty {
-                emptyRoster(isSearching: isSearching)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        rosterSummary
-                        BotRosterTableHeader(columns: $rosterColumns)
-                        ForEach(model.visibleBots) { bot in
-                            botRow(bot)
-                            Divider().overlay(Color.dockBorderLight)
+            Menu {
+                ForEach(BotRosterActivityFilter.allCases) { filter in
+                    Button {
+                        activityFilter = filter
+                    } label: {
+                        if filter == activityFilter {
+                            Label(filter.title, systemImage: "checkmark")
+                        } else {
+                            Text(filter.title)
                         }
-                        if showsHiddenBots {
-                            ForEach(model.hiddenBots) { bot in
-                                botRow(bot)
-                                Divider().overlay(Color.dockBorderLight)
-                            }
-                        }
-                        routinesSection
                     }
-                    .padding(.horizontal, DockLayout.contentInset)
-                    .padding(.vertical, DockLayout.tight)
                 }
+            } label: {
+                Label(activityFilter.title, systemImage: "line.3.horizontal.decrease")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(minHeight: DockLayout.controlHeight)
+                    .padding(.horizontal, 10)
+                    .background(Color.dockControlSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                            .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                    }
+            }
+            .menuStyle(.borderlessButton)
+            .help("Filter Bots by activity")
+
+            Menu {
+                Button {
+                    showsHiddenBots = false
+                } label: {
+                    if !showsHiddenBots { Label("Visible only", systemImage: "checkmark") }
+                    else { Text("Visible only") }
+                }
+                Button {
+                    showsHiddenBots = true
+                } label: {
+                    if showsHiddenBots { Label("Include hidden", systemImage: "checkmark") }
+                    else { Text("Include hidden") }
+                }
+            } label: {
+                Label(showsHiddenBots ? "All Bots" : "Visible", systemImage: showsHiddenBots ? "eye" : "eye.slash")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(minHeight: DockLayout.controlHeight)
+                    .padding(.horizontal, 10)
+                    .background(Color.dockControlSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                            .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                    }
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(model.hiddenBots.isEmpty)
+            .help("Choose whether hidden Bots are included")
+
+            if showsHiddenBots || activityFilter != .all {
+                Button("Clear") {
+                    showsHiddenBots = false
+                    activityFilter = .all
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockAccent)
+                .fixedSize()
+            }
+        }
+    }
+
+    private var botsContent: some View {
+        GeometryReader { proxy in
+            let gridWidth = max(0, proxy.size.width - DockLayout.contentInset * 2)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    rosterSummary
+                    if shownBots.isEmpty {
+                        emptyRoster(isSearching: isSearching || activityFilter != .all)
+                    } else if model.visibleBots.isEmpty && !showsHiddenBots && !isSearching && activityFilter == .all {
+                        hiddenOnlyRoster
+                    } else {
+                        LazyVGrid(columns: BotRosterGrid.columns(for: gridWidth), alignment: .leading, spacing: 12) {
+                            ForEach(shownBots) { bot in botCard(bot) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, DockLayout.contentInset)
+                .padding(.vertical, DockLayout.tight)
             }
         }
     }
 
     private var rosterSummary: some View {
         HStack(spacing: 8) {
-            Text("FLEET")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(0.8)
-                .foregroundStyle(Color.dockMetadataText)
             Text("\(model.visibleBots.count) Bots")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.dockSecondaryText)
@@ -199,27 +320,23 @@ struct BotRosterPage: View {
                     .foregroundStyle(Color.dockAccent)
             }
             Spacer(minLength: 0)
-            Text("Open a chat or edit a Bot profile")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
         }
         .padding(.horizontal, DockLayout.compactInset)
         .padding(.vertical, 8)
     }
 
-    private func botRow(_ bot: BotSummary) -> some View {
+    private func botCard(_ bot: BotSummary) -> some View {
         MissionControlBotRow(
             bot: bot,
             avatarData: model.avatarImages[bot.id],
-            isSelected: false,
             onSelect: { onSelectBot(bot) },
+            onOpenRecentSession: { if let session = bot.recentSession { onOpenRecentSession(bot, session) } },
             onEdit: { editingBot = bot },
             onShowActivity: { activityBot = bot },
             onDuplicate: { duplicatingBot = bot },
             onToggleHidden: {
                 Task { await model.setHidden(!bot.isHidden, for: bot) }
-            },
-            columns: rosterColumns
+            }
         )
         .equatable()
     }
@@ -234,63 +351,53 @@ struct BotRosterPage: View {
             }
     }
 
-    @ViewBuilder
-    private var routinesSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text("ROUTINES")
-                    .font(.system(size: 10, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.dockMetadataText)
-                Spacer()
-                Button {
-                    isShowingRoutineForm = true
-                } label: {
-                    LucideImage(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .foregroundStyle(Color.dockSecondaryText)
-                .help("New routine")
-            }
-            if model.isLoadingRoutines {
-                Text("Loading routines…").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-            } else if model.routines.isEmpty {
-                Text("No routines yet — a routine is a recurring Hermes cron job that runs in its Bot's chat.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-            } else {
-                ForEach(model.routines) { routine in
-                    HStack(spacing: 8) {
-                        LucideImage(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.dockAccent)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(routine.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-                            Text("\(botDisplayName(routine.profileID)) · \(routine.schedule)")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Color.dockMetadataText)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Button {
-                            Task { await model.removeRoutine(routine) }
-                        } label: {
-                            LucideImage(systemName: "trash")
-                                .font(.system(size: 10))
-                        }
-                        .buttonStyle(.borderless)
+    private var routinesContent: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
+                    Text("ROUTINES")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(Color.dockMetadataText)
+                    Text("\(model.routines.count)")
+                        .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(Color.dockSecondaryText)
-                        .help("Remove routine")
+                    Spacer()
+                    Text("Recurring Hermes jobs")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                .padding(.horizontal, DockLayout.compactInset)
+                .padding(.vertical, 10)
+
+                if model.isLoadingRoutines {
+                    Text("Loading routines…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                        .padding(.horizontal, DockLayout.compactInset)
+                } else if model.routines.isEmpty {
+                    Text("No routines yet — a routine is a recurring Hermes cron job that runs in its Bot’s chat.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                        .padding(.horizontal, DockLayout.compactInset)
+                } else {
+                    ForEach(model.routines) { routine in
+                        BotRoutineRow(
+                            routine: routine,
+                            botName: botDisplayName(routine.profileID),
+                            isRemoving: model.removingRoutineID == routine.id,
+                            onRemove: { pendingRoutineRemoval = routine }
+                        )
+                        .equatable()
+                        Divider().overlay(Color.dockBorderLight)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
                 }
             }
+            .padding(.horizontal, DockLayout.contentInset)
+            .padding(.vertical, DockLayout.tight)
         }
-        .padding(.horizontal, 4)
-        .padding(.top, 12)
     }
 
     private func botDisplayName(_ profileID: String) -> String {
@@ -299,6 +406,12 @@ struct BotRosterPage: View {
 
     private var isSearching: Bool {
         !model.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var shownBots: [BotSummary] {
+        model.filteredBots.filter { bot in
+            (showsHiddenBots || !bot.isHidden) && activityFilter.includes(bot)
+        }
     }
 
     private func emptyRoster(isSearching: Bool) -> some View {
@@ -324,6 +437,18 @@ struct BotRosterPage: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var hiddenOnlyRoster: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("No visible Bots")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            Button("Reveal hidden Bots", systemImage: "eye") { showsHiddenBots = true }
+                .controlSize(.small)
+        }
+        .padding(.horizontal, DockLayout.compactInset)
+        .padding(.vertical, 12)
     }
 
     private func unavailableContent(title: String, detail: String, showsRetry: Bool) -> some View {
@@ -525,124 +650,6 @@ func modalActions(primaryTitle: String, isDisabled: Bool, isPending: Bool, onCan
     }
 }
 
-/// Presentation dimensions shared by the roster header and every Bot row.
-/// Activity intentionally takes the remaining width so it remains useful as
-/// either adjacent column is resized.
-struct BotRosterColumns: Equatable {
-    var identity: CGFloat = 230
-    var metadata: CGFloat = 168
-    let actions: CGFloat = 132
-
-    static let minimumIdentity: CGFloat = 160
-    static let minimumMetadata: CGFloat = 132
-    static let minimumActivity: CGFloat = 190
-    static let horizontalInset: CGFloat = DockLayout.compactInset
-    static let columnSpacing: CGFloat = 12
-
-    func maximumIdentity(for availableWidth: CGFloat) -> CGFloat {
-        max(
-            Self.minimumIdentity,
-            availableWidth - (Self.horizontalInset * 2) - (Self.columnSpacing * 3) - metadata - actions - Self.minimumActivity
-        )
-    }
-
-    func maximumMetadata(for availableWidth: CGFloat) -> CGFloat {
-        max(
-            Self.minimumMetadata,
-            availableWidth - (Self.horizontalInset * 2) - (Self.columnSpacing * 3) - identity - actions - Self.minimumActivity
-        )
-    }
-}
-
-private struct BotRosterTableHeader: View {
-    @Binding var columns: BotRosterColumns
-    @State private var identityStart: CGFloat?
-    @State private var metadataStart: CGFloat?
-
-    var body: some View {
-        GeometryReader { proxy in
-            HStack(spacing: BotRosterColumns.columnSpacing) {
-                headerLabel("BOT")
-                    .frame(width: columns.identity, alignment: .leading)
-                headerLabel("ACTIVITY")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                headerLabel("MODEL / LAST ACTIVE")
-                    .frame(width: columns.metadata, alignment: .trailing)
-                headerLabel("ACTIONS")
-                    .frame(width: columns.actions, alignment: .trailing)
-            }
-            .padding(.horizontal, BotRosterColumns.horizontalInset)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .overlay(alignment: .leading) {
-                BotRosterColumnResizeHandle(accessibilityLabel: "Resize Bot column") { translation in
-                    if identityStart == nil { identityStart = columns.identity }
-                    let start = identityStart ?? columns.identity
-                    columns.identity = min(
-                        max(BotRosterColumns.minimumIdentity, start + translation),
-                        columns.maximumIdentity(for: proxy.size.width)
-                    )
-                } onEnded: {
-                    identityStart = nil
-                }
-                .offset(x: BotRosterColumns.horizontalInset + columns.identity + (BotRosterColumns.columnSpacing / 2))
-            }
-            .overlay(alignment: .leading) {
-                BotRosterColumnResizeHandle(accessibilityLabel: "Resize Model and last active column") { translation in
-                    if metadataStart == nil { metadataStart = columns.metadata }
-                    let start = metadataStart ?? columns.metadata
-                    columns.metadata = min(
-                        max(BotRosterColumns.minimumMetadata, start - translation),
-                        columns.maximumMetadata(for: proxy.size.width)
-                    )
-                } onEnded: {
-                    metadataStart = nil
-                }
-                .offset(x: proxy.size.width - BotRosterColumns.horizontalInset - columns.actions - BotRosterColumns.columnSpacing - columns.metadata - (BotRosterColumns.columnSpacing / 2))
-            }
-        }
-        .frame(height: 27)
-        .background(Color.dockSurface4.opacity(0.35))
-        .overlay(alignment: .bottom) {
-            Divider().overlay(Color.dockBorderLight)
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private func headerLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .tracking(0.65)
-            .foregroundStyle(Color.dockMetadataText)
-            .lineLimit(1)
-    }
-}
-
-private struct BotRosterColumnResizeHandle: View {
-    let accessibilityLabel: String
-    let onChanged: (CGFloat) -> Void
-    let onEnded: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Rectangle()
-            .fill(isHovering ? Color.dockAccent.opacity(0.7) : Color.dockBorderLight)
-            .frame(width: isHovering ? 2 : DockLayout.hairline, height: 17)
-            .frame(width: 10, height: 27)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                isHovering = hovering
-                (hovering ? NSCursor.resizeLeftRight : NSCursor.arrow).set()
-            }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { onChanged($0.translation.width) }
-                    .onEnded { _ in onEnded() }
-            )
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityHint("Drag left or right to resize the column")
-    }
-}
-
 /// Displays the Dock's retained records for explicit work dispatched to one
 /// Bot. Hermes does not provide a full activity-feed contract here, so this
 /// deliberately does not present chat previews as a complete audit trail.
@@ -742,53 +749,214 @@ private struct BotActivityHistorySheet: View {
     }
 }
 
+enum BotRosterSection: String, CaseIterable, Identifiable {
+    case bots
+    case routines
+
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+}
+
+enum BotRosterActivityFilter: String, CaseIterable, Identifiable {
+    case all
+    case active
+    case working
+
+    var id: Self { self }
+    var title: String { rawValue.capitalized }
+
+    func includes(_ bot: BotSummary) -> Bool {
+        switch self {
+        case .all: true
+        case .active: bot.isRecentlyActive || bot.isWorkingNow
+        case .working: bot.isWorkingNow
+        }
+    }
+}
+
+enum BotRosterRowLayout {
+    static let minimumCardWidth: CGFloat = 280
+    static let columnSpacing: CGFloat = 12
+
+    static func columnCount(contentWidth: CGFloat) -> Int {
+        if contentWidth >= 900 { return 3 }
+        if contentWidth >= 600 { return 2 }
+        return 1
+    }
+}
+
+private enum BotRosterGrid {
+    static func columns(for contentWidth: CGFloat) -> [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(minimum: BotRosterRowLayout.minimumCardWidth), spacing: BotRosterRowLayout.columnSpacing),
+            count: BotRosterRowLayout.columnCount(contentWidth: contentWidth)
+        )
+    }
+}
+
+struct BotRosterMetadata: Equatable {
+    let model: String?
+    let lastActive: String?
+
+    var values: [String] {
+        [model, lastActive]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
+private struct BotRoutineRow: View, Equatable {
+    let routine: BotRoutine
+    let botName: String
+    let isRemoving: Bool
+    let onRemove: () -> Void
+    @State private var isHovering = false
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.routine == rhs.routine && lhs.botName == rhs.botName && lhs.isRemoving == rhs.isRemoving
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            LucideImage(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(routine.enabled ? Color.dockAccent : Color.dockMetadataText)
+                .frame(width: 28, height: 44)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(routine.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                    if !routine.enabled {
+                        Text("DISABLED")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                }
+                HStack(spacing: 5) {
+                    Text(botName)
+                    Text("·")
+                    Text(routine.schedule)
+                    if let prompt = routine.prompt?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty {
+                        Text("·")
+                        Text(prompt)
+                    }
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Menu {
+                Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
+            } label: {
+                LucideImage(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(isRemoving)
+            .help("More routine actions")
+        }
+        .padding(.horizontal, DockLayout.compactInset)
+        .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+        .background(isHovering ? Color.dockSurface4 : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
+                .disabled(isRemoving)
+        }
+    }
+}
+
 struct MissionControlBotRow: View, Equatable {
     let bot: BotSummary
     let avatarData: Data?
-    let isSelected: Bool
     let onSelect: () -> Void
+    var onOpenRecentSession: (() -> Void)?
     var onEdit: (() -> Void)?
     var onShowActivity: (() -> Void)?
     var onDuplicate: (() -> Void)?
     var onToggleHidden: (() -> Void)?
-    var columns = BotRosterColumns()
+    @FocusState private var isFocused: Bool
     @State private var isHovering = false
 
-    init(bot: BotSummary, avatarData: Data? = nil, isSelected: Bool, onSelect: @escaping () -> Void, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil, columns: BotRosterColumns = BotRosterColumns()) {
+    init(bot: BotSummary, avatarData: Data? = nil, onSelect: @escaping () -> Void, onOpenRecentSession: (() -> Void)? = nil, onEdit: (() -> Void)? = nil, onShowActivity: (() -> Void)? = nil, onDuplicate: (() -> Void)? = nil, onToggleHidden: (() -> Void)? = nil) {
         self.bot = bot
         self.avatarData = avatarData
-        self.isSelected = isSelected
         self.onSelect = onSelect
+        self.onOpenRecentSession = onOpenRecentSession
         self.onEdit = onEdit
         self.onShowActivity = onShowActivity
         self.onDuplicate = onDuplicate
         self.onToggleHidden = onToggleHidden
-        self.columns = columns
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData && lhs.isSelected == rhs.isSelected && lhs.columns == rhs.columns
+        lhs.bot == rhs.bot && lhs.avatarData == rhs.avatarData
     }
 
     var body: some View {
-        HStack(spacing: BotRosterColumns.columnSpacing) {
-            identity
-                .frame(width: columns.identity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                BotAvatarView(bot: bot, imageData: avatarData, size: 44)
+                    .overlay(alignment: .bottomTrailing) {
+                        if bot.isWorkingNow || bot.isRecentlyActive {
+                            Circle()
+                                .fill(Color.dockAccent)
+                                .frame(width: 9, height: 9)
+                                .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 1.5))
+                        }
+                    }
+                identity
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                actions
+                    .opacity(isHovering || isFocused ? 1 : 0)
+                    .allowsHitTesting(isHovering || isFocused)
+                    .accessibilityHidden(!(isHovering || isFocused))
+            }
             activity
-                .frame(maxWidth: .infinity, alignment: .leading)
-            metadata
-                .frame(width: columns.metadata, alignment: .trailing)
-            actions
-                .frame(width: columns.actions, alignment: .trailing)
+                .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
+            HStack(spacing: 6) {
+                if let lastActive = bot.lastActive {
+                    Text(lastActive, style: .relative)
+                        .lineLimit(1)
+                } else {
+                    Text("No activity time")
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if let modelLabel {
+                    Text(modelLabel)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(Color.dockMetadataText)
         }
-        .padding(.horizontal, DockLayout.compactInset)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
         .background(rowBackground)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
+        .onTapGesture(perform: onSelect)
+        .onKeyPress(.return) { onSelect(); return .handled }
+        .onKeyPress(.space) { onSelect(); return .handled }
+        .focusable()
+        .focused($isFocused)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Opens the canonical Bot chat")
         .contextMenu {
             Button("Open Chat") { onSelect() }
+            if let onOpenRecentSession {
+                Button("Open Recent Session", action: onOpenRecentSession)
+            }
             Button("Show Activity") { onShowActivity?() }
             Button("Edit Profile…") { onEdit?() }
             Button("Duplicate…") { onDuplicate?() }
@@ -800,111 +968,87 @@ struct MissionControlBotRow: View, Equatable {
     }
 
     private var identity: some View {
-        HStack(spacing: 9) {
-            ZStack(alignment: .bottomTrailing) {
-                BotAvatarView(bot: bot, imageData: avatarData, size: 32)
-                if bot.isRecentlyActive {
-                    Circle()
-                        .fill(Color.dockAccent)
-                        .frame(width: 8, height: 8)
-                        .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 1.5))
-                }
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(bot.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(bot.isHidden ? Color.dockSecondaryText : Color.dockPrimaryText)
-                        .lineLimit(1)
-                    if bot.isDefault {
-                        Text("DEFAULT")
-                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(Color.dockMetadataText)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.dockSurface4)
-                            .clipShape(Capsule())
-                    }
-                }
-                Text(BotRosterPresentation.role(for: bot))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
-            }
-        }
-    }
-
-    private var activity: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(bot.isRecentlyActive ? "RECENT ACTIVITY" : "LAST ACTIVITY")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(0.65)
-                .foregroundStyle(bot.isRecentlyActive ? Color.dockAccent : Color.dockMetadataText)
-            Text(BotRosterPresentation.activity(for: bot))
+            HStack(spacing: 6) {
+                Text(bot.name)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(bot.isHidden ? Color.dockSecondaryText : Color.dockPrimaryText)
+                    .lineLimit(1)
+                if bot.isDefault {
+                    Text("Default")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+            }
+            Text(BotRosterPresentation.role(for: bot))
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockSecondaryText)
                 .lineLimit(1)
         }
     }
 
-    private var metadata: some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            Text(KanbanModelMetadataPresentation.make(taskModel: nil, taskProvider: nil, bot: bot).label)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.dockSecondaryText)
-                .lineLimit(1)
-            if let timestamp = bot.lastActive {
-                Text(timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
-            } else {
-                Text("No activity timestamp")
-                    .font(.system(size: 11, design: .monospaced))
+    private var activity: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(BotRosterPresentation.activity(for: bot))
+                .font(.system(size: 12))
+                .foregroundStyle(bot.isWorkingNow || bot.isRecentlyActive ? Color.dockAccent : Color.dockSecondaryText)
+                .lineLimit(2)
+            if bot.isHidden {
+                Text("Hidden Bot")
+                    .font(.system(size: 11))
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
             }
         }
     }
 
-    private var actions: some View {
-        HStack(spacing: 0) {
-            Button(action: onSelect) {
-                LucideImage(systemName: "text.bubble")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .buttonStyle(.dockPress)
-            .dockHitTarget()
-            .help("Open \(bot.name) chat")
-            .accessibilityLabel("Open \(bot.name) chat")
-
-            Button { onShowActivity?() } label: {
-                LucideImage(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .buttonStyle(.dockPress)
-            .dockHitTarget()
-            .help("Show \(bot.name) activity")
-            .accessibilityLabel("Show \(bot.name) activity")
-
-            Button { onEdit?() } label: {
-                LucideImage(systemName: "gearshape")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .buttonStyle(.dockPress)
-            .dockHitTarget()
-            .help("Edit \(bot.name) profile")
-            .accessibilityLabel("Edit \(bot.name) profile")
+    private var modelLabel: String? {
+        let provider = bot.provider?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? bot.provider?.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+        let model = bot.model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? bot.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+            : nil
+        switch (provider, model) {
+        case let (provider?, model?): return "\(provider) / \(model)"
+        case let (provider?, nil): return provider
+        case let (nil, model?): return model
+        default: return nil
         }
+    }
+
+    private var actions: some View {
+        Menu {
+            Button("Open Chat", systemImage: "text.bubble") { onSelect() }
+            if let onOpenRecentSession {
+                Button("Open Recent Session", systemImage: "clock", action: onOpenRecentSession)
+            }
+            Button("Show Activity", systemImage: "clock.arrow.circlepath") { onShowActivity?() }
+            Button("Edit Profile…", systemImage: "gearshape") { onEdit?() }
+            Button("Duplicate…", systemImage: "plus.square.on.square") { onDuplicate?() }
+            Divider()
+            Button(bot.isHidden ? "Unhide Bot" : "Hide Bot", systemImage: bot.isHidden ? "eye" : "eye.slash") { onToggleHidden?() }
+        }
+        label: {
+            LucideImage(systemName: "ellipsis")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color.dockSecondaryText)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .dockHitTarget()
+        .help("More actions for \(bot.name)")
+        .accessibilityLabel("More actions for \(bot.name)")
         .foregroundStyle(Color.dockSecondaryText)
     }
 
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-            .fill(isSelected ? Color.dockAccentMuted : (isHovering ? Color.dockSurface4 : Color.clear))
+            .fill(isHovering || isFocused ? Color.dockSurface4 : Color.dockSurface2)
             .overlay {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .stroke(isSelected ? Color.dockAccent.opacity(0.42) : (isHovering ? Color.dockBorder : Color.clear), lineWidth: DockLayout.hairline)
+                    .stroke(isFocused ? Color.dockAccent : Color.dockBorderLight, lineWidth: isFocused ? 1.5 : DockLayout.hairline)
             }
     }
 }

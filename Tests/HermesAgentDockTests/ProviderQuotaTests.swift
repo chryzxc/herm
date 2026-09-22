@@ -3,6 +3,50 @@ import Testing
 @testable import HermesAgentDock
 
 struct ProviderQuotaTests {
+    @Test func quotaWorkspaceSortsWorstHealthFirstWithCatalogTieBreakers() {
+        let healthy = ProviderQuotaSnapshot(
+            provider: "codex",
+            displayName: "Codex",
+            model: nil,
+            updatedAt: .now,
+            windows: [ProviderQuotaWindow(id: "weekly", label: "Weekly", remainingPercent: 80, remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)],
+            safeDetail: nil
+        )
+        let warning = ProviderQuotaSnapshot(
+            provider: "claude",
+            displayName: "Claude",
+            model: nil,
+            updatedAt: .now,
+            windows: [ProviderQuotaWindow(id: "weekly", label: "Weekly", remainingPercent: 20, remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)],
+            safeDetail: nil
+        )
+        let critical = ProviderQuotaSnapshot(
+            provider: "glm",
+            displayName: "GLM",
+            model: nil,
+            updatedAt: .now,
+            windows: [ProviderQuotaWindow(id: "session", label: "Session", remainingPercent: 5, remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)],
+            safeDetail: nil
+        )
+        let unknown = ProviderQuotaSnapshot(
+            provider: "opencode",
+            displayName: "OpenCode",
+            model: nil,
+            updatedAt: .now,
+            windows: [],
+            safeDetail: nil
+        )
+
+        #expect(QuotaWorkspacePresentation.sortedConnected([healthy, unknown, warning, critical]).map(\.provider) == ["glm", "claude", "opencode", "codex"])
+        #expect(QuotaWorkspacePresentation.needsAttention(critical))
+        #expect(!QuotaWorkspacePresentation.needsAttention(unknown))
+    }
+
+    @Test func quotaWorkspaceOverviewSentenceHandlesCountsAndAvailableProviders() {
+        #expect(QuotaWorkspacePresentation.overviewSentence(providerCount: 6, connectedCount: 3, attentionCount: 0) == "3 connected · 0 need attention · 3 available to connect")
+        #expect(QuotaWorkspacePresentation.overviewSentence(providerCount: 2, connectedCount: 1, attentionCount: 1) == "1 connected · 1 needs attention · 1 available to connect")
+    }
+
     @MainActor
     @Test func parsesBoundedQuotaWindowsAndDropsInvalidValues() {
         let snapshot = ControlCenterModel.parseProviderQuota([
