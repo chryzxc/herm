@@ -243,15 +243,14 @@ struct SessionActivityOverviewView: View {
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "kanban.session") }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             pageHeader
             if !snapshot.hasContent {
                 unifiedEmptyState
             } else {
-                summaryRail
-                agentsSection
-                currentWorkSection
-                recentActivitySection
+                if !snapshot.work.isEmpty || refreshState?.error != nil { currentWorkSection }
+                if !snapshot.agents.isEmpty { agentsSection }
+                if !snapshot.timeline.isEmpty { recentActivitySection }
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -260,14 +259,9 @@ struct SessionActivityOverviewView: View {
 
     private var pageHeader: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Session Activity")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                Text(activityStateLabel)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(activityStateColor)
-            }
+            Text(refreshState?.error != nil ? "Couldn’t refresh activity" : "Session activity")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(refreshState?.error != nil ? Color.dockWarning : Color.dockSecondaryText)
             Spacer(minLength: 8)
             Button { Task { await refreshActivity() } } label: {
                 Group {
@@ -290,38 +284,14 @@ struct SessionActivityOverviewView: View {
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private var summaryRail: some View {
-        HStack(spacing: 0) {
-            summaryMetric("LIVE AGENTS", value: "\(snapshot.liveAgentCount)")
-            Divider().frame(height: 28).overlay(Color.dockBorderLight)
-            summaryMetric("ACTIVE WORK", value: "\(snapshot.work.count)")
-            Divider().frame(height: 28).overlay(Color.dockBorderLight)
-            summaryMetric("BLOCKED", value: "\(snapshot.blockedWorkCount)")
-            Divider().frame(height: 28).overlay(Color.dockBorderLight)
-            summaryMetric("EVENTS", value: "\(snapshot.timeline.count)")
-        }
-        .padding(.vertical, 10)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-    }
-
-    private func summaryMetric(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.dockPrimaryText)
-            Text(label)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 8)
-    }
-
     private var agentsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Active Agents", detail: "\(visibleAgents.count) / \(snapshot.agents.count)") {
+            sectionHeader("Agents", detail: "") {
                 Menu {
+                    Picker("Scope", selection: $agentScope) {
+                        ForEach(AgentScope.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    Divider()
                     ForEach(AgentView.allCases) { view in
                         Button(view.rawValue) { agentView = view }
                     }
@@ -339,7 +309,6 @@ struct SessionActivityOverviewView: View {
                 .menuStyle(.borderlessButton)
                 .accessibilityLabel("Agent view: \(agentView.rawValue)")
             }
-            scopePicker
             if agentView == .map {
                 AgentHandoffMapView(
                     model: model,
@@ -356,23 +325,6 @@ struct SessionActivityOverviewView: View {
                 }
             }
         }
-    }
-
-    private var scopePicker: some View {
-        HStack(spacing: 0) {
-            ForEach(AgentScope.allCases) { scope in
-                Button(scope.rawValue) { agentScope = scope }
-                    .font(.system(size: 11, weight: agentScope == scope ? .semibold : .regular))
-                    .foregroundStyle(agentScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
-                    .frame(width: 52, height: 30)
-                    .background(agentScope == scope ? Color.dockAccentMuted : Color.clear)
-                    .buttonStyle(.borderless)
-                    .accessibilityAddTraits(agentScope == scope ? .isSelected : [])
-            }
-        }
-        .padding(2)
-        .background(Color.dockSurface4.opacity(0.55))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 
     private func agentRow(_ row: SessionActivityOverviewPresentation.AgentRow) -> some View {
@@ -446,7 +398,7 @@ struct SessionActivityOverviewView: View {
 
     private var currentWorkSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Current Work", detail: refreshState?.isStale == true ? "STALE" : "\(snapshot.work.count) ITEMS") { EmptyView() }
+            sectionHeader("In progress", detail: "") { EmptyView() }
             if snapshot.work.isEmpty {
                 compactEmpty(refreshState?.error == nil ? "No session-attributed work is active." : "Session work is unavailable; retry to refresh.")
             } else {
@@ -500,7 +452,7 @@ struct SessionActivityOverviewView: View {
 
     private var recentActivitySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Recent Activity", detail: "LATEST \(min(timelineLimit, snapshot.timeline.count)) / \(snapshot.timeline.count)") { EmptyView() }
+            sectionHeader("Recent", detail: "") { EmptyView() }
             if snapshot.timeline.isEmpty {
                 compactEmpty("No activity events have been received yet.")
             } else {
@@ -549,14 +501,15 @@ struct SessionActivityOverviewView: View {
                             Text(row.actor).lineLimit(1)
                             if let timestamp = row.timestamp { Text("·"); Text(HumanDateFormatting.timeOnly(timestamp)).monospacedDigit() }
                         }
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundStyle(statusColor(row.status))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
                     }
                     Spacer(minLength: 4)
                     LucideImage(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 9)
+                .padding(.vertical, 10)
+                .frame(minHeight: 48)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
@@ -586,7 +539,7 @@ struct SessionActivityOverviewView: View {
 
     private func sectionHeader<T: View>(_ title: String, detail: String, @ViewBuilder trailing: () -> T) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(Color.dockSecondaryText)
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 4)
             Text(detail).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
             trailing()
@@ -643,18 +596,6 @@ struct SessionActivityOverviewView: View {
         if seconds < 60 { return "\(seconds)s" }
         if seconds < 3_600 { return "\(seconds / 60)m \(seconds % 60)s" }
         return "\(seconds / 3_600)h \((seconds % 3_600) / 60)m"
-    }
-
-    private var activityStateLabel: String {
-        if refreshState?.error != nil { return refreshState?.isStale == true ? "STALE" : "UNAVAILABLE" }
-        if snapshot.liveAgentCount > 0 || !snapshot.work.isEmpty { return "LIVE" }
-        return "WAITING FOR HERMES"
-    }
-
-    private var activityStateColor: Color {
-        if refreshState?.error != nil { return .dockWarning }
-        if activityStateLabel == "LIVE" { return .dockSuccess }
-        return .dockMetadataText
     }
 
     private func refreshActivity() async {

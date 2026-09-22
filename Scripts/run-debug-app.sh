@@ -76,9 +76,13 @@ if pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
 fi
 
 echo "[3/4] Replacing and signing the debug app bundle..."
-mkdir -p "$APP_PATH/Contents/MacOS"
+mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$EXECUTABLE_PATH" "$APP_PATH/Contents/MacOS/HermesAgentDock"
 cp "$PROJECT_DIR/Sources/HermesAgentDock/Info.plist" "$APP_PATH/Contents/Info.plist"
+cp "$PROJECT_DIR/Sources/HermesAgentDock/Resources/DockAppIcon.icns" "$APP_PATH/Contents/Resources/DockAppIcon.icns"
+# Keep SwiftPM image resources inside the signed app so it remains self-contained.
+cp -R "$BUILD_DIR/HermesAgentDock_HermesAgentDock.bundle" "$APP_PATH/Contents/Resources/"
+cp -Rf "$BUILD_DIR/SwiftTerm_SwiftTerm.bundle" "$APP_PATH/Contents/Resources/"
 # `cp` can retain a restrictive mode from an older bundle. Launch Services
 # requires the bundle executable to be discoverable as a normal app binary.
 chmod 755 "$APP_PATH/Contents/MacOS/HermesAgentDock"

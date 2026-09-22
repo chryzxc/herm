@@ -166,7 +166,7 @@ struct OfficePreviewView: View {
 
     private var selectedBot: BotSummary? {
         guard case .agent(let id) = selection else { return nil }
-        return bots.first(where: { $0.id == id && !$0.isDefault })
+        return bots.first(where: { $0.id == id })
     }
 
     private var assignableTasks: [KanbanTaskSummary] {

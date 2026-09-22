@@ -3,13 +3,38 @@ import Testing
 @testable import HermesAgentDock
 
 struct LocalTerminalSessionTests {
-    @Test func terminalSurfaceDoesNotExposeFreeFormCommandDispatch() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/HermesAgentDock/SessionWorkspace/SessionWorkspaceTools.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        #expect(!source.contains("terminal.submit("))
-        #expect(!source.contains("commandInput"))
+    @MainActor @Test func terminalRendererAppliesCursorMovementAndColors() {
+        let terminal = LocalTerminalSession()
+        terminal.emulator.view.feed(text: "hello\r\u{1b}[31mworld\u{1b}[0m")
+        let line = terminal.emulator.view.getTerminal().getLine(row: 0)?.translateToString(trimRight: true)
+        #expect(line == "world")
+    }
+
+    @MainActor @Test func commandsRequireAnOpenShell() {
+        let terminal = LocalTerminalSession()
+        #expect(!terminal.submitCommand("pwd"))
+        #expect(terminal.commandHistory.isEmpty)
+        #expect(terminal.lastVerificationRun == nil)
+    }
+
+    @MainActor @Test func interactiveCommandUsesWorkingDirectoryWithoutVerificationEvidence() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let terminal = LocalTerminalSession()
+        terminal.start(directory: directory.path)
+        defer { terminal.close() }
+        // Send actual keystrokes, including backspace and Return, through the PTY.
+        terminal.sendInput(Array("printf inspector-test > result.txX\u{7f}t\r".utf8)[...])
+        let result = directory.appendingPathComponent("result.txt")
+        for _ in 0..<100 {
+            if FileManager.default.fileExists(atPath: result.path) { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(try String(contentsOf: result, encoding: .utf8) == "inspector-test")
+        #expect(terminal.lastVerificationRun == nil)
+        terminal.close()
+        #expect(!terminal.submitCommand("pwd"))
     }
 
     @MainActor @Test func missingProjectDirectoryFailsClosed() {
@@ -63,7 +88,7 @@ struct LocalTerminalSessionTests {
         #expect(LocalTerminalSession.maxOutputLines == 2_000)
     }
 
-    @Test func arbitraryTerminalCommandsAreRejectedBeforeDispatch() {
+    @Test func arbitraryCommandsCannotBecomeVerificationRecipes() {
         let allowed = VerificationRecipe(id: "test:swift test", title: "Run tests", command: "swift test", kind: .test, workingDirectory: "/tmp", source: "Hermes project facts")
         let arbitrary = VerificationRecipe(id: "arbitrary", title: "No", command: "rm -rf .", kind: .custom, workingDirectory: "/tmp", source: "user input")
 

@@ -14,6 +14,7 @@ struct SessionInspector: View {
     @State private var hoveredSection: Section?
     @State private var isSwitchingBranch = false
     @StateObject private var preferences = CommandCenterPreferencesStore()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let sessionTabFont = Font.system(size: 12, weight: .semibold)
 
@@ -29,7 +30,7 @@ struct SessionInspector: View {
             case .files: "Explorer"
             case .terminal: "Terminal"
             case .activity: "Activity"
-            case .changes: "Source Control"
+            case .changes: "Changes"
             }
         }
         var icon: String {
@@ -67,12 +68,17 @@ struct SessionInspector: View {
                 }
             }
 
-            ScrollView {
+            if selectedSection == .terminal {
                 inspectorContent
-                    .padding(.horizontal, DockLayout.compactInset)
-                    .padding(.top, selectedSection == .activity ? DockLayout.tight : DockLayout.compactInset)
-                    .padding(.bottom, DockLayout.compactInset)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    inspectorContent
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -98,25 +104,21 @@ struct SessionInspector: View {
 
     private func sectionButton(_ section: Section) -> some View {
         Button {
-            withAnimation(.dockEase(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
                 selectedSection = section
             }
         } label: {
             HStack(spacing: 5) {
-                LucideImage(systemName: section.icon)
-                    .font(.system(size: 14, weight: .medium))
                 Text(section.navigationTitle)
                     .lineLimit(1)
             }
                 .font(sessionTabFont)
                 .foregroundStyle(selectedSection == section ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .frame(minWidth: 82, minHeight: 40)
-                .background(hoveredSection == section && selectedSection != section ? Color.dockSurface2.opacity(0.45) : Color.clear)
-                .overlay(alignment: .bottom) {
-                    if selectedSection == section {
-                        Color.dockAccent.frame(height: 2)
-                    }
-                }
+                .padding(.horizontal, 10)
+                .frame(minHeight: 32)
+                .background(selectedSection == section ? Color.dockAccentMuted : hoveredSection == section ? Color.dockSurface2 : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
@@ -125,6 +127,7 @@ struct SessionInspector: View {
             hoveredSection = isHovering ? section : nil
         }
         .accessibilityLabel("Show \(section.rawValue)")
+        .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
     }
 
     private var inspectorHeader: some View {
@@ -175,7 +178,6 @@ struct SessionInspector: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         case .files:
             VStack(alignment: .leading, spacing: 14) {
-                inspectorLabel("PROJECT FILES")
                 SessionFilesView(
                     projectPath: sessionRepositoryPath,
                     onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
@@ -187,7 +189,8 @@ struct SessionInspector: View {
                 model: model,
                 workflow: workflow,
                 projectPath: sessionRepositoryPath,
-                onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
+                onRefresh: { await workflow.refresh(preferences: preferences, control: control) },
+                isInspector: true
             )
         case .terminal:
             SessionTerminalView(

@@ -302,6 +302,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private var lastLeisureTick: TimeInterval = 0
         private var screens: [Int: ModelEntity] = [:]
         private var poweredScreens: Set<Int> = []
+        private var interactionPlan = OfficePreviewInteractionPlan()
 
         init(onSelectAgent: @escaping (String) -> Void) { self.onSelectAgent = onSelectAgent }
 
@@ -413,13 +414,13 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             lastDataCurrent = isDataCurrent
             lastPresentations = visibleAgents
             let oldCapacity = roomLayout.capacity
-            let oldSlots = roomLayout.slots
             roomLayout.reconcile(ids: visibleAgents.map(\.id), mainAgentID: mainOfficeOwner(in: visibleAgents), reserveMainOffice: true)
             if oldCapacity != roomLayout.capacity {
                 rebuildRoom()
                 if wholeOfficePreset && !manuallyMovedCamera { resetCamera(reduceMotion: true, wholeOffice: true) }
             }
             desiredAgents = Dictionary(uniqueKeysWithValues: visibleAgents.map { ($0.id, $0) })
+            interactionPlan = isDataCurrent ? .make(agents: visibleAgents) : OfficePreviewInteractionPlan()
             for id in Array(avatarRoots.keys) where desiredAgents[id] == nil {
                 movementTasks.removeValue(forKey: id)?.cancel()
                 avatarRoots.removeValue(forKey: id)?.removeFromParent()
@@ -443,7 +444,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     avatarRoots[agent.id] = root
                     anchor.addChild(root)
                 }
-                if isNew || reduceMotion || oldSlots[agent.id] != slot {
+                if isNew || reduceMotion {
                     movementTasks.removeValue(forKey: agent.id)?.cancel()
                     root.stopAllAnimations()
                     currentNodes[agent.id] = destination
@@ -464,13 +465,13 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         }
 
         private func destination(for agent: OfficePreviewAgentPresentation, slot: Int) -> OfficePreviewLayout.Node {
-            if agent.canWander, let target = leisureTargets[agent.id] { return target }
-            if agent.canWander, let authored = roomLayout.authored, !authored.leisureSpots.isEmpty {
-                // Taskless bots begin with a distinct indoor activity instead
-                // of filling the small patio's lounge seats.
-                let index = Int(agent.identitySeed % UInt64(authored.leisureSpots.count))
-                return OfficePreviewLayout.Node(slot: slot, index: 0, isStation: true, leisureIndex: index)
+            if let seat = interactionPlan.stations[agent.id] {
+                return roomLayout.node(slot: seat, location: agent.location)
             }
+            if agent.canWander, let target = leisureTargets[agent.id] { return target }
+            // Every bot owns a unique home. Shared leisure seats are claimed
+            // only when walking there, never used as overlapping spawn points.
+            if agent.canWander { return roomLayout.node(slot: slot, location: .desk) }
             return roomLayout.node(slot: slot, location: agent.location)
         }
 
@@ -481,16 +482,15 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private func updateLeisure() {
             guard let authored = roomLayout.authored else { return }
             for agent in desiredAgents.values.sorted(by: { $0.id < $1.id }) where agent.canWander && movementTasks[agent.id] == nil {
-                guard dataCurrent(for: agent) else { continue }
                 guard let slot = roomLayout.slots[agent.id], let current = currentNodes[agent.id] else { continue }
-                if nextLeisureChange[agent.id] == nil { nextLeisureChange[agent.id] = animationTime + 5 + Double(agent.identitySeed % 12) }
+                if nextLeisureChange[agent.id] == nil { nextLeisureChange[agent.id] = animationTime + 2 + Double(agent.identitySeed % 5) }
                 guard animationTime >= nextLeisureChange[agent.id, default: .infinity] else { continue }
                 // Reserve destinations and still-occupied seats until their occupant
                 // has left. Leisure never changes Hermes tasks or their ordering.
                 let reserved = Set(leisureTargets.filter { $0.key != agent.id }.values.compactMap(\.leisureIndex)
                     + currentNodes.filter { $0.key != agent.id }.values.compactMap(\.leisureIndex))
-                var target = destination(for: agent, slot: slot)
-                if current.leisureIndex == nil || agent.identitySeed % 3 != UInt64(Int(animationTime) % 3) {
+                var target = roomLayout.node(slot: slot, location: .desk)
+                do {
                     let count = authored.leisureSpots.count
                     if count > 0 {
                         let start = Int(agent.identitySeed % UInt64(count)) + Int(animationTime / 20)
@@ -503,7 +503,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     }
                 }
                 leisureTargets[agent.id] = target
-                nextLeisureChange[agent.id] = animationTime + 25 + Double(agent.identitySeed % 20)
+                nextLeisureChange[agent.id] = animationTime + 8 + Double(agent.identitySeed % 7)
                 if current != target, let root = avatarRoots[agent.id] { movementTasks[agent.id] = move(root, id: agent.id, delay: 0) }
             }
         }
@@ -554,7 +554,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 while let agent = self.desiredAgents[id], let node = self.currentNodes[id],
                       let slot = self.roomLayout.slots[id] {
                     guard !Task.isCancelled else { return }
-                    if !self.dataCurrent(for: agent) || self.view?.window?.isVisible != true {
+                    if (!self.dataCurrent(for: agent) && !agent.canWander) || self.view?.window?.isVisible != true {
                         do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
                         continue
                     }
@@ -562,7 +562,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     if node == destination {
                         self.applyStationaryPose(agent: agent, root: root, time: 0)
                         self.movementTasks[id] = nil
-                        if agent.canWander { self.nextLeisureChange[id] = self.animationTime + 25 + Double(agent.identitySeed % 20) }
+                        if agent.canWander { self.nextLeisureChange[id] = self.animationTime + 8 + Double(agent.identitySeed % 7) }
                         self.updateComputers()
                         self.layoutLabels()
                         return
@@ -600,7 +600,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                         let now = clock.now
                         let elapsed = lastTick.duration(to: now)
                         lastTick = now
-                        let visible = self.dataCurrent(for: agent) && self.view?.window?.occlusionState.contains(.visible) == true
+                        let visible = (self.dataCurrent(for: agent) || agent.canWander) && self.view?.window?.occlusionState.contains(.visible) == true
                         if !visible {
                             do { try await Task.sleep(for: .milliseconds(100)) } catch { return }
                             continue
@@ -648,7 +648,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 updateComputers()
             }
             for (id, agent) in desiredAgents where movementTasks[id] == nil {
-                guard dataCurrent(for: agent) else { continue }
+                guard dataCurrent(for: agent) || agent.canWander else { continue }
                 applyActionLoop(agent: agent, time: animationTime)
             }
         }
@@ -658,7 +658,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             guard let limbs = limbEntities[agent.id], let visual = characterVisuals[agent.id] else { return }
             let slot = roomLayout.slots[agent.id] ?? 0
             let leisure = currentNodes[agent.id]?.leisureIndex.flatMap { roomLayout.authored?.leisureSpots[$0] }
-            root.orientation = simd_quatf(angle: leisure?.station.yaw ?? roomLayout.yaw(slot: slot, location: agent.location), axis: [0, 1, 0])
+            root.orientation = simd_quatf(angle: leisure?.station.yaw ?? roomLayout.yaw(slot: currentNodes[agent.id]?.slot ?? slot, location: OfficePreviewLayout.locations[currentNodes[agent.id]?.index ?? 0]), axis: [0, 1, 0])
             if isSeated(agent) {
                 visual.position.y = 0.30
                 for leg in [limbs.leftLeg, limbs.rightLeg] {
@@ -673,7 +673,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             guard agent.phase.isSeated else { return false }
             if let index = currentNodes[agent.id]?.leisureIndex { return roomLayout.authored?.leisureSpots[index].station.seated ?? false }
             let slot = roomLayout.slots[agent.id] ?? 0
-            return roomLayout.authored?.station(slot: slot, location: agent.location).seated ?? true
+            return roomLayout.authored?.station(slot: currentNodes[agent.id]?.slot ?? slot, location: OfficePreviewLayout.locations[currentNodes[agent.id]?.index ?? 0]).seated ?? true
         }
 
         private func applyActionLoop(agent: OfficePreviewAgentPresentation, time: TimeInterval) {
@@ -694,6 +694,18 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 case .socializing: limbs.rightArm.orientation = simd_quatf(angle: -0.7 + wave * 0.3, axis: [1, 0, 0])
                 case .strolling: visual.orientation = simd_quatf(angle: wave * 0.12, axis: [0, 1, 0])
                 }
+                return
+            }
+            // Exchange gestures only once both colleagues have arrived. Work
+            // continues to display the original task and reported status.
+            if let partnerID = interactionPlan.partners[agent.id],
+               movementTasks[partnerID] == nil, let peer = avatarRoots[partnerID],
+               let root = avatarRoots[agent.id], simd_distance(root.position, peer.position) < 4 {
+                let delta = peer.position - root.position
+                root.orientation = simd_quatf(angle: atan2(delta.x, delta.z), axis: [0, 1, 0])
+                let speaking = (Int(time / 3) % 2 == 0) == (agent.id < partnerID)
+                limbs.rightArm.orientation = simd_quatf(angle: speaking ? -0.7 + wave * 0.22 : -0.3, axis: [1, 0, 0])
+                limbs.leftArm.orientation = simd_quatf(angle: -0.4, axis: [1, 0, 0])
                 return
             }
             switch agent.phase {

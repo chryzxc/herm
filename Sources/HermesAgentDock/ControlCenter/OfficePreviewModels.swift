@@ -329,12 +329,12 @@ enum OfficePreviewResolver {
         }
     }
 
-    static func agents(bots: [BotSummary], tasks: [KanbanTaskSummary]) -> [OfficePreviewAgentPresentation] {
+    static func agents(bots: [BotSummary], tasks: [KanbanTaskSummary], includeDefault: Bool = false) -> [OfficePreviewAgentPresentation] {
         let byAssignee = Dictionary(grouping: tasks.map(OfficePreviewTaskData.init), by: { $0.assignee ?? "" })
         var seen = Set<String>()
         // The office is a roster view: hidden profiles remain intentionally
         // absent from selectors but keep their physical desk here.
-        return bots.filter { !$0.isDefault && seen.insert($0.id).inserted }.sorted { $0.id < $1.id }.map {
+        return bots.filter { (includeDefault || !$0.isDefault) && seen.insert($0.id).inserted }.sorted { $0.id < $1.id }.map {
             OfficePreviewAgentPresentation(id: $0.id, name: $0.name, tasks: ordered(byAssignee[$0.id] ?? []))
         }
     }
@@ -369,9 +369,43 @@ final class OfficePreviewSimulation: ObservableObject {
             .sorted { $0.id < $1.id }.map {
                 OfficePreviewAgentPresentation(id: "main-session:\($0.id)", name: "Nexus · \($0.title)", tasks: [], mainSession: $0)
             }
-        let next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks)
+        let next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: main.isEmpty)
         if next != agents { agents = next }
         let lanes = OfficePreviewResolver.board(tasks: tasks)
         if lanes != board { board = lanes }
+    }
+}
+
+/// Visual conversations only: a shared board and reported planning/review phase
+/// connect colleagues. This never assigns work or fabricates a task handoff.
+struct OfficePreviewInteractionPlan {
+    var partners: [String: String] = [:]
+    var stations: [String: Int] = [:]
+
+    static func make(agents: [OfficePreviewAgentPresentation]) -> Self {
+        var plan = Self()
+        for phase in [OfficePreviewPhase.planning, .reviewing] {
+            let participants = agents.filter { $0.mainSession == nil && $0.phase == phase }
+                .sorted {
+                    let left = $0.taskData?.boardSlug ?? ""
+                    let right = $1.taskData?.boardSlug ?? ""
+                    return left == right ? $0.id < $1.id : left < right
+                }
+            var seat = 0
+            var remaining = participants
+            while !remaining.isEmpty {
+                let first = remaining.removeFirst()
+                plan.stations[first.id] = seat
+                seat += 1
+                guard let board = first.taskData?.boardSlug, !board.isEmpty,
+                      let index = remaining.firstIndex(where: { $0.taskData?.boardSlug == board }) else { continue }
+                let second = remaining.remove(at: index)
+                plan.stations[second.id] = seat
+                seat += 1
+                plan.partners[first.id] = second.id
+                plan.partners[second.id] = first.id
+            }
+        }
+        return plan
     }
 }

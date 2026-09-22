@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 @MainActor
 final class ControlCenterModel: ObservableObject {
@@ -110,6 +111,60 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var projectionRefreshStates: [String: ProjectionRefreshState] = [:]
     @Published private(set) var projectionStates: [String: HermesProjectionState<Int>] = [:]
+
+    /// Presentation-only invalidation for the left navigation rail. The
+    /// control center still publishes its complete object change stream to
+    /// destinations that need it, while the rail listens to this narrow set.
+    var sidebarPresentationChanges: AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            $attention.map { _ in () }.eraseToAnyPublisher(),
+            $activeSessions.map { _ in () }.eraseToAnyPublisher(),
+            $latestActivities.map { _ in () }.eraseToAnyPublisher(),
+            $projects.map { _ in () }.eraseToAnyPublisher(),
+            $projectIDBySessionID.map { _ in () }.eraseToAnyPublisher(),
+            $projectSessionsByProjectID.map { _ in () }.eraseToAnyPublisher(),
+            $projectProfileID.map { _ in () }.eraseToAnyPublisher(),
+            $isRefreshing.map { _ in () }.eraseToAnyPublisher(),
+            $isRefreshingProjectNavigation.map { _ in () }.eraseToAnyPublisher()
+        ).eraseToAnyPublisher()
+    }
+
+    /// Installs deterministic navigation data for local scroll profiling. It
+    /// never runs in production because the caller gates it on the debug flag.
+    func installScrollPerformanceFixture(_ fixture: ScrollPerformanceFixture) {
+        let sessions = fixture.sessions.map {
+            SessionSummary(
+                id: $0.id,
+                title: $0.title,
+                state: "completed",
+                preview: $0.preview,
+                updatedAt: $0.updatedAt,
+                profileID: $0.profileID
+            )
+        }
+        let projectsPerGroup = max(1, fixture.projectCount)
+        projects = (0..<projectsPerGroup).map { index in
+            let members = sessions.enumerated().compactMap { offset, session in
+                offset % projectsPerGroup == index ? session.id : nil
+            }
+            return ProjectSummary(
+                id: "scroll-fixture-project-\(index)",
+                name: "Fixture project \(index)",
+                repoCount: 1,
+                sessionCount: members.count,
+                sessionIDs: Set(members),
+                preview: "Performance fixture",
+                isActive: index == 0
+            )
+        }
+        projectIDBySessionID = Dictionary(uniqueKeysWithValues: sessions.enumerated().map { offset, session in
+            (session.id, "scroll-fixture-project-\(offset % projectsPerGroup)")
+        })
+        projectSessionsByProjectID = Dictionary(grouping: sessions) { session in
+            projectIDBySessionID[session.id] ?? "scroll-fixture-project-0"
+        }
+        activeSessions = Array(sessions.prefix(24))
+    }
 
     private weak var dockModel: DockModel?
     private var rpc: HermesControlRPC?
@@ -821,8 +876,6 @@ final class ControlCenterModel: ObservableObject {
                 providerQuota = snapshots.first(where: { $0.provider == "codex" })
                 recordProjectionSuccess("provider.quota")
             } else {
-                providerQuota = nil
-                providerQuotas = []
                 let errors = readers.compactMap { byID[$0.id]?.error }
                 recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")
             }

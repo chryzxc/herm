@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -23,7 +24,22 @@ final class DockModel: ObservableObject {
     }
     @Published var status: HermesStatus = .idle
     @Published private(set) var isHermesConnected = false
-    @Published var messages: [ChatMessage] = []
+    @Published var messages: [ChatMessage] = [] {
+        didSet { cachedMessageNavigatorItems = nil }
+    }
+    private var cachedMessageNavigatorItems: (sessionID: String, items: [MessageNavigatorItem])?
+
+    /// Invalidate at the canonical array mutation boundary, not by hashing
+    /// the entire history again on each scroll or live-tail layout update.
+    var messageNavigatorItems: [MessageNavigatorItem] {
+        let owner = sessionID ?? ""
+        if let cached = cachedMessageNavigatorItems, cached.sessionID == owner {
+            return cached.items
+        }
+        let items = ConversationMessageWindow.navigatorItems(messages: messages, sessionID: owner)
+        cachedMessageNavigatorItems = (owner, items)
+        return items
+    }
     let composer = ComposerText()
     let streamingText = StreamingText()
 
@@ -159,6 +175,25 @@ final class DockModel: ObservableObject {
     /// `activeBotProfileID`, which identifies an open canonical Bot Chat.
     @Published private(set) var profileScopeID: String?
     @Published private(set) var profileScopeUnavailable = false
+
+    /// The rail subscribes only to fields it renders. Keeping this publisher
+    /// separate from `objectWillChange` prevents transcript deltas and other
+    /// workspace activity from invalidating the navigation projection.
+    var sidebarPresentationChanges: AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            $sessionID.map { _ in () }.eraseToAnyPublisher(),
+            $profileScopeID.map { _ in () }.eraseToAnyPublisher(),
+            $runtimeConfiguration.map { _ in () }.eraseToAnyPublisher(),
+            $status.map { _ in () }.eraseToAnyPublisher(),
+            $sessions.map { _ in () }.eraseToAnyPublisher(),
+            $sessionProjectionState.map { _ in () }.eraseToAnyPublisher(),
+            $isLoadingSessions.map { _ in () }.eraseToAnyPublisher(),
+            $deletingSessionID.map { _ in () }.eraseToAnyPublisher(),
+            $renamingSessionID.map { _ in () }.eraseToAnyPublisher(),
+            $updatingSessionVisibilityID.map { _ in () }.eraseToAnyPublisher(),
+            $isCreatingSession.map { _ in () }.eraseToAnyPublisher()
+        ).eraseToAnyPublisher()
+    }
     @Published private(set) var sessionProfileID: String?
     /// Profile identity for a profile-scoped Bot Chat. This is authoritative
     /// session context, not an inference from the assistant's prose.
@@ -1541,6 +1576,18 @@ final class DockModel: ObservableObject {
         hasUnreadResponse = false
     }
 
+    /// Debug-only fixture activation. It uses the same session ownership
+    /// boundary as gateway events so the streaming fixture can exercise the
+    /// production `message.start`/delta/complete path without touching the
+    /// transcript array per delta.
+    func prepareScrollPerformanceFixtureSession(_ session: HermesSession) {
+        sessionID = session.id
+        sessionStorageID = session.id
+        sessionProfileID = session.profileID
+        kanbanAttributionSessionID = session.id
+        status = .idle
+    }
+
     func markUnreadUpdate() {
         guard !isPopoverVisible else { return }
         hasUnreadResponse = true
@@ -2907,6 +2954,10 @@ final class DockModel: ObservableObject {
         }
         applyVisionNoticeDetectionIfNeeded(to: streamingMessageBuffer)
         let publishedText = streamingMessageIsVisionNotice ? Self.visionUnsupportedNotice : streamingMessageBuffer
+        // Completion may arrive before the adaptive presentation timer flushes
+        // its final delta. Reconcile the live projection first so the native
+        // completion handoff can reuse every promoted section.
+        streamingText.reconcilePresentation(with: publishedText)
         let message = messages[index]
         let attribution = Self.botAttribution(from: publishedText)
         let botProfileID = attribution?.profileID ?? activeBotProfileID
@@ -2923,7 +2974,8 @@ final class DockModel: ObservableObject {
             botDisplayName: botDisplayName
         )
         streamingMessagePendingPresentationDelta = ""
-        streamingText.clearPresentation()
+        streamingText.retainCompletionPresentation()
+        streamingText.clearLivePresentation()
         streamingResponseStartedAt = nil
     }
 

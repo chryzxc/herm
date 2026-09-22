@@ -73,7 +73,7 @@ struct SessionFilesView: View {
                                 icon: expandedDirectories.contains(entry.path) ? "folder.fill" : "folder",
                                 title: entryName(entry),
                                 path: entry.path,
-                                depth: entry.depth + 1,
+                                depth: entry.depth,
                                 isDirectory: true,
                                 isExpanded: expandedDirectories.contains(entry.path),
                                 color: Color.dockSecondaryText
@@ -86,7 +86,7 @@ struct SessionFilesView: View {
                                 icon: fileIcon(for: entry),
                                 title: entryName(entry),
                                 path: entry.path,
-                                depth: entry.depth + 1,
+                                depth: entry.depth,
                                 isDirectory: false,
                                 isExpanded: false,
                                 color: selectedPath == entry.path ? Color.dockAccent : Color.dockSecondaryText
@@ -243,15 +243,6 @@ struct SessionFilesView: View {
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(Color.dockMetadataText)
             Spacer(minLength: 4)
-            Button { collapseAll() } label: {
-                LucideImage(systemName: "arrow.up.right.and.arrow.down.left")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Color.dockSecondaryText)
-            .help("Collapse all folders")
-            .accessibilityLabel("Collapse all folders")
             Button { Task { await refresh() } } label: {
                 Group {
                     if isRefreshing { ProgressView().controlSize(.small) }
@@ -265,7 +256,8 @@ struct SessionFilesView: View {
             .help("Refresh project files")
             .accessibilityLabel("Refresh project files")
             Menu {
-                Toggle("Show Generated Files", isOn: $showsGeneratedFiles)
+                Button("Collapse all folders") { collapseAll() }
+                Toggle("Show generated files", isOn: $showsGeneratedFiles)
             } label: {
                 LucideImage(systemName: "ellipsis")
                     .font(.system(size: 14, weight: .medium))
@@ -414,7 +406,8 @@ struct SessionTerminalView: View {
     let repositoryID: String?
     let repositoryFingerprint: String?
     @StateObject private var terminalTabs = TerminalTabStore()
-    @State private var followsOutput = true
+
+    private var directory: String { projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path }
 
     private var terminal: LocalTerminalSession { terminalTabs.selected }
 
@@ -424,75 +417,23 @@ struct SessionTerminalView: View {
         return false
     }
 
-    private var statusColor: Color {
-        switch terminal.state {
-        case .ready, .running: Color.dockSuccess
-        case .interrupting, .starting: Color.dockWarning
-        case .exited, .closed, .idle: Color.dockSecondaryText
-        case .failed: Color.dockDestructive
-        }
-    }
-
-    private var statusText: String {
-        switch terminal.state {
-        case .ready: "READY"
-        case .running: "RUNNING"
-        case .interrupting: "INTERRUPTING"
-        case .starting: "STARTING"
-        case .exited: "EXITED"
-        case .closed: "CLOSED"
-        case .idle: "IDLE"
-        case .failed(let error): "FAILED (\(error))"
-        }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             terminalTabBar
-            if !recipes.isEmpty { terminalControls }
+            terminalControls
             if let run = terminal.lastVerificationRun {
                 verificationRunBanner(run)
             }
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if terminal.output.isEmpty {
-                            if recipes.isEmpty {
-                                terminalUnavailable
-                            } else {
-                                terminalPrompt
-                            }
-                        } else {
-                            Text(terminal.output)
-                                .font(.system(size: 14, design: .monospaced))
-                                .foregroundStyle(Color.dockPrimaryText)
-                                .lineSpacing(4)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .id("terminal-output")
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-                    .padding(.horizontal, 30)
-                    .padding(.top, 20)
-                    .padding(.bottom, 28)
-                }
-                .frame(minHeight: 220, maxHeight: .infinity)
-                .background(Color.dockCanvas)
-                .accessibilityLabel("Terminal output")
-                .accessibilityValue(terminal.output.isEmpty ? "No output" : "Output available")
-                .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalOutput)
-                .onChange(of: terminal.output) { _, _ in
-                    guard followsOutput else { return }
-                    proxy.scrollTo("terminal-output", anchor: .bottom)
-                }
-            }
+            SessionTerminalCanvas(session: terminal)
+                .id(terminal.id)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.top, 8)
+
         }
         .background(Color.dockCanvas)
         .task(id: projectPath) {
-            guard let projectPath, !recipes.isEmpty else { terminal.close(); return }
-            terminal.start(directory: projectPath)
+            terminal.start(directory: directory)
         }
         .onDisappear { terminalTabs.closeAll() }
     }
@@ -510,17 +451,15 @@ struct SessionTerminalView: View {
             Spacer(minLength: 0)
 
             Button {
-                guard let projectPath, !recipes.isEmpty else { return }
-                terminalTabs.add(directory: projectPath)
+                terminalTabs.add(directory: directory)
             } label: {
                 LucideImage(systemName: "plus")
                     .font(.system(size: 16, weight: .light))
-            .foregroundStyle(Color.dockSecondaryText)
-            .frame(width: 28, height: 28)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(width: 44, height: 44)
             }
             .buttonStyle(.borderless)
             .help("New terminal session")
-            .disabled(projectPath == nil || recipes.isEmpty)
         }
         .padding(.horizontal, 0)
         .padding(.top, 8)
@@ -532,8 +471,8 @@ struct SessionTerminalView: View {
         HStack(spacing: 7) {
             LucideImage(systemName: "terminal")
                 .font(.system(size: 10, weight: .semibold))
-            Text("\(NSUserName())@\(Host.current().localizedName ?? "hermes")")
-                .font(.system(size: 10, design: .monospaced))
+            Text("Shell \((terminalTabs.sessions.firstIndex(where: { $0.id == session.id }) ?? 0) + 1)")
+                .font(.system(size: 12))
                 .lineLimit(1)
             Button {
                 terminalTabs.selectedID = session.id
@@ -556,42 +495,21 @@ struct SessionTerminalView: View {
         .onTapGesture { terminalTabs.selectedID = session.id }
     }
 
-    private var terminalPrompt: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("➜")
-                .foregroundStyle(Color.dockSuccess)
-            Text(terminal.workingDirectory ?? "No repository")
-                .foregroundStyle(Color.dockAccent)
-        }
-        .font(.system(size: 12, weight: .medium, design: .monospaced))
-        .accessibilityLabel("Terminal working directory")
-    }
-
-    private var terminalUnavailable: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Verification unavailable")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockPrimaryText)
-            Text(projectPath == nil
-                 ? "Select a repository-backed session to use the terminal."
-                 : "Hermes has not provided an allow-listed verification recipe for this repository.")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockMetadataText)
-        }
-        .padding(12)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Verification unavailable")
-    }
-
     private var terminalControls: some View {
         HStack(alignment: .center, spacing: 10) {
-            HStack(spacing: 6) {
-                Circle().fill(statusColor).frame(width: 6, height: 6)
-                Text(statusText)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            Text(URL(fileURLWithPath: directory).lastPathComponent)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
+                .help(directory)
+            if case .failed(let error) = terminal.state {
+                Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning)
+                Button("Retry") { terminal.start(directory: directory) }.buttonStyle(.borderless)
             }
-            .foregroundStyle(statusColor)
-
+            if terminal.state == .closed || terminal.state == .exited {
+                Button("Restart") { terminal.start(directory: directory) }
+                    .buttonStyle(.borderless)
+            }
             Spacer(minLength: 8)
 
             if !recipes.isEmpty {
@@ -618,33 +536,20 @@ struct SessionTerminalView: View {
                 .disabled(terminal.state != .ready)
             }
 
-            Button { terminal.clear() } label: {
-                LucideImage(systemName: "trash").frame(width: 26, height: 26)
+            Menu {
+                Button("Clear output") { terminal.clear() }
+                Button("Interrupt", action: terminal.interrupt)
+                    .disabled(!canInterrupt)
+                Button("Restart shell") { terminal.start(directory: directory) }
+            } label: {
+                LucideImage(systemName: "ellipsis").frame(width: 44, height: 44)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Color.dockSecondaryText)
-            .disabled(terminal.output.isEmpty)
-            .help("Clear terminal output")
-            .accessibilityLabel("Clear terminal output")
-            .accessibilityIdentifier(WorkflowAccessibilityIdentifier.terminalClearOutput)
+            .menuStyle(.borderlessButton)
+            .accessibilityLabel("Terminal options")
 
-            Button { terminal.interrupt() } label: {
-                LucideImage(systemName: "stop.fill").frame(width: 26, height: 26)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(canInterrupt ? Color.dockWarning : Color.dockMetadataText)
-            .disabled(!canInterrupt)
-            .help("Interrupt running verification")
-            .accessibilityLabel("Interrupt running verification")
-
-            Toggle("Follow", isOn: $followsOutput)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .help("Follow new terminal output")
-                .accessibilityLabel("Follow new terminal output")
         }
         .padding(.horizontal, 14)
-        .frame(height: 34)
+        .frame(height: 44)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 

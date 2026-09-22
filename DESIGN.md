@@ -31,6 +31,219 @@ The app uses a dark, precise sci-fi glass treatment. The intended feeling is a
 calm operational instrument: low-noise, high-contrast, and technical without
 being theatrical.
 
+### Global Hermes themes
+
+The Dock has one global theme preference stored under
+`hermes.dock.theme.v1`. Native macOS is the default and follows the system
+Light/Dark setting. Hermes palettes map stable skin IDs (`default`, `ares`,
+`mono`, `slate`, `daylight`, `warm-lightmode`, `poseidon`, `sisyphus`, and
+`charizard`) to semantic Dock roles. Daylight and Warm Light force light
+appearance; the other Hermes palettes use dark appearance. Theme selection is
+Dock-owned presentation state and never invokes Hermes skin commands or changes
+Hermes configuration.
+
+Theme palettes resolve canvas, layered surfaces, text, selection, controls,
+dividers, accents, success, warning, destructive, and message fills. Every
+Dock surface consumes these semantic tokens: navigation, workspace,
+conversations, composer, inspectors, repository tools, settings, popovers,
+menus, sheets, and confirmations. Unknown local or hub skins remain visible as
+read-only inventory and are disabled until an explicit Dock palette mapping
+exists.
+
+Settings presents Dock palettes and Hermes skin status as one Skins gallery.
+Each mapped skin appears once as its corresponding Dock skin, with a checkmark
+for the selected Dock skin and a separate Hermes-active label when Hermes
+reports that skin as active. Native macOS is the Dock default and has no Hermes
+skin status. Selecting a tile changes Dock presentation only; it never invokes
+Hermes skin commands. Unmapped skins appear in a compact unavailable list, and
+installed companions remain in their own read-only section.
+
+The Projects section uses one shared outline tree:
+the section disclosure, label, count, and refresh action form a flat header;
+each project row places disclosure and folder identity before its name, with
+session count and new-chat action trailing. Sessions align under the project
+name and use a title plus one compact relative-time/preview line. Show the ten
+newest sessions by default, with an independent per-project expansion control
+for the rest. Keep project and session rows cardless and preserve 44pt action
+targets.
+
+Session management follows a progressive action hierarchy: Pin is the only
+direct session-management control and shares the profile-scoped pinned store
+with the Pinned section. Rename, Hide/Show, and Delete live in the row’s More
+menu and native context menu. Rename edits inline; visibility and deletion
+remain Hermes-authoritative mutations, with a shared confirmation/error
+surface. Runtime controls (steer, branch, compress, interrupt, and model
+changes) stay with the active-session workspace rather than navigation.
+
+Conversations uses the same outline language as Projects: one collapsible
+header with count and refresh, ten newest sessions by default, and independent
+Show more/Show recent expansion. Each session is a 50pt two-line row. The
+second line may combine relative time, an inline repository identity, and a
+single-line preview; missing values do not leave separators behind. Repository
+identity is inline metadata rather than a capsule so the list remains calm at
+narrow sidebar widths. The Pinned section remains a separate presentation.
+
+Pinned is a saved-conversation outline with 8pt inner margins and a comfortable
+72pt row. Title, project context, timestamp, and preview occupy separate visual
+levels: project context uses a quiet folder icon, timestamps align
+independently, and dot-separated metadata strings are avoided. Unpin remains a
+direct trailing action while less frequent session actions stay in More. In the
+Projects tree, the selected session owns the only selected fill; its parent
+project remains neutral and uses only an accent folder to show containment.
+Session selection is profile-scoped and owned by navigation state, so refreshes
+may update projections but never clear a still-valid selection. Only explicit
+navigation or authoritative removal can clear it.
+
+### Settings workspace
+
+Settings is a responsive, cardless workspace rather than one long accordion.
+It keeps six stable categories in this order: General, Runtime, Integrations,
+Session, Project, and Diagnostics. General is selected when the surface is
+mounted; selection is local presentation state and is not persisted. At 760pt
+and wider, a 208pt category rail scrolls independently from the detail page;
+narrow layouts use a full-width category menu below the Settings header.
+
+Each detail page begins directly with real content—there is no repeated
+category detail header. Use a leading-aligned column (maximum 920pt), 48–56pt
+preference rows, 12pt semibold section labels, and one subtle divider between
+groups. Purpose-built sections, preference rows, status rows, action rows,
+inventory lists, and inline notices keep the surface cardless and calm. Global
+theme-resolved `dock*` tokens apply everywhere. Loading, unavailable, and empty
+states stay inside their category without moving the header or removing
+navigation. Badges are reserved for actionable state: an update dot on
+General, setup-needed count on Integrations, and open-attention count on
+Session. Long inventories may retain local disclosure, while disruptive
+session actions keep their existing confirmations.
+
+### Quota workspace
+
+Quota is a centered, cardless operational ledger. The page starts with one
+toolbar containing a compact connected/attention/available sentence, last
+updated time, and refresh control. Connected providers are sorted by worst
+health first and show all quota windows inline; window rows preserve remaining
+capacity, daily-budget markers, forecasts, limits, and reset times. Disconnected
+providers appear afterward in a compact Available providers section with
+Connect and website actions. Healthy, warning, critical, and unknown states use
+their semantic colors; missing numeric data is never rendered as a fabricated
+meter or percentage. The existing provider-order preference is retained for
+compatibility but does not control this presentation.
+
+The fullscreen Automation destination is a full-height operations index rather
+than a dashboard. A quiet table is the primary surface: status, automation
+name/request, cadence, next run, latest result, delivery, and progressive
+actions. It preserves Hermes order, uses hairline dividers, and replaces vague
+repeated UNKNOWN labels with Paused, No run yet, Succeeded, or Failed. Run now
+is direct; Edit and Remove live in More and the native context menu.
+
+Selecting a row opens a contextual inspector at wide widths and the same native
+sheet at narrow widths. The inspector has Overview and Runs tabs. Overview
+contains the complete schedule, request, delivery, identifiers, latest result,
+and report action; Runs defaults to the selected job and can switch to the
+authoritative All runs scope. Empty, stale, loading, and unavailable states stay
+inside stable table or inspector regions. New automation uses a focused native
+sheet, and no pause/resume control is shown without an authoritative Hermes
+mutation path.
+
+The session inspector uses one compact text switcher for Explorer, Terminal,
+Activity, and Changes. All four share the canvas, 12pt typography, and 12pt
+side insets. Explorer starts with the repository and filter, without a repeated
+page label. Secondary tree actions live in its options menu. Changes prioritizes
+branch and staged/unstaged files; GitHub account and PR management remain in the
+full repository workspace. Missing projects use a compact top-aligned message.
+
+Activity starts with a fixed refresh toolbar, followed by actual current work,
+agents when present, and recent events. It has no summary dashboard or empty
+agent/work sections. Agent scope and map selection live in a secondary menu.
+The canonical session-attributed work and newest-first timeline retain their
+stable IDs, disclosures, durations, results, and bounded pagination. One empty
+state appears when there is no activity; refresh errors remain actionable.
+
+The fullscreen Kanban page uses a compact native board. Its header subtitle
+names the selected board and reports filtered results as “shown of total”. A
+single persistent toolbar keeps board selection, Status, Assignee, Mine, Sort,
+active-filter count/Clear, and Add Task available in loaded, loading, and empty
+states; filter visibility is not gated by an optional capability when the
+board adapter can apply the filters. Updated, Created, Priority, and Title
+sorts are readable labels backed by stable adapter ordering.
+
+Kanban lanes are flat columns in canonical order. Non-empty lanes use a compact
+working width; empty lanes collapse to a discoverable icon/name/count rail and
+expand locally on selection or automatically when work arrives. Cards prioritize
+title, priority/assignee, model metadata, summary/current step, and relative
+activity. Selecting a card opens the existing detail inspector. Details, Done,
+Block, Unblock, and Archive are progressive actions in More and the native
+context menu, appearing on hover, keyboard focus, or selection rather than as
+permanent chips. Health diagnostics stay behind a compact disclosure above the
+board. The board and its toolbar remain presentation-only and do not add Hermes
+data contracts.
+
+Kanban cards are essential-compact: priority and assignee, a two-line title,
+one summary line, and relative activity with a subdued task ID. Provider/model
+and execution diagnostics belong in the task inspector, not on every card.
+Empty lanes collapse to horizontal icon/name/count rails; rotated lane labels
+are not used. Selecting a card immediately opens a fallback-first inspector so
+the authoritative board summary remains visible while Hermes enriches it. The
+inspector is a flat contextual surface with Overview and Activity tabs for task
+content, metadata, attachments, current state, and run history.
+
+The Bots destination uses a responsive adaptive grid for profiles and a compact
+schedule list for routines. The grid uses one column below 600pt, two columns
+from 600pt, and three columns from 900pt, with flexible cards filling the
+workspace width. Cards keep identity and live presence first, a bounded
+latest-activity preview second, and relative activity time plus provider/model
+metadata at the footer. Tabs, search, activity, and visibility filters share a
+responsive toolbar that wraps at narrower widths. The full card opens the
+canonical Bot Chat; profile editing, duplication, activity history, and
+hide/unhide remain in More and the native context menu. Focus and hover use one
+quiet surface treatment, and the 44pt More target does not change card layout.
+Routines retain their own focused list with assigned Bot names, schedules,
+disabled state, and confirmed removal. This page uses the global Dock tokens and
+is independent of the sidebar brand-concept preference. Groups, sections,
+profile deletion, cross-machine routing, and richer routine actions require
+additional Hermes gateway contracts and are not presented as available Dock
+controls yet.
+
+The conversation workspace uses a stable cool-navy canvas in both fullscreen
+and compact layouts, independent of the sidebar concept selector. Its header
+is a single flat row.
+The session identity gets the flexible header width and may wrap to two lines.
+A view menu replaces the fixed destination icon strip. Voice is directly
+available from 520pt chat width; the inspector toggle remains direct from
+340pt and moves into the view menu below that. All destinations remain available
+at every width. Controls retain 44pt targets and resizing does not animate.
+Assistant responses are open document content; user prompts use restrained
+right-aligned navy bubbles; and completed assistant
+responses keep a compact action rail permanently visible beneath the content.
+The rail uses tightly grouped 28pt controls, a subtle divider, and subdued
+monospaced metadata. Hover and keyboard focus strengthen the control surface but
+never reveal or hide actions. The composer is one centered floating surface with
+the editor, attachments, model, reasoning, and send controls kept together.
+It is aligned to the reading column, stays at a compact two-row idle height,
+and grows only for multiline drafts, attachments, suggestions, or actionable
+errors. Attach is icon-only; model and reasoning context remain available at
+normal widths, while the send/steer action retains the strongest emphasis.
+Streaming, approvals, clarifications, voice state, and errors may use semantic
+surfaces when they represent an active decision or recovery path.
+
+Explorer is a dedicated, cardless source workspace. Its navigator starts at
+280pt and remains between 220pt and 360pt, leaving the remaining width to the
+selected file editor. The navigator uses a flat repository header, compact
+30pt tree rows, neutral file icons, and one quiet selected-row fill. Top-level
+folders are collapsed initially; filtering reveals matching ancestors without
+discarding the user's disclosure state. Generated and dependency trees are
+hidden by default, while `.git` remains excluded for safety. Compact layouts
+drill into the editor and provide a 44pt Back action. The workspace continues
+to use the global cool-navy Dock tokens and does not inherit sidebar brand
+concept colors.
+
+The fullscreen Artifacts destination is a two-pane output browser. Its fixed
+header and toolbar keep search, type scope, counts, and refresh visible while a
+lazy newest-first results list drives a selected detail pane. Images use an
+aspect-fit preview; files and links use semantic previews with selectable
+paths or URLs. Open, Copy, optional Reveal in Finder, and source-session
+navigation are the only artifact actions. The compact conversation inspector
+retains its existing grid/list and pagination presentation.
+
 ### Color tokens
 
 Use the SwiftUI color names below rather than introducing ad hoc colors.
@@ -193,11 +406,14 @@ events, and main-agent tool activity.
 
 ### Terminal and external workflow states
 
-- Session Terminal is a local, bounded PTY used only for repository-fact-derived
-  verification recipes, not a Hermes shell escape hatch. Show its current working
-  directory, lifecycle state, bounded output, and an explicit verification result
-  when available. Never render a free-form command field; show a clear unavailable
-  state when no valid recipe exists.
+- Session Terminal is an interactive local PTY with a native SwiftTerm canvas.
+  Typing occurs at the shell cursor; there is no separate command field.
+  It starts in the session project or the user's home directory without
+  requiring verification recipes. Tabs and directory context remain visible;
+  the terminal owns selection, scrollback, completion, and keyboard history.
+  Its grid resizes with the panel. Clear, interrupt, and
+  restart live in its options menu. Failed and closed shells offer recovery.
+  User-entered commands never create verification evidence.
 - Verification recipes are presented only when repository facts produce an
   allow-listed command. A missing project root or unsupported command is shown
   as unavailable and cannot be executed.
@@ -342,3 +558,83 @@ Before considering a UI change complete, verify:
 - Pending, error, unavailable, empty, and stale states are intentional.
 - Controls meet hit-target, contrast, and reduced-motion rules.
 - The README is updated when user-visible behavior changes.
+
+### Office simulation and exterior
+
+The 3D office projects canonical bot identities and Kanban activity. Each bot
+starts at a distinct home position; shared leisure destinations are reserved
+before travel. Refreshes and desk changes preserve walking continuity. Ambient
+breaks do not claim task progress. Planning/review interactions require a shared
+reported board and phase, and begin only after both participants arrive.
+
+The exterior is a connected campus forecourt: stone promenade, timber pergola,
+seating terrace, fountain court, planting beds, and bicycle parking. Outdoor
+seats are reachable activities, while solid furniture and landscaping contribute
+to the same obstacle map as the interior. Reuse cached geometry and materials;
+static scenery does not introduce animation timers or additional dynamic lights.
+
+### Side activity notch
+
+The side notch is the primary launcher; the menu-bar item is temporarily hidden.
+Idle is a quiet theme-colored 22 × 72pt silhouette with a 44pt-wide hit target and no
+passive lifecycle label. Hover or new work morphs it into an attached activity
+surface. The preview leads with the current session title, then current tool
+activity or the latest response, with one Open session action. Running tools
+and background-task changes update real progress text;
+new responses, completions, and requests for attention expand automatically for
+six seconds. Rapid tool chains are bounded to one automatic announcement every
+four seconds. Indeterminate progress never implies a measured percentage.
+
+The generated workstation-and-side-dock icon is shared by the notch and app
+bundle. Circular indicators accompany meaningful work and updates, with semantic
+colors and text; sparkles are not used as app identity. Compact, preview, and
+workspace states share the selected theme’s canvas and
+text colors, with a 1pt semantic border around the contour. The workspace
+reserves a 12pt horizontal and 32pt vertical safe inset for the notch contour.
+The entire workspace, including its header and bottom controls, fits inside this rectangle.
+Native panel dimensions include these insets; responsive content dimensions
+exclude them and clamp to the selected display.
+
+Drag the notch along either side of any connected display. It snaps to the
+nearest side and persists that side, display, and relative vertical position.
+The native context menu also offers left/right placement and Quit. Screen
+changes clamp the surface to an available display.
+
+Click or double-tap Command expands the same native window into the workspace
+at the notch's location. Closing, leaving the window with the pointer, or clicking outside returns
+that window to the notch. There is one conversation host, retained across these transitions, and
+hover never activates the app, mounts the conversation, or marks responses read.
+The workspace and preview share the screen-attached contour.
+Shortcut reveal coordinates a 460ms edge expansion with a restrained inward
+spring slide and staged content fade. Collapse takes 260ms. Repeated toggles
+cancel content animations, and focus is available immediately. Reduced Motion
+makes geometry changes immediate and replaces the work animation with a static
+symbol. Only bounded response excerpts and tool names appear in automatic
+previews; full results and decisions remain in the workspace.
+
+The expanded notch also offers a clickable Quota tab. It shares the existing
+selection across collapse/reopen and remembers the chosen provider. Automatic
+session announcements temporarily show activity without changing that selection.
+Cached quota remains visible during refresh and after failed reads, with stale
+status shown instead of clearing the last successful values. It shares the
+ControlCenterModel provider inventory with the workspace, reads quota only on
+explicit selection or refresh, and presents at most two windows for the chosen
+provider. Bars show `100 - remainingPercent`; missing values stay unavailable.
+Reset times and last-updated time remain visible. Leaving either preview or the expanded workspace collapses it after a 350–400ms
+grace period; returning cancels dismissal. Attached sheets and popovers remain
+usable, and fullscreen stays open. Quota menus can be used before collapse;
+The preview has no close button, upward arrow, or duplicate icon rail; pointer
+exit handles dismissal. Open Quota routes
+to the full quota workspace in the same native window.
+
+The quota preview fits two complete rows without an inner scroll view. Each
+row places window name and used percentage on one line, a 4pt meter beneath,
+and a short reset countdown below it. Last-updated text and Open Quota share
+one compact footer. Full provider windows remain available in the workspace.
+
+The minimized notch retains its slim 22 × 72pt contour in every activity state.
+A subdued grip marks idle; an indeterminate accent travels vertically while
+work runs, a small dot/check marks updates, and an exclamation mark signals
+attention. Work and attention can coexist. Hover reveals the full text, and the
+button accessibility label always names the status. Reduce Motion holds the
+work marker still. These indicators replace the large compact icon rail.

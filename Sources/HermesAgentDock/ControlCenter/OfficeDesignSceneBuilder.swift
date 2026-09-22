@@ -26,10 +26,10 @@ final class OfficeDesignSceneBuilder {
         // The building and the two-seat patio have a fixed footprint. Bot
         // count no longer expands the exterior into an empty field.
         navigation.minX = -24
-        navigation.maxX = 24
+        navigation.maxX = max(24, 24.5 + Float(max(0, capacity - 1) / 20) * 1.5)
         navigation.back = -14
-        navigation.front = 24
-        box(root, "exterior-ground", [48, 0.12, 38], [0, -0.10, 5], green)
+        navigation.front = 28
+        box(root, "exterior-ground", [navigation.maxX + 24, 0.12, 42], [(navigation.maxX - 24) / 2, -0.10, 7], green)
         box(root, "west-wing-floor", [20, 0.18, 26], [-18, -0.09, 1], floor)
         box(root, "connecting-hall-floor", [3, 0.18, 26], [0, -0.09, 1], floor)
         box(root, "east-wing-floor", [20, 0.18, 28], [18, -0.09, 2], floor)
@@ -129,20 +129,24 @@ final class OfficeDesignSceneBuilder {
         // All trees live in the lower entrance garden. The varied offsets are
         // deterministic so the scene feels organic without moving on refresh.
         for (position, scale) in [
-            (SIMD3<Float>(-20.7, 0, 20.4), Float(0.72)),
-            (SIMD3<Float>(-12.8, 0, 22.1), Float(0.58)),
-            (SIMD3<Float>(14.6, 0, 20.0), Float(0.66)),
-            (SIMD3<Float>(21.0, 0, 22.4), Float(0.78))
+            (SIMD3<Float>(-21, 0, 18), Float(0.72)),
+            (SIMD3<Float>(-21, 0, 24.8), Float(0.58)),
+            (SIMD3<Float>(20.5, 0, 24.8), Float(0.66)),
+            (SIMD3<Float>(21, 0, 20.5), Float(0.78))
         ] {
             gardenTree(landscape, at: position, scale: scale)
         }
-        outdoorLandscape(landscape)
         navigation.leisureSpots = [
             .init(station: .init(position: [17.25, 0, 1], approach: [16.5, 0, 1], yaw: .pi / 2, seated: false), action: .coffee),
             .init(station: .init(position: [-8.8, 0, 0], approach: [-10, 0, 0], yaw: -.pi / 2), action: .reading),
             .init(station: .init(position: [-5, 0, 10], approach: [-5, 0, 9], yaw: 0, seated: false), action: .strolling),
-            .init(station: .init(position: [2, 0, 4], approach: [2, 0, 3], yaw: -.pi / 2, seated: false), action: .socializing)
+            .init(station: .init(position: [-0.65, 0, 4], approach: [-0.65, 0, 3], yaw: .pi / 2, seated: false), action: .socializing),
+            .init(station: .init(position: [0.65, 0, 4], approach: [0.65, 0, 3], yaw: -.pi / 2, seated: false), action: .socializing),
+            .init(station: .init(position: [0, 0, -5], approach: [0, 0, -5], yaw: 0, seated: false), action: .strolling),
+            .init(station: .init(position: [0, 0, 9], approach: [0, 0, 9], yaw: 0, seated: false), action: .strolling),
+            .init(station: .init(position: [0, 0, 12], approach: [0, 0, 12], yaw: .pi, seated: false), action: .strolling)
         ]
+        outdoorLandscape(landscape)
         for slot in 0..<capacity {
             if slot < 12 {
                 let p = SIMD3<Float>(-17 + Float(slot % 6) * 1.2, 0, -1 + Float(slot / 6))
@@ -181,7 +185,7 @@ final class OfficeDesignSceneBuilder {
         for location in [OfficePreviewLocation.desk, .reviewTable, .kanbanBoard] {
             navigation.stations[location] = navigation.stations[location]?.map(station)
         }
-        navigation.leisureSpots = navigation.leisureSpots.map { .init(station: station($0.station), action: $0.action) }
+        navigation.leisureSpots = navigation.leisureSpots.map { $0.isOutdoor ? $0 : .init(station: station($0.station), action: $0.action) }
     }
 
     /// Static props share the builder's cached meshes/materials; no new update loops or lights.
@@ -643,30 +647,145 @@ final class OfficeDesignSceneBuilder {
         }
     }
 
-    /// Exterior-only scenery gives the compact site a finished edge without
-    /// claiming an operational room or entering the office navigation grid.
+    /// One connected forecourt: shaded terrace, entrance promenade and a
+    /// planted water court. Props share cached meshes and have no update loops.
     private func outdoorLandscape(_ root: Entity) {
-        landscapePlanter(root, at: [-3.15, 0, 19.1], length: 2.5)
-        landscapePlanter(root, at: [3.15, 0, 19.1], length: 2.5)
-        bikeRack(root, at: [5.1, 0, 18.2])
-        entryDirectory(root, at: [-5.0, 0, 17.5])
-        for p: SIMD3<Float> in [[-2.5, 0, 16.5], [2.5, 0, 16.5], [-2.5, 0, 21.8], [2.5, 0, 21.8]] {
-            bollardLight(root, at: p)
+        let stone = NSColor(srgbRed: 0.64, green: 0.64, blue: 0.59, alpha: 1)
+        let gravel = NSColor(srgbRed: 0.43, green: 0.45, blue: 0.40, alpha: 1)
+        let soil = NSColor(srgbRed: 0.22, green: 0.25, blue: 0.18, alpha: 1)
+        // The lateral path connects both courts to the existing entrance patio.
+        pavedCourt(root, name: "west-terrace-floor", center: [-12, 0, 18.5], size: [16, 7], color: stone)
+        pavedCourt(root, name: "east-courtyard-floor", center: [11, 0, 20], size: [15, 7], color: stone)
+        pavedCourt(root, name: "entrance-promenade-floor", center: [0, 0, 24.2], size: [4.4, 4.4], color: stone)
+        pavedCourt(root, name: "west-link-floor", center: [-3.1, 0, 20.5], size: [1.8, 2], color: stone)
+        pavedCourt(root, name: "east-link-floor", center: [2.85, 0, 20.5], size: [1.3, 2], color: stone)
+        pavedCourt(root, name: "site-sidewalk-floor", center: [0, 0, 27], size: [45, 1.2], color: gravel)
+        // Raised planting beds define the edges rather than isolated rocks.
+        for (x, length) in [(Float(-13), Float(13)), (Float(11), Float(12))] {
+            let bed = group(root, "campus-planting-bed", [x, 0, 24.5])
+            box(bed, "bed-edging", [length, 0.18, 1.3], [0, 0.09, 0], steel, radius: 0.05)
+            box(bed, "bed-soil", [length - 0.18, 0.035, 1.1], [0, 0.2, 0], soil)
+            for index in 0..<Int(length / 1.2) {
+                let offset = -length / 2 + 0.7 + Float(index) * 1.2
+                landscapeShrub(bed, at: [offset, 0.22, 0], scale: index.isMultiple(of: 3) ? 0.8 : 0.55)
+                for j in 0..<3 {
+                    let stalk = group(bed, "ornamental-grass", [offset + Float(j - 1) * 0.18, 0.22, 0.25])
+                    stalk.orientation = simd_quatf(angle: Float(j - 1) * 0.16, axis: [0, 0, 1])
+                    box(stalk, "grass-stem", [0.035, 0.62, 0.035], [0, 0.31, 0], green)
+                    oval(stalk, "grass-seed-head", [0.10, 0.22, 0.08], [0, 0.66, 0], cork)
+                }
+            }
         }
-        for (position, scale) in [
-            (SIMD3<Float>(-18.6, 0, 19.4), Float(0.75)),
-            (SIMD3<Float>(-15.1, 0, 21.3), Float(0.55)),
-            (SIMD3<Float>(10.8, 0, 21.6), Float(0.65)),
-            (SIMD3<Float>(18.2, 0, 19.1), Float(0.80))
-        ] {
-            landscapeShrub(root, at: position, scale: scale)
+        pergola(root, at: [-12, 0, 18.3])
+        campusBench(root, at: [-15, 0, 17], yaw: 0)
+        campusBench(root, at: [-9, 0, 17], yaw: 0)
+        campusBench(root, at: [-12, 0, 21], yaw: .pi)
+        landscapePlanter(root, at: [-18.5, 0, 17.3], length: 2)
+        landscapePlanter(root, at: [-5.4, 0, 17.3], length: 2)
+        courtyardFountain(root, at: [10, 0, 20])
+        campusBench(root, at: [6, 0, 20], yaw: .pi / 2)
+        campusBench(root, at: [14, 0, 20], yaw: -.pi / 2)
+        bikeRack(root, at: [19.5, 0, 18.3])
+        bicycle(root, at: [19.2, 0, 17.6], color: blue)
+        bicycle(root, at: [20.0, 0, 18.5], color: orange)
+        entryDirectory(root, at: [-3.2, 0, 23])
+        for x: Float in [-21, -4, 4, 21] {
+            bollardLight(root, at: [x, 0, 25.7])
         }
-        for (index, position) in [
-            SIMD3<Float>(-8.0, 0, 19.2), SIMD3<Float>(-5.7, 0, 21.7),
-            SIMD3<Float>(5.5, 0, 21.4), SIMD3<Float>(8.2, 0, 19.3)
-        ].enumerated() {
-            landscapeStone(root, at: position, scale: index.isMultiple(of: 2) ? 0.75 : 1.0)
+        for x: Float in [-19, -5, 4, 18] { bollardLight(root, at: [x, 0, 22.7]) }
+        for x: Float in [-3, 3] { bollardLight(root, at: [x, 0, 16.7]) }
+        for x: Float in [-17.5, 17.5] {
+            let bins = group(root, "campus-waste-station", [x, 0, 22.7])
+            wasteBin(bins, at: [-0.28, 0, 0], color: steel)
+            wasteBin(bins, at: [0.28, 0, 0], color: green)
         }
+        // Drain channels and small joints add scale without textures or lights.
+        for x: Float in [-2.25, 2.25] {
+            box(root, "entrance-drain", [0.09, 0.012, 4.2], [x, 0.01, 24.2], trim)
+            for z in stride(from: Float(22.2), through: 26.2, by: 0.3) {
+                box(root, "drain-grate", [0.10, 0.008, 0.035], [x, 0.02, z], steel)
+            }
+        }
+    }
+
+    private func pavedCourt(_ root: Entity, name: String, center: SIMD3<Float>, size: SIMD2<Float>, color: NSColor) {
+        box(root, name, [size.x, 0.04, size.y], center + [0, -0.02, 0], color)
+        for x in stride(from: -size.x / 2 + 1, to: size.x / 2, by: 1) {
+            box(root, "paver-joint", [0.016, 0.004, size.y], center + [x, 0.003, 0], steel)
+        }
+        for z in stride(from: -size.y / 2 + 1, to: size.y / 2, by: 1) {
+            box(root, "paver-joint", [size.x, 0.004, 0.016], center + [0, 0.003, z], steel)
+        }
+    }
+
+    private func campusBench(_ root: Entity, at position: SIMD3<Float>, yaw: Float) {
+        let bench = group(root, "campus-bench", position, yaw: yaw)
+        for x: Float in [-0.95, 0.95] {
+            box(bench, "bench-leg", [0.12, 0.46, 0.65], [x, 0.23, 0], trim)
+            box(bench, "bench-arm", [0.09, 0.07, 0.68], [x, 0.72, 0], trim)
+            box(bench, "bench-back-post", [0.09, 0.8, 0.09], [x, 0.55, -0.28], trim)
+        }
+        for z: Float in [-0.24, -0.08, 0.08, 0.24] {
+            box(bench, "bench-seat-slat", [2.3, 0.065, 0.13], [0, 0.48, z], wood, radius: 0.015)
+        }
+        for y: Float in [0.68, 0.86] {
+            box(bench, "bench-back-slat", [2.3, 0.13, 0.07], [0, y, -0.29], wood, radius: 0.015)
+        }
+        let rotation = simd_quatf(angle: yaw, axis: [0, 1, 0])
+        navigation.leisureSpots.append(.init(station: .init(position: position,
+            approach: position + rotation.act([0, 0, 1.1]), yaw: yaw), action: .reading, isOutdoor: true))
+    }
+
+    private func pergola(_ root: Entity, at p: SIMD3<Float>) {
+        let shelter = group(root, "courtyard-pergola", p)
+        for x: Float in [-4.2, 4.2] {
+            for z: Float in [-2, 2] {
+                box(shelter, "pergola-post", [0.20, 2.9, 0.20], [x, 1.45, z], wood)
+                box(shelter, "post-footing", [0.32, 0.16, 0.32], [x, 0.08, z], steel)
+            }
+            box(shelter, "pergola-beam", [0.22, 0.22, 4.8], [x, 2.85, 0], wood)
+        }
+        for z in stride(from: Float(-2.2), through: 2.2, by: 0.55) {
+            box(shelter, "pergola-slat", [9.2, 0.12, 0.16], [0, 3.03, z], wood)
+        }
+    }
+
+    private func courtyardFountain(_ root: Entity, at p: SIMD3<Float>) {
+        let fountain = group(root, "courtyard-fountain", p)
+        box(fountain, "fountain-plinth", [3.7, 0.18, 2.9], [0, 0.09, 0], steel, radius: 0.08)
+        box(fountain, "fountain-basin", [3.2, 0.36, 2.4], [0, 0.30, 0], paper, radius: 0.08)
+        box(fountain, "reflecting-water", [2.9, 0.025, 2.1], [0, 0.49, 0], NSColor(srgbRed: 0.25, green: 0.44, blue: 0.47, alpha: 1), radius: 0.04)
+        box(fountain, "fountain-monolith", [0.48, 1.1, 0.48], [0, 0.9, 0], steel, radius: 0.06)
+        box(fountain, "fountain-cap", [0.56, 0.06, 0.56], [0, 1.47, 0], paper, radius: 0.03)
+    }
+
+    private func bicycle(_ root: Entity, at p: SIMD3<Float>, color: NSColor) {
+        let bike = group(root, "parked-bicycle", p, yaw: .pi / 2)
+        func bar(_ name: String, _ a: SIMD3<Float>, _ b: SIMD3<Float>, _ width: Float, _ color: NSColor) {
+            let part = group(bike, name, (a + b) / 2)
+            part.orientation = simd_quatf(from: [0, 1, 0], to: simd_normalize(b - a))
+            box(part, name + "-tube", [width, simd_length(b - a), width], .zero, color, radius: width / 3)
+        }
+        for x: Float in [-0.65, 0.65] {
+            for segment in 0..<16 {
+                let a = Float(segment) * .pi / 8, b = Float(segment + 1) * .pi / 8
+                bar("bicycle-tire", [x + cos(a) * 0.36, 0.39 + sin(a) * 0.36, 0],
+                    [x + cos(b) * 0.36, 0.39 + sin(b) * 0.36, 0], 0.05, trim)
+            }
+            for angle: Float in [0, .pi / 2, .pi / 4, -.pi / 4] {
+                let d = SIMD3<Float>(cos(angle) * 0.33, sin(angle) * 0.33, 0)
+                bar("bicycle-spoke", [x, 0.39, 0] - d, [x, 0.39, 0] + d, 0.012, steel)
+            }
+        }
+        let rear = SIMD3<Float>(-0.65, 0.39, 0), crank = SIMD3<Float>(-0.05, 0.36, 0)
+        let saddle = SIMD3<Float>(-0.28, 0.95, 0), head = SIMD3<Float>(0.40, 0.98, 0)
+        for (a, b) in [(rear, crank), (rear, saddle), (crank, saddle), (saddle, head), (crank, head), (head, SIMD3<Float>(0.65, 0.39, 0))] {
+            bar("bicycle-frame", a, b, 0.045, color)
+        }
+        box(bike, "bicycle-saddle", [0.30, 0.065, 0.15], saddle + [0, 0.08, 0], trim, radius: 0.025)
+        bar("handlebar-stem", head, head + [0, 0.18, 0], 0.04, steel)
+        bar("handlebar", head + [0, 0.18, -0.22], head + [0, 0.18, 0.22], 0.04, trim)
+        bar("kickstand", crank, crank + [-0.1, -0.32, 0.18], 0.025, steel)
     }
 
     private func landscapePlanter(_ root: Entity, at p: SIMD3<Float>, length: Float) {
@@ -750,11 +869,9 @@ final class OfficeDesignSceneBuilder {
     }
 
     private func captureObstacles(in root: Entity) {
-        let groups: Set<String> = ["wall", "glazed-partition", "open-door", "task-chair", "garden-chair", "garden-bench", "garden-tree", "raised-planter", "garden-light", "broad-leaf-plant", "filing-cabinet", "bookcase", "office-printer", "arcade-cabinet", "games-sofa", "visitor-armchair", "coffee-counter", "water-cooler", "waste-bin", "cleaning-cart", "staircase"]
-        let parts: Set<String> = ["tabletop", "beanbag", "beanbag-back", "stall-partition", "vanity", "toilet-tank", "toilet-bowl", "coat-stand", "cross-divider-x", "cross-divider-z"]
+        let groups: Set<String> = ["wall", "glazed-partition", "open-door", "task-chair", "garden-chair", "garden-bench", "garden-tree", "raised-planter", "garden-light", "broad-leaf-plant", "filing-cabinet", "bookcase", "office-printer", "arcade-cabinet", "games-sofa", "visitor-armchair", "coffee-counter", "landscape-planter", "landscape-shrub", "landscape-light", "entry-directory", "bike-rack", "parked-bicycle", "campus-bench", "courtyard-fountain", "campus-planting-bed", "water-cooler", "waste-bin", "cleaning-cart", "staircase"]
+        let parts: Set<String> = ["tabletop", "beanbag", "beanbag-back", "stall-partition", "vanity", "toilet-tank", "toilet-bowl", "coat-stand", "pergola-post", "post-footing", "cross-divider-x", "cross-divider-z"]
         func visit(_ node: Entity) {
-            // Landscaping sits outside the navigable office and patio routes.
-            if node.name == "exterior-landscape" { return }
             if ["server-rack", "storage-shelf", "refrigerator", "reception-desk", "floor-detail"].contains(node.name) {
                 let bounds = node.visualBounds(relativeTo: root)
                 navigation.obstacles.append(.init(name: node.name, center: [bounds.center.x, bounds.center.z], size: [bounds.extents.x, bounds.extents.z]))

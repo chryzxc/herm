@@ -7,7 +7,12 @@ import UniformTypeIdentifiers
 /// Native panel placement is owned by AppKit, while this state lets the
 /// SwiftUI surface match its silhouette without resetting conversation state.
 final class DockPanelPresentation: ObservableObject {
+    @Published var quotaRequest = 0
     @Published var isEdgeAttached = false
+    @Published var edgeSide: EdgeDockSide = .right
+    @Published var compactHeight: CGFloat = 720
+    @Published var compactWidth: CGFloat = .greatestFiniteMagnitude
+    @Published var availableWidth: CGFloat = .greatestFiniteMagnitude
 }
 
 enum MissionControlNavigationSelection: Equatable {
@@ -165,8 +170,10 @@ final class MissionControlNavigationState: ObservableObject {
 private struct DockPanelSurfaceShape: Shape {
     let isEdgeAttached: Bool
     let cornerRadius: CGFloat
+    var edgeSide: EdgeDockSide = .right
 
     func path(in rect: CGRect) -> Path {
+        if isEdgeAttached { return EdgeNotchShape(side: edgeSide).path(in: rect) }
         let radius = min(cornerRadius, min(rect.width, rect.height) / 2)
         var path = Path()
 
@@ -225,9 +232,15 @@ struct ScopedRepositoryChange: Equatable {
     let file: RepositoryFileChange
 }
 
+private struct ConversationScrollAnchor: Equatable {
+    let messageID: UUID
+    let offset: CGFloat
+}
+
 struct DockPopover: View {
     @ObservedObject var model: DockModel
     @ObservedObject var panelPresentation: DockPanelPresentation
+    @ObservedObject var controlCenter: ControlCenterModel
     /// Read-only screen capacity. Layout decisions must never resize the live
     /// panel while they are merely determining whether desktop content fits.
     var availableWorkspaceWidth: () -> CGFloat = { .greatestFiniteMagnitude }
@@ -240,9 +253,13 @@ struct DockPopover: View {
     @State private var conversationScrollRequest = 0
     @State private var mountedMessageRange: Range<Int> = 0..<0
     @State private var visibleNavigatorIndexSpan: ClosedRange<Int>?
-    @State private var transcriptAnchorMessageID: UUID?
     @State private var visibleNavigatorTargets: Set<MessageNavigatorTarget> = []
-    @State private var isStreamingTailScrollScheduled = false
+    @State private var conversationRowViewports: [MessageNavigatorViewport] = []
+    @State private var conversationDocumentHeight: CGFloat = 0
+    @State private var conversationViewportTop: CGFloat = 0
+    @State private var pendingConversationAnchor: ConversationScrollAnchor?
+    @State private var pendingNativeRestoreTop: CGFloat?
+    @State private var streamingTailScroll = ConversationTailScrollScheduler()
     @State private var isTransientTailAdjustmentScheduled = false
     @State private var isPastEndRepairScheduled = false
     @State private var isHistoryCompactionScheduled = false
@@ -255,7 +272,6 @@ struct DockPopover: View {
     @StateObject private var voiceOutput = VoiceOutput()
     @StateObject private var messageActionState = ConversationMessageActionState()
     @StateObject private var workspaceStore = WorkspaceStore()
-    @StateObject private var controlCenter = ControlCenterModel()
     @StateObject private var agentUpdateService = HermesUpdateService()
     @StateObject private var developerWorkflow = DeveloperWorkflowModel()
     @StateObject private var pullRequestCenter = PullRequestCenterModel()
@@ -487,18 +503,30 @@ struct DockPopover: View {
 
     private var rootPopoverContent: some View {
         layoutContent
-            .frame(width: isFullscreen ? nil : popupWidth, height: isFullscreen ? nil : 720)
+            .frame(width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth), height: isFullscreen ? nil : panelPresentation.compactHeight)
+            .padding(.horizontal, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceHorizontalInset : 0)
+            .padding(.vertical, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceVerticalInset : 0)
+            .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
+            .onChange(of: panelPresentation.quotaRequest, initial: true) { _, request in
+                guard request > 0 else { return }
+                panelPresentation.quotaRequest = 0
+                missionControlNavigation.selectGlobal(.quota)
+                fullscreenGlobalTab = .quota
+                fullscreenSurface = .global
+            }
             .background(Color.dockCanvas)
             .clipShape(DockPanelSurfaceShape(
                 isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
-                cornerRadius: isFullscreen ? 0 : 22
+                cornerRadius: isFullscreen ? 0 : 22,
+                edgeSide: panelPresentation.edgeSide
             ))
             .overlay {
                 DockPanelSurfaceShape(
                     isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
-                    cornerRadius: isFullscreen ? 0 : 22
+                    cornerRadius: isFullscreen ? 0 : 22,
+                    edgeSide: panelPresentation.edgeSide
                 )
-                    .stroke(Color(nsColor: .separatorColor).opacity(0.65), lineWidth: 0.5)
+                    .stroke(Color.dockBorderStrong, lineWidth: panelPresentation.isEdgeAttached ? 1 : 0.5)
             }
             .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : nil)
             .animation(.dockEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
@@ -570,8 +598,8 @@ struct DockPopover: View {
                 if !isNarrowLayout || !isNarrowControlVisible {
                     conversationColumn
                         .frame(
-                            width: isFullscreen ? .infinity : (showsDesktopContextPanel ? 480 : 500),
-                            height: isFullscreen ? .infinity : 720
+                            width: isFullscreen ? .infinity : min(showsDesktopContextPanel ? 480 : 500, panelPresentation.compactWidth),
+                            height: isFullscreen ? .infinity : panelPresentation.compactHeight
                         )
                 }
 
@@ -579,8 +607,8 @@ struct DockPopover: View {
                     Rectangle().fill(Color.dockBorderLight).frame(width: 0.5)
                     contextPanel
                         .frame(
-                            width: isFullscreen ? .infinity : (isNarrowLayout ? 500 : 480),
-                            height: isFullscreen ? .infinity : 720
+                            width: isFullscreen ? .infinity : min(isNarrowLayout ? 500 : 480, panelPresentation.compactWidth),
+                            height: isFullscreen ? .infinity : panelPresentation.compactHeight
                         )
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
@@ -1357,110 +1385,113 @@ struct DockPopover: View {
     }
 
     private var header: some View {
-        HStack(spacing: DockLayout.controlGap) {
-            // Treat the session identity as one deliberate control instead of
-            // a loose status dot, title, and disclosure icon.
-            Button(action: { model.toggleSessions() }) {
-                HStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(statusColor.opacity(0.18))
-                            .frame(width: 18, height: 18)
-                        Circle()
-                            .fill(statusColor)
-                            .frame(width: 8, height: 8)
-                            .overlay(Circle().stroke(Color.dockSurface2, lineWidth: 1.5))
+        GeometryReader { geometry in
+            let showsTalkLabel = geometry.size.width >= 620
+            let showsInspector = geometry.size.width >= 440
+            HStack(spacing: 6) {
+                sessionIdentity
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .layoutPriority(0)
+
+                voiceModeButton(showsLabel: showsTalkLabel)
+                    .fixedSize()
+
+                sessionViewMenu(includesInspector: !showsInspector)
+                    .fixedSize()
+
+                if showsInspector {
+                    Button(action: toggleInspectorPanel) {
+                        LucideImage(systemName: "rectangle.split.2x1")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(inspectorPanelIsVisible ? Color.dockAccent : Color.dockSecondaryText)
+                            .frame(width: 44, height: 44)
                     }
-                    Text(model.currentSessionTitle ?? "Untitled chat")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                    LucideImage(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.dockMetadataText)
+                    .buttonStyle(DockPressButtonStyle())
+                    .help(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector")
+                    .accessibilityLabel(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector")
                 }
-                .padding(.horizontal, 8)
-                .frame(minHeight: conversationMetrics.headerHeight - 12)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(DockPressButtonStyle())
-            .help("Session status: \(model.status.title)")
-            .accessibilityLabel("\(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
-            .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                sessionPicker
-                    .frame(width: 390, height: 310)
-                    .padding(.vertical, 4)
-                    .background(Color.dockCanvas)
-            }
-
-            Spacer(minLength: 12)
-
-            HStack(spacing: 2) {
-                sessionModePicker
-
-                Divider()
-                    .frame(height: 24)
-                    .overlay(Color.dockBorderLight)
-
-                // This control belongs to the active conversation: it
-                // toggles the inspector (the third workspace panel).
-                Button(action: toggleInspectorPanel) {
-                    LucideImage(systemName: inspectorPanelIsVisible ? "rectangle.split.2x1" : "rectangle")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(inspectorPanelIsVisible ? Color.dockAccent : Color.dockSecondaryText)
-                        .frame(width: 44, height: 44)
-                        .background {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(inspectorPanelIsVisible ? Color.dockAccent.opacity(0.12) : Color.clear)
-                                .padding(5)
-                        }
-                }
-                .buttonStyle(DockPressButtonStyle())
-                .help(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector")
-                .accessibilityLabel(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector")
-            }
+            .padding(.horizontal, 12)
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .padding(.horizontal, DockLayout.contentInset)
         .frame(height: conversationMetrics.headerHeight)
         .background(Color.dockCanvas)
-        .overlay(alignment: .bottom) {
-            Color.dockBorderLight.frame(height: DockLayout.hairline)
-        }
-        .animation(.dockEase(duration: 0.2), value: model.status)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
-    private var sessionModePicker: some View {
-        HStack(spacing: 2) {
-            ForEach(SessionWorkspaceMode.allCases) { mode in
-                sessionModeButton(mode)
+    private var sessionIdentity: some View {
+        Button(action: { model.toggleSessions() }) {
+            HStack(spacing: 8) {
+                Circle().fill(statusColor).frame(width: 6, height: 6)
+                Text(model.currentSessionTitle ?? "Untitled chat")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                LucideImage(systemName: model.isShowingSessions ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Color.dockMetadataText)
             }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Session surface")
-    }
-
-    private func sessionModeButton(_ mode: SessionWorkspaceMode) -> some View {
-        Button(action: { selectSessionMode(mode) }) {
-            Group {
-                if mode == .pullRequests {
-                    LucideIcon(name: .gitPullRequest, size: 13, color: sessionWorkspaceMode == mode ? Color.dockAccent : Color.dockSecondaryText)
-                } else {
-                    LucideImage(systemName: mode.icon)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(sessionWorkspaceMode == mode ? Color.dockAccent : Color.dockSecondaryText)
-                }
-            }
-            .frame(width: 44, height: 44)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(sessionWorkspaceMode == mode ? Color.dockAccent.opacity(0.12) : Color.clear)
-                    .padding(5)
-            )
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
-        .help(mode.help)
-        .accessibilityLabel(mode.label)
+        .buttonStyle(.plain)
+        .help("\(model.currentSessionTitle ?? "Untitled chat") — \(model.status.title)")
+        .accessibilityLabel("Choose session: \(model.currentSessionTitle ?? "Untitled chat"), \(model.status.title)")
+        .popover(isPresented: $model.isShowingSessions, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+            sessionPicker
+                .frame(width: 390, height: 310)
+                .padding(.vertical, 4)
+                .background(Color.dockCanvas)
+        }
+    }
+
+    private func voiceModeButton(showsLabel: Bool) -> some View {
+        Button { selectSessionMode(sessionWorkspaceMode == .voice ? .chat : .voice) } label: {
+            HStack(spacing: 6) {
+                LucideImage(systemName: "audio-lines")
+                    .font(.system(size: 14, weight: .medium))
+                if showsLabel { Text(sessionWorkspaceMode == .voice ? "Chat" : "Talk") }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(sessionWorkspaceMode == .voice ? Color.dockAccent : Color.dockSecondaryText)
+            .padding(.horizontal, showsLabel ? 8 : 0)
+            .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(DockPressButtonStyle())
+        .help(sessionWorkspaceMode == .voice ? "Return to chat" : "Voice conversation")
+        .accessibilityLabel(sessionWorkspaceMode == .voice ? "Return to chat" : "Voice conversation")
+        .accessibilityAddTraits(sessionWorkspaceMode == .voice ? .isSelected : [])
+    }
+
+    private func sessionViewMenu(includesInspector: Bool) -> some View {
+        Menu {
+            ForEach(SessionWorkspaceMode.allCases) { mode in
+                Button { selectSessionMode(mode) } label: {
+                    if mode == sessionWorkspaceMode {
+                        Label(mode.label, systemImage: "checkmark")
+                    } else {
+                        Text(mode.label)
+                    }
+                }
+            }
+            if includesInspector {
+                Divider()
+                Button(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector", action: toggleInspectorPanel)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                LucideImage(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .foregroundStyle(Color.dockSecondaryText)
+            .frame(minWidth: 44, minHeight: 44)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .help("Session views: \(sessionWorkspaceMode.label)")
+        .accessibilityLabel("Session views, current view: \(sessionWorkspaceMode.label)")
     }
 
     private func selectSessionMode(_ mode: SessionWorkspaceMode) {
@@ -2017,8 +2048,8 @@ struct DockPopover: View {
                                                     value: [MessageNavigatorViewport(
                                                         target: MessageNavigatorTarget(sessionID: model.sessionID ?? "", messageID: message.id),
                                                         index: mountedRange.lowerBound + rowOffset,
-                                                        minY: geometry.frame(in: .named("conversation-scroll")).minY,
-                                                        maxY: geometry.frame(in: .named("conversation-scroll")).maxY
+                                                        minY: geometry.frame(in: .named("conversation-document")).minY,
+                                                        maxY: geometry.frame(in: .named("conversation-document")).maxY
                                                     )]
                                                 )
                                             }
@@ -2080,17 +2111,36 @@ struct DockPopover: View {
                                 Color.clear.preference(
                                     key: ConversationContentBoundsPreferenceKey.self,
                                     value: ConversationContentBounds(
-                                        topMinY: geometry.frame(in: .named("conversation-scroll")).minY,
-                                        bottomMaxY: geometry.frame(in: .named("conversation-scroll")).maxY
+                                        topMinY: geometry.frame(in: .named("conversation-document")).minY,
+                                        bottomMaxY: geometry.frame(in: .named("conversation-document")).maxY
                                     )
                                 )
                             }
                         )
+                        .coordinateSpace(name: "conversation-document")
                     }
                     .id(model.sessionID)
                     .defaultScrollAnchor(.bottom)
-                    .scrollPosition(id: $transcriptAnchorMessageID, anchor: .top)
-                    .coordinateSpace(name: "conversation-scroll")
+                    .background {
+                        ConversationScrollEventObserver(restoreDocumentTop: pendingNativeRestoreTop) { bounds in
+                            conversationPerformance.recordScrollSettled()
+                            let top = -bounds.minY
+                            let bottom = top + bounds.height
+                            conversationViewportTop = top
+                            updateConversationPosition(
+                                ConversationContentBounds(
+                                    topMinY: top,
+                                    bottomMaxY: conversationDocumentHeight + top
+                                ),
+                                viewportHeight: viewport.size.height,
+                                proxy: proxy
+                            )
+                            updateNavigatorVisibility(
+                                top: top,
+                                bottom: bottom
+                            )
+                        }
+                    }
                     .onAppear {
                         isConversationAtBottom = true
                         unseenMessageCount = 0
@@ -2110,42 +2160,27 @@ struct DockPopover: View {
                             totalCount: model.messages.count
                         )
                         visibleNavigatorIndexSpan = nil
-                        transcriptAnchorMessageID = nil
+                        pendingConversationAnchor = nil
+                        pendingNativeRestoreTop = nil
                         lastRenderedMessageBubbleCount = renderedMessageBubbleCount
-                        isStreamingTailScrollScheduled = false
+                        streamingTailScroll.cancel()
                         isTransientTailAdjustmentScheduled = false
                         isPastEndRepairScheduled = false
                         isHistoryCompactionScheduled = false
                         scrollConversationToBottom(proxy)
                     }
                     .onPreferenceChange(ConversationContentBoundsPreferenceKey.self) { bounds in
-                        conversationPerformance.recordScrollBoundsUpdate()
-                        updateConversationPosition(
-                            bounds,
-                            viewportHeight: viewport.size.height,
-                            proxy: proxy
-                        )
+                        conversationDocumentHeight = max(0, bounds.bottomMaxY - bounds.topMinY)
                     }
                     .onPreferenceChange(MessageNavigatorViewportPreferenceKey.self) { viewports in
-                        let viewportHeight = viewport.size.height
-                        let visible = viewports.filter { $0.maxY >= 0 && $0.minY <= viewportHeight }
-                        let next = Set(visible.map(\.target))
-                        // Row frames move in the scroll coordinate space, so
-                        // this preference fires on every scroll frame. A state
-                        // write with an unchanged value would still invalidate
-                        // the whole popover body between row-edge crossings.
-                        if next != visibleNavigatorTargets {
-                            visibleNavigatorTargets = next
-                        }
-                        if let first = visible.min(by: { $0.index < $1.index }),
-                           let last = visible.max(by: { $0.index < $1.index }) {
-                            let span = first.index...last.index
-                            if span != visibleNavigatorIndexSpan {
-                                visibleNavigatorIndexSpan = span
-                            }
-                        } else if visibleNavigatorIndexSpan != nil {
-                            visibleNavigatorIndexSpan = nil
-                        }
+                        // Document-space frames are stable during live scroll;
+                        // retain them until the native clip view reports that
+                        // scrolling has settled.
+                        conversationRowViewports = viewports
+                        guard let anchor = pendingConversationAnchor,
+                              let restoredRow = viewports.first(where: { $0.target.messageID == anchor.messageID }) else { return }
+                        pendingNativeRestoreTop = restoredRow.minY - anchor.offset
+                        pendingConversationAnchor = nil
                     }
                     .onChange(of: model.scrollToLatestMessageRequest) { _, _ in
                         unseenMessageCount = 0
@@ -2196,6 +2231,7 @@ struct DockPopover: View {
                         guard isConversationAtBottom else { return }
                         scheduleTransientTailAdjustment(proxy)
                     }
+                    .onDisappear { streamingTailScroll.cancel() }
                     .onReceive(model.streamingText.$chunks) { _ in
                         conversationPerformance.recordStreamingUpdate()
                         guard isConversationAtBottom else { return }
@@ -2233,7 +2269,7 @@ struct DockPopover: View {
                     if model.messages.count >= MessageNavigator.minimumMessagesToShowNavigator,
                        viewport.size.width >= navigatorMinimumConversationWidth {
                         MessageNavigatorView(
-                            items: ConversationMessageWindow.navigatorItems(messages: model.messages, sessionID: model.sessionID ?? ""),
+                            items: model.messageNavigatorItems,
                             sessionID: model.sessionID ?? "",
                             visibleTargets: visibleNavigatorTargets,
                             onSelect: { item in jumpToMessage(item, proxy: proxy) }
@@ -2300,6 +2336,7 @@ struct DockPopover: View {
     }
 
     private func revealEarlierMessages() {
+        captureConversationAnchor()
         mountedMessageRange = ConversationMessageWindow.revealEarlier(
             effectiveMountedRange,
             totalCount: model.messages.count,
@@ -2308,10 +2345,20 @@ struct DockPopover: View {
     }
 
     private func revealLaterMessages() {
+        captureConversationAnchor()
         mountedMessageRange = ConversationMessageWindow.revealLater(
             effectiveMountedRange,
             totalCount: model.messages.count,
             visibleSpan: visibleNavigatorIndexSpan
+        )
+    }
+
+    private func captureConversationAnchor() {
+        guard let firstIndex = visibleNavigatorIndexSpan?.lowerBound,
+              let first = conversationRowViewports.first(where: { $0.index == firstIndex }) else { return }
+        pendingConversationAnchor = ConversationScrollAnchor(
+            messageID: first.target.messageID,
+            offset: first.minY - conversationViewportTop
         )
     }
 
@@ -2364,6 +2411,23 @@ struct DockPopover: View {
         }
     }
 
+    private func updateNavigatorVisibility(top: CGFloat, bottom: CGFloat) {
+        let visible = conversationRowViewports.filter { $0.maxY >= top && $0.minY <= bottom }
+        let next = Set(visible.map(\.target))
+        if next != visibleNavigatorTargets {
+            visibleNavigatorTargets = next
+        }
+        if let first = visible.min(by: { $0.index < $1.index }),
+           let last = visible.max(by: { $0.index < $1.index }) {
+            let span = first.index...last.index
+            if span != visibleNavigatorIndexSpan {
+                visibleNavigatorIndexSpan = span
+            }
+        } else if visibleNavigatorIndexSpan != nil {
+            visibleNavigatorIndexSpan = nil
+        }
+    }
+
     private func scheduleHistoryCompaction(_ proxy: ScrollViewProxy) {
         guard !isHistoryCompactionScheduled else { return }
         isHistoryCompactionScheduled = true
@@ -2407,17 +2471,9 @@ struct DockPopover: View {
     }
 
     private func scheduleStreamingTailScroll(_ proxy: ScrollViewProxy) {
-        guard !isStreamingTailScrollScheduled else { return }
-        isStreamingTailScrollScheduled = true
-        Task { @MainActor in
-            // A streaming text flush already triggers an expensive re-wrap of
-            // the growing live row. Coalesce footer movement on a slightly
-            // slower cadence so it cannot compete with that work every 80 ms.
-            try? await Task.sleep(
-                for: .milliseconds(ConversationStreamingPresentationPolicy.tailAdjustmentIntervalMilliseconds)
-            )
-            isStreamingTailScrollScheduled = false
-            guard isConversationAtBottom else { return }
+        let owningSessionID = model.sessionID
+        streamingTailScroll.schedule {
+            guard owningSessionID == model.sessionID, isConversationAtBottom else { return }
             proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
     }
@@ -2463,20 +2519,12 @@ struct DockPopover: View {
 
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
-        if message.id == model.streamingMessageIDForPresentation {
-            StreamingAssistantMessageRow(
-                streaming: model.streamingText,
-                timestamp: message.timestamp,
-                modelName: message.modelName,
-                responseDuration: message.responseDuration,
-                metrics: conversationMetrics
-            )
-        } else if message.role == .hermes && !message.hasBodyText && message.images.isEmpty {
+        if message.role == .hermes && !message.hasBodyText && message.images.isEmpty && message.id != model.streamingMessageIDForPresentation {
             EmptyView()
         } else {
             ConversationMessageRow(
                 message: message,
-                isStreamingMessage: false,
+                isStreamingMessage: message.id == model.streamingMessageIDForPresentation,
                 streamingText: model.streamingText,
                 activeBotProfileID: model.activeBotProfileID,
                 botsByID: botMode.botsByID,
@@ -3019,6 +3067,26 @@ private struct MissionControlQueue: View {
         // not a navigation side effect; otherwise selecting a project or
         // conversation remounts the rail and reissues a full list refresh.
         .task {
+            if ScrollPerformanceFixture.isRequested {
+                let fixture = ScrollPerformanceFixture.standard
+                if let fixtureSession = fixture.sessions.first {
+                    model.prepareScrollPerformanceFixtureSession(fixtureSession)
+                }
+                model.sessions = fixture.sessions
+                let scenario = ScrollPerformanceFixture.requestedScenario ?? .idleLongMarkdown
+                model.messages = (scenario == .shortControl || scenario == .streamingLongMarkdown)
+                    ? Array(fixture.messages.prefix(6))
+                    : fixture.messages
+                controlCenter.installScrollPerformanceFixture(fixture)
+                navigationState.hasRequestedSessionIndex = true
+                DebugLog.writePerformance(
+                    "scroll_fixture scenario=\(scenario.rawValue) streaming_bytes=\(fixture.streamingBytes) streaming_cadence_ms=\(fixture.streamingCadenceMilliseconds) activity_visible=0"
+                )
+                if scenario == .streamingLongMarkdown {
+                    await fixture.runStreaming(on: model)
+                }
+                return
+            }
             guard !navigationState.hasRequestedSessionIndex else { return }
             navigationState.hasRequestedSessionIndex = true
             model.loadSessions()
@@ -4317,12 +4385,12 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         Group {
             switch sessionStatus {
             case .working:
-                if reduceMotion {
-                    LucideImage(systemName: "bolt.horizontal.circle")
-                        .font(.system(size: 12, weight: .medium))
-                } else {
-                    ProgressView().controlSize(.small)
-                }
+                // An indeterminate spinner per mounted row creates an
+                // animation timer for every working session while the rail is
+                // scrolling. The static symbol keeps the same status meaning
+                // and accessibility label without competing for frame time.
+                LucideImage(systemName: "bolt.horizontal.circle")
+                    .font(.system(size: 12, weight: .medium))
             case .needsAttention:
                 LucideImage(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 12, weight: .medium))

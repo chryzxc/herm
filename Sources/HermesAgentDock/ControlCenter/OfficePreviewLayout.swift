@@ -168,6 +168,7 @@ struct OfficePreviewLayout {
         var isApproach: Bool = false
         var grid: SIMD2<Int> = .zero
         var leisureIndex: Int? = nil
+        var connectorPosition: SIMD3<Float>? = nil
     }
     static let locations = OfficePreviewLocation.allCases
 
@@ -175,6 +176,7 @@ struct OfficePreviewLayout {
         Node(slot: slot, index: Self.locations.firstIndex(of: location)!, isStation: true)
     }
     func position(_ node: Node) -> SIMD3<Float> {
+        if let point = node.connectorPosition { return point }
         if let index = node.leisureIndex, let authored, authored.leisureSpots.indices.contains(index) {
             let station = authored.leisureSpots[index].station
             return node.isApproach ? station.approach : station.position
@@ -261,12 +263,35 @@ struct OfficePreviewLayout {
                 var points = [goal]
                 while let parent = previous[points.last!] { points.append(parent) }
                 points.reverse()
-                var nodes = points.map { Node(slot: -1, index: 0, isStation: false, grid: $0) }
-                if nodes.isEmpty { nodes = [first] }
-                nodes[0] = first
-                if nodes.count > 1 { nodes[nodes.count - 1] = last }
-                else if first != last { nodes.append(last) }
-                if start.isStation { nodes.insert(start, at: 0) }
+                let gridNodes = points.map { Node(slot: -1, index: 0, isStation: false, grid: $0) }
+                // Authored seats are not grid-aligned. Keep the rounded grid
+                // endpoints and join them with checked orthogonal connectors;
+                // replacing them with the seat approach creates diagonal cuts.
+                func connector(from a: SIMD3<Float>, to b: SIMD3<Float>) -> [Node]? {
+                    if a == b { return [] }
+                    for bend in [SIMD3<Float>(b.x, 0, a.z), SIMD3<Float>(a.x, 0, b.z)] {
+                        let segments = [(a, bend), (bend, b)]
+                        let clear = segments.allSatisfy { start, end in
+                            [Float(0), 0.25, 0.5, 0.75, 1].allSatisfy { fraction in
+                                let p = start + (end - start) * fraction
+                                return isWalkable(p) && !occupied.contains { abs($0.x - p.x) < 0.8 && abs($0.z - p.z) < 0.8 }
+                            }
+                        }
+                        if clear {
+                            return bend == a || bend == b ? [] : [Node(slot: -1, index: 0, isStation: false, connectorPosition: bend)]
+                        }
+                    }
+                    return nil
+                }
+                guard let head = connector(from: position(first), to: position(gridNodes[0])),
+                      let tail = connector(from: position(gridNodes[gridNodes.count - 1]), to: position(last)) else { return [] }
+                var nodes: [Node] = start.isStation ? [start, first] : [first]
+                for node in head + gridNodes + tail {
+                    if position(nodes.last!) != position(node) { nodes.append(node) }
+                }
+                if nodes.last == last { /* already at the destination approach */ }
+                else if position(nodes.last!) == position(last) && nodes.last != first { nodes[nodes.count - 1] = last }
+                else { nodes.append(last) }
                 nodes.append(end)
                 return nodes
             }

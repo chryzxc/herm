@@ -39,14 +39,30 @@ struct CommandDoubleTapDetector {
 @MainActor
 final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let model = DockModel()
+    private let controlCenter = ControlCenterModel()
     private var dockPanel: DockPanelController?
     private var edgeDock: EdgeDockController?
     private var commandDoubleTapDetector = CommandDoubleTapDetector()
     private var commandEventMonitors: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        dockPanel = DockPanelController(model: model)
-        edgeDock = EdgeDockController(model: model)
+        let edge = EdgeDockController(model: model, controlCenter: controlCenter, openQuota: { [weak self] in
+            self?.dockPanel?.showQuota()
+        }, openDock: { [weak self] in
+            self?.dockPanel?.showFromNotification()
+        })
+        edgeDock = edge
+        dockPanel = DockPanelController(model: model, controlCenter: controlCenter, panel: edge.panel,
+            placement: { [weak edge] in edge?.placement },
+            onWillShow: { [weak edge] in edge?.prepareForWorkspace() },
+            onHide: { [weak edge] in edge?.restoreNotch() })
+        NSApp.applicationIconImage = DockAppBrand.icon
+        if ScrollPerformanceFixture.isRequested {
+            let fixture = ScrollPerformanceFixture.standard
+            DebugLog.writePerformance(
+                "fixture scenario=\(ScrollPerformanceFixture.requestedScenario?.rawValue ?? ScrollPerformanceFixture.Scenario.idleLongMarkdown.rawValue) projects=\(fixture.projectCount) sessions=\(fixture.sessionCount) messages=\(fixture.messageCount) streaming_bytes=\(fixture.streamingBytes) mounted_row_cap=36"
+            )
+        }
         // The panel is intentionally created lazily, but its menu-bar identity
         // must still reflect the configured SOUL.md name at launch.
         model.refreshRuntimeConfiguration()
@@ -170,6 +186,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private let model: DockModel
+    private let controlCenter: ControlCenterModel
     private let statusItem: NSStatusItem
     private let unreadBadge = UnreadBadgeView(frame: .zero)
     private let panel: DockPanel
@@ -178,35 +195,41 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private var outsideClickMonitors: [Any] = []
     private var desiredWidth = Metrics.workspaceWidth
     private var isFullscreen = false
-    private var isPanelContentInstalled = false
+    private var workspaceHost: NSView?
+    private var isWorkspaceVisible = false
+    private var pointerExitTask: DispatchWorkItem?
+    private let placement: () -> EdgeDockPlacement?
+    private let onWillShow: () -> Void
+    private let onHide: () -> Void
 
     var statusItemDiagnostic: NSStatusBarButton? { statusItem.button }
     var statusItemIsVisible: Bool { statusItem.isVisible }
 
-    init(model: DockModel) {
+    init(model: DockModel, controlCenter: ControlCenterModel, panel: DockPanel, placement: @escaping () -> EdgeDockPlacement?,
+         onWillShow: @escaping () -> Void, onHide: @escaping () -> Void) {
         self.model = model
-        // Use a variable-width item with a text fallback. A square custom
-        // template image can be visually lost by the modern Control Center
-        // status-item host even though the item is registered successfully.
+        self.controlCenter = controlCenter
+        self.panel = panel
+        self.placement = placement
+        self.onWillShow = onWillShow
+        self.onHide = onHide
+        // Temporarily keep the status item hidden: the movable notch is the launcher.
+        // Retain its identity so restoring the menu-bar option later is reversible.
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // Without a stable autosave name, newer macOS Control Center hosts
-        // this as an ephemeral item and can omit it from the visible bar on a
-        // subsequent launch. Persist the item identity and opt it in to the
-        // visible status area before configuring its button.
         statusItem.autosaveName = "com.christian.HermesAgentDock.statusItem"
-        statusItem.isVisible = true
-        panel = DockPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Metrics.workspaceWidth, height: Metrics.height),
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
+        statusItem.isVisible = false
         super.init()
 
         configureStatusItem()
         configurePanel()
         installOutsideClickMonitors()
         observeModel()
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.isWorkspaceVisible else { return }
+                self.resizePanel(to: self.desiredWidth, animated: false)
+            }.store(in: &cancellables)
     }
 
     private func configureStatusItem() {
@@ -241,7 +264,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        panel.hasShadow = false
         // Dismissal is handled by the explicit outside-click monitors below.
         // Keeping this false is important for status-item activation: AppKit
         // can deactivate the agent while processing the click that opens it.
@@ -253,10 +276,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     /// a quiet menu-bar launch so the launcher does not claim a session before
     /// the user has opened this surface.
     private func installPanelContentIfNeeded() {
-        guard !isPanelContentInstalled else { return }
-        isPanelContentInstalled = true
-        let hostingView = NSHostingView(
-            rootView: DockPopover(model: model, panelPresentation: panelPresentation, availableWorkspaceWidth: { [weak self] in
+        if let workspaceHost {
+            panel.contentView = workspaceHost
+            return
+        }
+        let hostingView = EdgeDockHostingView(
+            rootView: DockPopover(model: model, panelPresentation: panelPresentation, controlCenter: controlCenter, availableWorkspaceWidth: { [weak self] in
                 self?.availableWorkspaceWidth() ?? .greatestFiniteMagnitude
             }, onWorkspaceWidthChange: { [weak self] width in
                 self?.resizePanel(to: width) ?? width
@@ -266,11 +291,33 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 self?.toggleFullscreen()
             })
         )
+        hostingView.onHoverChanged = { [weak self] inside in
+            self?.workspaceHoverChanged(inside)
+        }
         hostingView.wantsLayer = true
         // DockPopover owns the contour so a shortcut can attach cleanly to the
         // screen edge while ordinary presentations remain fully rounded.
         hostingView.layer?.masksToBounds = false
+        hostingView.sizingOptions = []
+        workspaceHost = hostingView
         panel.contentView = hostingView
+    }
+
+    private func workspaceHoverChanged(_ inside: Bool) {
+        pointerExitTask?.cancel()
+        guard !inside, isWorkspaceVisible, !isFullscreen else { return }
+        let task = DispatchWorkItem { [weak self] in
+            guard let self, self.isWorkspaceVisible, !self.isFullscreen,
+                  !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
+            // A sheet or popover belongs to the workspace, even outside its frame.
+            guard self.panel.attachedSheet == nil, self.panel.childWindows?.isEmpty != false else {
+                self.workspaceHoverChanged(false)
+                return
+            }
+            self.hide()
+        }
+        pointerExitTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: task)
     }
 
     private func observeModel() {
@@ -314,7 +361,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private func dismissIfOutside(_ event: NSEvent) {
-        guard panel.isVisible, !isFullscreen else { return }
+        guard isWorkspaceVisible, !isFullscreen else { return }
         let point = NSEvent.mouseLocation
         guard !panel.frame.contains(point), !statusItemFrame.contains(point) else { return }
         hide()
@@ -379,11 +426,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     @objc private func togglePanel() {
-        panel.isVisible ? hide() : show()
+        isWorkspaceVisible ? hide() : show()
     }
 
     func toggleFromShortcut() {
-        if panel.isVisible {
+        if isWorkspaceVisible {
             hide()
         } else {
             show(fromShortcut: true)
@@ -392,7 +439,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     func showFromNotification() {
-        if !panel.isVisible { show() }
+        if !isWorkspaceVisible { show() }
+    }
+
+    func showQuota() {
+        showFromNotification()
+        panelPresentation.quotaRequest &+= 1
     }
 
     func showFromDebugLaunch() {
@@ -405,22 +457,25 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private func show(fromShortcut: Bool = false) {
+        pointerExitTask?.cancel()
+        onWillShow()
+        isWorkspaceVisible = true
+        panel.onCancel = { [weak self] in self?.hide() }
+        panelPresentation.isEdgeAttached = true
+        panelPresentation.edgeSide = placement()?.side ?? .right
         installPanelContentIfNeeded()
-        panelPresentation.isEdgeAttached = false
         if isFullscreen {
             guard let screen = NSScreen.main else { return }
             panel.setFrame(screen.visibleFrame, display: true)
         } else {
-            // Both the menu-bar click and the global shortcut use the same
-            // status-item-relative placement. The shortcut must not introduce
-            // a separate left-edge presentation.
-            resizePanel(to: desiredWidth, animated: false)
+            resizePanel(to: desiredWidth, animated: true)
         }
         // `swift run` leaves Terminal as the active app. A status-bar panel can
         // become key visually without receiving keyboard input until its agent
         // application is explicitly activated.
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
+        EdgeDockMotion.reveal(workspaceHost, side: panelPresentation.edgeSide, fromShortcut: fromShortcut)
         model.markPopoverVisible()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -430,13 +485,16 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private func hide() {
-        guard panel.isVisible else { return }
+        pointerExitTask?.cancel()
+        guard isWorkspaceVisible else { return }
+        EdgeDockMotion.cancel(workspaceHost)
         if isFullscreen {
             exitFullscreen()
         }
-        panel.orderOut(nil)
-        panelPresentation.isEdgeAttached = false
+        isFullscreen = false
+        isWorkspaceVisible = false
         model.markPopoverHidden()
+        onHide()
     }
 
     private func toggleFullscreen() {
@@ -510,7 +568,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             hostingView.autoresizingMask = []
         }
 
-        if panel.isVisible {
+        if isWorkspaceVisible {
             resizePanel(to: desiredWidth, animated: true)
         }
     }
@@ -518,32 +576,26 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     @discardableResult
     private func resizePanel(to width: CGFloat, animated: Bool = true) -> CGFloat {
         desiredWidth = width
-        guard !isFullscreen, let button = statusItem.button else { return width }
-
-        let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil))
-        let screen = buttonRect.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } }
-            ?? button.window?.screen
-            ?? NSScreen.main
-        guard let screen else { return width }
-
-        let visibleFrame = screen.visibleFrame
-        let fittedWidth = min(width, max(Metrics.compactWidth, visibleFrame.width - Metrics.screenInset * 2))
-        let maxX = visibleFrame.maxX - Metrics.screenInset
-        let minX = visibleFrame.minX + Metrics.screenInset
-        let preferredX = (buttonRect?.midX ?? visibleFrame.midX) - fittedWidth / 2
-        let x = min(max(preferredX, minX), maxX - fittedWidth)
-        let preferredY = (buttonRect?.minY ?? visibleFrame.maxY) - Metrics.height - Metrics.menuGap
-        let y = max(visibleFrame.minY + Metrics.screenInset, preferredY)
-        let frame = NSRect(x: x, y: y, width: fittedWidth, height: Metrics.height)
+        guard !isFullscreen, let placement = placement() else { return width }
+        let horizontalInset = EdgeDockLayout.workspaceHorizontalInset
+        let verticalInset = EdgeDockLayout.workspaceVerticalInset
+        let availableWidth = max(0, placement.screenFrame.width - Metrics.screenInset - horizontalInset * 2)
+        let fittedWidth = min(width, availableWidth)
+        let height = min(Metrics.height, placement.visibleFrame.height)
+        panelPresentation.edgeSide = placement.side
+        panelPresentation.availableWidth = availableWidth
+        panelPresentation.compactWidth = fittedWidth
+        panelPresentation.compactHeight = max(0, height - verticalInset * 2)
+        let frame = placement.frame(width: fittedWidth + horizontalInset * 2, height: height)
 
         // Session selection may re-evaluate the layout. Setting an identical
         // frame through the animator still visibly relayouts the host tree.
         guard !panel.frame.equalTo(frame) else { return fittedWidth }
 
-        if animated, panel.isVisible {
+        if animated, isWorkspaceVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.35
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.duration = EdgeDockMotion.revealDuration
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
                 panel.animator().setFrame(frame, display: true)
             }
         } else {
@@ -555,13 +607,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     /// Reads the capacity of the display hosting the menu-bar item without
     /// resizing the live panel. SwiftUI uses this only for layout decisions.
     private func availableWorkspaceWidth() -> CGFloat {
-        guard let button = statusItem.button else { return .greatestFiniteMagnitude }
-        let buttonRect = button.window?.convertToScreen(button.convert(button.bounds, to: nil))
-        let screen = buttonRect.flatMap { rect in NSScreen.screens.first { $0.frame.intersects(rect) } }
-            ?? button.window?.screen
-            ?? NSScreen.main
-        guard let screen else { return .greatestFiniteMagnitude }
-        return max(Metrics.compactWidth, screen.visibleFrame.width - Metrics.screenInset * 2)
+        guard let placement = placement() else { return .greatestFiniteMagnitude }
+        return max(0, placement.screenFrame.width - Metrics.screenInset - EdgeDockLayout.workspaceHorizontalInset * 2)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -574,11 +621,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 }
 
 @MainActor
-private final class DockPanel: NSPanel {
+final class DockPanel: NSPanel {
+    var acceptsWorkspaceFocus = true
     var onCancel: (() -> Void)?
 
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeKey: Bool { acceptsWorkspaceFocus }
+    override var canBecomeMain: Bool { acceptsWorkspaceFocus }
     override var acceptsFirstResponder: Bool { true }
 
     override func cancelOperation(_ sender: Any?) {

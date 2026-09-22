@@ -16,6 +16,21 @@ struct MissionControlConversationGroup: Identifiable, Equatable {
     let isLinked: Bool
 }
 
+/// Immutable row input for future native and SwiftUI rail renderers. Keeping
+/// presentation text in a value type makes row equality independent from the
+/// live model graph and prevents formatters from running in every body pass.
+struct SidebarSessionRowDescriptor: Identifiable, Equatable, Sendable {
+    let id: String
+    let title: String
+    let preview: String
+    let repositoryLabel: String?
+    let statusLabel: String
+    let relativeTime: String?
+    let isPinned: Bool
+    let isSelected: Bool
+    let actionState: String?
+}
+
 /// A deduplicated projection of everything the left navigation rail renders.
 ///
 /// The rail previously re-derived conversation groups several times per body
@@ -256,6 +271,7 @@ struct MissionControlSidebarSnapshot: Equatable {
 @MainActor
 final class MissionControlSidebarModel: ObservableObject {
     @Published private(set) var snapshot: MissionControlSidebarSnapshot
+    let instanceID = UUID().uuidString.prefix(8).description
 
     private let model: DockModel
     private let control: ControlCenterModel
@@ -266,17 +282,22 @@ final class MissionControlSidebarModel: ObservableObject {
         self.control = control
         self.snapshot = MissionControlSidebarSnapshot(inputs: MissionControlSidebarSnapshot.inputs(model: model, control: control))
 
-        Publishers.Merge(model.objectWillChange, control.objectWillChange)
+        Publishers.Merge(model.sidebarPresentationChanges, control.sidebarPresentationChanges)
             // objectWillChange fires before the mutation lands; one main-queue
             // hop reads the settled values and coalesces same-tick bursts.
             .receive(on: DispatchQueue.main)
+            .debounce(for: .milliseconds(1), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.refresh() }
             .store(in: &cancellables)
     }
 
     func refresh() {
+        let startedAt = Date()
         let inputs = MissionControlSidebarSnapshot.inputs(model: model, control: control)
         guard inputs != snapshot.inputs else { return }
         snapshot = MissionControlSidebarSnapshot(inputs: inputs)
+        DebugLog.writePerformance(
+            "sidebar instance=\(instanceID) snapshot_refresh_ms=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
+        )
     }
 }

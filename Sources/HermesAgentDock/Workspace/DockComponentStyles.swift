@@ -8,6 +8,11 @@ private func dockAdaptiveColor(light: NSColor, dark: NSColor) -> Color {
 }
 
 extension Color {
+    // The notch is an extension of the workspace and follows its global palette.
+    static var dockNotchCanvas: Color { dockCanvas }
+    static var dockNotchText: Color { dockPrimaryText }
+    static var dockNotchSecondaryText: Color { dockSecondaryText }
+
     // Shared appearance-aware palette for the Dock popover and its supporting
     // panels. These roles intentionally follow the system Light/Dark mode.
     static let dockOnAccentText = dockAdaptiveColor(

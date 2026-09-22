@@ -5,9 +5,9 @@
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138)](#development)
 [![local-first](https://img.shields.io/badge/local-first-f0883e)](#how-it-works)
 
-**A native macOS menu-bar control center for a local [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime — chat, voice, Kanban boards, bot rosters, automations, and developer tooling for your AI agent team, in one popover.**
+**A native macOS edge-notch control center for a local [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime — chat, voice, Kanban boards, bot rosters, automations, and developer tooling for your AI agent team, in one popover.**
 
-The Dock lives in your menu bar as a unified popover: conversations, voice, sessions, and quick capture on the left; Today, Inbox, Activity, and Core controls on the right. It is a projection and control surface for the Hermes runtime you already have installed — never a second runtime, never a second copy of your data. Everything runs locally on your Mac; the Dock never stores credentials, memory, or tool payloads.
+The Dock expands from a movable screen-edge notch into a unified workspace: conversations, voice, sessions, and quick capture on the left; Today, Inbox, Activity, and Core controls on the right. It is a projection and control surface for the Hermes runtime you already have installed — never a second runtime, never a second copy of your data. Everything runs locally on your Mac; the Dock never stores credentials, memory, or tool payloads.
 
 ```sh
 git clone https://github.com/chryzxc/hermes-agent-dock.git
@@ -24,7 +24,7 @@ Running an AI agent team from a terminal means juggling sessions, task boards, c
 | Your agent team, at a glance | Bots page with roster, models, avatars, routines, and live activity — plus a 3D office visualization where bots physically move between working, review, and planning |
 | Task boards that stay authoritative | Kanban reads and mutates the real Hermes board — create, assign, block, promote, reclaim — with filters the engine forwards natively |
 | Conversations with real control | Streaming chat, in-turn steering, context guardrails, approval choices with persistent allowlists, and a searchable multi-provider model picker |
-| Developer command center | Working-tree changes, pull requests, repository review, verification evidence, and a recipe-gated session terminal |
+| Developer command center | Working-tree changes, pull requests, GitHub issues, repository review, verification evidence, and a recipe-gated session terminal |
 | Automations and quota in one place | Cron job management plus live allowance windows across Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity |
 | Local-first by construction | Loopback-only authenticated gateway, capability-gated fail-closed controls, zero telemetry |
 
@@ -49,8 +49,8 @@ Running an AI agent team from a terminal means juggling sessions, task boards, c
 
 ### Conversations
 
-- **Streaming chat** — bottom-anchored transcript, bounded history paging, native Markdown links, and in-turn steering: typed guidance is submitted to the running turn at its next tool boundary.
-- **Message navigator** — session-scoped jump navigation with bounded previews across Markdown, image, tool, and clarification messages.
+- **Streaming chat** — bottom-anchored transcript with a bounded sliding history window (earlier and later messages page in bounded increments in either direction), native Markdown links, and in-turn steering: typed guidance is submitted to the running turn at its next tool boundary.
+- **Message navigator** — session-scoped jump navigation that lands in a bounded context window around the target across Markdown, image, tool, and clarification messages; paging outward stays bounded no matter how far the target sits from the newest message.
 - **Completed-message actions** — accessible, message-scoped actions can branch from the source message, copy readable text, read aloud with a stop toggle, or refresh from Hermes' authoritative transcript. Branch and refresh remain unavailable while message/session identity or response context is incomplete; malformed runtime responses fail closed without replacing the source conversation.
 - **Attachments** — accessible Attach popover with native file/image pickers, pasted images, validated http(s) URLs, and prompt snippets; multi-image and single-PDF review before sending (25 MB PDF cap).
 - **Explicit session lifecycle** — selecting or restoring a session never creates a replacement implicitly; new chats are created only on request. Session data stays isolated and fails closed on identity mismatch.
@@ -68,7 +68,7 @@ Running an AI agent team from a terminal means juggling sessions, task boards, c
 
 ### Bots
 
-- **Bots page** on the verified Hermes `profiles.*` contract: roster with titles, models, latest-message previews, active-now strip, and avatars (stored asset, upload, AI generation, or deterministic fallback).
+- **Bots page** on the verified Hermes `profiles.*` contract: an adaptive card grid with titles, models, bounded latest-message previews, live presence, and avatars (stored asset, upload, AI generation, or deterministic fallback). Each card opens its canonical Bot Chat; routines remain in a compact schedule list.
 - Open a Bot's canonical **Bot Chat**; create agents (quick path or advanced clone/empty), edit profiles (avatar, title, description, guarded model pin, full SOUL.md, per-skill/toolset/MCP-server enablement), duplicate, and hide/unhide.
 - **Routines** per bot via namespaced `[bot:<name>]` cron jobs.
 - **Bot-scoped navigation** — the nav header becomes a profile selector scoping conversations, projects, and new chats to the selected bot.
@@ -85,7 +85,7 @@ Running an AI agent team from a terminal means juggling sessions, task boards, c
 ### Developer command center
 
 - **Changes** — bounded read-only Git working-tree and diff projection (including untracked files) with a local added-line pre-commit signal pass (conflict markers, likely credentials, debug statements — credential values never repeated in the UI).
-- **GitHub context** — open pull requests, check status, review state, actionable blockers, and deep links for the session repository; confirmed draft creation and title/body updates. Merge, commenting, force-push, and workflow dispatch are intentionally unsupported.
+- **GitHub context** — open pull requests, check status, review state, actionable blockers, and deep links for the session repository; GitHub issues are available as a separate destination in the navigation rail. Confirmed draft creation and title/body updates are supported. Merge, commenting, force-push, and workflow dispatch are intentionally unsupported.
 - **Repository review and watch** — bounded repository-wide local review with explicit partial-coverage accounting and fingerprint-stale invalidation; passive opt-in repository watching that never starts Hermes work automatically; read-only worktree fleet (bounded to eight).
 - **Verification Center** — manifests, package managers, exact verification commands, and best-known evidence from Hermes `project.facts` / `verification.status`.
 - **Session Terminal** — runs only repository-fact-derived, allow-listed recipes through a bounded local PTY; no free-form shell input.
@@ -104,13 +104,16 @@ Running an AI agent team from a terminal means juggling sessions, task boards, c
 
 ### Office Preview
 
+- Idle bots start at distinct home positions, reserve break destinations, and walk between activities. Planning and review colleagues on the same board exchange simulated gestures after arriving; task status remains Hermes-owned. The default profile remains visible when no main-session avatar represents it.
+- The exterior includes connected stone paths, a timber pergola, usable benches, a fountain courtyard, layered planting, bicycles, and lighting. Furniture and landscaping participate in navigation; reduced motion disables continuous activity.
+
 - A furnished 3D office and garden built locally from original RealityKit geometry (no purchased assets). Every bot gets one stable chibi character matched to Kanban tasks by profile ID: running work goes to the computers, review to Mission Control, planning to the Kanban room; idle bots take patio breaks, coffee, and walks. Task ownership and status are live; office actions are simulated.
 - Specialist interiors (Design Studio, QA / Verification lab, Server / Operations, Bot Workshop), a private Main Agent office, live Nexus avatars, a task board, camera presets, full keyboard camera navigation, and Reduce Motion support.
 
 ### Presentation
 
 - Native macOS menu-bar presentation: appearance-aware navy surface, system typography, native controls, restrained selection, and a deliberate compact type scale.
-- Optional right-edge Dock notch — a hover/click launcher that expands into the Dock without replacing the menu-bar icon.
+- Movable activity notch — stays small when idle, expands for live work and completed tasks, and opens the full workspace in the same window. Drag to either screen edge; placement is remembered. Hover previews activity, click opens the Dock, and animations respect Reduce Motion. The Session preview shows the session title and latest activity; the clickable Quota tab shows provider usage and reset times. The menu-bar icon is temporarily hidden.
 - Status colors reserved for meaning (blue active, green healthy, amber warning, red failure); menu-bar unread badge; narrow-screen single-pane mode; adaptive composer.
 
 ## How it works
@@ -135,7 +138,7 @@ cd hermes-agent-dock
 swift run
 ```
 
-The app launches quietly into the menu bar. Double-tap the Command key (or click the status item) to open the popover; `--show-panel` forces it visible immediately for development runs.
+The app launches as a small screen-edge notch. Drag it to reposition, hover for updates, or click to expand the workspace. Double-tap Command also opens or closes it. The menu-bar icon is temporarily hidden; right-click the notch for placement controls and Quit. `Scripts/run-debug-app.sh` builds the signed app with its generated icon and opens the workspace for debugging.
 
 Packaged DMGs under `dist/` are local developer artifacts — ad-hoc signed, not notarized.
 
@@ -184,3 +187,17 @@ Voice today uses Hermes' native continuous loop when available, with the labelle
 ## Maintaining this document
 
 Every user-facing feature or behavior change must update the relevant section of this README in the same change set. Mark incomplete work as planned, and never describe mock data or provider capabilities as live functionality. Calendar, email, iMessage, automation fields Hermes does not return, and third-party MCP browsing remain planned follow-on integrations.
+
+The session inspector now uses compact Explorer, Terminal, Activity, and Changes
+views. Activity prioritizes live work and recent events without empty counters;
+files and changes use tight, cardless lists. Terminal accepts local commands in
+the session project (or home folder), with optional repository checks and shell
+management in secondary controls. Type directly at the shell prompt in the native
+terminal canvas, with arrow-key history, Tab completion, and normal terminal
+selection and scrolling; there is no separate bottom command field.
+
+The chat header prioritizes the session title and adapts to the resized chat
+column. Its view menu keeps every destination available, with direct Voice and
+inspector controls shown when space permits.
+The dock shortcut uses a coordinated edge expansion, soft content slide, and
+fade, with a faster collapse and immediate transitions under Reduce Motion.

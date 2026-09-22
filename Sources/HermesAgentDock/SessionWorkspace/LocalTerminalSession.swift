@@ -59,6 +59,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     @Published private(set) var workingDirectory: String?
     @Published private(set) var commandHistory: [String] = []
     @Published private(set) var lastVerificationRun: VerificationRun?
+    lazy var emulator = SessionTerminalEmulator(session: self)
 
     private var masterFD: Int32 = -1
     private var processID: pid_t = 0
@@ -86,6 +87,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         verificationRun = nil
         verificationTail = ""
         workingDirectory = url.path
+        emulator.reset()
         var size = winsize(ws_row: 24, ws_col: 120, ws_xpixel: 0, ws_ypixel: 0)
         var fd: Int32 = -1
         let child = forkpty(&fd, nil, nil, &size)
@@ -128,11 +130,35 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
             let text = Self.cleanTerminalText(String(decoding: data, as: UTF8.self))
             Task { @MainActor [weak self] in
                 guard let self, self.lifecycleID == lifecycleID, self.masterFD >= 0 else { return }
+                self.emulator.view.feed(byteArray: Array(data)[...])
                 self.consume(text)
                 if self.state == .starting { self.state = .ready }
             }
         }
         state = .ready
+        resize(columns: emulator.view.getTerminal().cols, rows: emulator.view.getTerminal().rows)
+    }
+
+    func resize(columns: Int, rows: Int) {
+        guard masterFD >= 0 else { return }
+        var size = winsize(ws_row: UInt16(clamping: max(1, rows)), ws_col: UInt16(clamping: max(1, columns)), ws_xpixel: 0, ws_ypixel: 0)
+        _ = ioctl(masterFD, TIOCSWINSZ, &size)
+    }
+
+    func sendInput(_ bytes: ArraySlice<UInt8>) {
+        guard masterFD >= 0 else { return }
+        if bytes.elementsEqual([3]) { interrupt(); return }
+        guard verificationRun == nil else { return }
+        if bytes.contains(13) || bytes.contains(10) { state = .running }
+        try? handle?.write(contentsOf: Data(bytes))
+    }
+
+    /// Interactive shell input never creates verification evidence.
+    @discardableResult
+    func submitCommand(_ command: String) -> Bool {
+        guard masterFD >= 0, verificationRun == nil, !command.isEmpty else { return false }
+        send(command + "\n")
+        return true
     }
 
     private func send(_ text: String) {
@@ -176,6 +202,7 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     }
 
     func clear() {
+        emulator.view.feed(text: "\u{1b}[2J\u{1b}[3J\u{1b}[H")
         outputBuffer.removeAll()
         output = outputBuffer.text
     }

@@ -180,16 +180,15 @@ struct SessionProjectRequiredState: View {
                 }
             }
             if let onSelectProject {
-                Button("SELECT PROJECT FOLDER", action: onSelectProject)
+                Button("Choose project folder", action: onSelectProject)
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockAccent)
             }
-            Divider().overlay(Color.dockBorderLight)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 32)
-        .padding(.top, 48)
+        .padding(.horizontal, 4)
+        .padding(.top, 20)
         .background(Color.dockCanvas)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("No project selected. Choose a project from Projects to use this session workspace.")

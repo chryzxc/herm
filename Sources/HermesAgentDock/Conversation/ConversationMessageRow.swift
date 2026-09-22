@@ -39,6 +39,7 @@ struct ConversationMessageRow: View, Equatable {
     let botsByID: [String: BotSummary]
     let avatarImages: [String: Data]
     let botRosterRevision: Int
+    let themeRevision: Int
     let onImagePreview: (NSImage) -> Void
     let pendingAction: ConversationMessageActionKind?
     let areSessionActionsAvailable: Bool
@@ -56,6 +57,7 @@ struct ConversationMessageRow: View, Equatable {
         botsByID: [String: BotSummary],
         avatarImages: [String: Data],
         botRosterRevision: Int,
+        themeRevision: Int = DockThemeRuntime.revision,
         onImagePreview: @escaping (NSImage) -> Void,
         pendingAction: ConversationMessageActionKind? = nil,
         areSessionActionsAvailable: Bool = true,
@@ -73,6 +75,7 @@ struct ConversationMessageRow: View, Equatable {
         self.botsByID = botsByID
         self.avatarImages = avatarImages
         self.botRosterRevision = botRosterRevision
+        self.themeRevision = themeRevision
         self.onImagePreview = onImagePreview
         self.pendingAction = pendingAction
         self.areSessionActionsAvailable = areSessionActionsAvailable
@@ -98,6 +101,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.isStreamingMessage == rhs.isStreamingMessage
             && lhs.activeBotProfileID == rhs.activeBotProfileID
             && lhs.botRosterRevision == rhs.botRosterRevision
+            && lhs.themeRevision == rhs.themeRevision
             && lhs.pendingAction == rhs.pendingAction
             && lhs.areSessionActionsAvailable == rhs.areSessionActionsAvailable
             && lhs.isSpeaking == rhs.isSpeaking
@@ -144,8 +148,7 @@ struct ConversationMessageRow: View, Equatable {
                                     .foregroundStyle(Color.dockAccent)
                             }
                             if !userText.isEmpty {
-                                MarkdownMessageView(markdown: userText)
-                                    .equatable()
+                                messageMarkdownView(userText, cacheKey: messageRenderCacheKey)
                             }
                         }
                         .fixedSize(horizontal: false, vertical: true)
@@ -213,7 +216,16 @@ struct ConversationMessageRow: View, Equatable {
                     if !message.text.isEmpty || isStreamingMessage {
                         Group {
                             if isStreamingMessage, let streamingText {
-                                StreamingMessageText(streaming: streamingText)
+                                if CompletedMarkdownRendererPolicy.usesNativeRenderer(for: streamingText.text) {
+                                    NativeMarkdownDocumentHost(
+                                        source: streamingText.text,
+                                        key: markdownRenderKey,
+                                        streamingSections: MarkdownRenderDocumentBuilder.sections(for: streamingText.chunks)
+                                    )
+                                    .fixedSize(horizontal: false, vertical: true)
+                                } else {
+                                    StreamingMessageText(streaming: streamingText)
+                                }
                             } else if message.isError {
                                 HStack(alignment: .top, spacing: 10) {
                                     LucideImage(systemName: "exclamationmark.triangle.fill")
@@ -227,8 +239,7 @@ struct ConversationMessageRow: View, Equatable {
                                     }
                                 }
                             } else {
-                                MarkdownMessageView(markdown: message.text)
-                                    .equatable()
+                                messageMarkdownView(message.text, cacheKey: messageRenderCacheKey)
                             }
                         }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -248,6 +259,15 @@ struct ConversationMessageRow: View, Equatable {
 
                     if !message.isError, message.hasBodyText {
                         messageActions
+                    } else if isStreamingMessage {
+                        HStack(spacing: 6) {
+                            Text(message.timeLabel)
+                            ResponseDurationLabel(startedAt: message.timestamp, finishedDuration: message.responseDuration)
+                            if let modelName = message.modelName { Text("· \(modelName)") }
+                        }
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .padding(.horizontal, 4)
                     } else if message.isError {
                         messageMetadata
                     }
@@ -256,6 +276,32 @@ struct ConversationMessageRow: View, Equatable {
         }
         .padding(.horizontal, metrics.contentInset)
         .padding(.vertical, 8)
+    }
+
+    private var messageRenderCacheKey: String {
+        "message:\(message.id.uuidString):\(message.contentRevision):theme:\(themeRevision)"
+    }
+
+    private var markdownRenderKey: MarkdownRenderKey {
+        MarkdownRenderKey(
+            messageID: message.id,
+            contentRevision: message.contentRevision,
+            themeRevision: themeRevision
+        )
+    }
+
+    @ViewBuilder
+    private func messageMarkdownView(_ markdown: String, cacheKey: String) -> some View {
+        if CompletedMarkdownRendererPolicy.usesNativeRenderer(for: markdown) {
+            let retainedSections = streamingText?
+                .completionChunks(matching: markdown)
+                .map(MarkdownRenderDocumentBuilder.sections(for:))
+            NativeMarkdownDocumentHost(source: markdown, key: markdownRenderKey, streamingSections: retainedSections)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            MarkdownMessageView(markdown: markdown, cacheKey: cacheKey)
+                .equatable()
+        }
     }
 
     private var messageActions: some View {

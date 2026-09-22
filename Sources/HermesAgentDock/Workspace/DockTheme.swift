@@ -106,17 +106,25 @@ private extension Color {
 final class DockThemeStore: ObservableObject {
     static let storageKey = "hermes.dock.theme.v1"
     static let legacyStorageKey = "hermes.sidebar.brand-concept.v1"
-    @Published var selectedThemeID: DockThemeID { didSet { defaults.set(selectedThemeID.rawValue, forKey: Self.storageKey); DockThemeRuntime.current = selectedThemeID } }
+    @Published var selectedThemeID: DockThemeID {
+        didSet {
+            defaults.set(selectedThemeID.rawValue, forKey: Self.storageKey)
+            DockThemeRuntime.current = selectedThemeID
+            DockThemeRuntime.revision &+= 1
+        }
+    }
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.removeObject(forKey: Self.legacyStorageKey)
         selectedThemeID = defaults.string(forKey: Self.storageKey).flatMap(DockThemeID.init(rawValue:)) ?? .nativeMacOS
         DockThemeRuntime.current = selectedThemeID
+        DockThemeRuntime.revision &+= 1
     }
     var palette: DockThemePalette { DockThemePalette(theme: selectedThemeID) }
 }
 
 enum DockThemeRuntime {
     nonisolated(unsafe) static var current: DockThemeID = .nativeMacOS
+    nonisolated(unsafe) static var revision: Int = 0
 }

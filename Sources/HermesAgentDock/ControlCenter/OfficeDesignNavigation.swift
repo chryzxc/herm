@@ -6,6 +6,7 @@ struct OfficeDesignNavigation {
     struct LeisureSpot {
         let station: Station
         let action: LeisureAction
+        var isOutdoor = false
     }
     struct Station {
         let position: SIMD3<Float>
@@ -24,7 +25,7 @@ struct OfficeDesignNavigation {
     func station(slot: Int, location: OfficePreviewLocation) -> Station {
         if let candidates = stations[location], candidates.indices.contains(slot) { return candidates[slot] }
         // Overflow agents stand in distinct garden positions, never share a chair.
-        let p = SIMD3<Float>(maxX - 2, 0, back + 3 + Float(slot) * 0.75)
-        return Station(position: p, approach: p + [1, 0, 0], yaw: -.pi / 2, seated: false)
+        let p = SIMD3<Float>(23 + Float(slot / 20) * 1.5, 0, -10 + Float(slot % 20) * 1.5)
+        return Station(position: p, approach: p, yaw: -.pi / 2, seated: false)
     }
 }

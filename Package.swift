@@ -9,10 +9,15 @@ let package = Package(
     name: "HermesAgentDock",
     platforms: [.macOS(.v14)],
     products: [.executable(name: "HermesAgentDock", targets: ["HermesAgentDock"])],
+    dependencies: [
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.20.0")
+    ],
     targets: [
         .executableTarget(
             name: "HermesAgentDock",
-            exclude: ["Info.plist"],
+            dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
+            exclude: ["Info.plist", "Resources/DockAppIcon.icns"],
+            resources: [.copy("Resources/DockAppIcon.png")],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

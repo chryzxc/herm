@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 
 /// Reusable conversation-only presentation primitives. They render DockModel
@@ -95,13 +96,46 @@ enum MarkdownJSONScanPolicy {
     static let maxScanBytes = 1_048_576
 }
 
+/// Shared fence rules keep streaming chunk boundaries and final rendering in
+/// agreement, including tilde fences and shorter backticks inside code.
+struct MarkdownFence {
+  let marker: Character
+  let length: Int
+  let language: String?
+
+  init(marker: Character, length: Int, language: String?) {
+    self.marker = marker
+    self.length = length
+    self.language = language
+  }
+
+  init?(opening line: String) {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    guard let marker = trimmed.first, marker == "`" || marker == "~" else { return nil }
+    let length = trimmed.prefix(while: { $0 == marker }).count
+    guard length >= 3 else { return nil }
+    let suffix = String(trimmed.dropFirst(length)).trimmingCharacters(in: .whitespaces)
+    guard marker != "`" || !suffix.contains("`") else { return nil }
+    self.marker = marker
+    self.length = length
+    self.language = suffix.isEmpty ? nil : suffix
+  }
+
+  func isClosed(by line: String) -> Bool {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    let count = trimmed.prefix(while: { $0 == marker }).count
+    return count >= length && trimmed.dropFirst(count).trimmingCharacters(in: .whitespaces).isEmpty
+  }
+}
+
 struct MarkdownMessageView: View, Equatable {
   let markdown: String
+  private let renderCacheKey: String?
   private let blocks: [RenderBlock]
 
   /// Fully-rendered row payloads. Inline `AttributedString` parsing happens
   /// once per distinct message, not on every body evaluation.
-  enum RenderBlock {
+  enum RenderBlock: Equatable {
     case heading(level: Int, text: AttributedString)
     case paragraph(AttributedString)
     case listItem(text: AttributedString, marker: String)
@@ -110,12 +144,16 @@ struct MarkdownMessageView: View, Equatable {
     case tableRow([AttributedString])
   }
 
-  init(markdown: String) {
+  init(markdown: String, cacheResult: Bool = true, cacheKey: String? = nil) {
     self.markdown = markdown
+    self.renderCacheKey = cacheKey
     // SwiftUI rebuilds each transcript row's view value on every parent
     // render and each lazy row build while scrolling. The shared cache keeps
     // that to a dictionary hit instead of re-parsing the message Markdown.
-    self.blocks = RenderCache.renderBlocks(for: markdown)
+    // Transient prefixes must not evict completed messages from the cache.
+    self.blocks = cacheResult
+      ? RenderCache.renderBlocks(for: markdown, cacheKey: cacheKey)
+      : Self.renderBlocks(for: markdown)
   }
 
   /// Transcript activity and scrolling can invalidate the surrounding stack
@@ -136,6 +174,7 @@ struct MarkdownMessageView: View, Equatable {
       // transcript resident so exact (non-lazy) row layout does not turn an
       // activity update into a Markdown reparse cascade.
       cache.countLimit = 600
+      cache.totalCostLimit = 32 * 1024 * 1024
       return cache
     }()
 
@@ -144,15 +183,25 @@ struct MarkdownMessageView: View, Equatable {
       init(blocks: [RenderBlock]) { self.blocks = blocks }
     }
 
-    static func renderBlocks(for markdown: String) -> [RenderBlock] {
-      let key = markdown as NSString
-      if let entry = cache.object(forKey: key) { return entry.blocks }
+    static func renderBlocks(for markdown: String, cacheKey: String?) -> [RenderBlock] {
+      // Transcript rows pass a stable message/revision key, avoiding a full
+      // long-string hash on every parent invalidation. Standalone previews
+      // retain their source as the fallback identity.
+      let key = (cacheKey ?? markdown) as NSString
+      if let entry = cache.object(forKey: key) {
+        DebugLog.writePerformance("markdown_cache_hit bytes=\(markdown.utf8.count)")
+        return entry.blocks
+      }
       // Always use the same renderer for restored and live messages. A
       // cheap-looking plain-text shortcut can miss inline Markdown (for
       // example `*italic*`, `_emphasis_`, or backticks), which makes resumed
       // assistant replies display their source syntax instead of formatting.
+      let started = DispatchTime.now().uptimeNanoseconds
       let blocks = MarkdownMessageView.renderBlocks(for: markdown)
-      cache.setObject(Entry(blocks: blocks), forKey: key)
+      let cost = max(markdown.utf8.count, blocks.count * 128)
+      cache.setObject(Entry(blocks: blocks), forKey: key, cost: cost)
+      let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+      DebugLog.writePerformance("markdown_parse cache_miss bytes=\(markdown.utf8.count) blocks=\(blocks.count) duration_ms=\(String(format: "%.2f", elapsed))")
       return blocks
     }
   }
@@ -199,7 +248,7 @@ struct MarkdownMessageView: View, Equatable {
     // Explicitly apply soft dockPrimaryText text color to eliminate pure white glare.
     // Native AttributedString links retain AppKit/SwiftUI pointer and keyboard
     // focus behavior; styling only their ranges keeps safe URL opening intact.
-    Text(Self.linkAffordances(in: value))
+    Text(value)
       .foregroundStyle(Color.dockPrimaryText)
       .tint(Color.dockAccent)
       .fixedSize(horizontal: false, vertical: true)
@@ -252,7 +301,7 @@ struct MarkdownMessageView: View, Equatable {
     var result: [ParsedBlock] = []
     var code: [String] = []
     var language: String?
-    var inCode = false
+    var fence: MarkdownFence?
     var paragraph: [String] = []
     func flushParagraph() {
       let text = paragraph.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -269,25 +318,25 @@ struct MarkdownMessageView: View, Equatable {
     for (index, line) in lines.enumerated() {
       if index < skippedJSONLines { continue }
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if !inCode, let json = Self.unmarkedJSONObject(in: lines, startingAt: index) {
+      if fence == nil, let json = Self.unmarkedJSONObject(in: lines, startingAt: index) {
         flushParagraph()
         result.append(.code(json.text, language: "json"))
         skippedJSONLines = json.nextLineIndex
         continue
       }
-      if trimmed.hasPrefix("```") {
-        if inCode {
+      if let active = fence {
+        if active.isClosed(by: line) {
           flushCode()
+          fence = nil
         } else {
-          flushParagraph()
-          let suffix = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-          language = suffix.isEmpty ? nil : suffix
+          code.append(line)
         }
-        inCode.toggle()
         continue
       }
-      if inCode {
-        code.append(line)
+      if let opening = MarkdownFence(opening: line) {
+        flushParagraph()
+        fence = opening
+        language = opening.language
         continue
       }
       if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
@@ -333,7 +382,7 @@ struct MarkdownMessageView: View, Equatable {
       }
       paragraph.append(line)
     }
-    if inCode { flushCode() } else { flushParagraph() }
+    if fence != nil { flushCode() } else { flushParagraph() }
     return result
   }
 
@@ -447,10 +496,195 @@ struct MarkdownMessageView: View, Equatable {
   }
 
   private static func inlineMarkdown(_ value: String) -> AttributedString {
-    (try? AttributedString(
+    let parsed = (try? AttributedString(
       markdown: value,
       options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
     )) ?? AttributedString(value)
+    return linkAffordances(in: parsed)
+  }
+}
+
+/// Long messages use AppKit's text system instead of one SwiftUI `Text` per
+/// Markdown block.  The outer conversation scroll view still owns scrolling;
+/// this view only owns text storage and intrinsic-height measurement.
+enum CompletedMarkdownRendererPolicy {
+  static let nativeThresholdBytes = 8_192
+
+  static func usesNativeRenderer(for markdown: String) -> Bool {
+    markdown.utf8.count >= nativeThresholdBytes
+  }
+}
+
+@MainActor
+struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
+  let markdown: String
+  let seedChunks: [StreamingPresentationChunk]?
+  let themeRevision: Int
+
+  init(
+    markdown: String,
+    seedChunks: [StreamingPresentationChunk]? = nil,
+    themeRevision: Int = DockThemeRuntime.revision
+  ) {
+    self.markdown = markdown
+    self.seedChunks = seedChunks
+    self.themeRevision = themeRevision
+  }
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.markdown == rhs.markdown && lhs.themeRevision == rhs.themeRevision
+  }
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  func makeNSView(context: Context) -> NativeMarkdownTextView {
+    let view = NativeMarkdownTextView()
+    context.coordinator.update(view, markdown: markdown, seedChunks: seedChunks, themeRevision: themeRevision)
+    return view
+  }
+
+  func updateNSView(_ nsView: NativeMarkdownTextView, context: Context) {
+    context.coordinator.update(nsView, markdown: markdown, seedChunks: seedChunks, themeRevision: themeRevision)
+  }
+
+  @MainActor
+  final class Coordinator {
+    private var renderedMarkdown: String?
+    private var renderedThemeRevision: Int?
+
+    func update(
+      _ view: NativeMarkdownTextView,
+      markdown: String,
+      seedChunks: [StreamingPresentationChunk]? = nil,
+      themeRevision: Int
+    ) {
+      guard renderedMarkdown != markdown || renderedThemeRevision != themeRevision else { return }
+      renderedMarkdown = markdown
+      renderedThemeRevision = themeRevision
+      let started = DispatchTime.now().uptimeNanoseconds
+      let attributed = seedChunks.map(Self.attributedString(for:)) ?? Self.attributedString(for: markdown)
+      view.textStorage?.setAttributedString(attributed)
+      view.invalidateIntrinsicContentSize()
+      let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+      DebugLog.writePerformance("markdown_native_update mode=completed bytes=\(markdown.utf8.count) duration_ms=\(String(format: "%.2f", elapsed))")
+    }
+
+    static func attributedString(for markdown: String) -> NSAttributedString {
+      let result = NSMutableAttributedString()
+      let blocks = MarkdownMessageView.renderBlocks(for: markdown)
+      for (index, block) in blocks.enumerated() {
+        if index > 0 { result.append(NSAttributedString(string: "\n")) }
+        switch block {
+        case .heading(let level, let text):
+          append(text, to: result, font: .systemFont(ofSize: headingSize(level), weight: .semibold), color: NSColor(Color.dockPrimaryText))
+        case .paragraph(let text):
+          append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockPrimaryText))
+        case .listItem(let text, let marker):
+          append(NSAttributedString(string: "\(marker) "), to: result, font: .systemFont(ofSize: 14, weight: .medium), color: NSColor(Color.dockAccent))
+          append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockPrimaryText))
+        case .quote(let text):
+          append(NSAttributedString(string: "│ "), to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockSecondaryText))
+          append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockSecondaryText))
+        case .code(let code, let language):
+          if let language, !language.isEmpty {
+            append(NSAttributedString(string: language.uppercased() + "\n"), to: result, font: .monospacedSystemFont(ofSize: 12, weight: .medium), color: NSColor(Color.dockMetadataText))
+          }
+          append(NSAttributedString(string: code), to: result, font: .monospacedSystemFont(ofSize: 12.5, weight: .regular), color: NSColor(Color.dockPrimaryText))
+        case .tableRow(let columns):
+          for (columnIndex, column) in columns.enumerated() {
+            if columnIndex > 0 { append(NSAttributedString(string: "  │  "), to: result, font: .systemFont(ofSize: 12.5), color: NSColor(Color.dockMetadataText)) }
+            append(column, to: result, font: .systemFont(ofSize: 12.5), color: NSColor(Color.dockPrimaryText))
+          }
+        }
+        if index < blocks.count - 1 { result.append(NSAttributedString(string: "\n")) }
+      }
+      return result
+    }
+
+    static func attributedString(for chunks: [StreamingPresentationChunk]) -> NSAttributedString {
+      let result = NSMutableAttributedString()
+      for (index, chunk) in chunks.enumerated() {
+        if index > 0 { result.append(NSAttributedString(string: "\n")) }
+        result.append(attributedString(for: source(for: chunk)))
+      }
+      return result
+    }
+
+    private static func source(for chunk: StreamingPresentationChunk) -> String {
+      switch chunk.context {
+      case .markdown, .paragraph, .list, .quote, .table, .inline:
+        return chunk.text
+      case .fencedCode(let marker, let length, let language):
+        let fence = String(repeating: String(marker), count: length)
+        return "\(fence)\(language.map { $0.isEmpty ? "" : "\($0)" } ?? "")\n\(chunk.text)\n\(fence)"
+      }
+    }
+
+    private static func append(_ value: AttributedString, to result: NSMutableAttributedString, font: NSFont, color: NSColor) {
+      append(NSAttributedString(value), to: result, font: font, color: color)
+    }
+
+    private static func append(_ value: NSAttributedString, to result: NSMutableAttributedString, font: NSFont, color: NSColor) {
+      let copy = NSMutableAttributedString(attributedString: value)
+      copy.addAttribute(.font, value: font, range: NSRange(location: 0, length: copy.length))
+      copy.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: copy.length))
+      result.append(copy)
+    }
+
+    private static func headingSize(_ level: Int) -> CGFloat {
+      level == 1 ? 18 : level == 2 ? 16 : level == 3 ? 14.5 : 14
+    }
+  }
+}
+
+final class NativeMarkdownTextView: NSTextView {
+  init() {
+    let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+    let layout = NSLayoutManager()
+    let storage = NSTextStorage()
+    layout.addTextContainer(container)
+    storage.addLayoutManager(layout)
+    super.init(frame: .zero, textContainer: container)
+    isEditable = false
+    isSelectable = true
+    isRichText = true
+    linkTextAttributes = [
+      .foregroundColor: NSColor.controlAccentColor,
+      .underlineStyle: NSUnderlineStyle.single.rawValue
+    ]
+    drawsBackground = false
+    isVerticallyResizable = true
+    isHorizontallyResizable = false
+    maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    textContainerInset = NSSize(width: 0, height: 0)
+    textContainer?.widthTracksTextView = true
+    textContainer?.lineFragmentPadding = 0
+    allowsUndo = false
+    isAutomaticSpellingCorrectionEnabled = false
+    isAutomaticTextCompletionEnabled = false
+    isAutomaticLinkDetectionEnabled = false
+    isAutomaticQuoteSubstitutionEnabled = false
+    isAutomaticDashSubstitutionEnabled = false
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override var intrinsicContentSize: NSSize {
+    guard let textContainer, let layoutManager else { return NSSize(width: NSView.noIntrinsicMetric, height: 0) }
+    layoutManager.ensureLayout(for: textContainer)
+    let used = layoutManager.usedRect(for: textContainer)
+    return NSSize(width: NSView.noIntrinsicMetric, height: ceil(used.height))
+  }
+
+  override func setFrameSize(_ newSize: NSSize) {
+    let widthChanged = abs(frame.width - newSize.width) > 0.5
+    super.setFrameSize(newSize)
+    if widthChanged {
+      // TextKit must recompute wrapping after a transcript resize, but an
+      // ordinary scroll/layout pass must not continuously invalidate the
+      // intrinsic height.
+      invalidateIntrinsicContentSize()
+    }
   }
 }
 
@@ -467,6 +701,97 @@ struct ConversationContentBoundsPreferenceKey: PreferenceKey {
 
     static func reduce(value: inout ConversationContentBounds, nextValue: () -> ConversationContentBounds) {
         value = nextValue()
+    }
+}
+
+/// Observes the native clip view without publishing its live bounds through
+/// SwiftUI. Trackpad scrolling can produce dozens of bounds changes per frame;
+/// only the settled transition is sent back to the transcript presentation.
+struct ConversationScrollEventObserver: NSViewRepresentable {
+    var restoreDocumentTop: CGFloat?
+    var onScrollSettled: (CGRect) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(restoreDocumentTop: restoreDocumentTop, onScrollSettled: onScrollSettled)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.isHidden = true
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onScrollSettled = onScrollSettled
+        context.coordinator.restoreDocumentTop = restoreDocumentTop
+        DispatchQueue.main.async {
+            context.coordinator.attachIfNeeded(from: nsView)
+            context.coordinator.restoreIfNeeded()
+        }
+    }
+
+    final class Coordinator: NSObject, @unchecked Sendable {
+        var onScrollSettled: (CGRect) -> Void
+        var restoreDocumentTop: CGFloat?
+        weak var clipView: NSClipView?
+        private var observers: [NSObjectProtocol] = []
+        private var settleGeneration = 0
+        private var lastRestoredDocumentTop: CGFloat?
+
+        init(restoreDocumentTop: CGFloat?, onScrollSettled: @escaping (CGRect) -> Void) {
+            self.restoreDocumentTop = restoreDocumentTop
+            self.onScrollSettled = onScrollSettled
+        }
+
+        @MainActor
+        func restoreIfNeeded() {
+            guard let clipView, let restoreDocumentTop,
+                  restoreDocumentTop != lastRestoredDocumentTop else { return }
+            lastRestoredDocumentTop = restoreDocumentTop
+            var origin = clipView.bounds.origin
+            origin.y = restoreDocumentTop
+            clipView.setBoundsOrigin(origin)
+        }
+
+        @MainActor
+        func attachIfNeeded(from view: NSView) {
+            guard clipView == nil else { return }
+            var candidate: NSView? = view
+            while let current = candidate {
+                if let scrollView = current as? NSScrollView {
+                    attach(to: scrollView.contentView)
+                    return
+                }
+                candidate = current.superview
+            }
+        }
+
+        @MainActor
+        private func attach(to clipView: NSClipView) {
+            self.clipView = clipView
+            let notification = NSView.boundsDidChangeNotification
+            let token = NotificationCenter.default.addObserver(
+                forName: notification,
+                object: clipView,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, let clipView = self.clipView else { return }
+                    self.settleGeneration &+= 1
+                    let generation = self.settleGeneration
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                    guard generation == self.settleGeneration else { return }
+                    self.onScrollSettled(clipView.bounds)
+                }
+            }
+            observers.append(token)
+            clipView.postsBoundsChangedNotifications = true
+            onScrollSettled(clipView.bounds)
+        }
+
+        deinit {
+            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        }
     }
 }
 

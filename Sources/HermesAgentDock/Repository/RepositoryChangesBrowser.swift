@@ -12,6 +12,8 @@ struct RepositoryChangesBrowser: View {
     var onSelectFile: ((RepositoryFileChange) -> Void)? = nil
     var selectedFilePath: String? = nil
 
+    var isInspector = false
+
     @State private var selectedDiff: RepositoryDiff?
 
     @State private var isLoading = false
@@ -44,7 +46,7 @@ struct RepositoryChangesBrowser: View {
 
             sourceControlHeader(changes)
 
-            if case .available = workflow.githubIntegrationState {
+            if !isInspector, case .available = workflow.githubIntegrationState {
                 pullRequestsSection
             }
 
@@ -56,7 +58,7 @@ struct RepositoryChangesBrowser: View {
 
                 if !stagedFiles.isEmpty {
                     changeGroup(
-                        title: "STAGED CHANGES",
+                        title: "Staged",
                         files: stagedFiles,
                         isExpanded: $isStagedExpanded
                     )
@@ -64,7 +66,7 @@ struct RepositoryChangesBrowser: View {
 
                 if !worktreeFiles.isEmpty {
                     changeGroup(
-                        title: "CHANGES",
+                        title: "Changes",
                         files: worktreeFiles,
                         isExpanded: $isChangesExpanded
                     )
@@ -88,13 +90,12 @@ struct RepositoryChangesBrowser: View {
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 12)
                     Text(title)
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .tracking(1.05)
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockSecondaryText)
                     Spacer(minLength: 8)
                     Text("\(files.count)")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(title == "STAGED CHANGES" ? Color.dockAccent : Color.dockMetadataText)
+                        .foregroundStyle(title == "Staged" ? Color.dockAccent : Color.dockMetadataText)
                 }
                 .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
                 .contentShape(Rectangle())
@@ -166,7 +167,7 @@ struct RepositoryChangesBrowser: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Text(changes.branch)
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -188,7 +189,7 @@ struct RepositoryChangesBrowser: View {
                 Spacer(minLength: 0)
             }
 
-            githubConnectionRow
+            if !isInspector { githubConnectionRow }
         }
             .padding(.bottom, 11)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -488,6 +489,6 @@ struct RepositoryChangesBrowser: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .dockGlassPane()
+
     }
 }

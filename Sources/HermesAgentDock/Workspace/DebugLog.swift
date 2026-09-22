@@ -73,24 +73,32 @@ enum DebugLog {
 /// SwiftUI state: tracing must not itself invalidate the popover being measured.
 @MainActor
 final class ConversationPerformanceMonitor {
+    let instanceID: String
     private var startedAt = Date()
     private var modelPublications = 0
     private var scrollBoundsUpdates = 0
     private var streamingUpdates = 0
+    private var scrollSettledEvents = 0
+
+    init(instanceID: String = UUID().uuidString.prefix(8).description) {
+        self.instanceID = instanceID
+    }
 
     func recordModelPublication() { modelPublications += 1; flushIfNeeded() }
     func recordScrollBoundsUpdate() { scrollBoundsUpdates += 1; flushIfNeeded() }
     func recordStreamingUpdate() { streamingUpdates += 1; flushIfNeeded() }
+    func recordScrollSettled() { scrollSettledEvents += 1; flushIfNeeded() }
 
     private func flushIfNeeded() {
         guard Date().timeIntervalSince(startedAt) >= 1 else { return }
         DebugLog.writePerformance(
-            "conversation model_publications=\(modelPublications) scroll_bounds=\(scrollBoundsUpdates) streaming=\(streamingUpdates)"
+            "conversation instance=\(instanceID) model_publications=\(modelPublications) scroll_bounds=\(scrollBoundsUpdates) scroll_settled=\(scrollSettledEvents) streaming=\(streamingUpdates)"
         )
         startedAt = Date()
         modelPublications = 0
         scrollBoundsUpdates = 0
         streamingUpdates = 0
+        scrollSettledEvents = 0
     }
 }
 

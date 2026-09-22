@@ -272,6 +272,83 @@ struct StreamingPerformanceTests {
         #expect(first.activeAgentIDs.count == 4)
     }
 
+    @Test func markdownBlocksMatchAcrossStreamingBoundaries() {
+        let streaming = StreamingText()
+        let source = "# Heading\n\n" + String(repeating: "**bold** and `code` words. ", count: 200)
+            + "\n\n```swift\nlet value = 1\n\n" + String(repeating: "// code\n", count: 700)
+            + "```\n\n> Quote\n\n- Item with *emphasis*"
+        var remainder = source[...]
+        while !remainder.isEmpty {
+            let delta = remainder.prefix(37)
+            streaming.appendPresentation(String(delta))
+            remainder = remainder.dropFirst(delta.count)
+        }
+        #expect(streaming.chunks.map(\.text).joined() == source)
+        let streamed = streaming.chunks.flatMap { MarkdownMessageView.renderBlocks(for: $0.text) }
+        #expect(streamed == MarkdownMessageView.renderBlocks(for: source))
+    }
+
+    @Test func blankLinesInsideAnOpenFenceNeverPromoteCodeToProse() {
+        for marker in ["```", "~~~~", "````"] {
+            let streaming = StreamingText()
+            let source = marker + "swift\n" + String(repeating: "let x = 1\n\n", count: 1_000)
+            streaming.appendPresentation(source)
+            #expect(streaming.chunks.count > 1)
+            #expect(streaming.chunks.dropFirst().allSatisfy { chunk in
+                if case .fencedCode(let chunkMarker, let length, let language) = chunk.context {
+                    return String(repeating: String(chunkMarker), count: length) == String(marker.prefix(length))
+                        && language == "swift"
+                }
+                return false
+            })
+            #expect(MarkdownMessageView.codeBlockLanguages(in: source).first == "swift")
+            streaming.appendPresentation("\n" + marker + "\n\nDone")
+            #expect(streaming.chunks.count == 2)
+            #expect(streaming.chunks.map(\.text).joined() == streaming.text)
+        }
+    }
+
+    @Test func shorterFenceAndBackticksWithTextRemainCode() {
+        let source = "````swift\n```\n```not a closing fence\nlet value = 1\n````"
+        #expect(MarkdownMessageView.renderBlocks(for: source) == [
+            .code("```\n```not a closing fence\nlet value = 1", language: "swift")
+        ])
+    }
+
+    @Test func incompleteMarkdownIsRenderedWithoutChangingSource() {
+        let streaming = StreamingText()
+        streaming.appendPresentation("# Title\n\n**complete** and **partial")
+        #expect(MarkdownMessageView.renderBlocks(for: streaming.chunks[0].text) ==
+            MarkdownMessageView.renderBlocks(for: streaming.text))
+        streaming.appendPresentation(" bold**")
+        guard case .paragraph(let text) = MarkdownMessageView.renderBlocks(for: streaming.text).last else {
+            Issue.record("Expected a Markdown paragraph")
+            return
+        }
+        #expect(String(text.characters) == "complete and partial bold")
+        #expect(streaming.text.hasSuffix("**partial bold**"))
+    }
+
+    @Test func scrollRequestsCoalesceAndCancellationDoesNotCancelReplacement() async throws {
+        let scheduler = ConversationTailScrollScheduler()
+        var actions: [Int] = []
+        scheduler.schedule { actions.append(1) }
+        scheduler.schedule { actions.append(2) }
+        let firstDeadline = Date().addingTimeInterval(2)
+        while actions.isEmpty && Date() < firstDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(actions == [1])
+        scheduler.schedule { actions.append(3) }
+        scheduler.cancel()
+        scheduler.schedule { actions.append(4) }
+        let secondDeadline = Date().addingTimeInterval(2)
+        while actions.count < 2 && Date() < secondDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(actions == [1, 4])
+    }
+
     @Test func smallPresentationAppendRemainsOneMutableTail() {
         let streaming = StreamingText()
         streaming.appendPresentation("short response")
@@ -308,15 +385,84 @@ struct StreamingPerformanceTests {
         #expect(streaming.chunks.map(\.text).joined() == streaming.text)
     }
 
-    @Test func LargeTextWithoutParagraphBoundaryRemainsOneExactTail() {
+    @Test func largeTextWithoutParagraphBoundaryStaysBoundedAndExact() {
         let streaming = StreamingText()
         let value = String(repeating: "a", count: 20_000)
         streaming.appendPresentation(value)
 
-        #expect(streaming.chunks.count == 1)
-        #expect(streaming.chunks[0].isMutableTail)
-        #expect(streaming.chunks[0].text == value)
+        #expect(streaming.chunks.count > 1)
+        #expect(streaming.chunks.last?.isMutableTail == true)
+        #expect(streaming.chunks.last?.text.utf8.count ?? .max <= StreamingChunkPolicy.maxMutableTailBytes)
         #expect(streaming.text == value)
+        #expect(streaming.chunks.map(\.text).joined() == value)
+    }
+
+    @Test func unicodePromotionNeverSplitsACharacter() {
+        let streaming = StreamingText()
+        let value = String(repeating: "🙂", count: 8_000)
+        streaming.appendPresentation(value)
+
+        #expect(streaming.text == value)
+        #expect(streaming.chunks.map(\.text).joined() == value)
+        #expect(streaming.chunks.last?.text.utf8.count ?? .max <= StreamingChunkPolicy.maxMutableTailBytes)
+    }
+
+    @Test func promotedContinuationKeepsTheOriginalFenceMarker() {
+        let streaming = StreamingText()
+        let prefix = "````swift\n"
+            + String(repeating: "``` literal code\nlet value = 1\n", count: 500)
+        let source = prefix + "````\n"
+        streaming.appendPresentation(prefix)
+        streaming.appendPresentation("````\n")
+
+        #expect(streaming.text == source)
+        #expect(streaming.chunks.map(\.text).joined() == source)
+        #expect(streaming.chunks.contains { chunk in
+            if case .fencedCode(let marker, let length, let language) = chunk.context {
+                return marker == "`" && length == 4 && language == "swift"
+            }
+            return false
+        })
+    }
+
+    @Test func replacementAndClearNeverReuseRenderedChunkRevisions() {
+        let streaming = StreamingText()
+        let prefix = String(repeating: "a", count: 4_096) + "\n\n"
+        streaming.appendPresentation(prefix + String(repeating: "b", count: 5_000))
+        let old = streaming.chunks
+        streaming.replacePresentation(with: prefix.uppercased() + String(repeating: "c", count: 5_000))
+        #expect(streaming.chunks[0] != old[0])
+        #expect(streaming.chunks[1] != old[1])
+        let previousTail = streaming.chunks.last
+        streaming.clearPresentation()
+        streaming.appendPresentation("different response")
+        #expect(streaming.chunks.last != previousTail)
+    }
+
+    @Test func completionSnapshotSurvivesLiveRowHandoff() {
+        let streaming = StreamingText()
+        let source = String(repeating: "A completed response. ", count: 600)
+        streaming.appendPresentation(source)
+        streaming.retainCompletionPresentation()
+        let expected = streaming.chunks
+        streaming.clearLivePresentation()
+
+        #expect(streaming.text.isEmpty)
+        #expect(streaming.chunks.isEmpty)
+        #expect(streaming.completionChunks(matching: source) == expected)
+        #expect(streaming.completionChunks(matching: "different") == nil)
+    }
+
+    @Test func completionReconciliationAppendsOnlyTheMissingSuffix() {
+        let streaming = StreamingText()
+        let prefix = String(repeating: "stable ", count: 1_400)
+        streaming.appendPresentation(prefix)
+        let stableIDs = streaming.chunks.filter { !$0.isMutableTail }.map(\.id)
+
+        streaming.reconcilePresentation(with: prefix + "final")
+
+        #expect(streaming.text == prefix + "final")
+        #expect(streaming.chunks.filter { !$0.isMutableTail }.map(\.id) == stableIDs)
     }
 
     @Test func replacementResetsPreviousChunks() {
