@@ -4377,7 +4377,10 @@ final class DockModel: ObservableObject {
         var pendingImages: [RestoredTranscript.PendingImages] = []
         for row in rows {
             guard let role = row["role"] as? String else { continue }
-            let persisted = persistedImageContent(from: messageText(row["text"] ?? row["content"]))
+            let persisted = persistedImageContent(
+                from: [row["text"], row["content"]].compactMap { $0 }.map(messageText),
+                attachmentReferences: imageAttachmentReferences(in: row)
+            )
             let text = persisted.text
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.imageFileURLs.isEmpty else { continue }
             let timestamp: Date
@@ -4415,9 +4418,25 @@ final class DockModel: ObservableObject {
     /// references are collected here; decoding happens off the main actor in
     /// `rehydratePendingTranscriptImages`.
     static func persistedImageContent(from rawText: String) -> (text: String, imageFileURLs: [URL]) {
+        persistedImageContent(from: [rawText], attachmentReferences: [])
+    }
+
+    /// Reconciles the two transcript shapes used by Hermes Desktop. Older
+    /// rows carry `@image:` directives in text/content; newer rows may also
+    /// expose the same references as attachment metadata. Keep the first
+    /// occurrence of each path so a row containing both shapes cannot render
+    /// one thumbnail twice.
+    static func persistedImageContent(
+        from rawTexts: [String],
+        attachmentReferences: [String]
+    ) -> (text: String, imageFileURLs: [URL]) {
+        let rawText = rawTexts.reduce(into: [String]()) { values, value in
+            guard !value.isEmpty, !values.contains(value) else { return }
+            values.append(value)
+        }.joined(separator: "\n")
         let lines = rawText.components(separatedBy: .newlines)
         var imageFileURLs: [URL] = []
-        var removedImageReference = false
+        var seenPaths = Set<String>()
         var remainingLines: [String] = []
 
         for line in lines {
@@ -4427,17 +4446,17 @@ final class DockModel: ObservableObject {
                 continue
             }
 
-            removedImageReference = true
-            var path = String(trimmed.dropFirst("@image:".count))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if path.count >= 2, path.first == "`", path.last == "`" {
-                path.removeFirst()
-                path.removeLast()
+            if let path = imagePath(from: trimmed), seenPaths.insert(path).inserted {
+                imageFileURLs.append(URL(fileURLWithPath: path))
             }
+        }
+
+        for reference in attachmentReferences {
+            guard let path = imagePath(from: reference), seenPaths.insert(path).inserted else { continue }
             imageFileURLs.append(URL(fileURLWithPath: path))
         }
 
-        if removedImageReference {
+        if !imageFileURLs.isEmpty {
             remainingLines.removeAll { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "[screenshot]" }
         }
         // This boundary feeds every restored transcript message, not only
@@ -4445,6 +4464,33 @@ final class DockModel: ObservableObject {
         // Markdown renderer receives the exact persisted body rather than
         // literal `\\n` source characters.
         return (remainingLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), imageFileURLs)
+    }
+
+    private static func imagePath(from reference: String) -> String? {
+        var path = reference.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.hasPrefix("@image:") else { return nil }
+        path = String(path.dropFirst("@image:".count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        if path.count >= 2, path.first == "`", path.last == "`" {
+            path.removeFirst()
+            path.removeLast()
+        }
+        return path.isEmpty ? nil : path
+    }
+
+    private static func imageAttachmentReferences(in row: [String: Any]) -> [String] {
+        let keys = ["attachmentRefs", "attachment_refs", "attachmentReferences", "attachment_references", "imageRefs", "image_refs"]
+        let containers = [row, row["display_metadata"] as? [String: Any] ?? [:]]
+        return containers.flatMap { container in
+            keys.flatMap { key -> [String] in
+                guard let value = container[key] else { return [] }
+                if let references = value as? [String] { return references }
+                if let reference = value as? String { return [reference] }
+                if let references = value as? [[String: Any]] {
+                    return references.compactMap { $0["ref"] as? String ?? $0["reference"] as? String }
+                }
+                return []
+            }
+        }
     }
 
     /// Hermes Bot Mode's documented delivery envelope is:
