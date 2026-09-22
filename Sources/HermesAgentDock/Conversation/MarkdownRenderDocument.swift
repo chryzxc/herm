@@ -197,6 +197,16 @@ enum MarkdownRenderDocumentBuilder {
         var index = 0
         var paragraph = ""
         var paragraphStart = 0
+        // Consecutive list/quote lines share one section view. One NSTextView
+        // per line made AutoLayout solve cost scale with line count (252
+        // sections for one compaction message).
+        var listBuffer = ""
+        var listStart = 0
+        var listMarker: String?
+        var listIndentation = 0
+        var quoteBuffer = ""
+        var quoteStart = 0
+        var quoteDepth = 0
 
         func appendSection(_ text: String, kind: MarkdownRenderSectionKind, context: MarkdownContinuationContext, start: Int) {
             guard !text.isEmpty else { return }
@@ -213,6 +223,30 @@ enum MarkdownRenderDocumentBuilder {
             guard !paragraph.isEmpty else { return }
             appendSection(paragraph, kind: .prose, context: .paragraph, start: paragraphStart)
             paragraph = ""
+        }
+
+        func flushList() {
+            guard let marker = listMarker else { return }
+            appendSection(
+                listBuffer,
+                kind: .list(marker: marker),
+                context: .list(marker: marker, indentation: listIndentation),
+                start: listStart
+            )
+            listBuffer = ""
+            listMarker = nil
+        }
+
+        func flushQuote() {
+            guard !quoteBuffer.isEmpty else { return }
+            appendSection(quoteBuffer, kind: .quote, context: .quote(depth: quoteDepth), start: quoteStart)
+            quoteBuffer = ""
+        }
+
+        func flushBlocks() {
+            flushParagraph()
+            flushList()
+            flushQuote()
         }
 
         func preserveWhitespace(_ whitespace: String, start: Int) {
@@ -237,7 +271,7 @@ enum MarkdownRenderDocumentBuilder {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if let fence = MarkdownFence(opening: line) {
-                flushParagraph()
+                flushBlocks()
                 let start = offset
                 var code = rawLine
                 var cursor = index + 1
@@ -271,6 +305,10 @@ enum MarkdownRenderDocumentBuilder {
                     paragraph += rawLine
                     flushParagraph()
                 } else {
+                    // A blank line ends a buffered list/quote block; flushing
+                    // first keeps section order aligned with source order.
+                    flushList()
+                    flushQuote()
                     preserveWhitespace(rawLine, start: offset)
                     offset += rawLine.utf8.count
                 }
@@ -279,7 +317,7 @@ enum MarkdownRenderDocumentBuilder {
             }
 
             if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
-                flushParagraph()
+                flushBlocks()
                 let start = offset
                 var table = rawLine
                 var cursor = index + 1
@@ -297,16 +335,35 @@ enum MarkdownRenderDocumentBuilder {
             }
 
             if let heading = headingLevel(trimmed) {
-                flushParagraph()
+                flushBlocks()
                 appendSection(rawLine, kind: .heading(level: heading), context: .markdown, start: offset)
             } else if let item = unorderedListItem(trimmed) ?? orderedListItem(trimmed) {
                 flushParagraph()
-                appendSection(rawLine, kind: .list(marker: item.marker), context: .list(marker: item.marker, indentation: line.prefix(while: { $0 == " " }).count), start: offset)
+                flushQuote()
+                let indentation = line.prefix(while: { $0 == " " }).count
+                // Ordered markers are unique per line ("1.", "2.", …); merge
+                // by list class so numbered items share one section.
+                let markerClass = item.marker.hasSuffix(".") ? "1." : item.marker
+                if let marker = listMarker, marker == markerClass, indentation == listIndentation {
+                    listBuffer += rawLine
+                } else {
+                    flushList()
+                    listMarker = markerClass
+                    listIndentation = indentation
+                    listStart = offset
+                    listBuffer = rawLine
+                }
             } else if trimmed.hasPrefix(">") {
                 flushParagraph()
+                flushList()
                 let depth = trimmed.prefix(while: { $0 == ">" }).count
-                appendSection(rawLine, kind: .quote, context: .quote(depth: depth), start: offset)
+                if quoteBuffer.isEmpty {
+                    quoteStart = offset
+                    quoteDepth = depth
+                }
+                quoteBuffer += rawLine
             } else {
+                flushBlocks()
                 if paragraph.isEmpty { paragraphStart = offset }
                 paragraph += rawLine
             }
@@ -314,7 +371,7 @@ enum MarkdownRenderDocumentBuilder {
             offset += rawLine.utf8.count
             index += 1
         }
-        flushParagraph()
+        flushBlocks()
         return MarkdownRenderDocument(key: key, source: source, sections: sections)
     }
 
@@ -356,9 +413,22 @@ final class NativeMarkdownDocumentContainerView: NSView {
     private let stack = NSStackView()
     private var sectionViews: [Int: NSView] = [:]
     private var source = ""
+    // SwiftUI consults intrinsic sizing on every layout pass while the row
+    // is mounted. `stack.fittingSize` re-solves AutoLayout over every section
+    // view per consultation — for a 250-section document that measured
+    // ~15.6 ms per call, an entire frame budget spent per layout query. The
+    // cached solve is valid until the content or the solve width changes.
+    private(set) var cachedIntrinsicHeight: CGFloat?
+    private(set) var cachedSolveWidth: CGFloat = -1
 
     override var intrinsicContentSize: NSSize {
+        let width = bounds.width
+        if let cached = cachedIntrinsicHeight, abs(cachedSolveWidth - width) <= 0.5 {
+            return NSSize(width: NSView.noIntrinsicMetric, height: cached)
+        }
         let height = stack.fittingSize.height
+        cachedSolveWidth = width
+        cachedIntrinsicHeight = max(0, height)
         return NSSize(width: NSView.noIntrinsicMetric, height: max(0, height))
     }
 
@@ -407,6 +477,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
             for view in stack.arrangedSubviews { stack.removeArrangedSubview(view) }
             for view in ordered { stack.addArrangedSubview(view) }
         }
+        cachedIntrinsicHeight = nil
         invalidateIntrinsicContentSize()
     }
 
@@ -423,6 +494,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
         sectionViews.removeAll(keepingCapacity: true)
         stack.arrangedSubviews.forEach { stack.removeArrangedSubview($0) }
         source = ""
+        cachedIntrinsicHeight = nil
         invalidateIntrinsicContentSize()
     }
 
