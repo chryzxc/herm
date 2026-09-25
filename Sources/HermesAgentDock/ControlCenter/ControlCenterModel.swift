@@ -63,14 +63,20 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var memoryHealthStatus: HermesReadOnlyStatus?
     @Published private(set) var sessionUsage: SessionUsageSummary?
     @Published private(set) var sessionContext: SessionContextSummary?
-    @Published private(set) var providerQuota: ProviderQuotaSnapshot?
     @Published private(set) var providerQuotas: [ProviderQuotaSnapshot] = []
+    /// Snapshots exactly as the providers reported them. `providerQuotas` is
+    /// derived from these plus the user's nicknames and display order, so a
+    /// rename or reorder never needs another provider read.
+    private var reportedProviderQuotas: [ProviderQuotaSnapshot] = []
     /// Safe per-provider diagnostics from the last quota refresh, keyed by
     /// catalog provider id. Providers without an entry connected successfully;
     /// missing providers render disabled with their diagnostic, never invented.
     @Published private(set) var providerQuotaDiagnostics: [String: String] = [:]
     @Published private(set) var kanbanDiagnostics: [KanbanDiagnosticSummary] = []
     @Published private(set) var kanbanAttachments: [KanbanAttachmentSummary] = []
+    /// Keyed task detail for inspectors that sit beside the Kanban page (the
+    /// 3D office). Separate from `kanbanDetail`, so the two never clobber.
+    @Published private(set) var kanbanTaskInspections: [KanbanTaskIdentity: KanbanTaskInspection] = [:]
     @Published private(set) var promptBudget: PromptBudgetSummary?
     @Published private(set) var projectFacts: ProjectFactsSummary?
     @Published private(set) var verification: VerificationSummary?
@@ -109,6 +115,9 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var pendingActionIDs: Set<String> = []
     @Published private(set) var lastError: String?
+    /// Failures of quota-card actions (such as removing a Hermes-pooled
+    /// account), keyed by provider id and shown on that card.
+    @Published private(set) var providerQuotaActionErrors: [String: String] = [:]
     @Published private(set) var projectionRefreshStates: [String: ProjectionRefreshState] = [:]
     @Published private(set) var projectionStates: [String: HermesProjectionState<Int>] = [:]
 
@@ -186,6 +195,8 @@ final class ControlCenterModel: ObservableObject {
     private var kanbanStatsGeneration = UUID()
     private var kanbanAssigneesGeneration = UUID()
     private var kanbanDetailGeneration = UUID()
+    private var kanbanTaskInspectionGenerations: [KanbanTaskIdentity: UUID] = [:]
+    private var kanbanTaskInspectionOrder: [KanbanTaskIdentity] = []
     private var kanbanDiagnosticsGeneration = UUID()
     private var kanbanAttachmentsGeneration = UUID()
     private var promptBudgetGeneration = UUID()
@@ -213,6 +224,8 @@ final class ControlCenterModel: ObservableObject {
     private let diagnosticsService = HermesDiagnosticsService()
     private var remindersAdapter: AppleRemindersAdapter?
     private let presentationDefaults = UserDefaults.standard
+    let providerNicknameStore = ProviderNicknameStore()
+    private static let providerQuotaOrderKey = "dock.quota.displayOrder"
     private let presentationKey = "hermes.control.attention.presentation.v1"
     private let snoozeKey = "hermes.control.attention.snooze.v1"
     private struct QuotaReadResult: @unchecked Sendable {
@@ -503,6 +516,9 @@ final class ControlCenterModel: ObservableObject {
             kanbanDetail = nil
             kanbanDetailTaskIdentity = nil
             kanbanDetailError = nil
+            kanbanTaskInspections = [:]
+            kanbanTaskInspectionGenerations = [:]
+            kanbanTaskInspectionOrder = []
             kanbanStats = nil
             kanbanAssignees = []
             kanbanBoards = []
@@ -513,8 +529,8 @@ final class ControlCenterModel: ObservableObject {
             sessionUsage = nil
             sessionContext = nil
             sessionCockpitSessionID = nil
-            providerQuota = nil
             providerQuotas = []
+            reportedProviderQuotas = []
             kanbanDiagnostics = []
             kanbanAttachments = []
             promptBudget = nil
@@ -835,14 +851,13 @@ final class ControlCenterModel: ObservableObject {
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         providerQuotaGeneration = generation
         guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else {
-            providerQuota = nil
             providerQuotas = []
+            reportedProviderQuotas = []
             return
         }
         beginProjectionRefresh("provider.quota")
         Task { @MainActor in
             let readers: [(id: String, read: @Sendable () async throws -> [String: Any])] = [
-                ("codex", CodexQuotaService.read),
                 ("codex-hermes", CodexQuotaService.readHermes),
                 ("opencode", OpenCodeQuotaService.read),
                 ("glm", GLMQuotaService.read),
@@ -864,16 +879,29 @@ final class ControlCenterModel: ObservableObject {
             var diagnostics: [String: String] = [:]
             for reader in readers {
                 let result = byID[reader.id] ?? QuotaReadResult(value: nil, error: nil)
-                if let raw = result.value, let snapshot = Self.parseProviderQuota(raw) {
-                    snapshots.append(snapshot)
+                if let raw = result.value {
+                    // Special handling for codex-hermes: may return multiple account snapshots
+                    if reader.id == "codex-hermes" {
+                        if let accounts = raw["_accounts"] as? [[String: Any]] {
+                            for account in accounts {
+                                if let snapshot = Self.parseProviderQuota(account) {
+                                    snapshots.append(snapshot)
+                                }
+                            }
+                        } else if let snapshot = Self.parseProviderQuota(raw) {
+                            snapshots.append(snapshot)
+                        }
+                    } else if let snapshot = Self.parseProviderQuota(raw) {
+                        snapshots.append(snapshot)
+                    }
                 } else if let error = result.error {
                     diagnostics[reader.id] = error
                 }
             }
             providerQuotaDiagnostics = diagnostics
             if !snapshots.isEmpty {
-                providerQuotas = snapshots
-                providerQuota = snapshots.first(where: { $0.provider == "codex" })
+                reportedProviderQuotas = snapshots
+                applyProviderQuotaPresentation()
                 recordProjectionSuccess("provider.quota")
             } else {
                 let errors = readers.compactMap { byID[$0.id]?.error }
@@ -888,6 +916,127 @@ final class ControlCenterModel: ObservableObject {
         guard let storageKey = descriptor.storageKey else { return }
         ProviderKeyStore().save(key, storageKey: storageKey)
         refreshProviderQuota()
+    }
+    
+    /// Rebuilds `providerQuotas` from the last reported snapshots, applying
+    /// nicknames and the saved display order without re-reading providers.
+    private func applyProviderQuotaPresentation() {
+        let named = reportedProviderQuotas.map { snapshot in
+            ProviderQuotaSnapshot(
+                provider: snapshot.provider,
+                displayName: providerNicknameStore.nickname(for: snapshot.provider) ?? snapshot.displayName,
+                model: snapshot.model,
+                updatedAt: snapshot.updatedAt,
+                windows: snapshot.windows,
+                safeDetail: snapshot.safeDetail,
+                hermesCredential: snapshot.hermesCredential
+            )
+        }
+        providerQuotas = QuotaWorkspacePresentation.ordered(named, savedOrder: providerQuotaOrder)
+    }
+
+    /// Sets a custom display name (nickname) for a provider. Persists across
+    /// app launches. An empty or whitespace-only name restores the default.
+    func setProviderNickname(_ nickname: String, for providerID: String) {
+        providerNicknameStore.setNickname(nickname, for: providerID)
+        applyProviderQuotaPresentation()
+    }
+
+    /// Gets the custom display name for a provider, or nil if not set.
+    func getProviderNickname(for providerID: String) -> String? {
+        providerNicknameStore.nickname(for: providerID)
+    }
+
+    /// The name the provider itself reports, ignoring any nickname.
+    func reportedProviderName(for providerID: String) -> String? {
+        reportedProviderQuotas.first(where: { $0.provider == providerID })?.displayName
+    }
+
+    /// Removes the custom nickname for a provider (reverts to default).
+    func removeProviderNickname(for providerID: String) {
+        providerNicknameStore.removeNickname(for: providerID)
+        applyProviderQuotaPresentation()
+    }
+
+    /// The user's saved order of connected quota providers, keyed by the
+    /// reported provider id so individual Hermes accounts (`codex-hermes-<pool entry id>`) can be
+    /// ordered independently.
+    var providerQuotaOrder: [String] {
+        presentationDefaults.stringArray(forKey: Self.providerQuotaOrderKey) ?? []
+    }
+
+    /// Moves `providerID` into the position currently held by `targetID` and
+    /// persists the resulting order.
+    func moveProviderQuota(_ providerID: String, to targetID: String) {
+        let current = providerQuotas.map(\.provider)
+        let reordered = QuotaWorkspacePresentation.moving(providerID, to: targetID, in: current)
+        guard reordered != current else { return }
+        saveProviderQuotaOrder(reordered)
+    }
+
+    /// Moves a provider one position up (`offset: -1`) or down (`offset: 1`).
+    func moveProviderQuota(_ providerID: String, by offset: Int) {
+        let current = providerQuotas.map(\.provider)
+        guard let index = current.firstIndex(of: providerID) else { return }
+        let target = index + offset
+        guard current.indices.contains(target) else { return }
+        moveProviderQuota(providerID, to: current[target])
+    }
+
+    private func saveProviderQuotaOrder(_ ids: [String]) {
+        // Keep ids of providers that are temporarily disconnected, after the
+        // visible ones, so reconnecting does not lose their saved position.
+        let retained = providerQuotaOrder.filter { !ids.contains($0) }
+        presentationDefaults.set(ids + retained, forKey: Self.providerQuotaOrderKey)
+        applyProviderQuotaPresentation()
+    }
+
+    static func hermesCredentialRemovalActionID(_ providerID: String) -> String {
+        "quota.hermesCredential.remove.\(providerID)"
+    }
+
+    /// Removes a Hermes-pooled account from Hermes itself through
+    /// `hermes auth remove`, so Hermes stops rotating through it too. The Dock
+    /// only forgets its own nickname and position after Hermes succeeds.
+    func removeHermesPooledCredential(for providerID: String) {
+        guard let credential = reportedProviderQuotas.first(where: { $0.provider == providerID })?.hermesCredential else { return }
+        guard let cli else {
+            providerQuotaActionErrors[providerID] = "Hermes is not connected, so the account could not be removed."
+            return
+        }
+        let actionID = Self.hermesCredentialRemovalActionID(providerID)
+        guard beginAction(actionID) else { return }
+        providerQuotaActionErrors[providerID] = nil
+        Task {
+            defer { finishAction(actionID) }
+            do {
+                let result = try await cli.authRemove(provider: credential.provider, credentialID: credential.id)
+                guard result.succeeded else {
+                    let message = Self.safeUserDiagnostic(result.stderr)
+                    providerQuotaActionErrors[providerID] = message.isEmpty ? "Hermes could not remove this account." : message
+                    return
+                }
+                providerNicknameStore.removeNickname(for: providerID)
+                presentationDefaults.set(providerQuotaOrder.filter { $0 != providerID }, forKey: Self.providerQuotaOrderKey)
+                reportedProviderQuotas.removeAll { $0.provider == providerID }
+                applyProviderQuotaPresentation()
+                refreshProviderQuota()
+            } catch {
+                providerQuotaActionErrors[providerID] = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+        }
+    }
+
+    /// Saves the user's preferred catalog order (used for providers without a
+    /// saved display position).
+    func setProviderOrder(_ providerIDs: [String]) {
+        QuotaProviderCatalog.saveProviderOrder(providerIDs)
+        applyProviderQuotaPresentation()
+    }
+
+    /// Gets the current provider display order based on user preferences.
+    func getProviderOrder() -> [String] {
+        QuotaProviderCatalog.orderedProviderIDs()
     }
 
     /// Launches the provider's desktop app so the user can sign in; quota is
@@ -2500,31 +2649,13 @@ final class ControlCenterModel: ObservableObject {
                 }
             }
             do {
-                let taskResult = try await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: task.id)
-                guard taskResult.succeeded else {
-                    guard generation == kanbanDetailGeneration else { return }
-                    let safeError = HermesDiagnosticsService.safeSummary(taskResult.stderr)
-                    kanbanDetailError = safeError.isEmpty ? "Hermes task details are unavailable. Showing the board summary." : safeError
+                let fetched = try await fetchKanbanTaskDetail(task, boardSlug: requestedBoardSlug, cli: cli)
+                guard generation == kanbanDetailGeneration else { return }
+                if let error = fetched.error {
+                    kanbanDetailError = error
                     return
                 }
-                // A successful Hermes version may return a human-readable
-                // `show` response instead of structured JSON. The selected
-                // card already contains authoritative summary data, so keep
-                // Details usable and use the structured response only to
-                // enrich it when available.
-                var detail = Self.parseKanbanTaskDetail(taskResult.stdout, fallback: task, boardSlug: requestedBoardSlug)
-                    ?? Self.fallbackKanbanTaskDetail(task, boardSlug: requestedBoardSlug)
-
-                let runsResult = capabilityAvailable("kanban.taskRuns") ? try await cli.kanbanRuns(boardSlug: requestedBoardSlug, taskID: task.id) : nil
-                if let runsResult, runsResult.succeeded {
-                    detail = Self.enrichedKanbanTaskDetail(
-                        detail,
-                        runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: requestedBoardSlug),
-                        boardSlug: requestedBoardSlug
-                    ) ?? detail
-                }
-                guard generation == kanbanDetailGeneration,
-                      kanbanDetailTaskIdentity == identity else { return }
+                guard kanbanDetailTaskIdentity == identity, let detail = fetched.detail else { return }
                 kanbanDetail = detail
             } catch {
                 guard generation == kanbanDetailGeneration,
@@ -2532,6 +2663,94 @@ final class ControlCenterModel: ObservableObject {
                 kanbanDetailError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
+    }
+
+    /// One `show` round trip, plus `runs` only for Hermes versions whose
+    /// `show` omits run history. Returns `error` when `show` itself failed.
+    private func fetchKanbanTaskDetail(
+        _ task: KanbanTaskSummary,
+        boardSlug: String?,
+        cli: HermesCLIAdapter
+    ) async throws -> (detail: KanbanTaskDetail?, error: String?) {
+        let taskResult = try await cli.kanbanShow(boardSlug: boardSlug, taskID: task.id)
+        guard taskResult.succeeded else {
+            let safeError = HermesDiagnosticsService.safeSummary(taskResult.stderr)
+            return (nil, safeError.isEmpty ? "Hermes task details are unavailable. Showing the board summary." : safeError)
+        }
+        // A successful Hermes version may return a human-readable `show`
+        // response instead of structured JSON. The selected card already
+        // contains authoritative summary data, so keep Details usable and use
+        // the structured response only to enrich it when available.
+        var detail = Self.parseKanbanTaskDetail(taskResult.stdout, fallback: task, boardSlug: boardSlug)
+            ?? Self.fallbackKanbanTaskDetail(task, boardSlug: boardSlug)
+        if detail.runs.isEmpty, capabilityAvailable("kanban.taskRuns") {
+            let runsResult = try await cli.kanbanRuns(boardSlug: boardSlug, taskID: task.id)
+            if runsResult.succeeded {
+                detail = Self.enrichedKanbanTaskDetail(
+                    detail,
+                    runs: Self.parseKanbanRuns(runsResult.stdout, boardSlug: boardSlug),
+                    boardSlug: boardSlug
+                ) ?? detail
+            }
+        }
+        return (detail, nil)
+    }
+
+    static let kanbanTaskInspectionLimit = 24
+
+    /// Loads detail and attachments for an inspector outside the Kanban page.
+    /// The cached entry (or the card summary) stays visible while refreshing.
+    func inspectKanbanTask(_ task: KanbanTaskSummary) {
+        let identity = KanbanTaskIdentity(boardSlug: task.boardSlug, taskID: task.id)
+        var entry = kanbanTaskInspections[identity]
+            ?? KanbanTaskInspection(detail: Self.fallbackKanbanTaskDetail(task, boardSlug: task.boardSlug))
+        guard let cli else {
+            entry.error = "Hermes task details are unavailable. Showing the board summary."
+            storeKanbanTaskInspection(entry, for: identity)
+            return
+        }
+        entry.isLoading = true
+        entry.error = nil
+        storeKanbanTaskInspection(entry, for: identity)
+        let generation = UUID()
+        kanbanTaskInspectionGenerations[identity] = generation
+        Task {
+            async let attachmentsResult = try? cli.kanbanAttachments(boardSlug: task.boardSlug, taskID: task.id)
+            var next = kanbanTaskInspections[identity] ?? entry
+            do {
+                let fetched = try await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug, cli: cli)
+                if let detail = fetched.detail { next.detail = detail }
+                next.error = fetched.error
+            } catch {
+                next.error = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+            if let result = await attachmentsResult, result.succeeded,
+               let data = result.stdout.data(using: .utf8),
+               let value = try? JSONSerialization.jsonObject(with: data) {
+                next.attachments = Self.parseKanbanAttachments(value, boardSlug: task.boardSlug, taskID: task.id)
+                next.attachmentsAvailable = true
+            } else {
+                next.attachmentsAvailable = false
+            }
+            guard kanbanTaskInspectionGenerations[identity] == generation else { return }
+            kanbanTaskInspectionGenerations[identity] = nil
+            next.isLoading = false
+            next.loadedAt = Date()
+            storeKanbanTaskInspection(next, for: identity)
+        }
+    }
+
+    private func storeKanbanTaskInspection(_ entry: KanbanTaskInspection, for identity: KanbanTaskIdentity) {
+        kanbanTaskInspectionOrder.removeAll { $0 == identity }
+        kanbanTaskInspectionOrder.append(identity)
+        var next = kanbanTaskInspections
+        next[identity] = entry
+        // Bounded LRU. In-flight entries are never evicted.
+        while kanbanTaskInspectionOrder.count > Self.kanbanTaskInspectionLimit,
+              let index = kanbanTaskInspectionOrder.firstIndex(where: { kanbanTaskInspectionGenerations[$0] == nil }) {
+            next[kanbanTaskInspectionOrder.remove(at: index)] = nil
+        }
+        if next != kanbanTaskInspections { kanbanTaskInspections = next }
     }
 
     private func refreshKanbanStats() {
@@ -2668,6 +2887,74 @@ final class ControlCenterModel: ObservableObject {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
+    }
+
+    func kanbanMoveActionID(_ task: KanbanTaskSummary) -> String { "kanban.move:\(task.id)" }
+
+    /// Lane drops PATCH the same plugin route the board is read from, so the
+    /// board being loaded is the capability.
+    var canMoveKanbanTasks: Bool { capabilityAvailable(HermesFeatureIDs.ID.kanban.rawValue) }
+
+    /// Drag-to-move for Triage/Todo/Ready. The card moves immediately; a
+    /// refused transition surfaces Hermes' reason and the refresh restores it.
+    func moveKanbanTask(_ task: KanbanTaskSummary, to lane: KanbanLane) {
+        guard let cli, canMoveKanbanTasks else {
+            lastError = "Moving Kanban tasks is unavailable through the installed Hermes."
+            return
+        }
+        guard case .move = KanbanBoardPresentation.dropOutcome(taskStatus: task.status, target: lane) else { return }
+        let actionID = kanbanMoveActionID(task)
+        guard beginAction(actionID) else { return }
+        setKanbanTask(task.id) { $0.status = lane.status }
+        Task {
+            defer { finishAction(actionID) }
+            do {
+                _ = try await cli.kanbanMove(boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, taskID: task.id, status: lane.status)
+            } catch {
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+            refreshKanban()
+            refreshGlobalKanban()
+        }
+    }
+
+    /// One-step assignment, as in the Hermes desktop assignee menu: reassign
+    /// and reclaim a live worker first so a running card can change hands.
+    /// `nil` unassigns.
+    func assignKanbanTask(_ task: KanbanTaskSummary, to profile: String?) {
+        guard let cli, capabilityAvailable(HermesFeatureIDs.ID.kanbanReassign.rawValue) else {
+            lastError = "Assigning Kanban tasks is unavailable through the installed Hermes CLI."
+            return
+        }
+        guard task.assignee != profile else { return }
+        let actionID = kanbanActionID(.reassign, task: task)
+        guard beginAction(actionID) else { return }
+        setKanbanTask(task.id) { $0.assignee = profile }
+        Task {
+            defer { finishAction(actionID) }
+            do {
+                let result = try await cli.kanbanAssign(
+                    boardSlug: task.boardSlug ?? selectedKanbanBoardSlug,
+                    taskID: task.id,
+                    profile: profile ?? "none",
+                    reassign: true,
+                    reclaim: true
+                )
+                if !result.succeeded {
+                    let message = Self.safeUserDiagnostic(result.stderr)
+                    lastError = message.isEmpty ? "Hermes Kanban could not assign the task." : message
+                }
+            } catch {
+                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+            refreshKanban()
+            refreshGlobalKanban()
+        }
+    }
+
+    private func setKanbanTask(_ id: String, _ change: (inout KanbanTaskSummary) -> Void) {
+        guard let index = kanbanTasks.firstIndex(where: { $0.id == id }) else { return }
+        change(&kanbanTasks[index])
     }
 
     func editCron(_ job: CronSummary, draft: CronEditDraft) {
@@ -3628,7 +3915,20 @@ final class ControlCenterModel: ObservableObject {
             model: boundedQuotaText(result["model"]),
             updatedAt: updatedAt,
             windows: unique,
-            safeDetail: boundedQuotaText(result["safe_detail"])
+            safeDetail: boundedQuotaText(result["safe_detail"]),
+            hermesCredential: hermesPooledCredential(result["hermes_credential"])
+        )
+    }
+
+    private static func hermesPooledCredential(_ value: Any?) -> HermesPooledCredential? {
+        guard let object = value as? [String: Any],
+              let provider = object["provider"] as? String, !provider.isEmpty,
+              let id = object["id"] as? String, !id.isEmpty else { return nil }
+        return HermesPooledCredential(
+            provider: provider,
+            id: id,
+            label: (object["label"] as? String) ?? id,
+            position: (object["position"] as? Int) ?? 0
         )
     }
 
@@ -3678,24 +3978,45 @@ final class ControlCenterModel: ObservableObject {
     /// optional result distinguishes malformed output from a genuine empty
     /// board, whose valid `[]` response must still replace the projection.
     static func parseKanbanTasksStrict(_ output: String, boardSlug: String? = nil) -> [KanbanTaskSummary]? {
-        let starts = output.indices.filter { output[$0] == "[" || output[$0] == "{" }
+        // A JSON value starting at a bracket can only end at its matching
+        // bracket, so parse one candidate per start. Trying every later
+        // closing bracket was quadratic and stalled the main thread for
+        // seconds on large boards.
+        let bytes = Array(output.utf8)
         var validEmptyRows: [[String: Any]]?
-        for start in starts {
-            var end = start
-            while end < output.endIndex {
-                if output[end] == "]" || output[end] == "}" {
-                    let candidate = String(output[start...end])
-                    if let data = candidate.data(using: .utf8),
-                       let value = try? JSONSerialization.jsonObject(with: data),
-                       let rows = kanbanTaskRows(from: value) {
-                        if !rows.isEmpty { return rows.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) } }
-                        validEmptyRows = rows
-                    }
-                }
-                end = output.index(after: end)
-            }
+        for start in bytes.indices where bytes[start] == UInt8(ascii: "[") || bytes[start] == UInt8(ascii: "{") {
+            guard let end = matchingJSONBracket(in: bytes, from: start),
+                  let value = try? JSONSerialization.jsonObject(with: Data(bytes[start...end])),
+                  let rows = kanbanTaskRows(from: value) else { continue }
+            if !rows.isEmpty { return rows.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) } }
+            validEmptyRows = rows
         }
         return validEmptyRows?.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) }
+    }
+
+    /// Index of the bracket closing the one at `start`, skipping JSON strings.
+    private static func matchingJSONBracket(in bytes: [UInt8], from start: Int) -> Int? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for index in start..<bytes.count {
+            let byte = bytes[index]
+            if inString {
+                if escaped { escaped = false }
+                else if byte == UInt8(ascii: "\\") { escaped = true }
+                else if byte == UInt8(ascii: "\"") { inString = false }
+                continue
+            }
+            switch byte {
+            case UInt8(ascii: "\""): inString = true
+            case UInt8(ascii: "["), UInt8(ascii: "{"): depth += 1
+            case UInt8(ascii: "]"), UInt8(ascii: "}"):
+                depth -= 1
+                if depth == 0 { return index }
+            default: break
+            }
+        }
+        return nil
     }
 
     private static func kanbanTaskRows(from value: Any) -> [[String: Any]]? {
@@ -3747,7 +4068,9 @@ final class ControlCenterModel: ObservableObject {
             latestEventNote: event.note,
             latestEventAt: event.date,
             modelOverride: base.modelOverride,
-            providerOverride: base.providerOverride
+            providerOverride: base.providerOverride,
+            skills: base.skills,
+            workflowTemplateID: base.workflowTemplateID
         )
     }
 
@@ -3774,7 +4097,9 @@ final class ControlCenterModel: ObservableObject {
             completedAt: activityDate(row["completed_at"] ?? row["completedAt"]),
             currentStepKey: (row["current_step_key"] as? String) ?? (row["currentStepKey"] as? String),
             modelOverride: (row["model_override"] as? String) ?? (row["modelOverride"] as? String) ?? (row["model"] as? String),
-            providerOverride: (row["provider_override"] as? String) ?? (row["providerOverride"] as? String) ?? (row["provider"] as? String)
+            providerOverride: (row["provider_override"] as? String) ?? (row["providerOverride"] as? String) ?? (row["provider"] as? String),
+            skills: kanbanStringList(row["skills"]),
+            workflowTemplateID: (row["workflow_template_id"] as? String) ?? (row["workflowTemplateID"] as? String)
         )
     }
 
@@ -3806,9 +4131,10 @@ final class ControlCenterModel: ObservableObject {
               let value = try? JSONSerialization.jsonObject(with: data),
               let source = kanbanTaskDetailRow(from: value) else { return nil }
         guard let id = (source["id"] as? String) ?? (source["task_id"] as? String) else { return nil }
-        return KanbanTaskDetail(
+        let resolvedBoardSlug = boardSlug ?? fallback.boardSlug
+        var detail = KanbanTaskDetail(
             id: id,
-            boardSlug: boardSlug ?? fallback.boardSlug,
+            boardSlug: resolvedBoardSlug,
             title: (source["title"] as? String) ?? fallback.title,
             body: (source["body"] as? String) ?? (source["description"] as? String),
             status: (source["status"] as? String) ?? fallback.status,
@@ -3818,6 +4144,97 @@ final class ControlCenterModel: ObservableObject {
             modelOverride: (source["model_override"] as? String) ?? (source["modelOverride"] as? String) ?? (source["model"] as? String) ?? fallback.modelOverride,
             providerOverride: (source["provider_override"] as? String) ?? (source["providerOverride"] as? String) ?? (source["provider"] as? String) ?? fallback.providerOverride
         )
+        // `show --json` wraps the task with its history; the history may also
+        // arrive inline on the task row from relay transports.
+        let history = kanbanShowEnvelope(from: value) ?? source
+        detail.latestSummary = Self.nonEmpty(history["latest_summary"] as? String)
+        detail.result = Self.nonEmpty(source["result"] as? String)
+        detail.lastFailureError = Self.nonEmpty(source["last_failure_error"] as? String)
+        detail.skills = kanbanStringList(source["skills"])
+        detail.workflowTemplateID = Self.nonEmpty(source["workflow_template_id"] as? String)
+        detail.currentStepKey = Self.nonEmpty(source["current_step_key"] as? String) ?? fallback.currentStepKey
+        detail.workspaceKind = Self.nonEmpty(source["workspace_kind"] as? String)
+        detail.workspacePath = Self.nonEmpty(source["workspace_path"] as? String)
+        detail.branchName = Self.nonEmpty(source["branch_name"] as? String)
+        detail.sessionID = Self.nonEmpty(source["session_id"] as? String) ?? fallback.sessionID
+        detail.createdBy = Self.nonEmpty(source["created_by"] as? String)
+        detail.createdAt = activityDate(source["created_at"])
+        detail.startedAt = activityDate(source["started_at"]) ?? fallback.startedAt
+        detail.completedAt = activityDate(source["completed_at"]) ?? fallback.completedAt
+        detail.parents = kanbanStringList(history["parents"])
+        detail.children = kanbanStringList(history["children"])
+        detail.comments = ((history["comments"] as? [[String: Any]]) ?? []).enumerated().compactMap { index, row in
+            guard let body = Self.nonEmpty(row["body"] as? String) else { return nil }
+            let createdAt = activityDate(row["created_at"])
+            return KanbanCommentSummary(
+                id: Self.stringValue(row["id"]) ?? "comment-\(index)",
+                author: Self.nonEmpty(row["author"] as? String) ?? "Unknown",
+                body: body,
+                createdAt: createdAt
+            )
+        }
+        detail.events = ((history["events"] as? [[String: Any]]) ?? []).enumerated().compactMap { index, row in
+            guard let kind = Self.nonEmpty((row["kind"] as? String) ?? (row["type"] as? String)) else { return nil }
+            return KanbanEventSummary(
+                id: Self.stringValue(row["id"]) ?? "event-\(index)",
+                kind: kind,
+                note: kanbanEventNote(row["note"] ?? row["payload"]),
+                runID: Self.stringValue(row["run_id"]),
+                createdAt: activityDate(row["created_at"])
+            )
+        }
+        detail.runs = ((history["runs"] as? [[String: Any]]) ?? []).enumerated().compactMap { index, row in
+            kanbanRunSummary(row, index: index, boardSlug: resolvedBoardSlug)
+        }
+        return detail
+    }
+
+    /// The `show --json` object that carries `task` plus its history.
+    private static func kanbanShowEnvelope(from value: Any) -> [String: Any]? {
+        if let rows = value as? [[String: Any]] { return rows.first.flatMap { kanbanShowEnvelope(from: $0) } }
+        guard let dictionary = value as? [String: Any] else { return nil }
+        if dictionary["task"] is [String: Any] { return dictionary }
+        for key in ["data", "result", "payload", "output", "stdout"] {
+            if let envelope = dictionary[key].flatMap({ kanbanShowEnvelope(from: $0) }) { return envelope }
+        }
+        return nil
+    }
+
+    /// Hermes stores skills and links as JSON arrays; older rows may hold a
+    /// comma-separated string.
+    private static func kanbanStringList(_ value: Any?) -> [String] {
+        if let values = value as? [Any] {
+            return values.compactMap { stringValue($0).flatMap(nonEmpty) }
+        }
+        if let string = value as? String {
+            if let data = string.data(using: .utf8),
+               let decoded = try? JSONSerialization.jsonObject(with: data) as? [Any] {
+                return kanbanStringList(decoded)
+            }
+            return string.split(separator: ",").compactMap { nonEmpty(String($0)) }
+        }
+        return []
+    }
+
+    /// Events carry either a plain note or a payload object/JSON string.
+    private static func kanbanEventNote(_ value: Any?) -> String? {
+        if let string = value as? String {
+            if let data = string.data(using: .utf8),
+               let decoded = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return kanbanEventNote(decoded)
+            }
+            return nonEmpty(string)
+        }
+        guard let payload = value as? [String: Any] else { return nil }
+        for key in ["note", "reason", "summary", "message", "text", "error"] {
+            if let note = nonEmpty(payload[key] as? String) { return note }
+        }
+        return nil
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     static func fallbackKanbanTaskDetail(_ task: KanbanTaskSummary, boardSlug: String? = nil) -> KanbanTaskDetail {
@@ -3840,19 +4257,10 @@ final class ControlCenterModel: ObservableObject {
         runs: [KanbanRunSummary],
         boardSlug: String?
     ) -> KanbanTaskDetail? {
-        guard let detail else { return nil }
-        return KanbanTaskDetail(
-            id: detail.id,
-            boardSlug: boardSlug,
-            title: detail.title,
-            body: detail.body,
-            status: detail.status,
-            priority: detail.priority,
-            assignee: detail.assignee,
-            runs: runs,
-            modelOverride: detail.modelOverride,
-            providerOverride: detail.providerOverride
-        )
+        guard var detail else { return nil }
+        detail.boardSlug = boardSlug
+        detail.runs = runs
+        return detail
     }
 
     /// Hermes versions and relay transports have returned task details as a
@@ -3887,18 +4295,26 @@ final class ControlCenterModel: ObservableObject {
             return []
         }
         return rows.enumerated().compactMap { index, row in
-            let id = (row["id"] as? String) ?? (row["run_id"] as? String) ?? "run-\(index)"
-            guard let status = (row["status"] as? String) ?? (row["state"] as? String) else { return nil }
-            return KanbanRunSummary(
-                id: id,
-                boardSlug: boardSlug,
-                status: status,
-                outcome: row["outcome"] as? String,
-                profile: (row["profile"] as? String) ?? (row["assignee"] as? String),
-                summary: (row["summary"] as? String) ?? (row["message"] as? String),
-                elapsed: (row["elapsed"] as? String) ?? (row["duration"] as? String)
-            )
+            kanbanRunSummary(row, index: index, boardSlug: boardSlug)
         }
+    }
+
+    /// Hermes run ids are integers; relays may send strings.
+    private static func kanbanRunSummary(_ row: [String: Any], index: Int, boardSlug: String?) -> KanbanRunSummary? {
+        guard let status = (row["status"] as? String) ?? (row["state"] as? String) else { return nil }
+        return KanbanRunSummary(
+            id: stringValue(row["id"] ?? row["run_id"]) ?? "run-\(index)",
+            boardSlug: boardSlug,
+            status: status,
+            outcome: row["outcome"] as? String,
+            profile: (row["profile"] as? String) ?? (row["assignee"] as? String),
+            summary: (row["summary"] as? String) ?? (row["message"] as? String),
+            elapsed: (row["elapsed"] as? String) ?? (row["duration"] as? String),
+            stepKey: nonEmpty(row["step_key"] as? String),
+            error: nonEmpty(row["error"] as? String),
+            startedAt: activityDate(row["started_at"]),
+            endedAt: activityDate(row["ended_at"])
+        )
     }
 
     static func parseKanbanStats(_ output: String) -> KanbanStatsSummary? {
@@ -4030,10 +4446,13 @@ final class ControlCenterModel: ObservableObject {
             let name = (row["name"] as? String) ?? (row["filename"] as? String) ?? "Attachment"
             let fallback = [boardSlug ?? "default", taskID, name, String(index)].joined(separator: ":")
             return KanbanAttachmentSummary(
-                id: (row["id"] as? String) ?? fallback,
+                id: Self.stringValue(row["id"]) ?? fallback,
                 name: name,
-                kind: row["kind"] as? String ?? row["mime_type"] as? String,
-                sizeBytes: Self.optionalIntValue(row["size"] ?? row["size_bytes"])
+                kind: row["kind"] as? String ?? row["mime_type"] as? String ?? row["content_type"] as? String,
+                sizeBytes: Self.optionalIntValue(row["size"] ?? row["size_bytes"]),
+                uploadedBy: Self.nonEmpty(row["uploaded_by"] as? String),
+                createdAt: activityDate(row["created_at"]),
+                storedPath: Self.nonEmpty(row["stored_path"] as? String)
             )
         }
     }

@@ -29,7 +29,8 @@ enum HermesRuntimeInspector {
         let configPath = output(arguments: ["config", "path"])
         let maxTurns = output(arguments: ["config", "get", "agent.max_turns"])
         let terminalTimeout = output(arguments: ["config", "get", "terminal.timeout"])
-        let skills = parseEnabledSkills(output(arguments: HermesFeatureContract.enabledSkillsCommand.words) ?? "")
+        // `runData` prepends `hermes`; the shared contract command already includes it.
+        let skills = parseEnabledSkills(output(arguments: Array(HermesFeatureContract.enabledSkillsCommand.words.dropFirst())) ?? "")
         let mcpServers = parseMCPServers(output(arguments: ["mcp", "list"]) ?? "")
         let plugins = parsePlugins(output(arguments: ["plugins", "list", "--enabled", "--json"]) ?? "")
         return HermesRuntimeConfiguration(
@@ -88,7 +89,10 @@ enum HermesRuntimeInspector {
         let pipe = Pipe()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["hermes"] + arguments
-        process.environment = HermesEnvironment.processEnvironment()
+        var environment = HermesEnvironment.processEnvironment()
+        // Rich tables default to 80 columns off a TTY and ellipsize skill names.
+        environment["COLUMNS"] = "240"
+        process.environment = environment
         process.standardOutput = pipe
         process.standardError = pipe
         do {

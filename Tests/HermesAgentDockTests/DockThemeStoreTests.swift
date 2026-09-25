@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import HermesAgentDock
 
@@ -23,6 +23,37 @@ struct DockThemeStoreTests {
         let store = DockThemeStore(defaults: defaults)
         #expect(store.selectedThemeID == .nativeMacOS)
         #expect(defaults.string(forKey: DockThemeStore.legacyStorageKey) == nil)
+    }
+
+    @Test func nativeMarkdownRecolorsUnchangedTextWhenThemeChanges() {
+        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
+        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        func textColor(_ view: NativeMarkdownTextSectionView) -> NSColor? {
+            (view.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)?.usingColorSpace(.sRGB)
+        }
+        let view = NativeMarkdownTextSectionView()
+        DockThemeRuntime.current = .daylight
+        DockThemeRuntime.revision &+= 1
+        view.update(markdown: "Plain **bold** reply", kind: .prose)
+        let light = textColor(view)
+
+        DockThemeRuntime.current = .poseidon
+        DockThemeRuntime.revision &+= 1
+        view.update(markdown: "Plain **bold** reply", kind: .prose)
+        let dark = textColor(view)
+
+        #expect(light != nil && dark != nil)
+        #expect(light != dark)
+        #expect((dark?.brightnessComponent ?? 0) > 0.8)
+    }
+
+    @Test func isolatedStoresDoNotChangeTheApplicationTheme() {
+        let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let revision = DockThemeRuntime.revision
+        DockThemeStore(defaults: defaults).selectedThemeID = .charizard
+        #expect(DockThemeRuntime.revision == revision)
     }
 
     @Test func registryMapsHermesSkinIDsAndAppearance() {

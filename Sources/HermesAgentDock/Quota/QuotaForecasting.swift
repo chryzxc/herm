@@ -56,6 +56,12 @@ enum QuotaForecasting {
         return max(0, min(100, 100 - spentByEndOfToday))
     }
 
+    /// The daily-budget marker to draw on a meter, or nil when the window has
+    /// no daily budget to show (short rolling windows, or nothing left).
+    static func visibleDailyBudgetMarker(for window: ProviderQuotaWindow, now: Date = .now) -> Double? {
+        dailyAllowance(for: window, now: now) == nil ? nil : dailyBudgetMarker(for: window, now: now)
+    }
+
     /// Expected remaining percentage if the window's allowance were consumed
     /// evenly throughout its cycle. Deliberately separate from the daily
     /// allowance: the marker compares actual balance to the pace line (for

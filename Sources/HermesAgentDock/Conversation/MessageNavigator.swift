@@ -18,6 +18,11 @@ struct MessageNavigatorItem: Equatable, Identifiable {
     let preview: String
     let contentRevision: Int
     let hasImages: Bool
+    /// Text search matches: the full message body, not only the preview.
+    var searchText: String = ""
+    /// Set for a stored prompt that is not loaded into the transcript yet.
+    /// Selecting it loads history through this row before jumping.
+    var storedRowID: Int? = nil
 
     var id: MessageNavigatorTarget { target }
     var messageID: UUID { target.messageID }
@@ -46,20 +51,64 @@ enum MessageNavigator {
                 roleLabel: message.role == .user ? "You" : "Hermes",
                 preview: boundedPreview(message.text, limit: limit),
                 contentRevision: message.contentRevision,
-                hasImages: !message.images.isEmpty
+                hasImages: !message.images.isEmpty,
+                searchText: message.text
             )
         }
         memo.store(items: projected, fingerprint: fingerprint)
         return projected
     }
 
+    /// Loaded messages preceded by stored prompts that are older than the
+    /// loaded transcript. Ordinals count positions in the combined list.
+    static func items(
+        messages: [ChatMessage],
+        earlierPrompts: [TranscriptTimelineEntry],
+        sessionID: String,
+        previewLimit: Int = defaultPreviewLimit
+    ) -> [MessageNavigatorItem] {
+        let loaded = items(messages: messages, sessionID: sessionID, previewLimit: previewLimit)
+        guard !earlierPrompts.isEmpty else { return loaded }
+        let limit = max(minimumPreviewLimit, previewLimit)
+        let prompts = earlierPrompts.enumerated().map { index, entry in
+            MessageNavigatorItem(
+                target: MessageNavigatorTarget(sessionID: sessionID, messageID: placeholderMessageID(forRowID: entry.rowID)),
+                ordinal: index + 1,
+                roleLabel: "You",
+                preview: boundedPreview(entry.preview, limit: limit),
+                contentRevision: 0,
+                hasImages: false,
+                searchText: entry.preview,
+                storedRowID: entry.rowID
+            )
+        }
+        let offset = prompts.count
+        return prompts + loaded.map { item in
+            MessageNavigatorItem(
+                target: item.target,
+                ordinal: item.ordinal + offset,
+                roleLabel: item.roleLabel,
+                preview: item.preview,
+                contentRevision: item.contentRevision,
+                hasImages: item.hasImages,
+                searchText: item.searchText
+            )
+        }
+    }
+
+    /// Deterministic identity for a stored prompt that has no loaded message.
+    static func placeholderMessageID(forRowID rowID: Int) -> UUID {
+        UUID(uuidString: String(format: "00000000-0000-4000-8000-%012llx", UInt64(truncatingIfNeeded: rowID) & 0xFFFF_FFFF_FFFF))!
+    }
+
     static func search(items: [MessageNavigatorItem], query: String) -> [MessageNavigatorItem] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return items }
-        let foldedQuery = normalizedQuery.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
         return items.filter { item in
-            item.preview.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).contains(foldedQuery)
-                || item.roleLabel.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current).contains(foldedQuery)
+            let body = item.searchText.isEmpty ? item.preview : item.searchText
+            return body.range(of: normalizedQuery, options: options) != nil
+                || item.roleLabel.range(of: normalizedQuery, options: options) != nil
         }
     }
 
@@ -176,16 +225,28 @@ struct MessageNavigatorView: View {
     let items: [MessageNavigatorItem]
     let sessionID: String
     let visibleTargets: Set<MessageNavigatorTarget>
+    /// The find panel stays hidden until the header search action opens it.
+    @Binding var isSearchPresented: Bool
+    /// The marker rail needs room beside the transcript; search does not.
+    var showsMap = true
+    /// Older stored history is being read so search covers all of it.
+    var isLoadingHistory = false
+    /// Called when a non-empty search starts, so older history can load.
+    var onSearch: () -> Void = {}
     let onSelect: (MessageNavigatorItem) -> Void
 
     @State private var selectedTarget: MessageNavigatorTarget?
     @State private var hoveredTarget: MessageNavigatorTarget?
     @State private var clearHoverTask: Task<Void, Never>?
     @State private var searchQuery = ""
+    @State private var hoveredResult: MessageNavigatorTarget?
+    /// Full-text matching scans every message body, so results are computed
+    /// when the query or items change instead of on every hover render.
+    @State private var searchResults: [MessageNavigatorItem] = []
     @FocusState private var isSearchFocused: Bool
 
-    private var searchResults: [MessageNavigatorItem] {
-        MessageNavigator.search(items: items, query: searchQuery)
+    private var hasSearchQuery: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var activeTarget: MessageNavigatorTarget? {
@@ -226,14 +287,21 @@ struct MessageNavigatorView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
                 if !items.isEmpty {
-                    messageMap(in: CGSize(width: 286, height: geometry.size.height))
-                        .frame(width: 286, height: geometry.size.height)
-                    searchPanel
-                        .frame(width: 270, alignment: .leading)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    if showsMap {
+                        messageMap(in: CGSize(width: 286, height: geometry.size.height))
+                            .frame(width: 286, height: geometry.size.height)
+                    }
+                    if isSearchPresented {
+                        searchPanel
+                            .frame(width: 300, alignment: .leading)
+                            .padding(.top, 10)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .animation(.dockEase(duration: 0.16), value: isSearchPresented)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: sessionID) { _, _ in
@@ -241,10 +309,26 @@ struct MessageNavigatorView: View {
             selectedTarget = nil
             hoveredTarget = nil
             searchQuery = ""
+            isSearchPresented = false
+        }
+        .onChange(of: isSearchPresented) { _, presented in
+            if !presented { searchQuery = "" }
         }
         .onDisappear {
             clearHoverTask?.cancel()
             hoveredTarget = nil
+        }
+        .onChange(of: searchQuery) { _, _ in
+            if hasSearchQuery { onSearch() }
+        }
+        .task(id: SearchInput(query: searchQuery, items: items)) {
+            guard hasSearchQuery else {
+                searchResults = []
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            searchResults = MessageNavigator.search(items: items, query: searchQuery)
         }
         .onMoveCommand { direction in
             guard hoveredTarget != nil, !items.isEmpty else { return }
@@ -261,60 +345,103 @@ struct MessageNavigatorView: View {
     }
 
     private var searchPanel: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            TextField("Find a message", text: $searchQuery)
-                .textFieldStyle(.dockGlass)
-                .focused($isSearchFocused)
-                .onSubmit(selectFirstSearchResult)
-                .accessibilityLabel("Find a message")
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                LucideIcon(name: .search, size: 13, color: Color.dockMetadataText)
+                TextField("Find a message", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .focused($isSearchFocused)
+                    .onSubmit(selectFirstSearchResult)
+                    .onExitCommand { isSearchPresented = false }
+                    .accessibilityLabel("Find a message")
+                if hasSearchQuery, !searchResults.isEmpty {
+                    Text("\(searchResults.count)")
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+                Button { isSearchPresented = false } label: {
+                    LucideIcon(name: .xmark, size: 11, color: Color.dockSecondaryText)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Close search (Esc)")
+                .accessibilityLabel("Close search")
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 6)
+            .frame(height: 38)
 
-            if !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if hasSearchQuery {
+                Color.dockBorder.frame(height: DockLayout.hairline)
                 if searchResults.isEmpty {
-                    Text("No matching messages")
-                        .font(.system(size: 11))
+                    Text(isLoadingHistory ? "Searching earlier messages…" : "No matching messages")
+                        .font(.system(size: 12))
                         .foregroundStyle(Color.dockSecondaryText)
-                        .padding(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
                 } else {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 2) {
+                        LazyVStack(alignment: .leading, spacing: 1) {
                             ForEach(searchResults) { item in
                                 Button {
                                     selectedTarget = item.target
                                     Self.dispatchSelection(item, onSelect: onSelect)
-                                    isSearchFocused = false
+                                    isSearchPresented = false
                                 } label: {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("\(item.ordinal) · \(item.roleLabel)")
-                                            .font(.system(size: 10, weight: .semibold))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 6) {
+                                            Text(item.roleLabel)
+                                                .font(.system(size: 11, weight: .semibold))
+                                                .foregroundStyle(item.roleLabel == "You" ? Color.dockAccent : Color.dockPrimaryText)
+                                            Text("#\(item.ordinal)")
+                                                .font(.system(size: 10).monospacedDigit())
+                                                .foregroundStyle(Color.dockMetadataText)
+                                        }
                                         Text(item.preview.isEmpty ? "(empty message)" : item.preview)
-                                            .font(.system(size: 11))
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockSecondaryText)
                                             .lineLimit(2)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 5)
-                                    .background(item.target == selectedTarget ? Color.dockAccent.opacity(0.18) : Color.clear)
-                                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        item.target == hoveredResult ? Color.dockSurface4 : Color.clear,
+                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    )
+                                    .contentShape(Rectangle())
+                                    .onHover { hoveredResult = $0 ? item.target : (hoveredResult == item.target ? nil : hoveredResult) }
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
+                        .padding(4)
                     }
-                    .frame(maxHeight: 240)
+                    .frame(maxHeight: 280)
                 }
             }
         }
-        .padding(7)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorder, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
+        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
+        .onAppear { isSearchFocused = true }
+    }
+
+    private struct SearchInput: Equatable {
+        let query: String
+        let items: [MessageNavigatorItem]
     }
 
     private func selectFirstSearchResult() {
-        guard let item = searchResults.first else { return }
+        let results = MessageNavigator.search(items: items, query: searchQuery)
+        guard let item = results.first else { return }
         selectedTarget = item.target
         Self.dispatchSelection(item, onSelect: onSelect)
-        isSearchFocused = false
+        isSearchPresented = false
     }
 
     private func messageMap(in size: CGSize) -> some View {

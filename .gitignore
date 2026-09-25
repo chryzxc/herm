@@ -15,3 +15,6 @@ dist/
 !.hermes/plans/**
 
 .superpowers/
+
+# Generated knowledge graph
+graphify-out/

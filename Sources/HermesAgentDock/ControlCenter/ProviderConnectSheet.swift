@@ -14,6 +14,7 @@ final class ProviderLoginModel: ObservableObject {
     var onFinished: (() -> Void)?
 
     private var process: Process?
+    private var inputPipe: Pipe?
     private var pendingPartialLine = ""
 
     func start(command: String) {
@@ -37,6 +38,8 @@ final class ProviderLoginModel: ObservableObject {
         let pipe = Pipe()
         child.standardOutput = pipe
         child.standardError = pipe
+        let stdin = Pipe()
+        child.standardInput = stdin
 
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
@@ -63,7 +66,18 @@ final class ProviderLoginModel: ObservableObject {
             return
         }
         process = child
+        inputPipe = stdin
         isRunning = true
+    }
+
+    /// Sends a line of text (such as an OAuth callback code) to the running
+    /// process's stdin, followed by a newline, as if the user typed it into a
+    /// terminal.
+    func sendInput(_ text: String) {
+        guard isRunning, let handle = inputPipe?.fileHandleForWriting else { return }
+        let line = text.hasSuffix("\n") ? text : text + "\n"
+        guard let data = line.data(using: .utf8) else { return }
+        handle.write(data)
     }
 
     func cancel() {
@@ -81,6 +95,7 @@ final class ProviderLoginModel: ObservableObject {
         guard isRunning else { return }
         isRunning = false
         exitStatus = terminationStatus
+        inputPipe = nil
         if !pendingPartialLine.isEmpty {
             outputLines = Self.cappedLines(outputLines, newLines: [pendingPartialLine])
             pendingPartialLine = ""
@@ -146,6 +161,7 @@ struct ProviderConnectSheet: View {
     @StateObject private var login = ProviderLoginModel()
     @State private var apiKeyInput = ""
     @State private var hasStoredKey = false
+    @State private var callbackCodeInput = ""
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -179,6 +195,13 @@ struct ProviderConnectSheet: View {
 
     private func refreshStoredKeyState() {
         hasStoredKey = descriptor.storageKey.map { ProviderKeyStore().contains($0) } ?? false
+    }
+
+    private func submitCallbackCode() {
+        let trimmed = callbackCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        login.sendInput(trimmed)
+        callbackCodeInput = ""
     }
 
     private func apiKeySection(_ instruction: String) -> some View {
@@ -255,6 +278,18 @@ struct ProviderConnectSheet: View {
                     Button("Cancel") { login.cancel() }
                         .buttonStyle(.bordered)
                 }
+                HStack(spacing: 8) {
+                    TextField("Paste the code from the browser page", text: $callbackCodeInput)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { submitCallbackCode() }
+                    Button("Submit") { submitCallbackCode() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(callbackCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                Text("After signing in, the browser shows an authorization code. Paste it here to finish.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 HStack(spacing: 8) {
                     Button { login.start(command: command) } label: {

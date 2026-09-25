@@ -157,7 +157,7 @@ struct GitHubIssueCenterAPI: Sendable {
         var request = URLRequest(url: components.url!); request.timeoutInterval = GitHubCodeHostService.requestTimeout
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        if let token = GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let token = await GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         let (data, response) = try await transport.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }
         return try JSONSerialization.jsonObject(with: data)

@@ -174,4 +174,52 @@ struct ConversationRenderOptimizationTests {
         let chunks = streaming.completionChunks(matching: "# Result\n\nready")
         #expect(chunks?.map(\.text).joined() == "# Result\n\nready")
     }
+
+    @Test func tableCellsKeepEmptyColumnsAndDetectSeparators() {
+        #expect(NativeMarkdownAttributedTextBuilder.tableCells("| a || c |") == ["a", "", "c"])
+        #expect(NativeMarkdownAttributedTextBuilder.tableCells("| a \\| b | c |").count == 2)
+        #expect(NativeMarkdownAttributedTextBuilder.isSeparatorRow(["---", ":--:", "--:"]))
+        #expect(!NativeMarkdownAttributedTextBuilder.isSeparatorRow(["a", "---"]))
+    }
+
+    @Test func proseAfterAClosingFenceIsNotRenderedAsCode() {
+        let chunks = [
+            StreamingPresentationChunk(
+                id: 0, text: "```swift\nlet x = 1\n```\nDone here.\n", revision: 0, isMutableTail: false,
+                context: .fencedCode(marker: "`", length: 3, language: "swift")),
+        ]
+
+        let sections = MarkdownRenderDocumentBuilder.sections(for: chunks)
+
+        #expect(sections.map(\.source).joined() == chunks[0].text)
+        #expect(sections.count == 2)
+        #expect(sections.first?.kind == .code(language: "swift"))
+        #expect(sections.last?.kind == .prose)
+    }
+
+    @Test func completionSnapshotIsScopedToItsMessage() {
+        let streaming = StreamingText()
+        let ownerID = UUID()
+        streaming.appendPresentation("# Result\n\nready")
+        streaming.retainCompletionPresentation(for: ownerID)
+
+        #expect(streaming.completionChunks(matching: "# Result\n\nready", messageID: UUID()) == nil)
+        #expect(streaming.completionChunks(matching: "# Result\n\nready", messageID: ownerID) != nil)
+    }
+
+    @Test func nativeDocumentHeightGrowsAsTheWidthNarrows() {
+        let key = MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1)
+        let paragraph = String(repeating: "Long wrapping transcript text. ", count: 60)
+        let document = MarkdownRenderDocumentBuilder.build(source: "# Title\n\n\(paragraph)", key: key)
+        let container = NativeMarkdownDocumentContainerView(frame: NSRect(x: 0, y: 0, width: 620, height: 10))
+        container.apply(document: document)
+
+        let wide = container.measuredHeight(forWidth: 620)
+        let narrow = container.measuredHeight(forWidth: 300)
+
+        #expect(wide > 0)
+        #expect(narrow > wide)
+        // A zero-width proposal must never lay text out one glyph per line.
+        #expect(NativeMarkdownDocumentContainerView(frame: .zero).intrinsicContentSize.height == 0)
+    }
 }

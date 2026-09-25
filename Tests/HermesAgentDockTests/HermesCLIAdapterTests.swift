@@ -156,6 +156,17 @@ struct HermesCLIAdapterTests {
         #expect(client.commands.last == "'hermes' 'kanban' '--board' 'client-board' 'attachments' '--json' 'task-1'")
     }
 
+    @Test func kanbanMovePatchesThePluginTaskRouteWithBoardScope() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.kanbanMove(boardSlug: "client board", taskID: "t_1", status: "ready")
+        #expect(client.httpWrites.last?.method == "PATCH")
+        #expect(client.httpWrites.last?.path == "/api/plugins/kanban/tasks/t_1?board=client%20board")
+        #expect(client.httpWrites.last?.body["status"] as? String == "ready")
+        #expect(client.commands.isEmpty)
+    }
+
     @Test func enabledSkillsUsesTheVerifiedDisplayOnlyContract() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
@@ -195,6 +206,13 @@ private final class CLITestRPCClient: HermesRPCClientProtocol {
             ["id": "old-task", "title": "Old task", "status": "ready", "updated_at": 100, "created_at": 100, "priority": 10],
             ["id": "undated-task", "title": "Undated task", "status": "ready"]
         ]]]]
+    }
+
+    private(set) var httpWrites: [(method: String, path: String, body: [String: Any])] = []
+
+    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
+        httpWrites.append((method, path, body))
+        return [:]
     }
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {

@@ -2,7 +2,7 @@ import Foundation
 
 /// Navigation captured from the same authored furniture and walls that are rendered.
 struct OfficeDesignNavigation {
-    enum LeisureAction { case coffee, arcade, reading, strolling, socializing }
+    enum LeisureAction { case coffee, arcade, reading, strolling, socializing, charging, tinkering, browsing }
     struct LeisureSpot {
         let station: Station
         let action: LeisureAction

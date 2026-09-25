@@ -71,11 +71,9 @@ struct DockThemePalette {
     var sectionSpacing: CGFloat { 12 }
     var usesStructuredDividers: Bool { true }
     var showsDestinationIcons: Bool { true }
-    private var isDark: Bool {
-        theme.appearance == .dark ||
-        (theme.appearance == .system && NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
-    }
-    private var colors: (bg: String, surface: String, surface2: String, surface4: String, primary: String, secondary: String, metadata: String, accent: String, selected: String, divider: String, success: String, warning: String, destructive: String) {
+    /// Semantic hex roles for one appearance of a theme.
+    fileprivate typealias Roles = (bg: String, surface: String, surface2: String, surface4: String, primary: String, secondary: String, metadata: String, accent: String, selected: String, divider: String, success: String, warning: String, destructive: String)
+    fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         switch theme {
         case .nativeMacOS: return isDark ? ("#111624", "#131A2A", "#101521", "#1A2131", "#F0F1F5", "#A7AAB5", "#737C8D", "#169BFF", "#1A2131", "#2A3040", "#39C878", "#F2A33B", "#EC5C64") : ("#F4F7FC", "#EEF2F8", "#F8FAFD", "#E2E8F2", "#18202D", "#5F6878", "#7C8697", "#0071D8", "#DFE9F8", "#D3DBE8", "#238636", "#B45309", "#B4232F")
         case .hermesClassic: return isDark ? ("#1A1A2E", "#211F35", "#171728", "#333355", "#FFF8DC", "#C0C0C0", "#8A7A4A", "#FFBF00", "#3A3A55", "#544F67", "#8FBC8F", "#FFD700", "#FF6B6B") : ("#F7F3E8", "#F1E8D3", "#FBF9F2", "#E9DFC6", "#3E321F", "#76664A", "#948261", "#B8860B", "#E8DCC2", "#D7C9A9", "#2E7D32", "#B45309", "#B4232F")
@@ -88,17 +86,45 @@ struct DockThemePalette {
         case .charizard: return isDark ? ("#2B160E", "#351B11", "#1E0F09", "#4A1B07", "#FFF0D4", "#D9B58B", "#826144", "#F29C38", "#5A260D", "#7B593A", "#6BCB77", "#F29C38", "#EF5350") : ("#FFF5E9", "#F8E8D0", "#FFFAF3", "#F5D2A8", "#3A2114", "#765741", "#96704F", "#C75B1D", "#F5D2A8", "#D8B487", "#2E7D32", "#F29C38", "#C62828")
         }
     }
-    private func color(_ value: String) -> Color { Color(hex: value) }
-    var background: Color { color(colors.bg) }; var surface: Color { color(colors.surface) }; var surface2: Color { color(colors.surface2) }; var surface4: Color { color(colors.surface4) }
-    var surface6: Color { color(colors.surface4).opacity(0.86) }; var surface8: Color { color(colors.surface4).opacity(0.72) }
-    var primaryText: Color { color(colors.primary) }; var secondaryText: Color { color(colors.secondary) }; var metadataText: Color { color(colors.metadata) }; var accent: Color { color(colors.accent) }; var selectedFill: Color { color(colors.selected) }; var divider: Color { color(colors.divider) }; var success: Color { color(colors.success) }; var warning: Color { color(colors.warning) }; var destructive: Color { color(colors.destructive) }
+    /// Colors are resolved once per theme. Native macOS colors are dynamic and
+    /// resolve against the appearance they draw in, so AppKit text, nested
+    /// hosting views, and Office materials never pick up a stale Light/Dark
+    /// variant from whatever appearance happened to be current when read.
+    private static let tokens: [DockThemeID: Tokens] = Dictionary(uniqueKeysWithValues: DockThemeID.allCases.map { ($0, Tokens(theme: $0)) })
+    private var resolvedTokens: Tokens { Self.tokens[theme]! }
+    var background: Color { resolvedTokens.background }; var surface: Color { resolvedTokens.surface }; var surface2: Color { resolvedTokens.surface2 }; var surface4: Color { resolvedTokens.surface4 }
+    var surface6: Color { surface4.opacity(0.86) }; var surface8: Color { surface4.opacity(0.72) }
+    var primaryText: Color { resolvedTokens.primaryText }; var secondaryText: Color { resolvedTokens.secondaryText }; var metadataText: Color { resolvedTokens.metadataText }; var accent: Color { resolvedTokens.accent }; var selectedFill: Color { resolvedTokens.selectedFill }; var divider: Color { resolvedTokens.divider }; var success: Color { resolvedTokens.success }; var warning: Color { resolvedTokens.warning }; var destructive: Color { resolvedTokens.destructive }
     var swatches: [Color] { [background, selectedFill, primaryText, accent, success] }
 }
 
-private extension Color {
-    init(hex: String) {
+private struct Tokens {
+    let background, surface, surface2, surface4, primaryText, secondaryText, metadataText, accent, selectedFill, divider, success, warning, destructive: Color
+
+    init(theme: DockThemeID) {
+        let light = DockThemePalette.roles(theme, dark: false)
+        let dark = DockThemePalette.roles(theme, dark: true)
+        func color(_ pick: (DockThemePalette.Roles) -> String) -> Color {
+            switch theme.appearance {
+            case .light: return Color(nsColor: NSColor(hex: pick(light)))
+            case .dark: return Color(nsColor: NSColor(hex: pick(dark)))
+            case .system:
+                let lightColor = NSColor(hex: pick(light)), darkColor = NSColor(hex: pick(dark))
+                return Color(nsColor: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? darkColor : lightColor
+                })
+            }
+        }
+        background = color { $0.bg }; surface = color { $0.surface }; surface2 = color { $0.surface2 }; surface4 = color { $0.surface4 }
+        primaryText = color { $0.primary }; secondaryText = color { $0.secondary }; metadataText = color { $0.metadata }; accent = color { $0.accent }
+        selectedFill = color { $0.selected }; divider = color { $0.divider }; success = color { $0.success }; warning = color { $0.warning }; destructive = color { $0.destructive }
+    }
+}
+
+private extension NSColor {
+    convenience init(hex: String) {
         var value: UInt64 = 0; Scanner(string: hex.replacingOccurrences(of: "#", with: "")).scanHexInt64(&value)
-        self.init(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255, blue: Double(value & 0xFF) / 255)
+        self.init(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255, alpha: 1)
     }
 }
 
@@ -106,22 +132,64 @@ private extension Color {
 final class DockThemeStore: ObservableObject {
     static let storageKey = "hermes.dock.theme.v1"
     static let legacyStorageKey = "hermes.sidebar.brand-concept.v1"
+    /// The one theme store every Dock window observes. Separate stores would
+    /// each hold their own selection, so a surface observing a different
+    /// instance kept rendering the previous theme.
+    static let shared = DockThemeStore(appliesToApplication: true)
     @Published var selectedThemeID: DockThemeID {
         didSet {
+            guard oldValue != selectedThemeID else { return }
             defaults.set(selectedThemeID.rawValue, forKey: Self.storageKey)
-            DockThemeRuntime.current = selectedThemeID
-            DockThemeRuntime.revision &+= 1
+            applyToApplication()
         }
     }
     private let defaults: UserDefaults
-    init(defaults: UserDefaults = .standard) {
+    private let appliesToApplication: Bool
+    private var systemAppearanceObservation: NSKeyValueObservation?
+
+    init(defaults: UserDefaults = .standard, appliesToApplication: Bool = false) {
         self.defaults = defaults
+        self.appliesToApplication = appliesToApplication
         defaults.removeObject(forKey: Self.legacyStorageKey)
         selectedThemeID = defaults.string(forKey: Self.storageKey).flatMap(DockThemeID.init(rawValue:)) ?? .nativeMacOS
-        DockThemeRuntime.current = selectedThemeID
-        DockThemeRuntime.revision &+= 1
+        applyToApplication()
+        observeSystemAppearance()
     }
     var palette: DockThemePalette { DockThemePalette(theme: selectedThemeID) }
+
+    /// Publishes the theme to token readers and forces the matching
+    /// appearance on every window, so AppKit views, nested hosting views,
+    /// menus, and sheets resolve system and theme colors consistently.
+    private func applyToApplication() {
+        guard appliesToApplication else { return }
+        DockThemeRuntime.current = selectedThemeID
+        DockThemeRuntime.revision &+= 1
+        guard let app = NSApp else { return }
+        let appearance: NSAppearance? = switch selectedThemeID.appearance {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+        if app.appearance?.name != appearance?.name { app.appearance = appearance }
+    }
+
+    /// Native macOS follows the system Light/Dark setting. Content that bakes
+    /// colors into attributed text is keyed by the theme revision, so bump it
+    /// and republish when the effective appearance flips.
+    private func observeSystemAppearance() {
+        guard appliesToApplication, let app = NSApp else { return }
+        var lastIsDark = app.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        systemAppearanceObservation = app.observe(\.effectiveAppearance) { [weak self] app, _ in
+            let isDark = app.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            MainActor.assumeIsolated {
+                guard let self, isDark != lastIsDark else { return }
+                lastIsDark = isDark
+                guard self.selectedThemeID.appearance == .system else { return }
+                DockThemeRuntime.revision &+= 1
+                self.objectWillChange.send()
+            }
+        }
+    }
 }
 
 enum DockThemeRuntime {

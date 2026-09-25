@@ -15,6 +15,8 @@ struct RestoredTranscript {
 
     let messages: [ChatMessage]
     let pendingImages: [PendingImages]
+    /// Stored Hermes row id of each message that carried one.
+    var rowIDs: [Int: UUID] = [:]
 }
 
 @MainActor
@@ -36,7 +38,11 @@ final class DockModel: ObservableObject {
         if let cached = cachedMessageNavigatorItems, cached.sessionID == owner {
             return cached.items
         }
-        let items = ConversationMessageWindow.navigatorItems(messages: messages, sessionID: owner)
+        let items = MessageNavigator.items(
+            messages: messages,
+            earlierPrompts: unloadedTranscriptPrompts,
+            sessionID: owner
+        )
         cachedMessageNavigatorItems = (owner, items)
         return items
     }
@@ -317,6 +323,22 @@ final class DockModel: ObservableObject {
     private let agentStateStore: SessionAgentStateStore
     private let agentStateWriter: SessionAgentStateWriter
     private var sessionResumeGeneration = 0
+    /// Older rows of the active transcript still stored in Hermes. Nil when the
+    /// whole transcript was delivered inline (legacy resume or a new session).
+    private var transcriptHistoryCursor: TranscriptHistoryCursor?
+    private var isLoadingEarlierTranscript = false
+    private var earlierTranscriptRetryAfter: Date?
+    private var transcriptPrependGeneration = 0
+    /// Set in the same main-actor step that prepends older history, so the
+    /// transcript view can tell a prepend from an append on the count change.
+    private(set) var lastTranscriptPrepend: TranscriptHistoryPrepend?
+    /// Every stored prompt of the active paged transcript, oldest first.
+    private var transcriptTimeline: [TranscriptTimelineEntry] = [] {
+        didSet { cachedMessageNavigatorItems = nil }
+    }
+    private var transcriptMessageIDsByRowID: [Int: UUID] = [:]
+    /// True while search or a jump reads older history in one step.
+    @Published private(set) var isLoadingTranscriptHistory = false
     private var restoreGeneration = 0
     private var interruptGeneration = 0
     private var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
@@ -325,6 +347,7 @@ final class DockModel: ObservableObject {
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
     private let lastSessionIDKey = "hermes.session.last-active.v1"
     private let profileScopeKey = "hermes.dock.selected-profile.v1"
+    private let unreadSessionIDsKey = "hermes.dock.unread-session-ids.v1"
     private let defaults: UserDefaults
     private let playApprovalSound: () -> Void
     private var sessionLoadTask: Task<Void, Never>?
@@ -561,7 +584,7 @@ final class DockModel: ObservableObject {
                     switch gatewayError {
                     case .backendUnavailable, .disconnected, .httpError:
                         transportFailure = true
-                    case .malformedResponse, .imageAttachFailed:
+                    case .malformedResponse, .imageAttachFailed, .httpRefused:
                         transportFailure = false
                     }
                 } else {
@@ -852,7 +875,7 @@ final class DockModel: ObservableObject {
                 // Keep a newer event timestamp until Hermes publishes an equal
                 // or newer canonical row, so navigation never regresses its
                 // visible “Updated” time after a completed message.
-                let merged = Self.mergingSessionIndex(loaded, with: sessions)
+                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions))
                 sessions = merged
                 sessionProjectionState = merged.isEmpty ? .empty : .ready(merged)
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
@@ -1072,10 +1095,20 @@ final class DockModel: ObservableObject {
                 detachInFlightBotActivities(as: .canceled)
             }
         }
+        // A refresh re-reads at least as much history as the reader already
+        // paged in, so refreshing never collapses the transcript they scrolled.
+        let refreshedTranscriptRowCount = isRefreshingActiveSession ? (transcriptHistoryCursor?.nextOffset ?? 0) : 0
         sessionResumeGeneration &+= 1
         interruptGeneration &+= 1
         let resumeGeneration = sessionResumeGeneration
+        transcriptHistoryCursor = nil
+        isLoadingEarlierTranscript = false
+        isLoadingTranscriptHistory = false
+        earlierTranscriptRetryAfter = nil
+        transcriptTimeline = []
+        transcriptMessageIDsByRowID = [:]
         sessionID = session.id
+        updateSessionActivity(sessionID: session.id, unread: false)
         sessionProfileID = owningProfileID
         kanbanAttributionSessionID = session.id
         activeBotProfileID = profileID
@@ -1118,7 +1151,16 @@ final class DockModel: ObservableObject {
         restorePendingApproval(for: [session.id])
         do {
             try await sessionRPCClient.connect()
-            var resumeParams: [String: Any] = ["session_id": session.id, "source": "hermes-agent-dock"]
+            var resumeParams: [String: Any] = [
+                "session_id": session.id,
+                "source": "hermes-agent-dock",
+                // Page the transcript over REST instead of shipping it whole in
+                // this response: long sessions produced multi-megabyte frames
+                // and parsed thousands of rows nobody had scrolled to. Hermes
+                // hydrates the model history in the background either way.
+                "defer_history": true,
+                "omit_messages": true,
+            ]
             if let owningProfileID, !owningProfileID.isEmpty { resumeParams["profile"] = owningProfileID }
             let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
@@ -1164,16 +1206,33 @@ final class DockModel: ObservableObject {
             guard result["messages"] is [[String: Any]] else {
                 throw HermesGateway.GatewayError.malformedResponse
             }
+            var transcriptRows = result["messages"]
+            if TranscriptHistoryPaging.resumeResponseDefersTranscript(result),
+               let storageID = sessionStorageID {
+                let tail = try await loadTranscriptTail(
+                    storageSessionID: storageID,
+                    profileID: owningProfileID,
+                    minimumRowCount: refreshedTranscriptRowCount,
+                    fallbackResumeParams: resumeParams
+                )
+                guard resumeGeneration == sessionResumeGeneration else { return false }
+                transcriptRows = tail.rows
+                transcriptHistoryCursor = tail.cursor
+            }
             let restored = Self.parseMessages(
-                result["messages"],
+                transcriptRows,
                 defaultBotProfileID: profileID,
                 defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
             )
+            transcriptMessageIDsByRowID = restored.rowIDs
             messages = restored.messages
             rehydratePendingTranscriptImages(
                 restored.pendingImages,
                 requestedSessionID: session.id
             )
+            if transcriptHistoryCursor?.hasMore == true {
+                loadTranscriptTimeline(generation: resumeGeneration)
+            }
             restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
             projectBotMessagesIntoActivity()
@@ -1199,6 +1258,229 @@ final class DockModel: ObservableObject {
             DebugLog.write("model: session resume failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             return false
         }
+    }
+
+    /// Reads the newest stored rows of a paged resume. When the REST read is
+    /// unavailable, falls back to one resume that inlines the transcript
+    /// (the session is live by now, so Hermes answers from memory).
+    private func loadTranscriptTail(
+        storageSessionID: String,
+        profileID: String?,
+        minimumRowCount: Int,
+        fallbackResumeParams: [String: Any]
+    ) async throws -> (rows: [[String: Any]], cursor: TranscriptHistoryCursor?) {
+        let cursor = TranscriptHistoryCursor(storageSessionID: storageSessionID, profileID: profileID)
+        let limit = min(
+            TranscriptHistoryPaging.maximumPageRowLimit,
+            max(TranscriptHistoryPaging.pageRowLimit, minimumRowCount)
+        )
+        do {
+            let loaded = try await fetchEarlierTranscriptRows(
+                from: cursor,
+                limit: limit,
+                minimumDisplayRows: ConversationMessageWindow.initialLimit
+            )
+            return (loaded.rows, loaded.cursor)
+        } catch {
+            DebugLog.write("model: transcript page read failed, resuming inline: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            var params = fallbackResumeParams
+            params.removeValue(forKey: "defer_history")
+            params.removeValue(forKey: "omit_messages")
+            let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: params)
+            guard let rows = result["messages"] as? [[String: Any]] else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            return (rows, nil)
+        }
+    }
+
+    /// Reads older pages until at least `minimumDisplayRows` visible messages
+    /// arrive or history is exhausted. Returned rows are display-projected and
+    /// chronological.
+    private func fetchEarlierTranscriptRows(
+        from start: TranscriptHistoryCursor,
+        limit: Int,
+        minimumDisplayRows: Int,
+        maximumPages: Int = TranscriptHistoryPaging.maximumPagesPerLoad,
+        through targetRowID: Int? = nil
+    ) async throws -> (rows: [[String: Any]], cursor: TranscriptHistoryCursor) {
+        var cursor = start
+        var collected: [[String: Any]] = []
+        var pagesRead = 0
+        while cursor.hasMore, pagesRead < maximumPages {
+            guard let path = TranscriptHistoryPaging.pagePath(
+                sessionID: cursor.storageSessionID,
+                profileID: cursor.profileID,
+                limit: limit,
+                offset: cursor.nextOffset
+            ) else { throw HermesGateway.GatewayError.malformedResponse }
+            guard let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path)) else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            pagesRead += 1
+            let fresh = TranscriptHistoryPaging.advance(&cursor, with: page, limit: limit)
+            collected = TranscriptHistoryPaging.displayRows(fromStoredRows: fresh) + collected
+            if let targetRowID {
+                if cursor.seenRowIDs.contains(targetRowID) { break }
+            } else if collected.count >= minimumDisplayRows {
+                break
+            }
+        }
+        return (collected, cursor)
+    }
+
+    var canLoadEarlierTranscript: Bool {
+        guard let cursor = transcriptHistoryCursor, cursor.hasMore, !isLoadingEarlierTranscript else { return false }
+        return cursor.storageSessionID == sessionStorageID
+    }
+
+    /// Prepends the next page of stored history once the reader reaches the
+    /// oldest loaded message.
+    func loadEarlierTranscriptIfAvailable() {
+        guard canLoadEarlierTranscript, let cursor = transcriptHistoryCursor else { return }
+        if let retryAfter = earlierTranscriptRetryAfter, retryAfter > Date() { return }
+        isLoadingEarlierTranscript = true
+        let generation = sessionResumeGeneration
+        Task { @MainActor in
+            defer {
+                if generation == sessionResumeGeneration { isLoadingEarlierTranscript = false }
+            }
+            do {
+                let loaded = try await fetchEarlierTranscriptRows(
+                    from: cursor,
+                    limit: TranscriptHistoryPaging.pageRowLimit,
+                    minimumDisplayRows: 1
+                )
+                guard generation == sessionResumeGeneration,
+                      sessionStorageID == cursor.storageSessionID else { return }
+                earlierTranscriptRetryAfter = nil
+                prependEarlierTranscript(loaded.rows, cursor: loaded.cursor)
+            } catch {
+                guard generation == sessionResumeGeneration else { return }
+                // Scroll events call this continuously at the top edge; back
+                // off instead of re-requesting a failing page on every frame.
+                earlierTranscriptRetryAfter = Date().addingTimeInterval(5)
+                DebugLog.write("model: earlier transcript page failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            }
+        }
+    }
+
+    private func prependEarlierTranscript(_ rows: [[String: Any]], cursor: TranscriptHistoryCursor) {
+        transcriptHistoryCursor = cursor
+        // Loaded prompts leave the navigator's unloaded list with the cursor.
+        cachedMessageNavigatorItems = nil
+        let restored = Self.parseMessages(
+            rows,
+            defaultBotProfileID: activeBotProfileID,
+            defaultBotDisplayName: activeBotDisplayName
+        )
+        guard !restored.messages.isEmpty else { return }
+        transcriptMessageIDsByRowID.merge(restored.rowIDs) { current, _ in current }
+        transcriptPrependGeneration &+= 1
+        lastTranscriptPrepend = TranscriptHistoryPrepend(
+            generation: transcriptPrependGeneration,
+            count: restored.messages.count,
+            resultingCount: messages.count + restored.messages.count
+        )
+        messages.insert(contentsOf: restored.messages, at: 0)
+        if let sessionID {
+            rehydratePendingTranscriptImages(restored.pendingImages, requestedSessionID: sessionID)
+        }
+        DebugLog.write("model: loaded \(restored.messages.count) earlier messages (offset \(cursor.nextOffset))")
+    }
+
+    /// Stored prompts older than the loaded transcript, oldest first.
+    var unloadedTranscriptPrompts: [TranscriptTimelineEntry] {
+        guard let cursor = transcriptHistoryCursor, cursor.hasMore,
+              cursor.storageSessionID == sessionStorageID else { return [] }
+        return transcriptTimeline.filter { !cursor.seenRowIDs.contains($0.rowID) }
+    }
+
+    /// True while stored history older than the loaded transcript remains.
+    var hasUnloadedTranscript: Bool {
+        guard let cursor = transcriptHistoryCursor else { return false }
+        return cursor.hasMore && cursor.storageSessionID == sessionStorageID
+    }
+
+    /// Reads the prompt timeline of the paged transcript so the navigator can
+    /// list and search prompts that are not loaded yet. Failure leaves the
+    /// navigator covering loaded messages only.
+    private func loadTranscriptTimeline(generation: Int) {
+        guard let cursor = transcriptHistoryCursor else { return }
+        Task { @MainActor in
+            var entries: [TranscriptTimelineEntry] = []
+            var after = 0
+            do {
+                for _ in 0..<TranscriptHistoryPaging.maximumTimelinePages {
+                    guard let path = TranscriptHistoryPaging.timelinePath(
+                        sessionID: cursor.storageSessionID,
+                        profileID: cursor.profileID,
+                        afterRowID: after
+                    ), let page = TranscriptHistoryPaging.timelinePage(
+                        from: try await sessionRPCClient.fetchHTTP(path)
+                    ) else { break }
+                    entries += page.entries
+                    guard let next = page.nextCursor, next > after else { break }
+                    after = next
+                }
+            } catch {
+                DebugLog.write("model: transcript timeline read failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            }
+            guard generation == sessionResumeGeneration,
+                  sessionStorageID == cursor.storageSessionID else { return }
+            transcriptTimeline = entries
+        }
+    }
+
+    /// Loads all older history through `rowID` (or all of it when nil) in one
+    /// prepend and returns the loaded message to show for that row. Search and
+    /// navigator jumps use this; scrolling keeps reading page by page.
+    @discardableResult
+    func loadTranscriptHistory(through rowID: Int?) async -> UUID? {
+        let generation = sessionResumeGeneration
+        while isLoadingEarlierTranscript {
+            try? await Task.sleep(for: .milliseconds(20))
+            guard generation == sessionResumeGeneration else { return nil }
+        }
+        if let rowID, let loaded = loadedMessageID(forRowID: rowID) { return loaded }
+        guard hasUnloadedTranscript, let cursor = transcriptHistoryCursor else {
+            return rowID.flatMap(loadedMessageID(forRowID:))
+        }
+        isLoadingEarlierTranscript = true
+        isLoadingTranscriptHistory = true
+        defer {
+            if generation == sessionResumeGeneration {
+                isLoadingEarlierTranscript = false
+                isLoadingTranscriptHistory = false
+            }
+        }
+        do {
+            let loaded = try await fetchEarlierTranscriptRows(
+                from: cursor,
+                limit: TranscriptHistoryPaging.maximumPageRowLimit,
+                minimumDisplayRows: .max,
+                maximumPages: .max,
+                through: rowID
+            )
+            guard generation == sessionResumeGeneration,
+                  sessionStorageID == cursor.storageSessionID else { return nil }
+            earlierTranscriptRetryAfter = nil
+            prependEarlierTranscript(loaded.rows, cursor: loaded.cursor)
+        } catch {
+            guard generation == sessionResumeGeneration else { return nil }
+            DebugLog.write("model: transcript history read failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            return nil
+        }
+        return rowID.flatMap(loadedMessageID(forRowID:))
+    }
+
+    /// The message for a stored row, or the next loaded message after it when
+    /// that row itself has no visible message.
+    private func loadedMessageID(forRowID rowID: Int) -> UUID? {
+        if let exact = transcriptMessageIDsByRowID[rowID] { return exact }
+        guard let next = transcriptMessageIDsByRowID.keys.filter({ $0 > rowID }).min(),
+              transcriptHistoryCursor?.seenRowIDs.contains(rowID) == true else { return nil }
+        return transcriptMessageIDsByRowID[next]
     }
 
     func resumeBotChat(_ bot: BotSummary) {
@@ -1604,10 +1886,13 @@ final class DockModel: ObservableObject {
         reconcileDirectBotLifecycle(type: type, params: params)
         capturePendingApproval(type: type, params: params)
         capturePendingClarification(type: type, params: params)
+        let eventPayload = params["payload"] as? [String: Any] ?? [:]
+        let eventSessionID = (params["session_id"] as? String) ?? (eventPayload["session_id"] as? String)
         if type == "message.start" || type == "message.complete" || type == "sessions.changed" {
-            let payload = params["payload"] as? [String: Any] ?? [:]
-            let sessionID = params["session_id"] as? String ?? payload["session_id"] as? String
-            touchSession(sessionID: sessionID, at: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date())
+            touchSession(sessionID: eventSessionID, at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
+        }
+        if type == "message.start", let eventSessionID {
+            updateSessionActivity(sessionID: eventSessionID, isWorking: true)
         }
         // `sessions.changed` is a notification, not a new session snapshot.
         // Re-read the authoritative index after a turn completes so titles,
@@ -1619,6 +1904,9 @@ final class DockModel: ObservableObject {
         }
         if Self.isUnreadUpdateEvent(type) {
             markUnreadUpdate()
+            if let eventSessionID {
+                updateSessionActivity(sessionID: eventSessionID, isWorking: false, unread: eventSessionID != sessionID)
+            }
         }
         handleEvent(type, params: params)
     }
@@ -1956,8 +2244,62 @@ final class DockModel: ObservableObject {
             startedAt: session.startedAt,
             updatedAt: date,
             messageCount: session.messageCount,
-            source: session.source
+            source: session.source,
+            isHidden: session.isHidden,
+            isWorking: session.isWorking,
+            hasUnreadUpdate: session.hasUnreadUpdate
         )
+    }
+
+    /// Tracks working/unread state for a session that is not necessarily the
+    /// one currently open, so the dock and sidebars can surface every session
+    /// with activity, not just the focused one. Reuses the same gateway
+    /// stream and `Self.isUnreadUpdateEvent` predicate that already drive the
+    /// current session's `hasUnreadResponse`.
+    private func updateSessionActivity(sessionID: String, isWorking: Bool? = nil, unread: Bool? = nil) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let session = sessions[index]
+        sessions[index] = HermesSession(
+            id: session.id,
+            profileID: session.profileID,
+            title: session.title,
+            preview: session.preview,
+            startedAt: session.startedAt,
+            updatedAt: session.updatedAt,
+            messageCount: session.messageCount,
+            source: session.source,
+            isHidden: session.isHidden,
+            isWorking: isWorking ?? session.isWorking,
+            hasUnreadUpdate: unread ?? session.hasUnreadUpdate
+        )
+        if let unread {
+            var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
+            if unread { unreadIDs.insert(sessionID) } else { unreadIDs.remove(sessionID) }
+            defaults.set(Array(unreadIDs), forKey: unreadSessionIDsKey)
+        }
+    }
+
+    /// Restores unread state persisted across launches for sessions the
+    /// in-memory index does not already carry a live value for.
+    private func applyPersistedUnreadState(_ loaded: [HermesSession]) -> [HermesSession] {
+        let unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
+        guard !unreadIDs.isEmpty else { return loaded }
+        return loaded.map { session in
+            guard unreadIDs.contains(session.id), !session.hasUnreadUpdate else { return session }
+            return HermesSession(
+                id: session.id,
+                profileID: session.profileID,
+                title: session.title,
+                preview: session.preview,
+                startedAt: session.startedAt,
+                updatedAt: session.updatedAt,
+                messageCount: session.messageCount,
+                source: session.source,
+                isHidden: session.isHidden,
+                isWorking: session.isWorking,
+                hasUnreadUpdate: true
+            )
+        }
     }
 
     private func refreshSessionIndexAfterActivity() {
@@ -2683,7 +3025,7 @@ final class DockModel: ObservableObject {
             activeToolCalls.append(ActiveToolCall(
                 id: id,
                 name: name,
-                input: input,
+                input: Self.truncatedForPersistence(input),
                 context: payload["context"] as? String ?? "",
                 startedAt: dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date(),
                 result: nil,
@@ -2714,7 +3056,7 @@ final class DockModel: ObservableObject {
                 if wasDelegation, let args = payload["args"] as? [String: Any] {
                     refreshSynthesizedSubagents(toolCallID: id, args: args)
                 }
-                activeToolCalls[index].result = result.isEmpty ? nil : result
+                activeToolCalls[index].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
                 activeToolCalls[index].isComplete = true
                 activeToolCalls[index].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 activeToolCalls[index].diffPreview = diffPreview
@@ -2724,7 +3066,7 @@ final class DockModel: ObservableObject {
                 if wasDelegation, let args = payload["args"] as? [String: Any] {
                     refreshSynthesizedSubagents(toolCallID: activeToolCalls[last].id, args: args)
                 }
-                activeToolCalls[last].result = result.isEmpty ? nil : result
+                activeToolCalls[last].result = result.isEmpty ? nil : Self.truncatedForPersistence(result)
                 activeToolCalls[last].isComplete = true
                 activeToolCalls[last].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 activeToolCalls[last].diffPreview = diffPreview
@@ -2974,7 +3316,7 @@ final class DockModel: ObservableObject {
             botDisplayName: botDisplayName
         )
         streamingMessagePendingPresentationDelta = ""
-        streamingText.retainCompletionPresentation()
+        streamingText.retainCompletionPresentation(for: id)
         streamingText.clearLivePresentation()
         streamingResponseStartedAt = nil
     }
@@ -3632,6 +3974,22 @@ final class DockModel: ObservableObject {
         return status == "dispatched" || mode == "background"
     }
 
+    /// Tool call input/result strings are shown as short previews in the
+    /// activity list and are persisted verbatim into a per-session cache
+    /// (`session-agent-state-v1.json`) that lives for the whole session
+    /// lifetime. Full tool payloads (raw file listings, page dumps, etc.) can
+    /// be hundreds of KB each; leaving them unbounded made that cache file
+    /// grow into the multi-MB range for long sessions, which was observed to
+    /// make session restoration fail with "connection to Hermes was lost".
+    /// Cap what we keep to a size that comfortably covers the UI preview.
+    static let toolPayloadPersistenceLimit = 4000
+
+    static func truncatedForPersistence(_ value: String) -> String {
+        guard value.count > toolPayloadPersistenceLimit else { return value }
+        let prefix = value.prefix(toolPayloadPersistenceLimit)
+        return "\(prefix)\n… [truncated \(value.count - toolPayloadPersistenceLimit) chars]"
+    }
+
     static func eventText(_ value: Any?) -> String {
         if let value = value as? String { return value }
         guard let value,
@@ -4159,18 +4517,27 @@ final class DockModel: ObservableObject {
         isUpdatingSessionModel = true
         runtimeConfigurationError = nil
         let request = Self.sessionRuntimeModelSwitchRequest(option: option, sessionID: sessionID)
+        
+        // Update UI optimistically so user sees selection immediately
+        let previousModelOptionID = sessionModelOptionID
+        let previousModelValue = sessionModelValue
+        let previousModelName = currentModelName
+        sessionModelOptionID = option.id
+        sessionModelValue = option.displayName
+        currentModelName = option.model
 
         Task { [weak self] in
             guard let self else { return }
             do {
                 let result = try await gateway.request(HermesFeatureIDs.ID.configSet.rawValue, params: request.parameters)
-                sessionModelOptionID = option.id
-                sessionModelValue = option.displayName
-                currentModelName = option.model
                 if result["deferred"] as? Bool == true {
                     DebugLog.write("model: session provider/model switch queued for the next turn")
                 }
             } catch {
+                // Revert to previous values on failure
+                sessionModelOptionID = previousModelOptionID
+                sessionModelValue = previousModelValue
+                currentModelName = previousModelName
                 runtimeConfigurationError = "Hermes could not apply the session provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
             isUpdatingSessionModel = false
@@ -4238,7 +4605,7 @@ final class DockModel: ObservableObject {
     ) -> HermesRuntimeModelSwitchRequest {
         HermesRuntimeModelSwitchRequest(
             sessionID: sessionID,
-            value: "\(option.model) --provider \(option.provider) --session"
+            value: "\(option.model) --provider \(option.provider) --session \(sessionID)"
         )
     }
 
@@ -4302,10 +4669,12 @@ final class DockModel: ObservableObject {
     private static func mergingSessionIndex(_ loaded: [HermesSession], with existing: [HermesSession]) -> [HermesSession] {
         let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return loaded.map { session in
-            guard let observed = existingByID[session.id],
-                  let observedDate = observed.lastUpdatedAt,
-                  observedDate > (session.lastUpdatedAt ?? .distantPast) else {
-                return session
+            guard let observed = existingByID[session.id] else { return session }
+            let updatedAt: Date?
+            if let observedDate = observed.lastUpdatedAt, observedDate > (session.lastUpdatedAt ?? .distantPast) {
+                updatedAt = observedDate
+            } else {
+                updatedAt = session.updatedAt
             }
             return HermesSession(
                 id: session.id,
@@ -4313,10 +4682,12 @@ final class DockModel: ObservableObject {
                 title: session.title,
                 preview: session.preview,
                 startedAt: session.startedAt,
-                updatedAt: observedDate,
+                updatedAt: updatedAt,
                 messageCount: session.messageCount,
                 source: session.source,
-                isHidden: session.isHidden
+                isHidden: session.isHidden,
+                isWorking: observed.isWorking,
+                hasUnreadUpdate: observed.hasUnreadUpdate
             )
         }
     }
@@ -4455,6 +4826,7 @@ final class DockModel: ObservableObject {
         }
         var messages: [ChatMessage] = []
         var pendingImages: [RestoredTranscript.PendingImages] = []
+        var rowIDs: [Int: UUID] = [:]
         for row in rows {
             guard let role = row["role"] as? String else { continue }
             let persisted = persistedImageContent(from: messageText(row["text"] ?? row["content"]))
@@ -4479,6 +4851,9 @@ final class DockModel: ObservableObject {
                 botDisplayName: attribution?.displayName ?? defaultBotDisplayName
             )
             messages.append(message)
+            if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") {
+                rowIDs[rowID] = message.id
+            }
             if !persisted.imageFileURLs.isEmpty {
                 pendingImages.append(RestoredTranscript.PendingImages(
                     messageID: message.id,
@@ -4486,7 +4861,7 @@ final class DockModel: ObservableObject {
                 ))
             }
         }
-        return RestoredTranscript(messages: messages, pendingImages: pendingImages)
+        return RestoredTranscript(messages: messages, pendingImages: pendingImages, rowIDs: rowIDs)
     }
 
     /// Hermes persists uploaded images as directive lines in the session

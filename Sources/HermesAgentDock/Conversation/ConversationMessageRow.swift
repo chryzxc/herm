@@ -140,34 +140,34 @@ struct ConversationMessageRow: View, Equatable {
                             }
                         }
                     }
-                    if message.isSteering || !userText.isEmpty {
-                        VStack(alignment: .trailing, spacing: 6) {
-                            if message.isSteering {
-                                Text("STEERING · \(message.steeringStatus ?? "QUEUED")")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(Color.dockAccent)
+                    if !userText.isEmpty {
+                        messageMarkdownView(userText, cacheKey: messageRenderCacheKey)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(Self.userBubbleShape.fill(Color.dockUserMessageBubble))
+                            .overlay {
+                                Self.userBubbleShape
+                                    .stroke(
+                                        message.isSteering ? Color.dockAccent.opacity(0.45) : Color.dockBorderStrong,
+                                        lineWidth: 0.5
+                                    )
                             }
-                            if !userText.isEmpty {
-                                messageMarkdownView(userText, cacheKey: messageRenderCacheKey)
-                            }
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        // Use opaque slate-navy user message bubble background to eliminate eye strain
-                        .background(Color.dockUserMessageBubble)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(Color.dockBorderStrong, lineWidth: 0.5)
-                        }
                     }
 
-                    Text(message.timeLabel)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .padding(.horizontal, 4)
+                    HStack(spacing: 6) {
+                        if message.isSteering {
+                            Text(steeringLabel)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color.dockAccent)
+                        }
+                        Text(message.timeLabel)
+                            .font(DockTypography.machineMetadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.top, 2)
                 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
             } else {
@@ -216,28 +216,27 @@ struct ConversationMessageRow: View, Equatable {
                     if !message.text.isEmpty || isStreamingMessage {
                         Group {
                             if isStreamingMessage, let streamingText {
-                                if CompletedMarkdownRendererPolicy.usesNativeRenderer(for: streamingText.text) {
-                                    NativeMarkdownDocumentHost(
-                                        source: streamingText.text,
-                                        key: markdownRenderKey,
-                                        streamingSections: MarkdownRenderDocumentBuilder.sections(for: streamingText.chunks)
-                                    )
-                                    .fixedSize(horizontal: false, vertical: true)
-                                } else {
-                                    StreamingMessageText(streaming: streamingText)
-                                }
+                                // The row is an equatable boundary that does
+                                // not observe live text. StreamingMessageText
+                                // observes it and owns the native switch, so a
+                                // long response can never freeze at the
+                                // snapshot captured by the last row render.
+                                StreamingMessageText(streaming: streamingText)
                             } else if message.isError {
                                 HStack(alignment: .top, spacing: 10) {
-                                    LucideImage(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundStyle(Color.dockWarning)
-                                    VStack(alignment: .leading, spacing: 4) {
+                                    LucideIcon(name: .triangleAlert, size: 13, color: Color.dockWarning)
+                                        .padding(.top, 1)
+                                    VStack(alignment: .leading, spacing: 3) {
                                         Text("Request could not be completed")
-                                            .font(.system(size: 13, weight: .semibold))
+                                            .font(.system(size: 12, weight: .semibold))
                                         Text(message.text)
-                                            .font(.system(size: 13))
+                                            .font(DockTypography.body)
+                                            .foregroundStyle(Color.dockSecondaryText)
                                             .textSelection(.enabled)
                                     }
                                 }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
                             } else {
                                 messageMarkdownView(message.text, cacheKey: messageRenderCacheKey)
                             }
@@ -247,12 +246,12 @@ struct ConversationMessageRow: View, Equatable {
                             .padding(.vertical, 6)
                             .foregroundStyle(Color.dockPrimaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(message.isError ? Color.dockWarning.opacity(0.10) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .background(message.isError ? Color.dockWarning.opacity(0.08) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
                             .overlay {
                                 if message.isError {
-                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                        .stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5)
+                                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
+                                        .stroke(Color.dockWarning.opacity(0.4), lineWidth: 0.5)
                                 }
                             }
                     }
@@ -265,7 +264,7 @@ struct ConversationMessageRow: View, Equatable {
                             ResponseDurationLabel(startedAt: message.timestamp, finishedDuration: message.responseDuration)
                             if let modelName = message.modelName { Text("· \(modelName)") }
                         }
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(DockTypography.machineMetadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .padding(.horizontal, 4)
                     } else if message.isError {
@@ -276,6 +275,21 @@ struct ConversationMessageRow: View, Equatable {
         }
         .padding(.horizontal, metrics.contentInset)
         .padding(.vertical, 8)
+    }
+
+    /// The tail corner points toward the sender edge so consecutive prompts
+    /// read as one side of the exchange without an avatar.
+    private static let userBubbleShape = UnevenRoundedRectangle(
+        topLeadingRadius: 14,
+        bottomLeadingRadius: 14,
+        bottomTrailingRadius: 4,
+        topTrailingRadius: 14,
+        style: .continuous
+    )
+
+    private var steeringLabel: String {
+        let status = (message.steeringStatus ?? "queued").lowercased()
+        return "Steering · \(status)"
     }
 
     private var messageRenderCacheKey: String {
@@ -294,7 +308,7 @@ struct ConversationMessageRow: View, Equatable {
     private func messageMarkdownView(_ markdown: String, cacheKey: String) -> some View {
         if CompletedMarkdownRendererPolicy.usesNativeRenderer(for: markdown) {
             let retainedSections = streamingText?
-                .completionChunks(matching: markdown)
+                .completionChunks(matching: markdown, messageID: message.id)
                 .map(MarkdownRenderDocumentBuilder.sections(for:))
             NativeMarkdownDocumentHost(source: markdown, key: markdownRenderKey, streamingSections: retainedSections)
                 .fixedSize(horizontal: false, vertical: true)
@@ -305,7 +319,7 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     private var messageActions: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(ConversationMessageActionKind.allCases) { kind in
                 actionButton(
                     kind,
@@ -316,7 +330,7 @@ struct ConversationMessageRow: View, Equatable {
             Rectangle()
                 .fill(Color.dockBorderLight)
                 .frame(width: 1, height: 12)
-                .padding(.horizontal, 5)
+                .padding(.horizontal, 6)
             messageMetadata
         }
         .accessibilityElement(children: .contain)
@@ -333,8 +347,9 @@ struct ConversationMessageRow: View, Equatable {
                 Text("· \(modelName)")
             }
         }
-        .font(.system(size: 12, design: .monospaced))
+        .font(DockTypography.machineMetadata)
         .foregroundStyle(Color.dockMetadataText)
+        .lineLimit(1)
         .padding(.leading, 4)
     }
 
@@ -367,7 +382,7 @@ struct ConversationMessageRow: View, Equatable {
             } else {
                 LucideIcon(
                     name: .from(systemName: icon),
-                    size: 13,
+                    size: 12,
                     color: iconColor
                 )
             }

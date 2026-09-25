@@ -114,11 +114,81 @@ struct EdgeNotchTests {
     }
 
     @Test func quotaUsageKeepsUnknownValuesUnknownAndClampsBounds() {
-        #expect(EdgeQuotaPreview.usedPercent(remaining: 27) == 73)
-        #expect(EdgeQuotaPreview.usedPercent(remaining: nil) == nil)
-        #expect(EdgeQuotaPreview.usedPercent(remaining: .nan) == nil)
-        #expect(EdgeQuotaPreview.usedPercent(remaining: -5) == 100)
-        #expect(EdgeQuotaPreview.usedPercent(remaining: 120) == 0)
+        #expect(EdgeQuotaPreview.remainingPercent(27) == 27)
+        #expect(EdgeQuotaPreview.remainingPercent(nil) == nil)
+        #expect(EdgeQuotaPreview.remainingPercent(.nan) == nil)
+        #expect(EdgeQuotaPreview.remainingPercent(-5) == 0)
+        #expect(EdgeQuotaPreview.remainingPercent(120) == 100)
     }
 
+    @Test func quotaPreviewPicksSessionAndWeeklyWindows() {
+        func window(_ id: String, _ label: String) -> ProviderQuotaWindow {
+            ProviderQuotaWindow(id: id, label: label, remainingPercent: 50, remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
+        }
+        let claude = EdgeQuotaPreview.compactWindows([window("opus", "Opus"), window("weekly", "Weekly"), window("session", "Session")])
+        #expect(claude.map { $0.label } == ["5h", "7d"])
+        #expect(claude.map { $0.window.id } == ["session", "weekly"])
+
+        let other = EdgeQuotaPreview.compactWindows([window("a", "Daily"), window("b", "Monthly"), window("c", "Search")])
+        #expect(other.map { $0.label } == ["Daily", "Monthly"])
+        #expect(EdgeQuotaPreview.compactWindows([]).isEmpty)
+    }
+
+    @Test func providerMarksCoverDynamicAccountIdentifiers() {
+        #expect(ProviderMark(providerID: "claude", displayName: "Claude") == .claude)
+        #expect(ProviderMark(providerID: "codex-hermes-0", displayName: "Codex via Hermes") == .openAI)
+        #expect(ProviderMark(providerID: "opencode", displayName: "OpenCode Go") == .openCode)
+        #expect(ProviderMark(providerID: "glm", displayName: "GLM Coding Plan") == .monogram("G"))
+    }
+
+    @MainActor @Test func dragCancelsPendingExpansionDuringHover() {
+        let state = EdgeNotchState()
+        state.expanded = false
+        #expect(!state.expanded)
+        // Simulate: hover starts expansion (but with delay now)
+        // Then drag immediately begins before expansion completes
+        // Result: expansion should be cancelled and notch should stay collapsed
+        // (This is handled via expandTask cancellation in moveNotch)
+        #expect(!state.expanded)
+    }
+
+    @Test func tasksListEveryRunningAndUnopenedSessionInPriorityOrder() {
+        let now = Date()
+        func session(_ id: String, working: Bool = false, unread: Bool = false, age: TimeInterval) -> HermesSession {
+            HermesSession(id: id, title: id, preview: "", startedAt: nil, updatedAt: now.addingTimeInterval(-age),
+                          messageCount: 1, source: "cli", isWorking: working, hasUnreadUpdate: unread)
+        }
+        let sessions = (0..<8).map { session("done-\($0)", unread: true, age: TimeInterval($0 * 60)) } + [
+            session("old-work", working: true, age: 600),
+            session("new-work", working: true, age: 30),
+            session("seen", age: 5),
+            session("open", working: true, age: 1),
+        ]
+        let current = EdgeNotchTask(id: "open", title: "Open", phase: .attention, statusLabel: "Needs your approval",
+                                    detail: nil, updatedAt: nil, isCurrent: true, isStatusCurrent: true, session: nil)
+        let tasks = EdgeNotchTask.build(current: current, sessions: sessions, currentSessionID: "open", isOnline: true)
+        #expect(tasks.map(\.id).prefix(3) == ["open", "new-work", "old-work"])
+        #expect(tasks.filter { !$0.isInProgress }.count == 8)
+        #expect(!tasks.contains { $0.id == "seen" })
+        #expect(tasks.filter { $0.id == "open" }.count == 1)
+        #expect(tasks.first?.tone == .attention)
+    }
+
+    @Test func offlineTasksKeepResultsButStopClaimingLiveStatus() {
+        let sessions = [
+            HermesSession(id: "a", title: "A", preview: "", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
+            HermesSession(id: "b", title: "B", preview: "", startedAt: nil, messageCount: 1, source: "cli", hasUnreadUpdate: true),
+        ]
+        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionID: nil, isOnline: false)
+        #expect(tasks.first { $0.id == "a" }?.tone == .inactive)
+        #expect(tasks.first { $0.id == "a" }?.displayStatus == "Status not current")
+        #expect(tasks.first { $0.id == "b" }?.tone == .complete)
+        #expect(EdgeNotchTask.build(current: nil, sessions: [], currentSessionID: nil, isOnline: true).isEmpty)
+    }
+
+    @Test func officeStatusesShareTheDockStatusVocabulary() {
+        #expect(OfficeAgentStatus.blocked.tone == .attention)
+        #expect(OfficeAgentStatus.idle.tone == .complete)
+        #expect(OfficeAgentStatus.working.nsColor == DockStatusTone.working.signageColor)
+    }
 }

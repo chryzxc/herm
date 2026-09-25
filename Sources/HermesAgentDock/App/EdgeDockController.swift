@@ -14,6 +14,7 @@ final class EdgeDockController: NSObject {
     private var notchHost: NSView?
     private var subscriptions = Set<AnyCancellable>()
     private var collapseTask: DispatchWorkItem?
+    private var expandTask: DispatchWorkItem?
     private var hovering = false
     private var dragging = false
     private var suppressClickUntil = Date.distantPast
@@ -21,7 +22,7 @@ final class EdgeDockController: NSObject {
     private var completedTaskIDs: Set<String>?
     private var latestToolID: String?
     private var latestToolComplete = false
-    private var lastProgressAnnouncement = Date.distantPast
+    private var latestSessions: [HermesSession] = []
     private var displayID: NSNumber?
     private var fraction: CGFloat = 0.5
     private let defaults: UserDefaults
@@ -48,6 +49,7 @@ final class EdgeDockController: NSObject {
             onQuotaRequested: { [weak self] in self?.loadQuota() },
             onOpenQuota: { [weak self] in self?.openQuota() },
             openDock: { [weak self] in self?.openWorkspace() },
+            onOpenTask: { [weak self] task in self?.openTask(task) },
             onDrag: { [weak self] ended in self?.moveNotch(ended: ended) },
             onSideChange: { [weak self] side in
                 guard let self else { return }
@@ -65,6 +67,10 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] status, unread, tasks in
                 self?.refresh(status: status, unread: unread, tasks: tasks)
             }.store(in: &subscriptions)
+        model.$sessions
+            .receive(on: RunLoop.main)
+            .sink { [weak self] sessions in self?.refreshNoteworthySessions(sessions) }
+            .store(in: &subscriptions)
         model.$activityPresentationRevision
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in self?.refreshProgress() }
@@ -130,6 +136,44 @@ final class EdgeDockController: NSObject {
         openDock()
     }
 
+    private func openTask(_ task: EdgeNotchTask) {
+        guard let session = task.session else { return openWorkspace() }
+        guard !dragging, Date() >= suppressClickUntil else { return }
+        model.resumeSession(session)
+        openDock()
+    }
+
+    /// `@Published` sinks fire before the property changes, so the latest
+    /// session list is cached from the publisher rather than read back.
+    private func refreshNoteworthySessions(_ sessions: [HermesSession]) {
+        latestSessions = sessions
+        rebuildTasks()
+    }
+
+    /// Every session in progress or finished-but-unopened, with the open
+    /// session contributing its own live activity instead of the index flag.
+    private func rebuildTasks() {
+        let activity = state.activity
+        var current: EdgeNotchTask?
+        let phase: EdgeNotchTask.Phase? = activity.attention ? .attention
+            : activity.working ? .working : activity.hasUpdate ? .finished : nil
+        if let phase {
+            let label: String = switch phase {
+            case .attention: activity.status.title
+            case .working: activity.status == .working ? "Working" : activity.title
+            case .finished: activity.title
+            }
+            current = EdgeNotchTask(
+                id: model.sessionID ?? "current", title: state.sessionTitle, phase: phase,
+                statusLabel: label, detail: state.detail, updatedAt: nil, isCurrent: true,
+                isStatusCurrent: activity.status != .offline, session: nil)
+        }
+        let tasks = EdgeNotchTask.build(current: current, sessions: latestSessions,
+                                        currentSessionID: model.sessionID,
+                                        isOnline: activity.status != .offline)
+        if tasks != state.tasks { state.tasks = tasks }
+    }
+
     private func refresh(status: HermesStatus, unread: Bool, tasks: [HermesBackgroundTask]) {
         let completed = Set(tasks.filter { $0.status == .completed }.map(\.id))
         let newCompletion = completedTaskIDs.map { !completed.subtracting($0).isEmpty } ?? false
@@ -157,11 +201,12 @@ final class EdgeDockController: NSObject {
         latestToolComplete = tool.isComplete
         guard changed else { return }
         updateDetail()
-        // Bound automatic expansions during rapid tool chains, while keeping
-        // an already-open preview current. Token streaming never drives geometry.
-        if Date().timeIntervalSince(lastProgressAnnouncement) >= 4 {
-            lastProgressAnnouncement = Date()
-            announce()
+        // Tool/activity completions update the detail text in place but must
+        // not pop the notch open; only a finished response (or an already
+        // expanded preview) should surface. This keeps the quickview from
+        // announcing on every tool call within a session.
+        if state.expanded {
+            position(animated: true)
         }
     }
 
@@ -181,9 +226,9 @@ final class EdgeDockController: NSObject {
         if state.activity.attention {
             state.detail = "Open this session to review and respond"
         } else if state.activity.working, let tool = model.activeToolCalls.last {
-            state.detail = "\(tool.isComplete ? "Completed" : "Running"): \(tool.name)"
+            state.detail = "\(tool.isComplete ? "Completed" : "Running") \(tool.name)"
         } else if state.activity.backgroundCompleted {
-            state.detail = "A background task finished. Open this session to review its result."
+            state.detail = "Open this session to review its result"
         } else if let response = model.messages.last(where: { $0.role == .hermes }), !response.text.isEmpty {
             state.detail = String(response.text.prefix(180))
             if state.activity.quiet { state.updateTitle = "Latest update" }
@@ -193,6 +238,7 @@ final class EdgeDockController: NSObject {
             state.updateTitle = "No activity yet"
             state.detail = model.sessionID == nil ? "Choose a session to see its activity." : "Updates will appear as work begins in this session."
         }
+        rebuildTasks()
     }
 
     private func announce() {
@@ -207,9 +253,19 @@ final class EdgeDockController: NSObject {
         guard !workspacePresented, !dragging else { return }
         hovering = value
         collapseTask?.cancel()
+        expandTask?.cancel()
         if value {
             state.showingAnnouncement = false
-            setExpanded(true)
+            // Delay expansion long enough for a drag gesture to register before
+            // the view hierarchy changes from rail (with drag gesture) to preview;
+            // 80ms was too short for a user to start moving the notch before it
+            // expanded out from under the cursor.
+            let task = DispatchWorkItem { [weak self] in
+                guard let self, self.hovering, !self.dragging else { return }
+                self.setExpanded(true)
+            }
+            expandTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: task)
         }
         else { scheduleCollapse(after: 0.4) }
     }
@@ -243,6 +299,7 @@ final class EdgeDockController: NSObject {
     private func moveNotch(ended: Bool) {
         guard !workspacePresented else { return }
         collapseTask?.cancel()
+        expandTask?.cancel()
         dragging = !ended
         hovering = false
         state.expanded = false
@@ -268,8 +325,8 @@ final class EdgeDockController: NSObject {
 
     private func position(animated: Bool) {
         guard !workspacePresented, let placement else { return }
-        let target = placement.frame(width: state.expanded ? 368 : state.railWidth,
-                                     height: state.expanded ? max(300, state.railHeight) : state.railHeight)
+        let target = placement.frame(width: state.expanded ? EdgeNotchState.expandedSize.width : state.railWidth,
+                                     height: state.expanded ? max(EdgeNotchState.expandedSize.height, state.railHeight) : state.railHeight)
         guard !panel.frame.equalTo(target) else { return }
         if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
@@ -285,7 +342,8 @@ final class EdgeDockController: NSObject {
 
     static func frame(screenFrame: NSRect, visibleFrame: NSRect, expanded: Bool, railHeight: CGFloat = 136) -> NSRect {
         EdgeDockPlacement(screenFrame: screenFrame, visibleFrame: visibleFrame)
-            .frame(width: expanded ? 368 : 72, height: expanded ? max(200, railHeight) : railHeight)
+            .frame(width: expanded ? EdgeNotchState.expandedSize.width : 72,
+                   height: expanded ? max(EdgeNotchState.expandedSize.height, railHeight) : railHeight)
     }
 }
 
@@ -334,6 +392,12 @@ final class EdgeNotchState: ObservableObject {
     @Published var showingAnnouncement = false
     var displaysQuota: Bool { showsQuota && !showingAnnouncement }
     @Published var detail = "Open your conversation"
+    /// Sessions in progress or finished with a result not yet opened,
+    /// including the current session when it has live activity.
+    @Published var tasks: [EdgeNotchTask] = []
+    /// Fixed so refreshes and task arrivals never resize the preview.
+    static let expandedSize = CGSize(width: 368, height: 360)
+    static let previewSize = CGSize(width: 352, height: 312)
     var showsSeparateWork: Bool { activity.working && (activity.hasUpdate || activity.attention) }
     var isQuiet: Bool { activity.quiet && !expanded }
     var railWidth: CGFloat { expanded ? 72 : 44 }
@@ -345,15 +409,12 @@ struct EdgeNotchView: View {
     let controlCenter: ControlCenterModel
     var onQuotaRequested: () -> Void = {}
     var onOpenQuota: () -> Void = {}
-    @StateObject private var theme = DockThemeStore()
+    @ObservedObject private var theme = DockThemeStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let openDock: () -> Void
+    var onOpenTask: (EdgeNotchTask) -> Void = { _ in }
     var onDrag: (Bool) -> Void = { _ in }
     var onSideChange: (EdgeDockSide) -> Void = { _ in }
-
-    private var tint: Color {
-        state.activity.attention ? .dockWarning : state.activity.hasUpdate ? .dockSuccess : .dockAccent
-    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -362,7 +423,7 @@ struct EdgeNotchView: View {
                     // The outer contour already supplies visual breathing room.
                     // Keep the preview close to it so its content does not float
                     // in the middle of the expanded notch.
-                    preview.frame(width: 352, height: 252)
+                    preview.frame(width: EdgeNotchState.previewSize.width, height: EdgeNotchState.previewSize.height)
                         .padding(.horizontal, 8)
                         .transition(.opacity)
                 } else {
@@ -377,10 +438,15 @@ struct EdgeNotchView: View {
                         .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 1) }
                 }
             }
+            // Attach drag gesture to parent so it works in both collapsed and expanded states
+            .simultaneousGesture(DragGesture(minimumDistance: 6)
+                .onChanged { _ in onDrag(false) }
+                .onEnded { _ in onDrag(true) })
         }
         .clipped()
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: state.expanded)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state.isQuiet)
+        .dockThemedRoot()
         .preferredColorScheme(theme.selectedThemeID.appearance == .light ? .light : theme.selectedThemeID.appearance == .dark ? .dark : nil)
         .id(theme.selectedThemeID)
     }
@@ -401,9 +467,6 @@ struct EdgeNotchView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .simultaneousGesture(DragGesture(minimumDistance: 6)
-            .onChanged { _ in onDrag(false) }
-            .onEnded { _ in onDrag(true) })
         .contextMenu {
             Button("Move to left edge") { onSideChange(.left) }
             Button("Move to right edge") { onSideChange(.right) }
@@ -417,50 +480,45 @@ struct EdgeNotchView: View {
 
     private var preview: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                Button("Session") { state.showingAnnouncement = false; state.showsQuota = false }
-                    .foregroundStyle(state.displaysQuota ? Color.dockSecondaryText : Color.dockAccent)
-                Button("Quota") { state.showingAnnouncement = false; state.showsQuota = true; onQuotaRequested() }
-                    .foregroundStyle(state.displaysQuota ? Color.dockAccent : Color.dockSecondaryText)
+            HStack(spacing: 20) {
+                tabButton("Tasks", isSelected: !state.displaysQuota) {
+                    state.showingAnnouncement = false; state.showsQuota = false
+                }
+                tabButton("Quota", isSelected: state.displaysQuota) {
+                    state.showingAnnouncement = false; state.showsQuota = true; onQuotaRequested()
+                }
                 Spacer()
+                if state.displaysQuota {
+                    EdgeQuotaToolbar(control: controlCenter)
+                } else if state.activity.status == .offline {
+                    DockStatusPill(tone: .inactive, text: "Offline", symbol: "wifi.slash")
+                        .accessibilityLabel("Hermes is offline. Task status is not current.")
+                }
             }
-            .font(.system(size: 12, weight: .semibold))
-            .buttonStyle(.plain)
-            .frame(height: 44)
+            .frame(height: 40)
             .padding(.horizontal, 12)
+            Divider().overlay(Color.dockBorderLight)
             if state.displaysQuota {
                 EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota)
             } else {
-                sessionPreview
+                EdgeTaskPreview(tasks: state.tasks, isOffline: state.activity.status == .offline,
+                                currentSessionTitle: state.sessionTitle, openDock: openDock, openTask: onOpenTask)
             }
         }
     }
 
-    private var sessionPreview: some View {
-        Button(action: openDock) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    DockAppIcon().frame(width: 22, height: 22)
-                    Text(state.sessionTitle).font(.system(size: 12, weight: .semibold)).lineLimit(2)
-                    Spacer()
-                }
-                Text(state.updateTitle).font(.system(size: 12, weight: .semibold)).foregroundStyle(tint)
-                Text(state.detail)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockNotchSecondaryText)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("Open session").font(.system(size: 12, weight: .medium))
+    private func tabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 7) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
+                Capsule()
+                    .fill(isSelected ? Color.dockAccent : Color.clear)
+                    .frame(height: 2)
             }
-            .foregroundStyle(Color.dockNotchText)
-            .padding(.leading, 12)
-            .padding(.vertical, 14)
-            .padding(.trailing, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(state.sessionTitle). \(state.updateTitle). \(state.detail). Open session")
     }
 }
 
@@ -481,8 +539,6 @@ private struct EdgeNotchStatusIndicator: View {
         VStack(spacing: 7) {
             if activity.attention {
                 Image(systemName: "exclamationmark").font(.system(size: 10, weight: .bold))
-            } else if activity.hasUpdate {
-                Circle().fill(color).frame(width: 5, height: 5)
             } else if activity.status == .offline {
                 Image(systemName: "slash.circle").font(.system(size: 10))
             }

@@ -41,8 +41,9 @@ struct OfficeGardenNavigationTests {
             [-17, 0, -1], [0, 0, 3.5], [0, 0, -1.5], [16, 0, 3],
             [12, 0, 10], [22, 0, 10], [21.5, 0, 4], [17, 0, 15],
             // Reach the usable interior of each converted specialist room,
-            // not only its doorway: studio, QA, server aisle and operations.
-            [-23.5, 0, 0.5], [-24, 0, 6], [-25, 0, 11], [-19, 0, 11.6]
+            // not only its doorway: studio, QA, server aisle and Security Ops,
+            // in front of its two console chairs.
+            [-23.5, 0, 0.5], [-24, 0, 6], [-25, 0, 11], [-20, 0, 11.1]
         ].map { p in p + SIMD3<Float>(p.x <= -8 ? 6.5 : (p.x >= 8 ? -6.5 : 0), 0, 0) }
         authored.stations[.waitingArea] = destinations.map { .init(position: $0, approach: $0, yaw: 0, seated: false) }
         var layout = OfficePreviewLayout()

@@ -56,6 +56,17 @@ struct OfficePreviewSimulationTests {
         #expect(rest.footTravel == 0)
     }
 
+    @Test func gaitCounterSwingsArmsAndScalesWithSpeed() {
+        let stride = OfficePreviewWalkPose(distance: OfficePreviewWalkPose.strideLength / 4)
+        // Arms swing opposite the leg on the same side, with a forward lean.
+        #expect(stride.armAngle * stride.legAngle < 0)
+        #expect(stride.lean > 0)
+        let slow = OfficePreviewWalkPose(distance: OfficePreviewWalkPose.strideLength / 4, amount: 0.5)
+        #expect(abs(slow.legAngle - stride.legAngle * 0.5) < 0.0001)
+        let stopped = OfficePreviewWalkPose(distance: OfficePreviewWalkPose.strideLength / 4, amount: 0)
+        #expect(stopped.legAngle == 0 && stopped.armAngle == 0 && stopped.bounce == 0 && stopped.leftLift == 0)
+    }
+
     @Test func cameraDefaultsMatchTheIsometricOverview() {
         let camera = OfficePreviewCameraState()
         #expect(camera.azimuth == OfficePreviewCameraState.defaultAzimuth)
@@ -262,7 +273,8 @@ struct OfficePreviewSimulationTests {
         #expect(layout.slots.count == 48)
         var occupied = Set<SIMD3<Float>>()
         for slot in layout.slots.values {
-            for location in OfficePreviewLocation.allCases {
+            // Work rooms are authored-only and fall back to the desk here.
+            for location in OfficePreviewLocation.allCases where !location.isWorkZone {
                 let point = layout.station(slot: slot, location: location)
                 #expect(occupied.insert(point).inserted)
                 #expect(point.x > layout.minX && point.x < layout.maxX)
@@ -295,8 +307,10 @@ struct OfficePreviewSimulationTests {
         var layout = OfficePreviewLayout()
         layout.reconcile(ids: (0..<48).map { "bot-\($0)" })
         for slot in [0, 3, 23, 47] {
-            for from in OfficePreviewLocation.allCases {
-                for to in OfficePreviewLocation.allCases {
+            // Work rooms are authored-only; OfficeWorkZoneTests routes to them.
+            let locations = OfficePreviewLocation.allCases.filter { !$0.isWorkZone }
+            for from in locations {
+                for to in locations {
                     let start = layout.node(slot: slot, location: from)
                     let end = layout.node(slot: slot, location: to)
                     let route = layout.route(from: start, to: end)

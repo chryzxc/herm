@@ -5,14 +5,14 @@ import Testing
 
 struct WorkspaceActivitySidebarTests {
     @MainActor
-    @Test func kanbanBoardHostsTwoAxisScrollForTrailingCardsAndActions() throws {
+    @Test func kanbanBoardScrollsLanesHorizontallyAndCardsPerLane() throws {
         let capabilities = [
             "kanban.taskDetails", "kanban.complete", "kanban.block", "kanban.archive", "kanban.unblock"
         ].map {
             CapabilityState(id: $0, title: $0, detail: "test", isAvailable: true, recovery: nil)
         }
         let control = ControlCenterModel(capabilities: capabilities)
-        control.setKanbanTasksForTesting((0..<24).map { index in
+        let tasks = (0..<24).map { index in
             KanbanTaskSummary(
                 id: "task-\(index)",
                 title: "Trailing card \(index)",
@@ -21,7 +21,8 @@ struct WorkspaceActivitySidebarTests {
                 priority: "1",
                 assignee: "forge"
             )
-        })
+        }
+        control.setKanbanTasksForTesting(tasks)
         let sidebar = WorkspaceActivitySidebar(
             model: DockModel(),
             botMode: BotModeModel(),
@@ -44,29 +45,26 @@ struct WorkspaceActivitySidebarTests {
         window.display()
         window.layoutIfNeeded()
         RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        // Opening the tab starts a refresh that clears the board without a
+        // Hermes runtime; seed again once that has settled.
+        control.setKanbanTasksForTesting(tasks)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
         hostingView.layoutSubtreeIfNeeded()
 
         let scrollViews = descendants(of: hostingView).compactMap { $0 as? NSScrollView }
+        // The board scrolls horizontally to reach trailing lanes.
         let boardScrollView = try #require(scrollViews.first {
-            $0.hasVerticalScroller && $0.hasHorizontalScroller
+            $0.hasHorizontalScroller && !$0.hasVerticalScroller
         })
-
-        #expect(boardScrollView.documentView != nil)
         #expect(boardScrollView.documentView!.frame.width > boardScrollView.contentView.bounds.width)
-        let trailingOrigin = NSPoint(
-            x: max(0, boardScrollView.documentView!.frame.width - boardScrollView.contentView.bounds.width),
-            y: max(0, boardScrollView.documentView!.frame.height - boardScrollView.contentView.bounds.height)
-        )
-        boardScrollView.contentView.scroll(to: trailingOrigin)
-        boardScrollView.reflectScrolledClipView(boardScrollView.contentView)
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-        boardScrollView.documentView!.layoutSubtreeIfNeeded()
-        let archiveAction = try #require(descendants(of: boardScrollView.documentView!).first {
-            guard let button = $0 as? NSButton else { return false }
-            return button.frame.minX >= boardScrollView.documentView!.frame.width - 260
+
+        // A lane with more cards than fit scrolls vertically on its own.
+        let laneScrollView = try #require(scrollViews.first {
+            $0.hasVerticalScroller && !$0.hasHorizontalScroller
+                && $0.documentView != nil
+                && $0.documentView!.frame.height > $0.contentView.bounds.height
         })
-        #expect(boardScrollView.contentView.documentVisibleRect.intersects(archiveAction.convert(archiveAction.bounds, to: boardScrollView.documentView)))
-        #expect(WorkspaceActivitySidebar.kanbanScrollAxes == [.vertical, .horizontal])
+        #expect(laneScrollView.frame.height <= hostingView.frame.height)
         window.close()
     }
 

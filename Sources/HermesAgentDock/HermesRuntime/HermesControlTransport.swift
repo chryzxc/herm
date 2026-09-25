@@ -12,6 +12,7 @@ protocol HermesRPCClientProtocol: AnyObject {
     func connect() async throws
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any]
     func fetchHTTP(_ path: String) async throws -> [String: Any]
+    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any]
     func close()
 }
 
@@ -21,6 +22,14 @@ extension HermesRPCClientProtocol {
             domain: "HermesControl",
             code: 501,
             userInfo: [NSLocalizedDescriptionKey: "This Hermes transport does not support read-only HTTP requests."]
+        )
+    }
+
+    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
+        throw NSError(
+            domain: "HermesControl",
+            code: 501,
+            userInfo: [NSLocalizedDescriptionKey: "This Hermes transport does not support HTTP writes."]
         )
     }
 }
@@ -243,6 +252,12 @@ final class HermesControlRPC {
     /// Authenticated, read-only gateway HTTP request used for structured Hermes projections.
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         try await client.fetchHTTP(path)
+    }
+
+    /// Authenticated gateway HTTP write. Only for verified plugin REST routes
+    /// (for example the Kanban task PATCH the Hermes desktop board uses).
+    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
+        try await client.sendHTTP(method, path: path, body: body)
     }
 
     /// Structured-command entry point; never accept an arbitrary shell string.

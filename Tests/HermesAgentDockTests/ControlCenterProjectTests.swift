@@ -813,6 +813,94 @@ struct ControlCenterProjectTests {
         #expect(control.loadingKanbanDetailTaskID == nil)
     }
 
+    @Test func parsesFullKanbanShowEnvelopeHistory() {
+        let fallback = KanbanTaskSummary(id: "t_1", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let detail = ControlCenterModel.parseKanbanTaskDetail("""
+        {"task":{"id":"t_1","title":"Audit login flow","body":"Check auth","status":"running","assignee":"sentinel",
+          "skills":["security-audit","web-research"],"workflow_template_id":"audit","current_step_key":"scan",
+          "workspace_kind":"worktree","workspace_path":"/tmp/ws","branch_name":"audit/login","session_id":"s_9",
+          "created_by":"nexus","created_at":1789000000,"started_at":1789000100,"completed_at":null,
+          "result":null,"last_failure_error":"  "},
+         "latest_summary":"Found two issues","parents":["t_0"],"children":["t_2","t_3"],
+         "comments":[{"author":"christian","body":"Focus on tokens","created_at":1789000200},{"author":"x","body":"  ","created_at":1}],
+         "events":[{"kind":"claimed","payload":null,"created_at":1789000100,"run_id":7},
+                   {"kind":"blocked","payload":"{\\"reason\\": \\"needs creds\\"}","created_at":1789000300,"run_id":7}],
+         "runs":[{"id":7,"profile":"sentinel","step_key":"scan","status":"running","outcome":null,"summary":null,
+                  "error":null,"metadata":null,"worker_pid":42,"started_at":1789000100,"ended_at":null}]}
+        """, fallback: fallback, boardSlug: "sec")
+
+        #expect(detail?.skills == ["security-audit", "web-research"])
+        #expect(detail?.workflowTemplateID == "audit")
+        #expect(detail?.currentStepKey == "scan")
+        #expect(detail?.branchName == "audit/login")
+        #expect(detail?.sessionID == "s_9")
+        #expect(detail?.createdAt == Date(timeIntervalSince1970: 1789000000))
+        #expect(detail?.lastFailureError == nil)
+        #expect(detail?.latestSummary == "Found two issues")
+        #expect(detail?.parents == ["t_0"])
+        #expect(detail?.children == ["t_2", "t_3"])
+        #expect(detail?.comments.map(\.body) == ["Focus on tokens"])
+        #expect(detail?.events.map(\.kind) == ["claimed", "blocked"])
+        #expect(detail?.events.last?.note == "needs creds")
+        #expect(detail?.events.first?.runID == "7")
+        #expect(detail?.runs.first?.id == "7")
+        #expect(detail?.runs.first?.stepKey == "scan")
+        #expect(detail?.runs.first?.boardSlug == "sec")
+    }
+
+    @Test func enrichingKanbanDetailWithRunsKeepsShowHistory() {
+        let fallback = KanbanTaskSummary(id: "t_1", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let detail = ControlCenterModel.parseKanbanTaskDetail("""
+        {"task":{"id":"t_1","title":"T","status":"review"},"comments":[{"author":"a","body":"b","created_at":1}]}
+        """, fallback: fallback)
+        let runs = ControlCenterModel.parseKanbanRuns(#"[{"id":3,"status":"done","outcome":"completed"}]"#)
+
+        let enriched = ControlCenterModel.enrichedKanbanTaskDetail(detail, runs: runs, boardSlug: "b")
+
+        #expect(enriched?.comments.count == 1)
+        #expect(enriched?.runs.map(\.id) == ["3"])
+        #expect(enriched?.boardSlug == "b")
+    }
+
+    @Test func parsesKanbanListSkillsAndWorkflowTemplate() {
+        let tasks = ControlCenterModel.parseKanbanTasks("""
+        [{"id":"t_1","title":"Research vendors","status":"running","skills":["web-research"],"workflow_template_id":"research"},
+         {"id":"t_2","title":"Plain","status":"todo","skills":[]}]
+        """)
+
+        #expect(tasks.first?.skills == ["web-research"])
+        #expect(tasks.first?.workflowTemplateID == "research")
+        #expect(tasks.last?.skills.isEmpty == true)
+    }
+
+    @Test func parsesHermesAttachmentRows() throws {
+        let value = try JSONSerialization.jsonObject(with: Data("""
+        [{"id":4,"filename":"report.pdf","content_type":"application/pdf","size":2048,"uploaded_by":"forge",
+          "stored_path":"/Users/me/.hermes/kanban/attachments/t_1/report.pdf","created_at":1789000000}]
+        """.utf8))
+
+        let attachments = ControlCenterModel.parseKanbanAttachments(value, boardSlug: nil, taskID: "t_1")
+
+        #expect(attachments.first?.id == "4")
+        #expect(attachments.first?.kind == "application/pdf")
+        #expect(attachments.first?.uploadedBy == "forge")
+        #expect(attachments.first?.storedPath?.hasSuffix("report.pdf") == true)
+    }
+
+    @Test func inspectingKanbanTaskWithoutHermesKeepsSummaryAndLeavesPageDetailAlone() {
+        let control = ControlCenterModel()
+        let task = KanbanTaskSummary(id: "t_office", boardSlug: "default", title: "Office task", status: "running",
+                                     detail: "Summary body", priority: nil, assignee: "forge")
+
+        control.inspectKanbanTask(task)
+
+        let entry = control.kanbanTaskInspections[KanbanTaskIdentity(boardSlug: "default", taskID: "t_office")]
+        #expect(entry?.detail.body == "Summary body")
+        #expect(entry?.error != nil)
+        #expect(entry?.isLoading == false)
+        #expect(control.kanbanDetail == nil)
+    }
+
     @Test func kanbanTaskIdentitySeparatesSameTaskIDsAcrossBoards() {
         #expect(KanbanTaskIdentity(boardSlug: "one", taskID: "same") != KanbanTaskIdentity(boardSlug: "two", taskID: "same"))
         #expect(KanbanTaskIdentity(boardSlug: "one", taskID: "same") == KanbanTaskIdentity(boardSlug: "one", taskID: "same"))

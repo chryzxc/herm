@@ -512,10 +512,10 @@ struct KanbanTaskSummary: Identifiable, Equatable {
     let id: String
     let boardSlug: String?
     let title: String
-    let status: String
+    var status: String
     let detail: String?
     let priority: String?
-    let assignee: String?
+    var assignee: String?
     let sessionID: String?
     let startedAt: Date?
     let completedAt: Date?
@@ -525,8 +525,10 @@ struct KanbanTaskSummary: Identifiable, Equatable {
     let latestEventAt: Date?
     let modelOverride: String?
     let providerOverride: String?
+    let skills: [String]
+    let workflowTemplateID: String?
 
-    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil, modelOverride: String? = nil, providerOverride: String? = nil) {
+    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil, modelOverride: String? = nil, providerOverride: String? = nil, skills: [String] = [], workflowTemplateID: String? = nil) {
         self.id = id
         self.boardSlug = boardSlug
         self.title = title
@@ -543,6 +545,8 @@ struct KanbanTaskSummary: Identifiable, Equatable {
         self.latestEventAt = latestEventAt
         self.modelOverride = modelOverride
         self.providerOverride = providerOverride
+        self.skills = skills
+        self.workflowTemplateID = workflowTemplateID
     }
 }
 
@@ -554,8 +558,12 @@ struct KanbanRunSummary: Identifiable, Equatable {
     let profile: String?
     let summary: String?
     let elapsed: String?
+    let stepKey: String?
+    let error: String?
+    let startedAt: Date?
+    let endedAt: Date?
 
-    init(id: String, boardSlug: String? = nil, status: String, outcome: String?, profile: String?, summary: String?, elapsed: String?) {
+    init(id: String, boardSlug: String? = nil, status: String, outcome: String?, profile: String?, summary: String?, elapsed: String?, stepKey: String? = nil, error: String? = nil, startedAt: Date? = nil, endedAt: Date? = nil) {
         self.id = id
         self.boardSlug = boardSlug
         self.status = status
@@ -563,20 +571,61 @@ struct KanbanRunSummary: Identifiable, Equatable {
         self.profile = profile
         self.summary = summary
         self.elapsed = elapsed
+        self.stepKey = stepKey
+        self.error = error
+        self.startedAt = startedAt
+        self.endedAt = endedAt
     }
+}
+
+struct KanbanCommentSummary: Identifiable, Equatable {
+    let id: String
+    let author: String
+    let body: String
+    let createdAt: Date?
+}
+
+/// One `task_events` row. `note` is the human-readable part of the payload,
+/// when Hermes supplied one; the raw kind is always kept for traceability.
+struct KanbanEventSummary: Identifiable, Equatable {
+    let id: String
+    let kind: String
+    let note: String?
+    let runID: String?
+    let createdAt: Date?
 }
 
 struct KanbanTaskDetail: Identifiable, Equatable {
     let id: String
-    let boardSlug: String?
+    var boardSlug: String?
     let title: String
     let body: String?
     let status: String
     let priority: String?
     let assignee: String?
-    let runs: [KanbanRunSummary]
+    var runs: [KanbanRunSummary]
     let modelOverride: String?
     let providerOverride: String?
+    // Fields below come from `kanban show --json`; older Hermes versions and
+    // the summary fallback leave them empty.
+    var latestSummary: String?
+    var result: String?
+    var lastFailureError: String?
+    var skills: [String] = []
+    var workflowTemplateID: String?
+    var currentStepKey: String?
+    var workspaceKind: String?
+    var workspacePath: String?
+    var branchName: String?
+    var sessionID: String?
+    var createdBy: String?
+    var createdAt: Date?
+    var startedAt: Date?
+    var completedAt: Date?
+    var parents: [String] = []
+    var children: [String] = []
+    var comments: [KanbanCommentSummary] = []
+    var events: [KanbanEventSummary] = []
 
     init(id: String, boardSlug: String? = nil, title: String, body: String?, status: String, priority: String?, assignee: String?, runs: [KanbanRunSummary], modelOverride: String? = nil, providerOverride: String? = nil) {
         self.id = id
@@ -595,6 +644,18 @@ struct KanbanTaskDetail: Identifiable, Equatable {
 struct KanbanTaskIdentity: Hashable, Equatable {
     let boardSlug: String?
     let taskID: String
+}
+
+/// A cached task inspection. `detail` starts as the card summary and is
+/// replaced by `kanban show`; it stays visible while a refresh is in flight.
+struct KanbanTaskInspection: Equatable {
+    var detail: KanbanTaskDetail
+    var attachments: [KanbanAttachmentSummary] = []
+    /// False when the attachment listing failed, as opposed to an empty list.
+    var attachmentsAvailable = true
+    var isLoading = false
+    var error: String?
+    var loadedAt: Date?
 }
 
 enum KanbanInspectorTab: String, CaseIterable, Identifiable {
@@ -660,11 +721,31 @@ struct KanbanFilterPresentation: Equatable {
     }
 }
 
+/// Empty lanes start collapsed and lanes with work start expanded. Either can
+/// be toggled locally; an empty lane that receives work expands unless the
+/// person collapsed that lane while it had work.
 struct KanbanLaneExpansionState: Equatable {
     var expandedEmptyLanes: Set<KanbanLane> = []
+    var collapsedLanes: Set<KanbanLane> = []
 
     func isExpanded(_ lane: KanbanLane, hasTasks: Bool) -> Bool {
-        hasTasks || expandedEmptyLanes.contains(lane)
+        hasTasks ? !collapsedLanes.contains(lane) : expandedEmptyLanes.contains(lane)
+    }
+
+    mutating func expand(_ lane: KanbanLane, hasTasks: Bool) {
+        if hasTasks {
+            collapsedLanes.remove(lane)
+        } else {
+            expandedEmptyLanes.insert(lane)
+        }
+    }
+
+    mutating func collapse(_ lane: KanbanLane, hasTasks: Bool) {
+        if hasTasks {
+            collapsedLanes.insert(lane)
+        } else {
+            expandedEmptyLanes.remove(lane)
+        }
     }
 }
 
@@ -714,6 +795,10 @@ struct ProviderQuotaWindow: Identifiable, Equatable {
 
     var threshold: ProviderQuotaThreshold {
         guard let remainingPercent else { return .unknown }
+        return Self.threshold(forRemaining: remainingPercent)
+    }
+
+    static func threshold(forRemaining remainingPercent: Double) -> ProviderQuotaThreshold {
         if remainingPercent <= 10 { return .critical }
         if remainingPercent <= 20 { return .warning }
         return .healthy
@@ -727,6 +812,20 @@ struct ProviderQuotaSnapshot: Equatable {
     let updatedAt: Date
     let windows: [ProviderQuotaWindow]
     let safeDetail: String?
+    /// Set when this account is an entry in Hermes' credential pool, which
+    /// makes it removable through `hermes auth remove`.
+    var hermesCredential: HermesPooledCredential? = nil
+}
+
+/// One entry of Hermes' credential pool (`hermes auth list <provider>`).
+struct HermesPooledCredential: Equatable {
+    /// Hermes provider id, such as `openai-codex`.
+    let provider: String
+    /// Stable pool entry id; `hermes auth remove` accepts it as the target.
+    let id: String
+    let label: String
+    /// 1-based position as `hermes auth list` numbers it.
+    let position: Int
 }
 
 enum ProviderQuotaThreshold: Equatable {
@@ -1081,6 +1180,10 @@ struct KanbanAttachmentSummary: Identifiable, Equatable {
     let name: String
     let kind: String?
     let sizeBytes: Int?
+    var uploadedBy: String? = nil
+    var createdAt: Date? = nil
+    /// Local file Hermes stored the upload at; used for Open / Reveal.
+    var storedPath: String? = nil
 }
 
 struct PromptBudgetSummary: Equatable {

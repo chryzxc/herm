@@ -225,7 +225,7 @@ final class PullRequestDiffPresentationCache: ObservableObject {
 
 enum LucideIconName {
     case gitPullRequest, gitBranch, refreshCw, search, arrowRight, arrowUp, arrowDown, pencil, check, checkCircle, xmark, fileText, braces, image
-    case sun, inbox, kanban, cube, gauge, clock, activity, audioLines, bot, fileSearch, users, user, folder, messages, messageCircle, messageCirclePlus, settings, panelOpen, panelClosed, chevronDown, chevronUp, chevronRight, chevronLeft, arrowDownUp, fileDiff, plus, ellipsis, circle, triangleAlert, trash, terminal, paperclip, mic, stop, pause, calendar, link, pin, externalLink, sliders, radio, cpu, brain, flame, eye, download, upload, expand, minimize, fullscreen, sparkles
+    case sun, inbox, kanban, cube, gauge, clock, activity, audioLines, bot, fileSearch, users, user, folder, messages, messageCircle, messageCirclePlus, settings, panelOpen, panelClosed, chevronDown, chevronUp, chevronRight, chevronLeft, arrowDownUp, fileDiff, plus, ellipsis, circle, triangleAlert, trash, terminal, paperclip, mic, stop, pause, calendar, link, pin, externalLink, sliders, radio, cpu, brain, flame, eye, download, upload, expand, minimize, fullscreen, sparkles, circleDot, chevronsUpDown, eyeOff
 
     static func from(systemName: String) -> Self {
         switch systemName {
@@ -260,6 +260,7 @@ enum LucideIconName {
         case "arrow.down.right.and.arrow.up.left": return .minimize
         case "arrow.up.left.and.arrow.down.right": return .expand
         case "arrow.triangle.branch": return .gitBranch
+        case "arrow.triangle.pull": return .gitPullRequest
         case "pencil": return .pencil
         case "square.and.pencil": return .messageCirclePlus
         case "checkmark": return .check
@@ -270,6 +271,7 @@ enum LucideIconName {
         case "rectangle.split.2x1": return .panelOpen
         case "ellipsis", "ellipsis.circle": return .ellipsis
         case "circle", "circle.dotted": return .circle
+        case "smallcircle.filled.circle": return .circleDot
         case "trash": return .trash
         case "lock.slash", "exclamationmark.triangle", "exclamationmark.triangle.fill", "exclamationmark.circle", "exclamationmark.octagon", "exclamationmark.shield", "minus.circle": return .triangleAlert
         case "xmark", "xmark.circle.fill", "xmark.octagon": return .xmark
@@ -287,7 +289,8 @@ enum LucideIconName {
         case "cpu.fill": return .cpu
         case "brain", "brain.head.profile": return .brain
         case "flame.fill": return .flame
-        case "eye", "eye.slash": return .eye
+        case "eye": return .eye
+        case "eye.slash": return .eyeOff
         case "square.and.arrow.down": return .download
         case "arrow.up.forward.square": return .arrowRight
         case "text.bubble": return .messageCircle
@@ -471,6 +474,10 @@ private struct LucideIconShape: Shape {
             path.addEllipse(in: CGRect(x: 4 * s, y: 10 * s, width: 4 * s, height: 4 * s)); path.addEllipse(in: CGRect(x: 10 * s, y: 10 * s, width: 4 * s, height: 4 * s)); path.addEllipse(in: CGRect(x: 16 * s, y: 10 * s, width: 4 * s, height: 4 * s))
         case .circle:
             path.addEllipse(in: CGRect(x: 4 * s, y: 4 * s, width: 16 * s, height: 16 * s))
+        case .circleDot:
+            path.addEllipse(in: CGRect(x: 2 * s, y: 2 * s, width: 20 * s, height: 20 * s)); path.addEllipse(in: CGRect(x: 11 * s, y: 11 * s, width: 2 * s, height: 2 * s))
+        case .chevronsUpDown:
+            path.move(to: p(7, 15)); path.addLine(to: p(12, 20)); path.addLine(to: p(17, 15)); path.move(to: p(7, 9)); path.addLine(to: p(12, 4)); path.addLine(to: p(17, 9))
         case .triangleAlert:
             path.move(to: p(12, 3)); path.addLine(to: p(22, 20)); path.addLine(to: p(2, 20)); path.closeSubpath(); path.move(to: p(12, 9)); path.addLine(to: p(12, 14)); path.move(to: p(12, 17)); path.addLine(to: p(12, 17))
         case .trash:
@@ -505,6 +512,8 @@ private struct LucideIconShape: Shape {
             path.move(to: p(12, 2)); path.addCurve(to: p(6, 13), control1: p(7, 6), control2: p(4, 8)); path.addCurve(to: p(12, 22), control1: p(4, 20), control2: p(20, 23)); path.addCurve(to: p(18, 12), control1: p(20, 18), control2: p(16, 16)); path.addCurve(to: p(12, 2), control1: p(15, 8), control2: p(13, 5))
         case .eye:
             path.addEllipse(in: CGRect(x: 2 * s, y: 6 * s, width: 20 * s, height: 12 * s)); path.addEllipse(in: CGRect(x: 9 * s, y: 9 * s, width: 6 * s, height: 6 * s))
+        case .eyeOff:
+            path.addEllipse(in: CGRect(x: 2 * s, y: 6 * s, width: 20 * s, height: 12 * s)); path.addEllipse(in: CGRect(x: 9 * s, y: 9 * s, width: 6 * s, height: 6 * s)); path.move(to: p(3, 3)); path.addLine(to: p(21, 21))
         case .download:
             path.move(to: p(12, 3)); path.addLine(to: p(12, 16)); path.move(to: p(7, 11)); path.addLine(to: p(12, 16)); path.addLine(to: p(17, 11)); path.move(to: p(4, 20)); path.addLine(to: p(20, 20))
         case .upload:

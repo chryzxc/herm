@@ -41,8 +41,8 @@ extension Color {
     static var dockMetadataText: Color { DockThemePalette(theme: DockThemeRuntime.current).metadataText }
     static var dockSectionText: Color { dockSecondaryText }
     // Kanban lifecycle accents shared by board and session-kanban surfaces.
-    static let dockKanbanRunning = dockAccent
-    static let dockKanbanReview = Color(nsColor: .secondaryLabelColor)
+    static var dockKanbanRunning: Color { dockAccent }
+    static var dockKanbanReview: Color { dockSecondaryText }
     static var dockSuccess: Color { DockThemePalette(theme: DockThemeRuntime.current).success }
     static var dockWarning: Color { DockThemePalette(theme: DockThemeRuntime.current).warning }
     static var dockFolder: Color { dockSecondaryText }
@@ -75,6 +75,15 @@ extension View {
     /// hit area specified by the Dock design system.
     func dockHitTarget() -> some View {
         frame(minWidth: 44, minHeight: 44)
+    }
+
+    /// Applies the selected Dock theme at a hosting root. Nested
+    /// `NSHostingView`s do not inherit the parent SwiftUI environment, so each
+    /// root sets the themed default text and control tint itself; unstyled
+    /// `Text`, hierarchical styles, toggles, and links then follow the theme.
+    func dockThemedRoot() -> some View {
+        foregroundStyle(Color.dockPrimaryText)
+            .tint(Color.dockAccent)
     }
 }
 
@@ -127,13 +136,15 @@ struct DockPressButtonStyle: ButtonStyle {
 /// primary action in a section; secondary actions stay text-on-glass.
 struct DockPrimaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.controlSize) private var controlSize
 
     func makeBody(configuration: Configuration) -> some View {
+        let isCompact = controlSize == .small || controlSize == .mini
         configuration.label
-            .font(.body.weight(.semibold))
+            .font(isCompact ? .system(size: 12, weight: .semibold) : .body.weight(.semibold))
             .foregroundStyle(Color.dockOnAccentText)
-            .padding(.horizontal, 12)
-            .frame(minHeight: DockLayout.controlHeight)
+            .padding(.horizontal, isCompact ? 10 : 12)
+            .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
             .background(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .shadow(color: Color.dockAccent.opacity(configuration.isPressed ? 0 : 0.14), radius: 6)

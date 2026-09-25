@@ -257,8 +257,33 @@ final class HermesCLIAdapter {
         words += [taskID, profile]
         return try await run(words)
     }
+    /// Moves a card the way the Hermes desktop board does on a lane drop:
+    /// PATCH the plugin task route, which applies the workflow-aware
+    /// transition (unblock, reopen review) rather than a raw status write.
+    func kanbanMove(boardSlug: String? = nil, taskID: String, status: String) async throws -> HermesCLIResult {
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-._~")
+        guard let encodedID = taskID.addingPercentEncoding(withAllowedCharacters: allowed) else {
+            throw HermesCLIError.invalidArgument
+        }
+        var path = "/api/plugins/kanban/tasks/\(encodedID)"
+        if let boardSlug, !boardSlug.isEmpty {
+            guard let encodedBoard = boardSlug.addingPercentEncoding(withAllowedCharacters: allowed) else {
+                throw HermesCLIError.invalidArgument
+            }
+            path += "?board=\(encodedBoard)"
+        }
+        _ = try await rpc.sendHTTP("PATCH", path: path, body: ["status": status])
+        return HermesCLIResult(stdout: "", stderr: "", succeeded: true)
+    }
     func kanbanPromote(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "promote") + [taskID, reason]) }
     func kanbanReclaim(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "reclaim") + ["--reason", reason, taskID]) }
+
+    /// Removes one entry from Hermes' credential pool. Hermes performs any
+    /// source-specific cleanup (such as its singleton device-code login).
+    func authRemove(provider: String, credentialID: String) async throws -> HermesCLIResult {
+        try await run(["hermes", "auth", "remove", provider, credentialID])
+    }
 
     func cronRun(jobID: String) async throws -> HermesCLIResult { try await run(["hermes", "cron", "run", jobID]) }
     func cronRuns(limit: Int = 20) async throws -> HermesCLIResult { try await run(["hermes", "cron", "runs", "--limit", String(limit)]) }

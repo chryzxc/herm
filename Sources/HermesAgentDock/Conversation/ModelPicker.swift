@@ -120,11 +120,19 @@ struct ModelPickerView: View {
         Menu {
             pickerContent
         } label: {
-            Text(selectedOption?.displayName ?? "Select model")
-                .lineLimit(1)
+            // Plain-button menu draws this SwiftUI label as-is, so long
+            // provider/model names truncate instead of widening the toolbar.
+            HStack(spacing: 4) {
+                Text(selectedOption?.displayName ?? "Select model")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                LucideIcon(name: .chevronDown, size: 10, color: Color.dockMetadataText)
+            }
+            .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .buttonStyle(.borderless)
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .accessibilityLabel("Select model, currently \(selectedOption?.displayName ?? "none")")
         .sheet(isPresented: $showingEditor) {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)

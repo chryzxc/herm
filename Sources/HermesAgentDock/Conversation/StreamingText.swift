@@ -185,6 +185,8 @@ final class StreamingText: ObservableObject {
     private var nextStableChunkID = 0
     private var tailRevision = 0
     private var completionSnapshot: [StreamingPresentationChunk]?
+    private var completionSnapshotText = ""
+    private var completionSnapshotMessageID: UUID?
 
     func appendPresentation(_ delta: String) {
         guard !delta.isEmpty else { return }
@@ -209,6 +211,8 @@ final class StreamingText: ObservableObject {
 
     func replacePresentation(with value: String) {
         completionSnapshot = nil
+        completionSnapshotText = ""
+        completionSnapshotMessageID = nil
         text = ""
         stableChunks = []
         mutableTail = ""
@@ -225,20 +229,30 @@ final class StreamingText: ObservableObject {
 
     func clearPresentation() {
         completionSnapshot = nil
+        completionSnapshotText = ""
+        completionSnapshotMessageID = nil
         clearLivePresentation()
     }
 
     /// Retains the already-rendered projection for the one-frame handoff from
     /// the live row to the completed transcript row. The canonical transport
     /// text remains owned by DockModel.
-    func retainCompletionPresentation() {
+    func retainCompletionPresentation(for messageID: UUID? = nil) {
         completionSnapshot = chunks
+        completionSnapshotText = chunks.map(\.text).joined()
+        completionSnapshotMessageID = messageID
     }
 
-    func completionChunks(matching source: String) -> [StreamingPresentationChunk]? {
+    /// The snapshot belongs to one completed message. Other long rows must
+    /// not pay a full-text search on every body evaluation to discover that.
+    func completionChunks(matching source: String, messageID: UUID? = nil) -> [StreamingPresentationChunk]? {
         guard let completionSnapshot else { return nil }
+        if let messageID, let completionSnapshotMessageID, messageID != completionSnapshotMessageID {
+            return nil
+        }
         if source.isEmpty { return completionSnapshot }
-        let rendered = completionSnapshot.map(\.text).joined()
+        let rendered = completionSnapshotText
+        guard source.utf8.count <= rendered.utf8.count else { return nil }
         if rendered == source { return completionSnapshot }
         // Bot attribution is removed from the persisted message and its
         // surrounding envelope whitespace is trimmed. Reuse the exact
@@ -384,6 +398,14 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
         context.coordinator.update(nsView, chunks: streaming.chunks, themeRevision: themeRevision)
     }
 
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        nsView: NativeMarkdownDocumentContainerView,
+        context: Context
+    ) -> CGSize? {
+        NativeMarkdownDocumentSizing.size(for: proposal, view: nsView)
+    }
+
     @MainActor
     final class Coordinator {
         private var renderedThemeRevision: Int?
@@ -401,16 +423,6 @@ struct NativeStreamingMarkdownView: NSViewRepresentable {
             let tailBytes = chunks.last(where: { $0.isMutableTail })?.text.utf8.count ?? 0
             let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
             DebugLog.writePerformance("markdown_native_update mode=streaming stable_sections=\(chunks.filter { !$0.isMutableTail }.count) tail_bytes=\(tailBytes) duration_ms=\(String(format: "%.2f", elapsed))")
-        }
-
-        private static func source(for chunk: StreamingPresentationChunk) -> String {
-            switch chunk.context {
-            case .markdown, .paragraph, .list, .quote, .table, .inline:
-                return chunk.text
-            case .fencedCode(let marker, let length, let language):
-                let fence = String(repeating: String(marker), count: length)
-                return "\(fence)\(language.map { $0.isEmpty ? "" : "\($0)" } ?? "")\n\(chunk.text)\n\(fence)"
-            }
         }
     }
 }

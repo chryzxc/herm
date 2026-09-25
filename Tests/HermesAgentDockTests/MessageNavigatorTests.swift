@@ -332,7 +332,7 @@ final class MessageNavigatorTests: XCTestCase {
         let plan = ConversationMessageWindow.jumpPlan(
             for: selected,
             sessionID: sessionID,
-            totalCount: messages.count
+            messages: messages
         )
 
         XCTAssertEqual(plan?.messageID, selected.messageID)

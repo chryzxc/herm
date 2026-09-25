@@ -29,7 +29,7 @@ struct QuotaProviderDescriptor: Identifiable, Equatable, Hashable {
 }
 
 enum QuotaProviderCatalog {
-    static let all: [QuotaProviderDescriptor] = [codexHermes, codexCLI, opencode, glm, claude, antigravity]
+    static let all: [QuotaProviderDescriptor] = [codexHermes, opencode, glm, claude, antigravity]
     private static let orderDefaultsKey = "quota.providerOrder"
 
     static let codexHermes = QuotaProviderDescriptor(
@@ -39,24 +39,9 @@ enum QuotaProviderCatalog {
         website: URL(string: "https://chatgpt.com/codex"),
         connect: .login(
             command: "hermes auth add openai-codex",
-            instruction: "Starts Hermes-managed Codex sign-in. This account can differ from the standalone Codex CLI account."
+            instruction: "Starts Hermes-managed Codex sign-in."
         )
     )
-
-    static let codexCLI = QuotaProviderDescriptor(
-        id: "codex",
-        displayName: "Codex CLI",
-        summary: "Quota for the standalone Codex CLI account.",
-        website: URL(string: "https://chatgpt.com/codex"),
-        connect: .login(
-            command: "codex login",
-            instruction: "Starts the Codex CLI sign-in, which opens your browser to authenticate with your ChatGPT account. The Dock then reads the token the CLI stores on this Mac."
-        )
-    )
-
-    /// Backward-compatible name for callers that previously referenced the
-    /// single Codex catalog entry.
-    static let codex = codexCLI
 
     static let opencode = QuotaProviderDescriptor(
         id: "opencode",

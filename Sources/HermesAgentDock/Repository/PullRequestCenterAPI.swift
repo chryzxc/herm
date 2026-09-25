@@ -152,7 +152,7 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         var components = URLComponents(string: "https://api.github.com\(path)")!; components.queryItems = query.map(URLQueryItem.init)
         var request = URLRequest(url: components.url!); request.timeoutInterval = GitHubCodeHostService.requestTimeout; request.httpMethod = method
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept"); request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        if let token = GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let token = await GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body) }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }

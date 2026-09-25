@@ -44,12 +44,12 @@ struct AgentAvatar: View {
             .foregroundStyle(statusColor)
         }
         .overlay {
-          Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+          Circle().stroke(Color.dockBorder, lineWidth: 0.5)
         }
       Circle()
         .fill(statusColor)
         .frame(width: 6, height: 6)
-        .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1))
+        .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 1))
         .offset(x: 8, y: -8)
     }
     .accessibilityLabel("Agent avatar")
@@ -268,16 +268,18 @@ struct MarkdownMessageView: View, Equatable {
   }
 
   private func codeBlock(_ code: String, language: String?) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      if let language {
-        Text(language).font(.system(size: 12, weight: .medium, design: .monospaced))
-          .foregroundStyle(Color.dockSecondaryText).textCase(.uppercase).padding(.horizontal, 8).padding(
-            .top, 6)
-      }
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        Text((language ?? "").lowercased()).font(DockTypography.machineMetadata)
+          .foregroundStyle(Color.dockMetadataText).lineLimit(1)
+        Spacer(minLength: 8)
+        MarkdownCodeCopyButton(code: code)
+      }.padding(.leading, 10).padding(.trailing, 4).frame(height: 28)
+      Rectangle().fill(Color.dockBorder).frame(height: 0.5)
       ScrollView(.horizontal, showsIndicators: false) {
         Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.dockPrimaryText).frame(
           maxWidth: .infinity, alignment: .leading
-        ).padding(.horizontal, 8).padding(.vertical, 6)
+        ).padding(.horizontal, 10).padding(.vertical, 8)
       }
     }.background(
       RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface4).stroke(
@@ -561,6 +563,10 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
       guard renderedMarkdown != markdown || renderedThemeRevision != themeRevision else { return }
       renderedMarkdown = markdown
       renderedThemeRevision = themeRevision
+      view.linkTextAttributes = [
+        .foregroundColor: NSColor(Color.dockAccent),
+        .underlineStyle: NSUnderlineStyle.single.rawValue
+      ]
       let started = DispatchTime.now().uptimeNanoseconds
       let attributed = seedChunks.map(Self.attributedString(for:)) ?? Self.attributedString(for: markdown)
       view.textStorage?.setAttributedString(attributed)
@@ -648,10 +654,6 @@ final class NativeMarkdownTextView: NSTextView {
     isEditable = false
     isSelectable = true
     isRichText = true
-    linkTextAttributes = [
-      .foregroundColor: NSColor.controlAccentColor,
-      .underlineStyle: NSUnderlineStyle.single.rawValue
-    ]
     drawsBackground = false
     isVerticallyResizable = true
     isHorizontallyResizable = false
@@ -704,15 +706,71 @@ struct ConversationContentBoundsPreferenceKey: PreferenceKey {
     }
 }
 
+/// Viewport geometry in top-origin document coordinates, matching the SwiftUI
+/// "conversation-document" coordinate space used by row frames.
+struct ConversationScrollGeometry: Equatable {
+    var visibleTop: CGFloat
+    var visibleHeight: CGFloat
+    var documentHeight: CGFloat
+
+    var distanceToBottom: CGFloat { max(0, documentHeight - visibleTop - visibleHeight) }
+}
+
+/// Direct, non-publishing access to the transcript's native clip view. Used
+/// to hold the reader's position while history pages mount above them, in
+/// the same layout pass, instead of a SwiftUI state round trip (a visible
+/// jump followed by a correction).
+@MainActor
+final class ConversationScrollController {
+    weak var clipView: NSClipView?
+
+    var geometry: ConversationScrollGeometry? {
+        guard let clipView, let documentView = clipView.documentView else { return nil }
+        let visible = clipView.documentVisibleRect
+        let documentHeight = documentView.bounds.height
+        let top = documentView.isFlipped ? visible.minY : documentHeight - visible.maxY
+        return ConversationScrollGeometry(
+            visibleTop: top,
+            visibleHeight: visible.height,
+            documentHeight: documentHeight
+        )
+    }
+
+    /// Moves the viewport by a document-space delta relative to wherever it
+    /// is now, so in-flight momentum keeps its progress. If the hosting
+    /// document has not adopted its new height yet, the clamped remainder is
+    /// applied once on the next run-loop turn.
+    func shiftVisibleTop(by delta: CGFloat) {
+        let remaining = delta - applyShift(delta)
+        guard abs(remaining) > 0.5 else { return }
+        DispatchQueue.main.async { [weak self] in
+            _ = self?.applyShift(remaining)
+        }
+    }
+
+    private func applyShift(_ delta: CGFloat) -> CGFloat {
+        guard abs(delta) > 0.5, let clipView, let documentView = clipView.documentView else { return delta }
+        let sign: CGFloat = documentView.isFlipped ? 1 : -1
+        let current = clipView.bounds.origin.y
+        let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
+        let target = min(max(0, current + sign * delta), maxY)
+        clipView.scroll(to: NSPoint(x: clipView.bounds.origin.x, y: target))
+        (clipView.superview as? NSScrollView)?.reflectScrolledClipView(clipView)
+        return (target - current) * sign
+    }
+}
+
 /// Observes the native clip view without publishing its live bounds through
 /// SwiftUI. Trackpad scrolling can produce dozens of bounds changes per frame;
-/// only the settled transition is sent back to the transcript presentation.
+/// `onScroll` receives them synchronously for cheap edge checks, and only the
+/// settled transition is reported through `onScrollSettled`.
 struct ConversationScrollEventObserver: NSViewRepresentable {
-    var restoreDocumentTop: CGFloat?
-    var onScrollSettled: (CGRect) -> Void
+    var controller: ConversationScrollController
+    var onScroll: (ConversationScrollGeometry, _ deltaTop: CGFloat) -> Void
+    var onScrollSettled: (ConversationScrollGeometry) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(restoreDocumentTop: restoreDocumentTop, onScrollSettled: onScrollSettled)
+        Coordinator(controller: controller, onScroll: onScroll, onScrollSettled: onScrollSettled)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -722,38 +780,42 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.onScrollSettled = onScrollSettled
-        context.coordinator.restoreDocumentTop = restoreDocumentTop
+        let coordinator = context.coordinator
+        coordinator.onScroll = onScroll
+        coordinator.onScrollSettled = onScrollSettled
+        guard coordinator.clipView == nil else { return }
         DispatchQueue.main.async {
-            context.coordinator.attachIfNeeded(from: nsView)
-            context.coordinator.restoreIfNeeded()
+            coordinator.attachIfNeeded(from: nsView)
         }
     }
 
-    final class Coordinator: NSObject, @unchecked Sendable {
-        var onScrollSettled: (CGRect) -> Void
-        var restoreDocumentTop: CGFloat?
-        weak var clipView: NSClipView?
-        private var observers: [NSObjectProtocol] = []
-        private var settleGeneration = 0
-        private var lastRestoredDocumentTop: CGFloat?
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.detach()
+    }
 
-        init(restoreDocumentTop: CGFloat?, onScrollSettled: @escaping (CGRect) -> Void) {
-            self.restoreDocumentTop = restoreDocumentTop
+    @MainActor
+    final class Coordinator: NSObject {
+        static let settleDelayNanoseconds: UInt64 = 80_000_000
+
+        let controller: ConversationScrollController
+        var onScroll: (ConversationScrollGeometry, CGFloat) -> Void
+        var onScrollSettled: (ConversationScrollGeometry) -> Void
+        weak var clipView: NSClipView?
+        nonisolated(unsafe) private var observer: NSObjectProtocol?
+        private var lastBoundsChange: UInt64 = 0
+        private var lastVisibleTop: CGFloat?
+        private var settleTask: Task<Void, Never>?
+
+        init(
+            controller: ConversationScrollController,
+            onScroll: @escaping (ConversationScrollGeometry, CGFloat) -> Void,
+            onScrollSettled: @escaping (ConversationScrollGeometry) -> Void
+        ) {
+            self.controller = controller
+            self.onScroll = onScroll
             self.onScrollSettled = onScrollSettled
         }
 
-        @MainActor
-        func restoreIfNeeded() {
-            guard let clipView, let restoreDocumentTop,
-                  restoreDocumentTop != lastRestoredDocumentTop else { return }
-            lastRestoredDocumentTop = restoreDocumentTop
-            var origin = clipView.bounds.origin
-            origin.y = restoreDocumentTop
-            clipView.setBoundsOrigin(origin)
-        }
-
-        @MainActor
         func attachIfNeeded(from view: NSView) {
             guard clipView == nil else { return }
             var candidate: NSView? = view
@@ -766,31 +828,67 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
             }
         }
 
-        @MainActor
+        func detach() {
+            settleTask?.cancel()
+            settleTask = nil
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
+            clipView = nil
+        }
+
         private func attach(to clipView: NSClipView) {
             self.clipView = clipView
-            let notification = NSView.boundsDidChangeNotification
-            let token = NotificationCenter.default.addObserver(
-                forName: notification,
+            controller.clipView = clipView
+            observer = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
                 object: clipView,
                 queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self, let clipView = self.clipView else { return }
-                    self.settleGeneration &+= 1
-                    let generation = self.settleGeneration
-                    try? await Task.sleep(nanoseconds: 80_000_000)
-                    guard generation == self.settleGeneration else { return }
-                    self.onScrollSettled(clipView.bounds)
+                MainActor.assumeIsolated { self?.boundsDidChange() }
+            }
+            clipView.postsBoundsChangedNotifications = true
+            reportSettled()
+        }
+
+        private func boundsDidChange() {
+            lastBoundsChange = DispatchTime.now().uptimeNanoseconds
+            if let geometry = controller.geometry {
+                let delta = geometry.visibleTop - (lastVisibleTop ?? geometry.visibleTop)
+                lastVisibleTop = geometry.visibleTop
+                onScroll(geometry, delta)
+            }
+            scheduleSettle()
+        }
+
+        /// One sleeping task per gesture instead of one per bounds change:
+        /// the task re-arms itself until the clip view has been still for the
+        /// settle delay.
+        private func scheduleSettle() {
+            guard settleTask == nil else { return }
+            settleTask = Task { @MainActor [weak self] in
+                var remaining = Self.settleDelayNanoseconds
+                while true {
+                    try? await Task.sleep(nanoseconds: remaining)
+                    guard let self, !Task.isCancelled else { return }
+                    let elapsed = DispatchTime.now().uptimeNanoseconds &- self.lastBoundsChange
+                    if elapsed >= Self.settleDelayNanoseconds {
+                        self.settleTask = nil
+                        self.reportSettled()
+                        return
+                    }
+                    remaining = Self.settleDelayNanoseconds - elapsed
                 }
             }
-            observers.append(token)
-            clipView.postsBoundsChangedNotifications = true
-            onScrollSettled(clipView.bounds)
+        }
+
+        private func reportSettled() {
+            guard let geometry = controller.geometry else { return }
+            lastVisibleTop = geometry.visibleTop
+            onScrollSettled(geometry)
         }
 
         deinit {
-            for observer in observers { NotificationCenter.default.removeObserver(observer) }
+            if let observer { NotificationCenter.default.removeObserver(observer) }
         }
     }
 }
@@ -828,5 +926,32 @@ struct ConversationActivityRow: View {
       }
     }.padding(.horizontal, horizontalInset).padding(.vertical, 8).frame(
       maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// Copies one fenced block and briefly confirms it in place.
+private struct MarkdownCodeCopyButton: View {
+  let code: String
+  @State private var didCopy = false
+  @State private var resetTask: Task<Void, Never>?
+
+  var body: some View {
+    Button {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(code, forType: .string)
+      didCopy = true
+      resetTask?.cancel()
+      resetTask = Task { @MainActor in
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        guard !Task.isCancelled else { return }
+        didCopy = false
+      }
+    } label: {
+      Text(didCopy ? "Copied" : "Copy").font(DockTypography.control).foregroundStyle(Color.dockSecondaryText)
+        .padding(.horizontal, 6).frame(height: 28).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .help("Copy code")
+    .accessibilityLabel("Copy code")
   }
 }

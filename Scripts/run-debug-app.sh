@@ -93,7 +93,15 @@ echo "[4/4] Launching the newly-built app..."
 # Hermes is a menu-bar app. Explicitly request the panel for debug launches so
 # startup exercises the same presentation path users see when opening it.
 rm -f /private/tmp/hermes-status-item-diagnostic.txt
-if ! open -n "$APP_PATH" --args --show-panel --status-item-diagnostics --perf-trace; then
+
+# Optional debug flags (only when explicitly enabled via environment variable).
+# Performance tracing adds I/O overhead in hot paths; enable only when debugging.
+DEBUG_ARGS=""
+if [ "${HERMES_DOCK_DEBUG:-0}" = "1" ]; then
+    DEBUG_ARGS="--status-item-diagnostics --perf-trace"
+fi
+
+if ! open -n "$APP_PATH" --args --show-panel $DEBUG_ARGS; then
     # Launch Services is unavailable in some managed/headless environments.
     # The signed bundle executable still has the same Bundle.main context, so
     # use it as a deterministic fallback instead of reporting a false build
@@ -101,8 +109,7 @@ if ! open -n "$APP_PATH" --args --show-panel --status-item-diagnostics --perf-tr
     echo "Launch Services unavailable; starting the bundle executable directly..."
     "$APP_PATH/Contents/MacOS/HermesAgentDock" \
         --show-panel \
-        --status-item-diagnostics \
-        --perf-trace \
+        $DEBUG_ARGS \
         >/private/tmp/hermes-debug-app.log 2>&1 &
 fi
 

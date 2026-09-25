@@ -1,6 +1,7 @@
 import Foundation
 
 /// Distance-driven gait: slowing down travel also slows the steps. No second timer.
+/// `amount` (0...1) follows walking speed so starts and stops blend into the idle pose.
 struct OfficePreviewWalkPose {
     static let strideLength: Float = 0.95
     let legAngle: Float
@@ -9,16 +10,27 @@ struct OfficePreviewWalkPose {
     let bounce: Float
     let sway: Float
     let footTravel: Float
+    let armAngle: Float
+    let lean: Float
+    let twist: Float
+    let headBob: Float
 
-    init(distance: Float) {
+    init(distance: Float, amount: Float = 1) {
+        let amount = min(1, max(0, amount))
         let phase = max(0, distance).truncatingRemainder(dividingBy: Self.strideLength) / Self.strideLength * 2 * .pi
         let swing = sin(phase)
-        legAngle = swing * 0.50
-        leftLift = max(0, swing) * 0.085
-        rightLift = max(0, -swing) * 0.085
-        bounce = (1 - cos(phase * 2)) * 0.020
-        sway = swing * 0.045
-        footTravel = swing * 0.075
+        // A slightly sharpened swing keeps feet planted longer at each extreme.
+        let planted = swing * (1.25 - 0.25 * swing * swing)
+        legAngle = planted * 0.50 * amount
+        leftLift = max(0, swing) * 0.085 * amount
+        rightLift = max(0, -swing) * 0.085 * amount
+        bounce = (1 - cos(phase * 2)) * 0.020 * amount
+        sway = swing * 0.045 * amount
+        footTravel = swing * 0.075 * amount
+        armAngle = -planted * 0.62 * amount
+        lean = 0.07 * amount
+        twist = swing * 0.07 * amount
+        headBob = -cos(phase * 2) * 0.035 * amount
     }
 }
 
@@ -124,6 +136,18 @@ enum OfficePreviewLocation: String, CaseIterable, Sendable {
     case reviewTable = "Review table"
     case waitingArea = "Help point"
     case lounge = "Garden patio"
+    case library = "Library"
+    case qaLab = "QA Lab"
+    case securityOps = "Security Ops"
+    case serverRoom = "Server Room"
+    case designStudio = "Design Studio"
+    case assemblyBay = "Assembly Bay"
+    case missionWall = "Mission Control wall"
+
+    /// Rooms entered only for a running task's work kind. They exist only in
+    /// the authored office; a full or missing room falls back to the desk.
+    static let workZones: [OfficePreviewLocation] = [.library, .qaLab, .securityOps, .serverRoom, .designStudio, .assemblyBay, .missionWall]
+    var isWorkZone: Bool { Self.workZones.contains(self) }
 }
 
 enum OfficePreviewPhase: String, Sendable {
@@ -197,7 +221,10 @@ struct OfficePreviewTaskData: Identifiable, Equatable, Sendable {
     let latestEventNote: String?
     let latestEventAt: Date?
     let startedAt: Date?
+    let skills: [String]
+    let workflowTemplateID: String?
     var lane: OfficePreviewLane { OfficePreviewLane(status) }
+    var work: OfficeWorkClassification { OfficeWorkClassifier.classify(self) }
 
     init(_ task: KanbanTaskSummary) {
         id = task.id
@@ -212,17 +239,13 @@ struct OfficePreviewTaskData: Identifiable, Equatable, Sendable {
         latestEventNote = task.latestEventNote
         latestEventAt = task.latestEventAt
         startedAt = task.startedAt
+        skills = task.skills
+        workflowTemplateID = task.workflowTemplateID
     }
 
     var phase: OfficePreviewPhase {
         switch lane {
-        case .running:
-            // Explicit reported step takes precedence over the older event.
-            let report = (currentStepKey ?? latestEventNote ?? latestEventKind ?? "").lowercased()
-            let words = Set(report.split(whereSeparator: { !$0.isLetter }).map(String.init))
-            if !words.isDisjoint(with: ["test", "testing", "tests", "verify", "verification", "validate"]) { return .testing }
-            if !words.isDisjoint(with: ["read", "reading", "inspect", "research", "analyze"]) { return .reading }
-            return .implementing
+        case .running: return work.kind.phase
         case .review: return .reviewing
         case .blocked: return .waiting
         case .triage, .ready: return .planning
@@ -257,13 +280,26 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
     let name: String
     let tasks: [OfficePreviewTaskData]
     var mainSession: OfficeMainSession? = nil
+    /// Settled work kind from `OfficePreviewSimulation`; nil means unsmoothed.
+    var settledWork: OfficeWorkClassification? = nil
     var activityLane: OfficePreviewLane? { mainSession?.lane ?? taskData?.lane }
     var taskData: OfficePreviewTaskData? { tasks.first }
     var phase: OfficePreviewPhase {
         if let mainSession { return mainSession.lane == .running ? .implementing : mainSession.lane == .done ? .resting : .waiting }
-        return taskData?.phase ?? .resting
+        guard let taskData else { return .resting }
+        return taskData.lane == .running ? (work?.kind.phase ?? .implementing) : taskData.phase
     }
-    var location: OfficePreviewLocation { mainSession.map { $0.lane == .done ? .lounge : .desk } ?? taskData?.lane.location ?? .lounge }
+    /// The running work kind and its evidence; nil when no work is in progress.
+    var work: OfficeWorkClassification? {
+        if let mainSession { return mainSession.lane == .running ? OfficeWorkClassifier.classify(mainSession) : nil }
+        guard let taskData, taskData.lane == .running else { return nil }
+        return settledWork ?? taskData.work
+    }
+    var location: OfficePreviewLocation {
+        if let mainSession { return mainSession.lane == .done ? .lounge : .desk }
+        guard let taskData else { return .lounge }
+        return taskData.lane == .running ? (work?.kind.location ?? .desk) : taskData.lane.location
+    }
     /// Availability here describes the loaded Kanban queue, not runtime capacity.
     var hasNoPendingTasks: Bool { mainSession == nil && tasks.allSatisfy { $0.lane == .done } }
     var canWander: Bool { mainSession.map { $0.lane == .done } ?? tasks.allSatisfy { [.todo, .scheduled, .done].contains($0.lane) } }
@@ -285,12 +321,7 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
         }
         if hasNoPendingTasks { return "diamond.fill" }
         switch taskData?.lane {
-        case .running:
-            switch phase {
-            case .testing: return "testtube.2"
-            case .reading: return "book.fill"
-            default: return "desktopcomputer"
-            }
+        case .running: return work?.kind.symbol ?? "desktopcomputer"
         case .review: return "eye.fill"
         case .blocked: return "exclamationmark"
         case .scheduled: return "clock.fill"
@@ -358,18 +389,27 @@ struct OfficePreviewBoardLane: Identifiable, Equatable {
 final class OfficePreviewSimulation: ObservableObject {
     @Published private(set) var agents: [OfficePreviewAgentPresentation] = []
     @Published private(set) var board: [OfficePreviewBoardLane] = []
+    private var stabilizer = OfficeWorkStabilizer()
 
     init(bots: [BotSummary] = [], tasks: [KanbanTaskSummary] = [], sessions: [OfficeMainSession] = []) {
         update(bots: bots, tasks: tasks, sessions: sessions)
     }
 
-    func update(bots: [BotSummary], tasks: [KanbanTaskSummary], sessions: [OfficeMainSession] = []) {
+    func update(bots: [BotSummary], tasks: [KanbanTaskSummary], sessions: [OfficeMainSession] = [], now: Date = Date()) {
         var seen = Set<String>()
         let main = sessions.filter { seen.insert($0.id).inserted && ($0.isCurrent || [.running, .blocked].contains($0.lane)) }
             .sorted { $0.id < $1.id }.map {
                 OfficePreviewAgentPresentation(id: "main-session:\($0.id)", name: "Nexus · \($0.title)", tasks: [], mainSession: $0)
             }
-        let next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: main.isEmpty)
+        var next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: main.isEmpty)
+        var keys = Set<String>()
+        for index in next.indices {
+            guard let task = next[index].taskData else { continue }
+            let key = "\(next[index].id)|\(task.boardSlug ?? "")|\(task.id)"
+            keys.insert(key)
+            next[index].settledWork = stabilizer.stabilize(key: key, lane: task.lane, proposed: task.work, now: now)
+        }
+        stabilizer.retain(keys: keys)
         if next != agents { agents = next }
         let lanes = OfficePreviewResolver.board(tasks: tasks)
         if lanes != board { board = lanes }
@@ -382,8 +422,24 @@ struct OfficePreviewInteractionPlan {
     var partners: [String: String] = [:]
     var stations: [String: Int] = [:]
 
-    static func make(agents: [OfficePreviewAgentPresentation]) -> Self {
+    /// `zoneCapacity` is the authored seat count per work room. Bots beyond it
+    /// have no seat and work at their own desk; a seat is never shared.
+    static func make(agents: [OfficePreviewAgentPresentation], zoneCapacity: [OfficePreviewLocation: Int] = [:]) -> Self {
         var plan = Self()
+        for zone in OfficePreviewLocation.workZones {
+            let capacity = zoneCapacity[zone] ?? 0
+            guard capacity > 0 else { continue }
+            var taken = Set<Int>()
+            // Each bot prefers a seat derived from its identity, so a refresh
+            // or a colleague leaving does not reshuffle the room.
+            for agent in agents.filter({ $0.mainSession == nil && $0.location == zone }).sorted(by: { $0.id < $1.id }) {
+                guard taken.count < capacity else { break }
+                var seat = Int(agent.identitySeed % UInt64(capacity))
+                while taken.contains(seat) { seat = (seat + 1) % capacity }
+                taken.insert(seat)
+                plan.stations[agent.id] = seat
+            }
+        }
         for phase in [OfficePreviewPhase.planning, .reviewing] {
             let participants = agents.filter { $0.mainSession == nil && $0.phase == phase }
                 .sorted {

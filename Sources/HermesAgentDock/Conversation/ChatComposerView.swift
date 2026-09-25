@@ -262,11 +262,14 @@ struct ChatComposerView: View {
                     // Attachment popover keeps secondary actions discoverable
                     // without changing the composer's stable footprint.
                     Button { showingAttachmentPopover = true } label: {
-                        LucideImage(systemName: "plus")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+                        LucideIcon(name: .plus, size: 14, color: Color.dockSecondaryText)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                    .fill(Color.dockControlSurface)
+                            )
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.borderless)
                     .help("Attach or insert content")
@@ -294,11 +297,19 @@ struct ChatComposerView: View {
                             }
                         }
                     )
-                    .font(.system(size: 12, weight: .regular))
+                    .font(DockTypography.control)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .padding(.horizontal, 8)
+                    .frame(height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                            .fill(Color.dockControlSurface)
+                    )
                     .frame(minHeight: 44, alignment: .center)
                     .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
                     .help("Select model")
                 }
+                .layoutPriority(-1)
 
                 Spacer(minLength: 4)
 
@@ -323,25 +334,33 @@ struct ChatComposerView: View {
                             }
                         }
                     } label: {
-                        HStack(spacing: 5) {
-                            LucideImage(systemName: "brain")
-                                .font(.system(size: 12, weight: .medium))
+                        // A plain button-style menu renders this SwiftUI
+                        // label as drawn; a borderless menu keeps only native
+                        // text and images and drops the Lucide glyph.
+                        HStack(spacing: 6) {
+                            LucideIcon(name: .brain, size: 13, color: Color.dockSecondaryText)
                             if ComposerToolbarPresentation.showsReasoningLabel(for: metrics) {
                                 Text(sessionReasoningDisplayName)
-                                    .font(.system(size: 12, weight: .regular))
+                                    .font(DockTypography.control)
+                                    .foregroundStyle(Color.dockSecondaryText)
+                                    .lineLimit(1)
                             }
+                            LucideIcon(name: .chevronDown, size: 10, color: Color.dockMetadataText)
                         }
-                        .foregroundStyle(Color.dockSecondaryText)
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .frame(height: 28)
                         .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color.white.opacity(0.04))
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                .fill(Color.dockControlSurface)
                         )
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
-                    .menuStyle(.borderlessButton)
-                    .buttonStyle(.borderless)
-                        .frame(minHeight: 44, alignment: .center)
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
                     .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
                     .help("Select thinking depth")
 
@@ -434,13 +453,15 @@ struct ChatComposerView: View {
                     .padding(.top, 2)
             }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .padding(.top, 6)
+            .padding(.bottom, 0)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Color.dockSurface2)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .stroke(
                                 speechInput.isRecording
                                     ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
@@ -575,14 +596,14 @@ struct ChatComposerView: View {
         if let provider = runtime?.provider, let modelName = runtime?.model {
             return "\(provider)  /  \(modelName)"
         }
-        return "LOADING…"
+        return "Loading…"
     }
 
     private var sessionReasoningDisplayName: String {
         let reasoning = model.sessionID == nil
             ? model.defaultReasoningVariant
             : model.sessionReasoningVariant
-        return reasoning?.displayName ?? "LOADING…"
+        return reasoning?.displayName ?? "Loading…"
     }
 
     private var selectedModelOptionID: String? {

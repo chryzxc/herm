@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 /// A compact shared floor plan. Geometry and navigation consume the same walls,
 /// furniture footprints and station coordinates.
@@ -79,13 +80,16 @@ struct OfficePreviewLayout {
         case .lounge:
             return [3.2 + (slot.isMultiple(of: 2) ? -0.8 : 0.8), 0,
                     hallBottom + 2 + Float(slot / 4) * 3.8 + (slot % 4 < 2 ? -1.05 : 1.05)]
+        default:
+            // Work rooms are authored-only; the generated fallback office uses desks.
+            return station(slot: slot, location: .desk)
         }
     }
 
     func yaw(slot: Int, location: OfficePreviewLocation) -> Float {
         if let authored { return authored.station(slot: slot, location: location).yaw }
         if location == .reviewTable { return slot.isMultiple(of: 2) ? .pi / 2 : -.pi / 2 }
-        if location == .desk || location == .lounge { return slot % 4 < 2 ? 0 : .pi }
+        if location == .desk || location == .lounge || location.isWorkZone { return slot % 4 < 2 ? 0 : .pi }
         return .pi
     }
 
@@ -161,6 +165,48 @@ struct OfficePreviewLayout {
         return !(walls + furniture).contains { $0.contains([point.x, point.z], clearance: 0.36) }
     }
 
+    /// Straight-line clearance against the cached obstacle grid. Every grid
+    /// cell touching the sampled point must be free, so a shortcut never
+    /// clips a corner the A* search would have walked around.
+    func isClear(from a: SIMD3<Float>, to b: SIMD3<Float>, avoiding occupied: [SIMD3<Float>] = []) -> Bool {
+        let length = simd_length(SIMD2<Float>(b.x - a.x, b.z - a.z))
+        let steps = max(1, Int((length / 0.1).rounded(.up)))
+        for step in 0...steps {
+            let p = a + (b - a) * (Float(step) / Float(steps))
+            guard p.x >= minX + 0.6, p.x <= maxX - 0.6, p.z >= back + 0.6, p.z <= front - 0.6 else { return false }
+            if authored == nil {
+                if !isWalkable(p) { return false }
+            } else {
+                let x0 = Int((p.x * 4).rounded(.down)), z0 = Int((p.z * 4).rounded(.down))
+                for cell in [SIMD2<Int>(x0, z0), [x0 + 1, z0], [x0, z0 + 1], [x0 + 1, z0 + 1]] where blockedGrid.contains(cell) { return false }
+            }
+            if occupied.contains(where: { abs($0.x - p.x) < 0.8 && abs($0.z - p.z) < 0.8 }) { return false }
+        }
+        return true
+    }
+
+    /// Removes grid staircase corners: keeps each node only when the walk
+    /// from the previous kept point to the following node is obstructed.
+    /// The first node, stations, approaches and the destination are always kept.
+    func smoothed(_ route: [Node], from start: SIMD3<Float>, avoiding occupied: [SIMD3<Float>] = []) -> [Node] {
+        guard route.count > 2 else { return route }
+        var result: [Node] = []
+        var anchor = start
+        var index = 0
+        while index < route.count {
+            let node = route[index]
+            let isFixed = index == 0 || node.isStation || node.isApproach || index == route.count - 1
+            if !isFixed, index + 1 < route.count, isClear(from: anchor, to: position(route[index + 1]), avoiding: occupied) {
+                index += 1
+                continue
+            }
+            result.append(node)
+            anchor = position(node)
+            index += 1
+        }
+        return result
+    }
+
     struct Node: Hashable {
         let slot: Int
         let index: Int
@@ -187,7 +233,7 @@ struct OfficePreviewLayout {
             if let authored { return authored.station(slot: node.slot, location: Self.locations[node.index]).approach }
             // Enter armless seats from their side, never through a backrest.
             if Self.locations[node.index] == .reviewTable { return base + [0, 0, 0.75] }
-            if Self.locations[node.index] == .desk || Self.locations[node.index] == .lounge {
+            if [.desk, .lounge].contains(Self.locations[node.index]) || Self.locations[node.index].isWorkZone {
                 return base + [node.slot.isMultiple(of: 2) ? -1 : 1, 0, 0]
             }
             return base + [1, 0, 0]

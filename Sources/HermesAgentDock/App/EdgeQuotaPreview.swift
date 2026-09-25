@@ -1,127 +1,329 @@
 import SwiftUI
 
-/// A small projection of the same quota inventory used by the full workspace.
-struct EdgeQuotaPreview: View {
-    @ObservedObject var control: ControlCenterModel
-    let openQuota: () -> Void
-    @AppStorage("hermes.notch.quota.provider") private var selectedProvider = ""
+enum EdgeQuotaLayout: String, CaseIterable {
+    case list, grid
 
-    private var snapshot: ProviderQuotaSnapshot? {
-        control.providerQuotas.first { $0.provider == selectedProvider } ?? control.providerQuotas.first
-    }
+    static let storageKey = "hermes.notch.quota.layout"
+
+    var title: String { self == .list ? "List" : "Grid" }
+    var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
+}
+
+/// Layout toggle and refresh control shown in the notch tab row while the
+/// Quota tab is selected, so the preview body can spend its height on providers.
+struct EdgeQuotaToolbar: View {
+    @ObservedObject var control: ControlCenterModel
+    @AppStorage(EdgeQuotaLayout.storageKey) private var layout: EdgeQuotaLayout = .list
+
     private var refreshing: Bool { control.refreshState(for: "provider.quota")?.isRefreshing == true }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                if let snapshot {
-                    Menu {
-                        ForEach(control.providerQuotas, id: \.provider) { provider in
-                            Button(provider.displayName) { selectedProvider = provider.provider }
-                        }
-                    } label: {
-                        Text(snapshot.displayName).font(.system(size: 12, weight: .semibold))
+        HStack(spacing: 4) {
+            HStack(spacing: 2) {
+                ForEach(EdgeQuotaLayout.allCases, id: \.self) { option in
+                    Button { layout = option } label: {
+                        Image(systemName: option.symbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(layout == option ? Color.dockAccent : Color.dockSecondaryText)
+                            .frame(width: 26, height: 22)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(layout == option ? Color.dockAccentMuted : Color.clear)
+                            )
+                            .contentShape(Rectangle())
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
-                } else {
-                    Text("Provider usage").font(.system(size: 12, weight: .semibold))
+                    .buttonStyle(.plain)
+                    .help("\(option.title) layout")
+                    .accessibilityLabel("\(option.title) layout")
+                    .accessibilityAddTraits(layout == option ? .isSelected : [])
                 }
-                Spacer()
-                Button { control.refreshProviderQuota() } label: {
-                    Image(systemName: "arrow.clockwise").frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-                .disabled(refreshing)
-                .accessibilityLabel("Refresh quota")
             }
-            .frame(height: 44)
+            .padding(2)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockSurface4))
 
-            if let snapshot {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(snapshot.windows.prefix(2)) { window in
-                        quotaWindow(window)
-                    }
-                    if snapshot.windows.isEmpty {
-                        Text("No quota windows reported").foregroundStyle(Color.dockSecondaryText)
+            Button { control.refreshProviderQuota() } label: {
+                Group {
+                    if refreshing {
+                        ProgressView().controlSize(.small).scaleEffect(0.7)
+                    } else {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .semibold))
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(refreshing ? "Loading quota…" : "Quota unavailable")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(refreshing ? "Reading connected providers" : "Open Quota to connect a provider or review its status.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .foregroundStyle(Color.dockSecondaryText)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
             }
-            HStack(spacing: 8) {
-                if let snapshot {
-                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                        Text(refreshing ? "Refreshing…" :
-                             control.refreshState(for: "provider.quota")?.isStale == true ? "Stale data" :
-                             "Updated \(Self.shortDuration(timeline.date.timeIntervalSince(snapshot.updatedAt))) ago")
+            .buttonStyle(.plain)
+            .disabled(refreshing)
+            .help("Refresh quota")
+            .accessibilityLabel("Refresh quota")
+        }
+    }
+}
+
+/// A small projection of the same quota inventory used by the full workspace:
+/// every connected provider with its 5-hour and weekly windows.
+struct EdgeQuotaPreview: View {
+    @ObservedObject var control: ControlCenterModel
+    let openQuota: () -> Void
+    @AppStorage(EdgeQuotaLayout.storageKey) private var layout: EdgeQuotaLayout = .list
+
+    private var refreshing: Bool { control.refreshState(for: "provider.quota")?.isRefreshing == true }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Group {
+                if control.providerQuotas.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(refreshing ? "Loading quota…" : "Quota unavailable")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(refreshing ? "Reading connected providers" : "Open Quota to connect a provider or review its status.")
+                            .font(.system(size: 12))
                             .foregroundStyle(Color.dockSecondaryText)
                     }
+                    .padding(.top, 12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                } else {
+                    ScrollView {
+                        if layout == .grid { grid } else { list }
+                    }
+                    .scrollIndicators(.never)
                 }
-                Spacer(minLength: 0)
-                Button("Open Quota", action: openQuota)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.dockAccent)
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(height: 44)
             }
-            .lineLimit(1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            Divider().overlay(Color.dockBorderLight)
+            footer
         }
         .font(.system(size: 12))
         .foregroundStyle(Color.dockPrimaryText)
         .padding(.horizontal, 12)
-        .padding(.bottom, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func quotaWindow(_ window: ProviderQuotaWindow) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(window.label).fontWeight(.medium).lineLimit(1)
-                Spacer(minLength: 4)
-                if let used = Self.usedPercent(remaining: window.remainingPercent) {
-                    Text("\(Int(used.rounded()))% used")
-                        .monospacedDigit().foregroundStyle(Color.dockSecondaryText)
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if let updatedAt = control.providerQuotas.map(\.updatedAt).max() {
+                TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                    Text(refreshing ? "Refreshing…" :
+                         control.refreshState(for: "provider.quota")?.isStale == true ? "Stale data" :
+                         "Updated \(Self.shortDuration(timeline.date.timeIntervalSince(updatedAt))) ago")
+                        .foregroundStyle(Color.dockSecondaryText)
                 }
             }
-            if let used = Self.usedPercent(remaining: window.remainingPercent) {
+            Spacer(minLength: 0)
+            Button("Open Quota", action: openQuota)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.dockAccent)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(height: 36)
+                .contentShape(Rectangle())
+        }
+        .lineLimit(1)
+    }
+
+    // MARK: List
+
+    private var list: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(control.providerQuotas.enumerated()), id: \.element.provider) { index, snapshot in
+                if index > 0 { Divider().overlay(Color.dockBorderLight).padding(.leading, 28) }
+                HStack(alignment: .top, spacing: 8) {
+                    ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(snapshot.displayName)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .frame(height: 20)
+                        let windows = Self.compactWindows(snapshot.windows)
+                        if windows.isEmpty {
+                            Text(snapshot.safeDetail ?? "No quota windows reported")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .lineLimit(1)
+                        }
+                        ForEach(windows, id: \.window.id) { item in
+                            listMeter(item.label, item.window)
+                        }
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private func listMeter(_ label: String, _ window: ProviderQuotaWindow) -> some View {
+        let remaining = Self.remainingPercent(window.remainingPercent)
+        let marker = QuotaForecasting.visibleDailyBudgetMarker(for: window)
+        return HStack(spacing: 8) {
+            Text(label)
+                .foregroundStyle(Color.dockSecondaryText)
+                .frame(minWidth: 18, alignment: .leading)
+                .fixedSize()
+            if let remaining {
                 GeometryReader { geometry in
                     Capsule().fill(Color.dockBorder)
                         .overlay(alignment: .leading) {
                             Capsule()
-                                .fill(window.threshold == .critical ? Color.dockDestructive : window.threshold == .warning ? Color.dockWarning : Color.dockAccent)
-                                .frame(width: geometry.size.width * used / 100)
+                                .fill(Self.color(window.threshold))
+                                .frame(width: geometry.size.width * remaining / 100)
+                        }
+                        .overlay(alignment: .leading) {
+                            if let marker {
+                                RoundedRectangle(cornerRadius: 1)
+                                    .fill(Color.dockWarning)
+                                    .frame(width: 2, height: 9)
+                                    .offset(x: min(max(0, geometry.size.width * marker / 100), geometry.size.width - 2))
+                            }
                         }
                 }
                 .frame(height: 4)
-                .accessibilityLabel("\(window.label), \(Int(used.rounded())) percent used")
+                Text("\(Int(remaining.rounded()))%")
+                    .monospacedDigit()
+                    .frame(width: 34, alignment: .trailing)
+            } else {
+                Text(window.remainingDisplay ?? "Remaining unavailable")
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            HStack {
-                if window.remainingPercent == nil {
-                    Text(window.remainingDisplay ?? "Usage unavailable")
-                }
-                Spacer(minLength: 0)
-                if let resets = window.resetsAt {
-                    TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                        Text(resets > timeline.date ? "Resets in \(Self.shortDuration(resets.timeIntervalSince(timeline.date)))" : "Reset time passed")
-                    }
-                    .help("Resets \(resets.formatted(date: .abbreviated, time: .shortened))")
-                } else if let text = window.resetsDisplay {
-                    Text(text)
-                }
-            }
-            .foregroundStyle(Color.dockSecondaryText)
-            .lineLimit(1)
+            resetText(window)
+                .foregroundStyle(Color.dockSecondaryText)
+                .frame(width: 48, alignment: .trailing)
         }
+        .font(.system(size: 11))
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.accessibilityLabel(label, window))
+    }
+
+    // MARK: Grid
+
+    private var grid: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            ForEach(control.providerQuotas, id: \.provider) { snapshot in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName), size: 18)
+                        Text(snapshot.displayName)
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    let windows = Self.compactWindows(snapshot.windows)
+                    HStack(spacing: 4) {
+                        if windows.isEmpty {
+                            Text(snapshot.safeDetail ?? "No quota windows reported")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, minHeight: 50, alignment: .topLeading)
+                        }
+                        ForEach(windows, id: \.window.id) { item in
+                            ring(item.label, item.window).frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface2))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func ring(_ label: String, _ window: ProviderQuotaWindow) -> some View {
+        let remaining = Self.remainingPercent(window.remainingPercent)
+        let marker = QuotaForecasting.visibleDailyBudgetMarker(for: window)
+        return VStack(spacing: 5) {
+            ZStack {
+                Circle().stroke(Color.dockBorder, lineWidth: 3)
+                if let remaining, remaining > 0 {
+                    Circle()
+                        .trim(from: 0, to: remaining / 100)
+                        .stroke(Self.color(window.threshold), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                if let marker {
+                    // Daily budget line: a radial tick across the ring at the
+                    // balance to keep after today's even-use budget.
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.dockWarning)
+                        .frame(width: 2, height: 8)
+                        .offset(y: -19)
+                        .rotationEffect(.degrees(marker / 100 * 360))
+                }
+                Group {
+                    if let remaining {
+                        Text("\(Int(remaining.rounded()))")
+                            .font(.system(size: 11, weight: .semibold))
+                            .monospacedDigit()
+                        + Text("%")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(Color.dockSecondaryText)
+                    } else {
+                        Text("—").font(.system(size: 11, weight: .semibold))
+                    }
+                }
+                .lineLimit(1)
+                .fixedSize()
+            }
+            .frame(width: 38, height: 38)
+            HStack(spacing: 4) {
+                Text(label).fontWeight(.semibold).foregroundStyle(Color.dockPrimaryText)
+                resetText(window).foregroundStyle(Color.dockSecondaryText).monospacedDigit()
+            }
+            .font(.system(size: 11))
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.accessibilityLabel(label, window))
+    }
+
+    // MARK: Shared
+
+    @ViewBuilder
+    private func resetText(_ window: ProviderQuotaWindow) -> some View {
+        if let resets = window.resetsAt {
+            TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                Text(resets > timeline.date ? Self.shortDuration(resets.timeIntervalSince(timeline.date)) : "Now")
+            }
+            .help("Resets \(resets.formatted(date: .abbreviated, time: .shortened))")
+        } else if let text = window.resetsDisplay {
+            Text(text)
+        }
+    }
+
+    private static func color(_ threshold: ProviderQuotaThreshold) -> Color {
+        QuotaWorkspaceView.color(for: threshold)
+    }
+
+    private static func accessibilityLabel(_ label: String, _ window: ProviderQuotaWindow) -> String {
+        var parts = [label == "5h" ? "5-hour window" : label == "7d" ? "Weekly window" : window.label]
+        if let remaining = remainingPercent(window.remainingPercent) {
+            parts.append("\(Int(remaining.rounded())) percent remaining")
+        } else {
+            parts.append(window.remainingDisplay ?? "remaining unavailable")
+        }
+        if let marker = QuotaForecasting.visibleDailyBudgetMarker(for: window) {
+            parts.append("daily budget line at \(Int(marker)) percent")
+        }
+        if let resets = window.resetsAt {
+            parts.append("resets \(resets.formatted(date: .abbreviated, time: .shortened))")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Picks the 5-hour ("Session") and weekly windows every quota service
+    /// reports, labelled compactly. Providers without those windows fall back
+    /// to their first two windows under their own names.
+    nonisolated static func compactWindows(_ windows: [ProviderQuotaWindow]) -> [(label: String, window: ProviderQuotaWindow)] {
+        let session = windows.first { $0.label == "Session" }
+        let weekly = windows.first { $0.label == "Weekly" }
+        let known = [session.map { ("5h", $0) }, weekly.map { ("7d", $0) }].compactMap { $0 }
+        if !known.isEmpty { return known.map { (label: $0.0, window: $0.1) } }
+        return windows.prefix(2).map { (label: $0.label, window: $0) }
     }
 
     static func shortDuration(_ interval: TimeInterval) -> String {
@@ -133,8 +335,9 @@ struct EdgeQuotaPreview: View {
         return hours % 24 == 0 ? "\(hours / 24)d" : "\(hours / 24)d \(hours % 24)h"
     }
 
-    static func usedPercent(remaining: Double?) -> Double? {
+    /// Remaining capacity clamped to 0–100, matching the Quota page.
+    static func remainingPercent(_ remaining: Double?) -> Double? {
         guard let remaining, remaining.isFinite else { return nil }
-        return 100 - min(100, max(0, remaining))
+        return min(100, max(0, remaining))
     }
 }

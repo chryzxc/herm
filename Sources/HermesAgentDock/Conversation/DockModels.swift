@@ -324,8 +324,12 @@ actor SessionAgentStateWriter {
               let data = try? JSONEncoder.sessionAgentState.encode(SessionAgentStateArchive(states: pending)),
               data != lastEncoded else { return }
         lastEncoded = data
-        store.saveEncoded(data)
         self.pending = nil
+        // Write to disk on a background thread to avoid blocking the main thread
+        // during atomic writes of large session state files (440KB+).
+        Task.detached(priority: .background) { [store = self.store] in
+            store.saveEncoded(data)
+        }
     }
 }
 
@@ -470,6 +474,12 @@ struct HermesSession: Identifiable, Equatable {
     let messageCount: Int
     let source: String
     let isHidden: Bool
+    /// True while a turn or background task is actively running for this
+    /// session, even when it is not the one currently open.
+    let isWorking: Bool
+    /// True once this session has completed activity the user has not yet
+    /// seen (i.e. it was not the open session when the activity finished).
+    let hasUnreadUpdate: Bool
 
     var displayTitle: String {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled chat" : title
@@ -492,7 +502,9 @@ struct HermesSession: Identifiable, Equatable {
         updatedAt: Date? = nil,
         messageCount: Int,
         source: String,
-        isHidden: Bool = false
+        isHidden: Bool = false,
+        isWorking: Bool = false,
+        hasUnreadUpdate: Bool = false
     ) {
         self.id = id
         self.profileID = profileID
@@ -503,6 +515,8 @@ struct HermesSession: Identifiable, Equatable {
         self.messageCount = messageCount
         self.source = source
         self.isHidden = isHidden
+        self.isWorking = isWorking
+        self.hasUnreadUpdate = hasUnreadUpdate
     }
 }
 

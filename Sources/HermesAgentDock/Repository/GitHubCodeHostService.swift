@@ -36,14 +36,27 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
 
     /// Shared by the read-only pull-request center. Tokens are never stored
     /// by Dock; this only consults the launch environment or `gh` keychain.
-    static func localGitHubToken() -> String? {
+    ///
+    /// The `gh` lookup spawns subprocesses and blocks on `waitUntilExit()`,
+    /// so it runs on a detached task and is cached briefly — called from a
+    /// `@MainActor` refresh, the synchronous prefix of this call otherwise
+    /// ran on the main thread and produced multi-second UI hangs.
+    static func localGitHubToken() async -> String? {
         let environment = ProcessInfo.processInfo.environment
         if let token = [environment["GH_TOKEN"], environment["GITHUB_TOKEN"]]
             .compactMap({ $0?.trimmingCharacters(in: .whitespacesAndNewlines) })
             .first(where: { !$0.isEmpty }) {
             return token
         }
+        if let cached = await GitHubTokenCache.shared.cachedToken() {
+            return cached
+        }
+        let token = await Task.detached(priority: .utility) { resolveGHCLIToken() }.value
+        await GitHubTokenCache.shared.store(token)
+        return token
+    }
 
+    private static func resolveGHCLIToken() -> String? {
         // Reuse the user's existing GitHub CLI credential without persisting
         // or logging it. App bundles often have a reduced PATH, so check the
         // standard Homebrew locations explicitly and fall back to `gh`.
@@ -143,7 +156,7 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         // environment, use a short-lived token for private repositories and
         // higher GitHub API limits. GH_TOKEN is the GitHub CLI convention;
         // GITHUB_TOKEN supports CI and other launchers.
-        let token = Self.localGitHubToken()
+        let token = await Self.localGitHubToken()
         if let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -170,5 +183,25 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         case 404: .repositoryNotFound
         default: nil
         }
+    }
+}
+
+/// Short-lived cache for the resolved `gh` CLI token so repeated refreshes
+/// don't each spawn subprocesses. `nil` results are cached too, so an
+/// unsigned-in `gh` doesn't get re-probed on every refresh.
+private actor GitHubTokenCache {
+    static let shared = GitHubTokenCache()
+    private var token: String?
+    private var fetchedAt: Date?
+    private let ttl: TimeInterval = 60
+
+    func cachedToken() -> String?? {
+        guard let fetchedAt, Date().timeIntervalSince(fetchedAt) < ttl else { return nil }
+        return .some(token)
+    }
+
+    func store(_ token: String?) {
+        self.token = token
+        self.fetchedAt = Date()
     }
 }

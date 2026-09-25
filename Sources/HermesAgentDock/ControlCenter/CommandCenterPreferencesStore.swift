@@ -12,6 +12,7 @@ final class CommandCenterPreferencesStore: ObservableObject {
     @Published private(set) var watchedRepositoryIDs: [String]
     @Published private(set) var reviewBaselines: [RepositoryReviewBaseline]
     @Published private(set) var repositoryNotificationsEnabled: Bool
+    @Published private(set) var launchesExpandedByDefault: Bool
     private var lastSeen: [String: TimeInterval]
     private let defaults: UserDefaults
     private let key = "hermes.command-center.preferences.v1"
@@ -27,6 +28,7 @@ final class CommandCenterPreferencesStore: ObservableObject {
         watchedRepositoryIDs = saved["watchedRepositoryIDs"] as? [String] ?? []
         reviewBaselines = (saved["reviewBaselines"] as? [[String: Any]] ?? []).compactMap(RepositoryReviewBaseline.init(dictionary:))
         repositoryNotificationsEnabled = saved["repositoryNotificationsEnabled"] as? Bool ?? false
+        launchesExpandedByDefault = saved["launchesExpandedByDefault"] as? Bool ?? false
         lastSeen = saved["lastSeen"] as? [String: TimeInterval] ?? [:]
     }
 
@@ -88,6 +90,11 @@ final class CommandCenterPreferencesStore: ObservableObject {
         save()
     }
 
+    func setLaunchesExpandedByDefault(_ enabled: Bool) {
+        launchesExpandedByDefault = enabled
+        save()
+    }
+
     func baseline(for repositoryID: String) -> RepositoryReviewBaseline? {
         reviewBaselines.first { $0.repositoryID == repositoryID }
     }
@@ -109,7 +116,8 @@ final class CommandCenterPreferencesStore: ObservableObject {
             "lastSeen": lastSeen,
             "watchedRepositoryIDs": watchedRepositoryIDs,
             "reviewBaselines": reviewBaselines.map(\.dictionary),
-            "repositoryNotificationsEnabled": repositoryNotificationsEnabled
+            "repositoryNotificationsEnabled": repositoryNotificationsEnabled,
+            "launchesExpandedByDefault": launchesExpandedByDefault
         ], forKey: key)
     }
 }

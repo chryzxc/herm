@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import HermesAgentDock
 
@@ -61,7 +62,49 @@ struct KanbanBoardPresentationTests {
         #expect(state.isExpanded(.ready, hasTasks: true))
     }
 
+    @Test func lanesWithWorkCollapseIndependentlyOfEmptyLanes() {
+        var state = KanbanLaneExpansionState()
+        state.collapse(.running, hasTasks: true)
+        #expect(!state.isExpanded(.running, hasTasks: true))
+        #expect(state.isExpanded(.review, hasTasks: true))
+
+        state.expand(.running, hasTasks: true)
+        #expect(state.isExpanded(.running, hasTasks: true))
+
+        state.expand(.todo, hasTasks: false)
+        #expect(state.isExpanded(.todo, hasTasks: false))
+        state.collapse(.todo, hasTasks: false)
+        #expect(!state.isExpanded(.todo, hasTasks: false))
+    }
+
+    @Test func compactAgeUsesMinuteResolution() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(KanbanBoardPresentation.compactAge(since: now.addingTimeInterval(-20), now: now) == "now")
+        #expect(KanbanBoardPresentation.compactAge(since: now.addingTimeInterval(-5 * 60), now: now) == "5m")
+        #expect(KanbanBoardPresentation.compactAge(since: now.addingTimeInterval(-8 * 3600), now: now) == "8h")
+        #expect(KanbanBoardPresentation.compactAge(since: now.addingTimeInterval(-2 * 86400), now: now) == "2d")
+        #expect(KanbanBoardPresentation.compactAge(since: now.addingTimeInterval(-21 * 86400), now: now) == "3w")
+        #expect(KanbanBoardPresentation.compactAge(since: now.addingTimeInterval(60), now: now) == "now")
+    }
+
     @Test func inspectorTabsAreStableAndReadable() {
         #expect(KanbanInspectorTab.allCases.map(\.rawValue) == ["Overview", "Activity"])
+    }
+
+    @Test func dropsFollowTheDesktopWorkflowRules() {
+        typealias P = KanbanBoardPresentation
+        #expect(P.dropOutcome(taskStatus: "todo", target: .ready) == .move(.ready))
+        #expect(P.dropOutcome(taskStatus: "blocked", target: .todo) == .move(.todo))
+        #expect(P.dropOutcome(taskStatus: "ready", target: .triage) == .move(.triage))
+        #expect(P.dropOutcome(taskStatus: "running", target: .done) == .confirm(.complete))
+        #expect(P.dropOutcome(taskStatus: "ready", target: .blocked) == .confirm(.block))
+        #expect(P.dropOutcome(taskStatus: "in_progress", target: .running) == .none)
+        for locked in [KanbanLane.running, .review, .scheduled] {
+            guard case .refused = P.dropOutcome(taskStatus: "todo", target: locked) else {
+                Issue.record("\(locked) must refuse drops")
+                continue
+            }
+        }
+        #expect(KanbanLane.ready.status == "ready")
     }
 }

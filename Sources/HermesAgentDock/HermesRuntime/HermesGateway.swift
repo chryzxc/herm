@@ -35,6 +35,7 @@ final class HermesGateway: NSObject {
         case backendUnavailable, malformedResponse, disconnected
         case imageAttachFailed(String)
         case httpError(Int)
+        case httpRefused(Int, String)
         var errorDescription: String? {
             switch self {
             case .backendUnavailable: "Hermes could not start its local backend."
@@ -42,6 +43,7 @@ final class HermesGateway: NSObject {
             case .disconnected: "The connection to Hermes was lost."
             case .imageAttachFailed(let message): message
             case .httpError(let statusCode): "Hermes returned HTTP status \(statusCode)."
+            case .httpRefused(_, let detail): detail
             }
         }
     }
@@ -61,6 +63,13 @@ final class HermesGateway: NSObject {
     private var backendStartWaiters: [CheckedContinuation<Void, Error>] = []
     private let connectionGate = HermesConnectionGate()
     private static let maximumBackendOutputLength = 32_768
+    /// `URLSessionWebSocketTask` rejects frames over 1 MiB by default and
+    /// fails the receive, which tears down the socket. A cold
+    /// `session.resume` returns the whole display transcript in one frame, so
+    /// long sessions (thousands of messages) exceeded that and surfaced as
+    /// "The connection to Hermes was lost." Hermes itself accepts frames up
+    /// to 16 MiB for attachments; allow comfortably more than that inbound.
+    static let maximumWebSocketMessageSize = 256 * 1024 * 1024
 
     init(workingDirectory: URL? = nil) {
         self.workingDirectory = workingDirectory
@@ -98,6 +107,7 @@ final class HermesGateway: NSObject {
         let session = URLSession(configuration: .ephemeral)
         urlSession = session
         let task = session.webSocketTask(with: request)
+        task.maximumMessageSize = Self.maximumWebSocketMessageSize
         socket = task
         task.resume()
         onConnectionChange?(true)
@@ -166,6 +176,34 @@ final class HermesGateway: NSObject {
             throw GatewayError.malformedResponse
         }
         return result
+    }
+
+    /// Authenticated JSON write to the local backend. A refusal's FastAPI
+    /// `detail` is surfaced verbatim so the user sees why (e.g. open parents).
+    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
+        try await connect()
+        guard let port else { throw GatewayError.backendUnavailable }
+        guard let url = URL(string: "http://127.0.0.1:\(port)\(path)") else {
+            throw GatewayError.malformedResponse
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let session = urlSession ?? URLSession(configuration: .ephemeral)
+        let (data, response) = try await session.data(for: req)
+        guard let response = response as? HTTPURLResponse else {
+            throw GatewayError.malformedResponse
+        }
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard (200..<300).contains(response.statusCode) else {
+            if let detail = json?["detail"] as? String, !detail.isEmpty {
+                throw GatewayError.httpRefused(response.statusCode, detail)
+            }
+            throw GatewayError.httpError(response.statusCode)
+        }
+        return json ?? [:]
     }
 
     private func send(method: String, params: [String: Any]) async throws -> Data {

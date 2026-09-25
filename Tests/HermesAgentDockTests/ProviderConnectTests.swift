@@ -5,7 +5,7 @@ import Testing
 struct ProviderConnectTests {
     @Test func catalogListsEverySupportedProviderExactlyOnce() {
         let ids = QuotaProviderCatalog.all.map(\.id)
-        #expect(ids == ["codex-hermes", "codex", "opencode", "glm", "claude", "antigravity"])
+        #expect(ids == ["codex-hermes", "opencode", "glm", "claude", "antigravity"])
         #expect(Set(ids).count == ids.count)
         #expect(QuotaProviderCatalog.descriptor(for: "glm")?.displayName == "GLM Coding Plan")
         #expect(QuotaProviderCatalog.descriptor(for: "unknown") == nil)
@@ -14,7 +14,7 @@ struct ProviderConnectTests {
     @Test func apiKeyStorageKeysMatchQuotaServiceParsers() {
         #expect(QuotaProviderCatalog.glm.storageKey == "glm")
         #expect(QuotaProviderCatalog.opencode.storageKey == "opencode-go")
-        #expect(QuotaProviderCatalog.codex.storageKey == nil)
+        #expect(QuotaProviderCatalog.codexHermes.storageKey == nil)
         #expect(QuotaProviderCatalog.claude.storageKey == nil)
         #expect(QuotaProviderCatalog.antigravity.storageKey == nil)
     }

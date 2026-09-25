@@ -157,7 +157,9 @@ enum ConversationMessageWindow {
         guard newCount > oldCount else { return bounds }
         guard isAtBottom, bounds.upperBound == oldCount else { return bounds }
         guard !bounds.isEmpty else { return tailRange(totalCount: newCount) }
-        let start = max(0, newCount - bounds.count)
+        // Preserve the lower bound at 0 if viewing from the start of the conversation.
+        // Only slide the window forward if viewing history from the middle/end.
+        let start = bounds.lowerBound == 0 ? 0 : max(0, newCount - bounds.count)
         return start..<newCount
     }
 
@@ -190,13 +192,15 @@ enum ConversationMessageWindow {
     static func jumpPlan(
         for item: MessageNavigatorItem,
         sessionID: String,
-        totalCount: Int
+        messages: [ChatMessage]
     ) -> ConversationMessageJumpPlan? {
         guard item.sessionID == sessionID else { return nil }
-        // Navigator ordinals are 1-based over the canonical array.
+        // Ordinals also count stored prompts that are not loaded, so locate
+        // the message itself. A prompt that is still unloaded has no row.
+        guard let index = messages.firstIndex(where: { $0.id == item.messageID }) else { return nil }
         return ConversationMessageJumpPlan(
             messageID: item.messageID,
-            windowRange: jumpWindow(aroundIndex: item.ordinal - 1, totalCount: totalCount)
+            windowRange: jumpWindow(aroundIndex: index, totalCount: messages.count)
         )
     }
 
@@ -208,7 +212,7 @@ enum ConversationMessageWindow {
         guard let plan = jumpPlan(
             for: item,
             sessionID: sessionID,
-            totalCount: messages.count
+            messages: messages
         ) else { return nil }
         return ConversationMessageJumpEffect(
             messageID: plan.messageID,

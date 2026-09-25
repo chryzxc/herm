@@ -46,6 +46,8 @@ final class HermesAgentDockDelegate: NSObject, NSApplicationDelegate, UNUserNoti
     private var commandEventMonitors: [Any] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Apply the saved theme's appearance before any Dock window draws.
+        _ = DockThemeStore.shared
         let edge = EdgeDockController(model: model, controlCenter: controlCenter, openQuota: { [weak self] in
             self?.dockPanel?.showQuota()
         }, openDock: { [weak self] in
@@ -187,6 +189,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private let model: DockModel
     private let controlCenter: ControlCenterModel
+    private let preferences = CommandCenterPreferencesStore()
     private let statusItem: NSStatusItem
     private let unreadBadge = UnreadBadgeView(frame: .zero)
     private let panel: DockPanel
@@ -458,6 +461,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func show(fromShortcut: Bool = false) {
         pointerExitTask?.cancel()
+        if !isWorkspaceVisible {
+            isFullscreen = preferences.launchesExpandedByDefault
+        }
         onWillShow()
         isWorkspaceVisible = true
         panel.onCancel = { [weak self] in self?.hide() }
@@ -465,8 +471,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panelPresentation.edgeSide = placement()?.side ?? .right
         installPanelContentIfNeeded()
         if isFullscreen {
-            guard let screen = NSScreen.main else { return }
-            panel.setFrame(screen.visibleFrame, display: true)
+            enterFullscreen()
         } else {
             resizePanel(to: desiredWidth, animated: true)
         }
