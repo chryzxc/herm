@@ -221,7 +221,7 @@ enum DockActionRegistry {
             DockActionDescriptor(action: .tab(tab), title: "Open \(tab.tabLabel)", subtitle: "Navigate to \(tab.tabLabel)", icon: tab.icon, category: "Navigation", keywords: [tab.rawValue], isAvailable: true, unavailableReason: nil, requiresConfirmation: false)
         }
         let basics = [
-            DockActionDescriptor(action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: .chatCircleDots, category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
+            DockActionDescriptor(action: .newChat, title: "New chat", subtitle: "Start a Hermes session", icon: .notePencil, category: "Session", keywords: ["session", "chat"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .focusComposer, title: "Focus composer", subtitle: "Return to Ask", icon: .cursorText, category: "Session", keywords: ["ask", "prompt"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),
             DockActionDescriptor(action: .stop, title: "Stop active request", subtitle: "Interrupt the active Hermes turn", icon: .stopCircle, category: "Session", keywords: ["interrupt", "cancel"], isAvailable: isWorking, unavailableReason: isWorking ? nil : "No active request", requiresConfirmation: false),
             DockActionDescriptor(action: .voice, title: "Start voice", subtitle: "Start a voice conversation", icon: .microphone, category: "Session", keywords: ["talk", "microphone"], isAvailable: true, unavailableReason: nil, requiresConfirmation: false),

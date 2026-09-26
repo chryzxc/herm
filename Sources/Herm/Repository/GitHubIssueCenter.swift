@@ -433,7 +433,7 @@ struct IssueDetailView: View {
                 }
                 Button { onOpenChat(displayedIssue) } label: {
                     HStack(spacing: 5) {
-                        DockIcon(.chatCircleDots, size: 12, color: Color.dockOnAccentText)
+                        DockIcon(.notePencil, size: 12, color: Color.dockOnAccentText)
                         Text("Open in chat")
                     }
                 }
