@@ -449,41 +449,27 @@ private struct StreamingChunkText: View, Equatable {
     }
 }
 
-/// Keeps the in-flight assistant placeholder out of the transcript until the
-/// first response text has arrived. The live-text observation is important:
-/// the placeholder is created by `message.start`, before the first delta.
-struct StreamingAssistantMessageRow: View {
+/// Metadata for the in-flight assistant row. It observes live text because the
+/// row itself is an equatable boundary and the placeholder exists (via
+/// `message.start`) before the first delta; until text arrives the
+/// "Responding" indicator already shows the timer.
+struct StreamingResponseMetadata: View {
     @ObservedObject var streaming: StreamingText
     let timestamp: Date
+    let timeLabel: String
     let modelName: String?
     let responseDuration: TimeInterval?
-    var metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false)
 
     var body: some View {
         if !streaming.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            HStack(alignment: .top, spacing: 0) {
-                VStack(alignment: .leading, spacing: 4) {
-                    StreamingMessageText(streaming: streaming)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 6)
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack(spacing: 6) {
-                        Text(HumanDateFormatting.timeOnly(timestamp))
-                        ResponseDurationLabel(startedAt: timestamp, finishedDuration: responseDuration)
-                        if let modelName {
-                            Text("· \(modelName)")
-                        }
-                    }
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .padding(.horizontal, 4)
-                }
+            HStack(spacing: 6) {
+                Text(timeLabel)
+                ResponseDurationLabel(startedAt: timestamp, finishedDuration: responseDuration)
+                if let modelName { Text("· \(modelName)") }
             }
-            .padding(.horizontal, metrics.contentInset)
-            .padding(.vertical, 8)
+            .font(DockTypography.machineMetadata)
+            .foregroundStyle(Color.dockMetadataText)
+            .padding(.horizontal, 4)
         }
     }
 }

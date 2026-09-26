@@ -13,6 +13,9 @@ final class DockPanelPresentation: ObservableObject {
     @Published var compactHeight: CGFloat = 720
     @Published var compactWidth: CGFloat = .greatestFiniteMagnitude
     @Published var availableWidth: CGFloat = .greatestFiniteMagnitude
+    /// Owned by the panel controller; the view mirrors it so the layout always
+    /// matches the window, including when the panel reopens in fullscreen.
+    @Published var isFullscreen = false
 }
 
 /// UserDefaults keys for optional sidebar destinations; all default to visible.
@@ -515,6 +518,10 @@ struct DockPopover: View {
             .padding(.horizontal, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceHorizontalInset : 0)
             .padding(.vertical, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceVerticalInset : 0)
             .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
+            .onChange(of: isGlobalSurfaceActive) { _, _ in synchronizePanelLayout() }
+            .onChange(of: panelPresentation.isFullscreen, initial: true) { _, fullscreen in
+                applyFullscreen(fullscreen)
+            }
             .onChange(of: panelPresentation.quotaRequest, initial: true) { _, request in
                 guard request > 0 else { return }
                 panelPresentation.quotaRequest = 0
@@ -538,7 +545,6 @@ struct DockPopover: View {
             }
             .dockThemedRoot()
             .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : nil)
-            .animation(.dockEase(duration: 0.35), value: isWorkspaceVisibleForLayout)
             .sheet(item: $selectedChatImage) { preview in
                 ChatImagePreviewModal(image: preview.image)
             }
@@ -589,17 +595,12 @@ struct DockPopover: View {
             }
     }
 
+    /// Fullscreen and the desktop panel must share this single
+    /// `desktopWorkspaceShell` branch. Rendering it from separate if/else
+    /// branches gave each presentation its own identity, so toggling
+    /// fullscreen remounted the whole workspace and reset its state.
     @ViewBuilder
     private var layoutContent: some View {
-        if isFullscreen && !isNarrowLayout {
-            desktopWorkspaceShell
-        } else {
-            compactLayoutContent
-        }
-    }
-
-    @ViewBuilder
-    private var compactLayoutContent: some View {
         if !isNarrowLayout {
             desktopWorkspaceShell
         } else {
@@ -701,7 +702,7 @@ struct DockPopover: View {
     }
 
     private var popupWidth: CGFloat {
-        if !isNarrowLayout { return showsDesktopContextPanel ? 1_200 : 720 }
+        if !isNarrowLayout { return showsDesktopContextPanel || isGlobalSurfaceActive ? 1_200 : 720 }
         return 500
     }
 
@@ -866,7 +867,7 @@ struct DockPopover: View {
         DebugLog.writeDiagnostic("session.switch old=\(oldValue ?? "nil") new=\(newValue ?? "nil") title=\(model.currentSessionTitle ?? "nil") cachedProject=\(cachedProjectName ?? "nil") cachedRepo=\(cachedSessionRepositoryPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil")")
         synchronizeWorkspace()
         controlCenter.focus(sessionID: newValue)
-        missionControlNavigation.synchronizeActiveSession(newValue)
+        missionControlNavigation.synchronizeActiveSession(model.navigationSessionID)
         synchronizePanelLayout()
 
         guard oldValue != newValue else { return }
@@ -913,7 +914,7 @@ struct DockPopover: View {
     private func configureWorkspaceOnAppear() {
         synchronizePanelLayout()
         synchronizeWorkspace()
-        missionControlNavigation.synchronizeActiveSession(model.sessionID)
+        missionControlNavigation.synchronizeActiveSession(model.navigationSessionID)
         controlCenter.bind(to: model)
         // The session Activity child can mount before this root lifecycle hook.
         // Reissue its durable, read-only projection after binding so an early
@@ -946,7 +947,7 @@ struct DockPopover: View {
             navigationState: missionControlNavigation,
             dockThemeStore: dockThemeStore,
             sessionPendingDeletion: $sessionPendingDeletion,
-            activeSessionID: model.sessionID,
+            activeSessionID: model.navigationSessionID,
             activeGlobalTab: fullscreenSurface == .global ? fullscreenGlobalTab : nil,
             isArtifactsActive: fullscreenSurface == .artifacts,
             isBotsActive: fullscreenSurface == .bots,
@@ -1588,6 +1589,11 @@ struct DockPopover: View {
     }
 
     private func toggleFullscreen() {
+        onFullscreenToggle()
+    }
+
+    private func applyFullscreen(_ fullscreen: Bool) {
+        guard fullscreen != isFullscreen else { return }
         // Fullscreen changes only the host window and available layout space.
         // It must not select a different workspace, inspector scope, or
         // session surface: those are user-owned presentation state.
@@ -1595,7 +1601,7 @@ struct DockPopover: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            isFullscreen.toggle()
+            isFullscreen = fullscreen
             if isFullscreen {
                 isNarrowLayout = false
                 isMissionInspectorVisible = preservedInspectorVisibility
@@ -1608,7 +1614,6 @@ struct DockPopover: View {
                 }
             }
         }
-        onFullscreenToggle()
     }
 
     private var sessionModelDisplayName: String {
@@ -1642,6 +1647,20 @@ struct DockPopover: View {
 
     private var selectedReasoningVariant: HermesReasoningVariant? {
         model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
+    }
+
+    private var reasoningVariantSelection: Binding<HermesReasoningVariant?> {
+        Binding(
+            get: { selectedReasoningVariant },
+            set: { variant in
+                guard let variant else { return }
+                if model.sessionID == nil {
+                    model.updateDefaultReasoning(variant)
+                } else {
+                    model.updateSessionReasoning(variant)
+                }
+            }
+        )
     }
 
     private var configurationScopeLabel: String {
@@ -1688,22 +1707,12 @@ struct DockPopover: View {
                 .frame(width: 0.5, height: 24)
 
             Menu {
-                ForEach(HermesReasoningVariant.allCases) { variant in
-                    Button {
-                        if model.sessionID == nil {
-                            model.updateDefaultReasoning(variant)
-                        } else {
-                            model.updateSessionReasoning(variant)
-                        }
-                    } label: {
-                        HStack {
-                            Text(variant.displayName)
-                            if variant == selectedReasoningVariant {
-                                Ph.check.image()
-                            }
-                        }
+                Picker("", selection: reasoningVariantSelection) {
+                    ForEach(HermesReasoningVariant.allCases) { variant in
+                        Text(variant.displayName).tag(Optional(variant))
                     }
                 }
+                .pickerStyle(.inline)
             } label: {
                 sessionConfigurationLabel(
                     icon: .brain,
@@ -1799,7 +1808,7 @@ struct DockPopover: View {
                         SessionPickerRow(
                             session: session,
                             projectName: conversationProjectName(for: session),
-                            isCurrent: session.id == model.sessionID,
+                            isCurrent: session.id == model.navigationSessionID,
                             canDelete: session.id != model.sessionID && model.deletingSessionID == nil,
                             isUpdatingVisibility: model.updatingSessionVisibilityID == session.id,
                             style: style,
@@ -2136,10 +2145,6 @@ struct DockPopover: View {
                                     )
                                         .id("approval")
                                 }
-                                if isConversationActivityVisible {
-                                    activityView
-                                        .id("activity")
-                                }
                             }
                             .padding(.vertical, 12)
                             .padding(.horizontal, 0)
@@ -2313,10 +2318,6 @@ struct DockPopover: View {
                         }
                     }
                     .onChange(of: model.approvalText) { _, _ in
-                        guard isConversationAtBottom else { return }
-                        scheduleTransientTailAdjustment(proxy)
-                    }
-                    .onChange(of: isConversationActivityVisible) { _, _ in
                         guard isConversationAtBottom else { return }
                         scheduleTransientTailAdjustment(proxy)
                     }
@@ -2654,20 +2655,20 @@ struct DockPopover: View {
         }
     }
 
-    private var activityView: some View {
-        ConversationActivityRow(model: model)
-    }
-
-    private var isConversationActivityVisible: Bool {
-        model.status == .working || AgentActivityPresentation.hasActiveWork(
-            toolCalls: model.activeToolCalls,
-            subagents: model.activeSubagents
-        )
-    }
-
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
-        if message.role == .hermes && !message.hasBodyText && message.images.isEmpty && message.id != model.streamingMessageIDForPresentation {
+        let isStreaming = message.id == model.streamingMessageIDForPresentation
+        let activity = isStreaming ? model.streamingTurnActivity : message.activity
+        if message.role == .hermes, isStreaming || !activity.isEmpty {
+            TurnActivityView(
+                activity: activity,
+                runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,
+                duration: message.responseDuration
+            )
+            .padding(.horizontal, conversationMetrics.contentInset + 4)
+            .padding(.top, 8)
+        }
+        if message.role == .hermes && !message.hasBodyText && message.images.isEmpty && !isStreaming {
             EmptyView()
         } else {
             ConversationMessageRow(
@@ -3054,6 +3055,7 @@ private struct MissionControlQueue: View {
     let onSelectProfile: (String) -> Void
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
+    @State private var creatingProjectPath: String?
     @StateObject private var sidebarSessionSeenStore = SidebarSessionSeenStore()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -3191,14 +3193,14 @@ private struct MissionControlQueue: View {
                 profileHeader(style: style)
                 if showsFullscreenToggle {
                     DockIconButton(
-                        icon: isFullscreen ? .arrowsIn : .arrowsOut,
+                        icon: isFullscreen ? .cornersIn : .cornersOut,
                         label: isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
                         style: style,
                         action: onFullscreenToggle
                     )
                 }
                 DockIconButton(
-                    icon: .chatCircleDots,
+                    icon: .notePencil,
                     label: "New conversation",
                     isProminent: true,
                     style: style,
@@ -3412,7 +3414,10 @@ private struct MissionControlQueue: View {
         // Built once per pass; rows previously rebuilt it per row (O(n²)).
         let statuses = sidebarSessionStatuses
 
-        return VStack(alignment: .leading, spacing: style.sectionSpacing) {
+        // One flat LazyVStack: sections below emit their rows as direct
+        // children. Nested lazy stacks inside eager VStacks are not lazy, so
+        // every conversation and project row was built on each layout pass.
+        return LazyVStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 if showsKanban { globalRailDestination(.kanban, style: style) }
                 if showsPullRequests { pullRequestsDestinationRow(style: style) }
@@ -3461,6 +3466,7 @@ private struct MissionControlQueue: View {
                     deletingSessionID: sidebarSnapshot.inputs.deletingSessionID,
                     updatingSessionVisibilityID: sidebarSnapshot.inputs.updatingSessionVisibilityID,
                     renamingSessionID: sidebarSnapshot.inputs.renamingSessionID,
+                    creatingProjectPath: creatingProjectPath,
                     onSelectSession: { session in
                         markSessionSeen(session)
                         navigationState.selectSession(session.id)
@@ -3470,9 +3476,11 @@ private struct MissionControlQueue: View {
                         controlCenter.refreshProjectNavigation()
                     },
                     onNewChatInProject: { projectPath in
+                        creatingProjectPath = projectPath
                         navigationState.beginProjectChat()
                         Task {
                             await model.startNewChat(in: projectPath)
+                            creatingProjectPath = nil
                             if let createdID = model.sessionID {
                                 navigationState.beginProjectChat(sessionID: createdID)
                             }
@@ -3608,27 +3616,27 @@ private struct MissionControlQueue: View {
         .equatable()
     }
 
+    /// Emits header and rows as siblings so the rail's LazyVStack owns them.
+    @ViewBuilder
     private func pinnedOutline(_ pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            DockSectionHeader(
-                title: "Pinned",
-                count: pinned.count,
-                isExpanded: $navigationState.arePinnedExpanded,
-                style: style
-            )
+        DockSectionHeader(
+            title: "Pinned",
+            count: pinned.count,
+            isExpanded: $navigationState.arePinnedExpanded,
+            style: style
+        )
+        .padding(.top, style.sectionSpacing)
+        .padding(.bottom, navigationState.arePinnedExpanded ? 2 : 0)
 
-            if navigationState.arePinnedExpanded {
-                if pinned.sessions.isEmpty {
-                    queueEmpty(pinnedStatusText(pinned.status), style: style)
-                        .padding(.leading, 12)
-                        .padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(pinned.sessions) { session in
-                            pinnedSessionRow(session, statuses: statuses, style: style)
-                        }
-                    }
+        if navigationState.arePinnedExpanded {
+            if pinned.sessions.isEmpty {
+                queueEmpty(pinnedStatusText(pinned.status), style: style)
+                    .padding(.leading, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(pinned.sessions, id: \.[sidebarSection: "pinned"]) { session in
+                    pinnedSessionRow(session, statuses: statuses, style: style)
                 }
             }
         }
@@ -3675,44 +3683,44 @@ private struct MissionControlQueue: View {
         .equatable()
     }
 
+    /// Emits header and rows as siblings so the rail's LazyVStack owns them.
+    @ViewBuilder
     private func conversationOutline(_ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            DockSectionHeader(
-                title: "Conversations",
-                count: conversations.count,
-                isExpanded: $navigationState.areConversationsExpanded,
+        DockSectionHeader(
+            title: "Conversations",
+            count: conversations.count,
+            isExpanded: $navigationState.areConversationsExpanded,
+            style: style
+        ) {
+            DockIconButton(
+                icon: .arrowsClockwise,
+                label: sidebarSnapshot.inputs.isLoadingSessions ? "Refreshing conversations…" : "Refresh conversations",
+                isBusy: sidebarSnapshot.inputs.isLoadingSessions,
+                size: 24,
                 style: style
             ) {
-                DockIconButton(
-                    icon: .arrowsClockwise,
-                    label: sidebarSnapshot.inputs.isLoadingSessions ? "Refreshing conversations…" : "Refresh conversations",
-                    isBusy: sidebarSnapshot.inputs.isLoadingSessions,
-                    size: 24,
-                    style: style
-                ) {
-                    model.loadSessions()
-                    controlCenter.refreshProjectNavigation()
+                model.loadSessions()
+                controlCenter.refreshProjectNavigation()
+            }
+        }
+        .padding(.top, style.sectionSpacing)
+        .padding(.bottom, navigationState.areConversationsExpanded ? 2 : 0)
+
+        if navigationState.areConversationsExpanded {
+            if conversations.isEmpty {
+                queueEmpty(sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No saved conversations", style: style)
+                    .padding(.leading, 20)
+            } else {
+                let visibleSessions = navigationState.showsAllConversations
+                    ? conversations
+                    : Array(conversations.prefix(10))
+                ForEach(visibleSessions, id: \.[sidebarSection: "conversations"]) { session in
+                    conversationSessionRow(session, statuses: statuses, style: style)
                 }
             }
-
-            if navigationState.areConversationsExpanded {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if conversations.isEmpty {
-                        queueEmpty(sidebarSnapshot.inputs.isLoadingSessions ? "Loading conversations…" : "No saved conversations", style: style)
-                            .padding(.leading, 20)
-                    } else {
-                        let visibleSessions = navigationState.showsAllConversations
-                            ? conversations
-                            : Array(conversations.prefix(10))
-                        ForEach(visibleSessions) { session in
-                            conversationSessionRow(session, statuses: statuses, style: style)
-                        }
-                    }
-                    if conversations.count > 10 {
-                        conversationExpansionButton(style: style)
-                            .padding(.leading, 12)
-                    }
-                }
+            if conversations.count > 10 {
+                conversationExpansionButton(style: style)
+                    .padding(.leading, 12)
             }
         }
     }
@@ -3998,140 +4006,135 @@ private struct MissionControlProjectList: View {
     let deletingSessionID: String?
     let updatingSessionVisibilityID: String?
     let renamingSessionID: String?
+    let creatingProjectPath: String?
     let onSelectSession: (HermesSession) -> Void
     let onRefresh: () -> Void
     let onNewChatInProject: (String) -> Void
     @State private var disclosureState = ProjectDisclosureState()
     @State private var isExpanded = true
     @State private var hoveredNewChatProjectID: String?
-    @State private var creatingProjectID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let sessionLimit = 10
 
-
+    /// No container: header, project headers and session rows flatten into
+    /// the rail's LazyVStack so only on-screen rows are built.
+    @ViewBuilder
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
-                DockIconButton(
-                    icon: .arrowsClockwise,
-                    label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
-                    isBusy: isRefreshing,
-                    size: 24,
-                    style: style,
-                    action: onRefresh
-                )
-            }
-
-            if isExpanded {
-                if groups.isEmpty {
-                    projectStatusRow(isLoadingProjects ? "Loading projects…" : "No projects")
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(groups) { group in projectGroup(group) }
-                    }
-                }
-            }
+        DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
+            DockIconButton(
+                icon: .arrowsClockwise,
+                label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
+                isBusy: isRefreshing,
+                size: 24,
+                style: style,
+                action: onRefresh
+            )
         }
-        .onChange(of: isCreatingChat) { _, isCreating in
-            if !isCreating { creatingProjectID = nil }
+        .padding(.top, style.sectionSpacing)
+        .padding(.bottom, isExpanded ? 2 : 0)
+
+        if isExpanded {
+            if groups.isEmpty {
+                projectStatusRow(isLoadingProjects ? "Loading projects…" : "No projects")
+            } else {
+                ForEach(groups) { group in projectGroup(group) }
+            }
         }
     }
 
+    @ViewBuilder
     private func projectGroup(_ group: MissionControlConversationGroup) -> some View {
         let sessionCount = max(group.declaredSessionCount, group.sessions.count)
         let isCollapsed = disclosureState.isCollapsed(projectID: group.id)
         let sessions = disclosureState.visibleSessions(group.sessions, projectID: group.id, limit: sessionLimit)
         let isActiveProject = group.sessions.contains { $0.id == selectedSessionID }
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
+        let isCreatingHere = creatingProjectPath != nil && creatingProjectPath == group.projectPath
+        HStack(spacing: 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
+                    disclosureState.toggle(projectID: group.id)
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    DockIcon(isCollapsed ? .caretRight : .caretDown, size: 11, color: style.metadataText)
+                        .frame(width: 12)
+                    DockIcon(.folder, size: 15, color: isActiveProject ? style.accent : style.secondaryText)
+                        .frame(width: 16)
+                    Text(group.title)
+                        .font(style.labelFont)
+                        .foregroundStyle(style.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .layoutPriority(1)
+                    Spacer(minLength: 0)
+                    Text(compactCount(sessionCount))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(style.metadataText)
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 8)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isCollapsed ? "Expand project \(group.title)" : "Collapse project \(group.title)")
+
+            if let projectPath = group.projectPath, !projectPath.isEmpty {
                 Button {
-                    withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
-                        disclosureState.toggle(projectID: group.id)
-                    }
+                    onNewChatInProject(projectPath)
                 } label: {
-                    HStack(spacing: 7) {
-                        DockIcon(isCollapsed ? .caretRight : .caretDown, size: 11, color: style.metadataText)
-                            .frame(width: 12)
-                        DockIcon(.folder, size: 15, color: isActiveProject ? style.accent : style.secondaryText)
-                            .frame(width: 16)
-                        Text(group.title)
-                            .font(style.labelFont)
-                            .foregroundStyle(style.secondaryText)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .layoutPriority(1)
-                        Spacer(minLength: 0)
-                        Text(compactCount(sessionCount))
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(style.metadataText)
+                    Group {
+                        if isCreatingHere {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            DockIcon(.notePencil, size: 15, color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
+                        }
                     }
-                    .padding(.leading, 8)
-                    .padding(.trailing, 8)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel(isCollapsed ? "Expand project \(group.title)" : "Collapse project \(group.title)")
-
-                if let projectPath = group.projectPath, !projectPath.isEmpty {
-                    Button {
-                        creatingProjectID = group.id
-                        onNewChatInProject(projectPath)
-                    } label: {
-                        Group {
-                            if creatingProjectID == group.id {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                DockIcon(.chatCircleDots, size: 15, color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
-                            }
-                        }
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(isCreatingChat || creatingProjectID != nil)
-                    .help("New chat in \(group.title)")
-                    .accessibilityLabel("New chat in \(group.title)")
-                    .onHover { isHovered in
-                        hoveredNewChatProjectID = isHovered
-                            ? group.id
-                            : (hoveredNewChatProjectID == group.id ? nil : hoveredNewChatProjectID)
-                    }
+                .disabled(isCreatingChat || creatingProjectPath != nil)
+                .help("New chat in \(group.title)")
+                .accessibilityLabel("New chat in \(group.title)")
+                .onHover { isHovered in
+                    hoveredNewChatProjectID = isHovered
+                        ? group.id
+                        : (hoveredNewChatProjectID == group.id ? nil : hoveredNewChatProjectID)
                 }
             }
-            .background(Color.clear)
-            if !isCollapsed {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if group.sessions.isEmpty {
-                        projectStatusRow("Loading linked sessions…", leading: 0)
-                    } else {
-                        ForEach(sessions) { session in sessionRow(session) }
-                        if group.sessions.count > sessionLimit {
-                            Button {
-                                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
-                                    disclosureState.toggleAllSessions(projectID: group.id)
-                                }
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Text(disclosureState.showsAllSessions(projectID: group.id)
-                                         ? "Show recent"
-                                         : "Show \(group.sessions.count - sessionLimit) more")
-                                    DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.accent)
-                                }
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(style.accent)
-                                .frame(minHeight: 44, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel(disclosureState.showsAllSessions(projectID: group.id)
-                                                ? "Show recent sessions for \(group.title)"
-                                                : "Show \(group.sessions.count - sessionLimit) more sessions for \(group.title)")
+        }
+        .background(Color.clear)
+        if !isCollapsed {
+            if group.sessions.isEmpty {
+                projectStatusRow("Loading linked sessions…", leading: 0)
+                    .padding(.leading, 12)
+            } else {
+                ForEach(sessions, id: \.[sidebarSection: group.id]) { session in sessionRow(session).padding(.leading, 12) }
+                if group.sessions.count > sessionLimit {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) {
+                            disclosureState.toggleAllSessions(projectID: group.id)
                         }
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(disclosureState.showsAllSessions(projectID: group.id)
+                                 ? "Show recent"
+                                 : "Show \(group.sessions.count - sessionLimit) more")
+                            DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.accent)
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(style.accent)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel(disclosureState.showsAllSessions(projectID: group.id)
+                                        ? "Show recent sessions for \(group.title)"
+                                        : "Show \(group.sessions.count - sessionLimit) more sessions for \(group.title)")
+                    .padding(.leading, 12)
                 }
-                .padding(.leading, 12)
             }
         }
     }
@@ -4194,6 +4197,13 @@ enum SidebarSessionTime {
         default: return date.formatted(.dateTime.month(.abbreviated).day())
         }
     }
+}
+
+/// The rail is one flat LazyVStack, and a session can appear in Pinned,
+/// Conversations and a project at once. Lazy stacks conflate rows that share
+/// an id across sibling ForEach blocks and leave one blank until re-render.
+private extension HermesSession {
+    subscript(sidebarSection section: String) -> String { "\(section):\(id)" }
 }
 
 private struct MissionControlSidebarSessionRow: View, Equatable {
@@ -4286,6 +4296,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
         .onTapGesture { if !isEditingTitle { onSelect(session) } }
         .focusable(!isEditingTitle)
+        .focusEffectDisabled()
         .focused($rowFocused)
         .onKeyPress(.return) {
             guard !isEditingTitle else { return .ignored }
@@ -4370,7 +4381,9 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     }
 
     private var rowFill: Color {
-        isSelected ? style.selectedFill : (isHovered ? style.selectedFill.opacity(0.4) : .clear)
+        if isSelected { return style.selectedFill }
+        if sessionStatus == .working { return style.accent.opacity(0.12) }
+        return isHovered ? style.selectedFill.opacity(0.4) : .clear
     }
 
     private var tooltip: String {
@@ -4404,15 +4417,13 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     private var statusIndicator: some View {
         Group {
             switch sessionStatus {
-            case .working:
-                DockIcon(.lightning, size: 10, color: statusColor)
             case .needsAttention:
                 DockIcon(.warningCircle, size: 10, color: statusColor)
             case .failed:
                 DockIcon(.xCircle, size: 10, color: statusColor)
             case .unreadComplete:
                 Circle().frame(width: 6, height: 6)
-            case .none:
+            case .working, .none:
                 Color.clear
             }
         }
@@ -4645,6 +4656,9 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
         splitView.dividerStyle = .thin
         splitView.delegate = context.coordinator
         splitView.fraction = leadingFraction
+        splitView.minimumLeadingWidth = minimumLeadingWidth
+        splitView.maximumLeadingWidth = maximumLeadingWidth
+        splitView.minimumTrailingWidth = minimumTrailingWidth
         splitView.addArrangedSubview(context.coordinator.leadingHost)
         splitView.addArrangedSubview(context.coordinator.trailingHost)
         context.coordinator.splitView = splitView
@@ -4652,10 +4666,20 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
     }
 
     func updateNSView(_ splitView: NSSplitView, context: Context) {
-        context.coordinator.leadingHost.rootView = AnyView(leading.dockThemedRoot())
+        context.coordinator.leadingHost.rootView = AnyView(
+            leading.dockThemedRoot()
+                .overlay(alignment: .trailing) {
+                    Color.dockBorderLight.frame(width: DockLayout.hairline)
+                }
+        )
         context.coordinator.trailingHost.rootView = AnyView(trailing.dockThemedRoot())
         context.coordinator.leadingWidth = leadingWidth
-        (splitView as? FractionPreservingSplitView)?.fraction = leadingFraction
+        if let splitView = splitView as? FractionPreservingSplitView {
+            splitView.fraction = leadingFraction
+            splitView.minimumLeadingWidth = minimumLeadingWidth
+            splitView.maximumLeadingWidth = maximumLeadingWidth
+            splitView.minimumTrailingWidth = minimumTrailingWidth
+        }
 
         guard !context.coordinator.hasSetInitialPosition else { return }
         DispatchQueue.main.async {
@@ -4699,10 +4723,14 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
         }
 
         func minimumLeadingPosition(in splitView: NSSplitView) -> CGFloat {
-            min(minimumLeadingWidth, max(0, splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth))
+            (splitView as? FractionPreservingSplitView)?.minimumLeadingPosition
+                ?? min(minimumLeadingWidth, max(0, splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth))
         }
 
         func maximumLeadingPosition(in splitView: NSSplitView) -> CGFloat {
+            if let splitView = splitView as? FractionPreservingSplitView {
+                return splitView.maximumLeadingPosition
+            }
             let availableMaximum = max(minimumLeadingPosition(in: splitView), splitView.bounds.width - splitView.dividerThickness - minimumTrailingWidth)
             return min(maximumLeadingWidth ?? availableMaximum, availableMaximum)
         }
@@ -4740,9 +4768,25 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
 /// dragged a divider (tracked via delegate resize-subviews callbacks driven
 /// by the divider itself rather than the window).
 private final class FractionPreservingSplitView: NSSplitView {
+    // AppKit can paint the divider at the old coordinate after a host/window
+    // width change. The hosting view paints the hairline at its real edge;
+    // this transparent divider still provides the native drag target.
+    override var dividerColor: NSColor { .clear }
     var fraction: CGFloat?
+    var minimumLeadingWidth: CGFloat = 220
+    var maximumLeadingWidth: CGFloat?
+    var minimumTrailingWidth: CGFloat = 360
     private var userAdjusted = false
     private var lastAppliedWidth: CGFloat = 0
+
+    var minimumLeadingPosition: CGFloat {
+        min(minimumLeadingWidth, max(0, bounds.width - dividerThickness - minimumTrailingWidth))
+    }
+
+    var maximumLeadingPosition: CGFloat {
+        let availableMaximum = max(minimumLeadingPosition, bounds.width - dividerThickness - minimumTrailingWidth)
+        return min(maximumLeadingWidth ?? availableMaximum, availableMaximum)
+    }
 
     override func mouseDown(with event: NSEvent) {
         userAdjusted = true
@@ -4757,7 +4801,11 @@ private final class FractionPreservingSplitView: NSSplitView {
         guard let fraction, !userAdjusted, bounds.width > 0, bounds.width != lastAppliedWidth,
               arrangedSubviews.count >= 2 else { return }
         lastAppliedWidth = bounds.width
-        setPosition(bounds.width * fraction, ofDividerAt: 0)
+        // Passing an out-of-range fraction lets AppKit clamp the subview but
+        // leaves its drawn divider at the requested coordinate. This happens
+        // when the inspector closes and the window narrows to 720pt.
+        let position = min(max(bounds.width * fraction, minimumLeadingPosition), maximumLeadingPosition)
+        setPosition(position, ofDividerAt: 0)
     }
 }
 

@@ -8,12 +8,13 @@ import Testing
 private final class StreamingAttachmentRPCClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     private(set) var requests: [(method: String, params: [String: Any])] = []
+    var redirectStatus = "redirected"
 
     func connect() async throws {}
 
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requests.append((method, params))
-        if method == "session.steer" { return ["status": "queued"] }
+        if method == "session.redirect" { return ["status": redirectStatus] }
         return [:]
     }
 
@@ -22,32 +23,99 @@ private final class StreamingAttachmentRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 struct StreamingPerformanceTests {
-    @Test func acceptedSteeringMessageRetainsImageAndClearsComposerAttachment() async throws {
+    @Test func midTurnTextRedirectsAndLandsAsPlainUserMessageBelowStreamedOutput() async throws {
         let client = StreamingAttachmentRPCClient()
         let model = DockModel(
-            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("steering-image-(UUID().uuidString).json"),
-            initialSessionID: "steering-image-session",
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("redirect-\(UUID().uuidString).json"),
+            initialSessionID: "redirect-session",
             rpcClient: client
         )
-        let image = NSImage(size: NSSize(width: 2, height: 2))
-        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("steering-image-(UUID().uuidString).png")
-        defer { try? FileManager.default.removeItem(at: imageURL) }
-        model.pendingImages = [ImageAttachment(image: image, fileURL: imageURL)]
+        model.status = .working
+        model.isSending = true
+        model.receiveGatewayEvent("message.start", params: ["session_id": "redirect-session", "payload": [:]])
+        model.receiveGatewayEvent("message.delta", params: ["session_id": "redirect-session", "payload": ["delta": "Before"]])
+        model.draft = "Check the logs instead"
+
+        model.submitComposerInput()
+
+        #expect(model.draft.isEmpty)
+        #expect(model.queuedPrompts.isEmpty)
+        #expect(model.messages.map(\.role) == [.hermes, .user, .hermes])
+        #expect(model.messages[0].text == "Before")
+        #expect(model.messages[1].text == "Check the logs instead")
+        #expect(model.messages[1].isSteering == false)
+        #expect(model.streamingMessageIDForPresentation == model.messages[2].id)
+
+        let deadline = Date().addingTimeInterval(2)
+        while !client.requests.contains(where: { $0.method == "session.redirect" }), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(model.messages.count == 3)
+        #expect(model.queuedPrompts.isEmpty)
+    }
+
+    @Test func rejectedRedirectQueuesTextAndSendsItWhenTheTurnSettles() async throws {
+        let client = StreamingAttachmentRPCClient()
+        client.redirectStatus = "rejected"
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("redirect-\(UUID().uuidString).json"),
+            initialSessionID: "redirect-reject-session",
+            rpcClient: client
+        )
+        model.status = .working
+        model.isSending = true
+        model.draft = "Also update the docs"
+
+        model.submitComposerInput()
+        let deadline = Date().addingTimeInterval(2)
+        while model.queuedPrompts.isEmpty, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(model.queuedPrompts.map(\.text) == ["Also update the docs"])
+        #expect(!model.messages.contains { $0.text == "Also update the docs" })
+
+        model.receiveGatewayEvent("message.complete", params: ["session_id": "redirect-reject-session", "payload": ["text": "Done"]])
+
+        #expect(model.queuedPrompts.isEmpty)
+        #expect(model.isSending)
+        #expect(model.messages.last?.text == "Also update the docs")
+    }
+
+    @Test func attachmentsDuringATurnQueueAndCanBeRemoved() {
+        let model = DockModel(initialSessionID: "queue-image-session")
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queue-image-\(UUID().uuidString).png")
+        model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
         model.draft = "Use this image"
         model.status = .working
         model.isSending = true
 
-        model.steerDraft()
-        let deadline = Date().addingTimeInterval(2)
-        while !(model.messages.count == 1 && model.pendingImages.isEmpty), Date() < deadline {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        model.submitComposerInput()
 
-        #expect(model.messages.last?.role == .user)
-        #expect(model.messages.last?.text == "Use this image")
-        #expect(model.messages.last?.images.count == 1)
+        #expect(model.draft.isEmpty)
         #expect(model.pendingImages.isEmpty)
-        #expect(client.requests.contains { $0.method == "session.steer" })
+        #expect(model.messages.isEmpty)
+        #expect(model.queuedPrompts.count == 1)
+        #expect(model.queuedPrompts.first?.images.count == 1)
+
+        model.removeQueuedPrompt(model.queuedPrompts[0].id)
+        #expect(model.queuedPrompts.isEmpty)
+    }
+
+    @Test func toolEventOfATurnAlreadyRunningAtAttachOpensTheLiveRow() {
+        let model = DockModel(initialSessionID: "attached-mid-turn")
+        model.messages = [ChatMessage(role: .user, text: "commit it")]
+        model.receiveGatewayEvent("tool.start", params: [
+            "session_id": "attached-mid-turn",
+            "payload": ["id": "t1", "name": "patch"]
+        ])
+
+        #expect(model.status == .working)
+        #expect(model.messages.last?.role == .hermes)
+        #expect(model.streamingMessageIDForPresentation == model.messages.last?.id)
+        #expect(model.activeToolCalls.map(\.name) == ["patch"])
+        model.receiveGatewayEvent("message.start", params: ["session_id": "attached-mid-turn", "payload": [:]])
+        #expect(model.messages.count == 2)
     }
 
     @Test func responseStartAfterAcceptedSteeringCannotReuseOutgoingImageRow() {
@@ -113,9 +181,9 @@ struct StreamingPerformanceTests {
         #expect(model.messages.filter { $0.role == .hermes }.count == 3)
         #expect(model.streamingMessageIDForPresentation != activeResponseID)
         let newResponseIndex = model.messages.lastIndex(where: { $0.role == .hermes }) ?? -1
-        let appliedSteerIndex = model.messages.firstIndex(where: { $0.isSteering && $0.steeringStatus == "APPLIED" }) ?? -1
-        #expect(appliedSteerIndex >= 0)
-        #expect(appliedSteerIndex < newResponseIndex)
+        let steerIndex = model.messages.firstIndex(where: { $0.isSteering }) ?? -1
+        #expect(steerIndex >= 0)
+        #expect(steerIndex < newResponseIndex)
     }
 
     @Test func sendingWithoutAnExplicitNewChatDoesNotCreateOrMutateASession() {

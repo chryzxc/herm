@@ -21,7 +21,12 @@ struct ChatComposerView: View {
     @State private var showingAttachmentPopover = false
     @State private var showingFilePicker = false
     @State private var showingImagePicker = false
-    @State private var showingBotMentionPicker = false
+    @State private var completionTrigger: ComposerCompletionTrigger?
+    @State private var completion = ComposerCompletion.Result()
+    @State private var completionIndex = 0
+    /// UTF-16 caret the active trigger was detected at.
+    @State private var completionCaret = 0
+    @State private var completionTask: Task<Void, Never>?
     @FocusState private var isComposerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -58,6 +63,7 @@ struct ChatComposerView: View {
                 DebugLog.write("composer: appeared")
                 if pasteMonitor == nil {
                     let dockModel = model
+                    let composerText = composer
                     pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                         let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
                         // History navigation must not swallow Up/Down in other text fields.
@@ -72,7 +78,9 @@ struct ChatComposerView: View {
                             }
                             if let direction,
                                firstResponder.isEditable,
-                               MainActor.assumeIsolated({ dockModel.navigateComposerHistory(direction: direction) }) {
+                               MainActor.assumeIsolated({
+                                   !composerText.isCompletionOpen && dockModel.navigateComposerHistory(direction: direction)
+                               }) {
                                 return nil
                             }
                         }
@@ -87,7 +95,12 @@ struct ChatComposerView: View {
                     }
                 }
             }
+            .onChange(of: composer.text) { _, text in
+                // Sends and session switches clear the draft programmatically.
+                if text.isEmpty { closeCompletions() }
+            }
             .onDisappear {
+                completionTask?.cancel()
                 if let pasteMonitor {
                     NSEvent.removeMonitor(pasteMonitor)
                     self.pasteMonitor = nil
@@ -100,8 +113,11 @@ struct ChatComposerView: View {
         let draftIsEmpty = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasComposerContent = !draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil
         let isResponding = model.status == .working || model.isSending
-        let isSteeringTurn = model.status == .working && model.isSending && model.sessionID != nil
-        let canSubmit = isSteeringTurn ? !draftIsEmpty : (!draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil)
+        // Mid-turn input redirects the turn, or queues when it can't (attachments, approvals).
+        let isSteeringTurn = model.isSending && model.sessionID != nil
+        let queuedPrompts = model.queuedPrompts.filter { $0.sessionID == model.sessionID }
+        // An idle composer with a queue left by a stopped turn sends the next one.
+        let canSubmit = hasComposerContent || (!model.isSending && !queuedPrompts.isEmpty)
         let showStop = isResponding && !hasComposerContent && !speechInput.isRecording
         // Keep stop reachable while a steer draft is typed or Hermes waits on a
         // clarification; the submit button already shows stop when the draft is empty.
@@ -118,17 +134,19 @@ struct ChatComposerView: View {
         let textTopPadding: CGFloat = 4
 
         return VStack(spacing: 6) {
-            if showingBotMentionPicker {
-                BotMentionPicker(
-                    bots: mentionCandidates,
-                    isLoading: botMode.isRefreshing || botMode.inventory.availability == .unavailable,
-                    onSelect: { profileID in
-                        composer.text = ComposerMentionPresentation.replacingActiveToken(in: composer.text, with: profileID)
-                        showingBotMentionPicker = false
-                        isComposerFocused = true
-                    }
+            if let completionTrigger, !completion.items.isEmpty {
+                ComposerCompletionPopover(
+                    trigger: completionTrigger,
+                    items: completion.items,
+                    selectedIndex: completionIndex,
+                    avatarImages: botMode.avatarImages,
+                    onSelect: { acceptCompletion($0) }
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if !queuedPrompts.isEmpty {
+                QueuedPromptList(prompts: queuedPrompts, onRemove: model.removeQueuedPrompt)
             }
 
             if model.status == .needsClarification, !model.clarificationChoices.isEmpty {
@@ -152,12 +170,22 @@ struct ChatComposerView: View {
                     text: $composer.text,
                     isFocused: isComposerFocused,
                     onSubmit: submitComposerInput,
+                    onCompletionKey: handleCompletionKey,
                     onFocusChanged: { focused in
                         isComposerFocused = focused
                         model.isComposerEditing = focused
                     },
-                    onTextChanged: { text in
-                        updateMentionPicker(for: text)
+                    onCaretMoved: { text, caret in
+                        // Moving the caret retargets or closes an open popover; only typing opens one.
+                        guard completionTrigger != nil else { return }
+                        updateCompletions(for: text, caret: caret)
+                    },
+                    takePendingCaret: {
+                        defer { composer.pendingCaret = nil }
+                        return composer.pendingCaret
+                    },
+                    onTextChanged: { text, caret in
+                        updateCompletions(for: text, caret: caret)
                         // A large paste can change NSTextView's content size
                         // without updating its internal scroll origin. Defer
                         // until AppKit lays out the new text, then keep the
@@ -311,26 +339,16 @@ struct ChatComposerView: View {
 
                 // Right Toolbar Group: Thinking depth selector menu & circular submit button
                 HStack(alignment: .center, spacing: 8) {
-                    SessionTokenCounter(model: model, streaming: model.streamingText)
+                    SessionContextRing(model: model)
 
                     // Thinking depth variant selector menu
                     Menu {
-                        ForEach(HermesReasoningVariant.allCases) { variant in
-                            Button {
-                                if model.sessionID == nil {
-                                    model.updateDefaultReasoning(variant)
-                                } else {
-                                    model.updateSessionReasoning(variant)
-                                }
-                            } label: {
-                                HStack {
-                                    Text(variant.displayName)
-                                    if variant == selectedReasoningVariant {
-                                        Ph.check.image()
-                                    }
-                                }
+                        Picker("", selection: reasoningVariantSelection) {
+                            ForEach(HermesReasoningVariant.allCases) { variant in
+                                Text(variant.displayName).tag(Optional(variant))
                             }
                         }
+                        .pickerStyle(.inline)
                     } label: {
                         // A plain button-style menu renders this SwiftUI
                         // label as drawn; a borderless menu keeps only native
@@ -391,7 +409,7 @@ struct ChatComposerView: View {
                         ZStack {
                             Circle()
                                 // Soft translucent fill for submit circle
-                                .fill(canSubmit && !model.isSteering && !model.isRestoringSession ? Color.dockAccent : Color.dockSurface6)
+                                .fill(canSubmit && !model.isRestoringSession ? Color.dockAccent : Color.dockSurface6)
                                 .frame(width: isFullscreen ? 36 : 32, height: isFullscreen ? 36 : 32)
 
                             if speechInput.isRecording {
@@ -406,7 +424,7 @@ struct ChatComposerView: View {
                                 DockIcon(.arrowUp)
                                     .font(.system(size: 12, weight: .semibold))
                                     // Use soft dockPrimaryText instead of stark white to prevent eye strain
-                                    .foregroundStyle(canSubmit && !model.isSteering ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
+                                    .foregroundStyle(canSubmit ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
                             }
                         }
                     }
@@ -415,7 +433,7 @@ struct ChatComposerView: View {
                     .disabled(
                         model.isRestoringSession ||
                         model.isUpdatingSessionModel ||
-                        (!speechInput.isRecording && !showStop && (!canSubmit || (isSteeringTurn ? model.isSteering : model.isSending)))
+                        (!speechInput.isRecording && !showStop && (!canSubmit || (!isSteeringTurn && model.isSending)))
                     )
                     .keyboardShortcut(.return, modifiers: [.command])
                     .help(
@@ -477,15 +495,100 @@ struct ChatComposerView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var mentionCandidates: [BotSummary] {
-        let query = ComposerMentionPresentation.activeToken(in: composer.text)?
-            .dropFirst().lowercased() ?? ""
-        return botMode.visibleBots.filter { bot in
-            query.isEmpty
-                || bot.id.localizedCaseInsensitiveContains(query)
-                || bot.name.localizedCaseInsensitiveContains(query)
-                || (bot.title?.localizedCaseInsensitiveContains(query) == true)
+    /// Roster Bots offered ahead of Hermes' `@` rows (desktop's Bot Mode
+    /// `composer.atCompletions` contribution). Typed refs like `@file:` skip them.
+    private func botCompletionItems(for trigger: ComposerCompletionTrigger) -> [ComposerCompletionItem] {
+        guard case .mention(let token) = trigger else { return [] }
+        let query = token.dropFirst().lowercased()
+        guard !query.contains(":"), !query.contains("/") else { return [] }
+        return botMode.visibleBots
+            .filter { bot in
+                query.isEmpty
+                    || bot.id.localizedCaseInsensitiveContains(query)
+                    || bot.name.localizedCaseInsensitiveContains(query)
+                    || (bot.title?.localizedCaseInsensitiveContains(query) == true)
+            }
+            .map { ComposerCompletionItem(text: "@\($0.id)", display: "@\($0.id)", meta: $0.name, group: "", bot: $0) }
+    }
+
+    private func updateCompletions(for text: String, caret: Int) {
+        let wasMention: Bool = { if case .mention = completionTrigger { return true }; return false }()
+        let caret = min(caret, (text as NSString).length)
+        let trigger = ComposerCompletionTrigger.detect(in: (text as NSString).substring(to: caret))
+        if trigger != nil, trigger == completionTrigger, caret == completionCaret { return }
+        completionCaret = caret
+        completionTask?.cancel()
+        completionTrigger = trigger
+        guard let trigger else {
+            closeCompletions()
+            return
         }
+        if case .mention = trigger,
+           ComposerMentionRefreshPolicy.shouldRefresh(wasPickerVisible: wasMention, isPickerVisible: true) {
+            Task { @MainActor in await botMode.refreshNow(force: true) }
+        }
+        completionTask = Task { @MainActor in
+            // Same debounce as desktop's live completion adapter.
+            try? await Task.sleep(for: .milliseconds(60))
+            guard !Task.isCancelled else { return }
+            let result = await model.composerCompletions(for: trigger, bots: botCompletionItems(for: trigger))
+            guard !Task.isCancelled, completionTrigger == trigger else { return }
+            completion = result
+            completionIndex = 0
+            composer.isCompletionOpen = !result.items.isEmpty
+        }
+    }
+
+    private func closeCompletions() {
+        completionTask?.cancel()
+        completionTrigger = nil
+        completion = ComposerCompletion.Result()
+        completionIndex = 0
+        composer.isCompletionOpen = false
+    }
+
+    /// The draft split at the trigger's caret; completions rewrite only `before`.
+    private var completionSplit: (before: String, after: String) {
+        let text = composer.text as NSString
+        let caret = min(completionCaret, text.length)
+        return (text.substring(to: caret), text.substring(from: caret))
+    }
+
+    private func acceptCompletion(_ item: ComposerCompletionItem) {
+        guard let trigger = completionTrigger else { return }
+        let (before, after) = completionSplit
+        let result = ComposerCompletion.accepting(item, trigger: trigger, in: before, replaceFrom: completion.replaceFrom)
+        let tail = result.text.hasSuffix(" ") && after.hasPrefix(" ") ? String(after.dropFirst()) : after
+        let caret = (result.text as NSString).length
+        composer.pendingCaret = caret
+        composer.text = result.text + tail
+        isComposerFocused = true
+        closeCompletions()
+        if result.keepOpen { updateCompletions(for: composer.text, caret: caret) }
+    }
+
+    private func handleCompletionKey(_ key: ComposerCompletionKey) -> Bool {
+        guard completionTrigger != nil, completion.items.indices.contains(completionIndex) else { return false }
+        let count = completion.items.count
+        switch key {
+        case .up, .down:
+            completionIndex = (completionIndex + (key == .down ? 1 : -1) + count) % count
+        case .escape:
+            closeCompletions()
+        case .tab, .enter:
+            let item = completion.items[completionIndex]
+            // Enter on a command that is already fully typed runs it instead of re-inserting it.
+            if key == .enter,
+               let trigger = completionTrigger,
+               case let before = completionSplit.before,
+               ComposerCompletion.accepting(item, trigger: trigger, in: before, replaceFrom: completion.replaceFrom)
+                .text.trimmingCharacters(in: .whitespaces) == before.trimmingCharacters(in: .whitespaces) {
+                closeCompletions()
+                return false
+            }
+            acceptCompletion(item)
+        }
+        return true
     }
 
     private func submitComposerInput() {
@@ -504,23 +607,11 @@ struct ChatComposerView: View {
                 profileIDs: botMode.visibleBots.map(\.id)
            ),
            let bot = botMode.visibleBots.first(where: { $0.id == request.profileID }) {
-            showingBotMentionPicker = false
+            closeCompletions()
             model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text, chatSessionID: bot.chat?.sessionID)
             return
         }
         model.submitComposerInput()
-    }
-
-    private func updateMentionPicker(for text: String) {
-        let wasPickerVisible = showingBotMentionPicker
-        showingBotMentionPicker = ComposerMentionPresentation.activeToken(in: text) != nil
-        guard ComposerMentionRefreshPolicy.shouldRefresh(
-            wasPickerVisible: wasPickerVisible,
-            isPickerVisible: showingBotMentionPicker
-        ) else { return }
-        Task { @MainActor in
-            await botMode.refreshNow(force: true)
-        }
     }
 
     private var pasteImageAvailable: Bool {
@@ -614,52 +705,137 @@ struct ChatComposerView: View {
     private var selectedReasoningVariant: HermesReasoningVariant? {
         model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
     }
+
+    private var reasoningVariantSelection: Binding<HermesReasoningVariant?> {
+        Binding(
+            get: { selectedReasoningVariant },
+            set: { variant in
+                guard let variant else { return }
+                if model.sessionID == nil {
+                    model.updateDefaultReasoning(variant)
+                } else {
+                    model.updateSessionReasoning(variant)
+                }
+            }
+        )
+    }
 }
 
-/// Session token total that climbs while a response streams. Observes
-/// StreamingText itself so per-flush updates re-render only this label.
-private struct SessionTokenCounter: View {
+/// Context-window occupancy ring, matching Hermes desktop's context gauge.
+/// Hermes auto-compacts once occupancy crosses `compression.threshold`; the
+/// ring pulses while that summarization runs and drops on the next reading.
+private struct SessionContextRing: View {
     @ObservedObject var model: DockModel
-    @ObservedObject var streaming: StreamingText
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let committed = model.sessionTokenUsage.flatMap { $0.sessionID == model.sessionID ? $0.total : nil }
-        let live = model.isSending
-            ? DockModel.estimatedTokens(utf8Count: streaming.text.utf8.count + (model.reasoningState?.text.utf8.count ?? 0))
-            : 0
-        let total = (committed ?? 0) + live
         Group {
-            if committed != nil || live > 0 {
+            if let context = model.sessionContextUsage, context.sessionID == model.sessionID {
+                let fraction = min(1, Double(context.used) / Double(context.max))
+                let percent = Int((fraction * 100).rounded())
+                // Mid-turn compaction shows in the transcript; the ring only
+                // covers compactions with no streaming response to host them.
+                let compacting = model.compactingSessionID == model.sessionID
+                    && model.streamingMessageIDForPresentation == nil
+                let tint: Color = compacting ? .dockAccent : fraction >= 0.8 ? .dockWarning : .dockMetadataText
                 HStack(spacing: 4) {
-                    if model.isSending {
-                        DockIcon(.arrowDown)
-                            .font(.system(size: 9, weight: .semibold))
+                    ZStack {
+                        Circle().stroke(Color.dockBorderLight, lineWidth: 2)
+                        Circle()
+                            .trim(from: 0, to: fraction)
+                            .stroke(tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
                     }
-                    Text(Self.format(total))
-                        .contentTransition(.numericText(value: Double(total)))
+                    .frame(width: 12, height: 12)
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: fraction)
+                    Text(compacting ? "Compacting" : "\(percent)%")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(tint)
                 }
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.dockMetadataText)
-                .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: total)
-                .help("Tokens used in this session\(model.isSending ? " (live estimate while streaming)" : "")")
-                .accessibilityLabel("\(total) tokens used in this session")
+                .help(compacting
+                    ? "Hermes is summarizing older turns to free context"
+                    : "Context \(percent)% · \(SessionTokenFormatting.formatCompact(context.used)) / \(SessionTokenFormatting.formatCompact(context.max)) tokens")
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(compacting ? "Compacting context" : "Context \(percent) percent full")
             }
         }
         .task(id: model.sessionID) { model.refreshSessionTokenUsage() }
     }
+}
 
+enum SessionTokenFormatting {
     static func format(_ tokens: Int) -> String {
+        tokens < 1_000 ? "\(tokens) tokens" : "\(formatCompact(tokens)) tokens"
+    }
+
+    static func formatCompact(_ tokens: Int) -> String {
         switch tokens {
-        case ..<1_000: "\(tokens) tokens"
-        case ..<1_000_000: String(format: "%.1fk tokens", Double(tokens) / 1_000)
-        default: String(format: "%.2fM tokens", Double(tokens) / 1_000_000)
+        case ..<1_000: "\(tokens)"
+        case ..<1_000_000: String(format: "%.1fk", Double(tokens) / 1_000)
+        default: String(format: "%.2fM", Double(tokens) / 1_000_000)
         }
     }
 }
 
 /// Stacked response choices for an active Hermes clarification. The composer
 /// remains available for a custom response.
+/// Prompts parked until the active turn settles; not yet submitted, so removable.
+private struct QueuedPromptList: View {
+    let prompts: [QueuedPrompt]
+    let onRemove: (UUID) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("QUEUED · SENDS WHEN HERMES FINISHES")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .tracking(0.6)
+                .foregroundStyle(Color.dockMetadataText)
+
+            ForEach(prompts) { prompt in
+                HStack(spacing: 8) {
+                    Text(label(for: prompt))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    Button {
+                        onRemove(prompt.id)
+                    } label: {
+                        DockIcon(.x)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Remove queued message")
+                    .accessibilityLabel("Remove queued message")
+                }
+                .padding(.leading, 10)
+                .padding(.trailing, 4)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                        .fill(Color.dockAccent.opacity(0.06))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                .stroke(Color.dockAccent.opacity(0.24), lineWidth: DockLayout.hairline)
+                        }
+                )
+            }
+        }
+    }
+
+    private func label(for prompt: QueuedPrompt) -> String {
+        var parts: [String] = []
+        if !prompt.images.isEmpty { parts.append(prompt.images.count == 1 ? "[image]" : "[\(prompt.images.count) images]") }
+        if let pdf = prompt.pdfURL { parts.append("[PDF: \(pdf.lastPathComponent)]") }
+        if !prompt.text.isEmpty { parts.append(prompt.text) }
+        return parts.joined(separator: " ")
+    }
+}
+
 private struct ClarificationChoiceChips: View {
     let choices: [String]
     let isDisabled: Bool
@@ -709,98 +885,18 @@ private struct ClarificationChoiceChips: View {
     }
 }
 
-private struct BotMentionPicker: View {
-    let bots: [BotSummary]
-    let isLoading: Bool
-    let onSelect: (String) -> Void
+enum ComposerCompletionKey {
+    case up, down, tab, enter, escape
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Text("CALL A BOT")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.dockAccent)
-                Spacer()
-                Text("@")
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .background(Color.dockSurface6.opacity(0.5))
-
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 0) {
-                    if isLoading {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text("Loading Bots…")
-                        }
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                    } else if bots.isEmpty {
-                        HStack(spacing: 8) {
-                            DockIcon(.users)
-                                .foregroundStyle(Color.dockMetadataText)
-                            Text("No matching Bots")
-                        }
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                    } else {
-                        ForEach(bots) { bot in
-                            Button {
-                                onSelect(bot.id)
-                            } label: {
-                                HStack(spacing: 9) {
-                                    BotAvatarView(bot: bot, imageData: nil, size: 30)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(bot.name)
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                            .lineLimit(1)
-                                        if let description = bot.description?.trimmingCharacters(in: .whitespacesAndNewlines),
-                                           !description.isEmpty {
-                                            Text(description)
-                                                .font(.system(size: 11))
-                                                .foregroundStyle(Color.dockMetadataText)
-                                                .lineLimit(1)
-                                        }
-                                    }
-                                    Spacer(minLength: 8)
-                                    Text("@\(bot.id)")
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(Color.dockMetadataText)
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.borderless)
-                            .background(Color.dockCanvas.opacity(0.28))
-                            .overlay(alignment: .bottom) {
-                                Color.dockBorderLight.opacity(0.45)
-                                    .frame(height: DockLayout.hairline)
-                            }
-                        }
-                    }
-                }
-            }
-            .frame(maxHeight: 360)
+    init?(keyCode: UInt16) {
+        switch keyCode {
+        case 126: self = .up
+        case 125: self = .down
+        case 48: self = .tab
+        case 36, 76: self = .enter
+        case 53: self = .escape
+        default: return nil
         }
-        .frame(maxWidth: .infinity)
-        .background(Color.dockSurface2)
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-        }
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
     }
 }
 
@@ -808,8 +904,11 @@ private struct ComposerInputEditor: NSViewRepresentable {
     @Binding var text: String
     let isFocused: Bool
     let onSubmit: () -> Void
+    let onCompletionKey: (ComposerCompletionKey) -> Bool
     let onFocusChanged: (Bool) -> Void
-    let onTextChanged: (String) -> Void
+    let onCaretMoved: (String, Int) -> Void
+    let takePendingCaret: () -> Int?
+    let onTextChanged: (String, Int) -> Void
     let onContentHeightChanged: (CGFloat) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -826,6 +925,7 @@ private struct ComposerInputEditor: NSViewRepresentable {
         let textView = ComposerInputTextView()
         textView.delegate = context.coordinator
         textView.onSubmit = onSubmit
+        textView.onCompletionKey = onCompletionKey
         textView.string = text
         textView.font = .systemFont(ofSize: 14)
         textView.textColor = NSColor(Color.dockPrimaryText)
@@ -853,10 +953,14 @@ private struct ComposerInputEditor: NSViewRepresentable {
         guard let textView = scrollView.documentView as? ComposerInputTextView else { return }
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
+        textView.onCompletionKey = onCompletionKey
         if textView.string != text {
             context.coordinator.isSynchronizingText = true
             textView.string = text
             context.coordinator.isSynchronizingText = false
+        }
+        if let caret = takePendingCaret() {
+            textView.setSelectedRange(NSRange(location: min(caret, (textView.string as NSString).length), length: 0))
         }
         context.coordinator.reportContentHeight(for: textView)
 
@@ -886,9 +990,14 @@ private struct ComposerInputEditor: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             if !isSynchronizingText, parent.text != textView.string {
                 parent.text = textView.string
-                parent.onTextChanged(textView.string)
+                parent.onTextChanged(textView.string, textView.selectedRange().location)
             }
             reportContentHeight(for: textView)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard !isSynchronizingText, let textView = notification.object as? NSTextView else { return }
+            parent.onCaretMoved(textView.string, textView.selectedRange().location)
         }
 
         func reportContentHeight(for textView: NSTextView) {
@@ -904,9 +1013,15 @@ private struct ComposerInputEditor: NSViewRepresentable {
 
 private final class ComposerInputTextView: NSTextView {
     var onSubmit: (() -> Void)?
+    var onCompletionKey: ((ComposerCompletionKey) -> Bool)?
 
     override func keyDown(with event: NSEvent) {
         let editingModifiers: NSEvent.ModifierFlags = [.shift, .command, .option, .control]
+        if event.modifierFlags.intersection(editingModifiers).isEmpty,
+           let key = ComposerCompletionKey(keyCode: event.keyCode),
+           onCompletionKey?(key) == true {
+            return
+        }
         if (event.keyCode == 36 || event.keyCode == 76),
            event.modifierFlags.intersection(editingModifiers).isEmpty {
             onSubmit?()

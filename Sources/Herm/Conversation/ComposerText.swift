@@ -69,6 +69,10 @@ final class ComposerText: ObservableObject {
         }
     }
 
+    /// The `/`/`@` popover owns Up/Down while it is showing rows.
+    var isCompletionOpen = false
+    /// UTF-16 caret the editor applies after a completion rewrites the text.
+    var pendingCaret: Int?
     private var historyIndex: Int?
     private var restoreDraft = ""
     private var isUpdatingFromHistory = false

@@ -306,6 +306,19 @@ struct SessionConversationIsolationTests {
         #expect(model.draft == "Keep this aliased session draft")
     }
 
+    @Test func runtimeAliasEventsDoNotAddADuplicateRailRow() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.resumeResponses = [["session_id": "runtime-a", "session_key": Fixtures.sessionA, "messages": []]]
+        let model = DockModel(rpcClient: rpc)
+        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        try await waitUntil { model.sessionID == "runtime-a" && model.status == .idle }
+
+        model.receiveGatewayEvent("message.start", params: ["session_id": "runtime-a", "payload": [:]])
+
+        #expect(model.navigationSessionID == Fixtures.sessionA)
+        #expect(!model.sessions.contains { $0.id == "runtime-a" })
+    }
+
     @Test func taggedStreamFromRespondingSessionDoesNotEnterOpenSession() async throws {
         let rpc = SessionIsolationRPCClient()
         rpc.resumeResponses = [Fixtures.sessionAResponse]
@@ -528,6 +541,130 @@ struct SessionConversationIsolationTests {
         #expect(parsed.messages.count == 1)
         #expect(parsed.messages[0].text == markdown)
         #expect(parsed.messages[0].text.contains("\\n") == false)
+    }
+
+    @Test func restoredTurnAttachesItsThinkingAndToolCallsToTheReply() {
+        let parsed = DockModel.parseMessages([
+            ["role": "user", "content": "fix it", "timestamp": 100.0],
+            ["role": "assistant", "content": "", "reasoning": "look first", "timestamp": 101.0,
+             "tool_calls": [["id": "t1", "function": ["name": "read_file", "arguments": "{\"path\": \"a.swift\"}"]]]],
+            ["role": "tool", "tool_call_id": "t1", "content": "ok", "timestamp": 102.0],
+            ["role": "assistant", "content": "Done.", "timestamp": 160.0]
+        ])
+
+        #expect(parsed.messages.count == 2)
+        #expect(parsed.messages[0].activity.isEmpty)
+        let activity = parsed.messages[1].activity
+        #expect(activity.map(\.name) == [ActiveToolCall.thinkingName, "read_file"])
+        #expect(activity[0].result == "look first")
+        #expect(activity[1].context == "a.swift")
+        #expect(activity[1].result == "ok")
+        #expect(parsed.messages[1].responseDuration == 60)
+    }
+
+    @Test func compactionShowsAsTurnStepAndStaysAfterItFinishes() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.resumeResponses = [Fixtures.sessionAResponse]
+        let model = DockModel(rpcClient: rpc)
+        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
+        func send(_ type: String, _ payload: [String: Any] = [:]) {
+            model.receiveGatewayEvent(type, params: ["session_id": Fixtures.sessionA, "payload": payload])
+        }
+
+        send("message.start")
+        send("status.update", ["kind": "compacting"])
+        send("status.update", ["kind": "compressing"])
+        #expect(model.streamingTurnActivity.map(\.name) == [ActiveToolCall.compactionName])
+        #expect(model.streamingTurnActivity[0].isComplete == false)
+
+        send("status.update", ["kind": "compacted"])
+        #expect(model.streamingTurnActivity[0].isComplete)
+        #expect(model.streamingTurnActivity[0].completedAt != nil)
+        #expect(model.compactingSessionID == nil)
+
+        send("message.complete", ["text": "Done."])
+        #expect(model.messages.last?.activity.map(\.name) == [ActiveToolCall.compactionName])
+    }
+
+    @Test func liveTurnGrowsActivityAndCommitsItOntoTheReply() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.resumeResponses = [Fixtures.sessionAResponse]
+        let model = DockModel(rpcClient: rpc)
+        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
+        func send(_ type: String, _ payload: [String: Any] = [:]) {
+            model.receiveGatewayEvent(type, params: ["session_id": Fixtures.sessionA, "payload": payload])
+        }
+
+        send("message.start")
+        send("reasoning.start")
+        send("reasoning.delta", ["delta": "plan"])
+        send("reasoning.complete")
+        send("tool.start", ["id": "t1", "name": "terminal", "context": "swift test"])
+        #expect(model.streamingTurnActivity.map(\.name) == [ActiveToolCall.thinkingName, "terminal"])
+        #expect(model.streamingTurnActivity[1].isComplete == false)
+
+        // A second model call in the same turn resets activeToolCalls but
+        // must not drop what already happened.
+        send("message.start")
+        send("tool.start", ["id": "t2", "name": "read_file", "context": "a.swift"])
+        #expect(Array(model.streamingTurnActivity.map { $0.id }.suffix(2)) == ["t1", "t2"])
+
+        send("message.delta", ["delta": "Done."])
+        send("message.complete", ["text": "Done."])
+
+        let reply = try #require(model.messages.last)
+        #expect(reply.text == "Done.")
+        #expect(reply.activity.map(\.name) == [ActiveToolCall.thinkingName, "terminal", "read_file"])
+        #expect(reply.activity[0].result == "plan")
+        #expect(reply.activity.allSatisfy { $0.isComplete })
+        #expect(model.streamingTurnActivity.isEmpty)
+    }
+
+    @Test func returningToARunningSessionRestoresItsLiveTurn() async throws {
+        let rpc = SessionIsolationRPCClient()
+        var running = Fixtures.sessionAResponse
+        running["running"] = true
+        running["inflight"] = ["user": "fix the build", "assistant": "Half", "streaming": true]
+        rpc.resumeResponses = [Fixtures.sessionAResponse, ["session_id": Fixtures.sessionB, "messages": []], running]
+        let model = DockModel(rpcClient: rpc)
+        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        model.resumeSession(sessionA)
+        try await waitUntil { model.sessionID == Fixtures.sessionA && model.status == .idle }
+        func send(_ type: String, _ payload: [String: Any] = [:]) {
+            model.receiveGatewayEvent(type, params: ["session_id": Fixtures.sessionA, "payload": payload])
+        }
+        send("message.start")
+        send("tool.start", ["id": "t1", "name": "terminal", "context": "swift build"])
+
+        model.resumeSession(HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        try await waitUntil { model.sessionID == Fixtures.sessionB && model.status == .idle }
+        model.resumeSession(sessionA)
+        try await waitUntil { rpc.requests.filter { $0.method == "session.resume" }.count == 3 && model.sessionID == Fixtures.sessionA && model.status == .working }
+
+        #expect(model.messages.map(\.text).suffix(2).first == "fix the build")
+        #expect(model.streamingTurnActivity.map(\.id) == ["t1"])
+        send("message.delta", ["delta": " done"])
+        send("message.complete", ["text": "Half done"])
+        #expect(model.messages.last?.text == "Half done")
+        #expect(model.messages.last?.activity.map(\.id) == ["t1"])
+        #expect(model.status == .idle)
+    }
+
+    @Test func resumeToolRowsBecomeReplyActivity() {
+        // The shape session.resume actually returns: no tool_calls, one
+        // compact row per tool call.
+        let parsed = DockModel.parseMessages([
+            ["role": "user", "content": "check", "timestamp": 10.0],
+            ["role": "assistant", "text": "", "reasoning_content": "plan", "timestamp": 11.0],
+            ["role": "tool", "name": "terminal", "context": "swift test", "tool_call_id": "c1", "timestamp": 12.0],
+            ["role": "assistant", "text": "All green.", "timestamp": 40.0]
+        ])
+
+        #expect(parsed.messages.map(\.text) == ["check", "All green."])
+        #expect(parsed.messages[1].activity.map(\.name) == [ActiveToolCall.thinkingName, "terminal"])
+        #expect(parsed.messages[1].activity[1].context == "swift test")
     }
 
     @Test func canonicalBotChatDoesNotAdoptAnUnrelatedResumeResponse() async throws {

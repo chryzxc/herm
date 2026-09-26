@@ -45,17 +45,27 @@ struct EdgeNotchTask: Identifiable, Equatable {
 
     /// Needs-you first, then running work, then unopened results; the open
     /// session leads its group and the rest are newest first.
-    static func build(current: EdgeNotchTask?, sessions: [HermesSession],
-                      currentSessionID: String?, isOnline: Bool) -> [EdgeNotchTask] {
+    /// A working row shows its latest activity, never the session's opening
+    /// prompt, which says nothing about what is happening now.
+    static func build(current: EdgeNotchTask?, sessions: [HermesSession], activity: [String: String] = [:],
+                      currentSessionIDs: Set<String>, isOnline: Bool) -> [EdgeNotchTask] {
+        // Without a live row of its own, the open session's index row stands in.
+        // The open session can be known by a runtime alias its index row does
+        // not carry, so an in-progress row with its title is the same chat.
         let others = sessions
-            .filter { $0.id != currentSessionID && ($0.isWorking || $0.hasUnreadUpdate) }
+            .filter { session in
+                guard let current else { return true }
+                return !currentSessionIDs.contains(session.id)
+                    && !(current.isInProgress && session.isWorking && session.displayTitle == current.title)
+            }
+            .filter { $0.isWorking || $0.hasUnreadUpdate }
             .map { session in
                 EdgeNotchTask(
                     id: session.id,
                     title: session.displayTitle,
                     phase: session.isWorking ? .working : .finished,
                     statusLabel: session.isWorking ? "Working" : "Finished",
-                    detail: session.displayPreview,
+                    detail: session.isWorking ? activity[session.id] : session.displayPreview,
                     updatedAt: session.lastUpdatedAt,
                     isCurrent: false,
                     isStatusCurrent: isOnline,
@@ -78,6 +88,7 @@ struct EdgeTaskPreview: View {
     /// Set when a quota drop is announced alongside a task update.
     var quotaChange: EdgeQuotaChange? = nil
     let openDock: () -> Void
+    @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     let openTask: (EdgeNotchTask) -> Void
     @State private var hoveredID: String?
 
@@ -211,8 +222,8 @@ struct EdgeTaskPreview: View {
     }
 
     private var footer: some View {
-        EdgePreviewFooterButton(title: "Open Dock", icon: .sidebarSimple, shortcut: "⌘ ⌘",
-                                shortcutHelp: "Double-tap Command", fillsWidth: true, action: openDock)
+        EdgePreviewFooterButton(title: "Open Dock", icon: .sidebarSimple, shortcut: workspaceShortcut.keycap,
+                                shortcutHelp: workspaceShortcut.title, fillsWidth: true, action: openDock)
             .padding(.vertical, 6)
     }
 }

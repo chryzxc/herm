@@ -61,8 +61,11 @@ final class DockModel: ObservableObject {
     @Published private(set) var pendingPDFError: String?
     @Published private(set) var pendingAttachmentError: String?
     @Published var isSending = false
-    @Published private(set) var isSteering = false
     @Published private(set) var steeringError: String?
+    /// Prompts typed during a turn that could not reach it (attachments, a
+    /// blocked approval, or a turn that ended first). Not yet submitted, so
+    /// removable; sent one per turn once Hermes settles (desktop parity).
+    @Published private(set) var queuedPrompts: [QueuedPrompt] = []
     @Published var approvalTitle: String?
     @Published var approvalText: String?
     /// Approval requests arrive on the shared gateway stream, including while
@@ -104,6 +107,9 @@ final class DockModel: ObservableObject {
     @Published private(set) var isRespondingToClarification = false
     @Published private(set) var isRespondingToApproval = false
     @Published var sessions: [HermesSession] = []
+    /// What each session is doing right now (its latest tool), read from the
+    /// global gateway stream so sessions that are not open can show it too.
+    @Published private(set) var sessionActivityLabels: [String: String] = [:]
     @Published private(set) var sessionProjectionState: HermesProjectionState<[HermesSession]> = .empty
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
@@ -123,11 +129,30 @@ final class DockModel: ObservableObject {
     @Published private(set) var isRestoringSession = false
     @Published private(set) var isCreatingSession = false
     @Published var currentSessionTitle: String?
-    var reasoningState: ReasoningState? { didSet { if oldValue != reasoningState { scheduleActivityPresentation() } } }
+    var reasoningState: ReasoningState? {
+        didSet {
+            guard oldValue != reasoningState else { return }
+            if let reasoningState { recordTurnThinking(reasoningState) }
+            scheduleActivityPresentation()
+        }
+    }
     private(set) var conversationActivityPhase: ConversationActivityPhase = .idle { didSet { if oldValue != conversationActivityPhase { scheduleActivityPresentation() } } }
     @Published private(set) var interruptState: InterruptState = .idle
     @Published var isShowingReasoning = false
-    var activeToolCalls: [ActiveToolCall] = [] { didSet { if oldValue != activeToolCalls { scheduleActivityPresentation() } } }
+    var activeToolCalls: [ActiveToolCall] = [] {
+        didSet {
+            guard oldValue != activeToolCalls else { return }
+            if streamingMessageID != nil { Self.upsert(activeToolCalls, into: &streamingTurnActivity) }
+            scheduleActivityPresentation()
+        }
+    }
+    /// Every tool call of the in-flight response. `activeToolCalls` resets on
+    /// each `message.start`; this log survives until the turn commits onto
+    /// its message.
+    private(set) var streamingTurnActivity: [ActiveToolCall] = []
+    /// The turn log of a session left while its turn was still running,
+    /// keyed by stored session ID, so returning to it restores its steps.
+    private var inFlightTurnActivityBySessionID: [String: [ActiveToolCall]] = [:]
     @Published var hasUnreadResponse = false
     @Published private(set) var completionNotificationsEnabled: Bool
     var recentEvents: [AgentEvent] = [] { didSet { if oldValue != recentEvents { scheduleActivityPresentation() } } }
@@ -185,6 +210,14 @@ final class DockModel: ObservableObject {
     /// Authoritative `session.usage` total, keyed by the session it was read for
     /// so a switch never shows the previous chat's count.
     @Published private(set) var sessionTokenUsage: (sessionID: String, total: Int)?
+    /// Context-window occupancy from the same usage payloads (`context_used` is
+    /// the last prompt size, not lifetime throughput). Hermes omits the fields
+    /// right after a compaction until the next API call measures again, so
+    /// the previous reading is kept rather than cleared.
+    @Published private(set) var sessionContextUsage: (sessionID: String, used: Int, max: Int)?
+    /// Set by `status.update` `compacting`/`compressing`, cleared by
+    /// `compacted`/`ready` or turn end.
+    @Published private(set) var compactingSessionID: String?
     /// Canonical Hermes profile used by new chats and profile-owned
     /// navigation projections. This is intentionally separate from
     /// `activeBotProfileID`, which identifies an open canonical Bot Chat.
@@ -230,6 +263,19 @@ final class DockModel: ObservableObject {
     private let botActivityStore: BotActivityStore
     private let botActivityWriter: BotActivityWriter
     private var sessionStorageID: String?
+    /// The id session.list rows carry for the open chat. Hermes streams under
+    /// a runtime alias (`session_id`) that differs from the stored key.
+    var navigationSessionID: String? { sessionStorageID ?? sessionID }
+    /// Every id the open chat answers to: runtime alias, stored row, and the
+    /// id it was opened by.
+    var currentSessionIDs: Set<String> {
+        Set([sessionID, sessionStorageID, kanbanAttributionSessionID].compactMap { $0 })
+    }
+
+    /// Maps the open chat's runtime alias onto its stored row id.
+    private func rowSessionID(_ id: String) -> String {
+        id == sessionID ? (sessionStorageID ?? id) : id
+    }
     /// The durable identifier selected by the user for session-scoped durable
     /// projections. Gateway resume may return a transient alias for streaming,
     /// which must not replace the Kanban attribution boundary.
@@ -485,19 +531,27 @@ final class DockModel: ObservableObject {
         DebugLog.write("model: shutdown complete")
     }
 
-    func send() {
-        let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let attachedImages = pendingImages
-        let attachedPDF = pendingPDFURL
+    /// Sends the composer draft, or `queued` (a prompt parked during the
+    /// previous turn) without touching whatever the composer holds now.
+    func send(_ queued: QueuedPrompt? = nil) {
+        let prompt = (queued?.text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
+        let attachedImages = queued?.images ?? pendingImages
+        let attachedPDF = queued == nil ? pendingPDFURL : queued?.pdfURL
         guard (!prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil),
               !isSending,
               !isUpdatingSessionModel,
               !isRestoringSession,
               sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
 
+        if attachedImages.isEmpty, attachedPDF == nil, let command = ComposerSlashCommand(prompt) {
+            if queued == nil { draft = "" }
+            runSlashCommand(command, echo: prompt)
+            return
+        }
+
         let text: String
         if !prompt.isEmpty {
-            text = prompt
+            text = ComposerCompletion.pathifyingBareRefs(prompt)
         } else if attachedPDF != nil {
             text = attachedImages.isEmpty ? "What does this document contain?" : "What do you see in these attachments?"
         } else {
@@ -508,7 +562,7 @@ final class DockModel: ObservableObject {
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
         }
         let sendGeneration = sessionResumeGeneration
-        draft = ""
+        if queued == nil { draft = "" }
         let transcriptText = attachedPDF.map { "[PDF: \($0.lastPathComponent)]\n\(text)" } ?? text
         messages.append(ChatMessage(role: .user, text: transcriptText, images: attachedImages.map(\.image)))
         status = .working
@@ -574,7 +628,7 @@ final class DockModel: ObservableObject {
                             (result["message"] as? String) ?? "Hermes could not attach the PDF."
                         )
                     }
-                    pendingPDFURL = nil
+                    if queued == nil { pendingPDFURL = nil }
                 }
 
                 guard self.sessionResumeGeneration == sendGeneration,
@@ -621,66 +675,312 @@ final class DockModel: ObservableObject {
         }
     }
 
+    /// Mid-turn input, as Hermes desktop handles it: plain text redirects the
+    /// live turn (`session.redirect`) and lands in the transcript at once as an
+    /// ordinary user message. Anything a redirect can't carry (attachments,
+    /// slash commands, a turn parked on an approval) or a redirect Hermes
+    /// refuses because the turn already ended goes to `queuedPrompts` instead.
     func steerDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        guard status == .working, isSending, !isSteering, let sessionID, !sessionID.isEmpty else {
-            steeringError = "Steering is unavailable until Hermes has an active turn."
+        guard let sessionID, !sessionID.isEmpty else { return }
+        guard !text.isEmpty, pendingImages.isEmpty, pendingPDFURL == nil,
+              status == .working, ComposerSlashCommand(text) == nil else {
+            queueDraft()
             return
         }
 
-        let steeringSessionID = sessionID
-        let steeringGeneration = sessionResumeGeneration
-        let attachedImages = pendingImages
-        isSteering = true
+        draft = ""
         steeringError = nil
-        Task {
-            defer {
-                if self.sessionResumeGeneration == steeringGeneration,
-                   self.sessionID == steeringSessionID {
-                    self.isSteering = false
-                }
-            }
-            do {
-                let result = try await sessionRPCClient.request(
-                    HermesFeatureIDs.ID.sessionSteer.rawValue,
-                    params: ["session_id": steeringSessionID, "text": text]
-                )
-                guard self.sessionResumeGeneration == steeringGeneration,
-                      self.sessionID == steeringSessionID else { return }
-                guard (result["status"] as? String)?.lowercased() == "queued" else {
-                    steeringError = "Hermes rejected the steering guidance."
-                    return
-                }
-                draft = ""
-                // A queued steer is user-sent text: show it in the transcript, not a transient toast.
-                messages.append(ChatMessage(
-                    role: .user,
-                    text: text,
-                    images: attachedImages.map(\.image),
-                    isSteering: true,
-                    steeringStatus: "QUEUED"
-                ))
-                cleanupImageAttachments(attachedImages)
-                pendingImages.removeAll { attachedImage in
-                    attachedImages.contains { $0.id == attachedImage.id }
-                }
-                DebugLog.write("model: steering guidance queued")
-            } catch {
-                steeringError = Self.safeUserDiagnostic(error.localizedDescription)
-                DebugLog.write("model: steering failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+        let steeringGeneration = sessionResumeGeneration
+        // Redirect cancels the model request, so its completion can race the
+        // RPC response: record the correction first, below what already
+        // streamed, and let the resumed output continue in a fresh row under it.
+        let hadLiveStream = streamingMessageID != nil
+        if hadLiveStream {
+            if streamingMessageBuffer.isEmpty, streamingTurnActivity.isEmpty {
+                discardStreamingMessage()
+            } else {
+                commitStreamingMessage()
             }
         }
+        let correction = ChatMessage(role: .user, text: text)
+        messages.append(correction)
+        if hadLiveStream { beginStreamingMessage() }
+        let resumedRowID = hadLiveStream ? streamingMessageID : nil
+
+        Task {
+            let result = try? await sessionRPCClient.request(
+                HermesFeatureIDs.ID.sessionRedirect.rawValue,
+                params: ["session_id": sessionID, "text": text]
+            )
+            guard self.sessionResumeGeneration == steeringGeneration,
+                  self.sessionID == sessionID else { return }
+            switch (result?["status"] as? String)?.lowercased() {
+            case "redirected":
+                DebugLog.write("model: turn redirected")
+            case "queued":
+                // Build window or compaction: Hermes runs it as the next turn.
+                if let index = messages.firstIndex(where: { $0.id == correction.id }) {
+                    messages.append(messages.remove(at: index))
+                }
+            default:
+                // Refused (turn ended first) or failed: keep the words as the next turn.
+                messages.removeAll {
+                    $0.id == correction.id
+                        || ($0.id == resumedRowID && $0.id != streamingMessageID && $0.text.isEmpty && $0.activity.isEmpty)
+                }
+                queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: text, images: [], pdfURL: nil))
+                drainQueuedPromptIfIdle()
+            }
+        }
+    }
+
+    /// Parks the whole composer payload until the active turn settles.
+    func queueDraft() {
+        guard let sessionID else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil else { return }
+        queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL))
+        draft = ""
+        pendingImages = []
+        pendingPDFURL = nil
+    }
+
+    func removeQueuedPrompt(_ id: UUID) {
+        guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
+        cleanupImageAttachments(queuedPrompts.remove(at: index).images)
+    }
+
+    /// Sends the oldest queued prompt of the open session, one per settled turn.
+    private func drainQueuedPromptIfIdle() {
+        guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
+              let sessionID,
+              let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID }) else { return }
+        send(queuedPrompts.remove(at: index))
     }
 
     func submitComposerInput() {
         if status == .needsClarification {
             respondToClarification(draft)
-        } else if status == .working && isSending {
+        } else if isSending, sessionID != nil {
             steerDraft()
+        } else if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, pendingImages.isEmpty, pendingPDFURL == nil {
+            drainQueuedPromptIfIdle()
         } else {
             send()
         }
+    }
+
+    // MARK: - Slash commands and @ references (Hermes desktop parity)
+
+    /// `/name` -> Hermes' `desktop` disposition (terminal, messaging, hidden…)
+    /// from `commands.catalog`; a non-nil value means no desktop surface.
+    private var slashCommandDispositions: [String: String] = [:]
+    private var hasLoadedSlashCatalog = false
+    /// `/btw` and `/bg` task IDs whose answer lands in this transcript.
+    private var slashSideTaskIDs: Set<String> = []
+
+    private func loadSlashCatalogIfNeeded() async {
+        guard !hasLoadedSlashCatalog else { return }
+        var params: [String: Any] = [:]
+        if let sessionID { params["session_id"] = sessionID }
+        guard let catalog = try? await sessionRPCClient.request(HermesFeatureIDs.ID.commandsCatalog.rawValue, params: params) else { return }
+        let commands = catalog["commands"] as? [String: [String: Any]] ?? [:]
+        slashCommandDispositions = commands.compactMapValues { $0["desktop"] as? String }
+            .reduce(into: [:]) { $0[$1.key.lowercased()] = $1.value }
+        hasLoadedSlashCatalog = true
+    }
+
+    private func isSlashCommandHidden(_ command: String) -> Bool {
+        slashCommandDispositions[command] != nil || ComposerCompletion.terminalOnlyCommands.contains(command)
+    }
+
+    func composerCompletions(for trigger: ComposerCompletionTrigger, bots: [ComposerCompletionItem]) async -> ComposerCompletion.Result {
+        do {
+            try await sessionRPCClient.connect()
+            var params: [String: Any] = [:]
+            if let sessionID {
+                params["session_id"] = sessionID
+            } else if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
+                params["cwd"] = newSessionProjectPath
+            }
+            switch trigger {
+            case .slash(let text):
+                await loadSlashCatalogIfNeeded()
+                params["text"] = text
+                let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
+                return ComposerCompletion.slashResult(from: payload, hidden: isSlashCommandHidden)
+            case .skill(let token):
+                params["text"] = token
+                let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
+                var result = ComposerCompletion.slashResult(from: payload) { _ in false }
+                result.items.removeAll { $0.group != "Skills" }
+                return result
+            case .mention(let word):
+                params["word"] = word
+                let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completePath.rawValue, params: params)
+                return ComposerCompletion.mentionResult(from: payload, bots: bots)
+            }
+        } catch {
+            return ComposerCompletion.Result(items: bots)
+        }
+    }
+
+    /// Mirrors Hermes desktop's slash dispatcher: a few client-owned actions,
+    /// then `slash.exec`, falling back to `command.dispatch` for skills,
+    /// bundles, quick commands and prompt builtins.
+    private func runSlashCommand(_ command: ComposerSlashCommand, echo: String) {
+        let key = "/\(command.name)"
+        switch command.name {
+        case "new", "reset":
+            newChat(projectPath: sessionID.flatMap { createdSessionProjectPaths[$0] } ?? newSessionProjectPath)
+            return
+        case "stop":
+            _ = stop()
+            return
+        case "resume":
+            let query = command.arg.lowercased()
+            guard !query.isEmpty,
+                  let session = sessions.first(where: { $0.id == command.arg || $0.title.lowercased() == query })
+                    ?? sessions.first(where: { $0.id.hasPrefix(command.arg) || $0.title.lowercased().contains(query) }) else {
+                messages.append(ChatMessage(role: .user, text: echo))
+                messages.append(ChatMessage(role: .hermes, text: command.arg.isEmpty
+                    ? "Pick a session from the sidebar, or type `/resume <title>`."
+                    : "No session matches “\(command.arg)”.", isError: !command.arg.isEmpty))
+                return
+            }
+            resumeSession(session)
+            return
+        default:
+            break
+        }
+
+        messages.append(ChatMessage(role: .user, text: echo))
+        if command.name == "model" {
+            // Desktop opens its picker here (`desktop="hidden"` in the catalog); Herm matches the arg.
+            // ponytail: `--global` is ignored, the pick is session-scoped like Herm's model menu.
+            let query = command.arg.split(separator: " ").filter { !$0.hasPrefix("--") }.joined(separator: " ").lowercased()
+            guard !query.isEmpty else {
+                messages.append(ChatMessage(role: .hermes, text: "Model: \(sessionModelValue ?? "Hermes default"). Type `/model <name>` or use the model menu."))
+                return
+            }
+            guard let option = runtimeModelOptions.first(where: { $0.model.lowercased() == query })
+                    ?? runtimeModelOptions.first(where: { $0.displayName.lowercased().contains(query) }) else {
+                messages.append(ChatMessage(role: .hermes, text: "No model matches “\(query)”. Open the model menu to see what’s available.", isError: true))
+                return
+            }
+            updateSessionModel(option)
+            messages.append(ChatMessage(role: .hermes, text: "Switched to \(option.displayName)."))
+            return
+        }
+        if isSlashCommandHidden(key) {
+            let reason = slashCommandDispositions[key] ?? "terminal"
+            messages.append(ChatMessage(role: .hermes, text: "`\(key)` isn’t available in Herm (\(reason)-only).", isError: true))
+            return
+        }
+
+        let generation = sessionResumeGeneration
+        isSending = true
+        Task {
+            defer { if self.sessionResumeGeneration == generation, self.status != .working { self.isSending = false } }
+            do {
+                try await sessionRPCClient.connect()
+                let sessionID = try await createAuthorizedSession(source: "herm")
+                guard self.sessionResumeGeneration == generation else { return }
+                switch command.name {
+                case "compress", "compact":
+                    // session.compress, not slash.exec: the worker times out on large sessions.
+                    _ = try await interruptRPC.compress(sessionID: sessionID, focusTopic: command.arg)
+                    appendSlashOutput("Context compressed.", generation: generation)
+                case "title" where !command.arg.isEmpty:
+                    _ = try await sessionRPCClient.request(
+                        HermesFeatureIDs.ID.sessionTitle.rawValue,
+                        params: scopedSessionParams(["session_id": sessionID, "title": command.arg])
+                    )
+                    currentSessionTitle = command.arg
+                    loadSessions()
+                    appendSlashOutput("Renamed to “\(command.arg)”.", generation: generation)
+                case "btw", "bg", "background":
+                    guard !command.arg.isEmpty else {
+                        appendSlashOutput("Usage: `\(key) <prompt>`", generation: generation, isError: true)
+                        return
+                    }
+                    let isBtw = command.name == "btw"
+                    let result = try await sessionRPCClient.request(
+                        (isBtw ? HermesFeatureIDs.ID.promptBtw : .promptBackground).rawValue,
+                        params: ["session_id": sessionID, "text": command.arg]
+                    )
+                    guard let taskID = result["task_id"] as? String, !taskID.isEmpty else {
+                        appendSlashOutput("Hermes did not return a task ID.", generation: generation, isError: true)
+                        return
+                    }
+                    slashSideTaskIDs.insert(taskID)
+                    if !isBtw { registerBackgroundTask(id: taskID, prompt: command.arg, parentSessionID: sessionID) }
+                    appendSlashOutput(isBtw ? "Asking on the side…" : "Started in the background.", generation: generation)
+                default:
+                    try await execSlashCommand(command, sessionID: sessionID, generation: generation)
+                }
+            } catch {
+                appendSlashOutput("`\(key)` failed: \(Self.safeUserDiagnostic(error.localizedDescription))", generation: generation, isError: true)
+            }
+        }
+    }
+
+    private func execSlashCommand(_ command: ComposerSlashCommand, sessionID: String, generation: Int) async throws {
+        let payload: [String: Any]
+        do {
+            let line = command.arg.isEmpty ? command.name : "\(command.name) \(command.arg)"
+            payload = try await sessionRPCClient.request(
+                HermesFeatureIDs.ID.slashExec.rawValue,
+                params: ["session_id": sessionID, "command": line]
+            )
+        } catch {
+            // Skills, bundles and pending-input builtins refuse slash.exec.
+            payload = try await sessionRPCClient.request(
+                HermesFeatureIDs.ID.commandDispatch.rawValue,
+                params: ["session_id": sessionID, "name": command.name, "arg": command.arg]
+            )
+        }
+        guard self.sessionResumeGeneration == generation else { return }
+
+        let message = (payload["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if let notice = (payload["notice"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !notice.isEmpty {
+            appendSlashOutput(notice, generation: generation)
+        }
+        switch payload["type"] as? String {
+        case "alias":
+            let target = (payload["target"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if let aliased = ComposerSlashCommand("/\(target) \(command.arg)"), aliased.name != command.name {
+                try await execSlashCommand(aliased, sessionID: sessionID, generation: generation)
+            }
+        case "prefill":
+            if !message.isEmpty { draft = message }
+        case "send", "skill":
+            guard !message.isEmpty else {
+                appendSlashOutput("`/\(command.name)`: empty message", generation: generation, isError: true)
+                return
+            }
+            // The expanded skill body is model-facing; the transcript keeps the typed command.
+            status = .working
+            isSending = true
+            _ = try await sessionRPCClient.request(
+                HermesFeatureIDs.ID.promptSubmit.rawValue,
+                params: scopedSessionParams(["session_id": sessionID, "text": message])
+            )
+        default:
+            let output = (payload["output"] as? String) ?? "(no output)"
+            let warning = (payload["warning"] as? String).map { "warning: \($0)\n" } ?? ""
+            appendSlashOutput(warning + output, generation: generation)
+        }
+    }
+
+    private func appendSlashOutput(_ text: String, generation: Int, isError: Bool = false) {
+        guard sessionResumeGeneration == generation else { return }
+        if isError, status == .working {
+            status = .idle
+            isSending = false
+        }
+        messages.append(ChatMessage(role: .hermes, text: text, isError: isError))
     }
 
     /// Moves through the user prompts already present in the active session.
@@ -899,7 +1199,7 @@ final class DockModel: ObservableObject {
                 // Keep a newer event timestamp until Hermes publishes an equal
                 // or newer canonical row, so navigation never regresses its
                 // visible “Updated” time after a completed message.
-                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions, keeping: self.sessionID))
+                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions, keeping: self.navigationSessionID))
                 sessions = merged
                 sessionProjectionState = merged.isEmpty ? .empty : .ready(merged)
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
@@ -915,7 +1215,7 @@ final class DockModel: ObservableObject {
 
     @discardableResult
     func deleteSession(_ session: HermesSession) async -> Bool {
-        guard session.id != sessionID else {
+        guard session.id != sessionID, session.id != sessionStorageID else {
             sessionDeletionError = "The active session cannot be deleted."
             return false
         }
@@ -1179,6 +1479,9 @@ final class DockModel: ObservableObject {
         // resume can expose a different runtime identity. Both identify the
         // same active conversation and must retain its unsent composer text.
         let isRefreshingActiveSession = session.id == sessionID || session.id == sessionStorageID
+        if let sessionStorageID, streamingMessageID != nil {
+            inFlightTurnActivityBySessionID[sessionStorageID] = streamingTurnActivity
+        }
         commitStreamingMessage()
         if let sessionStorageID {
             cacheAgentState(for: sessionStorageID)
@@ -1324,7 +1627,13 @@ final class DockModel: ObservableObject {
                 defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
             )
             transcriptMessageIDsByRowID = restored.rowIDs
-            messages = restored.messages
+            // A turn that went live while the transcript loaded keeps its row.
+            let liveRow = streamingMessageID.flatMap { id in messages.first { $0.id == id } }
+            messages = restored.messages + [liveRow].compactMap { $0 }
+            let stashedTurnActivity = sessionStorageID.flatMap { inFlightTurnActivityBySessionID.removeValue(forKey: $0) }
+            if liveRow == nil, (result["running"] as? Bool) == true {
+                adoptRunningTurn(inflight: result["inflight"] as? [String: Any], activity: stashedTurnActivity ?? [])
+            }
             rehydratePendingTranscriptImages(
                 restored.pendingImages,
                 requestedSessionID: session.id
@@ -1339,7 +1648,7 @@ final class DockModel: ObservableObject {
             cacheCurrentAgentState()
             refreshDelegationStatus()
             startDelegationMonitoring()
-            if approvalText == nil, clarificationQuestion == nil {
+            if approvalText == nil, clarificationQuestion == nil, streamingMessageID == nil {
                 status = .idle
             }
             DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)")
@@ -1421,7 +1730,7 @@ final class DockModel: ObservableObject {
             collected = TranscriptHistoryPaging.displayRows(fromStoredRows: fresh) + collected
             if let targetRowID {
                 if cursor.seenRowIDs.contains(targetRowID) { break }
-            } else if collected.count >= minimumDisplayRows {
+            } else if collected.filter({ !(($0["text"] as? String) ?? "").isEmpty }).count >= minimumDisplayRows {
                 break
             }
         }
@@ -1993,6 +2302,9 @@ final class DockModel: ObservableObject {
         if type == "message.start", let eventSessionID {
             updateSessionActivity(sessionID: eventSessionID, isWorking: true)
         }
+        if let eventSessionID {
+            updateSessionActivityLabel(sessionID: eventSessionID, type: type, payload: eventPayload)
+        }
         // `sessions.changed` is a notification, not a new session snapshot.
         // Re-read the authoritative index after a turn completes so titles,
         // previews, and project membership in the left navigation are current.
@@ -2334,10 +2646,11 @@ final class DockModel: ObservableObject {
     /// Bumps a row's recency locally so the rail reorders immediately instead
     /// of waiting for the session index round-trip. The open session is
     /// inserted when the index has not listed it yet (a just-created chat).
-    private func touchSession(sessionID: String?, at date: Date, preview: String? = nil) {
-        guard let sessionID, !sessionID.isEmpty else { return }
+    private func touchSession(sessionID rawSessionID: String?, at date: Date, preview: String? = nil) {
+        guard let rawSessionID, !rawSessionID.isEmpty else { return }
+        let sessionID = rowSessionID(rawSessionID)
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
-            guard sessionID == self.sessionID else { return }
+            guard sessionID == navigationSessionID else { return }
             sessions.insert(HermesSession(
                 id: sessionID,
                 profileID: sessionProfileID ?? profileScopeID,
@@ -2372,7 +2685,8 @@ final class DockModel: ObservableObject {
     /// with activity, not just the focused one. Reuses the same gateway
     /// stream and `Self.isUnreadUpdateEvent` predicate that already drive the
     /// current session's `hasUnreadResponse`.
-    private func updateSessionActivity(sessionID: String, isWorking: Bool? = nil, unread: Bool? = nil) {
+    private func updateSessionActivity(sessionID rawSessionID: String, isWorking: Bool? = nil, unread: Bool? = nil) {
+        let sessionID = rowSessionID(rawSessionID)
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let session = sessions[index]
         sessions[index] = HermesSession(
@@ -2392,6 +2706,20 @@ final class DockModel: ObservableObject {
             var unreadIDs = Set(defaults.stringArray(forKey: unreadSessionIDsKey) ?? [])
             if unread { unreadIDs.insert(sessionID) } else { unreadIDs.remove(sessionID) }
             defaults.set(Array(unreadIDs), forKey: unreadSessionIDsKey)
+        }
+    }
+
+    private func updateSessionActivityLabel(sessionID rawSessionID: String, type: String, payload: [String: Any]) {
+        let sessionID = rowSessionID(rawSessionID)
+        switch type {
+        case "tool.call", "tool.start", "tool.use", "tool_use":
+            let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "tool"
+            let preview = (payload["tool_preview"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            sessionActivityLabels[sessionID] = preview.isEmpty ? "Running \(name)" : "\(name): \(preview)"
+        case "message.start":
+            sessionActivityLabels[sessionID] = nil
+        default:
+            if Self.isUnreadUpdateEvent(type) { sessionActivityLabels[sessionID] = nil }
         }
     }
 
@@ -2424,7 +2752,14 @@ final class DockModel: ObservableObject {
             guard let result = try? await self?.interruptRPC.sessionUsage(sessionID: id),
                   let self, self.sessionID == id else { return }
             self.sessionTokenUsage = (id, ControlCenterModel.parseSessionUsage(result).totalTokens)
+            self.applyContextUsage(result, sessionID: id)
         }
+    }
+
+    private func applyContextUsage(_ usage: [String: Any], sessionID id: String) {
+        let summary = ControlCenterModel.parseSessionUsage(usage)
+        guard let used = summary.contextUsed, let max = summary.contextMax, used > 0, max > 0 else { return }
+        sessionContextUsage = (id, used, max)
     }
 
     // ponytail: ~4 chars/token heuristic for the live stream; session.usage replaces it at turn end.
@@ -2499,41 +2834,6 @@ final class DockModel: ObservableObject {
                 DebugLog.write("model: interrupt failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
         }
-    }
-
-    /// Hermes has started the turn that consumes the guidance. The response
-    /// placeholder is created before the steer is appended, so move applied
-    /// steering rows ahead of that response to preserve causal order.
-    private func markQueuedSteeringMessagesApplied() {
-        guard let responseID = streamingMessageID,
-              messages.contains(where: { $0.id == responseID }) else { return }
-
-        let queuedIndices = messages.indices.filter {
-            messages[$0].isSteering && messages[$0].steeringStatus == "QUEUED"
-        }
-        guard !queuedIndices.isEmpty else { return }
-
-        let appliedSteers = queuedIndices.map { index in
-            let queued = messages[index]
-            return ChatMessage(
-                id: queued.id,
-                role: queued.role,
-                text: queued.text,
-                images: queued.images,
-                timestamp: queued.timestamp,
-                modelName: queued.modelName,
-                responseDuration: queued.responseDuration,
-                isSteering: true,
-                steeringStatus: "APPLIED",
-                isError: queued.isError,
-                botProfileID: queued.botProfileID,
-                botDisplayName: queued.botDisplayName
-            )
-        }
-        let queuedIDs = Set(appliedSteers.map(\.id))
-        messages.removeAll { queuedIDs.contains($0.id) }
-        guard let updatedResponseIndex = messages.firstIndex(where: { $0.id == responseID }) else { return }
-        messages.insert(contentsOf: appliedSteers, at: updatedResponseIndex)
     }
 
     /// Control-center actions share the user-facing Hermes gateway so they do
@@ -2896,9 +3196,37 @@ final class DockModel: ObservableObject {
         if !Self.isHighFrequencyEvent(type) {
             recordEvent(type, params: params)
         }
+        // A turn that started before this session was attached (app relaunch,
+        // reopening a busy session) never delivers its `message.start`. Its
+        // first mid-turn event opens the live row so the transcript, status and
+        // activity follow it like any other turn.
+        if streamingMessageID == nil, Self.isMidTurnEvent(type) {
+            activeToolCalls = []
+            beginStreamingMessage()
+            conversationActivityPhase = .responding
+            isSending = true
+            if status == .idle { status = .working }
+        }
         switch type {
-        case "background.complete":
+        case "session.usage":
+            guard let id = sessionID, let usage = payload["usage"] as? [String: Any] else { break }
+            applyContextUsage(usage, sessionID: id)
+        case "status.update":
+            switch payload["kind"] as? String {
+            case "compacting", "compressing":
+                recordTurnCompaction(isComplete: false)
+                compactingSessionID = sessionID
+            case "compacted", "ready":
+                if compactingSessionID != nil { recordTurnCompaction(isComplete: true) }
+                compactingSessionID = nil
+                refreshSessionTokenUsage()
+            default: break
+            }
+        case "background.complete", "btw.complete":
             let taskID = (payload["task_id"] as? String) ?? ""
+            if slashSideTaskIDs.remove(taskID) != nil, let text = payload["text"] as? String {
+                messages.append(ChatMessage(role: .hermes, text: text))
+            }
             guard !taskID.isEmpty,
                   let index = backgroundTasks.firstIndex(where: { $0.id == taskID }) else { break }
             backgroundTasks[index].status = .completed
@@ -2965,11 +3293,6 @@ final class DockModel: ObservableObject {
                 isAwaitingClarificationResume = false
             } else {
                 beginStreamingMessage()
-                // A queued steer belongs to the next turn, not the response that
-                // was already in flight when it was submitted. Once Hermes opens
-                // that next response, mark and place the steer immediately before
-                // its response row.
-                markQueuedSteeringMessagesApplied()
             }
             conversationActivityPhase = .responding
             streamingMessageIsVisionNotice = false
@@ -2998,9 +3321,20 @@ final class DockModel: ObservableObject {
                 }
                 streamingMessageBuffer = completedText
             }
+            var turnTokens: Int?
+            compactingSessionID = nil
+            if let id = sessionID, let usageDict = payload["usage"] as? [String: Any] {
+                applyContextUsage(usageDict, sessionID: id)
+            }
             if let id = sessionID, let usage = sessionTokenUsage, usage.sessionID == id {
-                let streamed = streamingMessageBuffer.utf8.count + streamingReasoningBuffer.utf8.count
-                sessionTokenUsage = (id, usage.total + Self.estimatedTokens(utf8Count: streamed))
+                if let usageDict = payload["usage"] as? [String: Any],
+                   case let total = ControlCenterModel.parseSessionUsage(usageDict).totalTokens, total > 0 {
+                    if total > usage.total { turnTokens = total - usage.total }
+                    sessionTokenUsage = (id, total)
+                } else {
+                    let streamed = streamingMessageBuffer.utf8.count + streamingReasoningBuffer.utf8.count
+                    sessionTokenUsage = (id, usage.total + Self.estimatedTokens(utf8Count: streamed))
+                }
             }
             refreshSessionTokenUsage()
             let wasInterrupting = interruptState == .requesting
@@ -3020,7 +3354,6 @@ final class DockModel: ObservableObject {
                 clarificationChoices = []
                 clarificationRequestID = nil
                 clarificationResponseError = nil
-                isSteering = false
                 steeringError = nil
             }
             if let error = Self.messageCompletionError(from: payload) {
@@ -3030,7 +3363,7 @@ final class DockModel: ObservableObject {
                 updateInFlightBotActivity(for: eventSessionID, state: .failed, result: text)
                 notify(title: "Hermes could not complete the request", body: text, identifier: "failure:\(sessionID ?? "hermes")")
             } else {
-                commitStreamingMessage()
+                commitStreamingMessage(tokenCount: turnTokens)
                 let result = messages.last(where: { $0.role == .hermes })?.text
                 updateInFlightBotActivity(for: eventSessionID, state: wasInterrupting ? .canceled : .completed, result: result)
             }
@@ -3048,6 +3381,7 @@ final class DockModel: ObservableObject {
             conversationActivityPhase = .idle
             isSending = false
             streamingMessageID = nil
+            streamingTurnActivity = []
             streamingResponseStartedAt = nil
             if completionNotificationsEnabled {
                 let response = messages.last(where: { $0.role == .hermes })?.text ?? "Hermes completed the active request."
@@ -3068,6 +3402,8 @@ final class DockModel: ObservableObject {
                 )
             }
             if let sessionStorageID { cacheAgentState(for: sessionStorageID); Task { await agentStateWriter.flush() } }
+            // A stopped turn keeps its queue; Enter on an empty composer sends it.
+            if !wasInterrupting { drainQueuedPromptIfIdle() }
         case "approval.request":
             let approval = ApprovalPresentation.from(payload: payload)
             setInFlightBotActivityWaiting(for: eventSessionID)
@@ -3156,6 +3492,7 @@ final class DockModel: ObservableObject {
 
         case "reasoning.start", "thinking":
             conversationActivityPhase = .thinking
+            closeTurnThinking()
             reasoningState = ReasoningState(text: "", isComplete: false)
             isShowingReasoning = false
         case "reasoning.delta", "thinking.delta":
@@ -3321,8 +3658,92 @@ final class DockModel: ObservableObject {
         streamingMessageBuffer = ""
         streamingMessagePendingPresentationDelta = ""
         streamingMessagePublishedText = ""
+        streamingTurnActivity = []
         streamingText.clearPresentation()
         streamingMessageGeneration &+= 1
+    }
+
+    /// Reopens the live row of a turn Hermes reports still running on resume,
+    /// seeded with what it already streamed, so the turn's remaining deltas
+    /// and tool events land in it instead of being dropped.
+    private func adoptRunningTurn(inflight: [String: Any]?, activity: [ActiveToolCall]) {
+        // The running turn's prompt may not be in stored history yet.
+        let prompt = (inflight?["user"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !prompt.isEmpty, messages.last(where: { $0.role == .user })?.text != prompt {
+            messages.append(ChatMessage(role: .user, text: prompt))
+        }
+        beginStreamingMessage()
+        streamingTurnActivity = activity
+        if let streamed = inflight?["assistant"] as? String, !streamed.isEmpty {
+            streamingMessageBuffer = streamed
+            streamingMessagePendingPresentationDelta = streamed
+            scheduleStreamingMessageFlush()
+        }
+        conversationActivityPhase = .responding
+        isSending = true
+        status = .working
+        if let sessionStorageID { updateSessionActivity(sessionID: sessionStorageID, isWorking: true) }
+    }
+
+    /// Thinking segments share the turn log with tool calls so they keep
+    /// their place in the sequence; the text rides in `result`.
+    private func recordTurnThinking(_ state: ReasoningState) {
+        guard streamingMessageID != nil else { return }
+        if let index = streamingTurnActivity.lastIndex(where: { $0.name == ActiveToolCall.thinkingName }),
+           !streamingTurnActivity[index].isComplete {
+            streamingTurnActivity[index].result = state.text
+            if state.isComplete { closeTurnThinking() }
+        } else if !state.isComplete || !state.text.isEmpty {
+            streamingTurnActivity.append(ActiveToolCall(
+                id: "thinking:\(UUID().uuidString)",
+                name: ActiveToolCall.thinkingName,
+                input: "",
+                context: "",
+                startedAt: Date(),
+                result: state.text,
+                isComplete: state.isComplete
+            ))
+        }
+    }
+
+    /// Compaction rides in the turn log like thinking, so the transcript shows
+    /// it live and keeps a "Compacted context" step once Hermes finishes.
+    private func recordTurnCompaction(isComplete: Bool) {
+        guard streamingMessageID != nil else { return }
+        if let index = streamingTurnActivity.lastIndex(where: { $0.name == ActiveToolCall.compactionName }),
+           !streamingTurnActivity[index].isComplete {
+            guard isComplete else { return }
+            streamingTurnActivity[index].isComplete = true
+            streamingTurnActivity[index].completedAt = Date()
+        } else if !isComplete {
+            streamingTurnActivity.append(ActiveToolCall(
+                id: "compaction:\(UUID().uuidString)",
+                name: ActiveToolCall.compactionName,
+                input: "",
+                context: "",
+                startedAt: Date(),
+                isComplete: false
+            ))
+        }
+    }
+
+    private func closeTurnThinking() {
+        for index in streamingTurnActivity.indices
+        where streamingTurnActivity[index].name == ActiveToolCall.thinkingName && !streamingTurnActivity[index].isComplete {
+            if !streamingReasoningBuffer.isEmpty { streamingTurnActivity[index].result = streamingReasoningBuffer }
+            streamingTurnActivity[index].isComplete = true
+            streamingTurnActivity[index].completedAt = Date()
+        }
+    }
+
+    private static func upsert(_ calls: [ActiveToolCall], into log: inout [ActiveToolCall]) {
+        for call in calls {
+            if let index = log.firstIndex(where: { $0.id == call.id }) {
+                log[index] = call
+            } else {
+                log.append(call)
+            }
+        }
     }
 
     private func removePendingClarificationResumeMessage() {
@@ -3426,6 +3847,17 @@ final class DockModel: ObservableObject {
         HermesHighFrequencyEvent.includes(type)
     }
 
+    /// Events only a running turn emits, so seeing one proves a turn is live.
+    static func isMidTurnEvent(_ type: String) -> Bool {
+        switch type {
+        case "tool.call", "tool.start", "tool.use", "tool_use",
+             "reasoning.start", "reasoning.delta", "thinking", "thinking.delta":
+            true
+        default:
+            false
+        }
+    }
+
     private func scheduleActivityPresentation() {
         guard activityPresentationTask == nil else { return }
         activityPresentationTask = Task { @MainActor [weak self] in
@@ -3487,7 +3919,7 @@ final class DockModel: ObservableObject {
     /// Commits the buffered stream into the transcript. Callers are response
     /// boundaries (complete, error, stop, chat switch) — the one place the
     /// messages array should change for the streamed response.
-    private func commitStreamingMessage() {
+    private func commitStreamingMessage(tokenCount: Int? = nil) {
         streamingMessageFlushTask?.cancel()
         streamingMessageFlushTask = nil
         guard let id = streamingMessageID,
@@ -3507,6 +3939,7 @@ final class DockModel: ObservableObject {
         let attribution = Self.botAttribution(from: publishedText)
         let botProfileID = attribution?.profileID ?? activeBotProfileID
         let botDisplayName = attribution?.displayName ?? activeBotDisplayName
+        closeTurnThinking()
         messages[index] = ChatMessage(
             id: id,
             role: .hermes,
@@ -3515,8 +3948,15 @@ final class DockModel: ObservableObject {
             timestamp: message.timestamp,
             modelName: message.modelName,
             responseDuration: Date().timeIntervalSince(message.timestamp),
+            tokenCount: tokenCount,
             botProfileID: botProfileID,
-            botDisplayName: botDisplayName
+            botDisplayName: botDisplayName,
+            // The response boundary is authoritative: nothing is still running.
+            activity: streamingTurnActivity.map { call in
+                var call = call
+                call.isComplete = true
+                return call
+            }
         )
         streamingMessagePendingPresentationDelta = ""
         streamingText.retainCompletionPresentation(for: id)
@@ -5055,28 +5495,59 @@ final class DockModel: ObservableObject {
         var messages: [ChatMessage] = []
         var pendingImages: [RestoredTranscript.PendingImages] = []
         var rowIDs: [Int: UUID] = [:]
+        // Tool calls since the last visible assistant reply; they attach to
+        // the next one so restored turns show the same activity as live ones.
+        var pendingActivity: [ActiveToolCall] = []
+        var turnStartedAt: Date?
         for row in rows {
             guard let role = row["role"] as? String else { continue }
+            let rowTimestamp = (row["timestamp"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) }
+            if let reasoning = ((row["reasoning"] ?? row["reasoning_content"]) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !reasoning.isEmpty {
+                pendingActivity.append(ActiveToolCall(
+                    id: "thinking:\(UUID().uuidString)", name: ActiveToolCall.thinkingName, input: "", context: "",
+                    startedAt: rowTimestamp ?? Date(), result: reasoning, isComplete: true
+                ))
+            }
+            pendingActivity.append(contentsOf: historyToolCalls(in: row, timestamp: rowTimestamp ?? Date()))
+            // session.resume projects each tool call as its own compact
+            // `{role: tool, name, context}` row.
+            if role == "tool" {
+                let id = (row["tool_call_id"] as? String) ?? (row["tool_use_id"] as? String) ?? UUID().uuidString
+                let result = messageText(row["content"])
+                if let index = pendingActivity.firstIndex(where: { $0.id == id }) {
+                    if !result.isEmpty { pendingActivity[index].result = truncatedForPersistence(result) }
+                } else if let name = row["name"] as? String, !name.isEmpty {
+                    pendingActivity.append(ActiveToolCall(
+                        id: id, name: name, input: "", context: row["context"] as? String ?? "",
+                        startedAt: rowTimestamp ?? Date(), result: result.isEmpty ? nil : truncatedForPersistence(result),
+                        isComplete: true
+                    ))
+                }
+                continue
+            }
             let persisted = persistedImageContent(from: messageText(row["text"] ?? row["content"]))
             let text = persisted.text
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.imageFileURLs.isEmpty else { continue }
-            let timestamp: Date
-            if let ts = row["timestamp"] as? Double {
-                timestamp = Date(timeIntervalSince1970: ts)
-            } else if let ts = row["timestamp"] as? NSNumber {
-                timestamp = Date(timeIntervalSince1970: ts.doubleValue)
-            } else {
-                timestamp = Date()
-            }
+            let timestamp = rowTimestamp ?? Date()
             guard role == "user" || role == "assistant" || role == "hermes" else { continue }
             let attribution = role == "user" ? nil : botAttribution(from: text)
+            var activity: [ActiveToolCall] = []
+            if role == "user" {
+                pendingActivity = []
+                turnStartedAt = rowTimestamp
+            } else {
+                activity = pendingActivity
+                pendingActivity = []
+            }
             let message = ChatMessage(
                 role: role == "user" ? .user : .hermes,
                 text: attribution?.body ?? text,
                 images: [],
                 timestamp: timestamp,
+                responseDuration: activity.isEmpty ? nil : turnStartedAt.flatMap { start in rowTimestamp.map { $0.timeIntervalSince(start) } },
                 botProfileID: attribution?.profileID ?? defaultBotProfileID,
-                botDisplayName: attribution?.displayName ?? defaultBotDisplayName
+                botDisplayName: attribution?.displayName ?? defaultBotDisplayName,
+                activity: activity
             )
             messages.append(message)
             if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") {
@@ -5090,6 +5561,30 @@ final class DockModel: ObservableObject {
             }
         }
         return RestoredTranscript(messages: messages, pendingImages: pendingImages, rowIDs: rowIDs)
+    }
+
+    /// Tool calls an assistant history row requested, in either the OpenAI
+    /// `tool_calls` shape or Anthropic-style `tool_use` content parts.
+    private static func historyToolCalls(in row: [String: Any], timestamp: Date) -> [ActiveToolCall] {
+        let parts = ((row["tool_calls"] as? [[String: Any]]) ?? [])
+            + ((row["content"] as? [[String: Any]]) ?? []).filter {
+                (($0["type"] as? String)?.lowercased() ?? "").contains("tool_use")
+            }
+        return parts.compactMap { part in
+            let function = part["function"] as? [String: Any]
+            guard let name = (part["name"] as? String) ?? (function?["name"] as? String), !name.isEmpty else { return nil }
+            let args = (part["input"] as? [String: Any]) ?? parseArgsDict(function?["arguments"]) ?? [:]
+            let context = ["command", "path", "file_path", "pattern", "query", "url", "goal"]
+                .lazy.compactMap { args[$0] as? String }.first ?? ""
+            return ActiveToolCall(
+                id: (part["id"] as? String) ?? UUID().uuidString,
+                name: name,
+                input: "",
+                context: context,
+                startedAt: timestamp,
+                isComplete: true
+            )
+        }
     }
 
     /// Hermes persists uploaded images as directive lines in the session

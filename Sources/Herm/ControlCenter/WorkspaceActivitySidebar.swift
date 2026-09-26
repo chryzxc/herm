@@ -122,6 +122,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var pendingProcess: ProcessSummary?
     @State private var pendingAgentID: String?
     @State private var isShowingAgentUpdateConfirmation = false
+    @State private var isAgentUpdateOutputExpanded = false
     @State private var isShowingDockRestartConfirmation = false
     @State private var isShowingEmergencyStopConfirmation = false
     @State private var selectedSettingsCategory: SettingsCategory = .general
@@ -137,6 +138,8 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequestsInSidebar = true
     @AppStorage(SidebarVisibilityKey.issues) private var showsIssuesInSidebar = true
     @AppStorage(SidebarVisibilityKey.office) private var showsOfficeInSidebar = true
+    @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
+    @AppStorage(DoubleTapShortcut.notchKey) private var notchShortcut = DoubleTapShortcut.option
     @ObservedObject var agentUpdateService: HermesUpdateService
 
     init(
@@ -2350,7 +2353,7 @@ struct WorkspaceActivitySidebar: View {
                         Button {
                             startNewChat(in: path)
                         } label: {
-                            DockIconLabel("NEW CHAT", icon: .chatCircleDots)
+                            DockIconLabel("NEW CHAT", icon: .notePencil)
                                 .font(.system(size: 10, weight: .semibold))
                         }
                         .buttonStyle(.borderless)
@@ -5189,7 +5192,10 @@ struct WorkspaceActivitySidebar: View {
             }
         }
         .confirmationDialog("Update Hermes Agent?", isPresented: $isShowingAgentUpdateConfirmation) {
-            Button("Update Hermes Agent") { agentUpdateService.performUpdate() }
+            Button("Update Hermes Agent") {
+                isAgentUpdateOutputExpanded = false
+                agentUpdateService.performUpdate()
+            }
                 .disabled(agentUpdateService.isBusy)
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -5295,28 +5301,26 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var agentUpdateProgressContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("UPDATING HERMES AGENT")
+                DockStatusDot(tone: .working, size: 7, pulses: true)
+                Text("Updating Hermes Agent")
                     .font(.system(size: 12, weight: .semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(Color.dockAccent)
+                    .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
                 TimelineView(.periodic(from: agentUpdateService.updateStartedAt ?? Date(), by: 1)) { context in
                     Text(agentUpdateElapsedText(until: context.date))
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
+                        .font(DockTypography.machineMetadata.monospacedDigit())
+                        .foregroundStyle(Color.dockMetadataText)
                 }
             }
-            ProgressView()
-                .progressViewStyle(.linear)
-                .tint(Color.dockAccent)
+            DockShimmerTrack(tone: .working)
             if let latestLine = agentUpdateService.logLines.last {
                 Text(latestLine)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(2)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             agentUpdateLogTail
         }
@@ -5359,26 +5363,49 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+            if let latestLine = agentUpdateService.logLines.last {
+                Text(latestLine)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            }
             agentUpdateLogTail
         }
     }
 
     private var agentUpdateLogTail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(Array(agentUpdateService.logLines.suffix(120).reversed().enumerated()), id: \.offset) { _, line in
-                    Text(line)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.dockEase(duration: 0.18)) { isAgentUpdateOutputExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    DockIcon(isAgentUpdateOutputExpanded ? .caretDown : .caretRight)
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(isAgentUpdateOutputExpanded ? "Hide output" : "Show output")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(Color.dockSecondaryText)
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 2)
+            .buttonStyle(.plain)
+
+            if isAgentUpdateOutputExpanded {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(agentUpdateService.logLines.suffix(120).enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .textSelection(.enabled)
+                    .padding(.vertical, 2)
+                }
+                .frame(maxHeight: 150)
+            }
         }
-        .frame(maxHeight: 110)
     }
 
     private func agentUpdateElapsedText(until now: Date) -> String {
@@ -5394,7 +5421,7 @@ struct WorkspaceActivitySidebar: View {
                 settingsDisclosure(title: "Appearance", subtitle: appearanceSubtitle, icon: .sparkle, isExpanded: $isAppearanceExpanded) {
                     appearanceSection
                 }
-                settingsDisclosure(title: "Agent update", subtitle: "Installed version and update channel", icon: .arrowsClockwise, isExpanded: $isAgentUpdateExpanded) {
+                settingsDisclosure(title: "Agent update", subtitle: "Version and updates", icon: .arrowsClockwise, isExpanded: $isAgentUpdateExpanded) {
                     agentUpdateSection
                 }
             }
@@ -5841,26 +5868,21 @@ struct WorkspaceActivitySidebar: View {
                 )
 
                 Divider().overlay(Color.dockBorderLight)
-                settingsSubheading("MCP SERVERS  ·  \(configuration.mcpServers.count)")
-                configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
+                settingsSubheading("MCP SERVERS  ·  \(control.mcpInventoryAvailable ? control.mcpServers.count : configuration.mcpServers.count)")
                 if control.mcpInventoryAvailable {
                     if control.mcpServers.isEmpty {
-                        Text("Hermes reports no configured MCP connections.")
+                        Text("No MCP servers configured in Hermes.")
                             .font(.system(size: 12))
                             .foregroundStyle(Color.dockMetadataText)
                     } else {
-                        VStack(alignment: .leading, spacing: 7) {
+                        VStack(alignment: .leading, spacing: 8) {
                             ForEach(control.mcpServers) { server in
                                 HStack(alignment: .top, spacing: 8) {
-                                    Circle()
-                                        .fill(server.isEnabled ? Color.dockSecondaryText : Color.dockSecondaryText)
-                                        .frame(width: 6, height: 6)
-                                        .padding(.top, 5)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(server.name)
-                                            .font(.system(size: 12, weight: .medium))
+                                            .font(.system(size: 12, weight: .semibold))
                                             .foregroundStyle(Color.dockPrimaryText)
-                                        Text("\(server.transport)  ·  \(server.tools)")
+                                        Text(server.tools == "all" ? server.transport : "\(server.transport)  ·  \(server.tools)")
                                             .font(.system(size: 12))
                                             .foregroundStyle(Color.dockMetadataText)
                                             .lineLimit(2)
@@ -5868,8 +5890,8 @@ struct WorkspaceActivitySidebar: View {
                                     Spacer(minLength: 0)
                                     VStack(alignment: .trailing, spacing: 4) {
                                         Text(server.isEnabled ? "Enabled" : "Disabled")
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(server.isEnabled ? Color.dockSecondaryText : Color.dockSecondaryText)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockSecondaryText)
                                         if control.capabilityAvailable("mcp.test") {
                                             Button { control.testMCP(server) } label: {
                                                 DockActionLabel(
@@ -5894,6 +5916,8 @@ struct WorkspaceActivitySidebar: View {
                             }
                         }
                     }
+                } else {
+                    configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
                 }
                 if model.sessionID != nil {
                     Button { isShowingMCPReloadConfirmation = true } label: {
@@ -6028,21 +6052,32 @@ struct WorkspaceActivitySidebar: View {
                     settingsSwitch(isOn: $showsIssuesInSidebar)
                 }
                 Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(title: "Show 3D Workspace in sidebar", detail: "List the 3D office workspace in the workspace side panel.") {
+                SettingsPreferenceRow(title: "Show Office in sidebar", detail: "List the Office in the workspace side panel.") {
                     settingsSwitch(isOn: $showsOfficeInSidebar)
                 }
                 Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(title: "Quick capture", detail: "Double-press Command to focus Ask from any app.") {
-                    Text("⌘ ⌘")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .padding(.horizontal, 8)
-                        .frame(height: 22)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.dockSurface4))
+                SettingsPreferenceRow(title: "Open workspace", detail: "Open or hide the workspace from any app. It reopens compact or fullscreen, whichever you used last.") {
+                    shortcutPicker($workspaceShortcut, excluding: notchShortcut)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Notch quick view", detail: "Peek at tasks and quota in the notch from any app.") {
+                    shortcutPicker($notchShortcut, excluding: workspaceShortcut)
                 }
             }
             .padding(.vertical, -8)
         }
+    }
+
+    /// Each modifier drives at most one shortcut, so the other's choice is hidden.
+    private func shortcutPicker(_ selection: Binding<DoubleTapShortcut>, excluding other: DoubleTapShortcut) -> some View {
+        Picker("", selection: selection) {
+            ForEach(DoubleTapShortcut.allCases.filter { $0 == .off || $0 != other }) { option in
+                Text(option.keycap.map { "\(option.title)  \($0)" } ?? option.title).tag(option)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
     }
 
     private func settingsSwitch(isOn: Binding<Bool>) -> some View {

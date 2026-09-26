@@ -71,8 +71,14 @@ enum HermesFeatureIDs {
         case projectFacts = "project.facts"
         case verificationStatus = "verification.status"
         case promptSubmit = "prompt.submit"
+        case completeSlash = "complete.slash"
+        case completePath = "complete.path"
+        case commandsCatalog = "commands.catalog"
+        case slashExec = "slash.exec"
+        case commandDispatch = "command.dispatch"
         case botRelayDeliver = "bot_relay.deliver"
         case promptBackground = "prompt.background"
+        case promptBtw = "prompt.btw"
         case sessionTitle = "session.title"
         case sessionSteer = "session.steer"
         case sessionBranch = "session.branch"
@@ -122,7 +128,7 @@ enum HermesFeatureIDs {
     static let transportIDs: [String] = [
         "session.list", "session.active_list", "session.activate", "session.delete", "session.resume",
         "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create", "session.close", "session.set_hidden", "session.events.since", "project.facts",
-        "verification.status", "prompt.submit", "bot_relay.deliver", "prompt.background", "session.title", "session.steer", "session.branch",
+        "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "bot_relay.deliver", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
         "approval.respond", "clarify.respond", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "config.get",

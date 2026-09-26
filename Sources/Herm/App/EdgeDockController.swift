@@ -23,6 +23,7 @@ final class EdgeDockController: NSObject {
     private var latestToolID: String?
     private var latestToolComplete = false
     private var latestSessions: [HermesSession] = []
+    private var latestActivityLabels: [String: String] = [:]
     private var lastQuotas: [ProviderQuotaSnapshot]?
     /// Quota readers whose usage has moved; these are the services being
     /// spent (by Hermes or any other app), so they are read on every tick.
@@ -75,6 +76,13 @@ final class EdgeDockController: NSObject {
         model.$sessions
             .receive(on: RunLoop.main)
             .sink { [weak self] sessions in self?.refreshNoteworthySessions(sessions) }
+            .store(in: &subscriptions)
+        model.$sessionActivityLabels
+            .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
+            .sink { [weak self] labels in
+                self?.latestActivityLabels = labels
+                self?.rebuildTasks()
+            }
             .store(in: &subscriptions)
         model.$activityPresentationRevision
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
@@ -184,12 +192,13 @@ final class EdgeDockController: NSObject {
             case .finished: activity.title
             }
             current = EdgeNotchTask(
-                id: model.sessionID ?? "current", title: state.sessionTitle, phase: phase,
+                id: model.navigationSessionID ?? "current", title: state.sessionTitle, phase: phase,
                 statusLabel: label, detail: state.detail, updatedAt: nil, isCurrent: true,
                 isStatusCurrent: activity.status != .offline, session: nil)
         }
         let tasks = EdgeNotchTask.build(current: current, sessions: latestSessions,
-                                        currentSessionID: model.sessionID,
+                                        activity: latestActivityLabels,
+                                        currentSessionIDs: model.currentSessionIDs,
                                         isOnline: activity.status != .offline)
         if tasks != state.tasks { state.tasks = tasks }
     }
@@ -281,11 +290,11 @@ final class EdgeDockController: NSObject {
             state.detail = "\(tool.isComplete ? "Completed" : "Running") \(tool.name)"
         } else if state.activity.backgroundCompleted {
             state.detail = "Open this session to review its result"
+        } else if state.activity.working {
+            state.detail = "Working on this session’s request"
         } else if let response = model.messages.last(where: { $0.role == .hermes }), !response.text.isEmpty {
             state.detail = String(response.text.prefix(180))
             if state.activity.quiet { state.updateTitle = "Latest update" }
-        } else if state.activity.working {
-            state.detail = "Working on this session’s request"
         } else {
             state.updateTitle = "No activity yet"
             state.detail = model.sessionID == nil ? "Choose a session to see its activity." : "Updates will appear as work begins in this session."
@@ -651,7 +660,6 @@ struct EdgeNotchView: View {
 private struct EdgeNotchStatusIndicator: View {
     let activity: EdgeNotchActivity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var traveling = false
 
     private var color: Color {
         if activity.attention { return .dockWarning }
@@ -668,12 +676,7 @@ private struct EdgeNotchStatusIndicator: View {
                 DockIcon(.prohibit).font(.system(size: 10))
             }
             if activity.working {
-                ZStack {
-                    Capsule().fill(color.opacity(0.18)).frame(width: 3, height: 28)
-                    Capsule().fill(color).frame(width: 3, height: 10)
-                        .offset(y: reduceMotion ? 0 : traveling ? 9 : -9)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.85).repeatForever(autoreverses: true), value: traveling)
-                }
+                EdgeNotchWorkingBar(color: color, reduceMotion: reduceMotion)
             } else if activity.quiet {
                 Capsule().fill(Color.dockSecondaryText.opacity(0.45))
                     .frame(width: 3, height: 16)
@@ -682,8 +685,26 @@ private struct EdgeNotchStatusIndicator: View {
             }
         }
         .foregroundStyle(color)
-        .onAppear { traveling = true }
         .accessibilityHidden(true)
+    }
+}
+
+/// Driven by the clock rather than a state flip, so the segment keeps
+/// traveling however the notch was shown, hidden or rebuilt around it.
+private struct EdgeNotchWorkingBar: View {
+    let color: Color
+    let reduceMotion: Bool
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion)) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate / 0.85
+            // Eased ping-pong between the track's ends.
+            let travel = reduceMotion ? 0 : -cos(phase * .pi) * 9
+            ZStack {
+                Capsule().fill(color.opacity(0.18)).frame(width: 3, height: 28)
+                Capsule().fill(color).frame(width: 3, height: 10).offset(y: travel)
+            }
+        }
     }
 }
 

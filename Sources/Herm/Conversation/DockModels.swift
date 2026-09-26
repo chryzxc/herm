@@ -86,6 +86,11 @@ struct ActiveToolCall: Identifiable, Equatable, Codable {
     var agentID: String? = nil
     var parentAgentID: String? = nil
     var childSessionID: String? = nil
+
+    /// Marks a thinking segment in a response's activity log.
+    static let thinkingName = "__thinking"
+    /// Marks a context compaction in a response's activity log.
+    static let compactionName = "__compaction"
 }
 
 struct ReasoningState: Equatable {
@@ -387,6 +392,9 @@ struct ChatMessage: Identifiable, Equatable {
     let timestamp: Date
     let modelName: String?
     let responseDuration: TimeInterval?
+    /// Tokens this turn consumed: the delta between consecutive `session.usage`
+    /// totals carried by `message.complete`. Nil for restored history.
+    let tokenCount: Int?
     let isSteering: Bool
     let steeringStatus: String?
     let isError: Bool
@@ -407,8 +415,10 @@ struct ChatMessage: Identifiable, Equatable {
     /// immutable per message, so row rendering must not re-run DateFormatter.
     let timeLabel: String
     let durationLabel: String?
+    /// Tool calls Hermes ran while producing this response, oldest first.
+    let activity: [ActiveToolCall]
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = []) {
         self.id = id
         self.role = role
         self.text = text
@@ -416,6 +426,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.timestamp = timestamp
         self.modelName = modelName
         self.responseDuration = responseDuration
+        self.tokenCount = tokenCount
         self.isSteering = isSteering
         self.steeringStatus = steeringStatus
         self.isError = isError
@@ -425,6 +436,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.hasBodyText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         self.timeLabel = timestamp.formatted(date: .omitted, time: .shortened)
         self.durationLabel = responseDuration.map { ResponseDurationFormatting.string(seconds: $0) }
+        self.activity = activity
     }
 
     var image: NSImage? { images.first }
@@ -447,12 +459,14 @@ struct ChatMessage: Identifiable, Equatable {
             timestamp: timestamp,
             modelName: modelName,
             responseDuration: responseDuration,
+            tokenCount: tokenCount,
             isSteering: isSteering,
             steeringStatus: steeringStatus,
             isError: isError,
             botProfileID: botProfileID,
             botDisplayName: botDisplayName,
-            contentRevision: contentRevision
+            contentRevision: contentRevision,
+            activity: activity
         )
     }
 
@@ -531,6 +545,14 @@ struct ProfileScopedID: Hashable, Equatable, Sendable {
             : nil
         self.resourceID = resourceID
     }
+}
+
+struct QueuedPrompt: Identifiable {
+    let id = UUID()
+    let sessionID: String
+    let text: String
+    let images: [ImageAttachment]
+    let pdfURL: URL?
 }
 
 struct ImageAttachment: Identifiable {

@@ -52,6 +52,24 @@ struct SessionActivityPresentationTests {
         #expect(snapshot.timeline.last?.status == "CUSTOM_STATE")
     }
 
+    @Test func activeTurnLeadsInProgressWithItsRunningStep() {
+        let running = AgentActivityPresentation.PipelineActivity(
+            id: "tool:t1", timestamp: Date(timeIntervalSince1970: 5), status: "Running",
+            task: "Run patch", agent: "Orchestrator", detail: nil, diffPreview: nil
+        )
+        let agentSnapshot = AgentPresentationSnapshot(
+            displayedSubagents: [], pipeline: [running],
+            activityCountsByAgentID: [:], activeAgentIDs: [], revision: 1
+        )
+        let idle = SessionActivityOverviewPresentation.makeSnapshot(agentSnapshot: agentSnapshot, botRecords: [], kanbanTasks: [])
+        let active = SessionActivityOverviewPresentation.makeSnapshot(agentSnapshot: agentSnapshot, botRecords: [], kanbanTasks: [], isTurnActive: true)
+        let between = SessionActivityOverviewPresentation.makeSnapshot(agentSnapshot: emptyAgentSnapshot, botRecords: [], kanbanTasks: [], isTurnActive: true)
+
+        #expect(idle.work.isEmpty)
+        #expect(active.work.map(\.title) == ["Run patch"])
+        #expect(between.work.map(\.id) == ["turn"])
+    }
+
     private var emptyAgentSnapshot: AgentPresentationSnapshot {
         AgentPresentationSnapshot(
             displayedSubagents: [], pipeline: [], activityCountsByAgentID: [:],

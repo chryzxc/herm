@@ -354,54 +354,6 @@ struct DockNotificationTests {
         #expect(model.interruptState == .idle)
     }
 
-    @Test func completedTurnMarksQueuedSteeringMessagesApplied() {
-        let model = DockModel(initialSessionID: "session-steer")
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "session-steer",
-            "payload": [:]
-        ])
-        let steerMessage = ChatMessage(
-            role: .user,
-            text: "Prefer the second option",
-            isSteering: true,
-            steeringStatus: "QUEUED"
-        )
-        model.messages.append(steerMessage)
-        model.receiveGatewayEvent("message.delta", params: [
-            "session_id": "session-steer",
-            "payload": ["delta": "The response influenced by the steer."]
-        ])
-
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-steer",
-            "payload": [:]
-        ])
-
-        #expect(model.messages.map(\.text) == ["The response influenced by the steer.", "Prefer the second option"])
-        #expect(model.messages.last?.isSteering == true)
-        #expect(model.messages.last?.steeringStatus == "QUEUED")
-
-        model.receiveGatewayEvent("message.start", params: [
-            "session_id": "session-steer",
-            "payload": [:]
-        ])
-        model.receiveGatewayEvent("message.delta", params: [
-            "session_id": "session-steer",
-            "payload": ["delta": "The next response uses the steer."]
-        ])
-        model.receiveGatewayEvent("message.complete", params: [
-            "session_id": "session-steer",
-            "payload": [:]
-        ])
-
-        #expect(model.messages.map(\.text) == [
-            "The response influenced by the steer.",
-            "Prefer the second option",
-            "The next response uses the steer."
-        ])
-        #expect(model.messages[1].steeringStatus == "APPLIED")
-    }
-
     @Test func unselectedSessionCannotProjectGatewayActivity() {
         let model = DockModel()
 

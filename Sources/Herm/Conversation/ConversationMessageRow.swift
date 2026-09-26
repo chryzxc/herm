@@ -98,6 +98,7 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.message.botProfileID == rhs.message.botProfileID
             && lhs.message.botDisplayName == rhs.message.botDisplayName
             && lhs.message.responseDuration == rhs.message.responseDuration
+            && lhs.message.tokenCount == rhs.message.tokenCount
             && lhs.isStreamingMessage == rhs.isStreamingMessage
             && lhs.activeBotProfileID == rhs.activeBotProfileID
             && lhs.botRosterRevision == rhs.botRosterRevision
@@ -257,15 +258,14 @@ struct ConversationMessageRow: View, Equatable {
 
                     if !message.isError, message.hasBodyText {
                         messageActions
-                    } else if isStreamingMessage {
-                        HStack(spacing: 6) {
-                            Text(message.timeLabel)
-                            ResponseDurationLabel(startedAt: message.timestamp, finishedDuration: message.responseDuration)
-                            if let modelName = message.modelName { Text("· \(modelName)") }
-                        }
-                        .font(DockTypography.machineMetadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .padding(.horizontal, 4)
+                    } else if isStreamingMessage, let streamingText {
+                        StreamingResponseMetadata(
+                            streaming: streamingText,
+                            timestamp: message.timestamp,
+                            timeLabel: message.timeLabel,
+                            modelName: message.modelName,
+                            responseDuration: message.responseDuration
+                        )
                     } else if message.isError {
                         messageMetadata
                     }
@@ -341,6 +341,10 @@ struct ConversationMessageRow: View, Equatable {
             Text(message.timeLabel)
             if let durationLabel = message.durationLabel {
                 DockIconLabel(durationLabel, icon: .timer)
+            }
+            if let tokenCount = message.tokenCount {
+                Text("· \(SessionTokenFormatting.format(tokenCount))")
+                    .help("Tokens used by this turn, including tool calls and context")
             }
             if let modelName = message.modelName {
                 Text("· \(modelName)")

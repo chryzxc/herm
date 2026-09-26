@@ -111,8 +111,27 @@ struct TranscriptHistoryPagingTests {
             ["role": "assistant", "content": [["type": "text", "text": "parts"]]],
             ["role": "assistant", "content": "  "],
         ])
-        #expect(rows.map { $0["text"] as? String } == ["Earlier turns were compacted.", "/work fix the leak", "parts"])
-        #expect(rows[1]["timestamp"] as? Double == 12.0)
+        let visible = rows.filter { $0["role"] as? String != "tool" }
+        #expect(visible.map { $0["text"] as? String } == ["Earlier turns were compacted.", "/work fix the leak", "parts"])
+        #expect(visible[1]["timestamp"] as? Double == 12.0)
+    }
+
+    @Test func storedToolRowsBecomeTheReplyActivity() {
+        let calls = #"[{"id": "c1", "type": "function", "function": {"name": "terminal", "arguments": "{\"command\": \"gh pr view\"}"}}]"#
+        let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
+            ["id": 1, "role": "user", "content": "update the PR", "timestamp": 100.0],
+            ["id": 2, "role": "assistant", "content": "", "tool_calls": calls, "reasoning": "Checking the PR", "timestamp": 110.0],
+            ["id": 3, "role": "tool", "content": "{\"output\": \"ok\"}", "tool_call_id": "c1", "tool_name": "terminal", "timestamp": 120.0],
+            ["id": 4, "role": "tool", "content": "{}", "tool_call_id": "c2", "tool_name": "search_files", "timestamp": 125.0],
+            ["id": 5, "role": "assistant", "content": "Updated PR", "timestamp": 160.0],
+        ])
+        let messages = DockModel.parseMessages(rows).messages
+        #expect(messages.map(\.text) == ["update the PR", "Updated PR"])
+        let activity = messages[1].activity
+        #expect(activity.map(\.name) == [ActiveToolCall.thinkingName, "terminal", "search_files"])
+        #expect(activity[0].result == "Checking the PR")
+        #expect(activity[1].context == "gh pr view")
+        #expect(messages[1].responseDuration == 60)
     }
 
     @Test func resumeLoadsOnlyTheTailAndPagesEarlierHistoryOnDemand() async throws {
@@ -244,4 +263,11 @@ struct TranscriptHistoryPagingTests {
         #expect(model.messages.count == 6)
         #expect(!model.canLoadEarlierTranscript)
     }
+}
+
+@Test func runningDurationUsesWholeUnits() {
+    #expect(TurnActivityView.roughDuration(1.9) == "1 second")
+    #expect(TurnActivityView.roughDuration(45) == "45 seconds")
+    #expect(TurnActivityView.roughDuration(119) == "1 minute")
+    #expect(TurnActivityView.roughDuration(7_300) == "2 hours")
 }

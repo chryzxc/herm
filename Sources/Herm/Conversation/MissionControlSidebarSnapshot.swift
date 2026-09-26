@@ -94,7 +94,7 @@ struct MissionControlSidebarSnapshot: Equatable {
     @MainActor
     static func inputs(model: DockModel, control: ControlCenterModel) -> Inputs {
         Inputs(
-            activeSessionID: model.sessionID,
+            activeSessionID: model.navigationSessionID,
             activeStatus: model.status,
             profileScopeID: model.profileScopeID,
             agentDisplayName: model.agentDisplayName,

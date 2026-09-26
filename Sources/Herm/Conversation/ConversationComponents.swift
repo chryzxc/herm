@@ -893,39 +893,202 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
     }
 }
 
-struct ConversationActivityRow: View {
-  @ObservedObject var model: DockModel
-  var horizontalInset: CGFloat = 20
-  private var latestPipelineActivity: AgentActivityPresentation.PipelineActivity? {
-    model.agentPresentationSnapshot.pipeline.first(where: \.isActive)
-  }
-  private var title: String {
-    switch model.conversationActivityPhase {
-    case .thinking: return "Thinking"
-    case .responding: break
-    case .idle: break
-    }
-    // Read once: each access re-runs the presentation snapshot cache's input
-    // equality check over the full agent and activity arrays.
-    let activity = latestPipelineActivity
-    guard activity != nil else { return "Responding" }
-    return AgentActivityPresentation.conversationTitle(
-      latestPipelineActivity: activity, recentEvents: model.recentEvents)
-  }
+/// The tool calls behind one response, shown above its bubble. While the
+/// response streams the list stays open and grows per call; once complete it
+/// collapses to a "Worked for …" summary the reader can expand.
+struct TurnActivityView: View {
+  let activity: [ActiveToolCall]
+  /// Turn start while streaming; nil once the response is complete.
+  let runningSince: Date?
+  let duration: TimeInterval?
+  @State private var isExpanded = false
+  @State private var expandedThoughtIDs: Set<String> = []
+
   var body: some View {
-    HStack(spacing: 6) {
-      ThinkingDots()
-      Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockSecondaryText)
-        .lineLimit(1).truncationMode(.tail)
-      if let startedAt = model.streamingResponseStartedAt {
-        Spacer(minLength: 8)
-        ResponseDurationLabel(startedAt: startedAt, finishedDuration: nil)
-          .font(.system(size: 12, design: .monospaced))
-          .foregroundStyle(Color.dockMetadataText)
-          .accessibilityLabel("Response duration")
+    VStack(alignment: .leading, spacing: 2) {
+      if let runningSince {
+        steps
+        HStack(spacing: 6) {
+          ProgressView().controlSize(.mini)
+          TimelineView(.periodic(from: .now, by: 1)) { context in
+            Text("Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))")
+          }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(Color.dockMetadataText)
+        .padding(.vertical, 4)
+      } else {
+        Button {
+          withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() }
+        } label: {
+          HStack(spacing: 6) {
+            Text(summary).font(.system(size: 12, weight: .medium))
+            DockIcon(isExpanded ? .caretDown : .caretRight, size: 10)
+          }
+          .foregroundStyle(Color.dockSecondaryText)
+          .padding(.vertical, 6)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isExpanded ? "Hide activity" : "Show activity")
+        if isExpanded { steps }
       }
-    }.padding(.horizontal, horizontalInset).padding(.vertical, 8).frame(
-      maxWidth: .infinity, alignment: .leading)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /// Whole units only: "45 seconds", "3 minutes", "2 hours".
+  static func roughDuration(_ seconds: TimeInterval) -> String {
+    let s = max(0, Int(seconds))
+    let (value, unit) = s < 60 ? (s, "second") : s < 3600 ? (s / 60, "minute") : (s / 3600, "hour")
+    return "\(value) \(unit)\(value == 1 ? "" : "s")"
+  }
+
+  private var summary: String {
+    let count = "\(activity.count) step\(activity.count == 1 ? "" : "s")"
+    return duration.map { "Worked for \(Self.roughDuration($0)) · \(count)" } ?? "Worked · \(count)"
+  }
+
+  private var steps: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      ForEach(activity) { call in
+        if call.name == ActiveToolCall.thinkingName {
+          thoughtRow(call)
+        } else if call.name == ActiveToolCall.compactionName {
+          CompactionStepRow(call: call)
+        } else {
+          toolRow(call)
+        }
+      }
+    }
+    .padding(.vertical, 4)
+  }
+
+  private func thoughtRow(_ call: ActiveToolCall) -> some View {
+    let isOpen = expandedThoughtIDs.contains(call.id)
+    let seconds = call.completedAt.map { $0.timeIntervalSince(call.startedAt) }
+    let title = call.isComplete
+      ? seconds.map { "Thought for \(Self.roughDuration($0))" } ?? "Thought"
+      : "Thinking"
+    return VStack(alignment: .leading, spacing: 4) {
+      Button {
+        withAnimation(.dockEase(duration: 0.18)) {
+          if isOpen { expandedThoughtIDs.remove(call.id) } else { expandedThoughtIDs.insert(call.id) }
+        }
+      } label: {
+        HStack(spacing: 8) {
+          stepIcon(.brain)
+          Text(title).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+          if !call.isComplete { ProgressView().controlSize(.mini) }
+          DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(isOpen ? "Hide thinking" : "Show thinking")
+      if isOpen {
+        Text((call.result ?? "").isEmpty ? "…" : call.result ?? "")
+          .font(.system(size: 12))
+          .foregroundStyle(Color.dockMetadataText)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.leading, 28)
+      }
+    }
+  }
+
+  private func stepIcon(_ icon: Ph) -> some View {
+    DockIcon(icon, size: 13, color: Color.dockSecondaryText).frame(width: 16, height: 16)
+  }
+
+  private func toolRow(_ call: ActiveToolCall) -> some View {
+        HStack(spacing: 8) {
+          stepIcon(Self.icon(for: call.name))
+          Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
+            .font(.system(size: 12))
+            .foregroundStyle(Color.dockSecondaryText)
+            .lineLimit(1).truncationMode(.tail)
+          if !call.isComplete { ProgressView().controlSize(.mini) }
+        }
+        .help(call.result ?? call.input)
+  }
+
+  static func icon(for toolName: String) -> Ph {
+    let name = toolName.lowercased().replacingOccurrences(of: "-", with: "_")
+    switch name {
+    case "terminal", "shell", "exec", "exec_command", "process": return .terminal
+    case "patch", "apply_patch", "edit_file", "write_file": return .pencilSimple
+    case "read_file": return .fileText
+    case "search_files", "search", "grep": return .magnifyingGlass
+    case "view_image", "vision_analyze": return .image
+    case "todo": return .listChecks
+    default:
+      if name.contains("delegate") || name.contains("subagent") { return .usersThree }
+      if name.contains("browser") || name.contains("web") || name.contains("fetch") { return .globe }
+      if name.contains("memory") || name.contains("skill") { return .brain }
+      return .wrench
+    }
+  }
+}
+
+/// Live compaction step: transcript lines squeeze into one while a shimmer
+/// sweeps the label, settling into a static "Compacted context" step.
+private struct CompactionStepRow: View {
+  let call: ActiveToolCall
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var isSqueezed = false
+  @State private var shimmer: CGFloat = -1
+
+  var body: some View {
+    HStack(spacing: 8) {
+      if call.isComplete {
+        DockIcon(.arrowsInLineVertical, size: 13, color: Color.dockSecondaryText).frame(width: 16, height: 16)
+          .transition(.scale.combined(with: .opacity))
+        Text(title).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+      } else {
+        squeezeGlyph.frame(width: 16, height: 16)
+        Text("Compacting context")
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(Color.dockAccent)
+          .overlay { if !reduceMotion { shimmerOverlay } }
+      }
+    }
+    .animation(.dockEase(duration: 0.25), value: call.isComplete)
+    .help("Hermes summarizes older turns to free context")
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(call.isComplete ? title : "Compacting context")
+    .onAppear {
+      guard !reduceMotion, !call.isComplete else { return }
+      withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { isSqueezed = true }
+      withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { shimmer = 1 }
+    }
+  }
+
+  private var title: String {
+    call.completedAt.map { "Compacted context in \(TurnActivityView.roughDuration($0.timeIntervalSince(call.startedAt)))" }
+      ?? "Compacted context"
+  }
+
+  /// Three transcript lines that fold toward the middle one and back.
+  private var squeezeGlyph: some View {
+    ZStack {
+      ForEach(Array([(-4.5, 10.0), (0, 14.0), (4.5, 8.0)].enumerated()), id: \.offset) { index, line in
+        Capsule()
+          .fill(Color.dockAccent.opacity(index == 1 ? 1 : isSqueezed ? 0.25 : 0.7))
+          .frame(width: isSqueezed ? 14 : line.1, height: 2)
+          .offset(y: isSqueezed ? 0 : line.0)
+      }
+    }
+  }
+
+  private var shimmerOverlay: some View {
+    GeometryReader { proxy in
+      LinearGradient(colors: [.clear, .white.opacity(0.55), .clear], startPoint: .leading, endPoint: .trailing)
+        .frame(width: proxy.size.width * 0.5)
+        .offset(x: shimmer * proxy.size.width)
+    }
+    .mask(Text("Compacting context").font(.system(size: 12, weight: .medium)))
+    .allowsHitTesting(false)
   }
 }
 

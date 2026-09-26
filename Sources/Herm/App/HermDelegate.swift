@@ -3,6 +3,65 @@ import Combine
 import SwiftUI
 import UserNotifications
 
+/// The modifier a global shortcut is triggered by double-tapping.
+enum DoubleTapShortcut: String, CaseIterable, Identifiable {
+    case command, option, control, shift, off
+
+    /// UserDefaults keys, read on every key event so Settings edits apply at once.
+    static let workspaceKey = "hermes.shortcut.workspace"
+    static let notchKey = "hermes.shortcut.notch"
+
+    static var workspace: Self { stored(workspaceKey, default: .command) }
+    static var notch: Self { stored(notchKey, default: .option) }
+
+    private static func stored(_ key: String, default value: Self) -> Self {
+        UserDefaults.standard.string(forKey: key).flatMap(Self.init(rawValue:)) ?? value
+    }
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .command: "Double-tap Command"
+        case .option: "Double-tap Option"
+        case .control: "Double-tap Control"
+        case .shift: "Double-tap Shift"
+        case .off: "Off"
+        }
+    }
+
+    var keycap: String? {
+        switch self {
+        case .command: "⌘ ⌘"
+        case .option: "⌥ ⌥"
+        case .control: "⌃ ⌃"
+        case .shift: "⇧ ⇧"
+        case .off: nil
+        }
+    }
+
+    /// Left and right key codes on macOS keyboards.
+    var keyCodes: Set<UInt16> {
+        switch self {
+        case .command: [54, 55]
+        case .option: [58, 61]
+        case .control: [59, 62]
+        case .shift: [56, 60]
+        case .off: []
+        }
+    }
+
+    var flag: NSEvent.ModifierFlags {
+        switch self {
+        case .command: .command
+        case .option: .option
+        case .control: .control
+        case .shift: .shift
+        case .off: []
+        }
+    }
+}
+
 struct CommandDoubleTapDetector {
     static let maximumInterval: TimeInterval = 0.35
 
@@ -152,19 +211,17 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             optionDoubleTapDetector.noteKeyActivity()
             return
         }
-        switch event.keyCode {
-        // 54 and 55 are the right and left Command keys: ⌘⌘ toggles the panel.
-        case 54, 55:
-            if commandDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(.command), at: event.timestamp) {
+        let workspace = DoubleTapShortcut.workspace
+        if workspace.keyCodes.contains(event.keyCode) {
+            if commandDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(workspace.flag), at: event.timestamp) {
                 dockPanel?.toggleFromShortcut()
             }
-        // 58 and 61 are the left and right Option keys: ⌥⌥ peeks the notch quick preview.
-        case 58, 61:
-            if optionDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(.option), at: event.timestamp) {
-                edgeDock?.toggleQuickPreview()
-            }
-        default:
-            break
+            return
+        }
+        let notch = DoubleTapShortcut.notch
+        if notch.keyCodes.contains(event.keyCode),
+           optionDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(notch.flag), at: event.timestamp) {
+            edgeDock?.toggleQuickPreview()
         }
     }
 
@@ -214,7 +271,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var outsideClickMonitors: [Any] = []
     private var desiredWidth = Metrics.workspaceWidth
-    private var isFullscreen = false
+    private var isFullscreen = false {
+        didSet { panelPresentation.isFullscreen = isFullscreen }
+    }
     private var workspaceHost: NSView?
     private var isWorkspaceVisible = false
     private var pointerExitTask: DispatchWorkItem?
@@ -304,7 +363,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             rootView: DockPopover(model: model, panelPresentation: panelPresentation, controlCenter: controlCenter, availableWorkspaceWidth: { [weak self] in
                 self?.availableWorkspaceWidth() ?? .greatestFiniteMagnitude
             }, onWorkspaceWidthChange: { [weak self] width in
-                self?.resizePanel(to: width) ?? width
+                // The split view changes pane count when the inspector toggles.
+                // Animating the window at the same time can leave an old
+                // divider drawn over the newly positioned conversation.
+                self?.resizePanel(to: width, animated: false) ?? width
             }, onClose: { [weak self] in
                 self?.hide()
             }, onFullscreenToggle: { [weak self] in

@@ -67,7 +67,8 @@ enum SessionActivityOverviewPresentation {
     static func makeSnapshot(
         agentSnapshot: AgentPresentationSnapshot,
         botRecords: [BotActivityRecord],
-        kanbanTasks: [KanbanTaskSummary]
+        kanbanTasks: [KanbanTaskSummary],
+        isTurnActive: Bool = false
     ) -> Snapshot {
         let kanbanIDs = Set(kanbanTasks.map(\.id))
         let directBotRecords = botRecords
@@ -109,7 +110,20 @@ enum SessionActivityOverviewPresentation {
                     result: record.result
                 )
             }
-        let work = (kanbanWork + botWork).sorted { lhs, rhs in
+        // The session's own turn is in progress too; its running steps lead,
+        // or one row stands for the turn between steps.
+        var turnWork: [WorkRow] = []
+        if isTurnActive {
+            turnWork = agentSnapshot.pipeline.filter { $0.status == "Running" }.map { item in
+                WorkRow(id: "turn:\(item.id)", source: .agent, title: item.task, status: "Working",
+                        actor: item.agent, updatedAt: item.startedAt ?? item.timestamp, detail: item.detail, result: nil)
+            }
+            if turnWork.isEmpty {
+                turnWork = [WorkRow(id: "turn", source: .agent, title: "Working on this session’s request",
+                                    status: "Working", actor: "Orchestrator", updatedAt: nil, detail: nil, result: nil)]
+            }
+        }
+        let work = turnWork + (kanbanWork + botWork).sorted { lhs, rhs in
             let lhsDate = lhs.updatedAt ?? .distantPast
             let rhsDate = rhs.updatedAt ?? .distantPast
             if lhsDate != rhsDate { return lhsDate > rhsDate }
@@ -227,7 +241,8 @@ struct SessionActivityOverviewView: View {
         SessionActivityOverviewPresentation.makeSnapshot(
             agentSnapshot: model.agentPresentationSnapshot,
             botRecords: botRecords,
-            kanbanTasks: sessionID == nil || control.sessionKanbanSessionID != sessionID ? [] : control.sessionKanbanTasks
+            kanbanTasks: sessionID == nil || control.sessionKanbanSessionID != sessionID ? [] : control.sessionKanbanTasks,
+            isTurnActive: model.status == .working
         )
     }
 

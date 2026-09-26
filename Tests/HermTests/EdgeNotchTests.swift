@@ -222,7 +222,7 @@ struct EdgeNotchTests {
         ]
         let current = EdgeNotchTask(id: "open", title: "Open", phase: .attention, statusLabel: "Needs your approval",
                                     detail: nil, updatedAt: nil, isCurrent: true, isStatusCurrent: true, session: nil)
-        let tasks = EdgeNotchTask.build(current: current, sessions: sessions, currentSessionID: "open", isOnline: true)
+        let tasks = EdgeNotchTask.build(current: current, sessions: sessions, currentSessionIDs: ["open"], isOnline: true)
         #expect(tasks.map(\.id).prefix(3) == ["open", "new-work", "old-work"])
         #expect(tasks.filter { !$0.isInProgress }.count == 8)
         #expect(!tasks.contains { $0.id == "seen" })
@@ -230,16 +230,39 @@ struct EdgeNotchTests {
         #expect(tasks.first?.tone == .attention)
     }
 
+    @Test func openSessionKnownByRuntimeAliasIsNotListedTwice() {
+        let sessions = [
+            HermesSession(id: "20260926_183044_1083e6", title: "Clarify recipients", preview: "", startedAt: nil,
+                          messageCount: 1, source: "herm", isWorking: true),
+            HermesSession(id: "other", title: "Other", preview: "", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
+        ]
+        let current = EdgeNotchTask(id: "893ad513", title: "Clarify recipients", phase: .working, statusLabel: "Working",
+                                    detail: nil, updatedAt: nil, isCurrent: true, isStatusCurrent: true, session: nil)
+        let tasks = EdgeNotchTask.build(current: current, sessions: sessions, currentSessionIDs: ["893ad513"], isOnline: true)
+        #expect(tasks.map(\.id) == ["893ad513", "other"])
+    }
+
+    @Test func workingTaskShowsLatestActivityNotItsOpeningPrompt() {
+        let sessions = [
+            HermesSession(id: "a", title: "A", preview: "first prompt", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
+            HermesSession(id: "b", title: "B", preview: "first prompt", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
+        ]
+        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, activity: ["a": "terminal: git checkout"],
+                                        currentSessionIDs: [], isOnline: true)
+        #expect(tasks.first { $0.id == "a" }?.detail == "terminal: git checkout")
+        #expect(tasks.first { $0.id == "b" }?.detail == nil)
+    }
+
     @Test func offlineTasksKeepResultsButStopClaimingLiveStatus() {
         let sessions = [
             HermesSession(id: "a", title: "A", preview: "", startedAt: nil, messageCount: 1, source: "cli", isWorking: true),
             HermesSession(id: "b", title: "B", preview: "", startedAt: nil, messageCount: 1, source: "cli", hasUnreadUpdate: true),
         ]
-        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionID: nil, isOnline: false)
+        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: false)
         #expect(tasks.first { $0.id == "a" }?.tone == .inactive)
         #expect(tasks.first { $0.id == "a" }?.displayStatus == "Status not current")
         #expect(tasks.first { $0.id == "b" }?.tone == .complete)
-        #expect(EdgeNotchTask.build(current: nil, sessions: [], currentSessionID: nil, isOnline: true).isEmpty)
+        #expect(EdgeNotchTask.build(current: nil, sessions: [], currentSessionIDs: [], isOnline: true).isEmpty)
     }
 
     @Test func officeStatusesShareTheDockStatusVocabulary() {

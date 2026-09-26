@@ -143,8 +143,23 @@ enum TranscriptHistoryPaging {
     /// slash-skill turn shows the invocation instead of the expanded skill.
     static func displayRows(fromStoredRows rows: [[String: Any]]) -> [[String: Any]] {
         rows.compactMap { row in
-            guard let role = row["role"] as? String, role == "user" || role == "assistant" else { return nil }
+            guard let role = row["role"] as? String else { return nil }
             guard (row["display_kind"] as? String) != "hidden" else { return nil }
+            // Tool rows and tool-only assistant rows carry the turn's
+            // activity; `parseMessages` attaches it to the next reply.
+            if role == "tool" {
+                var tool: [String: Any] = ["role": "tool", "name": (row["tool_name"] ?? row["name"]) as? String ?? "tool"]
+                for key in ["tool_call_id", "timestamp"] { tool[key] = row[key] }
+                return tool
+            }
+            guard role == "user" || role == "assistant" else { return nil }
+            var activity: [String: Any] = [:]
+            if role == "assistant" {
+                var toolCalls = row["tool_calls"]
+                if let encoded = toolCalls as? String { toolCalls = try? JSONSerialization.jsonObject(with: Data(encoded.utf8)) }
+                activity["tool_calls"] = toolCalls as? [[String: Any]]
+                activity["reasoning"] = (row["reasoning"] ?? row["reasoning_content"]) as? String
+            }
             var text = storedText(row["display_content"] as? String ?? row["content"])
             if role == "user" {
                 guard !text.trimmingCharacters(in: .whitespaces).hasPrefix("[System:") else { return nil }
@@ -155,8 +170,8 @@ enum TranscriptHistoryPaging {
                 )
                 if let invocation = skillInvocationText(text) { text = invocation }
             }
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-            var display: [String: Any] = ["role": role, "text": text]
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !activity.isEmpty else { return nil }
+            var display: [String: Any] = activity.merging(["role": role, "text": text]) { _, new in new }
             if let id = rowID(row) { display["row_id"] = id }
             if let timestamp = row["timestamp"] { display["timestamp"] = timestamp }
             return display

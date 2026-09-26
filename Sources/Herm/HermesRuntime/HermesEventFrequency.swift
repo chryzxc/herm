@@ -7,7 +7,7 @@ import Foundation
 enum HermesHighFrequencyEvent {
     static func includes(_ type: String) -> Bool {
         switch type {
-        case "message.delta", "reasoning.delta", "thinking.delta", "voice.status": return true
+        case "message.delta", "reasoning.delta", "thinking.delta", "voice.status", "session.usage": return true
         default: return false
         }
     }
