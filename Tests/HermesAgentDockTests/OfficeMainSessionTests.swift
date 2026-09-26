@@ -41,6 +41,6 @@ struct OfficeMainSessionTests {
         ])
         #expect(simulation.agents[0].activityLane == .unknown)
         #expect(!simulation.agents[0].canWander)
-        #expect(simulation.agents[0].activitySymbol == "questionmark")
+        #expect(simulation.agents[0].activitySymbol == .question)
     }
 }

@@ -95,7 +95,7 @@ final class OfficeMusicService: ObservableObject {
                 // -1743: Automation access denied; -1712: the first-run permission prompt went unanswered.
                 let reply = String(decoding: failure, as: UTF8.self)
                 return reply.contains("-1743") || reply.contains("-1712")
-                    ? "error\nAllow Hermes Workspace to control Spotify in System Settings › Privacy & Security › Automation."
+                    ? "error\nAllow Herm to control Spotify in System Settings › Privacy & Security › Automation."
                     : "error\nCould not reach Spotify."
             }
             return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -111,7 +111,7 @@ struct OfficeMusicControl: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: music.state.isPlaying ? "waveform" : "music.note")
+            DockIcon(music.state.isPlaying ? .waveform : .musicNote)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 .frame(width: 30, height: 30)
@@ -127,11 +127,11 @@ struct OfficeMusicControl: View {
             .frame(minHeight: 42)
             .help(music.state.message ?? "")
             Button(action: music.togglePlayback) {
-                Image(systemName: music.state.isPlaying ? "pause.fill" : "play.fill").frame(width: 24, height: 24)
+                DockIcon(music.state.isPlaying ? .pause : .play, weight: .fill).frame(width: 24, height: 24)
             }
             .help(music.state.isPlaying ? "Pause" : "Play")
             Button(action: music.next) {
-                Image(systemName: "forward.fill").frame(width: 24, height: 24)
+                DockIcon(.fastForward, weight: .fill).frame(width: 24, height: 24)
             }
             .help("Next song")
         }

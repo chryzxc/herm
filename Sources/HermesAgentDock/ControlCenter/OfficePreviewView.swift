@@ -48,7 +48,7 @@ struct OfficePreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DockPageHeader(icon: "cube.transparent", title: "3D Workspace", subtitle: subtitle,
+            DockPageHeader(icon: .cubeTransparent, title: "3D Workspace", subtitle: subtitle,
                            onRefresh: onRefresh, isRefreshing: isRefreshing)
 
             GeometryReader { geometry in
@@ -366,15 +366,15 @@ private struct OfficeToolbar: View {
                 .padding(2)
                 .background(Capsule().fill(Color.dockControlSurface))
                 separator
-                iconButton(showsAgents ? "person.2.fill" : "person.2", help: showsAgents ? "Hide bots" : "Show bots",
+                iconButton(showsAgents ? .users : .users, help: showsAgents ? "Hide bots" : "Show bots",
                            isOn: showsAgents, action: onToggleAgents)
                 if canShowRoster {
-                    iconButton("sidebar.left", help: showsRoster ? "Hide crew roster" : "Show crew roster",
+                    iconButton(.sidebar, help: showsRoster ? "Hide crew roster" : "Show crew roster",
                                isOn: showsRoster, action: onToggleRoster)
                 }
-                iconButton("rectangle.split.3x1", help: "Kanban task board", isOn: false, action: onShowBoard)
+                iconButton(.kanban, help: "Kanban task board", isOn: false, action: onShowBoard)
                 separator
-                iconButton("arrow.counterclockwise", help: "Reset camera", isOn: false, action: onResetCamera)
+                iconButton(.arrowCounterClockwise, help: "Reset camera", isOn: false, action: onResetCamera)
             }
             .padding(5)
         }
@@ -398,9 +398,9 @@ private struct OfficeToolbar: View {
         .accessibilityLabel("Show \(label)")
     }
 
-    private func iconButton(_ symbol: String, help: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ symbol: Ph, help: String, isOn: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
+            DockIcon(symbol)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isOn ? Color.dockAccent : Color.dockSecondaryText)
                 .frame(width: 32, height: 30)
@@ -435,7 +435,7 @@ private struct OfficeInspectorHeader<Leading: View>: View {
             }
             Spacer()
             Button(action: onClose) {
-                Image(systemName: "xmark")
+                DockIcon(.x)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
@@ -470,7 +470,7 @@ private struct OfficeAgentInspector: View {
                     if let bot {
                         BotAvatarView(bot: bot, imageData: avatarData, size: 34)
                     } else {
-                        Image(systemName: "cpu")
+                        DockIcon(.cpu)
                             .font(.system(size: 15))
                             .foregroundStyle(Color.dockAccent)
                             .frame(width: 34, height: 34)
@@ -499,7 +499,7 @@ private struct OfficeAgentInspector: View {
     @ViewBuilder
     private func sessionContent(_ session: OfficeMainSession) -> some View {
         Button { onOpenSession(session.id) } label: {
-            Label("Open conversation", systemImage: "bubble.left.and.bubble.right.fill")
+            Label("Open conversation", icon: .chats)
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderedProminent)
@@ -543,12 +543,12 @@ private struct OfficeAgentInspector: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 if let step = task.currentStepKey ?? task.latestEventNote {
-                    Label(step.replacingOccurrences(of: "_", with: " "), systemImage: "arrow.triangle.turn.up.right.circle")
+                    Label(step.replacingOccurrences(of: "_", with: " "), icon: .arrowBendUpRight)
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 if task.lane == .running, let started = task.startedAt {
-                    Label { Text("Running for ") + Text(started, style: .relative) } icon: { Image(systemName: "clock") }
+                    Label { Text("Running for ") + Text(started, style: .relative) } icon: { DockIcon(.clock) }
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(Color.dockSecondaryText)
                 }
@@ -564,7 +564,7 @@ private struct OfficeAgentInspector: View {
         Menu {
             ForEach(assignableTasks) { task in Button(task.title) { onAssignTask(task) } }
         } label: {
-            Label("Assign existing task…", systemImage: "plus.circle")
+            Label("Assign existing task…", icon: .plusCircle)
         }
         .disabled(!isDataCurrent || !canAssignTasks || assignableTasks.isEmpty)
         .help(canAssignTasks ? "Choose an unassigned Kanban task; confirm through Hermes." : "Task assignment is unavailable through the installed Hermes CLI.")
@@ -604,7 +604,7 @@ private struct OfficeBoardInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             OfficeInspectorHeader(title: "Kanban task board", subtitle: "Live tasks · Read only", onClose: onClose) {
-                Image(systemName: "rectangle.split.3x1.fill")
+                DockIcon(.kanban)
                     .font(.system(size: 14))
                     .foregroundStyle(Color.dockAccent)
                     .frame(width: 34, height: 34)
@@ -638,7 +638,7 @@ private struct OfficeBoardInspector: View {
                         .padding(.horizontal, 7)
                         .frame(height: 18)
                         .background(Capsule().fill(Color.dockControlSurface))
-                    Image(systemName: "chevron.right")
+                    DockIcon(.caretRight)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color.dockMetadataText)
                         .rotationEffect(.degrees(expanded ? 90 : 0))

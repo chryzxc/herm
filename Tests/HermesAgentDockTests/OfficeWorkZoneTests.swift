@@ -53,7 +53,7 @@ struct OfficeWorkZoneTests {
             #expect((agent.work != nil) == (status == "running"))
         }
         let running = OfficePreviewAgentPresentation(id: "bot", name: "Bot", tasks: [OfficePreviewTaskData(task("t", step: "pentest"))])
-        #expect(running.activitySymbol == "lock.shield.fill")
+        #expect(running.activitySymbol == .shieldCheck)
     }
 
     @MainActor @Test func noisySignalsSettleBeforeTheBotChangesRooms() {

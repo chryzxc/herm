@@ -444,11 +444,11 @@ struct BotServiceTests {
     }
 
     @Test func knownBotsHaveDistinctRoleAvatarSymbols() {
-        #expect(BotAvatarPresentation.symbol(for: "nexus") == "compass.drawing")
-        #expect(BotAvatarPresentation.symbol(for: "cypher") == "shield.fill")
-        #expect(BotAvatarPresentation.symbol(for: "atlas") == "globe")
-        #expect(BotAvatarPresentation.symbol(for: "scout") == "binoculars.fill")
-        #expect(BotAvatarPresentation.symbol(for: "unknown") == "person.crop.circle")
+        #expect(BotAvatarPresentation.symbol(for: "nexus") == .compassTool)
+        #expect(BotAvatarPresentation.symbol(for: "cypher") == .shield)
+        #expect(BotAvatarPresentation.symbol(for: "atlas") == .globe)
+        #expect(BotAvatarPresentation.symbol(for: "scout") == .binoculars)
+        #expect(BotAvatarPresentation.symbol(for: "unknown") == .userCircle)
     }
 }
 

@@ -32,17 +32,17 @@ enum OfficeWorkKind: String, CaseIterable, Sendable {
         }
     }
 
-    var symbol: String {
+    var symbol: Ph {
         switch self {
-        case .coding: "desktopcomputer"
-        case .research: "books.vertical.fill"
-        case .testing: "testtube.2"
-        case .security: "lock.shield.fill"
-        case .infrastructure: "server.rack"
-        case .design: "paintbrush.fill"
-        case .build: "hammer.fill"
-        case .writing: "pencil.and.list.clipboard"
-        case .orchestration: "point.3.connected.trianglepath.dotted"
+        case .coding: .desktop
+        case .research: .books
+        case .testing: .testTube
+        case .security: .shieldCheck
+        case .infrastructure: .hardDrives
+        case .design: .paintBrush
+        case .build: .hammer
+        case .writing: .clipboardText
+        case .orchestration: .graph
         }
     }
 

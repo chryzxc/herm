@@ -3,22 +3,22 @@ import SwiftUI
 /// Deterministic visual identity for built-in Bot roles. Stored Hermes assets
 /// still take precedence; this only improves the local fallback avatar.
 enum BotAvatarPresentation {
-    static func symbol(for profileID: String) -> String {
+    static func symbol(for profileID: String) -> Ph {
         switch profileID.lowercased() {
-        case "nexus": return "compass.drawing"
-        case "cypher": return "shield.fill"
-        case "atlas": return "globe"
-        case "archon": return "building.columns.fill"
-        case "canvas": return "paintpalette.fill"
-        case "ripple": return "pencil.and.outline"
-        case "forge": return "hammer.fill"
-        case "sentry": return "eye.fill"
-        case "sentinel": return "checkmark.shield.fill"
-        case "aegis": return "server.rack"
-        case "probe": return "flask.fill"
-        case "beacon": return "antenna.radiowaves.left.and.right"
-        case "scout": return "binoculars.fill"
-        default: return "person.crop.circle"
+        case "nexus": return .compassTool
+        case "cypher": return .shield
+        case "atlas": return .globe
+        case "archon": return .bank
+        case "canvas": return .palette
+        case "ripple": return .pencilLine
+        case "forge": return .hammer
+        case "sentry": return .eye
+        case "sentinel": return .shieldCheck
+        case "aegis": return .hardDrives
+        case "probe": return .flask
+        case "beacon": return .broadcast
+        case "scout": return .binoculars
+        default: return .userCircle
         }
     }
 
@@ -48,7 +48,7 @@ struct BotAvatarView: View {
 
     var body: some View {
         ZStack {
-            if let imageData, let image = NSImage(data: imageData) {
+            if let imageData, let image = Self.decoded(imageData) {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
@@ -67,6 +67,17 @@ struct BotAvatarView: View {
         .opacity(bot.isHidden ? 0.45 : 1)
     }
 
+    /// Rows re-render on every scroll frame; decode each avatar once.
+    private static let images = NSCache<NSData, NSImage>()
+
+    private static func decoded(_ data: Data) -> NSImage? {
+        let key = data as NSData
+        if let cached = images.object(forKey: key) { return cached }
+        guard let image = NSImage(data: data) else { return nil }
+        images.setObject(image, forKey: key)
+        return image
+    }
+
     private var deterministicFace: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
@@ -80,9 +91,8 @@ struct BotAvatarView: View {
             Circle()
                 .stroke(.white.opacity(0.20), lineWidth: max(0.6, size * 0.018))
                 .frame(width: size * 0.64, height: size * 0.64)
-            LucideImage(systemName: BotAvatarPresentation.symbol(for: bot.id))
+            DockIcon(BotAvatarPresentation.symbol(for: bot.id))
                 .font(.system(size: size * 0.34, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(.white.opacity(0.96))
                 .shadow(color: .black.opacity(0.22), radius: size * 0.06, y: size * 0.04)
         }

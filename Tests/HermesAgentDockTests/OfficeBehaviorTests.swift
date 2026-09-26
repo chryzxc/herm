@@ -40,7 +40,7 @@ struct OfficeBehaviorTests {
         for statuses in [[], ["done"], ["completed", "done"]] {
             #expect(agent(statuses).hasNoPendingTasks)
             #expect(agent(statuses).canWander)
-            #expect(agent(statuses).activitySymbol == "diamond.fill")
+            #expect(agent(statuses).activitySymbol == .diamond)
         }
         for status in ["todo", "scheduled", "ready", "triage", "review", "blocked", "running", "custom"] {
             #expect(!agent(["done", status]).hasNoPendingTasks)
@@ -52,10 +52,10 @@ struct OfficeBehaviorTests {
     }
 
     @Test func workIconUsesTheReportedStepWithoutChangingTasks() {
-        #expect(agent(["running"], step: "verification").activitySymbol == "testtube.2")
-        #expect(agent(["running"], step: "research").activitySymbol == "books.vertical.fill")
-        #expect(agent(["running"]).activitySymbol == "desktopcomputer")
-        #expect(agent(["scheduled"]).activitySymbol == "clock.fill")
+        #expect(agent(["running"], step: "verification").activitySymbol == .testTube)
+        #expect(agent(["running"], step: "research").activitySymbol == .books)
+        #expect(agent(["running"]).activitySymbol == .desktop)
+        #expect(agent(["scheduled"]).activitySymbol == .clock)
         let snapshot = agent(["scheduled", "done"])
         _ = snapshot.canWander
         _ = snapshot.availabilityLabel

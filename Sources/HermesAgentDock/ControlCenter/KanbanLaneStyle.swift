@@ -27,16 +27,16 @@ extension KanbanLane {
         }
     }
 
-    var icon: String {
+    var icon: Ph {
         switch self {
-        case .triage: "scope"
-        case .todo: "circle.dashed"
-        case .ready: "circle"
-        case .running: "refresh-cw"
-        case .review: "eye"
-        case .scheduled: "clock"
-        case .blocked: "exclamationmark.octagon"
-        case .done: "checkmark.circle"
+        case .triage: .crosshair
+        case .todo: .circleDashed
+        case .ready: .circle
+        case .running: .arrowsClockwise
+        case .review: .eye
+        case .scheduled: .clock
+        case .blocked: .warningOctagon
+        case .done: .checkCircle
         }
     }
 

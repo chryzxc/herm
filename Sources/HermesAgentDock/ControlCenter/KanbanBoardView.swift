@@ -96,7 +96,7 @@ struct KanbanBoardView: View, Equatable {
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 7) {
-                LucideIcon(name: .from(systemName: lane.icon), size: 13)
+                DockIcon(lane.icon, size: 13, color: Color.dockMetadataText)
                     .foregroundStyle(lane.color)
                 Text(lane.rawValue.uppercased())
                     .font(.system(size: 11, weight: .semibold))
@@ -114,7 +114,7 @@ struct KanbanBoardView: View, Equatable {
                 Button {
                     expansion.collapse(lane, hasTasks: !laneTasks.isEmpty)
                 } label: {
-                    Image(systemName: "chevron.left")
+                    DockIcon(.caretLeft)
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(width: 28, height: 28)
@@ -252,7 +252,7 @@ private struct KanbanLaneRail: View {
     var body: some View {
         Button(action: onExpand) {
             VStack(spacing: 8) {
-                LucideIcon(name: .from(systemName: lane.icon), size: 13)
+                DockIcon(lane.icon, size: 13, color: Color.dockMetadataText)
                     .foregroundStyle(lane.color)
                     .frame(height: 20)
                 Text("\(count)")
@@ -266,7 +266,7 @@ private struct KanbanLaneRail: View {
                             .frame(height: 13)
                     }
                 }
-                Image(systemName: "chevron.right")
+                DockIcon(.caretRight)
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 0)
@@ -371,34 +371,38 @@ private struct KanbanTaskCard: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(alignment: .topTrailing) {
-            if showsMenu {
-                Menu { actionMenu } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 32, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .fixedSize()
-                .padding(.top, 2)
-                .padding(.trailing, 2)
-                .help("More Kanban actions")
-                .accessibilityLabel("More actions for \(task.title)")
-            }
-        }
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onTapGesture { onSelect(task) }
-        .onHover { isHovered = $0 }
         .modifier(KanbanCardDragSource(
             isEnabled: actions.canDrag && !isMovePending,
             taskID: task.id,
             draggingTaskID: $draggingTaskID,
             preview: dragPreview
         ))
+        // Attached after the tap/drag gestures so they cannot swallow the
+        // click, and kept in the tree so losing hover while the menu is open
+        // does not tear it down.
+        .overlay(alignment: .topTrailing) {
+            Menu { actionMenu } label: {
+                Ph.dotsThree.image(size: 14)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .frame(width: 28, height: 22)
+                    .background(Color.dockSurface2.opacity(0.9), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(Rectangle())
+            }
+            // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .padding(.top, 6)
+            .padding(.trailing, 6)
+            .opacity(showsMenu ? 1 : 0)
+            .allowsHitTesting(showsMenu)
+            .help("More Kanban actions")
+            .accessibilityLabel("More actions for \(task.title)")
+        }
+        .onHover { isHovered = $0 }
         .contextMenu { actionMenu }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
@@ -459,26 +463,26 @@ private struct KanbanTaskCard: View {
     @ViewBuilder
     private var actionMenu: some View {
         if actions.details {
-            Button("Details", systemImage: "doc.text") { onSelect(task) }
+            Button("Details", icon: .fileText) { onSelect(task) }
                 .disabled(isLoadingDetail)
         }
         if lane == .done, actions.archive {
-            actionButton("Archive", icon: "archivebox", action: .archive)
+            actionButton("Archive", icon: .archive, action: .archive)
         } else if lane == .blocked, actions.unblock {
-            actionButton("Unblock", icon: "arrow.uturn.backward", action: .unblock)
+            actionButton("Unblock", icon: .arrowUUpLeft, action: .unblock)
         } else {
-            if actions.complete { actionButton("Done", icon: "checkmark", action: .complete) }
-            if actions.block { actionButton("Block", icon: "pause", action: .block) }
+            if actions.complete { actionButton("Done", icon: .check, action: .complete) }
+            if actions.block { actionButton("Block", icon: .pause, action: .block) }
         }
         if actions.assign, !assignableBots.isEmpty {
             Divider()
-            Menu("Assign to", systemImage: "person.crop.circle") {
+            Menu("Assign to", icon: .userCircle) {
                 ForEach(assignableBots) { bot in
                     Button {
                         onAssign(task, bot.id)
                     } label: {
                         if isAssigned(to: bot) {
-                            Label(bot.name, systemImage: "checkmark")
+                            Label(bot.name, icon: .check)
                         } else {
                             Text(bot.name)
                         }
@@ -492,14 +496,23 @@ private struct KanbanTaskCard: View {
             }
             .disabled(isAssignPending)
         }
+        if !hasAnyAction {
+            Text("No actions available")
+        }
+    }
+
+    private var hasAnyAction: Bool {
+        actions.details || actions.complete || actions.block
+            || (lane == .done && actions.archive) || (lane == .blocked && actions.unblock)
+            || (actions.assign && !assignableBots.isEmpty)
     }
 
     private func isAssigned(to bot: BotSummary) -> Bool {
         task.assignee?.caseInsensitiveCompare(bot.id) == .orderedSame
     }
 
-    private func actionButton(_ title: String, icon: String, action: KanbanTaskAction) -> some View {
-        Button(title, systemImage: icon) { onAction(task, action) }
+    private func actionButton(_ title: String, icon: Ph, action: KanbanTaskAction) -> some View {
+        Button(title, icon: icon) { onAction(task, action) }
             .disabled(pendingActionIDs.contains("kanban.\(action.rawValue):\(task.id)"))
     }
 

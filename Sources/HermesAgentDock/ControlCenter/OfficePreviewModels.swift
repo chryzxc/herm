@@ -310,24 +310,24 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
         if tasks.contains(where: { $0.lane == .blocked || $0.lane == .unknown }) { return "Needs attention" }
         return "Assigned work · \(tasks.filter { $0.lane != .done }.count) pending"
     }
-    var activitySymbol: String {
+    var activitySymbol: Ph {
         if let mainSession {
             switch mainSession.lane {
-            case .running: return "desktopcomputer"
-            case .blocked: return "exclamationmark"
-            case .done: return "bubble.left.fill"
-            default: return "questionmark"
+            case .running: return .desktop
+            case .blocked: return .warningCircle
+            case .done: return .chat
+            default: return .question
             }
         }
-        if hasNoPendingTasks { return "diamond.fill" }
+        if hasNoPendingTasks { return .diamond }
         switch taskData?.lane {
-        case .running: return work?.kind.symbol ?? "desktopcomputer"
-        case .review: return "eye.fill"
-        case .blocked: return "exclamationmark"
-        case .scheduled: return "clock.fill"
-        case .triage, .unknown: return "questionmark"
-        case .ready: return "play.fill"
-        default: return "list.bullet"
+        case .running: return work?.kind.symbol ?? .desktop
+        case .review: return .eye
+        case .blocked: return .warningCircle
+        case .scheduled: return .clock
+        case .triage, .unknown: return .question
+        case .ready: return .play
+        default: return .listBullets
         }
     }
     var monitorTitle: String { mainSession?.title ?? taskData?.title ?? "No assigned Kanban task" }

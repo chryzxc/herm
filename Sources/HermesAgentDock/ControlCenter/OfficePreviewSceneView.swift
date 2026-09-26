@@ -34,14 +34,14 @@ enum OfficeAgentStatus: Int, CaseIterable, Identifiable {
         }
     }
 
-    var symbol: String {
+    var symbol: Ph {
         switch self {
-        case .blocked: "exclamationmark.triangle.fill"
-        case .working: "bolt.fill"
-        case .reviewing: "eye.fill"
-        case .queued: "tray.full.fill"
-        case .idle: "cup.and.saucer.fill"
-        case .stale: "wifi.slash"
+        case .blocked: .warning
+        case .working: .lightning
+        case .reviewing: .eye
+        case .queued: .tray
+        case .idle: .coffee
+        case .stale: .wifiSlash
         }
     }
 
@@ -1091,7 +1091,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                 while let agent = self.desiredAgents[id], let node = self.currentNodes[id],
                       let slot = self.roomLayout.slots[id] {
                     guard !Task.isCancelled else { return }
-                    if (!self.dataCurrent(for: agent) && !agent.canWander) || self.view?.window?.isVisible != true {
+                    if (!self.dataCurrent(for: agent) && !agent.canWander) || self.view?.window?.occlusionState.contains(.visible) != true {
                         self.walkingNow.remove(id)
                         speed = 0
                         do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
@@ -1230,7 +1230,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         /// One per-frame driver for every pose. Targets blend with a critically
         /// damped follow, so sitting, standing, walking and gesturing never pop.
         private func animateStationary(delta: TimeInterval) {
-            guard !lastReduceMotion, view?.window?.isVisible == true else { return }
+            guard !lastReduceMotion, view?.window?.occlusionState.contains(.visible) == true else { return }
             let dt = Float(min(delta, 0.1))
             animationTime += Double(dt)
             if animationTime - lastLeisureTick >= 1 {

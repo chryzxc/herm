@@ -102,7 +102,7 @@ struct BotRosterPage: View {
 
     private var header: some View {
         DockPageHeader(
-            icon: "bot",
+            icon: .robot,
             title: "Bots",
             subtitle: "\(model.visibleBots.count) Bots · \(model.activeNowBots.count) active",
             onRefresh: { Task { await model.refreshNow(force: true) } },
@@ -113,7 +113,7 @@ struct BotRosterPage: View {
                     Button {
                         isShowingCreateSheet = true
                     } label: {
-                        LucideLabel("New Bot", icon: "plus")
+                        DockIconLabel("New Bot", icon: .plus)
                     }
                     .controlSize(.regular)
                     .disabled(!model.canCreateBots)
@@ -122,7 +122,7 @@ struct BotRosterPage: View {
                     Button {
                         isShowingRoutineForm = true
                     } label: {
-                        LucideLabel("New Routine", icon: "plus")
+                        DockIconLabel("New Routine", icon: .plus)
                     }
                     .controlSize(.regular)
                     .disabled(!model.canCreateBots || model.visibleBots.isEmpty)
@@ -134,6 +134,16 @@ struct BotRosterPage: View {
 
     @ViewBuilder
     private var content: some View {
+        // The inventory starts `.unavailable`; don't flash that error during the first fetch.
+        if model.isRefreshing && model.inventory.availability != .ready && model.bots.isEmpty {
+            DockLoadingState(title: "Loading Bots…", detail: "Reading the Hermes profile roster.")
+        } else {
+            availabilityContent
+        }
+    }
+
+    @ViewBuilder
+    private var availabilityContent: some View {
         switch model.inventory.availability {
         case .ready:
             readyContent
@@ -185,19 +195,15 @@ struct BotRosterPage: View {
     }
 
     private var sectionPicker: some View {
-        Picker("Bot destination", selection: $selectedSection) {
-            ForEach(BotRosterSection.allCases) { section in
-                Text(section == .bots ? "Bots \(model.visibleBots.count)" : "Routines \(model.routines.count)").tag(section)
-            }
+        DockTabBar(options: BotRosterSection.allCases, selection: $selectedSection) { section in
+            section == .bots ? "Bots \(model.visibleBots.count)" : "Routines \(model.routines.count)"
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
     }
 
     private var botFilters: some View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
-                LucideImage(systemName: "magnifyingglass")
+                DockIcon(.magnifyingGlass)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockMetadataText)
                 TextField("Search Bots", text: $model.searchText)
@@ -221,14 +227,14 @@ struct BotRosterPage: View {
                         activityFilter = filter
                     } label: {
                         if filter == activityFilter {
-                            Label(filter.title, systemImage: "checkmark")
+                            Label(filter.title, icon: .check)
                         } else {
                             Text(filter.title)
                         }
                     }
                 }
             } label: {
-                Label(activityFilter.title, systemImage: "line.3.horizontal.decrease")
+                Label(activityFilter.title, icon: .funnelSimple)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
@@ -247,17 +253,17 @@ struct BotRosterPage: View {
                 Button {
                     showsHiddenBots = false
                 } label: {
-                    if !showsHiddenBots { Label("Visible only", systemImage: "checkmark") }
+                    if !showsHiddenBots { Label("Visible only", icon: .check) }
                     else { Text("Visible only") }
                 }
                 Button {
                     showsHiddenBots = true
                 } label: {
-                    if showsHiddenBots { Label("Include hidden", systemImage: "checkmark") }
+                    if showsHiddenBots { Label("Include hidden", icon: .check) }
                     else { Text("Include hidden") }
                 }
             } label: {
-                Label(showsHiddenBots ? "All Bots" : "Visible", systemImage: showsHiddenBots ? "eye" : "eye.slash")
+                Label(showsHiddenBots ? "All Bots" : "Visible", icon: showsHiddenBots ? .eye : .eyeSlash)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: DockLayout.controlHeight)
@@ -290,7 +296,6 @@ struct BotRosterPage: View {
             let gridWidth = max(0, proxy.size.width - DockLayout.contentInset * 2)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    rosterSummary
                     if shownBots.isEmpty {
                         emptyRoster(isSearching: isSearching || activityFilter != .all)
                     } else if model.visibleBots.isEmpty && !showsHiddenBots && !isSearching && activityFilter == .all {
@@ -307,22 +312,6 @@ struct BotRosterPage: View {
                 .padding(.vertical, DockLayout.tight)
             }
         }
-    }
-
-    private var rosterSummary: some View {
-        HStack(spacing: 8) {
-            Text("\(model.visibleBots.count) Bots")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.dockSecondaryText)
-            if !model.activeNowBots.isEmpty {
-                Text("\(model.activeNowBots.count) recently active")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.dockAccent)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, DockLayout.compactInset)
-        .padding(.vertical, 8)
     }
 
     private func botCard(_ bot: BotSummary) -> some View {
@@ -428,7 +417,7 @@ struct BotRosterPage: View {
                 Button {
                     isShowingCreateSheet = true
                 } label: {
-                    LucideLabel("New Bot", icon: "plus")
+                    DockIconLabel("New Bot", icon: .plus)
                 }
                 .controlSize(.regular)
                 .disabled(!model.canCreateBots)
@@ -444,7 +433,7 @@ struct BotRosterPage: View {
             Text("No visible Bots")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
-            Button("Reveal hidden Bots", systemImage: "eye") { showsHiddenBots = true }
+            Button("Reveal hidden Bots", icon: .eye) { showsHiddenBots = true }
                 .controlSize(.small)
         }
         .padding(.horizontal, DockLayout.compactInset)
@@ -453,7 +442,7 @@ struct BotRosterPage: View {
 
     private func unavailableContent(title: String, detail: String, showsRetry: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            LucideLabel(title, icon: "person.2.slash")
+            DockIconLabel(title, icon: .users)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
@@ -469,7 +458,7 @@ struct BotRosterPage: View {
                     Button {
                         Task { await model.refreshNow(force: true) }
                     } label: {
-                        LucideLabel("Retry", icon: "refresh-cw")
+                        DockIconLabel("Retry", icon: .arrowsClockwise)
                     }
                     .controlSize(.regular)
                 }
@@ -477,7 +466,7 @@ struct BotRosterPage: View {
                     Button {
                         isShowingCreateSheet = true
                     } label: {
-                        LucideLabel("New Bot", icon: "plus")
+                        DockIconLabel("New Bot", icon: .plus)
                     }
                     .controlSize(.regular)
                 }
@@ -568,7 +557,7 @@ struct BotCreationSheet: View {
             Button {
                 withAnimation { showsAdvanced.toggle() }
             } label: {
-                LucideLabel(showsAdvanced ? "Hide Advanced" : "Advanced", icon: showsAdvanced ? "chevron.up" : "chevron.down")
+                DockIconLabel(showsAdvanced ? "Hide Advanced" : "Advanced", icon: showsAdvanced ? .caretUp : .caretDown)
                     .font(.system(size: 11, weight: .semibold))
             }
             .controlSize(.small)
@@ -587,68 +576,6 @@ struct BotCreationSheet: View {
 }
 
 
-
-@MainActor
-@ViewBuilder
-func modalHeader(title: String, eyebrow: String) -> some View {
-    VStack(alignment: .leading, spacing: 5) {
-        Text(eyebrow)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .tracking(1.1)
-            .foregroundStyle(Color.dockMetadataText)
-        Text(title)
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundStyle(Color.dockPrimaryText)
-    }
-}
-
-@MainActor
-@ViewBuilder
-func modalSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 9) {
-        Text(title)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .tracking(1.1)
-            .foregroundStyle(Color.dockMetadataText)
-        content()
-    }
-}
-
-@MainActor
-@ViewBuilder
-func labeledField<Content: View>(_ title: String, hint: String? = nil, @ViewBuilder content: () -> Content) -> some View {
-    VStack(alignment: .leading, spacing: 5) {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockPrimaryText)
-            if let hint {
-                Text(hint)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
-            }
-        }
-        content()
-    }
-}
-
-@MainActor
-@ViewBuilder
-func modalActions(primaryTitle: String, isDisabled: Bool, isPending: Bool, onCancel: @escaping () -> Void, onPrimary: @escaping () -> Void) -> some View {
-    HStack(spacing: 8) {
-        Spacer()
-        Button("Cancel", action: onCancel)
-            .keyboardShortcut(.cancelAction)
-            .buttonStyle(.dockPress)
-        Button(action: onPrimary) {
-            DockActionLabel(title: primaryTitle, pendingTitle: "Saving…", isPending: isPending)
-        }
-        .keyboardShortcut(.defaultAction)
-        .buttonStyle(.dockPrimary)
-        .disabled(isDisabled)
-    }
-}
 
 /// Displays the Dock's retained records for explicit work dispatched to one
 /// Bot. Hermes does not provide a full activity-feed contract here, so this
@@ -818,7 +745,7 @@ private struct BotRoutineRow: View, Equatable {
 
     var body: some View {
         HStack(spacing: 10) {
-            LucideImage(systemName: "clock.arrow.circlepath")
+            DockIcon(.clockCounterClockwise)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(routine.enabled ? Color.dockAccent : Color.dockMetadataText)
                 .frame(width: 28, height: 44)
@@ -850,9 +777,9 @@ private struct BotRoutineRow: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Menu {
-                Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
+                Button("Remove", icon: .trash, role: .destructive, action: onRemove)
             } label: {
-                LucideImage(systemName: "ellipsis")
+                DockIcon(.dotsThree)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 44, height: 44)
@@ -868,7 +795,7 @@ private struct BotRoutineRow: View, Equatable {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .contextMenu {
-            Button("Remove", systemImage: "trash", role: .destructive, action: onRemove)
+            Button("Remove", icon: .trash, role: .destructive, action: onRemove)
                 .disabled(isRemoving)
         }
     }
@@ -902,17 +829,9 @@ struct MissionControlBotRow: View, Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 10) {
-                BotAvatarView(bot: bot, imageData: avatarData, size: 44)
-                    .overlay(alignment: .bottomTrailing) {
-                        if bot.isWorkingNow || bot.isRecentlyActive {
-                            Circle()
-                                .fill(Color.dockAccent)
-                                .frame(width: 9, height: 9)
-                                .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 1.5))
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                BotAvatarView(bot: bot, imageData: avatarData, size: 36)
                 identity
                     .frame(maxWidth: .infinity, alignment: .leading)
                 actions
@@ -921,27 +840,12 @@ struct MissionControlBotRow: View, Equatable {
                     .accessibilityHidden(!(isHovering || isFocused))
             }
             activity
-                .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
-            HStack(spacing: 6) {
-                if let lastActive = bot.lastActive {
-                    Text(lastActive, style: .relative)
-                        .lineLimit(1)
-                } else {
-                    Text("No activity time")
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                if let modelLabel {
-                    Text(modelLabel)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundStyle(Color.dockMetadataText)
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .topLeading)
+            Divider().overlay(Color.dockBorderLight)
+            footer
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 156, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(rowBackground)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
@@ -974,11 +878,8 @@ struct MissionControlBotRow: View, Equatable {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(bot.isHidden ? Color.dockSecondaryText : Color.dockPrimaryText)
                     .lineLimit(1)
-                if bot.isDefault {
-                    Text("Default")
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.dockMetadataText)
-                }
+                if bot.isDefault { chip("Default", color: Color.dockAccent) }
+                if bot.isHidden { chip("Hidden", color: Color.dockMetadataText) }
             }
             Text(BotRosterPresentation.role(for: bot))
                 .font(.system(size: 12))
@@ -987,50 +888,70 @@ struct MissionControlBotRow: View, Equatable {
         }
     }
 
+    private var isActive: Bool { bot.isWorkingNow || bot.isRecentlyActive }
+
     private var activity: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(BotRosterPresentation.activity(for: bot))
-                .font(.system(size: 12))
-                .foregroundStyle(bot.isWorkingNow || bot.isRecentlyActive ? Color.dockAccent : Color.dockSecondaryText)
-                .lineLimit(2)
-            if bot.isHidden {
-                Text("Hidden Bot")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
+        Text(BotRosterPresentation.activity(for: bot))
+            .font(.system(size: 12))
+            .foregroundStyle(bot.recentSession == nil && !isActive ? Color.dockMetadataText : Color.dockSecondaryText)
+            .lineLimit(2)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(isActive ? Color.dockAccent : Color.dockMetadataText.opacity(0.5))
+                .frame(width: 6, height: 6)
+            Group {
+                if bot.isWorkingNow {
+                    Text("Working")
+                } else if let lastActive = bot.lastActive {
+                    Text(lastActive, format: .relative(presentation: .named, unitsStyle: .abbreviated))
+                } else {
+                    Text("Never active")
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(isActive ? Color.dockAccent : Color.dockMetadataText)
+            .lineLimit(1)
+            Spacer(minLength: 8)
+            if let modelLabel {
+                chip(modelLabel, color: Color.dockSecondaryText, monospaced: true)
+                    .help(bot.provider.map { "\($0) / \(modelLabel)" } ?? modelLabel)
             }
         }
     }
 
+    private func chip(_ text: String, color: Color, monospaced: Bool = false) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .medium, design: monospaced ? .monospaced : .default))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(0.12)))
+    }
+
     private var modelLabel: String? {
-        let provider = bot.provider?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            ? bot.provider?.trimmingCharacters(in: .whitespacesAndNewlines)
-            : nil
-        let model = bot.model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            ? bot.model?.trimmingCharacters(in: .whitespacesAndNewlines)
-            : nil
-        switch (provider, model) {
-        case let (provider?, model?): return "\(provider) / \(model)"
-        case let (provider?, nil): return provider
-        case let (nil, model?): return model
-        default: return nil
-        }
+        let model = bot.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return model.isEmpty ? nil : model
     }
 
     private var actions: some View {
         Menu {
-            Button("Open Chat", systemImage: "text.bubble") { onSelect() }
+            Button("Open Chat", icon: .chatText) { onSelect() }
             if let onOpenRecentSession {
-                Button("Open Recent Session", systemImage: "clock", action: onOpenRecentSession)
+                Button("Open Recent Session", icon: .clock, action: onOpenRecentSession)
             }
-            Button("Show Activity", systemImage: "clock.arrow.circlepath") { onShowActivity?() }
-            Button("Edit Profile…", systemImage: "gearshape") { onEdit?() }
-            Button("Duplicate…", systemImage: "plus.square.on.square") { onDuplicate?() }
+            Button("Show Activity", icon: .clockCounterClockwise) { onShowActivity?() }
+            Button("Edit Profile…", icon: .gear) { onEdit?() }
+            Button("Duplicate…", icon: .copy) { onDuplicate?() }
             Divider()
-            Button(bot.isHidden ? "Unhide Bot" : "Hide Bot", systemImage: bot.isHidden ? "eye" : "eye.slash") { onToggleHidden?() }
+            Button(bot.isHidden ? "Unhide Bot" : "Hide Bot", icon: bot.isHidden ? .eye : .eyeSlash) { onToggleHidden?() }
         }
         label: {
-            LucideImage(systemName: "ellipsis")
+            DockIcon(.dotsThree)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 44, height: 44)
