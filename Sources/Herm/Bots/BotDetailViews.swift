@@ -28,25 +28,23 @@ struct BotProfileEditorSheet: View {
     @State private var showsMCPServers = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                BotAvatarView(bot: bot, imageData: avatarPreview ?? model.avatarImages[bot.id], size: 44)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(bot.name).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
-                    Text("Hermes profile").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-                }
-                Spacer()
-            }
+        DockModal(
+            badge: AnyView(BotAvatarView(bot: bot, imageData: avatarPreview ?? model.avatarImages[bot.id], size: 32)),
+            title: "Edit \(bot.name)",
+            subtitle: "Changes apply to Hermes profile \(bot.id)",
+            contentPadding: 0
+        ) {
             if detail == nil {
-                BotEditorLoadingState()
+                BotEditorLoadingState().padding(20)
             } else {
                 editorForm
             }
+        } footer: {
+            modalActions(primaryTitle: "Save Changes", isDisabled: detail == nil || isSaving, isPending: isSaving, onCancel: { dismiss() }) {
+                Task { await save(confirm: false) }
+            }
         }
-        .padding(16)
-        .frame(width: 460)
         .frame(minHeight: 420)
-        .background(Color.dockSurface2)
         .task { await load() }
         .alert("Confirm Model", isPresented: Binding(get: { pendingConfirmMessage != nil }, set: { if !$0 { pendingConfirmMessage = nil } })) {
             Button("Cancel", role: .cancel) { pendingConfirmMessage = nil }
@@ -57,74 +55,61 @@ struct BotProfileEditorSheet: View {
     }
 
     private var editorForm: some View {
-        VStack(spacing: 10) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    avatarRow
-                    titledField("Title") {
-                        TextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
-                            .textFieldStyle(.dockGlass)
-                    }
-                    titledField("Description") {
-                        TextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }))
-                            .textFieldStyle(.dockGlass)
-                    }
-                    modelRow
-                    soulRow
-                    DisclosureGroup("Skills  ·  \(detail?.skills.count ?? 0)", isExpanded: $showsSkills) {
-                        toggleSection(items: skillBinding)
-                    }
-                    DisclosureGroup("Toolsets  ·  \(detail?.toolsets.count ?? 0)", isExpanded: $showsToolsets) {
-                        toolsetSection
-                    }
-                    DisclosureGroup("MCP Servers  ·  \(detail?.mcpServers.count ?? 0)", isExpanded: $showsMCPServers) {
-                        toggleSection(items: mcpBinding)
-                    }
-                    if let editError {
-                        Text(editError).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                avatarRow
+                titledField("Title") {
+                    TextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
+                        .textFieldStyle(.dockGlass)
                 }
-                .padding(.vertical, 2)
-            }
-            .frame(maxHeight: 500)
-
-            Divider().overlay(Color.dockBorderLight)
-            HStack {
-                Text("Changes apply to Hermes profile \(bot.id)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button {
-                    Task { await save(confirm: false) }
-                } label: {
-                    if isSaving { ProgressView().controlSize(.small) } else { Text("Save Changes") }
+                titledField("Description") {
+                    TextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }))
+                        .textFieldStyle(.dockGlass)
                 }
-                .keyboardShortcut(.defaultAction)
-                .disabled(isSaving)
+                modelRow
+                soulRow
+                DisclosureGroup("Skills  ·  \(detail?.skills.count ?? 0)", isExpanded: $showsSkills) {
+                    toggleSection(items: skillBinding)
+                }
+                DisclosureGroup("Toolsets  ·  \(detail?.toolsets.count ?? 0)", isExpanded: $showsToolsets) {
+                    toolsetSection
+                }
+                DisclosureGroup("MCP Servers  ·  \(detail?.mcpServers.count ?? 0)", isExpanded: $showsMCPServers) {
+                    toggleSection(items: mcpBinding)
+                }
+                if let editError {
+                    ModalNote(text: editError, icon: .warning, tone: .dockWarning)
+                }
             }
+            .padding(20)
         }
+        .frame(maxHeight: 500)
     }
 
     private var avatarRow: some View {
         HStack(spacing: 8) {
             Text("Avatar").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText).frame(width: 90, alignment: .leading)
             Button("Upload…") { uploadAvatar() }
+                .buttonStyle(.dockSecondary)
+                .controlSize(.small)
             if model.isImageGenerationAvailable {
                 Button {
                     Task { await generateAvatar() }
                 } label: {
-                    if isGeneratingAvatar { ProgressView().controlSize(.small) } else { Text("Generate") }
+                    DockActionLabel(title: "Generate", pendingTitle: "Generating…", isPending: isGeneratingAvatar)
                 }
+                .buttonStyle(.dockSecondary)
+                .controlSize(.small)
                 .disabled(isGeneratingAvatar)
             }
             if bot.hasAvatar || avatarPreview != nil || clearsAvatar {
-                Button("Clear") {
+                Button("Clear", role: .destructive) {
                     pendingAvatarData = nil
                     avatarPreview = nil
                     clearsAvatar = true
                 }
+                .buttonStyle(.dockSecondary)
+                .controlSize(.small)
             }
             if clearsAvatar { Text("avatar will be removed").font(.system(size: 10)).foregroundStyle(Color.dockMetadataText) }
             Spacer()
@@ -163,6 +148,7 @@ struct BotProfileEditorSheet: View {
                 Text("SOUL.md").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
                 Spacer()
                 Button(showsSoul ? "Hide" : "Edit") { withAnimation { showsSoul.toggle() } }
+                    .buttonStyle(.dockSecondary)
                     .controlSize(.small)
             }
             if showsSoul {
@@ -359,31 +345,26 @@ struct BotDuplicateSheet: View {
     let bot: BotSummary
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
+    @State private var isDuplicating = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Duplicate \(bot.name)")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.dockPrimaryText)
-            TextField("New profile name (lowercase)", text: $newName)
-                .textFieldStyle(.dockGlass)
-            if let error = model.botCreationError {
-                Text(error).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
+        DockModal(icon: .copy, title: "Duplicate \(bot.name)", subtitle: "Clones config, skills, SOUL, and memory into a new profile.", width: 400) {
+            labeledField("New profile name", hint: "Lowercase letters, numbers, dashes, or underscores") {
+                TextField("e.g. \(bot.name)-copy", text: $newName)
+                    .textFieldStyle(.dockGlass)
             }
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Duplicate") {
-                    Task {
-                        if await model.duplicateBot(bot, newName: trimmedName) { dismiss() }
-                    }
+            if let error = model.botCreationError {
+                ModalNote(text: error, icon: .warning, tone: .dockWarning)
+            }
+        } footer: {
+            modalActions(primaryTitle: "Duplicate", pendingTitle: "Duplicating…", isDisabled: !BotCreationSheet.isValidProfileName(trimmedName) || isDuplicating, isPending: isDuplicating, onCancel: { dismiss() }) {
+                Task {
+                    isDuplicating = true
+                    if await model.duplicateBot(bot, newName: trimmedName) { dismiss() }
+                    isDuplicating = false
                 }
-                .disabled(!BotCreationSheet.isValidProfileName(trimmedName))
             }
         }
-        .padding(16)
-        .frame(width: 340)
-        .background(Color.dockSurface2)
     }
 
     private var trimmedName: String { newName.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -401,9 +382,7 @@ struct BotRoutineFormSheet: View {
     @State private var isSaving = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            modalHeader(title: "New Routine", eyebrow: "AUTOMATION / ROUTINE")
-
+        DockModal(icon: .calendarBlank, title: "New Routine", subtitle: "Recurring work a Bot runs on a schedule.", width: 440) {
             modalSection("ASSIGNMENT") {
                 labeledField("Bot", hint: "The profile that owns this routine") {
                     Picker("Bot", selection: $selectedProfile) {
@@ -437,11 +416,9 @@ struct BotRoutineFormSheet: View {
             }
 
             if let error = model.botCreationError {
-                Text(error)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-                    .lineLimit(3)
+                ModalNote(text: error, icon: .warning, tone: .dockWarning)
             }
+        } footer: {
             modalActions(primaryTitle: "Add Routine", isDisabled: !isValid || isSaving, isPending: isSaving, onCancel: { dismiss() }) {
                 Task {
                     guard let bot = bots.first(where: { $0.id == selectedProfile }) else { return }
@@ -453,9 +430,6 @@ struct BotRoutineFormSheet: View {
                 }
             }
         }
-        .padding(20)
-        .frame(width: 420)
-        .background(Color.dockSurface2)
         .onAppear {
             if selectedProfile.isEmpty { selectedProfile = bots.first?.id ?? "" }
         }

@@ -500,18 +500,14 @@ struct BotCreationSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            modalHeader(title: "New Bot", eyebrow: "BOT PROFILE")
-
+        DockModal(icon: .robot, title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.", width: 420) {
             modalSection("IDENTITY") {
                 labeledField("Name", hint: "Lowercase letters, numbers, dashes, or underscores") {
                     TextField("e.g. researcher", text: $name)
                         .textFieldStyle(.dockGlass)
                 }
                 if !trimmedName.isEmpty && !isValidName {
-                    Text("Use lowercase letters, numbers, dashes, or underscores.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockWarning)
+                    ModalNote(text: "Use lowercase letters, numbers, dashes, or underscores.", icon: .warning, tone: .dockWarning)
                 }
                 labeledField("Title", hint: "Optional role label") {
                     TextField("e.g. Research Analyst", text: $title)
@@ -525,12 +521,10 @@ struct BotCreationSheet: View {
 
             advancedSection
             if let error = model.botCreationError {
-                Text(error)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-                    .lineLimit(3)
+                ModalNote(text: error, icon: .warning, tone: .dockWarning)
             }
-            modalActions(primaryTitle: "Create Bot", isDisabled: !isValidName || model.isCreatingBot, isPending: model.isCreatingBot, onCancel: { dismiss() }) {
+        } footer: {
+            modalActions(primaryTitle: "Create Bot", pendingTitle: "Creating…", isDisabled: !isValidName || model.isCreatingBot, isPending: model.isCreatingBot, onCancel: { dismiss() }) {
                 guard isValidName else { return }
                 Task {
                     if await model.createBot(
@@ -543,9 +537,6 @@ struct BotCreationSheet: View {
                 }
             }
         }
-        .padding(20)
-        .frame(width: 380)
-        .background(Color.dockSurface2)
         .onDisappear { model.botCreationError = nil }
     }
 
@@ -559,8 +550,9 @@ struct BotCreationSheet: View {
             } label: {
                 DockIconLabel(showsAdvanced ? "Hide Advanced" : "Advanced", icon: showsAdvanced ? .caretUp : .caretDown)
                     .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockSecondaryText)
             }
-            .controlSize(.small)
+            .buttonStyle(.dockPress)
             if showsAdvanced {
                 Picker("Clone from", selection: $cloneFrom) {
                     Text("Fresh profile").tag("")
@@ -586,25 +578,7 @@ private struct BotActivityHistorySheet: View {
     let onOpenChat: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("\(bot.name) activity")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("DOCK-DISPATCHED BOT WORK")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .tracking(0.65)
-                        .foregroundStyle(Color.dockMetadataText)
-                }
-                Spacer()
-                Button("Open chat", action: onOpenChat)
-                    .buttonStyle(.dockPress)
-            }
-            .padding(DockLayout.contentInset)
-
-            Divider().overlay(Color.dockBorderLight)
-
+        DockModal(icon: .clockCounterClockwise, title: "\(bot.name) activity", subtitle: "Work the Dock dispatched to this Bot", width: nil, contentPadding: 0) {
             if records.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("No recorded Bot activity")
@@ -629,9 +603,12 @@ private struct BotActivityHistorySheet: View {
                     .padding(.horizontal, DockLayout.contentInset)
                 }
             }
+        } footer: {
+            Spacer()
+            Button("Open Chat", action: onOpenChat)
+                .buttonStyle(.dockPrimary)
         }
         .frame(minWidth: 500, minHeight: 360)
-        .background(Color.dockCanvas)
     }
 
     private func activityRow(_ record: BotActivityRecord) -> some View {

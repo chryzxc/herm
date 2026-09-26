@@ -665,9 +665,6 @@ struct WorkspaceActivitySidebar: View {
         }
         .sheet(isPresented: $isShowingAutomationComposer) {
             automationComposer
-                .frame(width: 520)
-                .padding(20)
-                .background(Color.dockCanvas)
         }
         .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
             if let reminder = reminderForConfirmation {
@@ -874,19 +871,17 @@ struct WorkspaceActivitySidebar: View {
             Text("Hermes will interrupt the selected native subagent. Synthesized placeholders are not interruptible.")
         }
         .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
-            VStack(alignment: .leading, spacing: 14) {
-                Text("CLARIFICATION REQUIRED")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
+            DockModal(icon: .question, title: "Clarification Required", subtitle: "Hermes needs your input to continue.", width: 440) {
                 Text(item.detail)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(Color.dockPrimaryText)
                     .fixedSize(horizontal: false, vertical: true)
                 if let choices = item.choices, !choices.isEmpty {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("SUGGESTED RESPONSES")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockSecondaryText)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .tracking(1.1)
+                            .foregroundStyle(Color.dockMetadataText)
                         ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
                             Button {
                                 clarificationResponse = choice
@@ -916,20 +911,17 @@ struct WorkspaceActivitySidebar: View {
                 TextField("Your response", text: $clarificationResponse, axis: .vertical)
                     .textFieldStyle(.dockGlass)
                     .lineLimit(3...6)
-                HStack {
-                    Spacer()
-                    Button("Cancel") { clarificationItem = nil }
-                    Button("SEND RESPONSE") {
-                        control.respond(to: item, action: .respond, response: clarificationResponse)
-                        clarificationItem = nil
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(clarificationResponse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            } footer: {
+                modalActions(
+                    primaryTitle: "Send Response",
+                    isDisabled: clarificationResponse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    isPending: false,
+                    onCancel: { clarificationItem = nil }
+                ) {
+                    control.respond(to: item, action: .respond, response: clarificationResponse)
+                    clarificationItem = nil
                 }
             }
-            .padding(20)
-            .frame(width: 390)
-            .background(Color.dockCanvas)
         }
     }
 
@@ -1928,67 +1920,30 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var automationComposer: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                DockIcon(.magicWand)
-                    .foregroundStyle(Color.dockAccent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("New automation")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("Set the intent once; Hermes will keep the cadence.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockMetadataText)
+        DockModal(icon: .magicWand, title: "New Automation", subtitle: "Set the intent once; Hermes will keep the cadence.", width: 520) {
+            HStack(alignment: .top, spacing: 10) {
+                labeledField("Name") {
+                    TextField("Morning review", text: $automationName).textFieldStyle(.dockGlass)
                 }
-                Spacer()
-            }
-
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 6) {
-                    controlFieldLabel("NAME")
-                    dockTextField("Morning review", text: $automationName)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline) {
-                        controlFieldLabel("SCHEDULE")
-                        Spacer()
-                        Text("every 2h · 0 9 * * *")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.dockMetadataText)
-                            .lineLimit(1)
-                    }
-                    dockTextField("When should Hermes run this?", text: $automationSchedule)
+                labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
+                    TextField("When should Hermes run this?", text: $automationSchedule).textFieldStyle(.dockGlass)
                 }
             }
-
-            controlFieldLabel("REQUEST")
-            TextField("What should Hermes do?", text: $automationPrompt, axis: .vertical)
-                .lineLimit(2...4)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(Color.dockPrimaryText)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 10)
-                .frame(minHeight: 42)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
-
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    withAnimation(.dockEase(duration: 0.2)) { isShowingAutomationComposer = false }
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockSecondaryText)
-                Button("Review and create") { isShowingAutomationConfirmation = true }
-                    .buttonStyle(.borderedProminent)
-                    .opacity(canCreateAutomation && control.capabilityAvailable("rpc-scheduling") ? 1 : 0.42)
-                    .disabled(!canCreateAutomation || !control.capabilityAvailable("rpc-scheduling"))
+            labeledField("Request") {
+                TextField("What should Hermes do?", text: $automationPrompt, axis: .vertical)
+                    .lineLimit(3...6)
+                    .textFieldStyle(.dockGlass)
+            }
+        } footer: {
+            modalActions(
+                primaryTitle: "Review and Create",
+                isDisabled: !canCreateAutomation || !control.capabilityAvailable("rpc-scheduling"),
+                isPending: false,
+                onCancel: { isShowingAutomationComposer = false }
+            ) {
+                isShowingAutomationConfirmation = true
             }
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.dockSurface.opacity(0.38)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockAccent.opacity(0.28), lineWidth: 0.5))
     }
 
     private func cronScheduleRow(_ job: CronSummary, isSelected: Bool) -> some View {
@@ -2351,13 +2306,6 @@ struct WorkspaceActivitySidebar: View {
         !automationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !automationSchedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !automationPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private func controlFieldLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.system(.body).weight(.semibold))
-            .tracking(0.9)
-            .foregroundStyle(Color.dockSecondaryText)
     }
 
     private var tabBadges: ControlTabBadgeState {

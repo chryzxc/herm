@@ -352,42 +352,33 @@ struct KanbanMutationEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(request.kind.title)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
-            Text(request.task.title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.dockPrimaryText)
+        DockModal(icon: .kanban, title: request.kind.title, subtitle: request.task.title, width: 440) {
             TextField(placeholder, text: $value, axis: .vertical)
                 .lineLimit(2...5)
                 .textFieldStyle(.dockGlass)
             if (request.kind == .assign || request.kind == .reassign), !assignees.isEmpty {
-                Menu("Choose Hermes profile") {
+                Menu {
                     ForEach(assignees, id: \.self) { assignee in
                         Button(assignee) { value = assignee }
                     }
+                } label: {
+                    DockIconLabel("Choose Hermes profile", icon: .caretDown)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
             if request.kind == .reassign {
                 Toggle("Reclaim active worker first", isOn: $reclaimFirst)
+                    .toggleStyle(.dockSwitch)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.dockSecondaryText)
             }
-            HStack {
-                Button("Cancel") { dismiss() }
-                Spacer()
-                Button(request.kind.title) { confirming = true }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending)
+        } footer: {
+            modalActions(primaryTitle: request.kind.title, pendingTitle: "Saving…", isDisabled: value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isPending, isPending: isPending, onCancel: { dismiss() }) {
+                confirming = true
             }
         }
-        .padding(20)
-        .frame(width: 420)
-        .background(Color.dockCanvas)
         .confirmationDialog("Confirm Kanban change?", isPresented: $confirming) {
             Button(request.kind.title) {
                 submit(KanbanMutationRequest(task: request.task, kind: request.kind, value: value, reclaimFirst: reclaimFirst))
@@ -415,35 +406,30 @@ struct CronEditEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("EDIT SCHEDULED JOB")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
+        DockModal(icon: .clock, title: "Edit Scheduled Job", subtitle: job.name, width: 460) {
             if job.editableFields.contains(.name) {
-                TextField("Name", text: $draft.name).textFieldStyle(.dockGlass)
+                labeledField("Name") {
+                    TextField("Name", text: $draft.name).textFieldStyle(.dockGlass)
+                }
             }
             if job.editableFields.contains(.schedule) {
-                TextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
+                labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
+                    TextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
+                }
             }
             if job.editableFields.contains(.prompt), job.prompt != nil {
-                TextField("Prompt", text: $draft.prompt, axis: .vertical)
-                    .lineLimit(3...6)
-                    .textFieldStyle(.dockGlass)
+                labeledField("Prompt") {
+                    TextField("Prompt", text: $draft.prompt, axis: .vertical)
+                        .lineLimit(3...6)
+                        .textFieldStyle(.dockGlass)
+                }
             }
-            Text("Only values supplied by Hermes are editable. Unchanged values are not sent.")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-            HStack {
-                Button("Cancel") { dismiss() }
-                Spacer()
-                Button("Save Changes") { confirming = true }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(draft.changes(comparedTo: job).filter { job.editableFields.contains($0.key) }.isEmpty || isPending)
+            ModalNote(text: "Only values supplied by Hermes are editable. Unchanged values are not sent.", icon: .info)
+        } footer: {
+            modalActions(primaryTitle: "Save Changes", isDisabled: draft.changes(comparedTo: job).filter { job.editableFields.contains($0.key) }.isEmpty || isPending, isPending: isPending, onCancel: { dismiss() }) {
+                confirming = true
             }
         }
-        .padding(20)
-        .frame(width: 440)
-        .background(Color.dockCanvas)
         .confirmationDialog("Save scheduled-job changes?", isPresented: $confirming) {
             Button("Save Changes") { submit(draft) }
             Button("Cancel", role: .cancel) {}
@@ -465,46 +451,20 @@ struct CronReportDetailSheet: View {
     private var job: CronSummary { request.job }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("AUTOMATION REPORT")
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(0.6)
-                        .foregroundStyle(Color.dockAccent)
-                    Text(job.name)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("\(CronScheduleFormatting.humanReadable(job.schedule))  ·  \(job.id)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockMetadataText)
-                }
-                Spacer(minLength: 12)
-                if let report {
-                    Button("COPY") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(report.markdown, forType: .string)
-                    }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                }
-                Button("DONE") { dismiss() }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
-            .padding(18)
-
-            Divider().overlay(Color.dockBorderLight)
-
+        DockModal(
+            icon: .fileText,
+            title: job.name,
+            subtitle: "\(CronScheduleFormatting.humanReadable(job.schedule))  ·  \(job.id)",
+            width: nil,
+            contentPadding: 0
+        ) {
             Group {
                 if isLoading {
                     VStack(spacing: 10) {
                         ProgressView()
-                        Text("LOADING REPORT")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.dockMetadataText)
+                        Text("Loading report…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockSecondaryText)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let report {
@@ -522,18 +482,30 @@ struct CronReportDetailSheet: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Color.dockSecondaryText)
                             .multilineTextAlignment(.center)
-                        Button("TRY AGAIN") { load() }
-                            .buttonStyle(.borderless)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
+                        Button("Try Again") { load() }
+                            .buttonStyle(.dockSecondary)
+                            .controlSize(.small)
                     }
                     .padding(30)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+        } footer: {
+            Spacer()
+            if let report {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(report.markdown, forType: .string)
+                } label: {
+                    DockIconLabel("Copy Markdown", icon: .copy)
+                }
+                .buttonStyle(.dockSecondary)
+            }
+            Button("Done") { dismiss() }
+                .buttonStyle(.dockPrimary)
+                .keyboardShortcut(.defaultAction)
         }
         .frame(minWidth: 620, idealWidth: 720, minHeight: 480, idealHeight: 620)
-        .background(Color.dockCanvas)
         .task(id: request.sessionID) { await loadReport() }
     }
 
@@ -601,92 +573,6 @@ struct RepositoryFleetRow: View {
     }
 }
 
-enum DockCommand: Identifiable, CaseIterable {
-    case tab(ControlTab)
-    case newChat
-    case focusComposer
-    case stop
-    case voice
-
-    static var allCases: [DockCommand] {
-        ControlTab.allCases.map(DockCommand.tab) + [.newChat, .focusComposer, .stop, .voice]
-    }
-
-    var id: String {
-        switch self {
-        case .tab(let tab): "tab.\(tab.rawValue)"
-        case .newChat: "new-chat"
-        case .focusComposer: "focus-composer"
-        case .stop: "stop"
-        case .voice: "voice"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .tab(let tab): "Open \(tab.tabLabel)"
-        case .newChat: "New chat"
-        case .focusComposer: "Focus composer"
-        case .stop: "Stop active request"
-        case .voice: "Start voice"
-        }
-    }
-
-    var icon: Ph {
-        switch self {
-        case .tab(let tab): tab.icon
-        case .newChat: .chatCircleDots
-        case .focusComposer: .cursorText
-        case .stop: .stopCircle
-        case .voice: .microphone
-        }
-    }
-}
-
-struct DockCommandPalette: View {
-    let select: (DockCommand) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-
-    private var commands: [DockCommand] {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
-        guard !needle.isEmpty else { return DockCommand.allCases }
-        return DockCommand.allCases.filter { $0.title.localizedLowercase.contains(needle) }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("COMMAND PALETTE")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                Spacer()
-                Text("⌘K")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
-            TextField("Search actions", text: $query)
-                .textFieldStyle(.dockGlass)
-            ForEach(commands) { command in
-                Button {
-                    select(command)
-                    dismiss()
-                } label: {
-                    DockIconLabel(command.title, icon: command.icon)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 5)
-                }
-                .buttonStyle(.borderless)
-            }
-        }
-        .padding(20)
-        .frame(width: 380)
-        .background(Color.dockCanvas)
-    }
-}
-
 struct DockActionPalette: View {
     let repositoryAvailable: Bool
     let isWorking: Bool
@@ -701,14 +587,7 @@ struct DockActionPalette: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("COMMAND CENTER")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                Spacer()
-                Text("⌘K").font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
-            }
+        DockModal(icon: .command, title: "Command Center", subtitle: "Search actions  ·  ⌘K", width: 480, contentPadding: 16) {
             TextField("Search actions", text: $query)
                 .textFieldStyle(.dockGlass)
             ScrollView {
@@ -732,17 +611,16 @@ struct DockActionPalette: View {
                             }
                             .foregroundStyle(command.isAvailable ? Color.dockPrimaryText : Color.dockMetadataText)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 5)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockPress)
                         .disabled(!command.isAvailable)
                     }
                 }
             }
             .frame(maxHeight: 350)
         }
-        .padding(20)
-        .frame(width: 460)
-        .background(Color.dockCanvas)
     }
 }

@@ -116,21 +116,6 @@ extension DockModal where Footer == EmptyView {
     }
 }
 
-/// Eyebrow + title header for sheets that don't use `DockModal`'s chrome.
-@MainActor
-@ViewBuilder
-func modalHeader(title: String, eyebrow: String) -> some View {
-    VStack(alignment: .leading, spacing: 5) {
-        Text(eyebrow)
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-            .tracking(1.1)
-            .foregroundStyle(Color.dockMetadataText)
-        Text(title)
-            .font(.system(size: 20, weight: .semibold))
-            .foregroundStyle(Color.dockPrimaryText)
-    }
-}
-
 /// Uppercase section label that groups related fields inside a modal.
 @MainActor
 @ViewBuilder

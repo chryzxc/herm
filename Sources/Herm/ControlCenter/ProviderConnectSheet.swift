@@ -165,32 +165,57 @@ struct ProviderConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Connect \(descriptor.displayName)")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                Text(descriptor.summary)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockSecondaryText)
-            }
-
+        DockModal(
+            badge: AnyView(ProviderMarkBadge(mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName), size: 32)),
+            title: "Connect \(descriptor.displayName)",
+            subtitle: descriptor.summary
+        ) {
             switch descriptor.connect {
             case .apiKey(let instruction, _): apiKeySection(instruction)
             case .login(let command, let instruction): loginSection(command, instruction)
-            case .openApp(let applicationName, let instruction): openAppSection(applicationName, instruction)
+            case .openApp(_, let instruction): openAppSection(instruction)
             }
-
-            HStack {
-                Spacer()
-                Button("Close") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+        } footer: {
+            websiteLink
+            Spacer()
+            switch descriptor.connect {
+            case .apiKey:
+                if hasStoredKey {
+                    Button("Remove Key", role: .destructive) {
+                        control.saveProviderAPIKey(nil, for: descriptor)
+                        apiKeyInput = ""
+                        refreshStoredKeyState()
+                    }
+                    .buttonStyle(.dockSecondary)
+                }
+                Button("Save & Test") { saveAPIKey() }
+                    .buttonStyle(.dockPrimary)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            case .login(let command, _):
+                if login.isRunning {
+                    Button("Cancel Sign-In") { login.cancel() }
+                        .buttonStyle(.dockSecondary)
+                } else {
+                    Button("Log In") { login.start(command: command) }
+                        .buttonStyle(.dockPrimary)
+                    .keyboardShortcut(.defaultAction)
+                }
+            case .openApp(let applicationName, _):
+                Button("Open \(applicationName)") { control.openProviderApplication(named: applicationName) }
+                    .buttonStyle(.dockPrimary)
+                .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(18)
-        .frame(width: 470)
         .onAppear { refreshStoredKeyState() }
         .onChange(of: login.exitStatus) { control.refreshProviderQuota() }
+    }
+
+    private func saveAPIKey() {
+        guard !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        control.saveProviderAPIKey(apiKeyInput, for: descriptor)
+        apiKeyInput = ""
+        refreshStoredKeyState()
     }
 
     private func refreshStoredKeyState() {
@@ -205,111 +230,76 @@ struct ProviderConnectSheet: View {
     }
 
     private func apiKeySection(_ instruction: String) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(instruction)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            SecureField("API key", text: $apiKeyInput)
-                .textFieldStyle(.dockGlass)
-            HStack(spacing: 8) {
-                Button {
-                    control.saveProviderAPIKey(apiKeyInput, for: descriptor)
-                    apiKeyInput = ""
-                    refreshStoredKeyState()
-                } label: {
-                    Text("Save & Test")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        VStack(alignment: .leading, spacing: 16) {
+            instructionText(instruction)
+            labeledField("API key") {
+                SecureField(hasStoredKey ? "Paste a new key to replace the stored one" : "Paste your API key", text: $apiKeyInput)
+                    .textFieldStyle(.dockGlass)
+                    .onSubmit { saveAPIKey() }
+            }
+            VStack(alignment: .leading, spacing: 6) {
                 if hasStoredKey {
-                    Button(role: .destructive) {
-                        control.saveProviderAPIKey(nil, for: descriptor)
-                        apiKeyInput = ""
-                        refreshStoredKeyState()
-                    } label: {
-                        Text("Remove Stored Key")
-                    }
-                    .buttonStyle(.bordered)
+                    ModalNote(text: "A key is already stored for this provider.", icon: .checkCircle, tone: .dockSuccess)
                 }
-                Spacer()
-                websiteLink("Get an API Key")
+                ModalNote(text: "Stored in ~/.config/herm/providers.json with owner-only permissions. Never displayed or logged, and used only to read quota.", icon: .lockSimple)
             }
-            if hasStoredKey {
-                Text("A key is already stored for this provider.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            Text("The key is stored in ~/.config/herm/providers.json with owner-only permissions and is never displayed or logged. No Keychain is used.")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private func loginSection(_ command: String, _ instruction: String) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(instruction)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Text(command)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .textSelection(.enabled)
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(command, forType: .string)
-                } label: {
-                    DockIcon(.copy)
+        VStack(alignment: .leading, spacing: 16) {
+            instructionText(instruction)
+            labeledField("Command") {
+                HStack(spacing: 8) {
+                    Text(command)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 8)
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                    } label: {
+                        DockIcon(.copy).foregroundStyle(Color.dockSecondaryText)
+                    }
+                    .buttonStyle(.dockPress)
+                    .help("Copy command")
                 }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockAccent)
-                .help("Copy command")
+                .padding(.horizontal, 10)
+                .frame(minHeight: DockLayout.controlHeight)
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                        .fill(Color.dockControlSurface)
+                        .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                )
             }
             if login.isRunning {
+                labeledField("Authorization code", hint: "Shown in the browser after you sign in") {
+                    HStack(spacing: 8) {
+                        TextField("Paste the code", text: $callbackCodeInput)
+                            .textFieldStyle(.dockGlass)
+                            .onSubmit { submitCallbackCode() }
+                        Button("Submit") { submitCallbackCode() }
+                            .buttonStyle(.dockSecondary)
+                            .disabled(callbackCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
                     Text("Waiting for \(descriptor.displayName) sign-in…")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockSecondaryText)
-                    Spacer()
-                    Button("Cancel") { login.cancel() }
-                        .buttonStyle(.bordered)
                 }
-                HStack(spacing: 8) {
-                    TextField("Paste the code from the browser page", text: $callbackCodeInput)
-                        .textFieldStyle(.dockGlass)
-                        .onSubmit { submitCallbackCode() }
-                    Button("Submit") { submitCallbackCode() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(callbackCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                Text("After signing in, the browser shows an authorization code. Paste it here to finish.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                HStack(spacing: 8) {
-                    Button { login.start(command: command) } label: {
-                        DockIconLabel("Log In with \(descriptor.displayName)", icon: .arrowSquareOut)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    Spacer()
-                    websiteLink("Open Website")
-                }
-                if let status = login.exitStatus {
-                    Text(status == 0 ? "The login command finished. Quota was refreshed." : "The login command exited with status \(status). Check the output below.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(status == 0 ? Color.dockSuccess : Color.dockWarning)
-                }
-                if let failure = login.failureText {
-                    Text(failure)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockWarning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            }
+            if let status = login.exitStatus, !login.isRunning {
+                ModalNote(
+                    text: status == 0 ? "The login command finished. Quota was refreshed." : "The login command exited with status \(status). Check the output below.",
+                    icon: status == 0 ? .checkCircle : .warning,
+                    tone: status == 0 ? .dockSuccess : .dockWarning
+                )
+            }
+            if let failure = login.failureText {
+                ModalNote(text: failure, icon: .warning, tone: .dockWarning)
             }
             if !login.outputLines.isEmpty {
                 ScrollView {
@@ -322,45 +312,42 @@ struct ProviderConnectSheet: View {
                                 .textSelection(.enabled)
                         }
                     }
+                    .padding(10)
                 }
                 .frame(maxHeight: 160)
-                .padding(8)
-                .background(Color.dockSurface.opacity(0.4))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                        .fill(Color.dockSurface.opacity(0.4))
+                        .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                )
             }
         }
     }
 
-    private func openAppSection(_ applicationName: String, _ instruction: String) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(instruction)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockSecondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button {
-                    control.openProviderApplication(named: applicationName)
-                } label: {
-                    DockIconLabel("Open \(applicationName)", icon: .arrowSquareOut)
-                }
-                .buttonStyle(.borderedProminent)
-                Spacer()
-                websiteLink("Open Website")
-            }
-            Text("After you sign in, quota appears on refresh and stays live while the app is running.")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
+    private func openAppSection(_ instruction: String) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            instructionText(instruction)
+            ModalNote(text: "After you sign in, quota appears on refresh and stays live while the app is running.", icon: .info)
         }
     }
 
-    private func websiteLink(_ title: String) -> some View {
-        Group {
-            if let website = descriptor.website {
-                Link(destination: website) {
-                    Text(title)
-                }
+    private func instructionText(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13))
+            .foregroundStyle(Color.dockPrimaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private var websiteLink: some View {
+        if let website = descriptor.website {
+            let isAPIKey = if case .apiKey = descriptor.connect { true } else { false }
+            Link(destination: website) {
+                DockIconLabel(isAPIKey ? "Get an API Key" : "Open Website", icon: .arrowSquareOut)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockAccent)
             }
+            .buttonStyle(.plain)
         }
     }
 }

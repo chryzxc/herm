@@ -221,12 +221,7 @@ private struct ModelPickerEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Available models")
-                .font(.system(size: 16, weight: .semibold))
-            Text("Disabled models stay hidden from the picker. Hermes remains the source of truth for the catalog.")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockSecondaryText)
+        DockModal(icon: .cpu, title: "Available Models", subtitle: "Disabled models stay hidden from the picker. Hermes remains the source of truth for the catalog.", width: 400, contentPadding: 0) {
             List {
                 ForEach(ModelPickerCatalog(options: options).groups()) { group in
                     Section(group.provider) {
@@ -247,14 +242,14 @@ private struct ModelPickerEditorView: View {
                     }
                 }
             }
-            HStack {
-                Spacer()
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
-            }
+            .scrollContentBackground(.hidden)
+            .frame(height: 360)
+        } footer: {
+            Spacer()
+            Button("Done") { dismiss() }
+                .buttonStyle(.dockPrimary)
+                .keyboardShortcut(.defaultAction)
         }
-        .padding(16)
-        .frame(width: 360, height: 420)
         .onAppear {
             disabledIDs = ModelPickerPreferences().disabledIDs
         }

@@ -812,41 +812,30 @@ private struct AutomationCreationSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("New automation").font(.system(size: 18, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
-                Text("Define when Hermes should run and what it should do.").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+        DockModal(icon: .magicWand, title: "New Automation", subtitle: "Define when Hermes should run and what it should do.", width: 520) {
+            labeledField("Name") {
+                TextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
             }
-            creationField("Name", placeholder: "Nightly review", text: $name)
-            VStack(alignment: .leading, spacing: 6) {
-                creationField("Schedule", placeholder: "every 2h or 0 9 * * *", text: $schedule)
-                if !schedule.isEmpty { Text(CronScheduleFormatting.humanReadable(schedule)).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText) }
+            labeledField("Schedule", hint: "every 2h or 0 9 * * *") {
+                TextField("When should Hermes run this?", text: $schedule).textFieldStyle(.dockGlass)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Request").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+            if !schedule.isEmpty {
+                ModalNote(text: CronScheduleFormatting.humanReadable(schedule), icon: .clock)
+            }
+            labeledField("Request") {
                 TextField("What should Hermes do?", text: $prompt, axis: .vertical)
                     .lineLimit(4...8)
                     .textFieldStyle(.dockGlass)
             }
-            if let error { Text(error).font(.system(size: 11)).foregroundStyle(Color.dockWarning).fixedSize(horizontal: false, vertical: true) }
-            Spacer(minLength: 0)
-            HStack {
-                Button("Cancel") { dismiss() }.buttonStyle(.borderless).foregroundStyle(Color.dockSecondaryText)
-                Spacer()
-                Button(isSubmitting ? "Creating…" : "Create automation") { submit() }
-                    .buttonStyle(.dockPrimary)
-                    .disabled(!valid || isSubmitting || !control.capabilityAvailable("rpc-scheduling"))
-            }
-        }
-        .padding(24)
-        .frame(width: 520, height: 430)
-        .background(Color.dockCanvas)
-    }
-
-    private func creationField(_ title: String, placeholder: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
-            TextField(placeholder, text: text).textFieldStyle(.dockGlass)
+            if let error { ModalNote(text: error, icon: .warning, tone: .dockWarning) }
+        } footer: {
+            modalActions(
+                primaryTitle: "Create Automation",
+                pendingTitle: "Creating…",
+                isDisabled: !valid || isSubmitting || !control.capabilityAvailable("rpc-scheduling"),
+                isPending: isSubmitting,
+                onCancel: { dismiss() }
+            ) { submit() }
         }
     }
 
