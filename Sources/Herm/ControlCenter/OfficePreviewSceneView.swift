@@ -642,6 +642,16 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         /// Where each bot last stood, kept across view rebuilds so reopening
         /// the office resumes the simulation instead of resetting to desks.
         private static var placements: [String: OfficePreviewLayout.Node] = [:]
+        /// The furnished room is static between visits. Keep the flattened
+        /// geometry after closing Office so reopening does not build and batch
+        /// thousands of props again on the main thread.
+        private struct CachedRoom {
+            let geometry: Entity
+            let navigation: OfficeDesignNavigation
+            let palette: OfficeScenePalette
+            let capacity: Int
+        }
+        private static var cachedRoom: CachedRoom?
         private static let hipHeight: Float = 0.30
         var music: OfficeMusicService?
         private var musicParts: (player: Entity, marker: Entity, platter: Entity, speakers: [Entity], woofers: [Entity], tweeters: [Entity], notes: [Entity], waves: [ModelEntity], ping: ModelEntity?)?
@@ -1066,6 +1076,12 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             resumeFrameWaiters()
             labels.values.forEach { $0.removeFromSuperview() }
             labels.removeAll()
+            if let roomGeometry, let navigation = roomLayout.authored {
+                roomGeometry.removeFromParent()
+                Self.cachedRoom = CachedRoom(geometry: roomGeometry, navigation: navigation,
+                                             palette: palette, capacity: roomLayout.capacity)
+                self.roomGeometry = nil
+            }
             view?.scene.anchors.removeAll()
         }
 
@@ -1814,11 +1830,19 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
         private func rebuildRoom() {
             roomGeometry?.removeFromParent()
-            let geometry = Entity()
+            let geometry: Entity
+            if let cached = Self.cachedRoom, cached.palette == palette, cached.capacity == roomLayout.capacity {
+                geometry = cached.geometry
+                roomLayout.authored = cached.navigation
+                Self.cachedRoom = nil
+            } else {
+                Self.cachedRoom = nil
+                geometry = Entity()
+                buildRoom(in: geometry)
+                OfficeStaticMeshBatcher.flatten(geometry)
+            }
             roomGeometry = geometry
             anchor?.addChild(geometry)
-            buildRoom(in: geometry)
-            OfficeStaticMeshBatcher.flatten(geometry)
             screens = Dictionary(uniqueKeysWithValues: (0..<(roomLayout.authored?.stations[.desk]?.count ?? 8)).compactMap { slot in
                 (geometry.findEntity(named: "work-screen-\(slot)") as? ModelEntity).map { (slot, $0) }
             })

@@ -1491,7 +1491,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .session: "Overview"
         case .changes: "Source Control"
         case .automations: "Automate"
-        case .officePreview: "3D Workspace"
+        case .officePreview: "Office"
         case .core: "Settings"
         default: rawValue
         }
@@ -1501,7 +1501,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var globalRailLabel: String {
         switch self {
         case .automations: "Automation"
-        case .officePreview: "3D Workspace"
+        case .officePreview: "Office"
         case .core: "Settings"
         default: rawValue
         }
@@ -1519,7 +1519,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .projects: .folder
         case .search: .magnifyingGlass
         case .kanban: .kanban
-        case .officePreview: .cube
+        case .officePreview: .buildingOffice
         case .core: .gear
         case .quota: .gauge
         case .usage: .chartBar
@@ -1533,6 +1533,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .session: "Conversations"
         case .changes: "Source Control"
         case .automations: "Automation"
+        case .officePreview: "Office"
         case .core: "Settings"
         default: rawValue
         }

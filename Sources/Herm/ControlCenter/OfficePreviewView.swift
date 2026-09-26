@@ -25,7 +25,7 @@ struct OfficePreviewView: View {
     @State private var cameraResetToken = 0
     @State private var wholeOffice = true
     @State private var showsAgents = true
-    @State private var showsRoster = true
+    @State private var showsRoster = false
     // Not observed here: only the hover card and the scene read it.
     @State private var music = OfficeMusicService()
 
@@ -48,7 +48,7 @@ struct OfficePreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DockPageHeader(icon: .cubeTransparent, title: "3D Workspace", subtitle: subtitle,
+            DockPageHeader(icon: .buildingOffice, title: "Office", subtitle: subtitle,
                            onRefresh: onRefresh, isRefreshing: isRefreshing)
 
             GeometryReader { geometry in
@@ -117,13 +117,8 @@ struct OfficePreviewView: View {
             }
 
             OfficeToolbar(
-                wholeOffice: wholeOffice, showsAgents: showsAgents, showsRoster: showsRoster,
+                showsAgents: showsAgents, showsRoster: showsRoster,
                 canShowRoster: !compact,
-                onViewChange: { value in
-                    guard wholeOffice != value else { return }
-                    wholeOffice = value
-                    resetCamera()
-                },
                 onToggleAgents: { showsAgents.toggle() },
                 onToggleRoster: { withAnimation(hudAnimation) { showsRoster.toggle() } },
                 onShowBoard: { withAnimation(hudAnimation) { selection = selection == .board ? nil : .board } },
@@ -216,6 +211,7 @@ struct OfficePreviewView: View {
 
     private func resetCamera() {
         cameraFocusID = nil
+        wholeOffice = true
         cameraResetToken += 1
     }
 }
@@ -346,11 +342,9 @@ private struct OfficeRosterPanel: View {
 }
 
 private struct OfficeToolbar: View {
-    let wholeOffice: Bool
     let showsAgents: Bool
     let showsRoster: Bool
     let canShowRoster: Bool
-    let onViewChange: (Bool) -> Void
     let onToggleAgents: () -> Void
     let onToggleRoster: () -> Void
     let onShowBoard: () -> Void
@@ -359,14 +353,7 @@ private struct OfficeToolbar: View {
     var body: some View {
         OfficeHUDPanel {
             HStack(spacing: 4) {
-                HStack(spacing: 2) {
-                    modeButton("Workspace", isSelected: !wholeOffice) { onViewChange(false) }
-                    modeButton("Whole office", isSelected: wholeOffice) { onViewChange(true) }
-                }
-                .padding(2)
-                .background(Capsule().fill(Color.dockControlSurface))
-                separator
-                iconButton(showsAgents ? .users : .users, help: showsAgents ? "Hide bots" : "Show bots",
+                iconButton(.users, help: showsAgents ? "Hide bots" : "Show bots",
                            isOn: showsAgents, action: onToggleAgents)
                 if canShowRoster {
                     iconButton(.sidebar, help: showsRoster ? "Hide crew roster" : "Show crew roster",
@@ -383,19 +370,6 @@ private struct OfficeToolbar: View {
 
     private var separator: some View {
         Rectangle().fill(Color.dockBorder).frame(width: 1, height: 18).padding(.horizontal, 2)
-    }
-
-    private func modeButton(_ label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.dockOnAccentText : Color.dockSecondaryText)
-                .padding(.horizontal, 10)
-                .frame(height: 26)
-                .background { if isSelected { Capsule().fill(Color.dockAccent) } }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Show \(label)")
     }
 
     private func iconButton(_ symbol: Ph, help: String, isOn: Bool, action: @escaping () -> Void) -> some View {
