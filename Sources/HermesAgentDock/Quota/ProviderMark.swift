@@ -1,10 +1,11 @@
 import SwiftUI
 
 /// Vector provider marks for compact quota surfaces. Paths come from the
-/// CC0 Simple Icons set (24 × 24 view box) so they scale crisply and take the
+/// CC0 Simple Icons set and MIT LobeHub icons (Z.ai, Antigravity), all on a
+/// 24 × 24 view box, so they scale crisply and take the
 /// theme's foreground color instead of shipping fixed-color bitmaps.
 enum ProviderMark: Equatable {
-    case claude, openAI, openCode
+    case claude, openAI, openCode, zai, antigravity
     case monogram(String)
 
     /// Maps a quota provider identifier, including dynamic account suffixes
@@ -14,6 +15,8 @@ enum ProviderMark: Equatable {
         case "claude": self = .claude
         case let id where id == "codex" || id.hasPrefix("codex-"): self = .openAI
         case "opencode": self = .openCode
+        case "glm": self = .zai
+        case "antigravity": self = .antigravity
         default: self = .monogram(String(displayName.trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
         }
     }
@@ -46,6 +49,14 @@ struct ProviderMarkBadge: View {
                     ProviderMarkShape(path: ProviderMarkShape.openCode)
                         .fill(Color.dockPrimaryText)
                         .padding(size * 0.22)
+                case .zai:
+                    ProviderMarkShape(path: ProviderMarkShape.zai)
+                        .fill(Color.dockPrimaryText)
+                        .padding(size * 0.2)
+                case .antigravity:
+                    ProviderMarkShape(path: ProviderMarkShape.antigravity)
+                        .fill(Color.dockPrimaryText)
+                        .padding(size * 0.18)
                 }
             }
             .frame(width: size, height: size)
@@ -330,6 +341,30 @@ struct ProviderMarkShape: Shape {
         path.addLine(to: p(7, 4.8))
         path.addLine(to: p(7, 19.2))
         path.addLine(to: p(17, 19.2))
+        path.closeSubpath()
+        return path
+    }()
+
+    static let zai: Path = {
+        var path = Path()
+        path.addLines([p(12.105, 2), p(9.927, 4.953), p(0.653, 4.953), p(2.83, 2)])
+        path.closeSubpath()
+        path.addLines([p(23.254, 19.048), p(21.078, 22), p(11.836, 22), p(14.01, 19.048)])
+        path.closeSubpath()
+        path.addLines([p(24, 2), p(9.264, 22), p(0, 22), p(14.736, 2)])
+        path.closeSubpath()
+        return path
+    }()
+
+    static let antigravity: Path = {
+        var path = Path()
+        path.move(to: p(21.751, 22.607))
+        path.addCurve(to: p(23.259, 21.099), control1: p(23.091, 23.612), control2: p(25.101, 22.942))
+        path.addCurve(to: p(12.037, 1), control1: p(17.73, 15.74), control2: p(18.904, 1))
+        path.addCurve(to: p(0.815, 21.1), control1: p(5.17, 1), control2: p(6.342, 15.74))
+        path.addCurve(to: p(2.322, 22.606), control1: p(-1.195, 23.109), control2: p(0.982, 23.611))
+        path.addCurve(to: p(12.037, 12.892), control1: p(7.514, 19.089), control2: p(7.179, 12.892))
+        path.addCurve(to: p(21.751, 22.607), control1: p(16.894, 12.892), control2: p(16.559, 19.089))
         path.closeSubpath()
         return path
     }()

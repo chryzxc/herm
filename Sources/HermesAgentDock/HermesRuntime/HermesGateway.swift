@@ -327,8 +327,14 @@ final class HermesGateway: NSObject {
 
             stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let chunk = handle.availableData
-                guard !chunk.isEmpty, let text = String(data: chunk, encoding: .utf8) else { return }
+                // At EOF the handler keeps firing with empty data; left
+                // installed it spins a core until the app quits.
+                guard !chunk.isEmpty else { handle.readabilityHandler = nil; return }
+                guard let text = String(data: chunk, encoding: .utf8) else { return }
                 Task { @MainActor in
+                    // Keep draining after the port is known: an unread pipe
+                    // fills at 64 KB and blocks `hermes serve` on its next log write.
+                    guard self?.port == nil else { return }
                     self?.backendOutput += text
                     if let outputLength = self?.backendOutput.count,
                        outputLength > Self.maximumBackendOutputLength {
@@ -340,7 +346,6 @@ final class HermesGateway: NSObject {
                     guard let match = try? NSRegularExpression(pattern: pattern).firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
                           let portRange = Range(match.range(at: 1), in: output),
                           let value = Int(output[portRange]) else { return }
-                    stdout.fileHandleForReading.readabilityHandler = nil
                     self?.port = value
                     DebugLog.write("backend: discovered port \(value)")
                     let waiters = self?.backendStartWaiters ?? []

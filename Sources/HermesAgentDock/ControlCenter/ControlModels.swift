@@ -34,16 +34,38 @@ enum HumanDateFormatting {
     }
 
     static func dateAndTime(_ rawValue: String) -> String {
-        guard let date = iso8601WithFractionalSeconds.date(from: rawValue) ?? iso8601.date(from: rawValue) else {
-            return rawValue
-        }
+        guard let date = date(rawValue) else { return rawValue }
         return dateAndTime(date)
+    }
+
+    static func date(_ rawValue: String) -> Date? {
+        iso8601WithFractionalSeconds.date(from: rawValue) ?? iso8601.date(from: rawValue)
+    }
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    private static let relativeFullFormatter = RelativeDateTimeFormatter()
+
+    /// "2 hours ago", for list rows that re-render on every scroll frame.
+    static func relative(_ date: Date, now: Date = .now) -> String {
+        relativeFullFormatter.localizedString(for: date, relativeTo: now)
+    }
+
+    /// "in 3 hr" / "2 days ago"; falls back to the raw value when it is not ISO 8601.
+    static func relative(_ rawValue: String, now: Date = .now) -> String {
+        guard let date = date(rawValue) else { return rawValue }
+        return relativeFormatter.localizedString(for: date, relativeTo: now)
     }
 }
 
 @MainActor
 enum CronScheduleFormatting {
     static func humanReadable(_ expression: String) -> String {
+        if let interval = intervalDescription(expression) { return interval }
         let fields = expression.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
         guard fields.count == 5 else { return "Custom schedule" }
 
@@ -78,6 +100,24 @@ enum CronScheduleFormatting {
             return "Day \(dayOfMonth) of every month at \(time)"
         }
         return "Custom schedule at \(time)"
+    }
+
+    /// Hermes interval schedules such as "every 15m", "every 1440m", "every 2h".
+    private static func intervalDescription(_ expression: String) -> String? {
+        let parts = expression.lowercased().split(separator: " ")
+        guard parts.count == 2, parts[0] == "every", let unit = parts[1].last,
+              let value = Int(parts[1].dropLast()), value > 0 else { return nil }
+        let minutes: Int
+        switch unit {
+        case "m": minutes = value
+        case "h": minutes = value * 60
+        case "d": minutes = value * 1_440
+        default: return nil
+        }
+        if minutes % 10_080 == 0 { return minutes == 10_080 ? "Every week" : "Every \(minutes / 10_080) weeks" }
+        if minutes % 1_440 == 0 { return minutes == 1_440 ? "Every day" : "Every \(minutes / 1_440) days" }
+        if minutes % 60 == 0 { return minutes == 60 ? "Every hour" : "Every \(minutes / 60) hours" }
+        return minutes == 1 ? "Every minute" : "Every \(minutes) minutes"
     }
 
     private static func clockTime(hour: Int, minute: Int) -> String {
@@ -784,6 +824,85 @@ struct SessionUsageSummary: Equatable {
     let model: String?
 }
 
+/// Hermes' `/api/analytics/usage` report. `totals` and `daily` carry the
+/// main conversation loop only; auxiliary work (review, compression, titles,
+/// vision…) lives in `tasks` and is folded into each model's figures.
+struct TokenUsageReport: Equatable {
+    struct Day: Identifiable, Equatable {
+        let day: Date
+        let inputTokens: Int
+        let outputTokens: Int
+        let cacheReadTokens: Int
+        let reasoningTokens: Int
+        let estimatedCost: Double
+        let sessions: Int
+        let apiCalls: Int
+        var id: Date { day }
+    }
+
+    struct Task: Identifiable, Equatable {
+        let task: String
+        let inputTokens: Int
+        let outputTokens: Int
+        let estimatedCost: Double
+        let apiCalls: Int
+        var id: String { task }
+        var totalTokens: Int { inputTokens + outputTokens }
+    }
+
+    struct Model: Identifiable, Equatable {
+        let model: String
+        let inputTokens: Int
+        let outputTokens: Int
+        let estimatedCost: Double
+        let sessions: Int
+        let apiCalls: Int
+        let tasks: [Task]
+        /// Hermes billing providers that served this model, busiest first.
+        var providers: [String] = []
+        var id: String { model }
+        var totalTokens: Int { inputTokens + outputTokens }
+    }
+
+    struct Share: Identifiable, Equatable {
+        let name: String
+        let count: Int
+        let percentage: Double
+        var id: String { name }
+    }
+
+    let days: Int
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheReadTokens: Int
+    let reasoningTokens: Int
+    let estimatedCost: Double
+    let actualCost: Double
+    let sessions: Int
+    let apiCalls: Int
+    let daily: [Day]
+    let models: [Model]
+    let tasks: [Task]
+    let tools: [Share]
+    let skills: [Share]
+    let skillLoads: Int
+    let distinctSkills: Int
+
+    var auxInputTokens: Int { tasks.reduce(0) { $0 + $1.inputTokens } }
+    var auxOutputTokens: Int { tasks.reduce(0) { $0 + $1.outputTokens } }
+    var auxCost: Double { tasks.reduce(0) { $0 + $1.estimatedCost } }
+    /// Main loop plus auxiliary work, matching the per-model table.
+    var totalInputTokens: Int { inputTokens + auxInputTokens }
+    var totalOutputTokens: Int { outputTokens + auxOutputTokens }
+    var totalTokens: Int { totalInputTokens + totalOutputTokens }
+    var totalCost: Double { estimatedCost + auxCost }
+    /// Share of prompt tokens served from the provider cache.
+    var cacheHitRate: Double? {
+        let prompt = inputTokens + cacheReadTokens
+        return prompt > 0 ? Double(cacheReadTokens) / Double(prompt) : nil
+    }
+}
+
 struct ProviderQuotaWindow: Identifiable, Equatable {
     let id: String
     let label: String
@@ -884,7 +1003,7 @@ enum KanbanMutationKind: String, CaseIterable, Identifiable {
     case reclaim
 
     var id: String { rawValue }
-    var title: String { rawValue.replacingOccurrences(of: "_", with: " ").uppercased() }
+    var title: String { rawValue.capitalized }
     var capabilityID: String {
         HermesFeatureIDs.lookup("kanban.\(rawValue)")?.rawValue ?? rawValue
     }
@@ -925,8 +1044,12 @@ struct CronSummary: Identifiable, Codable, Equatable {
     let prompt: String?
     let report: String?
     let editableFields: Set<CronEditField>
+    let lastRunAt: String?
+    let lastStatus: String?
+    let lastError: String?
+    let details: CronJobDetails
 
-    init(id: String, name: String, schedule: String, enabled: Bool, nextRun: String?, sessionID: String? = nil, delivery: String? = nil, prompt: String? = nil, report: String? = nil, editableFields: Set<CronEditField> = []) {
+    init(id: String, name: String, schedule: String, enabled: Bool, nextRun: String?, sessionID: String? = nil, delivery: String? = nil, prompt: String? = nil, report: String? = nil, editableFields: Set<CronEditField> = [], lastRunAt: String? = nil, lastStatus: String? = nil, lastError: String? = nil, details: CronJobDetails = CronJobDetails()) {
         self.id = id
         self.name = name
         self.schedule = schedule
@@ -937,6 +1060,52 @@ struct CronSummary: Identifiable, Codable, Equatable {
         self.prompt = prompt
         self.report = report
         self.editableFields = editableFields
+        self.lastRunAt = lastRunAt
+        self.lastStatus = lastStatus
+        self.lastError = lastError
+        self.details = details
+    }
+}
+
+/// Secondary job configuration Hermes reports in `cron.manage list`; display-only.
+struct CronJobDetails: Codable, Equatable {
+    var model: String?
+    var provider: String?
+    var skills: [String] = []
+    var toolsets: [String] = []
+    var script: String?
+    var workdir: String?
+    var repeats: String?
+    var deliveryError: String?
+    var pausedReason: String?
+
+    init(model: String? = nil, provider: String? = nil, skills: [String] = [], toolsets: [String] = [], script: String? = nil, workdir: String? = nil, repeats: String? = nil, deliveryError: String? = nil, pausedReason: String? = nil) {
+        self.model = model
+        self.provider = provider
+        self.skills = skills
+        self.toolsets = toolsets
+        self.script = script
+        self.workdir = workdir
+        self.repeats = repeats
+        self.deliveryError = deliveryError
+        self.pausedReason = pausedReason
+    }
+
+    init(row: [String: Any]) {
+        func text(_ key: String) -> String? {
+            (row[key] as? String).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        }
+        self.init(
+            model: text("model"),
+            provider: text("provider"),
+            skills: row["skills"] as? [String] ?? [],
+            toolsets: row["enabled_toolsets"] as? [String] ?? [],
+            script: text("script"),
+            workdir: text("workdir"),
+            repeats: text("repeat"),
+            deliveryError: text("last_delivery_error") ?? text("last_fire_error"),
+            pausedReason: text("paused_reason")
+        )
     }
 }
 
@@ -1299,6 +1468,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case officePreview = "Office Preview"
     case core = "Core"
     case quota = "Quota"
+    case usage = "Usage"
 
     /// The fixed navigation strip is deliberately limited to the destinations
     /// used to orient, triage, and act on work. Everything else remains one
@@ -1306,7 +1476,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban]
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
-    static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota]
+    static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota, .usage]
     static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
     static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .officePreview, .core]
@@ -1337,25 +1507,26 @@ enum ControlTab: String, CaseIterable, Identifiable {
         }
     }
 
-    var icon: String {
+    var icon: Ph {
         switch self {
-        case .today: "sun.max"
-        case .session: "bubble.left.and.bubble.right"
-        case .inbox: "tray"
-        case .activity: "waveform.path.ecg"
-        case .changes: "arrow.triangle.branch"
-        case .verification: "checkmark.seal"
-        case .automations: "clock.arrow.circlepath"
-        case .projects: "folder.badge.gearshape"
-        case .search: "magnifyingglass"
-        case .kanban: "rectangle.3.group"
-        case .officePreview: "cube"
-        case .core: "gearshape"
-        case .quota: "gauge.with.dots.needle.50percent"
+        case .today: .sun
+        case .session: .chats
+        case .inbox: .tray
+        case .activity: .pulse
+        case .changes: .gitBranch
+        case .verification: .sealCheck
+        case .automations: .clockCounterClockwise
+        case .projects: .folder
+        case .search: .magnifyingGlass
+        case .kanban: .kanban
+        case .officePreview: .cube
+        case .core: .gear
+        case .quota: .gauge
+        case .usage: .chartBar
         }
     }
 
-    var pageHeaderIcon: String { icon }
+    var pageHeaderIcon: Ph { icon }
 
     var pageHeaderTitle: String {
         switch self {
@@ -1382,6 +1553,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .officePreview: "Live bot assignments in a simulated 3D office"
         case .core: "Runtime health, permissions, and session tools"
         case .quota: "Provider capacity and reset windows"
+        case .usage: "Tokens, cost, and tools Hermes has used"
         }
     }
 }
@@ -1442,7 +1614,7 @@ struct ControlTabBadgeState: Equatable {
         case .activity: activityCount
         case .changes: changeCount
         case .verification: verificationCount
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota: 0
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage: 0
         }
     }
 
@@ -1453,7 +1625,7 @@ struct ControlTabBadgeState: Equatable {
         case .inbox: urgentAttentionCount > 0
         case .changes: changeCount > 0
         case .verification: verificationCount > 0
-        case .activity, .automations, .projects, .search, .kanban, .officePreview, .core, .quota: false
+        case .activity, .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage: false
         }
     }
 }

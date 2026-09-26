@@ -56,7 +56,7 @@ struct AntigravityQuotaServiceTests {
         ]
         let windows = AntigravityQuotaService.legacyWindows(configs, now: Self.fixedNow)
         #expect(windows.map { $0["id"] as? String } == ["gemini-5h", "3p-5h"])
-        #expect(windows.map { $0["label"] as? String } == ["Session", "Claude"])
+        #expect(windows.map { $0["label"] as? String } == ["Gemini Session", "Claude & GPT Session"])
         #expect(windows.map { $0["remaining_percent"] as? Double } == [50, 25])
         #expect(windows.allSatisfy { ($0["resets_at"] as? String) != nil })
     }

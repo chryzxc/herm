@@ -299,7 +299,8 @@ final class HermesUpdateService: ObservableObject {
 
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
-            guard !chunk.isEmpty, let text = String(data: chunk, encoding: .utf8) else { return }
+            guard !chunk.isEmpty else { handle.readabilityHandler = nil; return }
+            guard let text = String(data: chunk, encoding: .utf8) else { return }
             let lines = collector.completeLines(from: text)
                 .compactMap(HermesUpdateLogPresentation.sanitize)
             guard !lines.isEmpty else { return }

@@ -554,7 +554,7 @@ struct DockNotificationTests {
         model.receiveGatewayEvent("message.complete", params: ["session_id": "session-1", "payload": [:]])
         for _ in 0..<10 { await Task.yield() }
 
-        #expect(client.requestedMethods == ["session.list"])
+        #expect(client.requestedMethods.sorted() == ["session.list", "session.usage"])
         #expect(model.sessions.first?.title == "Latest conversation")
         #expect(model.sessions.first?.preview == "The completed response")
     }

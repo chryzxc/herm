@@ -11,7 +11,7 @@ import Foundation
 /// The quota summary RPC is authoritative (merged pools plus weekly windows).
 /// Builds without it fall back to the legacy per-model endpoints, which only
 /// know the rolling 5-hour windows; per-model fractions there are pooled into
-/// the shared Gemini ("Session") and non-Gemini ("Claude") meters, keeping
+/// the shared Gemini and "Claude & GPT" meters, keeping
 /// each pool's worst remaining fraction. Antigravity's quota API is
 /// undocumented, so parsing accepts only known bucket IDs and model pools and
 /// ignores malformed or future buckets rather than fabricating values.
@@ -311,7 +311,7 @@ enum AntigravityQuotaService {
             if let existing = pooled[id], config.remainingFraction >= existing.fraction { continue }
             pooled[id] = (config.remainingFraction, config.resetTime)
         }
-        return [("gemini-5h", "Session"), ("3p-5h", "Claude")].compactMap { id, label in
+        return [("gemini-5h", "Gemini Session"), ("3p-5h", "Claude & GPT Session")].compactMap { id, label in
             guard let entry = pooled[id] else { return nil }
             var row: [String: Any] = [
                 "id": id,
@@ -383,7 +383,7 @@ enum AntigravityQuotaService {
 
     static func normalize(_ object: [String: Any], now: Date = .now) -> [String: Any] {
         let groups = ((object["response"] as? [String: Any])?["groups"] as? [[String: Any]]) ?? (object["groups"] as? [[String: Any]]) ?? []
-        let specs: [(String, String)] = [("gemini-5h", "Session"), ("gemini-weekly", "Weekly"), ("3p-5h", "Claude"), ("3p-weekly", "Claude Weekly")]
+        let specs: [(String, String)] = [("gemini-5h", "Gemini Session"), ("gemini-weekly", "Gemini Weekly"), ("3p-5h", "Claude & GPT Session"), ("3p-weekly", "Claude & GPT Weekly")]
         var windows: [[String: Any]] = []
         for (id, label) in specs {
             for group in groups {

@@ -98,13 +98,14 @@ final class HermesControlRPC {
         canonical["has_more"] = offset + sessions.count < total
         return canonical
     }
-    func sessionMessages(sessionID: String) async throws -> [String: Any] {
+    func sessionMessages(sessionID: String, profileID: String? = nil) async throws -> [String: Any] {
         let disallowed = CharacterSet(charactersIn: "/")
         let allowed = CharacterSet.urlPathAllowed.subtracting(disallowed)
         guard let encoded = sessionID.addingPercentEncoding(withAllowedCharacters: allowed) else {
             throw NSError(domain: "HermesControl", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid session ID."])
         }
-        let result = try await client.fetchHTTP("/api/sessions/\(encoded)/messages?limit=500")
+        let profile = profileID?.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed).map { "&profile=\($0)" } ?? ""
+        let result = try await client.fetchHTTP("/api/sessions/\(encoded)/messages?limit=500\(profile)")
         // The REST endpoint returns `messages`; normalize it to the envelope
         // consumed by the activity projection without relaxing its validation.
         guard result["data"] == nil, let messages = result["messages"] as? [[String: Any]] else {
@@ -124,6 +125,10 @@ final class HermesControlRPC {
             params: Self.profileParams(["session_id": sessionID], profileID: profileID)
         )
     }
+    /// Hermes clamps `days` to 1…365 server-side.
+    func usageAnalytics(days: Int) async throws -> [String: Any] { try await client.fetchHTTP("/api/analytics/usage?days=\(days)") }
+
+    func modelAnalytics(days: Int) async throws -> [String: Any] { try await client.fetchHTTP("/api/analytics/models?days=\(days)") }
     func sessionUsage(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionUsage.rawValue, params: ["session_id": sessionID]) }
     func sessionContextBreakdown(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionContextBreakdown.rawValue, params: ["session_id": sessionID]) }
     func projectFacts(cwd: String) async throws -> [String: Any] {

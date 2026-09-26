@@ -63,6 +63,9 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var memoryHealthStatus: HermesReadOnlyStatus?
     @Published private(set) var sessionUsage: SessionUsageSummary?
     @Published private(set) var sessionContext: SessionContextSummary?
+    @Published private(set) var tokenUsage: TokenUsageReport?
+    private var tokenUsageGeneration = UUID()
+    private var tokenUsageModelRows: [String: Any] = [:]
     @Published private(set) var providerQuotas: [ProviderQuotaSnapshot] = []
     /// Snapshots exactly as the providers reported them. `providerQuotas` is
     /// derived from these plus the user's nicknames and display order, so a
@@ -177,8 +180,11 @@ final class ControlCenterModel: ObservableObject {
 
     private weak var dockModel: DockModel?
     private var rpc: HermesControlRPC?
+    /// Desktop-parity editor for Hermes `config.yaml`, over the same backend.
+    lazy var configEditor = HermesConfigEditor { [weak self] in self?.rpc }
     private var cli: HermesCLIAdapter?
     private var refreshTask: Task<Void, Never>?
+    private var eventRefreshTask: Task<Void, Never>?
     private var initialProjectNavigationTask: Task<Void, Never>?
     private var refreshGeneration: UInt64 = 0
     private var clientBindingGeneration: UInt64 = 0
@@ -843,9 +849,26 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    /// Every quota service the Dock reads, by stable reader id.
+    private static let quotaReaders: [(id: String, read: @Sendable () async throws -> [String: Any])] = [
+        ("codex-hermes", CodexQuotaService.readHermes),
+        ("opencode", OpenCodeQuotaService.read),
+        ("glm", GLMQuotaService.read),
+        ("claude", ClaudeQuotaService.read),
+        ("antigravity", AntigravityQuotaService.read)
+    ]
+
+    /// The reader that last reported each snapshot's provider id.
+    private var providerQuotaReaderIDs: [String: String] = [:]
+
+    func quotaReaderID(for providerID: String) -> String? { providerQuotaReaderIDs[providerID] }
+
     /// Loads the stored Codex account quota through Codex's authenticated usage endpoint,
-    /// independently of the active Hermes provider/model.
-    func refreshProviderQuota() {
+    /// independently of the active Hermes provider/model. Each provider is
+    /// published as soon as its read returns, so one slow service never holds
+    /// back the rest. `readerIDs` limits the read to those services and keeps
+    /// every other provider's last reading.
+    func refreshProviderQuota(only readerIDs: Set<String>? = nil) {
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -856,58 +879,64 @@ final class ControlCenterModel: ObservableObject {
             return
         }
         beginProjectionRefresh("provider.quota")
+        let readers = Self.quotaReaders.filter { readerIDs?.contains($0.id) ?? true }
         Task { @MainActor in
-            let readers: [(id: String, read: @Sendable () async throws -> [String: Any])] = [
-                ("codex-hermes", CodexQuotaService.readHermes),
-                ("opencode", OpenCodeQuotaService.read),
-                ("glm", GLMQuotaService.read),
-                ("claude", ClaudeQuotaService.read),
-                ("antigravity", AntigravityQuotaService.read)
-            ]
-            let collected = await withTaskGroup(of: (String, QuotaReadResult).self) { group in
+            var diagnostics = readerIDs == nil ? [:] : providerQuotaDiagnostics
+            var seen = Set<String>()
+            var errors: [String] = []
+            await withTaskGroup(of: (String, QuotaReadResult).self) { group in
                 for reader in readers {
                     group.addTask { await (reader.id, Self.readQuota(reader.read)) }
                 }
-                var results: [(String, QuotaReadResult)] = []
-                for await result in group { results.append(result) }
-                return results
-            }
-            guard generation == providerQuotaGeneration,
-                  self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
-            let byID = Dictionary(collected, uniquingKeysWith: { first, _ in first })
-            var snapshots: [ProviderQuotaSnapshot] = []
-            var diagnostics: [String: String] = [:]
-            for reader in readers {
-                let result = byID[reader.id] ?? QuotaReadResult(value: nil, error: nil)
-                if let raw = result.value {
-                    // Special handling for codex-hermes: may return multiple account snapshots
-                    if reader.id == "codex-hermes" {
-                        if let accounts = raw["_accounts"] as? [[String: Any]] {
-                            for account in accounts {
-                                if let snapshot = Self.parseProviderQuota(account) {
-                                    snapshots.append(snapshot)
-                                }
-                            }
-                        } else if let snapshot = Self.parseProviderQuota(raw) {
-                            snapshots.append(snapshot)
-                        }
-                    } else if let snapshot = Self.parseProviderQuota(raw) {
-                        snapshots.append(snapshot)
+                for await (readerID, result) in group {
+                    guard generation == providerQuotaGeneration,
+                          self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { continue }
+                    let previous = reportedProviderQuotas.filter { providerQuotaReaderIDs[$0.provider] == readerID }
+                    diagnostics[readerID] = nil
+                    if let error = result.error {
+                        // A failed read keeps the last reading rather than
+                        // dropping the provider until the next success.
+                        diagnostics[readerID] = error
+                        errors.append(error)
+                        seen.formUnion(previous.map(\.provider))
+                        continue
                     }
-                } else if let error = result.error {
-                    diagnostics[reader.id] = error
+                    let snapshots = Self.providerQuotaSnapshots(readerID: readerID, raw: result.value)
+                    for snapshot in snapshots { providerQuotaReaderIDs[snapshot.provider] = readerID }
+                    seen.formUnion(snapshots.map(\.provider))
+                    guard snapshots != previous else { continue }
+                    let replaced = Set(previous.map(\.provider))
+                    reportedProviderQuotas = reportedProviderQuotas.filter { !replaced.contains($0.provider) } + snapshots
+                    applyProviderQuotaPresentation()
                 }
             }
-            providerQuotaDiagnostics = diagnostics
-            if !snapshots.isEmpty {
-                reportedProviderQuotas = snapshots
+            guard generation == providerQuotaGeneration else { return }
+            guard self.isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else {
+                // Rebound mid-read: clear the spinner or every later poll,
+                // which skips while a read is in flight, would stall.
+                recordProjectionFailure("provider.quota", error: "Quota read was interrupted.")
+                return
+            }
+            if providerQuotaDiagnostics != diagnostics { providerQuotaDiagnostics = diagnostics }
+            if readerIDs == nil, reportedProviderQuotas.contains(where: { !seen.contains($0.provider) }) {
+                reportedProviderQuotas.removeAll { !seen.contains($0.provider) }
                 applyProviderQuotaPresentation()
+            }
+            if !seen.isEmpty {
                 recordProjectionSuccess("provider.quota")
             } else {
-                let errors = readers.compactMap { byID[$0.id]?.error }
                 recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")
             }
         }
+    }
+
+    /// Codex through Hermes may report several pooled accounts at once.
+    private static func providerQuotaSnapshots(readerID: String, raw: [String: Any]?) -> [ProviderQuotaSnapshot] {
+        guard let raw else { return [] }
+        if readerID == "codex-hermes", let accounts = raw["_accounts"] as? [[String: Any]] {
+            return accounts.compactMap(parseProviderQuota)
+        }
+        return parseProviderQuota(raw).map { [$0] } ?? []
     }
 
     /// Saves (or removes, when nil) a user-entered API key for an API-key
@@ -2176,6 +2205,37 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    func refreshTokenUsage(days: Int) {
+        let generation = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        tokenUsageGeneration = generation
+        guard let rpc else {
+            recordProjectionUnavailable("token.usage")
+            return
+        }
+        beginProjectionRefresh("token.usage")
+        Task { @MainActor in
+            do {
+                let result = try await rpc.usageAnalytics(days: days)
+                guard generation == tokenUsageGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                tokenUsage = Self.parseTokenUsage(result, models: tokenUsageModelRows)
+                recordProjectionSuccess("token.usage", count: tokenUsage?.sessions ?? 0)
+                // Models is slower (models.dev lookups) and only adds provider
+                // pills, so it lands after the dashboard is already drawn.
+                guard let modelRows = try? await rpc.modelAnalytics(days: days),
+                      generation == tokenUsageGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                tokenUsageModelRows = modelRows
+                tokenUsage = Self.parseTokenUsage(result, models: modelRows)
+            } catch {
+                guard generation == tokenUsageGeneration else { return }
+                recordProjectionFailure("token.usage", error: error.localizedDescription)
+            }
+        }
+    }
+
     func refreshSessionCockpit(for requestedSessionID: String? = nil) {
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
@@ -3197,9 +3257,24 @@ final class ControlCenterModel: ObservableObject {
             break
         }
         if ["message.complete", "sessions.changed", "cron.changed", "process.changed"].contains(type) {
-            refresh()
+            scheduleEventRefresh()
         }
         rebuildAttention()
+    }
+
+    /// Gateway event bursts collapse into one refresh. A refresh already in
+    /// flight would otherwise drop the event and leave projects stale.
+    private func scheduleEventRefresh() {
+        eventRefreshTask?.cancel()
+        eventRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            while self?.isRefreshing == true, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.eventRefreshTask = nil
+            self.refresh()
+        }
     }
 
     private func upsertAttention(_ item: AttentionItem) {
@@ -3394,6 +3469,12 @@ final class ControlCenterModel: ObservableObject {
         guard let sessionID, !sessionID.isEmpty,
               project(forSessionID: sessionID) == nil,
               let rpc, !projects.isEmpty else { return }
+        if let path = dockModel?.createdSessionProjectPaths[sessionID],
+           let project = projects.first(where: { $0.isRenderableProject && $0.name == path }) {
+            projectIDBySessionID[sessionID] = project.id
+            resolvedProjectIDBySessionID[sessionID] = project.id
+            return
+        }
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -3458,17 +3539,27 @@ final class ControlCenterModel: ObservableObject {
             if row["name"] as? String != nil { editable.insert(.name) }
             if row["schedule"] as? String != nil { editable.insert(.schedule) }
             if (row["prompt"] as? String) != nil || (row["request"] as? String) != nil || (row["task"] as? String) != nil { editable.insert(.prompt) }
+            // `cron.manage list` only sends a truncated `prompt_preview`; it is display-only, not editable.
+            let prompt = (row["prompt"] as? String) ?? (row["request"] as? String) ?? (row["task"] as? String) ?? (row["prompt_preview"] as? String)
             return CronSummary(
                 id: id,
                 name: (row["name"] as? String) ?? id,
-                schedule: (row["schedule"] as? String) ?? "Scheduled",
+                // Hermes reports interval jobs as {"kind", "minutes", "display"}.
+                schedule: (row["schedule"] as? String)
+                    ?? ((row["schedule"] as? [String: Any])?["display"] as? String)
+                    ?? (row["schedule_display"] as? String)
+                    ?? "Scheduled",
                 enabled: (row["enabled"] as? Bool) ?? !(row["paused"] as? Bool ?? false),
                 nextRun: row["next_run_at"] as? String ?? row["next_run"] as? String ?? row["nextRun"] as? String,
                 sessionID: row["session_id"] as? String ?? row["sessionID"] as? String,
                 delivery: row["deliver"] as? String ?? row["delivery"] as? String,
-                prompt: (row["prompt"] as? String) ?? (row["request"] as? String) ?? (row["task"] as? String),
+                prompt: prompt,
                 report: nil,
-                editableFields: editable
+                editableFields: editable,
+                lastRunAt: row["last_run_at"] as? String,
+                lastStatus: row["last_status"] as? String,
+                lastError: row["last_error"] as? String,
+                details: CronJobDetails(row: row)
             )
         }
     }
@@ -3493,7 +3584,11 @@ final class ControlCenterModel: ObservableObject {
                 delivery: job.delivery,
                 prompt: job.prompt,
                 report: job.report,
-                editableFields: job.editableFields
+                editableFields: job.editableFields,
+                lastRunAt: job.lastRunAt,
+                lastStatus: job.lastStatus,
+                lastError: job.lastError,
+                details: job.details
             )
         }
     }
@@ -3848,6 +3943,89 @@ final class ControlCenterModel: ObservableObject {
             contextMax: optionalIntValue(result["context_max"]),
             contextPercent: doubleValue(result["context_percent"]),
             model: result["model"] as? String
+        )
+    }
+
+    /// `models` is `/api/analytics/models`, used only for each model's providers:
+    /// the usage payload groups by model alone.
+    static func parseTokenUsage(_ result: [String: Any], models modelResult: [String: Any] = [:]) -> TokenUsageReport {
+        let totals = result["totals"] as? [String: Any] ?? [:]
+        let rows = { (key: String, source: [String: Any]) in source[key] as? [[String: Any]] ?? [] }
+        var providers: [String: [String]] = [:]
+        for row in rows("models", modelResult) {
+            guard let model = row["model"] as? String,
+                  let provider = row["provider"] as? String, !provider.isEmpty,
+                  providers[model]?.contains(provider) != true else { continue }
+            providers[model, default: []].append(provider)
+        }
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.dateFormat = "yyyy-MM-dd"
+        // Hermes emits the same task once per model/provider pair; the
+        // dashboard reads a task as one line, so merge by name.
+        func tasks(_ raw: [[String: Any]]) -> [TokenUsageReport.Task] {
+            var order: [String] = []
+            var merged: [String: TokenUsageReport.Task] = [:]
+            for row in raw {
+                let name = (row["task"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "other"
+                let previous = merged[name]
+                if previous == nil { order.append(name) }
+                merged[name] = TokenUsageReport.Task(
+                    task: name,
+                    inputTokens: (previous?.inputTokens ?? 0) + intValue(row["input_tokens"]),
+                    outputTokens: (previous?.outputTokens ?? 0) + intValue(row["output_tokens"]),
+                    estimatedCost: (previous?.estimatedCost ?? 0) + (doubleValue(row["estimated_cost"]) ?? 0),
+                    apiCalls: (previous?.apiCalls ?? 0) + intValue(row["api_calls"])
+                )
+            }
+            return order.compactMap { merged[$0] }.sorted { $0.totalTokens > $1.totalTokens }
+        }
+        let skills = result["skills"] as? [String: Any] ?? [:]
+        let skillSummary = skills["summary"] as? [String: Any] ?? [:]
+        return TokenUsageReport(
+            days: intValue(result["period_days"]),
+            inputTokens: intValue(totals["total_input"]),
+            outputTokens: intValue(totals["total_output"]),
+            cacheReadTokens: intValue(totals["total_cache_read"]),
+            reasoningTokens: intValue(totals["total_reasoning"]),
+            estimatedCost: doubleValue(totals["total_estimated_cost"]) ?? 0,
+            actualCost: doubleValue(totals["total_actual_cost"]) ?? 0,
+            sessions: intValue(totals["total_sessions"]),
+            apiCalls: intValue(totals["total_api_calls"]),
+            daily: rows("daily", result).compactMap { row in
+                guard let day = (row["day"] as? String).flatMap(dayFormatter.date(from:)) else { return nil }
+                return TokenUsageReport.Day(
+                    day: day,
+                    inputTokens: intValue(row["input_tokens"]),
+                    outputTokens: intValue(row["output_tokens"]),
+                    cacheReadTokens: intValue(row["cache_read_tokens"]),
+                    reasoningTokens: intValue(row["reasoning_tokens"]),
+                    estimatedCost: doubleValue(row["estimated_cost"]) ?? 0,
+                    sessions: intValue(row["sessions"]),
+                    apiCalls: intValue(row["api_calls"])
+                )
+            },
+            models: rows("by_model", result).map { row in
+                TokenUsageReport.Model(
+                    model: (row["model"] as? String) ?? "unknown",
+                    inputTokens: intValue(row["input_tokens"]),
+                    outputTokens: intValue(row["output_tokens"]),
+                    estimatedCost: doubleValue(row["estimated_cost"]) ?? 0,
+                    sessions: intValue(row["sessions"]),
+                    apiCalls: intValue(row["api_calls"]),
+                    tasks: tasks(rows("aux_tasks", row)),
+                    providers: providers[(row["model"] as? String) ?? ""] ?? []
+                )
+            },
+            tasks: tasks(rows("by_task", result)),
+            tools: rows("tools", result).map {
+                TokenUsageReport.Share(name: ($0["tool"] as? String) ?? "unknown", count: intValue($0["count"]), percentage: doubleValue($0["percentage"]) ?? 0)
+            },
+            skills: rows("top_skills", skills).map {
+                TokenUsageReport.Share(name: ($0["skill"] as? String) ?? "unknown", count: intValue($0["total_count"]), percentage: doubleValue($0["percentage"]) ?? 0)
+            },
+            skillLoads: intValue(skillSummary["total_skill_loads"]),
+            distinctSkills: intValue(skillSummary["distinct_skills_used"])
         )
     }
 

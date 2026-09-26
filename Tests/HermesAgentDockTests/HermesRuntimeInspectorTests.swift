@@ -59,10 +59,10 @@ struct HermesRuntimeInspectorTests {
     @Test func providerSelectionUpdatesOnlyGlobalDefault() {
         let option = HermesModelOption(provider: "opencode-zen", model: "gpt-5.6")
 
-        let request = DockModel.globalRuntimeModelSwitchRequest(option: option)
+        let request = DockModel.globalRuntimeModelSwitchRequest(option: option, sessionID: "draft")
 
         #expect(request == HermesRuntimeModelSwitchRequest(
-            sessionID: nil,
+            sessionID: "draft",
             value: "gpt-5.6 --provider opencode-zen --global"
         ))
         #expect(request.parameters["confirm_expensive_model"] as? Bool == true)

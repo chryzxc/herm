@@ -16,6 +16,35 @@ struct ControlCenterProjectTests {
         #expect(AutomationWorkspaceRowPresentation.make(job: enabled, latestRun: failure).result == .failed)
     }
 
+    @Test func automationFallsBackToJobLastStatusAndFlagsOverdue() {
+        let ran = CronSummary(id: "a", name: "A", schedule: "every 1440m", enabled: true, nextRun: "2026-09-24T16:33:41.679148+08:00", lastRunAt: "2026-09-23T16:33:41+08:00", lastStatus: "ok")
+        let broke = CronSummary(id: "b", name: "B", schedule: "every 15m", enabled: true, nextRun: nil, lastRunAt: "2026-09-23T16:33:41+08:00", lastStatus: "error", lastError: "boom")
+        let now = HumanDateFormatting.date("2026-09-26T00:00:00+08:00")!
+
+        #expect(AutomationWorkspaceRowPresentation.make(job: ran, latestRun: nil).result == .succeeded)
+        #expect(AutomationWorkspaceRowPresentation.make(job: broke, latestRun: nil).result == .failed)
+        #expect(AutomationWorkspaceRowPresentation.isOverdue(ran, now: now))
+        #expect(!AutomationWorkspaceRowPresentation.isOverdue(broke, now: now))
+        #expect(CronScheduleFormatting.humanReadable("every 1440m") == "Every day")
+        #expect(CronScheduleFormatting.humanReadable("every 10080m") == "Every week")
+        #expect(CronScheduleFormatting.humanReadable("every 15m") == "Every 15 minutes")
+        #expect(CronScheduleFormatting.humanReadable("every 2h") == "Every 2 hours")
+        #expect(ControlCenterModel.parseCronJobs(["jobs": [["id": "x", "schedule": ["kind": "interval", "minutes": 1440, "display": "every 1440m"]]]]).first?.schedule == "every 1440m")
+    }
+
+    @Test func parsesCronListDetailsFromGatewayShape() {
+        let job = ControlCenterModel.parseCronJobs(["jobs": [[
+            "job_id": "41915f3f2593", "name": "Beacon", "schedule": "every 1440m",
+            "prompt_preview": "Audit the beacon", "model": "gpt-5.6-luna", "provider": "openai-codex",
+            "skills": ["audit"], "enabled_toolsets": ["web"], "script": "scan.sh", "repeat": "forever",
+            "last_delivery_error": "", "last_fire_error": "no gateway", "workdir": NSNull()
+        ]]]).first
+
+        #expect(job?.prompt == "Audit the beacon")
+        #expect(job?.editableFields.contains(.prompt) == false)
+        #expect(job?.details == CronJobDetails(model: "gpt-5.6-luna", provider: "openai-codex", skills: ["audit"], toolsets: ["web"], script: "scan.sh", repeats: "forever", deliveryError: "no gateway"))
+    }
+
     @Test func automationWorkspaceUsesInspectorOnlyWhenThereIsRoom() {
         #expect(AutomationWorkspaceLayout.usesPersistentInspector(width: 1_000))
         #expect(AutomationWorkspaceLayout.usesPersistentInspector(width: 1_440))
@@ -78,23 +107,14 @@ struct ControlCenterProjectTests {
         #expect(hidden.pendingAction == .visibility)
     }
 
-    @Test func conversationSidebarMetadataOmitsMissingValuesWithoutDanglingSeparators() {
-        let complete = SidebarSessionMetadata.make(
-            relativeTime: "2 min ago",
-            repository: "climateRX",
-            preview: "Security audit"
-        )
-        #expect(complete.values == ["2 min ago", "climateRX", "Security audit"])
-
-        let previewOnly = SidebarSessionMetadata.make(
-            relativeTime: nil,
-            repository: nil,
-            preview: "Session activity updated"
-        )
-        #expect(previewOnly.values == ["Session activity updated"])
-
-        let empty = SidebarSessionMetadata.make(relativeTime: nil, repository: nil, preview: nil)
-        #expect(empty.values.isEmpty)
+    @Test func sidebarSessionTimeIsCompact() {
+        let now = Date(timeIntervalSince1970: 1_000_000_000)
+        #expect(SidebarSessionTime.short(now.addingTimeInterval(-10), now: now) == "now")
+        #expect(SidebarSessionTime.short(now.addingTimeInterval(-9 * 60), now: now) == "9m")
+        #expect(SidebarSessionTime.short(now.addingTimeInterval(-3 * 3_600), now: now) == "3h")
+        #expect(SidebarSessionTime.short(now.addingTimeInterval(-2 * 86_400), now: now) == "2d")
+        #expect(SidebarSessionTime.short(now.addingTimeInterval(60), now: now) == "now")
+        #expect(!SidebarSessionTime.short(now.addingTimeInterval(-30 * 86_400), now: now).hasSuffix("d"))
     }
 
     @Test func conversationRepositoryIdentityRemainsBoundedAndUnlinkedSessionsHaveNone() {
