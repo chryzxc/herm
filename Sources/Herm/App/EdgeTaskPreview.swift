@@ -211,7 +211,7 @@ struct EdgeTaskPreview: View {
             Text(isOffline ? "Hermes is offline" : "No tasks in progress")
                 .font(.system(size: 12, weight: .semibold))
             Text(isOffline
-                 ? "Running and finished tasks appear here once the Dock reconnects."
+                 ? "Running and finished tasks appear here once Herm reconnects."
                  : "Running work and finished results you haven't opened appear here.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockSecondaryText)
@@ -222,7 +222,7 @@ struct EdgeTaskPreview: View {
     }
 
     private var footer: some View {
-        EdgePreviewFooterButton(title: "Open Dock", icon: .sidebarSimple, shortcut: workspaceShortcut.keycap,
+        EdgePreviewFooterButton(title: "Open Herm", icon: .sidebarSimple, shortcut: workspaceShortcut.keycap,
                                 shortcutHelp: workspaceShortcut.title, fillsWidth: true, action: openDock)
             .padding(.vertical, 6)
     }

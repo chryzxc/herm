@@ -385,7 +385,7 @@ struct KanbanMutationEditor: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Hermes will persist this \(request.kind.rawValue) change on ‘\(request.task.title)’. The Dock will refresh the authoritative task afterwards.")
+            Text("Hermes will persist this \(request.kind.rawValue) change on ‘\(request.task.title)’. Herm will refresh the authoritative task afterwards.")
         }
     }
 }

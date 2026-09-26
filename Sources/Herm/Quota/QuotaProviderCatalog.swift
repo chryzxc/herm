@@ -49,7 +49,7 @@ enum QuotaProviderCatalog {
         summary: "OpenCode Go session, weekly, and monthly allowance windows.",
         website: URL(string: "https://opencode.ai"),
         connect: .apiKey(
-            instruction: "Paste your OpenCode Go API key. It is stored in the Dock's own provider config and used only to read quota.",
+            instruction: "Paste your OpenCode Go API key. It is stored in Herm's own provider config and used only to read quota.",
             storageKey: "opencode-go"
         )
     )
@@ -60,7 +60,7 @@ enum QuotaProviderCatalog {
         summary: "Z.ai GLM Coding Plan session, weekly, and web-search windows.",
         website: URL(string: "https://z.ai"),
         connect: .apiKey(
-            instruction: "Paste your Z.ai API key. It is stored in the Dock's own provider config and used only to read quota.",
+            instruction: "Paste your Z.ai API key. It is stored in Herm's own provider config and used only to read quota.",
             storageKey: "glm"
         )
     )
@@ -72,7 +72,7 @@ enum QuotaProviderCatalog {
         website: URL(string: "https://claude.ai/code"),
         connect: .login(
             command: "claude auth login",
-            instruction: "Starts the Claude Code CLI sign-in, which opens your browser to authenticate with your Anthropic account. The Dock then reads the credential the CLI stores on this Mac."
+            instruction: "Starts the Claude Code CLI sign-in, which opens your browser to authenticate with your Anthropic account. Herm then reads the credential the CLI stores on this Mac."
         )
     )
 

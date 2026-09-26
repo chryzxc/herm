@@ -24,7 +24,7 @@ updated: 2026-09-15 · head: ba3719e
 
 ## Data flow
 
-WebSocket `/api/ws` (authenticated, loopback-only) → `HermesControlRPC` → `DockModel`/`ControlCenterModel` projection → SwiftUI views. Mutations flow back only through typed RPCs or capability-gated CLI calls; Hermes responses remain authoritative — the Dock never optimistically invents final state.
+WebSocket `/api/ws` (authenticated, loopback-only) → `HermesControlRPC` → `DockModel`/`ControlCenterModel` projection → SwiftUI views. Mutations flow back only through typed RPCs or capability-gated CLI calls; Hermes responses remain authoritative — Herm never optimistically invents final state.
 
 ## Contracts
 
@@ -42,9 +42,9 @@ No databases. `WorkspaceStore` persists preferences/display state; transcripts a
 
 ## Invariants
 
-- Hermes is authoritative for sessions, agents, prompts, models, skills, profiles, MCP, cron; the Dock stores references and display state only.
+- Hermes is authoritative for sessions, agents, prompts, models, skills, profiles, MCP, cron; Herm stores references and display state only.
 - Capability-gated, fail-closed: unavailable RPC/CLI contracts render explicit unavailable/stale states — never inferred from version strings.
-- Credentials, memory, profile paths, and tool payloads never enter Dock state; suspected credential values are never repeated in UI.
+- Credentials, memory, profile paths, and tool payloads never enter Herm state; suspected credential values are never repeated in UI.
 - Session isolation: streamed events must prove ownership of the open session; identity mismatch fails closed.
 - Documentation rule: every user-facing behavior change updates README in the same change set.
 

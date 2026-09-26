@@ -3028,7 +3028,7 @@ final class ControlCenterModel: ObservableObject {
             return
         }
         guard changes.values.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-            lastError = "Scheduled-job fields cannot be empty in the Dock."
+            lastError = "Scheduled-job fields cannot be empty in Herm."
             return
         }
         if let schedule = changes[.schedule], !CronSchedule.isValid(schedule) {

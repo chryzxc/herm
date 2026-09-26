@@ -356,12 +356,12 @@ final class HermesUpdateService: ObservableObject {
         guard Bundle.main.bundleURL.pathExtension.lowercased() == "app" else {
             // Swift package tests and command-line launches have no app bundle
             // to reopen. Keep the successful update state in those contexts.
-            appendLog("Dock restart is unavailable outside the app bundle.")
+            appendLog("Herm restart is unavailable outside the app bundle.")
             return
         }
 
         relaunchScheduled = true
-        appendLog("Restarting Dock…")
+        appendLog("Restarting Herm…")
 
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
@@ -374,7 +374,7 @@ final class HermesUpdateService: ObservableObject {
                 guard let self else { return }
                 if let error {
                     self.relaunchScheduled = false
-                    self.appendLog("Dock restart failed: \(error.localizedDescription)")
+                    self.appendLog("Herm restart failed: \(error.localizedDescription)")
                     return
                 }
                 // applicationWillTerminate shuts down the existing Hermes

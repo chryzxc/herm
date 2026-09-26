@@ -39,7 +39,7 @@ enum ControlTowerNotificationPolicy {
         guard !available else { return nil }
         let key = "capability:\(id):unavailable"
         guard !previouslyNotified.contains(key) else { return nil }
-        return ControlTowerNotification(id: key, title: "Dock capability unavailable", body: "A live Hermes capability is unavailable; no health state was inferred.", referenceID: id)
+        return ControlTowerNotification(id: key, title: "Herm capability unavailable", body: "A live Hermes capability is unavailable; no health state was inferred.", referenceID: id)
     }
 
     private static func key(for item: AttentionItem) -> String { "attention:\(item.id):\(item.kind.rawValue)" }

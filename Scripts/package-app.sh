@@ -27,6 +27,10 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$ROOT_DIR/Sources/Herm/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp "$ROOT_DIR/Sources/Herm/Resources/DockAppIcon.icns" "$APP_DIR/Contents/Resources/DockAppIcon.icns"
+# SwiftPM resource bundles must ship inside the app; otherwise Bundle.module
+# falls back to this build machine's path and traps on other Macs.
+cp -R "$BIN_DIR/Herm_Herm.bundle" "$BIN_DIR/SwiftTerm_SwiftTerm.bundle" "$APP_DIR/Contents/Resources/"
 
 echo "==> Validating bundle metadata…"
 plutil -lint "$APP_DIR/Contents/Info.plist"
@@ -42,7 +46,7 @@ if [ -n "$VERSION" ]; then
 fi
 
 # Ad-hoc sign so the bundle launches on a clean macOS install.
-codesign --force --deep --sign - "$APP_DIR"
+codesign --force --deep --sign - --identifier com.christian.Herm "$APP_DIR"
 echo "==> Verifying code signature…"
 codesign --verify --strict --verbose=2 "$APP_DIR"
 codesign -dv --verbose=2 "$APP_DIR" >/dev/null 2>&1

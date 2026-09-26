@@ -82,7 +82,7 @@ struct EdgeNotchTests {
         let activity = EdgeNotchActivity(status: .idle, runningCount: 2)
         #expect(activity.working)
         #expect(activity.title == "2 background tasks running")
-        #expect(EdgeNotchActivity().title == "Open Dock")
+        #expect(EdgeNotchActivity().title == "Open Herm")
         #expect(EdgeNotchActivity(unread: true).title == "New response")
     }
 

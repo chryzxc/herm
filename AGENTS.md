@@ -1,7 +1,7 @@
 # Herm contributor guidance
 
 Read `DESIGN.md` before changing a user-facing view. It is the source of
-truth for Dock UI behavior and styling.
+truth for Herm UI behavior and styling.
 
 ## UI consistency
 

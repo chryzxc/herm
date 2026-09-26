@@ -144,6 +144,8 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         }
         installCommandDoubleTapShortcut()
         writeStatusItemDiagnosticIfRequested()
+        HermAppUpdater.shared.isBusy = { [model] in model.isSending || model.status == .working }
+        HermAppUpdater.shared.start()
         if CommandLine.arguments.contains("--show-panel") {
             // The production app starts quietly in the menu bar. The debug
             // launcher passes this explicit argument so a manual run provides

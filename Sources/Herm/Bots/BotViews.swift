@@ -162,7 +162,7 @@ struct BotRosterPage: View {
         case .malformed:
             unavailableContent(
                 title: "Bot roster is malformed",
-                detail: "Hermes returned Bot data the Dock cannot safely read.",
+                detail: "Hermes returned Bot data Herm cannot safely read.",
                 showsRetry: true
             )
         }
@@ -578,13 +578,13 @@ private struct BotActivityHistorySheet: View {
     let onOpenChat: () -> Void
 
     var body: some View {
-        DockModal(icon: .clockCounterClockwise, title: "\(bot.name) activity", subtitle: "Work the Dock dispatched to this Bot", width: nil, contentPadding: 0) {
+        DockModal(icon: .clockCounterClockwise, title: "\(bot.name) activity", subtitle: "Work Herm dispatched to this Bot", width: nil, contentPadding: 0) {
             if records.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("No recorded Bot activity")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockPrimaryText)
-                    Text("The Dock has not dispatched work to \(bot.name) in the retained session history.")
+                    Text("Herm has not dispatched work to \(bot.name) in the retained session history.")
                         .font(.system(size: 12))
                         .foregroundStyle(Color.dockSecondaryText)
                 }

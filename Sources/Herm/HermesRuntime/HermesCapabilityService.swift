@@ -390,7 +390,7 @@ final class HermesCapabilityService {
                 title: "Activity inspection",
                 detail: activityRPC == nil ? "process.list is unsupported or unavailable" : "Process and activity inspection is available",
                 isAvailable: activityRPC != nil,
-                recovery: activityRPC == nil ? "Upgrade Hermes to expose process activity to the Dock." : nil
+                recovery: activityRPC == nil ? "Upgrade Hermes to expose process activity to Herm." : nil
             ),
             CapabilityState(
                 id: HermesFeatureIDs.ID.rpcProjects.rawValue,
@@ -479,7 +479,7 @@ final class HermesCapabilityService {
                 title: "Hermes Kanban",
                 detail: kanbanAvailable ? "Kanban CLI is available through Hermes shell; desktop RPC is unavailable" : "Kanban CLI is unavailable",
                 isAvailable: kanbanAvailable,
-                recovery: kanbanAvailable ? "Use Hermes Kanban prompts for actions; the Dock does not duplicate the board." : "Install or enable Hermes Kanban before using Kanban actions.",
+                recovery: kanbanAvailable ? "Use Hermes Kanban prompts for actions; Herm does not duplicate the board." : "Install or enable Hermes Kanban before using Kanban actions.",
                 source: .cli,
                 access: .confirmedMutation
             ),
@@ -518,7 +518,7 @@ final class HermesCapabilityService {
                 id: HermesFeatureIDs.ID.kanbanFilters.rawValue,
                 title: "Kanban list filters",
                 commandResult: kanbanResult,
-                recovery: "This Hermes version does not expose the filters used by the Dock.",
+                recovery: "This Hermes version does not expose the filters used by Herm.",
                 access: .readOnly,
                 requiredHelpTerms: ["--status", "--assignee", "--mine", "--session", "--sort", "--json"]
             ),

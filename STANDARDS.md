@@ -20,7 +20,7 @@ A card is COMMIT_READY only when: `swift build` and the relevant focused suite a
 
 ## Boundaries
 
-Transport and process-launch concerns stay in `HermesRuntime/` gateway services; persistent workspace state in `WorkspaceStore`; presentation state in `DockModel`. Views render state — they do not own RPC parsing, CLI word-building, or persistence. The Hermes engine install (`~/.hermes/hermes-agent`) is read-only; Dock features extend through verified Hermes contracts or user-state helper scripts, never engine patches.
+Transport and process-launch concerns stay in `HermesRuntime/` gateway services; persistent workspace state in `WorkspaceStore`; presentation state in `DockModel`. Views render state — they do not own RPC parsing, CLI word-building, or persistence. The Hermes engine install (`~/.hermes/hermes-agent`) is read-only; Herm features extend through verified Hermes contracts or user-state helper scripts, never engine patches.
 
 ## Git & commits
 
@@ -32,7 +32,7 @@ Conventional Commits, lowercase type, imperative summary scoped to the one-commi
 
 ## Security baseline
 
-Secrets never enter Dock state (single sanctioned exception: the explicit SOUL.md editor write path). Provider keys live only in owner-only local provider config. Suspected credential values detected by the pre-commit signal pass are never repeated anywhere. Attachments re-validate size limits immediately before upload.
+Secrets never enter Herm state (single sanctioned exception: the explicit SOUL.md editor write path). Provider keys live only in owner-only local provider config. Suspected credential values detected by the pre-commit signal pass are never repeated anywhere. Attachments re-validate size limits immediately before upload.
 
 ## Exceptions
 

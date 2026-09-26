@@ -449,7 +449,7 @@ struct EdgeNotchActivity: Equatable {
         if responseCompleted { return "Response completed" }
         if runningCount > 0 { return "\(runningCount) background \(runningCount == 1 ? "task" : "tasks") running" }
         if status == .working || status == .offline { return status.title }
-        return "Open Dock"
+        return "Open Herm"
     }
     var symbol: Ph {
         if attention { return status.icon }
@@ -601,7 +601,7 @@ struct EdgeNotchView: View {
             Divider()
             Button("Quit Herm") { NSApp.terminate(nil) }
         }
-        .accessibilityLabel("\(state.name), \(state.activity.title). Open Dock")
+        .accessibilityLabel("\(state.name), \(state.activity.title). Open Herm")
         .accessibilityHint("Drag to move along either screen edge")
         .help("\(state.activity.title). Hover for details; drag to reposition.")
     }

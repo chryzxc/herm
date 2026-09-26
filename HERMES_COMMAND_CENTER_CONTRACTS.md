@@ -2,7 +2,7 @@
 
 Herm intentionally leaves these surfaces unavailable until Hermes
 advertises a runtime capability and returns bounded, redacted structured data.
-The Dock must never replace these contracts with terminal-table parsing or direct
+Herm must never replace these contracts with terminal-table parsing or direct
 provider SDK calls.
 
 ## Repository and activity
@@ -29,7 +29,7 @@ provider SDK calls.
 
 All collection responses use `items`, `next_cursor`, and an inexpensive total
 when available. Errors use a safe message and retryability metadata. Hermes,
-not the Dock, owns OAuth, provider SDKs, credential storage, redaction, and
+not Herm, owns OAuth, provider SDKs, credential storage, redaction, and
 authorization.
 
 ## Existing deferred contracts

@@ -1,6 +1,11 @@
 name: Release macOS DMG
 
 on:
+  # Auto-release: every green CI run on main ships the next patch version.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   push:
     tags:
       - "v*"
@@ -20,7 +25,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.event_name == 'workflow_run' && 'auto' || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -28,12 +33,13 @@ jobs:
     name: Build and release macOS DMG
     runs-on: macos-26
     timeout-minutes: 30
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
 
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.source_ref || github.ref }}
+          ref: ${{ github.event.workflow_run.head_sha || inputs.source_ref || github.ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -47,7 +53,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            if git tag --points-at HEAD | grep -q '^v'; then
+              echo "HEAD is already released; skipping."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            LATEST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            LATEST="${LATEST:-v0.0.0}"
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+            VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             VERSION="$INPUT_VERSION"
           else
             VERSION="${REF_NAME#v}"
@@ -69,14 +85,17 @@ jobs:
           echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Run release test suite
+        if: github.event_name != 'workflow_run' && steps.version.outputs.skip != 'true'
         run: swift test
 
       - name: Build versioned DMG
+        if: steps.version.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: Scripts/package-app.sh "$VERSION"
 
       - name: Verify DMG
+        if: steps.version.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.value }}
         shell: bash
@@ -87,6 +106,7 @@ jobs:
           echo "Built Herm-${VERSION}.dmg ($(du -h dist/Herm.dmg | cut -f1))"
 
       - name: Upload DMG artifact
+        if: steps.version.outputs.skip != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Herm-${{ steps.version.outputs.value }}-dmg
@@ -94,6 +114,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create or update GitHub release
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.value }}

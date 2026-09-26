@@ -57,7 +57,7 @@ struct CapabilityStateTests {
         let unsupported = CapabilityState(
             id: "mcp.launch",
             title: "MCP launch",
-            detail: "Not supported by Dock",
+            detail: "Not supported by Herm",
             isAvailable: false,
             recovery: nil,
             category: .integration,

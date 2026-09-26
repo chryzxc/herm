@@ -86,6 +86,8 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingAllSkills = false
     @State private var expandedSettingsCapabilityCategories: Set<CapabilityCategory> = [.core]
     @State private var isAgentUpdateExpanded = true
+    @State private var isAppUpdateExpanded = true
+    @ObservedObject private var appUpdater = HermAppUpdater.shared
     @State private var isAppearanceExpanded = false
     @State private var isInsightsExpanded = false
     @State private var isCapabilitiesExpanded = true
@@ -757,7 +759,7 @@ struct WorkspaceActivitySidebar: View {
             Button("Undo Last Turn", role: .destructive) { Task { _ = await control.undoActiveSession() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Hermes will remove the latest real user turn and its following output. This cannot be recovered through the Dock.")
+            Text("Hermes will remove the latest real user turn and its following output. This cannot be recovered through Herm.")
         }
         .confirmationDialog("Create Session Branch?", isPresented: $isShowingBranchConfirmation) {
             Button("Create Branch") { Task { _ = await control.branchActiveSession(name: sessionBranchName) } }
@@ -782,7 +784,7 @@ struct WorkspaceActivitySidebar: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Hermes will prepare a no-edit Markdown handoff in the current session. The result stays in the current Dock runtime until you copy or explicitly send it elsewhere.")
+            Text("Hermes will prepare a no-edit Markdown handoff in the current session. The result stays in the current Herm runtime until you copy or explicitly send it elsewhere.")
         }
         .confirmationDialog("Change Global Delegation?", isPresented: $isShowingDelegationConfirmation) {
             Button(control.delegationPaused ? "Resume Delegation" : "Pause Delegation") {
@@ -820,7 +822,7 @@ struct WorkspaceActivitySidebar: View {
             Button("Cancel", role: .cancel) { control.cancelRestoreCheckpoint(); checkpointForRestore = nil }
         } message: {
             if let checkpoint = checkpointForRestore {
-                Text("Hermes will restore this session to checkpoint \(checkpoint.hash). Changes after that checkpoint cannot be recovered through the Dock.")
+                Text("Hermes will restore this session to checkpoint \(checkpoint.hash). Changes after that checkpoint cannot be recovered through Herm.")
             }
         }
         .confirmationDialog("Change Project?", isPresented: $isShowingProjectMutationConfirmation) {
@@ -1572,7 +1574,7 @@ struct WorkspaceActivitySidebar: View {
                         HStack(spacing: 10) {
                             Button("OPEN CHANGES") { select(.changes) }
                             Button("REVIEW WITH HERMES") {
-                                let prompt = "Review repository \(notice.displayName) without editing files. The Dock detected \(notice.changedFiles) changed files. Report risks, missing tests, and verification scope without quoting suspected credential values."
+                                let prompt = "Review repository \(notice.displayName) without editing files. Herm detected \(notice.changedFiles) changed files. Report risks, missing tests, and verification scope without quoting suspected credential values."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
                             }
                             Button("OPEN VERIFICATION") { select(.verification) }
@@ -5147,6 +5149,43 @@ struct WorkspaceActivitySidebar: View {
         .minimumScaleFactor(0.7)
     }
 
+    private var appUpdateSection: some View {
+        let (status, color): (String, Color) = switch appUpdater.phase {
+        case .idle: ("Updates are checked automatically every few hours.", .dockMetadataText)
+        case .unavailable(let reason): (reason, .dockMetadataText)
+        case .checking: ("Checking \(HermAppUpdater.repository)…", .dockSecondaryText)
+        case .upToDate: ("Up to date", .dockSecondaryText)
+        case .downloading: ("Downloading Herm \(appUpdater.latest?.version ?? "")…", .dockSecondaryText)
+        case .readyToInstall(let version): ("Herm \(version) is ready. It installs and restarts once the current turn finishes.", .dockWarning)
+        case .installing: ("Installing and restarting…", .dockWarning)
+        case .failed(let reason): (reason, .dockWarning)
+        }
+        let isUnavailable = if case .unavailable = appUpdater.phase { true } else { false }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Circle().fill(color).frame(width: 7, height: 7)
+                Text(status)
+                    .font(.system(size: 12))
+                    .foregroundStyle(color)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if case .readyToInstall = appUpdater.phase {
+                    Button("Restart now") { appUpdater.installNow() }
+                        .buttonStyle(.dockPrimary)
+                        .controlSize(.small)
+                } else if appUpdater.canCheck && !isUnavailable {
+                    Button("Check for updates") { appUpdater.checkForUpdates() }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockAccent)
+                }
+            }
+            Text("Source  ·  \(HermAppUpdater.repository)" + (appUpdater.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+        }
+    }
+
     private var agentUpdateSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
@@ -5154,7 +5193,7 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
-                Button("Restart Dock") { isShowingDockRestartConfirmation = true }
+                Button("Restart Herm") { isShowingDockRestartConfirmation = true }
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockSecondaryText)
@@ -5199,13 +5238,13 @@ struct WorkspaceActivitySidebar: View {
                 .disabled(agentUpdateService.isBusy)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(verbatim: "The Dock will run the allow-listed command `\(HermesUpdateService.updateCommandDisplay)`. It pulls the latest code from NousResearch/hermes-agent, reinstalls dependencies, and may migrate new configuration options. Running Hermes sessions keep the current version until Hermes restarts.")
+            Text(verbatim: "Herm will run the allow-listed command `\(HermesUpdateService.updateCommandDisplay)`. It pulls the latest code from NousResearch/hermes-agent, reinstalls dependencies, and may migrate new configuration options. Running Hermes sessions keep the current version until Hermes restarts.")
         }
         .confirmationDialog("Restart Herm?", isPresented: $isShowingDockRestartConfirmation) {
-            Button("Restart Dock", role: .destructive) { onRestartDock() }
+            Button("Restart Herm", role: .destructive) { onRestartDock() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This closes the current Hermes backend and relaunches the Dock. Unsaved draft text and the current session view will be cleared; the next chat will load the currently selected Codex account and global model.")
+            Text("This closes the current Hermes backend and relaunches Herm. Unsaved draft text and the current session view will be cleared; the next chat will load the currently selected Codex account and global model.")
         }
     }
 
@@ -5340,7 +5379,7 @@ struct WorkspaceActivitySidebar: View {
             if let installed = agentUpdateService.installed {
                 diagnosticRow(label: "INSTALLED", value: installed.displayVersion, color: Color.dockSuccess)
             }
-            Text("The Dock will restart automatically so new sessions run the updated agent.")
+            Text("Herm will restart automatically so new sessions run the updated agent.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -5359,7 +5398,7 @@ struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text("The Dock never retries an update automatically. Review the output below and run CHECK before trying again.")
+            Text("Herm never retries an update automatically. Review the output below and run CHECK before trying again.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -5420,6 +5459,9 @@ struct WorkspaceActivitySidebar: View {
                 generalPreferencesSection
                 settingsDisclosure(title: "Appearance", subtitle: appearanceSubtitle, icon: .sparkle, isExpanded: $isAppearanceExpanded) {
                     appearanceSection
+                }
+                settingsDisclosure(title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")", icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded) {
+                    appUpdateSection
                 }
                 settingsDisclosure(title: "Agent update", subtitle: "Version and updates", icon: .arrowsClockwise, isExpanded: $isAgentUpdateExpanded) {
                     agentUpdateSection
@@ -6023,7 +6065,7 @@ struct WorkspaceActivitySidebar: View {
                     ))
                 }
                 Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(title: "Completion alerts", detail: "Notify when Hermes finishes a request while the Dock is hidden.") {
+                SettingsPreferenceRow(title: "Completion alerts", detail: "Notify when Hermes finishes a request while Herm is hidden.") {
                     settingsSwitch(isOn: Binding(
                         get: { model.completionNotificationsEnabled },
                         set: { model.setCompletionNotificationsEnabled($0) }
@@ -6091,10 +6133,10 @@ struct WorkspaceActivitySidebar: View {
     private var appearanceSubtitle: String {
         guard let projection = control.appearanceProjection,
               control.appearanceProjectionAvailable else {
-            return "Dock themes and Hermes skin status unavailable"
+            return "Herm themes and Hermes skin status unavailable"
         }
         let mapped = projection.skins.filter { skin in DockThemeID.allCases.contains { $0.hermesSkinID == skin.id } }.count
-        return "\(DockThemeID.allCases.count) Dock skins · \(mapped) Hermes skins detected"
+        return "\(DockThemeID.allCases.count) Herm skins · \(mapped) Hermes skins detected"
     }
 
     private var appearanceSection: some View {
@@ -6106,7 +6148,7 @@ struct WorkspaceActivitySidebar: View {
                     themeOption(option)
                 }
             }
-            Text("Choosing a Dock skin doesn't change the active Hermes skin.")
+            Text("Choosing a Herm skin doesn't change the active Hermes skin.")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -6139,7 +6181,7 @@ struct WorkspaceActivitySidebar: View {
                                 Circle().fill(skin.isActive ? Color.dockAccent : Color.dockMetadataText).frame(width: 6, height: 6)
                                 Text(skin.name).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                                 Spacer()
-                                Text("No Dock palette")
+                                Text("No Herm palette")
                                     .font(.system(size: 11))
                                     .foregroundStyle(Color.dockMetadataText)
                             }
@@ -6217,7 +6259,7 @@ struct WorkspaceActivitySidebar: View {
                     Text(control.emergencyStopActive == true ? "New work paused" : control.emergencyStopActive == false ? "Dispatch resumed" : "Dispatch status unknown")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockPrimaryText)
-                    Text(control.emergencyStopMessage ?? "Pause or resume records this Dock action; Hermes does not expose a stable ESTOP status contract.")
+                    Text(control.emergencyStopMessage ?? "Pause or resume records this Herm action; Hermes does not expose a stable ESTOP status contract.")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(2)
@@ -6625,7 +6667,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .general: "Dock preferences and appearance"
+        case .general: "Herm preferences and appearance"
         case .runtime: "Models, dispatch, and tools"
         case .chat: "Personality, timezone, and attachments"
         case .workspace: "Working directory, shell, and file access"

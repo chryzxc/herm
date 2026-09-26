@@ -1,9 +1,9 @@
 # Herm — Design Specification
 
-This document is the source of truth for Dock UI behavior and styling. It has
+This document is the source of truth for Herm UI behavior and styling. It has
 five parts, and each has a different job:
 
-1. **Purpose and principles:** why the Dock looks and behaves the way it does.
+1. **Purpose and principles:** why Herm looks and behaves the way it does.
 2. **Design system:** the foundations (color, status, type, spacing,
    elevation, motion) and shared components that every surface is built from.
 3. **Layout and interaction rules:** hierarchy, stability, states, and
@@ -28,7 +28,7 @@ reference from another project.
 
 ## Product principles
 
-1. Hermes owns operational data. The Dock renders canonical sessions, agents,
+1. Hermes owns operational data. Herm renders canonical sessions, agents,
    tasks, tools, and runtime state; it only owns presentation state.
 2. Scan first, inspect second. Dense lists show status and a short summary;
    full payloads are disclosed after explicit selection.
@@ -42,14 +42,14 @@ reference from another project.
 
 ## Design system
 
-Every Dock surface is assembled from the foundations and components in this
+Every Herm surface is assembled from the foundations and components in this
 part. A surface spec may choose layout and content. It may not invent a new
 color, type size, radius, status hue, or panel treatment. If a need is not
 covered here, extend this part first, then use the new entry.
 
 ### Visual direction: the lamp-lit office
 
-The 3D office sets the Dock's identity. It is a calm workplace in open
+The 3D office sets Herm's identity. It is a calm workplace in open
 countryside whose sky follows the local clock: blue days, amber dusks, starry
 nights, warm lamps, and small signs that say who is doing what. The 2D chrome carries the same feeling:
 
@@ -288,18 +288,18 @@ will appear or what to do next.
 
 ### Themes
 
-The Dock has one global theme preference stored under
+Herm has one global theme preference stored under
 `hermes.dock.theme.v1`. Native macOS is the default and follows the system
 Light/Dark setting. Hermes palettes map stable skin IDs (`default`, `ares`,
 `mono`, `slate`, `daylight`, `warm-lightmode`, `poseidon`, `sisyphus`, and
-`charizard`) to semantic Dock roles. Daylight and Warm Light force light
+`charizard`) to semantic Herm roles. Daylight and Warm Light force light
 appearance; the other Hermes palettes use dark appearance. Theme selection is
-Dock-owned presentation state and never invokes Hermes skin commands or changes
+Herm-owned presentation state and never invokes Hermes skin commands or changes
 Hermes configuration.
 
 Theme palettes resolve canvas, layered surfaces, text, selection, controls,
 dividers, accents, success, warning, destructive, and message fills. Every
-Dock surface consumes these semantic tokens: navigation, workspace,
+Herm surface consumes these semantic tokens: navigation, workspace,
 conversations, composer, inspectors, repository tools, settings, popovers,
 menus, sheets, and confirmations. One shared theme store drives every window.
 The selected theme also sets the application appearance (Light, Dark, or system
@@ -309,14 +309,14 @@ panes, applies the themed default text color and control tint. Views must not
 use system label, separator, or window colors in themed surfaces, and content
 that bakes colors into attributed text must re-render when the theme revision
 changes, even if its text is unchanged. Unknown local or hub skins remain visible as
-read-only inventory and are disabled until an explicit Dock palette mapping
+read-only inventory and are disabled until an explicit Herm palette mapping
 exists.
 
 ## Layout and interaction rules
 
 ### Layout and information hierarchy
 
-The Dock has two primary work areas:
+Herm has two primary work areas:
 
 | Area | Responsibility |
 | --- | --- |
@@ -465,7 +465,7 @@ cap; the body scrolls.
   labelled "Status not current". Finished results keep their tone.
 - The empty state reads "No tasks in progress" or "Hermes is offline", with
   one line saying what will appear.
-- The footer is a full-width Open Dock row with a `⌘ ⌘` keycap hint for the
+- The footer is a full-width Open Herm row with a `⌘ ⌘` keycap hint for the
   double-tap Command shortcut.
 
 New responses, completions, and requests for attention expand the preview
@@ -615,7 +615,7 @@ soft vignette, and a tilt-shift blur at the top and bottom of wide views. The
 tilt-shift fades out as the camera moves in, so close views of a bot stay
 sharp. Apart from cloud drift and the clock-driven sky, none of it animates.
 
-The office palette is derived from the selected Dock theme (`OfficeScenePalette`).
+The office palette is derived from the selected Herm theme (`OfficeScenePalette`).
 Only the shell follows the theme: plaster, floors, trim, paving and ground take
 the hue of the theme's base surface at fixed lightness, with saturation capped
 so strong themes tint rather than flood the scene. Furniture stays one
@@ -727,10 +727,10 @@ layouts use a full-width category menu below the Settings header.
 - **Most used first.** General starts with Preferences (switch rows), then
   Appearance, then Agent update. Preference rows keep the 52pt minimum with a
   small switch trailing.
-- **Skins gallery.** Compact tiles: swatches, the Dock skin name, and one line
+- **Skins gallery.** Compact tiles: swatches, Herm skin name, and one line
   for the mode plus "Active in Hermes" when it applies. The selected tile gets
   an accent stroke and checkmark; the description is a tooltip. Selecting a
-  tile changes Dock presentation only and never invokes Hermes skin commands.
+  tile changes Herm presentation only and never invokes Hermes skin commands.
   Unmapped skins and installed companions are quiet lists below the grid.
 - **Color and copy.** The Quota rule applies: healthy and ready states stay
   neutral, and warning or destructive hues mark only states that need action.
@@ -790,9 +790,9 @@ open), the last-updated time (warning hue when stale), and refresh.
   stops using it everywhere. It runs `hermes auth remove <provider> <id>`
   through Hermes, so Hermes also does its own cleanup. While it runs, a
   spinner replaces the actions menu; a failure replaces the metadata line in
-  the warning hue. The Dock forgets that card's nickname and position only
+  the warning hue. Herm forgets that card's nickname and position only
   after Hermes succeeds. Other providers have no remove action, because the
-  Dock does not own their logins.
+  Herm does not own their logins.
 - Disconnected providers appear afterward under Available to connect with
   Connect and website actions.
 
@@ -905,10 +905,10 @@ canonical Bot Chat; profile editing, duplication, activity history, and
 hide/unhide remain in More and the native context menu. Focus and hover use one
 quiet surface treatment, and the 44pt More target does not change card layout.
 Routines retain their own focused list with assigned Bot names, schedules,
-disabled state, and confirmed removal. This page uses the global Dock tokens and
+disabled state, and confirmed removal. This page uses the global Herm tokens and
 is independent of the sidebar brand-concept preference. Groups, sections,
 profile deletion, cross-machine routing, and richer routine actions require
-additional Hermes gateway contracts and are not presented as available Dock
+additional Hermes gateway contracts and are not presented as available Herm
 controls yet.
 
 ### Conversation workspace
@@ -952,7 +952,7 @@ folders are collapsed initially; filtering reveals matching ancestors without
 discarding the user's disclosure state. Generated and dependency trees are
 hidden by default, while `.git` remains excluded for safety. Compact layouts
 drill into the editor and provide a 44pt Back action. The workspace continues
-to use the global cool-navy Dock tokens and does not inherit sidebar brand
+to use the global cool-navy Herm tokens and does not inherit sidebar brand
 concept colors.
 
 ### Artifacts
@@ -1047,12 +1047,12 @@ events, and main-agent tool activity.
   submits prompts, verification, or mutations automatically. System notices
   contain only a repository display name and aggregate count.
 - Worktree fleet views are read-only local Git projections. Selecting a
-  worktree changes only the Dock's session-to-repository presentation reference.
+  worktree changes only Herm's session-to-repository presentation reference.
 
 #### Verification Center
 
 - Consume `project.facts` and `verification.status` from Hermes; do not
-  re-detect package managers or invent verification commands in the Dock.
+  re-detect package managers or invent verification commands in Herm.
 - Show manifests, package managers, context filenames, and Hermes-provided
   verification commands as read-only facts.
 - Copying a command is always available when a command exists.
@@ -1095,7 +1095,7 @@ events, and main-agent tool activity.
   advertises it. It affects subsequent runtime work, not the active transcript;
   adding/removing/authenticating servers and third-party tool invocation remain
   unavailable without upstream typed contracts.
-- Skills and plugins are inventory/readiness surfaces only in the current Dock.
+- Skills and plugins are inventory/readiness surfaces only in the current Herm.
   Installation, enablement, disablement, removal, and configuration are
   unavailable until Hermes supplies a verified contract. Do not imply that a
   displayed inventory grants mutation authority.
