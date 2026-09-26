@@ -75,6 +75,25 @@ if pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
     fi
 fi
 
+# Herm's `hermes serve` backends lead their own process group, so they survive
+# the app and get reparented to launchd. An orphan keeps holding its session
+# lock ("This chat is open in another Hermes window"), so reap them — plus
+# their MCP children — now that Herm is gone.
+orphan_backends() {
+    ps -axo pid=,ppid=,command= | awk '$2 == 1 && / serve --host 127\.0\.0\.1 --port 0$/ { print $1 }'
+}
+orphans=$(orphan_backends)
+if [ -n "$orphans" ]; then
+    echo "Stopping orphaned Hermes backend(s): $(echo $orphans)"
+    for pid in $orphans; do kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true; done
+    attempt=0
+    while [ -n "$(orphan_backends)" ] && [ "$attempt" -lt 30 ]; do
+        sleep 0.1
+        attempt=$((attempt + 1))
+    done
+    for pid in $(orphan_backends); do kill -KILL -- "-$pid" 2>/dev/null || true; done
+fi
+
 echo "[3/4] Replacing and signing the debug app bundle..."
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$EXECUTABLE_PATH" "$APP_PATH/Contents/MacOS/Herm"
