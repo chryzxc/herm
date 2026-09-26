@@ -192,7 +192,9 @@ struct EdgeNotchTests {
         #expect(ProviderMark(providerID: "claude", displayName: "Claude") == .claude)
         #expect(ProviderMark(providerID: "codex-hermes-0", displayName: "Codex via Hermes") == .openAI)
         #expect(ProviderMark(providerID: "opencode", displayName: "OpenCode Go") == .openCode)
-        #expect(ProviderMark(providerID: "glm", displayName: "GLM Coding Plan") == .monogram("G"))
+        #expect(ProviderMark(providerID: "glm", displayName: "GLM Coding Plan") == .zai)
+        #expect(ProviderMark(providerID: "antigravity", displayName: "Antigravity") == .antigravity)
+        #expect(ProviderMark(providerID: "kimi", displayName: "Kimi") == .monogram("K"))
     }
 
     @MainActor @Test func dragCancelsPendingExpansionDuringHover() {
