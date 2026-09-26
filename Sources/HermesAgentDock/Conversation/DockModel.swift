@@ -115,21 +115,25 @@ final class DockModel: ObservableObject {
     @Published private(set) var sessionDeletionError: String?
     @Published private(set) var sessionVisibilityError: String?
     @Published private(set) var updatingSessionVisibilityID: String?
+    /// Sessions carrying Hermes' durable pin flag (`sessions.pinned`) — the
+    /// same flag Hermes Desktop's Pinned section and `hermes sessions pin` use.
+    @Published private(set) var pinnedSessions: [HermesSession] = []
+    @Published private(set) var pinningSessionID: String?
     @Published private(set) var renamingSessionID: String?
     @Published private(set) var isRestoringSession = false
     @Published private(set) var isCreatingSession = false
     @Published var currentSessionTitle: String?
-    var reasoningState: ReasoningState? { didSet { scheduleActivityPresentation() } }
-    private(set) var conversationActivityPhase: ConversationActivityPhase = .idle { didSet { scheduleActivityPresentation() } }
+    var reasoningState: ReasoningState? { didSet { if oldValue != reasoningState { scheduleActivityPresentation() } } }
+    private(set) var conversationActivityPhase: ConversationActivityPhase = .idle { didSet { if oldValue != conversationActivityPhase { scheduleActivityPresentation() } } }
     @Published private(set) var interruptState: InterruptState = .idle
     @Published var isShowingReasoning = false
-    var activeToolCalls: [ActiveToolCall] = [] { didSet { scheduleActivityPresentation() } }
+    var activeToolCalls: [ActiveToolCall] = [] { didSet { if oldValue != activeToolCalls { scheduleActivityPresentation() } } }
     @Published var hasUnreadResponse = false
     @Published private(set) var completionNotificationsEnabled: Bool
-    var recentEvents: [AgentEvent] = [] { didSet { scheduleActivityPresentation() } }
-    var activeSubagents: [HermesSubagent] = [] { didSet { scheduleActivityPresentation() } }
-    var sessionAgents: [HermesSubagent] = [] { didSet { scheduleActivityPresentation() } }
-    var agentActivities: [AgentActivity] = [] { didSet { scheduleActivityPresentation() } }
+    var recentEvents: [AgentEvent] = [] { didSet { if oldValue != recentEvents { scheduleActivityPresentation() } } }
+    var activeSubagents: [HermesSubagent] = [] { didSet { if oldValue != activeSubagents { scheduleActivityPresentation() } } }
+    var sessionAgents: [HermesSubagent] = [] { didSet { if oldValue != sessionAgents { scheduleActivityPresentation() } } }
+    var agentActivities: [AgentActivity] = [] { didSet { if oldValue != agentActivities { scheduleActivityPresentation() } } }
     /// The sole UI invalidation signal for high-frequency agent activity.
     /// Canonical arrays above update immediately; this revision is coalesced.
     @Published private(set) var activityPresentationRevision = 0
@@ -157,6 +161,8 @@ final class DockModel: ObservableObject {
     @Published private(set) var isUpdatingDefaultReasoning = false
     @Published private(set) var voiceState: HermesVoiceState = .inactive
     @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
+    /// Mirrors Hermes' process-wide `HERMES_VOICE_TTS` flag for this voice chat.
+    @Published private(set) var voiceRepliesEnabled = true
     @Published private(set) var composerFocusRequest = 0
     @Published var isComposerEditing = false
     @Published private(set) var controlInboxRequest = 0
@@ -176,6 +182,9 @@ final class DockModel: ObservableObject {
     private let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
     @Published private(set) var sessionID: String?
+    /// Authoritative `session.usage` total, keyed by the session it was read for
+    /// so a switch never shows the previous chat's count.
+    @Published private(set) var sessionTokenUsage: (sessionID: String, total: Int)?
     /// Canonical Hermes profile used by new chats and profile-owned
     /// navigation projections. This is intentionally separate from
     /// `activeBotProfileID`, which identifies an open canonical Bot Chat.
@@ -197,6 +206,7 @@ final class DockModel: ObservableObject {
             $deletingSessionID.map { _ in () }.eraseToAnyPublisher(),
             $renamingSessionID.map { _ in () }.eraseToAnyPublisher(),
             $updatingSessionVisibilityID.map { _ in () }.eraseToAnyPublisher(),
+            $pinnedSessions.map { _ in () }.eraseToAnyPublisher(),
             $isCreatingSession.map { _ in () }.eraseToAnyPublisher()
         ).eraseToAnyPublisher()
     }
@@ -300,6 +310,9 @@ final class DockModel: ObservableObject {
     /// a new chat. Resuming an existing session never grants this permission.
     private var newSessionCreationAuthorized = false
     private var newSessionProjectPath: String?
+    /// Project path each chat was created in, so project navigation can place
+    /// a new chat before the project tree reports it.
+    private(set) var createdSessionProjectPaths: [String: String] = [:]
     private var currentModelName: String?
     private var isPopoverVisible = false
     private var isRefreshingDelegationStatus = false
@@ -343,6 +356,9 @@ final class DockModel: ObservableObject {
     private var interruptGeneration = 0
     private var nativeVoiceCapture = NativeVoiceCaptureLifecycle()
     private var voiceConversationGeneration = 0
+    /// The user interrupted a generating turn; its `message.complete` has no
+    /// speech left to drain, so listening resumes immediately.
+    private var skipNextVoicePlaybackDrain = false
     private var hasShutDown = false
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
     private let lastSessionIDKey = "hermes.session.last-active.v1"
@@ -513,6 +529,7 @@ final class DockModel: ObservableObject {
                 let promptSessionID = sessionID
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
+                touchSession(sessionID: promptSessionID, at: Date(), preview: text)
 
                 for attachedImage in attachedImages {
                     let accessing = attachedImage.fileURL.startAccessingSecurityScopedResource()
@@ -825,11 +842,14 @@ final class DockModel: ObservableObject {
     }
 
     func artifactMessages(for session: HermesSession) async throws -> [[String: Any]] {
-        let result = try await sessionRPCClient.request(
-            HermesFeatureIDs.ID.sessionMessages.rawValue,
-            params: ["session_id": session.id, "limit": 500]
-        )
-        return result["messages"] as? [[String: Any]] ?? result["data"] as? [[String: Any]] ?? []
+        // Hermes has no `session.messages` RPC; the REST transcript carries raw
+        // tool calls, which is where written files are recorded.
+        do {
+            let result = try await interruptRPC.sessionMessages(sessionID: session.id, profileID: session.profileID)
+            return result["data"] as? [[String: Any]] ?? result["messages"] as? [[String: Any]] ?? []
+        } catch HermesGateway.GatewayError.httpError(404) {
+            return [] // pruned since the session list was read
+        }
     }
 
     func updateCurrentSessionTitle(_ title: String) {
@@ -871,11 +891,15 @@ final class DockModel: ObservableObject {
                     throw HermesGateway.GatewayError.malformedResponse
                 }
                 let loaded = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }
+                await migrateLegacyLocalPins()
+                let pinned = try? await Self.fetchPinnedSessions(client: sessionRPCClient, profileID: scope)
+                guard self.sessionLoadGeneration == generation, self.profileScopeID == scope else { return }
+                if let pinned { pinnedSessions = pinned }
                 // The session index can lag behind the live gateway stream.
                 // Keep a newer event timestamp until Hermes publishes an equal
                 // or newer canonical row, so navigation never regresses its
                 // visible “Updated” time after a completed message.
-                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions))
+                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions, keeping: self.sessionID))
                 sessions = merged
                 sessionProjectionState = merged.isEmpty ? .empty : .ready(merged)
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
@@ -930,6 +954,81 @@ final class DockModel: ObservableObject {
         } catch {
             sessionVisibilityError = Self.safeUserDiagnostic(error.localizedDescription)
             return false
+        }
+    }
+
+    func isSessionPinned(_ sessionID: String) -> Bool {
+        pinnedSessions.contains { $0.id == sessionID }
+    }
+
+    /// Toggles Hermes' pin flag through the same `PATCH /api/sessions/{id}`
+    /// Hermes Desktop uses, so a pin made here shows up there and in the CLI.
+    @discardableResult
+    func toggleSessionPinned(_ session: HermesSession) async -> Bool {
+        guard pinningSessionID == nil else { return false }
+        let pinned = !isSessionPinned(session.id)
+        pinningSessionID = session.id
+        defer { pinningSessionID = nil }
+        do {
+            try await Self.writeSessionPin(client: sessionRPCClient, sessionID: session.id,
+                                           profileID: session.profileID ?? profileScopeID, pinned: pinned)
+            // ponytail: optimistic local flip; a list page already in flight can
+            // briefly show the old pin until the next load (Desktop fences this).
+            if pinned { pinnedSessions.append(session) } else { pinnedSessions.removeAll { $0.id == session.id } }
+            loadSessions()
+            return true
+        } catch {
+            DebugLog.write("model: session pin failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            return false
+        }
+    }
+
+    /// `/api/sessions` back-fills every pinned row past `limit`, so one row
+    /// plus the pins is the full pinned set.
+    static func fetchPinnedSessions(client: HermesRPCClientProtocol, profileID: String?) async throws -> [HermesSession] {
+        var path = "/api/sessions?limit=1&order=recent"
+        if let profileID, !profileID.isEmpty,
+           let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
+            path += "&profile=\(encoded)"
+        }
+        guard let rows = try await client.fetchHTTP(path)["sessions"] as? [[String: Any]] else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        return rows.filter { $0["pinned"] as? Bool == true }.compactMap { parseSession($0, profileID: profileID) }
+    }
+
+    static func writeSessionPin(client: HermesRPCClientProtocol, sessionID: String, profileID: String?, pinned: Bool) async throws {
+        guard let encoded = sessionID.addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(CharacterSet(charactersIn: "-_."))) else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        var body: [String: Any] = ["pinned": pinned]
+        if let profileID, !profileID.isEmpty { body["profile"] = profileID }
+        _ = try await client.sendHTTP("PATCH", path: "/api/sessions/\(encoded)", body: body)
+    }
+
+    /// One-time move of pins older Herm builds kept in UserDefaults into Hermes.
+    /// Pins that fail to write (other than a deleted session) stay for the next load.
+    private func migrateLegacyLocalPins() async {
+        let key = "hermes.dock.pinned-sessions.v1"
+        guard let data = defaults.data(forKey: key),
+              let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let references = saved["references"] as? [[String: String]] else { return }
+        var remaining: [[String: String]] = []
+        for reference in references {
+            guard let sessionID = reference["sessionID"] else { continue }
+            do {
+                try await Self.writeSessionPin(client: sessionRPCClient, sessionID: sessionID,
+                                               profileID: reference["profileID"], pinned: true)
+            } catch HermesGateway.GatewayError.httpError(404), HermesGateway.GatewayError.httpRefused(404, _) {
+                continue
+            } catch {
+                remaining.append(reference)
+            }
+        }
+        if remaining.isEmpty {
+            defaults.removeObject(forKey: key)
+        } else if let data = try? JSONSerialization.data(withJSONObject: ["references": remaining]) {
+            defaults.set(data, forKey: key)
         }
     }
 
@@ -2232,15 +2331,32 @@ final class DockModel: ObservableObject {
         }
     }
 
-    private func touchSession(sessionID: String?, at date: Date) {
-        guard let sessionID,
-              let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+    /// Bumps a row's recency locally so the rail reorders immediately instead
+    /// of waiting for the session index round-trip. The open session is
+    /// inserted when the index has not listed it yet (a just-created chat).
+    private func touchSession(sessionID: String?, at date: Date, preview: String? = nil) {
+        guard let sessionID, !sessionID.isEmpty else { return }
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
+            guard sessionID == self.sessionID else { return }
+            sessions.insert(HermesSession(
+                id: sessionID,
+                profileID: sessionProfileID ?? profileScopeID,
+                title: currentSessionTitle ?? "",
+                preview: preview ?? "",
+                startedAt: date,
+                updatedAt: date,
+                messageCount: 0,
+                source: "hermes-agent-dock"
+            ), at: 0)
+            return
+        }
         let session = sessions[index]
         guard session.lastUpdatedAt.map({ date > $0 }) ?? true else { return }
         sessions[index] = HermesSession(
             id: session.id,
+            profileID: session.profileID,
             title: session.title,
-            preview: session.preview,
+            preview: preview ?? session.preview,
             startedAt: session.startedAt,
             updatedAt: date,
             messageCount: session.messageCount,
@@ -2301,6 +2417,18 @@ final class DockModel: ObservableObject {
             )
         }
     }
+
+    func refreshSessionTokenUsage() {
+        guard let id = sessionID, !id.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            guard let result = try? await self?.interruptRPC.sessionUsage(sessionID: id),
+                  let self, self.sessionID == id else { return }
+            self.sessionTokenUsage = (id, ControlCenterModel.parseSessionUsage(result).totalTokens)
+        }
+    }
+
+    // ponytail: ~4 chars/token heuristic for the live stream; session.usage replaces it at turn end.
+    static func estimatedTokens(utf8Count: Int) -> Int { (utf8Count + 3) / 4 }
 
     private func refreshSessionIndexAfterActivity() {
         guard !isLoadingSessions else {
@@ -2482,6 +2610,8 @@ final class DockModel: ObservableObject {
                     _ = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
                 }
                 guard voiceConversationGeneration == generation else { return }
+                voiceRepliesEnabled = true
+                skipNextVoicePlaybackDrain = false
                 voiceTelemetry.beginListening()
                 voiceState = .listening
                 armNativeVoiceCapture()
@@ -2523,10 +2653,20 @@ final class DockModel: ObservableObject {
         if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
             createParams["cwd"] = newSessionProjectPath
         }
+        // Hermes rejects sessionless model switches; a new-chat pick rides on
+        // session.create as a per-session override instead.
+        if let id = sessionModelOptionID,
+           let option = runtimeModelOptions.first(where: { $0.id == id }) {
+            createParams["model"] = option.model
+            createParams["provider"] = option.provider
+        }
         let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
         guard let createdSessionID = result["session_id"] as? String,
               !createdSessionID.isEmpty else {
             throw HermesGateway.GatewayError.malformedResponse
+        }
+        if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
+            createdSessionProjectPaths[createdSessionID] = newSessionProjectPath
         }
         sessionID = createdSessionID
         sessionProfileID = profileScopeID
@@ -2551,6 +2691,7 @@ final class DockModel: ObservableObject {
     func stopVoiceConversation() {
         voiceConversationGeneration &+= 1
         let wasNative = voiceState.isNativeConversationActive
+        skipNextVoicePlaybackDrain = false
         nativeVoiceCapture.reset()
         voiceState = .inactive
         guard wasNative else { return }
@@ -2559,6 +2700,50 @@ final class DockModel: ObservableObject {
                 _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
             }
             _ = try? await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "off"])
+        }
+    }
+
+    /// Ends the current utterance now instead of waiting for Hermes' VAD
+    /// silence window (`voice.silence_duration`, 3s by default).
+    func finishVoiceUtterance() {
+        guard voiceState == .listening, let sessionID else { return }
+        voiceState = .transcribing
+        Task {
+            _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+        }
+    }
+
+    /// Cuts Hermes off mid-thought or mid-sentence. `session.interrupt` also
+    /// silences Hermes' streaming TTS, so one request covers both phases.
+    func interruptVoiceTurn() {
+        switch voiceState {
+        case .thinking:
+            skipNextVoicePlaybackDrain = true
+            _ = stop()
+        case .speaking:
+            _ = stop()
+            resumeVoiceListening(force: true)
+        default:
+            break
+        }
+    }
+
+    /// Re-opens the microphone after a no-speech pause (or a cut-off reply).
+    func resumeVoiceListening(force: Bool = false) {
+        guard voiceState == .paused || force, voiceState.isNativeConversationActive else { return }
+        nativeVoiceCapture.reset()
+        voiceState = .listening
+        armNativeVoiceCapture()
+    }
+
+    func toggleVoiceReplies() {
+        guard voiceState.isNativeConversationActive else { return }
+        let generation = voiceConversationGeneration
+        voiceRepliesEnabled.toggle()
+        Task {
+            let result = try? await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
+            guard voiceConversationGeneration == generation else { return }
+            if let tts = result?["tts"] as? Bool { voiceRepliesEnabled = tts }
         }
     }
 
@@ -2727,6 +2912,12 @@ final class DockModel: ObservableObject {
                 stopVoiceConversation()
                 return
             }
+            if (payload["no_speech_limit"] as? Bool) == true {
+                // Hermes gave up after consecutive silent captures. Re-arming
+                // here looped forever (beeping) with a deaf or idle microphone.
+                voiceState = .paused
+                return
+            }
             guard !transcript.isEmpty else {
                 voiceState = .listening
                 armNativeVoiceCapture()
@@ -2739,11 +2930,13 @@ final class DockModel: ObservableObject {
             // The gateway's response boundary precedes the end of streamed
             // TTS. Ignore recorder status during that drain window: only the
             // playback-drain owner may reopen the ordinary capture path.
-            guard !nativeVoiceCapture.isAwaitingPlaybackDrain else { return }
+            guard !nativeVoiceCapture.isAwaitingPlaybackDrain, voiceState != .paused else { return }
             let state = payload["state"] as? String
             switch state {
             case "recording", "listening":
                 voiceState = .listening
+            case "transcribing":
+                voiceState = .transcribing
             case "idle":
                 voiceState = .listening
                 if nativeVoiceCapture.receivedIdle() {
@@ -2805,6 +2998,11 @@ final class DockModel: ObservableObject {
                 }
                 streamingMessageBuffer = completedText
             }
+            if let id = sessionID, let usage = sessionTokenUsage, usage.sessionID == id {
+                let streamed = streamingMessageBuffer.utf8.count + streamingReasoningBuffer.utf8.count
+                sessionTokenUsage = (id, usage.total + Self.estimatedTokens(utf8Count: streamed))
+            }
+            refreshSessionTokenUsage()
             let wasInterrupting = interruptState == .requesting
             interruptState = .idle
             if wasInterrupting {
@@ -2855,7 +3053,11 @@ final class DockModel: ObservableObject {
                 let response = messages.last(where: { $0.role == .hermes })?.text ?? "Hermes completed the active request."
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
             }
-            if voiceState.isNativeConversationActive {
+            if voiceState.isNativeConversationActive, skipNextVoicePlaybackDrain || !voiceRepliesEnabled {
+                skipNextVoicePlaybackDrain = false
+                voiceTelemetry.completedResponse()
+                resumeVoiceListening(force: true)
+            } else if voiceState.isNativeConversationActive {
                 voiceTelemetry.completedResponse()
                 voiceState = .speaking
                 let response = messages.last(where: { $0.role == .hermes })?.text ?? ""
@@ -2944,6 +3146,7 @@ final class DockModel: ObservableObject {
             streamingMessageSessionID = nil
             isSending = false
             if voiceState.isNativeConversationActive {
+                skipNextVoicePlaybackDrain = false
                 nativeVoiceCapture.reset()
                 voiceState = .listening
                 armNativeVoiceCapture()
@@ -4487,16 +4690,29 @@ final class DockModel: ObservableObject {
         guard !isLoadingRuntimeConfiguration else { return }
         isLoadingRuntimeConfiguration = true
         runtimeConfigurationError = nil
-        let request = Self.globalRuntimeModelSwitchRequest(option: option)
 
         Task { [weak self] in
             guard let self else { return }
             var updateError: String?
             do {
-                let result = try await gateway.request(HermesFeatureIDs.ID.configSet.rawValue, params: request.parameters)
-                if result["deferred"] as? Bool == true {
-                    DebugLog.write("model: provider/model switch queued for the next turn")
+                // Hermes only persists `--global` through a live session. A
+                // throwaway draft writes no DB row, so nothing reaches the sidebar.
+                var createParams: [String: Any] = ["source": "dock-settings"]
+                if let profileID = profileScopeID, !profileID.isEmpty {
+                    createParams["profile"] = profileID
                 }
+                let created = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
+                guard let draftID = created["session_id"] as? String, !draftID.isEmpty else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                let request = Self.globalRuntimeModelSwitchRequest(option: option, sessionID: draftID)
+                do {
+                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.configSet.rawValue, params: request.parameters)
+                } catch {
+                    _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.sessionClose.rawValue, params: ["session_id": draftID])
+                    throw error
+                }
+                _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.sessionClose.rawValue, params: ["session_id": draftID])
             } catch {
                 updateError = "Hermes could not apply the provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
@@ -4513,7 +4729,13 @@ final class DockModel: ObservableObject {
     }
 
     func updateSessionModel(_ option: HermesModelOption) {
-        guard let sessionID, !sessionID.isEmpty, !isUpdatingSessionModel else { return }
+        guard let sessionID, !sessionID.isEmpty else {
+            // No session yet: hold the pick until createAuthorizedSession.
+            sessionModelOptionID = option.id
+            sessionModelValue = option.displayName
+            return
+        }
+        guard !isUpdatingSessionModel else { return }
         isUpdatingSessionModel = true
         runtimeConfigurationError = nil
         let request = Self.sessionRuntimeModelSwitchRequest(option: option, sessionID: sessionID)
@@ -4591,10 +4813,11 @@ final class DockModel: ObservableObject {
     }
 
     nonisolated static func globalRuntimeModelSwitchRequest(
-        option: HermesModelOption
+        option: HermesModelOption,
+        sessionID: String
     ) -> HermesRuntimeModelSwitchRequest {
         HermesRuntimeModelSwitchRequest(
-            sessionID: nil,
+            sessionID: sessionID,
             value: "\(option.model) --provider \(option.provider) --global"
         )
     }
@@ -4605,7 +4828,7 @@ final class DockModel: ObservableObject {
     ) -> HermesRuntimeModelSwitchRequest {
         HermesRuntimeModelSwitchRequest(
             sessionID: sessionID,
-            value: "\(option.model) --provider \(option.provider) --session \(sessionID)"
+            value: "\(option.model) --provider \(option.provider) --session"
         )
     }
 
@@ -4666,9 +4889,14 @@ final class DockModel: ObservableObject {
     /// from the gateway. The index remains authoritative for session metadata,
     /// while a live event remains authoritative for recency until the index
     /// catches up.
-    private static func mergingSessionIndex(_ loaded: [HermesSession], with existing: [HermesSession]) -> [HermesSession] {
+    private static func mergingSessionIndex(_ loaded: [HermesSession], with existing: [HermesSession], keeping openSessionID: String? = nil) -> [HermesSession] {
         let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return loaded.map { session in
+        // A just-created chat can be missing from an index read that raced
+        // its creation; keep the open row until Hermes lists it.
+        let pending = openSessionID.flatMap { id in
+            loaded.contains { $0.id == id } ? nil : existingByID[id]
+        }
+        return (pending.map { [$0] } ?? []) + loaded.map { session in
             guard let observed = existingByID[session.id] else { return session }
             let updatedAt: Date?
             if let observedDate = observed.lastUpdatedAt, observedDate > (session.lastUpdatedAt ?? .distantPast) {

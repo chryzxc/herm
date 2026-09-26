@@ -15,6 +15,14 @@ final class DockPanelPresentation: ObservableObject {
     @Published var availableWidth: CGFloat = .greatestFiniteMagnitude
 }
 
+/// UserDefaults keys for optional sidebar destinations; all default to visible.
+enum SidebarVisibilityKey {
+    static let kanban = "hermes.sidebar.shows-kanban"
+    static let pullRequests = "hermes.sidebar.shows-pull-requests"
+    static let issues = "hermes.sidebar.shows-issues"
+    static let office = "hermes.sidebar.shows-office"
+}
+
 enum MissionControlNavigationSelection: Equatable {
     case session(String)
     case task(UUID)
@@ -269,6 +277,7 @@ struct DockPopover: View {
     @State private var selectedChatImage: ChatImagePreview?
     @StateObject private var speechInput = SpeechInput()
     @StateObject private var voiceOutput = VoiceOutput()
+    @StateObject private var micLevelMeter = MicLevelMeter()
     @StateObject private var messageActionState = ConversationMessageActionState()
     @StateObject private var workspaceStore = WorkspaceStore()
     @StateObject private var agentUpdateService = HermesUpdateService()
@@ -310,7 +319,7 @@ struct DockPopover: View {
         case bots
     }
     @State private var fullscreenSurface: FullscreenSurface = .conversation
-    @State private var fullscreenGlobalTab: ControlTab = .today
+    @State private var fullscreenGlobalTab: ControlTab = .kanban
 
     enum SessionWorkspaceMode: CaseIterable, Identifiable {
         case chat
@@ -331,13 +340,13 @@ struct DockPopover: View {
             }
         }
 
-        var icon: String {
+        var icon: Ph {
             switch self {
-            case .chat: "text.bubble"
-            case .voice: "audio-lines"
-            case .explorer: "folder"
-            case .sourceControl: "arrow.triangle.branch"
-            case .pullRequests: "git.pull.request"
+            case .chat: .chatText
+            case .voice: .waveform
+            case .explorer: .folder
+            case .sourceControl: .gitBranch
+            case .pullRequests: .gitPullRequest
             }
         }
 
@@ -367,11 +376,11 @@ struct DockPopover: View {
 
         var id: Self { self }
 
-        var icon: String {
+        var icon: Ph {
             switch self {
-            case .global: "square.grid.2x2"
-            case .session: "bubble.left.and.bubble.right"
-            case .artifacts: "doc.text.magnifyingglass"
+            case .global: .squaresFour
+            case .session: .chats
+            case .artifacts: .fileMagnifyingGlass
             }
         }
     }
@@ -774,6 +783,9 @@ struct DockPopover: View {
     }
 
     private func handleVoiceStateChange(_ state: HermesVoiceState) {
+        // Hermes' gateway owns the microphone in native mode; a passive meter
+        // lets the orb follow the user's voice anyway.
+        if state.isNativeConversationActive { micLevelMeter.start() } else { micLevelMeter.stop() }
         if state == .interrupted {
             // The native gateway has accepted a spoken interruption. Stop
             // any fallback playback immediately before it resumes capture.
@@ -793,6 +805,7 @@ struct DockPopover: View {
         guard previousMode == .voice, mode != .voice else { return }
         // Leaving voice mode must always release both fallback and native
         // voice capture, including a microphone that is still starting.
+        micLevelMeter.stop()
         speechInput.stop()
         voiceOutput.stop()
         model.stopVoiceConversation()
@@ -1241,7 +1254,7 @@ struct DockPopover: View {
                 )
             } else {
                 SessionSurfacePreviewPlaceholder(
-                    icon: "folder",
+                    icon: .folder,
                     title: "No file open",
                     detail: "Select a file in the explorer to open it here."
                 )
@@ -1401,7 +1414,7 @@ struct DockPopover: View {
 
                 if !model.messageNavigatorItems.isEmpty {
                     DockIconButton(
-                        icon: .search,
+                        icon: .magnifyingGlass,
                         label: isShowingMessageSearch ? "Close message search" : "Find a message (⌘F)",
                         isProminent: isShowingMessageSearch,
                         style: style
@@ -1410,7 +1423,7 @@ struct DockPopover: View {
                 }
 
                 DockIconButton(
-                    icon: .audioLines,
+                    icon: .waveform,
                     label: sessionWorkspaceMode == .voice ? "Return to chat" : "Voice conversation",
                     isProminent: sessionWorkspaceMode == .voice,
                     style: style
@@ -1422,7 +1435,7 @@ struct DockPopover: View {
 
                 if showsInspector {
                     DockIconButton(
-                        icon: inspectorPanelIsVisible ? .panelOpen : .panelClosed,
+                        icon: inspectorPanelIsVisible ? .sidebarSimple : .square,
                         label: inspectorPanelIsVisible ? "Hide inspector" : "Show inspector",
                         isProminent: inspectorPanelIsVisible,
                         style: style,
@@ -1454,7 +1467,7 @@ struct DockPopover: View {
                 }
                 .lineLimit(1)
                 .truncationMode(.tail)
-                LucideIcon(name: .chevronsUpDown, size: 12, color: style.metadataText)
+                DockIcon(.caretUpDown, size: 12, color: style.metadataText)
             }
             .padding(.horizontal, 8)
             .frame(minHeight: 40)
@@ -1482,7 +1495,7 @@ struct DockPopover: View {
             ForEach(SessionWorkspaceMode.allCases) { mode in
                 Button { selectSessionMode(mode) } label: {
                     if mode == sessionWorkspaceMode {
-                        Label(mode.label, systemImage: "checkmark")
+                        Label(mode.label, icon: .check)
                     } else {
                         Text(mode.label)
                     }
@@ -1493,7 +1506,7 @@ struct DockPopover: View {
                 Button(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector", action: toggleInspectorPanel)
             }
         } label: {
-            LucideIcon(name: .ellipsis, size: 14, color: isSessionMenuHovering ? style.primaryText : style.secondaryText)
+            DockIcon(.dotsThree, size: 14, color: isSessionMenuHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -1621,8 +1634,8 @@ struct DockPopover: View {
     }
 
     private var selectedModelOptionID: String? {
-        if model.sessionID != nil { return model.sessionModelOptionID }
-        guard let provider = model.runtimeConfiguration?.provider,
+        if let id = model.sessionModelOptionID { return id }
+        guard model.sessionID == nil, let provider = model.runtimeConfiguration?.provider,
               let modelName = model.runtimeConfiguration?.model else { return nil }
         return HermesModelOption(provider: provider, model: modelName).id
     }
@@ -1646,16 +1659,12 @@ struct DockPopover: View {
                 } else {
                     ForEach(model.runtimeModelOptions) { option in
                         Button {
-                            if model.sessionID == nil {
-                                model.updateRuntimeModel(option)
-                            } else {
-                                model.updateSessionModel(option)
-                            }
+                            model.updateSessionModel(option)
                         } label: {
                             HStack {
                                 Text(option.displayName)
                                 if option.id == selectedModelOptionID {
-                                    LucideImage(systemName: "checkmark")
+                                    Ph.check.image()
                                 }
                             }
                         }
@@ -1663,7 +1672,7 @@ struct DockPopover: View {
                 }
             } label: {
                 sessionConfigurationLabel(
-                    icon: "cpu",
+                    icon: .cpu,
                     title: "MODEL",
                     value: sessionModelDisplayName,
                     truncatesValue: true
@@ -1671,7 +1680,7 @@ struct DockPopover: View {
             }
             .menuStyle(.borderlessButton)
             .buttonStyle(.borderless)
-            .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
+            .disabled(model.isUpdatingSessionModel)
             .help("Change the model for \(configurationScopeLabel)")
             .accessibilityLabel("Model for \(configurationScopeLabel): \(sessionModelDisplayName)")
 
@@ -1690,14 +1699,14 @@ struct DockPopover: View {
                         HStack {
                             Text(variant.displayName)
                             if variant == selectedReasoningVariant {
-                                LucideImage(systemName: "checkmark")
+                                Ph.check.image()
                             }
                         }
                     }
                 }
             } label: {
                 sessionConfigurationLabel(
-                    icon: "brain",
+                    icon: .brain,
                     title: "THINKING",
                     value: sessionReasoningDisplayName
                 )
@@ -1718,13 +1727,13 @@ struct DockPopover: View {
     }
 
     private func sessionConfigurationLabel(
-        icon: String,
+        icon: Ph,
         title: String,
         value: String,
         truncatesValue: Bool = false
     ) -> some View {
         HStack(spacing: 7) {
-            LucideImage(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
 
@@ -1739,7 +1748,7 @@ struct DockPopover: View {
                 .truncationMode(truncatesValue ? .middle : .tail)
                 .layoutPriority(1)
 
-            LucideImage(systemName: "chevron.down")
+            DockIcon(.caretDown)
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(Color.dockSecondaryText)
         }
@@ -1765,7 +1774,7 @@ struct DockPopover: View {
                 style: style
             ) {
                 DockIconButton(
-                    icon: .refreshCw,
+                    icon: .arrowsClockwise,
                     label: "Refresh conversations",
                     isBusy: model.isLoadingSessions,
                     size: 24,
@@ -1775,7 +1784,9 @@ struct DockPopover: View {
             .padding(.horizontal, 6)
             .padding(.top, 8)
 
-            if model.sessions.isEmpty && !model.isLoadingSessions {
+            if model.sessions.isEmpty && model.isLoadingSessions {
+                DockLoadingState(title: "Loading conversations…", minHeight: 80)
+            } else if model.sessions.isEmpty {
                 Text("No saved conversations")
                     .font(.system(size: 12))
                     .foregroundStyle(style.secondaryText)
@@ -1836,61 +1847,178 @@ struct DockPopover: View {
     }
 
     private var voiceMode: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            Button {
-                if model.voiceState.isNativeConversationActive || speechInput.isRecording {
-                    exitVoiceMode()
-                } else if !model.isSending && !voiceOutput.isSpeaking {
-                    voiceOutput.stop()
-                    beginVoiceConversation()
-                }
-            } label: {
-                VoiceOrbView(
-                    isListening: model.voiceState == .listening || speechInput.isRecording,
-                    isResponding: model.voiceState == .preparing || model.voiceState == .interrupted || model.voiceState == .thinking || model.voiceState == .speaking || (model.status == .working && !speechInput.isRecording) || voiceOutput.isSpeaking,
-                    audioLevel: speechInput.audioLevel
-                )
+        let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
+        let captions = voiceCaptions
+        return VStack(spacing: 0) {
+            Spacer(minLength: 12)
+            Button(action: handleVoiceOrbTap) {
+                VoiceOrbView(mode: voiceOrbMode, audioLevel: max(speechInput.audioLevel, micLevelMeter.level))
                     .frame(width: 320, height: 320)
+                    .contentShape(Circle())
             }
             .buttonStyle(.borderless)
-            .help(model.voiceState.isNativeConversationActive || speechInput.isRecording ? "End voice conversation" : "Resume listening")
-            .overlay(alignment: .bottom) {
-                if let detail = model.voiceState.fallbackDetail {
-                    Text("LOCAL FALLBACK · \(detail)")
-                        .font(.system(size: 12, weight: .medium))
-                        .tracking(0.35)
-                        .foregroundStyle(Color.dockWarning)
+            .help(voiceOrbHelp)
+            .accessibilityLabel(voiceOrbHelp)
+
+            voiceStatusLabel
+                .frame(height: 40)
+
+            VStack(spacing: 8) {
+                if let user = captions.user {
+                    Text(user)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(2)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 270)
-                        .offset(y: 42)
-                } else if model.voiceState.isNativeConversationActive {
-                    VStack(spacing: 5) {
-                        Text(model.voiceState.label(agentName: model.agentDisplayName))
-                            .font(.system(size: 12, weight: .semibold))
-                            .tracking(0.75)
-                            .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : Color.dockAccent)
-                        if let timing = model.voiceTelemetry.summary {
-                            Text(timing)
-                                .font(.system(size: 12, weight: .medium))
-                                .tracking(0.45)
-                                .foregroundStyle(Color.dockMetadataText)
-                        }
-                    }
-                    .offset(y: 42)
-                } else if model.status == .working && !speechInput.isRecording {
-                    voiceActivityIndicator
-                        .offset(y: 34)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if let reply = captions.reply {
+                    Text(reply)
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(4)
+                        .truncationMode(.head)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
-            Spacer()
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 360, minHeight: 96, alignment: .top)
+            .padding(.horizontal, 16)
+
+            voiceControls(style: style)
+                .padding(.top, 10)
+            Spacer(minLength: 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .animation(.dockEase(duration: 0.25), value: model.status)
+        .animation(.dockEase(duration: 0.3), value: model.voiceState)
+        .animation(.dockEase(duration: 0.25), value: captions.user)
+        .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
         .onAppear { beginVoiceConversation() }
+    }
+
+    private var voiceOrbMode: VoiceOrbMode {
+        if speechInput.isRecording { return .listening }
+        if voiceOutput.isSpeaking { return .speaking }
+        switch model.voiceState {
+        case .listening: return .listening
+        case .transcribing, .interrupted: return .transcribing
+        case .preparing, .thinking: return .thinking
+        case .speaking: return .speaking
+        case .paused, .inactive, .localFallback: return model.status == .working ? .thinking : .idle
+        }
+    }
+
+    private var voiceOrbHelp: String {
+        switch voiceOrbMode {
+        case .listening: "Tap to send now"
+        case .thinking, .speaking: "Tap to interrupt"
+        case .transcribing: "Transcribing"
+        case .idle: "Tap to resume listening"
+        }
+    }
+
+    @ViewBuilder
+    private var voiceStatusLabel: some View {
+        if let detail = model.voiceState.fallbackDetail, !speechInput.isRecording, !voiceOutput.isSpeaking {
+            Text("LOCAL FALLBACK · \(detail)")
+                .font(.system(size: 12, weight: .medium))
+                .tracking(0.35)
+                .foregroundStyle(Color.dockWarning)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+        } else if model.voiceState.isNativeConversationActive {
+            VStack(spacing: 4) {
+                Text(model.voiceState.label(agentName: model.agentDisplayName))
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(0.75)
+                    .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent))
+                    .contentTransition(.opacity)
+                if let timing = model.voiceTelemetry.summary {
+                    Text(timing)
+                        .font(.system(size: 11, weight: .medium))
+                        .tracking(0.45)
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+            }
+        } else if model.status == .working && !speechInput.isRecording {
+            voiceActivityIndicator
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+        } else if speechInput.isRecording || voiceOutput.isSpeaking {
+            Text(speechInput.isRecording ? "\(model.agentDisplayName.uppercased()) IS LISTENING" : "\(model.agentDisplayName.uppercased()) IS SPEAKING")
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(0.75)
+                .foregroundStyle(speechInput.isRecording ? Color.dockSuccess : Color.dockAccent)
+        }
+    }
+
+    /// What you said and what the agent is saying, so the conversation reads
+    /// like live captions rather than a hidden transcript.
+    private var voiceCaptions: (user: String?, reply: String?) {
+        if speechInput.isRecording {
+            let partial = speechInput.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (partial.isEmpty ? nil : partial, nil)
+        }
+        guard voiceOrbMode != .listening, voiceOrbMode != .idle,
+              let userIndex = model.messages.lastIndex(where: { $0.role == .user }) else { return (nil, nil) }
+        let reply = model.messages[(userIndex + 1)...].last { $0.role == .hermes }?.text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (
+            "“" + model.messages[userIndex].text + "”",
+            reply.flatMap { $0.isEmpty ? nil : String($0.suffix(280)) }
+        )
+    }
+
+    private func voiceControls(style: DockThemePalette) -> some View {
+        HStack(spacing: 14) {
+            if model.voiceState.isNativeConversationActive {
+                DockIconButton(
+                    icon: .waveform,
+                    label: model.voiceRepliesEnabled ? "Mute spoken replies" : "Speak replies aloud",
+                    isProminent: model.voiceRepliesEnabled,
+                    size: 34,
+                    style: style
+                ) { model.toggleVoiceReplies() }
+            }
+            switch voiceOrbMode {
+            case .listening:
+                DockIconButton(icon: .arrowUp, label: "Send now", size: 34, style: style, action: handleVoiceOrbTap)
+            case .thinking, .speaking:
+                DockIconButton(icon: .stop, label: "Interrupt", size: 34, style: style, action: handleVoiceOrbTap)
+            case .idle:
+                DockIconButton(icon: .microphone, label: "Resume listening", size: 34, style: style, action: handleVoiceOrbTap)
+            case .transcribing:
+                DockIconButton(icon: .microphone, label: "Transcribing", isBusy: true, size: 34, style: style) {}
+            }
+            DockIconButton(icon: .x, label: "End voice conversation", size: 34, style: style, action: exitVoiceMode)
+        }
+    }
+
+    private func handleVoiceOrbTap() {
+        switch model.voiceState {
+        case .listening:
+            model.finishVoiceUtterance()
+            return
+        case .thinking, .speaking:
+            model.interruptVoiceTurn()
+            return
+        case .paused:
+            model.resumeVoiceListening()
+            return
+        case .preparing, .transcribing, .interrupted:
+            return
+        case .inactive, .localFallback:
+            break
+        }
+        if speechInput.isRecording {
+            speechInput.finishUtterance()
+        } else if voiceOutput.isSpeaking {
+            voiceOutput.stop()
+        } else if model.status == .working {
+            stopCurrentRequest()
+        } else {
+            beginVoiceConversation()
+        }
     }
 
     private func beginVoiceConversation() {
@@ -1915,6 +2043,7 @@ struct DockPopover: View {
     }
 
     private func exitVoiceMode() {
+        micLevelMeter.stop()
         speechInput.stop()
         voiceOutput.stop()
         model.stopVoiceConversation()
@@ -1973,6 +2102,9 @@ struct DockPopover: View {
                                     StartupAssistantView(agentName: model.agentDisplayName)
                                         .frame(maxWidth: .infinity)
                                         .frame(minHeight: max(300, viewport.size.height - 16))
+                                } else if model.messages.isEmpty {
+                                    // A resume clears the old transcript before Hermes answers.
+                                    DockLoadingState(title: "Loading conversation…", minHeight: max(300, viewport.size.height - 16))
                                 }
 
                                 let mountedRange = effectiveMountedRange
@@ -2205,11 +2337,7 @@ struct DockPopover: View {
                             conversationScrollRequest &+= 1
                         } label: {
                             HStack(spacing: 7) {
-                                LucideIcon(
-                                    name: .arrowDown,
-                                    size: 11,
-                                    color: Color.dockOnAccentText
-                                )
+                                DockIcon(.arrowDown, size: 11, color: Color.dockOnAccentText)
                                 Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
                                     .font(.system(size: 12, weight: .semibold))
                             }
@@ -2582,7 +2710,7 @@ struct DockPopover: View {
                 .padding(.vertical, 4)
         } label: {
             HStack(spacing: 5) {
-                LucideImage(systemName: "brain.head.profile")
+                DockIcon(.brain)
                     .font(.system(size: 12))
                 Text("Reasoning")
                     .font(.system(size: 12, weight: .medium))
@@ -2606,11 +2734,7 @@ struct DockPopover: View {
     private func approvalRow(title: String, detail: String, alwaysAllowCaption: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
-                LucideIcon(
-                    name: .triangleAlert,
-                    size: 16,
-                    color: Color.white
-                )
+                DockIcon(.warning, size: 16, color: Color.white)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: 28, height: 28)
                     .background(
@@ -2754,7 +2878,7 @@ struct DockPopover: View {
                 .disabled(quickPrompt.requiredCapability.map(controlCenter.capabilityAvailable) == false)
             }
         } label: {
-            LucideLabel("More", icon: "ellipsis")
+            DockIconLabel("More", icon: .dotsThree)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.dockSecondaryText)
                 .padding(.horizontal, 9)
@@ -2905,6 +3029,10 @@ private struct MissionControlQueue: View {
     @ObservedObject var navigationState: MissionControlNavigationState
     @ObservedObject var dockThemeStore: DockThemeStore
     @StateObject private var sidebar: MissionControlSidebarModel
+    @AppStorage(SidebarVisibilityKey.kanban) private var showsKanban = true
+    @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequests = true
+    @AppStorage(SidebarVisibilityKey.issues) private var showsIssues = true
+    @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
     @Binding var sessionPendingDeletion: HermesSession?
     let activeSessionID: String?
     let activeGlobalTab: ControlTab?
@@ -2926,7 +3054,6 @@ private struct MissionControlQueue: View {
     let onSelectProfile: (String) -> Void
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
-    @StateObject private var pinnedSessionStore = PinnedSessionStore()
     @StateObject private var sidebarSessionSeenStore = SidebarSessionSeenStore()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -3001,12 +3128,19 @@ private struct MissionControlQueue: View {
 
     private var pinnedSessionPresentation: PinnedSessionPresentation {
         PinnedSessionPresentation(
-            sessions: sidebarSnapshot.conversations,
-            state: pinnedSessionStore.state,
-            profileID: sidebarSnapshot.inputs.profileScopeID ?? "",
+            pinned: sidebarSnapshot.inputs.pinnedSessions,
+            live: sidebarSnapshot.conversations,
             projection: sidebarSnapshot.inputs.sessionProjectionState,
             hasRequestedSessionIndex: navigationState.hasRequestedSessionIndex
         )
+    }
+
+    private func isPinned(_ session: HermesSession) -> Bool {
+        sidebarSnapshot.inputs.pinnedSessions.contains { $0.id == session.id }
+    }
+
+    private func togglePin(_ session: HermesSession) {
+        Task { await model.toggleSessionPinned(session) }
     }
 
     private var sidebarSessionStatuses: [String: SidebarSessionStatus] {
@@ -3057,35 +3191,36 @@ private struct MissionControlQueue: View {
                 profileHeader(style: style)
                 if showsFullscreenToggle {
                     DockIconButton(
-                        icon: isFullscreen ? .minimize : .expand,
+                        icon: isFullscreen ? .arrowsIn : .arrowsOut,
                         label: isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
                         style: style,
                         action: onFullscreenToggle
                     )
                 }
                 DockIconButton(
-                    icon: .messageCirclePlus,
+                    icon: .chatCircleDots,
                     label: "New conversation",
                     isProminent: true,
                     style: style,
                     action: onNewConversation
                 )
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
             .frame(height: 56)
             .overlay(alignment: .bottom) { style.divider.frame(height: 0.5) }
 
             ScrollView {
                 globalRailBar(style: style)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 6)
                     .padding(.vertical, 8)
             }
 
             VStack(spacing: 2) {
+                globalRailDestination(.usage, style: style)
                 globalRailDestination(.quota, style: style)
                 globalRailDestination(.core, style: style)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
             .padding(.vertical, 6)
             .overlay(alignment: .top) { style.divider.frame(height: 0.5) }
         }
@@ -3176,7 +3311,7 @@ private struct MissionControlQueue: View {
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous).fill(style.selectedFill)
-                    LucideIcon(name: .bot, size: 15, color: style.secondaryText)
+                    DockIcon(.robot, size: 15, color: style.secondaryText)
                 }
                 .frame(width: 28, height: 28)
             }
@@ -3194,7 +3329,7 @@ private struct MissionControlQueue: View {
             }
             Spacer(minLength: 0)
             if isSwitchable {
-                LucideIcon(name: .chevronsUpDown, size: 12, color: style.metadataText)
+                DockIcon(.caretUpDown, size: 12, color: style.metadataText)
             }
         }
         .padding(.horizontal, 6)
@@ -3246,7 +3381,7 @@ private struct MissionControlQueue: View {
                                 .lineLimit(1)
                             Spacer(minLength: 8)
                             if option.id == selectedBot?.id {
-                                LucideImage(systemName: "checkmark")
+                                DockIcon(.check)
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(style.accent)
                             }
@@ -3274,21 +3409,17 @@ private struct MissionControlQueue: View {
     private func globalRailBar(style: DockThemePalette) -> some View {
         let projects = sidebarSnapshot.linkedProjectGroups
         let allConversations = sidebarSnapshot.conversations
+        // Built once per pass; rows previously rebuilt it per row (O(n²)).
+        let statuses = sidebarSessionStatuses
 
         return VStack(alignment: .leading, spacing: style.sectionSpacing) {
             VStack(alignment: .leading, spacing: 2) {
-                globalRailDestination(.today, style: style)
-                globalRailDestination(.inbox, style: style)
-                globalRailDestination(.kanban, style: style)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                DockSectionHeader(title: "Tools", style: style)
-                pullRequestsDestinationRow(style: style)
-                issuesDestinationRow(style: style)
+                if showsKanban { globalRailDestination(.kanban, style: style) }
+                if showsPullRequests { pullRequestsDestinationRow(style: style) }
+                if showsIssues { issuesDestinationRow(style: style) }
                 globalRailDestination(.automations, style: style)
-                globalRailDestination(.officePreview, style: style)
-                queueRailDestination("Artifacts", icon: "doc.text.magnifyingglass", isSelected: navigationState.selection.selection == .artifacts, style: style) {
+                if showsOffice { globalRailDestination(.officePreview, style: style) }
+                queueRailDestination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style) {
                     onOpenArtifacts()
                 }
                 botsDestinationRow(style: style)
@@ -3296,10 +3427,10 @@ private struct MissionControlQueue: View {
 
             let pinned = pinnedSessionPresentation
             if pinned.status != .empty || !pinned.sessions.isEmpty {
-                pinnedOutline(pinned, style: style)
+                pinnedOutline(pinned, statuses: statuses, style: style)
             }
 
-            conversationOutline(allConversations, style: style)
+            conversationOutline(allConversations, statuses: statuses, style: style)
 
             if showsProjectsForSelectedBot {
                 MissionControlProjectList(
@@ -3307,23 +3438,13 @@ private struct MissionControlQueue: View {
                     selectedSessionID: navigationState.selectedProjectSessionID,
                     activeSessionID: sidebarSnapshot.inputs.activeSessionID,
                     attentionDots: sidebarSnapshot.attentionDots,
-                    sessionStatuses: sidebarSessionStatuses,
+                    sessionStatuses: statuses,
                     isLoadingProjects: sidebarSnapshot.inputs.isRefreshing && projects.isEmpty,
                     isRefreshing: sidebarSnapshot.inputs.isRefreshingProjectNavigation,
                     isCreatingChat: sidebarSnapshot.inputs.isCreatingSession,
                     style: style,
-                    isPinned: { session in
-                        pinnedSessionStore.state.contains(
-                            profileID: session.profileID ?? model.profileScopeID ?? "",
-                            sessionID: session.id
-                        )
-                    },
-                    onTogglePin: { session in
-                        pinnedSessionStore.toggle(
-                            profileID: session.profileID ?? model.profileScopeID ?? "",
-                            sessionID: session.id
-                        )
-                    },
+                    isPinned: isPinned,
+                    onTogglePin: togglePin,
                     onRename: { session, title in
                         let succeeded = await model.renameSession(session, title: title)
                         if succeeded { controlCenter.refreshProjectNavigation() }
@@ -3371,7 +3492,7 @@ private struct MissionControlQueue: View {
     private func botsDestinationRow(style: DockThemePalette) -> some View {
         queueRailDestination(
             "Bots",
-            icon: "bot",
+            icon: .robot,
             isSelected: navigationState.selection.selection == .bots,
             style: style
         ) {
@@ -3380,11 +3501,11 @@ private struct MissionControlQueue: View {
     }
 
     private func pullRequestsDestinationRow(style: DockThemePalette) -> some View {
-        queueRailDestination("Pull requests", icon: "arrow.triangle.pull", isSelected: navigationState.selection.selection == .pullRequests, style: style, action: onOpenPullRequests)
+        queueRailDestination("Pull requests", icon: .gitPullRequest, isSelected: navigationState.selection.selection == .pullRequests, style: style, action: onOpenPullRequests)
     }
 
     private func issuesDestinationRow(style: DockThemePalette) -> some View {
-        queueRailDestination("Issues", icon: "smallcircle.filled.circle", isSelected: isIssuesActive, style: style, action: onOpenIssues)
+        queueRailDestination("Issues", icon: .record, isSelected: isIssuesActive, style: style, action: onOpenIssues)
             .help("GitHub issues across your repositories")
     }
 
@@ -3411,7 +3532,7 @@ private struct MissionControlQueue: View {
 
     private func queueRailDestination(
         _ title: String,
-        icon: String,
+        icon: Ph,
         isSelected: Bool,
         showsUpdateBadge: Bool = false,
         style: DockThemePalette,
@@ -3441,7 +3562,7 @@ private struct MissionControlQueue: View {
         Button { navigationState.showsAllConversations.toggle() } label: {
             HStack(spacing: 6) {
                 Text(navigationState.showsAllConversations ? "Show recent conversations" : "Show more conversations")
-                LucideImage(systemName: navigationState.showsAllConversations ? "chevron.up" : "chevron.down")
+                DockIcon(navigationState.showsAllConversations ? .caretUp : .caretDown)
                     .font(.system(size: 9, weight: .bold))
             }
             .font(.system(size: 11, weight: .medium))
@@ -3452,18 +3573,14 @@ private struct MissionControlQueue: View {
         .buttonStyle(.borderless)
     }
 
-    private func conversationSessionRow(_ session: HermesSession, style: DockThemePalette) -> some View {
+    private func conversationSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
         MissionControlSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
-            sessionStatus: sidebarSessionStatuses[session.id] ?? .none,
-            layout: .compact,
+            sessionStatus: statuses[session.id] ?? .none,
             style: style,
             repositoryName: sidebarSnapshot.projectNameBySessionID[session.id],
-            isPinned: pinnedSessionStore.state.contains(
-                profileID: session.profileID ?? sidebarSnapshot.inputs.profileScopeID ?? "",
-                sessionID: session.id
-            ),
+            isPinned: isPinned(session),
             isActive: session.id == activeSessionID,
             isDeleting: sidebarSnapshot.inputs.deletingSessionID == session.id,
             isUpdatingVisibility: sidebarSnapshot.inputs.updatingSessionVisibilityID == session.id,
@@ -3473,12 +3590,7 @@ private struct MissionControlQueue: View {
                 navigationState.selectSession(selected.id)
                 onSelectSession(selected)
             },
-            onTogglePin: { selected in
-                pinnedSessionStore.toggle(
-                    profileID: selected.profileID ?? model.profileScopeID ?? "",
-                    sessionID: selected.id
-                )
-            },
+            onTogglePin: togglePin,
             onRename: { selected, title in
                 let succeeded = await model.renameSession(selected, title: title)
                 if succeeded { controlCenter.refreshProjectNavigation() }
@@ -3496,7 +3608,7 @@ private struct MissionControlQueue: View {
         .equatable()
     }
 
-    private func pinnedOutline(_ pinned: PinnedSessionPresentation, style: DockThemePalette) -> some View {
+    private func pinnedOutline(_ pinned: PinnedSessionPresentation, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             DockSectionHeader(
                 title: "Pinned",
@@ -3512,9 +3624,9 @@ private struct MissionControlQueue: View {
                         .padding(.vertical, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(pinned.sessions) { session in
-                            pinnedSessionRow(session, style: style)
+                            pinnedSessionRow(session, statuses: statuses, style: style)
                         }
                     }
                 }
@@ -3530,12 +3642,11 @@ private struct MissionControlQueue: View {
         }
     }
 
-    private func pinnedSessionRow(_ session: HermesSession, style: DockThemePalette) -> some View {
+    private func pinnedSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
         MissionControlSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
-            sessionStatus: sidebarSessionStatuses[session.id] ?? .none,
-            layout: .pinned,
+            sessionStatus: statuses[session.id] ?? .none,
             style: style,
             repositoryName: sidebarSnapshot.projectNameBySessionID[session.id],
             isPinned: true,
@@ -3548,9 +3659,7 @@ private struct MissionControlQueue: View {
                 navigationState.selectSession(selected.id)
                 onSelectSession(selected)
             },
-            onTogglePin: { selected in
-                pinnedSessionStore.toggle(profileID: selected.profileID ?? model.profileScopeID ?? "", sessionID: selected.id)
-            },
+            onTogglePin: togglePin,
             onRename: { selected, title in
                 let succeeded = await model.renameSession(selected, title: title)
                 if succeeded { controlCenter.refreshProjectNavigation() }
@@ -3566,7 +3675,7 @@ private struct MissionControlQueue: View {
         .equatable()
     }
 
-    private func conversationOutline(_ conversations: [HermesSession], style: DockThemePalette) -> some View {
+    private func conversationOutline(_ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             DockSectionHeader(
                 title: "Conversations",
@@ -3575,7 +3684,7 @@ private struct MissionControlQueue: View {
                 style: style
             ) {
                 DockIconButton(
-                    icon: .refreshCw,
+                    icon: .arrowsClockwise,
                     label: sidebarSnapshot.inputs.isLoadingSessions ? "Refreshing conversations…" : "Refresh conversations",
                     isBusy: sidebarSnapshot.inputs.isLoadingSessions,
                     size: 24,
@@ -3596,8 +3705,7 @@ private struct MissionControlQueue: View {
                             ? conversations
                             : Array(conversations.prefix(10))
                         ForEach(visibleSessions) { session in
-                            conversationSessionRow(session, style: style)
-                                .padding(.leading, 12)
+                            conversationSessionRow(session, statuses: statuses, style: style)
                         }
                     }
                     if conversations.count > 10 {
@@ -3649,9 +3757,7 @@ private struct MissionControlQueue: View {
 
     private func sessionRow(_ session: HermesSession, style: DockThemePalette) -> some View {
         let controls = MissionControlConversationSessionRow.controls(
-            store: pinnedSessionStore,
-            profileID: session.profileID ?? model.profileScopeID ?? "",
-            sessionID: session.id,
+            togglePin: { togglePin(session) },
             onSelect: {
                 PinnedSessionRowInteraction.select(
                     session.id,
@@ -3668,10 +3774,7 @@ private struct MissionControlQueue: View {
             isProjectLinked: sidebarSnapshot.linkedSessionIDs.contains(session.id),
             projectName: sidebarSnapshot.projectNameBySessionID[session.id],
             attentionDot: sidebarSnapshot.attentionDots[session.id],
-            isPinned: pinnedSessionStore.state.contains(
-                profileID: session.profileID ?? sidebarSnapshot.inputs.profileScopeID ?? "",
-                sessionID: session.id
-            ),
+            isPinned: isPinned(session),
             style: style,
             onSelect: controls.select,
             onTogglePin: controls.togglePin
@@ -3750,17 +3853,10 @@ struct MissionControlConversationSessionRow: View, Equatable {
     let onTogglePin: () -> Void
 
     nonisolated static func controls(
-        store: PinnedSessionStore,
-        profileID: String,
-        sessionID: String,
+        togglePin: @escaping () -> Void,
         onSelect: @escaping () -> Void
     ) -> PinnedSessionRowControls {
-        PinnedSessionRowControls(
-            select: onSelect,
-            togglePin: {
-                store.toggle(profileID: profileID, sessionID: sessionID)
-            }
-        )
+        PinnedSessionRowControls(select: onSelect, togglePin: togglePin)
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
@@ -3782,11 +3878,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
             .buttonStyle(.borderless)
 
             Button(action: onTogglePin) {
-                LucideIcon(
-                    name: .pin,
-                    size: 13,
-                    color: isPinned ? style.accent : style.metadataText
-                )
+                DockIcon(.pushPin, size: 13, color: isPinned ? style.accent : style.metadataText)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
             }
@@ -3815,7 +3907,7 @@ struct MissionControlConversationSessionRow: View, Equatable {
                 projectName: projectName,
                 isProjectLinked: isProjectLinked
             ) {
-                LucideLabel(badge.label, icon: "arrow.triangle.branch")
+                DockIconLabel(badge.label, icon: .gitBranch)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(style.accent)
                     .padding(.horizontal, 7)
@@ -3922,7 +4014,7 @@ private struct MissionControlProjectList: View {
         VStack(alignment: .leading, spacing: 2) {
             DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
                 DockIconButton(
-                    icon: .refreshCw,
+                    icon: .arrowsClockwise,
                     label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
                     isBusy: isRefreshing,
                     size: 24,
@@ -3959,9 +4051,9 @@ private struct MissionControlProjectList: View {
                     }
                 } label: {
                     HStack(spacing: 7) {
-                        LucideIcon(name: isCollapsed ? .chevronRight : .chevronDown, size: 11, color: style.metadataText)
+                        DockIcon(isCollapsed ? .caretRight : .caretDown, size: 11, color: style.metadataText)
                             .frame(width: 12)
-                        LucideIcon(name: .folder, size: 15, color: isActiveProject ? style.accent : style.secondaryText)
+                        DockIcon(.folder, size: 15, color: isActiveProject ? style.accent : style.secondaryText)
                             .frame(width: 16)
                         Text(group.title)
                             .font(style.labelFont)
@@ -3991,11 +4083,7 @@ private struct MissionControlProjectList: View {
                             if creatingProjectID == group.id {
                                 ProgressView().controlSize(.small)
                             } else {
-                                LucideIcon(
-                                    name: .messageCirclePlus,
-                                    size: 15,
-                                    color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText
-                                )
+                                DockIcon(.chatCircleDots, size: 15, color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
                             }
                         }
                             .frame(width: 44, height: 44)
@@ -4015,10 +4103,8 @@ private struct MissionControlProjectList: View {
             .background(Color.clear)
             if !isCollapsed {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if group.sessions.isEmpty && sessionCount > 0 {
+                    if group.sessions.isEmpty {
                         projectStatusRow("Loading linked sessions…", leading: 0)
-                    } else if group.sessions.isEmpty && sessionCount == 0 {
-                        projectStatusRow("No sessions", leading: 0)
                     } else {
                         ForEach(sessions) { session in sessionRow(session) }
                         if group.sessions.count > sessionLimit {
@@ -4031,11 +4117,7 @@ private struct MissionControlProjectList: View {
                                     Text(disclosureState.showsAllSessions(projectID: group.id)
                                          ? "Show recent"
                                          : "Show \(group.sessions.count - sessionLimit) more")
-                                    LucideIcon(
-                                        name: disclosureState.showsAllSessions(projectID: group.id) ? .chevronUp : .chevronDown,
-                                        size: 10,
-                                        color: style.accent
-                                    )
+                                    DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.accent)
                                 }
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(style.accent)
@@ -4049,7 +4131,7 @@ private struct MissionControlProjectList: View {
                         }
                     }
                 }
-                .padding(.leading, 50)
+                .padding(.leading, 12)
             }
         }
     }
@@ -4067,7 +4149,6 @@ private struct MissionControlProjectList: View {
             session: session,
             selectedSessionID: selectedSessionID,
             sessionStatus: sessionStatuses[session.id] ?? .none,
-            layout: .compact,
             style: style,
             repositoryName: nil,
             isPinned: isPinned(session),
@@ -4101,35 +4182,24 @@ struct ProjectSessionActionPresentation: Equatable {
     var visibilityTitle: String { isHidden ? "Show" : "Hide" }
 }
 
-struct SidebarSessionMetadata: Equatable {
-    let relativeTime: String?
-    let repository: String?
-    let preview: String?
-
-    var values: [String] {
-        [relativeTime, repository, preview]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+enum SidebarSessionTime {
+    /// Compact rail timestamp: "now", "9m", "3h", "5d", then "Sep 2".
+    static func short(_ date: Date, now: Date = .now) -> String {
+        let seconds = max(0, now.timeIntervalSince(date))
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3_600: return "\(Int(seconds / 60))m"
+        case ..<86_400: return "\(Int(seconds / 3_600))h"
+        case ..<604_800: return "\(Int(seconds / 86_400))d"
+        default: return date.formatted(.dateTime.month(.abbreviated).day())
+        }
     }
-
-    static func make(relativeTime: String?, repository: String?, preview: String?) -> Self {
-        Self(relativeTime: relativeTime, repository: repository, preview: preview)
-    }
-}
-
-private enum SidebarSessionRowLayout: Equatable {
-    case compact
-    case pinned
-
-    var height: CGFloat { self == .pinned ? 72 : 50 }
-    var horizontalInset: CGFloat { self == .pinned ? 10 : 4 }
 }
 
 private struct MissionControlSidebarSessionRow: View, Equatable {
     let session: HermesSession
     let selectedSessionID: String?
     let sessionStatus: SidebarSessionStatus
-    let layout: SidebarSessionRowLayout
     let style: DockThemePalette
     let repositoryName: String?
     let isPinned: Bool
@@ -4148,10 +4218,10 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     @State private var renameError: String?
     @FocusState private var titleFieldFocused: Bool
     @FocusState private var rowFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Shared: formatter construction loads locale data. Safe because row rendering is main-actor bound.
-    private static let relativeTimeFormatter = RelativeDateTimeFormatter()
+    private static let rowHeight: CGFloat = 30
+
+    private var isSelected: Bool { session.id == selectedSessionID }
 
     private var pendingAction: ProjectSessionPendingAction? {
         if isDeleting { return .deletion }
@@ -4169,19 +4239,14 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         )
     }
 
-    private var showsActionSurface: Bool {
-        isHovered || rowFocused || session.id == selectedSessionID || isPinned
-    }
-
-    private var showsMoreActions: Bool {
-        isHovered || rowFocused || session.id == selectedSessionID
+    private var showsActions: Bool {
+        isHovered || rowFocused || pendingAction != nil
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.session == rhs.session
             && lhs.selectedSessionID == rhs.selectedSessionID
             && lhs.sessionStatus == rhs.sessionStatus
-            && lhs.layout == rhs.layout
             && lhs.style.theme == rhs.style.theme
             && lhs.repositoryName == rhs.repositoryName
             && lhs.isPinned == rhs.isPinned
@@ -4192,61 +4257,47 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            Group {
-                if isEditingTitle {
-                    VStack(alignment: .leading, spacing: 3) {
-                        TextField("Session title", text: $titleDraft)
-                            .textFieldStyle(.plain)
-                            .font(style.labelFont.weight(.medium))
-                            .foregroundStyle(style.primaryText)
-                            .focused($titleFieldFocused)
-                            .onSubmit { submitRename() }
-                            .onExitCommand { cancelRename() }
-                        if let renameError {
-                            Text(renameError)
-                                .font(.system(size: 10))
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            statusIndicator
+            VStack(alignment: .leading, spacing: 2) {
+                titleLine
+                if !isEditingTitle, repository != nil || preview != nil {
+                    HStack(spacing: 6) {
+                        if let repository { repositoryPill(repository) }
+                        if let preview {
+                            Text(preview)
+                                .font(.subheadline)
                                 .foregroundStyle(style.metadataText)
                                 .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                     }
-                } else {
-                    Button { onSelect(session) } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 6) {
-                                Text(session.displayTitle)
-                                    .font(titleFont)
-                                    .foregroundStyle(style.primaryText)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                Spacer(minLength: 4)
-                                statusIndicator
-                            }
-                            if let metadata = metadata {
-                                metadataView(metadata)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .frame(height: layout.height, alignment: .center)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .focused($rowFocused)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if showsActionSurface || isEditingTitle || pendingAction != nil {
-                actionSurface
-                    .background(rowFill)
-                    .transition(.opacity)
-            }
         }
-        .frame(height: layout.height)
-        .padding(.horizontal, layout.horizontalInset)
-        .background(rowFill)
-        .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        .padding(.leading, 2)
+        .padding(.trailing, 4)
+        .padding(.vertical, 5)
+        .frame(minHeight: Self.rowHeight)
+        .background(
+            RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        .onTapGesture { if !isEditingTitle { onSelect(session) } }
+        .focusable(!isEditingTitle)
+        .focused($rowFocused)
+        .onKeyPress(.return) {
+            guard !isEditingTitle else { return .ignored }
+            onSelect(session)
+            return .handled
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel(accessibilityLabel)
+        .help(tooltip)
         .disabled(isDeleting)
+        .opacity(isDeleting ? 0.5 : 1)
         .onHover { isHovered = $0 }
         .contextMenu { contextActions }
         .onChange(of: isEditingTitle) { _, editing in
@@ -4261,42 +4312,114 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         }
     }
 
-    private var rowFill: Color {
-        session.id == selectedSessionID ? style.selectedFill : (isHovered ? style.selectedFill.opacity(0.38) : .clear)
+    @ViewBuilder
+    private var titleLine: some View {
+        HStack(spacing: 6) {
+            if isEditingTitle {
+                TextField("Session title", text: $titleDraft)
+                    .textFieldStyle(.plain)
+                    .font(Font.body.weight(.medium))
+                    .foregroundStyle(style.primaryText)
+                    .focused($titleFieldFocused)
+                    .onSubmit { submitRename() }
+                    .onExitCommand { cancelRename() }
+                    .help(renameError ?? "Press Return to save, Esc to cancel")
+                if renameError != nil {
+                    DockIcon(.warningCircle, size: 11, color: .dockWarning)
+                        .help(renameError ?? "")
+                }
+            } else {
+                Text(session.displayTitle)
+                    .font(Font.body.weight(isSelected ? .medium : .regular))
+                    .foregroundStyle(isSelected ? style.primaryText : style.primaryText.opacity(0.88))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if showsActions {
+                    actionSurface
+                } else {
+                    trailingDetail
+                }
+            }
+        }
+        .frame(height: 24)
     }
 
-    private var titleFont: Font {
-        let base = layout == .pinned ? Font.system(size: 12) : style.labelFont
-        return base.weight(session.id == selectedSessionID ? .medium : .regular)
+    private var repository: String? { Self.nonEmpty(repositoryName) }
+    private var preview: String? { Self.nonEmpty(session.displayPreview) }
+
+    private static func nonEmpty(_ text: String?) -> String? {
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+        return text
+    }
+
+    /// Wired repo shown as a pill ahead of the last-message preview.
+    private func repositoryPill(_ name: String) -> some View {
+        HStack(spacing: 3) {
+            DockIcon(.gitBranch, size: 10, color: style.accent)
+            Text(name)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(style.secondaryText)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(style.surface4.opacity(0.8)))
+        .fixedSize()
+        .help(name)
+    }
+
+    private var rowFill: Color {
+        isSelected ? style.selectedFill : (isHovered ? style.selectedFill.opacity(0.4) : .clear)
+    }
+
+    private var tooltip: String {
+        [session.displayTitle, repositoryName, session.displayPreview]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+    }
+
+    private var accessibilityLabel: String {
+        var parts = [session.displayTitle]
+        if sessionStatus != .none { parts.append(sessionStatus.label) }
+        if let repositoryName, !repositoryName.isEmpty { parts.append(repositoryName) }
+        if let date = session.lastUpdatedAt { parts.append(SidebarSessionTime.short(date)) }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder
+    private var trailingDetail: some View {
+        if let date = session.lastUpdatedAt {
+            Text(SidebarSessionTime.short(date))
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(style.metadataText)
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    /// Leading status slot. Fixed width keeps titles aligned whether or not a
+    /// row has status; a static glyph (no spinner) keeps scrolling cheap.
     private var statusIndicator: some View {
         Group {
             switch sessionStatus {
             case .working:
-                // An indeterminate spinner per mounted row creates an
-                // animation timer for every working session while the rail is
-                // scrolling. The static symbol keeps the same status meaning
-                // and accessibility label without competing for frame time.
-                LucideImage(systemName: "bolt.horizontal.circle")
-                    .font(.system(size: 12, weight: .medium))
+                DockIcon(.lightning, size: 10, color: statusColor)
             case .needsAttention:
-                LucideImage(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 12, weight: .medium))
+                DockIcon(.warningCircle, size: 10, color: statusColor)
             case .failed:
-                LucideImage(systemName: "xmark.circle.fill")
-                    .font(.system(size: 12, weight: .medium))
+                DockIcon(.xCircle, size: 10, color: statusColor)
             case .unreadComplete:
-                Circle().frame(width: 7, height: 7)
+                Circle().frame(width: 6, height: 6)
             case .none:
-                Color.clear.frame(width: 12, height: 12)
+                Color.clear
             }
         }
         .foregroundStyle(statusColor)
-        .frame(width: 16, height: 16)
+        .frame(width: 10, height: 10)
         .help(sessionStatus.help)
-        .accessibilityLabel(sessionStatus.label)
+        .accessibilityHidden(true)
     }
 
     private var statusColor: Color {
@@ -4308,94 +4431,31 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         }
     }
 
-    private var metadata: SidebarSessionMetadata? {
-        let repository = ConversationRepositoryBadgePresentation.make(
-            projectName: repositoryName,
-            isProjectLinked: repositoryName != nil
-        )?.label
-        let result = SidebarSessionMetadata.make(
-            relativeTime: session.lastUpdatedAt.map { Self.relativeTimeFormatter.localizedString(for: $0, relativeTo: .now) },
-            repository: repository,
-            preview: session.displayPreview
-        )
-        return result.values.isEmpty ? nil : result
-    }
-
-    @ViewBuilder
-    private func metadataView(_ metadata: SidebarSessionMetadata) -> some View {
-        if layout == .pinned {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 5) {
-                    if let repository = metadata.repository, !repository.isEmpty {
-                        LucideImage(systemName: "folder")
-                            .font(.system(size: 10, weight: .medium))
-                        Text(repository)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Spacer(minLength: 4)
-                    if let relativeTime = metadata.relativeTime, !relativeTime.isEmpty {
-                        Text(relativeTime)
-                            .lineLimit(1)
-                    }
-                }
-                if let preview = metadata.preview, !preview.isEmpty {
-                    Text(preview)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(style.metadataText)
-        } else {
-        let hasRelativeTime = !(metadata.relativeTime?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        let hasRepository = !(metadata.repository?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        let hasPreview = !(metadata.preview?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-        HStack(spacing: 5) {
-            if let relativeTime = metadata.relativeTime, hasRelativeTime {
-                Text(relativeTime)
-            }
-            if let repository = metadata.repository, hasRepository {
-                if hasRelativeTime { Text("·") }
-                LucideImage(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 10, weight: .medium))
-                Text(repository)
-            }
-            if let preview = metadata.preview, hasPreview {
-                if hasRelativeTime || hasRepository { Text("·") }
-                Text(preview)
-            }
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(style.metadataText)
-        .lineLimit(1)
-        }
-    }
-
     private var actionSurface: some View {
         HStack(spacing: 0) {
             Button { onTogglePin(session) } label: {
-                LucideImage(systemName: isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(isPinned ? style.accent : style.metadataText)
-                    .frame(width: 44, height: 44)
+                DockIcon(.pushPin, size: 12, color: isPinned ? style.accent : style.metadataText)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .help(isPinned ? "Unpin session" : "Pin session")
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
 
-            if isRenaming {
-                ProgressView().controlSize(.small).frame(width: 44, height: 44)
-            } else if showsMoreActions {
+            if pendingAction != nil {
+                ProgressView().controlSize(.mini).frame(width: 24, height: 24)
+            } else {
+                // Menu labels on macOS only render Text/Image; a custom
+                // icon view is dropped and the button goes invisible.
                 Menu { contextActions } label: {
-                    LucideImage(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .medium))
+                    Ph.dotsThree.image(size: 13)
                         .foregroundStyle(style.secondaryText)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
                 .help("More session actions")
                 .accessibilityLabel("More actions for \(session.displayTitle)")
             }
@@ -4404,20 +4464,20 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
 
     @ViewBuilder
     private var contextActions: some View {
-        Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") {
+        Button(isPinned ? "Unpin" : "Pin", icon: isPinned ? .pushPinSlash : .pushPin) {
             onTogglePin(session)
         }
-        Button("Rename…", systemImage: "pencil") {
+        Button("Rename…", icon: .pencilSimple) {
             isEditingTitle = true
         }
-        Button(presentation.visibilityTitle, systemImage: session.isHidden ? "eye" : "eye.slash") {
+        Button(presentation.visibilityTitle, icon: session.isHidden ? .eye : .eyeSlash) {
             Task { @MainActor in
                 _ = await onToggleHidden(session, !session.isHidden)
             }
         }
         .disabled(isUpdatingVisibility || isDeleting)
         Divider()
-        Button("Delete", systemImage: "trash", role: .destructive) {
+        Button("Delete", icon: .trash, role: .destructive) {
             onRequestDelete(session)
         }
         .disabled(!presentation.canDelete || isDeleting)
@@ -4799,7 +4859,7 @@ private struct SessionPickerRow: View {
             .accessibilityAddTraits(isCurrent ? .isSelected : [])
 
             DockIconButton(
-                icon: session.isHidden ? .eye : .eyeOff,
+                icon: session.isHidden ? .eye : .eyeSlash,
                 label: session.isHidden ? "Show \(session.displayTitle)" : "Hide \(session.displayTitle)",
                 isBusy: isUpdatingVisibility,
                 size: 24,
@@ -4837,10 +4897,10 @@ private struct SessionPickerRow: View {
                     .foregroundStyle(style.accent)
             }
             if session.isHidden {
-                LucideLabel("Hidden", icon: "eye.slash")
+                DockIconLabel("Hidden", icon: .eyeSlash)
             }
             if let projectName {
-                LucideLabel(projectName, icon: "folder")
+                DockIconLabel(projectName, icon: .folder)
                     .truncationMode(.middle)
             }
             if let date = session.lastUpdatedAt {

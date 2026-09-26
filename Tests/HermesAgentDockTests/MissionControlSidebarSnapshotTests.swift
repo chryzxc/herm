@@ -171,19 +171,6 @@ struct MissionControlSidebarSnapshotTests {
         #expect(snapshot.attentionDots["s3"] == .warning)
     }
 
-    @Test func pinnedReferencesFallBackToTheProfileScope() {
-        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
-            sessions: [
-                session("s1", updatedAt: Date(timeIntervalSince1970: 3), profileID: "bot-x"),
-                session("s2", updatedAt: Date(timeIntervalSince1970: 4))
-            ],
-            projects: [project("p1", name: "/repos/Alpha", sessionIDs: ["s1", "s2"])]
-        ))
-
-        #expect(snapshot.pinnedReferences.contains(PinnedSessionReference(profileID: "bot-x", sessionID: "s1")))
-        #expect(snapshot.pinnedReferences.contains(PinnedSessionReference(profileID: "profile-main", sessionID: "s2")))
-    }
-
     @Test func identicalInputsProduceIdenticalSnapshots() {
         func build() -> MissionControlSidebarSnapshot.Inputs {
             inputs(
@@ -194,5 +181,22 @@ struct MissionControlSidebarSnapshotTests {
 
         #expect(MissionControlSidebarSnapshot(inputs: build()) == MissionControlSidebarSnapshot(inputs: build()))
         #expect(build() == build())
+    }
+
+    @Test func emptyProjectsAreHiddenAndProjectsFollowLatestActivity() {
+        let now = Date()
+        let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
+            sessions: [
+                session("old", updatedAt: now.addingTimeInterval(-600)),
+                session("new", updatedAt: now)
+            ],
+            projects: [
+                project("a", name: "/repo/alpha", sessionIDs: ["old"], sessionCount: 1),
+                project("b", name: "/repo/beta", sessionIDs: ["new"], sessionCount: 1),
+                project("c", name: "/repo/empty")
+            ]
+        ))
+
+        #expect(snapshot.linkedProjectGroups.map(\.title) == ["beta", "alpha"])
     }
 }

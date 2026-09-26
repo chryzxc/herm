@@ -133,6 +133,10 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingProjectCreationConfirmation = false
     @State private var projectsDisplayLimit = WorkspaceActivitySidebar.projectsPageSize
     @StateObject private var commandCenterPreferences = CommandCenterPreferencesStore()
+    @AppStorage(SidebarVisibilityKey.kanban) private var showsKanbanInSidebar = true
+    @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequestsInSidebar = true
+    @AppStorage(SidebarVisibilityKey.issues) private var showsIssuesInSidebar = true
+    @AppStorage(SidebarVisibilityKey.office) private var showsOfficeInSidebar = true
     @ObservedObject var agentUpdateService: HermesUpdateService
 
     init(
@@ -209,6 +213,7 @@ struct WorkspaceActivitySidebar: View {
                             case .officePreview: officePreviewContent
                             case .core: coreContent
                             case .quota: quotaContent
+                            case .usage: UsageWorkspaceView(control: control)
                             }
                         }
                         .padding(.horizontal, 16)
@@ -238,7 +243,7 @@ struct WorkspaceActivitySidebar: View {
                 isRefreshing: automationIsRefreshing,
                 trailing: {
                 Button(action: { isShowingAutomationComposer = true }) {
-                    LucideLabel("New automation", icon: "plus", iconColor: .dockOnAccentText)
+                    DockIconLabel("New automation", icon: .plus, iconColor: .dockOnAccentText)
                 }
                 .buttonStyle(.dockPrimary)
                 .font(.system(size: 12, weight: .semibold))
@@ -364,7 +369,7 @@ struct WorkspaceActivitySidebar: View {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .runtime, .project, .diagnostics:
+        case .runtime, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
             return nil
         }
     }
@@ -506,7 +511,7 @@ struct WorkspaceActivitySidebar: View {
             HStack {
                 Spacer()
                 Button { isShowingCommandPalette = true } label: {
-                    LucideImage(systemName: "command")
+                    DockIcon(.command)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .frame(width: 32, height: 32)
@@ -515,7 +520,7 @@ struct WorkspaceActivitySidebar: View {
                 .help("Command palette")
                 .keyboardShortcut("k", modifiers: [.command])
                 Button(action: onClose) {
-                    LucideImage(systemName: "chevron.left")
+                    DockIcon(.caretLeft)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 36, height: 36)
@@ -556,6 +561,8 @@ struct WorkspaceActivitySidebar: View {
             // opened Quota or Kanban tab never misses its first request.
             if selectedMode == .quota {
                 control.refreshProviderQuota()
+            } else if selectedMode == .usage {
+                control.refreshTokenUsage(days: UsageWorkspaceView.storedDays)
             } else if selectedMode == .kanban {
                 applyKanbanFilters()
             } else if selectedMode == .officePreview {
@@ -586,6 +593,8 @@ struct WorkspaceActivitySidebar: View {
             switch mode {
             case .quota:
                 control.refreshProviderQuota()
+            case .usage:
+                control.refreshTokenUsage(days: UsageWorkspaceView.storedDays)
             case .kanban:
                 // Re-apply this surface's visible controls. This prevents a
                 // session-only query started from Activity from leaking into
@@ -732,7 +741,7 @@ struct WorkspaceActivitySidebar: View {
         }
         .confirmationDialog("Change Kanban Task?", isPresented: $isShowingKanbanChangeConfirmation) {
             if let request = kanbanChangeRequest {
-                Button(request.action.rawValue.uppercased()) {
+                Button(kanbanActionTitle(for: request.action)) {
                     control.updateKanbanTask(request.task, action: request.action)
                 }
             }
@@ -785,7 +794,7 @@ struct WorkspaceActivitySidebar: View {
         }
         .confirmationDialog("Pause New Hermes Work?", isPresented: $isShowingEmergencyStopConfirmation) {
             Button("Pause New Work", role: .destructive) {
-                control.engageEmergencyStop(reason: "Paused from Hermes Agent Dock")
+                control.engageEmergencyStop(reason: "Paused from Herm")
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -883,7 +892,7 @@ struct WorkspaceActivitySidebar: View {
                                 clarificationResponse = choice
                             } label: {
                                 HStack(alignment: .top, spacing: 8) {
-                                    LucideImage(systemName: clarificationResponse == choice ? "checkmark.circle.fill" : "circle")
+                                    DockIcon(clarificationResponse == choice ? .checkCircle : .circle)
                                         .font(.system(size: 12, weight: .medium))
                                     Text(choice)
                                         .font(.system(size: 12))
@@ -939,12 +948,12 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
-            compactTabButton(title: "Artifacts", icon: "doc.text.magnifyingglass", isSelected: false) {
+            compactTabButton(title: "Artifacts", icon: .fileMagnifyingGlass, isSelected: false) {
                 onOpenArtifacts()
             }
             compactTabButton(
                 title: "Conversations",
-                icon: "bubble.left.and.bubble.right",
+                icon: .chats,
                 count: compactUnlinkedSessions.count,
                 isUrgent: false,
                 isSelected: selectedMode == .session
@@ -953,7 +962,7 @@ struct WorkspaceActivitySidebar: View {
             }
             compactTabButton(
                 title: "Projects",
-                icon: "folder",
+                icon: .folder,
                 count: compactProjectGroups.count,
                 isUrgent: false,
                 isSelected: selectedMode == .projects
@@ -970,7 +979,7 @@ struct WorkspaceActivitySidebar: View {
             } label: {
                 compactTabLabel(
                     title: "More",
-                    icon: "ellipsis.circle",
+                    icon: .dotsThreeCircle,
                     detail: isToolsModeSelected ? selectedMode.tabLabel : nil,
                     badgeCount: toolsBadgeCount,
                     isUrgent: toolsBadgeIsUrgent,
@@ -989,7 +998,7 @@ struct WorkspaceActivitySidebar: View {
 
     private func compactTabButton(
         title: String,
-        icon: String,
+        icon: Ph,
         count: Int = 0,
         isUrgent: Bool = false,
         isSelected: Bool,
@@ -1010,14 +1019,14 @@ struct WorkspaceActivitySidebar: View {
 
     private func compactTabLabel(
         title: String,
-        icon: String,
+        icon: Ph,
         detail: String?,
         badgeCount: Int,
         isUrgent: Bool,
         isSelected: Bool
     ) -> some View {
         HStack(spacing: 6) {
-            LucideImage(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 11, weight: .semibold))
             Text(detail ?? title)
                 .lineLimit(1)
@@ -1041,7 +1050,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var compactSortedSessions: [HermesSession] {
-        model.sessions.sorted { ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast) }
+        model.sessions.sorted { ($0.lastUpdatedAt ?? .distantPast) > ($1.lastUpdatedAt ?? .distantPast) }
     }
 
     private var compactProjectGroups: [CompactProjectGroup] {
@@ -1054,7 +1063,8 @@ struct WorkspaceActivitySidebar: View {
                 let name = URL(fileURLWithPath: project.name).lastPathComponent
                 return CompactProjectGroup(id: project.id, title: name.isEmpty ? project.name : name, sessions: sessions)
             }
-            .sorted { ($0.sessions.first?.startedAt ?? .distantPast) > ($1.sessions.first?.startedAt ?? .distantPast) }
+            .filter { !$0.sessions.isEmpty }
+            .sorted { ($0.sessions.first?.lastUpdatedAt ?? .distantPast) > ($1.sessions.first?.lastUpdatedAt ?? .distantPast) }
     }
 
     private var compactUnlinkedSessions: [HermesSession] {
@@ -1069,7 +1079,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var compactOverflowNavigation: [ControlTab] {
-        [.projects, .search, .officePreview, .core]
+        [.usage, .projects, .search, .officePreview, .core]
     }
 
     private var isToolsModeSelected: Bool {
@@ -1092,7 +1102,7 @@ struct WorkspaceActivitySidebar: View {
         isSelected: Bool
     ) -> some View {
         HStack(spacing: 8) {
-            LucideImage(systemName: "ellipsis.circle")
+            DockIcon(.dotsThreeCircle)
                 .font(.system(size: 12, weight: .semibold))
                 .frame(width: 22, alignment: .center)
             Text(detail ?? title)
@@ -1113,12 +1123,12 @@ struct WorkspaceActivitySidebar: View {
     private func secondaryModeButton(_ mode: ControlTab) -> some View {
         Button { select(mode) } label: {
             HStack {
-                LucideLabel(mode.tabLabel, icon: mode.icon)
+                DockIconLabel(mode.tabLabel, icon: mode.icon)
                 if badgeCount(for: mode) > 0 {
                     Text(badgeLabel(for: mode))
                 }
                 if selectedMode == mode {
-                    LucideImage(systemName: "checkmark")
+                    DockIcon(.check)
                 }
             }
         }
@@ -1127,7 +1137,7 @@ struct WorkspaceActivitySidebar: View {
     private func modeButton(_ mode: ControlTab) -> some View {
         Button { select(mode) } label: {
             HStack(spacing: 8) {
-                LucideImage(systemName: mode.icon)
+                DockIcon(mode.icon)
                     .font(.system(size: 12, weight: .semibold))
                     .frame(width: 22, alignment: .center)
                 Text(mode.globalRailLabel)
@@ -1349,19 +1359,19 @@ struct WorkspaceActivitySidebar: View {
                     todayMetric("CONFLICTS", value: changes.conflictedCount, color: changes.conflictedCount > 0 ? .dockDestructive : .dockSuccess)
                 }
                 if changes.files.isEmpty {
-                    emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
+                    emptyState(icon: .checkCircle, title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
                 } else {
                     changeSections(changes)
                 }
             } else if let path = activeRepositoryPath {
                 let inspecting = isRefreshingRepository || workflow.isRefreshing
                 emptyState(
-                    icon: inspecting ? "refresh-cw" : "folder",
+                    icon: inspecting ? .arrowsClockwise : .folder,
                     title: inspecting ? "Inspecting project" : "Project is not a Git repository",
                     detail: inspecting ? path : "\(path) is available as a local project folder, but it has no Git working tree to inspect."
                 )
             } else {
-                emptyState(icon: "doc.text.magnifyingglass", title: "No project selected", detail: "Choose a project from Projects to inspect its local changes.")
+                emptyState(icon: .fileMagnifyingGlass, title: "No project selected", detail: "Choose a project from Projects to inspect its local changes.")
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
@@ -1427,7 +1437,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.top, 5)
         } label: {
             HStack(spacing: 8) {
-                LucideImage(systemName: file.status == .conflicted ? "exclamationmark.octagon" : "doc")
+                DockIcon(file.status == .conflicted ? .warningOctagon : .file)
                     .foregroundStyle(file.status == .conflicted ? Color.dockDestructive : file.isStaged ? Color.dockAccent : Color.dockSecondaryText)
                 Text(file.path).lineLimit(1).foregroundStyle(Color.dockPrimaryText)
                 Spacer()
@@ -1453,7 +1463,7 @@ struct WorkspaceActivitySidebar: View {
         let findings = RepositoryDiffAuditor.audit(diff)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
-                LucideImage(systemName: findings.isEmpty ? "checkmark.shield" : "exclamationmark.shield")
+                DockIcon(findings.isEmpty ? .shieldCheck : .shieldWarning)
                 Text(findings.isEmpty ? "LOCAL AUDIT · NO OBVIOUS SIGNALS" : "LOCAL AUDIT · \(findings.count) SIGNAL\(findings.count == 1 ? "" : "S")")
             }
             .font(.system(size: 11, weight: .semibold))
@@ -1530,7 +1540,7 @@ struct WorkspaceActivitySidebar: View {
                     if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: .dockWarning) }
                 }
             } else if control.projectFacts == nil {
-                emptyState(icon: "checkmark.seal", title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Settings to request verification facts.")
+                emptyState(icon: .sealCheck, title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Settings to request verification facts.")
             }
         }
     }
@@ -1580,13 +1590,13 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if paths.isEmpty {
-                emptyState(icon: "folder.badge.gearshape", title: "No repositories attached", detail: "Use Change Repository from Today to attach a local repository to a Hermes session.")
+                emptyState(icon: .folder, title: "No repositories attached", detail: "Use Change Repository from Today to attach a local repository to a Hermes session.")
             } else {
                 if !workflow.worktrees.isEmpty {
                     DisclosureGroup("WORKTREES  ·  \(workflow.worktrees.count)") {
                         ForEach(workflow.worktrees) { worktree in
                             HStack(spacing: 8) {
-                                LucideImage(systemName: worktree.snapshot?.conflictedFiles ?? 0 > 0 ? "exclamationmark.octagon" : "arrow.triangle.branch")
+                                DockIcon(worktree.snapshot?.conflictedFiles ?? 0 > 0 ? .warningOctagon : .gitBranch)
                                     .foregroundStyle(worktree.snapshot?.conflictedFiles ?? 0 > 0 ? Color.dockDestructive : Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(worktree.displayName).foregroundStyle(Color.dockPrimaryText)
@@ -1692,9 +1702,9 @@ struct WorkspaceActivitySidebar: View {
 
     private var cronSchedulesColumn: some View {
         VStack(alignment: .leading, spacing: 10) {
-            cronSectionHeading("Schedules", count: control.cronJobs.count, icon: "calendar.badge.clock")
+            cronSectionHeading("Schedules", count: control.cronJobs.count, icon: .calendarDots)
             if control.cronJobs.isEmpty {
-                emptyState(icon: "clock.badge.questionmark", title: "No schedules", detail: "Create an automation when work needs to run without you.")
+                emptyState(icon: .clock, title: "No schedules", detail: "Create an automation when work needs to run without you.")
             } else {
                 ScrollView(.vertical, showsIndicators: true) {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -1715,7 +1725,7 @@ struct WorkspaceActivitySidebar: View {
                 cronDetailSummary(job)
                 cronHistorySection
             } else {
-                emptyState(icon: "cursorarrow.click.2", title: "Select a schedule", detail: "Choose a schedule to inspect its cadence, latest result, and run history.")
+                emptyState(icon: .cursorClick, title: "Select a schedule", detail: "Choose a schedule to inspect its cadence, latest result, and run history.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -1800,7 +1810,7 @@ struct WorkspaceActivitySidebar: View {
     private var cronHistorySection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                LucideImage(systemName: "waveform.path.ecg")
+                DockIcon(.pulse)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 Text("Run history")
@@ -1810,13 +1820,7 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer()
-                Picker("History scope", selection: $automationHistoryScope) {
-                    ForEach(AutomationHistoryScope.allCases) { scope in
-                        Text(scope.title).tag(scope)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 150)
+                DockTabBar(options: AutomationHistoryScope.allCases, selection: $automationHistoryScope, title: \.title)
             }
             .padding(.bottom, 5)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
@@ -1866,7 +1870,7 @@ struct WorkspaceActivitySidebar: View {
 
     private var cronHistoryColumn: some View {
         VStack(alignment: .leading, spacing: 10) {
-            cronSectionHeading("Run history", count: control.cronRuns.count, icon: "waveform.path.ecg")
+            cronSectionHeading("Run history", count: control.cronRuns.count, icon: .pulse)
             if let state = control.refreshState(for: "cron.history"), state.isStale {
                 Text("Showing the last successful history while Hermes reconnects. \(state.error ?? "")")
                     .font(.system(size: 11))
@@ -1906,9 +1910,9 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private func cronSectionHeading(_ title: String, count: Int, icon: String) -> some View {
+    private func cronSectionHeading(_ title: String, count: Int, icon: Ph) -> some View {
         HStack(spacing: 8) {
-            LucideImage(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             Text(title)
@@ -1926,7 +1930,7 @@ struct WorkspaceActivitySidebar: View {
     private var automationComposer: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                LucideImage(systemName: "wand.and.stars")
+                DockIcon(.magicWand)
                     .foregroundStyle(Color.dockAccent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("New automation")
@@ -2045,7 +2049,7 @@ struct WorkspaceActivitySidebar: View {
                         if control.isActionPending(control.cronActionID("run", job: job)) {
                             ProgressView().controlSize(.small)
                         } else {
-                            LucideImage(systemName: "play.fill")
+                            DockIcon(.play, weight: .fill)
                                 .font(.system(size: 12, weight: .semibold))
                         }
                     }
@@ -2060,7 +2064,7 @@ struct WorkspaceActivitySidebar: View {
             }
 
             Menu { cronContextActions(job) } label: {
-                LucideImage(systemName: "ellipsis")
+                DockIcon(.dotsThree)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 44, height: 44)
@@ -2081,17 +2085,17 @@ struct WorkspaceActivitySidebar: View {
     @ViewBuilder
     private func cronContextActions(_ job: CronSummary) -> some View {
         if control.capabilityAvailable("cron.runNow") {
-            Button("Run now", systemImage: "play.fill") {
+            Button("Run now", icon: .play) {
                 cronRunRequest = job
                 isShowingCronRunConfirmation = true
             }
         }
         if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
-            Button("Edit", systemImage: "pencil") { cronEditJob = job }
+            Button("Edit", icon: .pencilSimple) { cronEditJob = job }
         }
         if control.capabilityAvailable("rpc-scheduling") {
             Divider()
-            Button("Remove", systemImage: "trash", role: .destructive) {
+            Button("Remove", icon: .trash, role: .destructive) {
                 cronRemovalRequest = job
                 isShowingCronRemovalConfirmation = true
             }
@@ -2141,7 +2145,7 @@ struct WorkspaceActivitySidebar: View {
         let latestRun = control.cronRuns.first { $0.jobID == job.id }
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
-                LucideImage(systemName: job.enabled ? "clock.badge.checkmark" : "clock.badge.xmark")
+                DockIcon(job.enabled ? .clock : .clock)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(job.enabled ? Color.dockSuccess : Color.dockWarning)
                 VStack(alignment: .leading, spacing: 2) {
@@ -2201,7 +2205,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: expandedCronReportIDs.contains(job.id) ? "chevron.down" : "chevron.right")
+                        DockIcon(expandedCronReportIDs.contains(job.id) ? .caretDown : .caretRight)
                             .font(.system(size: 10, weight: .bold))
                         Text(expandedCronReportIDs.contains(job.id) ? "HIDE REPORT" : "VIEW LATEST REPORT")
                             .font(.system(size: 11, weight: .semibold))
@@ -2290,7 +2294,7 @@ struct WorkspaceActivitySidebar: View {
                     if canViewReport {
                         HStack(spacing: 4) {
                             Text("REPORT")
-                            LucideImage(systemName: "chevron.right")
+                            DockIcon(.caretRight)
                                 .font(.system(size: 9, weight: .bold))
                         }
                         .font(.system(size: 10, weight: .semibold))
@@ -2388,7 +2392,7 @@ struct WorkspaceActivitySidebar: View {
                         control.closeProject()
                         selectedProjectSessionID = nil
                     } label: {
-                        LucideLabel("PROJECTS", icon: "chevron.left")
+                        DockIconLabel("PROJECTS", icon: .caretLeft)
                     }
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .semibold))
@@ -2398,7 +2402,7 @@ struct WorkspaceActivitySidebar: View {
                         Button {
                             startNewChat(in: path)
                         } label: {
-                            LucideLabel("NEW CHAT", icon: "plus.bubble")
+                            DockIconLabel("NEW CHAT", icon: .chatCircleDots)
                                 .font(.system(size: 10, weight: .semibold))
                         }
                         .buttonStyle(.borderless)
@@ -2411,11 +2415,11 @@ struct WorkspaceActivitySidebar: View {
                 let projectSessionsProjectionKey = control.projectSessionsProjectionKey(for: project.id)
                 if control.projectSessions.isEmpty {
                     if let refresh = control.refreshState(for: projectSessionsProjectionKey), refresh.isStale {
-                        emptyState(icon: "exclamationmark.triangle", title: "Sessions stale", detail: "The last project session snapshot could not be refreshed. Retry to update it.")
+                        emptyState(icon: .warning, title: "Sessions stale", detail: "The last project session snapshot could not be refreshed. Retry to update it.")
                     } else if let refresh = control.refreshState(for: projectSessionsProjectionKey), refresh.error != nil {
-                        emptyState(icon: "exclamationmark.triangle", title: "Sessions unavailable", detail: "Hermes could not load this project's sessions. Retry to try again.")
+                        emptyState(icon: .warning, title: "Sessions unavailable", detail: "Hermes could not load this project's sessions. Retry to try again.")
                     } else {
-                        emptyState(icon: "bubble.left.and.bubble.right", title: "No sessions in this project", detail: "No grouped sessions were found for this project.")
+                        emptyState(icon: .chats, title: "No sessions in this project", detail: "No grouped sessions were found for this project.")
                     }
                 } else {
                     HStack {
@@ -2442,7 +2446,7 @@ struct WorkspaceActivitySidebar: View {
                                     Text(lifecycle.label.uppercased())
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(sessionLifecycleColor(lifecycle))
-                                    LucideImage(systemName: "chevron.right")
+                                    DockIcon(.caretRight)
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockAccent)
                                 }
@@ -2470,7 +2474,7 @@ struct WorkspaceActivitySidebar: View {
                     Spacer()
                     projectDirectoryActions
                 }
-                emptyState(icon: "folder", title: "No projects", detail: "Projects will appear here when project contexts are available.")
+                emptyState(icon: .folder, title: "No projects", detail: "Projects will appear here when project contexts are available.")
             } else {
                 HStack {
                     sectionLabel("PROJECTS  ·  \(control.projects.count)")
@@ -2482,7 +2486,7 @@ struct WorkspaceActivitySidebar: View {
                         openProject(project)
                     } label: {
                         HStack(spacing: 10) {
-                            LucideImage(systemName: project.isActive ? "folder.fill" : "folder")
+                            DockIcon(project.isActive ? .folder : .folder)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(project.isActive ? Color.dockAccent : Color.dockSecondaryText)
                                 .frame(width: 16)
@@ -2503,7 +2507,7 @@ struct WorkspaceActivitySidebar: View {
                                     .tracking(0.5)
                                     .foregroundStyle(Color.dockSuccess)
                             }
-                            LucideImage(systemName: "chevron.right")
+                            DockIcon(.caretRight)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Color.dockAccent)
                         }
@@ -2518,7 +2522,7 @@ struct WorkspaceActivitySidebar: View {
                     Button {
                         projectsDisplayLimit += Self.projectsPageSize
                     } label: {
-                        LucideLabel("SHOW MORE (\(control.projects.count - projectsDisplayLimit) REMAINING)", icon: "chevron.down")
+                        DockIconLabel("SHOW MORE (\(control.projects.count - projectsDisplayLimit) REMAINING)", icon: .caretDown)
                             .font(.system(size: 10, weight: .semibold))
                             .tracking(0.4)
                     }
@@ -2538,7 +2542,7 @@ struct WorkspaceActivitySidebar: View {
         Button {
             chooseProjectDirectory()
         } label: {
-            LucideLabel("ADD DIRECTORY", icon: "folder.badge.plus")
+            DockIconLabel("ADD DIRECTORY", icon: .folderPlus)
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(0.4)
         }
@@ -2610,7 +2614,7 @@ struct WorkspaceActivitySidebar: View {
     private func selectedProjectSummary(_ project: ProjectSummary) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                LucideImage(systemName: project.isActive ? "folder.fill" : "folder")
+                DockIcon(project.isActive ? .folder : .folder)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(project.isActive ? Color.dockAccent : Color.dockSecondaryText)
                 Text(projectDisplayName(project))
@@ -2752,7 +2756,7 @@ struct WorkspaceActivitySidebar: View {
                             createKanbanTaskForm
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         } else if kanbanCurrentSessionOnly {
-                            LucideLabel("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", icon: "link.badge.plus")
+                            DockIconLabel("Session cards must be created by a session-aware Kanban worker. Manual CLI cards are global.", icon: .link)
                                 .font(.system(size: 10))
                                 .foregroundStyle(Color.dockMetadataText)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -2774,7 +2778,7 @@ struct WorkspaceActivitySidebar: View {
                                         .foregroundStyle(Color.dockSecondaryText)
                                         .lineLimit(1)
                                     Spacer()
-                                    if diagnostic.taskID != nil { LucideImage(systemName: "chevron.right") }
+                                    if diagnostic.taskID != nil { DockIcon(.caretRight) }
                                 }
                                 .font(.system(size: 11))
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -2787,7 +2791,7 @@ struct WorkspaceActivitySidebar: View {
                     .padding(.top, 5)
                 } label: {
                     HStack(spacing: 7) {
-                        LucideImage(systemName: "stethoscope")
+                        DockIcon(.stethoscope)
                             .foregroundStyle(Color.dockWarning)
                         Text("Kanban health")
                             .font(.system(size: 11, weight: .semibold))
@@ -2807,7 +2811,7 @@ struct WorkspaceActivitySidebar: View {
                         Button {
                             control.refreshKanbanDiagnostics(severity: kanbanDiagnosticSeverity == "ALL" ? nil : kanbanDiagnosticSeverity.lowercased())
                         } label: {
-                            LucideImage(systemName: "refresh-cw")
+                            DockIcon(.arrowsClockwise)
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(Color.dockAccent)
@@ -2819,11 +2823,16 @@ struct WorkspaceActivitySidebar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
-            kanbanBoard
-                .frame(maxHeight: .infinity)
+            if control.kanbanTasks.isEmpty, control.refreshState(for: "kanban.board")?.lastSuccess == nil,
+               control.isKanbanRefreshPending || control.refreshState(for: "kanban.board")?.isRefreshing == true {
+                DockLoadingState(title: "Loading board…", detail: "Reading Kanban tasks from Hermes.")
+            } else {
+                kanbanBoard
+                    .frame(maxHeight: .infinity)
+            }
             if let state = control.refreshState(for: "kanban.board"), let error = state.error {
                 HStack(alignment: .top, spacing: 8) {
-                    LucideImage(systemName: "exclamationmark.triangle")
+                    DockIcon(.warning)
                         .font(.system(size: 12, weight: .medium))
                     Text(state.isStale ? "Showing the last successful board. \(error)" : error)
                         .font(.system(.body))
@@ -2905,7 +2914,7 @@ struct WorkspaceActivitySidebar: View {
                                 Text(board.name)
                                 if board.slug == control.selectedKanbanBoardSlug {
                                     Spacer()
-                                    Image(systemName: "checkmark")
+                                    Ph.check.image()
                                 }
                             }
                         }
@@ -2916,11 +2925,13 @@ struct WorkspaceActivitySidebar: View {
                     control.kanbanBoards.first(where: { $0.slug == control.selectedKanbanBoardSlug })?.name
                         ?? control.selectedKanbanBoardSlug
                         ?? "Current board",
-                    icon: "rectangle.3.group"
+                    icon: .kanban
                 )
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
             .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
             .disabled(control.kanbanBoards.count < 2 || control.isKanbanRefreshPending)
             .help("Select Kanban board")
 
@@ -2935,7 +2946,7 @@ struct WorkspaceActivitySidebar: View {
                     applyKanbanFilters()
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "xmark.circle.fill")
+                        DockIcon(.xCircle, weight: .fill)
                         Text("Clear")
                     }
                     .font(.system(size: 11, weight: .semibold))
@@ -2953,7 +2964,7 @@ struct WorkspaceActivitySidebar: View {
                         isShowingKanbanComposer.toggle()
                     }
                 } label: {
-                    LucideLabel(isShowingKanbanComposer ? "Close" : "Add task", icon: isShowingKanbanComposer ? "xmark" : "plus")
+                    DockIconLabel(isShowingKanbanComposer ? "Close" : "Add task", icon: isShowingKanbanComposer ? .x : .plus)
                 }
                 .buttonStyle(.dockPrimary)
                 .font(.system(size: 11, weight: .semibold))
@@ -2969,14 +2980,14 @@ struct WorkspaceActivitySidebar: View {
         kanbanStatusFilter != "All" || kanbanAssigneeFilter != "All" || kanbanMineOnly || kanbanSort != "updated"
     }
 
-    private func kanbanToolbarChip(_ title: String, icon: String) -> some View {
+    private func kanbanToolbarChip(_ title: String, icon: Ph) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 10, weight: .semibold))
             Text(title)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Image(systemName: "chevron.down")
+            DockIcon(.caretDown)
                 .font(.system(size: 8, weight: .bold))
         }
         .font(.system(size: 11, weight: .semibold))
@@ -2992,7 +3003,7 @@ struct WorkspaceActivitySidebar: View {
             Button {
                 isShowingKanbanStatusFilter.toggle()
             } label: {
-                kanbanFilterChip(kanbanStatusFilter == "All" ? "Status" : kanbanStatusFilter, icon: "line.3.horizontal.decrease")
+                kanbanFilterChip(kanbanStatusFilter == "All" ? "Status" : kanbanStatusFilter, icon: .funnelSimple)
             }
             .popover(isPresented: $isShowingKanbanStatusFilter, arrowEdge: .bottom) {
                 kanbanStatusPopover
@@ -3000,7 +3011,7 @@ struct WorkspaceActivitySidebar: View {
             Button {
                 isShowingKanbanAssigneeFilter.toggle()
             } label: {
-                kanbanFilterChip(kanbanAssigneeFilter == "All" ? "Assignee" : kanbanAssigneeFilter, icon: "person.2.fill")
+                kanbanFilterChip(kanbanAssigneeFilter == "All" ? "Assignee" : kanbanAssigneeFilter, icon: .users)
             }
             .popover(isPresented: $isShowingKanbanAssigneeFilter, arrowEdge: .bottom) {
                 kanbanAssigneePopover
@@ -3009,15 +3020,18 @@ struct WorkspaceActivitySidebar: View {
                 kanbanMineOnly.toggle()
                 applyKanbanFilters()
             } label: {
-                kanbanFilterChip("Mine", icon: "person.fill", isSelected: kanbanMineOnly)
+                kanbanFilterChip("Mine", icon: .user, isSelected: kanbanMineOnly)
             }
             Menu {
                 ForEach(["updated", "created-desc", "priority-desc", "title"], id: \.self) { value in
                     Button(kanbanSortLabel(value)) { kanbanSort = value; applyKanbanFilters() }
                 }
             } label: {
-                kanbanFilterChip(kanbanSort == "updated" ? "Sort" : kanbanSortLabel(kanbanSort), icon: "arrow.up.arrow.down")
+                kanbanFilterChip(kanbanSort == "updated" ? "Sort" : kanbanSortLabel(kanbanSort), icon: .arrowsDownUp)
             }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .fixedSize()
         }
         .buttonStyle(.plain)
         .font(.system(size: 11, weight: .semibold))
@@ -3040,13 +3054,13 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private func kanbanFilterChip(_ title: String, icon: String, isSelected: Bool = false) -> some View {
+    private func kanbanFilterChip(_ title: String, icon: Ph, isSelected: Bool = false) -> some View {
         HStack(spacing: 6) {
-            Image(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 11, weight: .semibold))
             Text(title)
                 .lineLimit(1)
-            Image(systemName: "chevron-down")
+            DockIcon(.caretDown)
                 .font(.system(size: 8, weight: .bold))
         }
         .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
@@ -3062,7 +3076,7 @@ struct WorkspaceActivitySidebar: View {
     private var kanbanStatusPopover: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
-                Image(systemName: "circle.grid.2x2.fill")
+                DockIcon(.circlesFour)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 Text("STATUS")
@@ -3104,10 +3118,10 @@ struct WorkspaceActivitySidebar: View {
                     Circle()
                         .fill((lane?.color ?? Color.dockAccent).opacity(0.18))
                     if let lane {
-                        LucideImage(systemName: lane.icon)
+                        DockIcon(lane.icon)
                             .foregroundStyle(lane.color)
                     } else {
-                        Image(systemName: "circle.grid.2x2.fill")
+                        DockIcon(.circlesFour)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -3119,7 +3133,7 @@ struct WorkspaceActivitySidebar: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if isSelected {
-                    Image(systemName: "checkmark")
+                    DockIcon(.check)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Color.dockAccent)
                 }
@@ -3136,7 +3150,7 @@ struct WorkspaceActivitySidebar: View {
     private var kanbanAssigneePopover: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
-                Image(systemName: "person.2.fill")
+                DockIcon(.users)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 Text("ASSIGNEE")
@@ -3178,7 +3192,7 @@ struct WorkspaceActivitySidebar: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
                             .fill(Color.dockAccent.opacity(0.18))
-                        Image(systemName: "person.2.fill")
+                        DockIcon(.users)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -3198,7 +3212,7 @@ struct WorkspaceActivitySidebar: View {
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 if isSelected {
-                    Image(systemName: "checkmark")
+                    DockIcon(.check)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Color.dockAccent)
                 }
@@ -3227,7 +3241,7 @@ struct WorkspaceActivitySidebar: View {
     private var createKanbanTaskForm: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                LucideImage(systemName: "plus")
+                DockIcon(.plus)
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Color.dockAccent)
                 Text("ADD TASK")
@@ -3244,7 +3258,7 @@ struct WorkspaceActivitySidebar: View {
                         if control.isCreatingKanbanTask {
                             ProgressView().controlSize(.small).tint(Color.dockOnAccentText)
                         } else {
-                            LucideImage(systemName: "arrow.up.right")
+                            DockIcon(.arrowUpRight)
                                 .font(.system(size: 13, weight: .bold))
                         }
                     }
@@ -3335,7 +3349,7 @@ struct WorkspaceActivitySidebar: View {
 
     private func kanbanModelMetadataRow(_ metadata: KanbanModelMetadataPresentation) -> some View {
         HStack(spacing: 5) {
-            LucideImage(systemName: metadata.isOverride ? "arrow.triangle.2.circlepath" : "cpu")
+            DockIcon(metadata.isOverride ? .arrowsClockwise : .cpu)
                 .font(.system(size: 9, weight: .semibold))
             Text(metadata.isOverride ? "OVERRIDE · \(metadata.label)" : metadata.label)
                 .lineLimit(1)
@@ -3344,38 +3358,6 @@ struct WorkspaceActivitySidebar: View {
         .font(.system(size: 10, weight: .medium, design: .monospaced))
         .foregroundStyle(metadata.isOverride ? Color.dockWarning : Color.dockMetadataText)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func kanbanActionChip(
-        title: String,
-        icon: String,
-        pendingTitle: String,
-        isPending: Bool,
-        tint: Color,
-        filled: Bool = true
-    ) -> some View {
-        HStack(spacing: 5) {
-            if isPending {
-                ProgressView()
-                    .controlSize(.mini)
-                    .tint(tint)
-            } else {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .bold))
-            }
-            Text(isPending ? pendingTitle : title)
-        }
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(tint)
-        .lineLimit(1)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(filled ? tint.opacity(0.12) : Color.dockSurface2.opacity(0.8))
-        .overlay {
-            Capsule().stroke(tint.opacity(filled ? 0.18 : 0.28), lineWidth: 0.5)
-        }
-        .clipShape(Capsule())
-        .contentShape(Capsule())
     }
 
     private func isRedundantKanbanStatus(_ event: String, for lane: KanbanLane) -> Bool {
@@ -3424,28 +3406,28 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, weight: .medium))
                 }
                 Spacer(minLength: 8)
-                Menu {
-                    ForEach(KanbanMutationKind.allCases) { kind in
-                        if control.capabilityAvailable(kind.capabilityID) {
-                            Button(kind.title) {
-                                kanbanMutationRequest = KanbanMutationRequest(task: task, kind: kind, value: "", reclaimFirst: false)
-                            }
-                        }
+                HStack(spacing: 2) {
+                    Menu {
+                        kanbanDetailActions(task, lane: lane)
+                    } label: {
+                        kanbanDetailHeaderIcon(.dotsThree)
                     }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 36, height: 32)
+                    // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
+                    .menuStyle(.button)
+                    .buttonStyle(.plain)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Task actions")
+                    .accessibilityLabel("Task actions")
+                    Button {
+                        selectedKanbanTask = nil
+                    } label: {
+                        kanbanDetailHeaderIcon(.x)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Close")
+                    .accessibilityLabel("Close task details")
                 }
-                .menuStyle(.borderlessButton)
-                .buttonStyle(.plain)
-                Button {
-                    selectedKanbanTask = nil
-                } label: {
-                    Image(systemName: "xmark")
-                        .frame(width: 36, height: 32)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close task details")
             }
             .foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, 16)
@@ -3470,7 +3452,7 @@ struct WorkspaceActivitySidebar: View {
                 VStack(alignment: .leading, spacing: 16) {
                     if let error = control.kanbanDetailError, !error.isEmpty {
                         HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle")
+                            DockIcon(.warning)
                             Text(error).lineLimit(3)
                             Spacer()
                             Button("Retry") { control.loadKanbanTask(task) }
@@ -3537,7 +3519,7 @@ struct WorkspaceActivitySidebar: View {
             } else {
                 ForEach(control.kanbanAttachments) { attachment in
                     HStack(spacing: 7) {
-                        Image(systemName: "paperclip")
+                        DockIcon(.paperclip)
                         Text(attachment.name).lineLimit(1)
                         Spacer(minLength: 4)
                         if let kind = attachment.kind { Text(kind) }
@@ -3616,30 +3598,57 @@ struct WorkspaceActivitySidebar: View {
         !kanbanTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func kanbanActionButton(_ label: String, task: KanbanTaskSummary, action: KanbanTaskAction) -> some View {
-        let isPending = control.isActionPending(control.kanbanActionID(action, task: task))
-        return Button {
-            kanbanChangeRequest = KanbanChangeRequest(task: task, action: action)
-            isShowingKanbanChangeConfirmation = true
-        } label: {
-            kanbanActionChip(
-                title: label,
-                icon: kanbanActionIcon(for: action),
-                pendingTitle: "Updating…",
-                isPending: isPending,
-                tint: action == .block || action == .archive ? Color.dockWarning : Color.dockAccent
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(isPending)
+    private func kanbanDetailHeaderIcon(_ name: Ph) -> some View {
+        DockIcon(name)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Color.dockSecondaryText)
+            .frame(width: 28, height: 28)
+            .background(Color.dockSurface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
     }
 
-    private func kanbanActionIcon(for action: KanbanTaskAction) -> String {
+    /// Same lane rules as the card menu, plus the edit-style mutations.
+    @ViewBuilder
+    private func kanbanDetailActions(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
+        let statusActions: [KanbanTaskAction] = switch lane {
+        case .done: [.archive]
+        case .blocked: [.unblock]
+        default: [.complete, .block]
+        }
+        let available = statusActions.filter { control.capabilityAvailable("kanban.\($0.rawValue)") }
+        let mutations = KanbanMutationKind.allCases.filter { control.capabilityAvailable($0.capabilityID) }
+        ForEach(available, id: \.self) { action in
+            Button(kanbanActionTitle(for: action), icon: kanbanActionIcon(for: action)) {
+                requestKanbanAction(task, action: action)
+            }
+            .disabled(control.isActionPending(control.kanbanActionID(action, task: task)))
+        }
+        if !available.isEmpty, !mutations.isEmpty { Divider() }
+        ForEach(mutations) { kind in
+            Button(kind.title) {
+                kanbanMutationRequest = KanbanMutationRequest(task: task, kind: kind, value: "", reclaimFirst: false)
+            }
+        }
+        if available.isEmpty, mutations.isEmpty {
+            Text("No actions available")
+        }
+    }
+
+    private func kanbanActionTitle(for action: KanbanTaskAction) -> String {
         switch action {
-        case .complete: "checkmark"
-        case .block: "pause"
-        case .unblock: "arrow.uturn.backward"
-        case .archive: "archivebox"
+        case .complete: "Mark Done"
+        case .block: "Block"
+        case .unblock: "Unblock"
+        case .archive: "Archive"
+        }
+    }
+
+    private func kanbanActionIcon(for action: KanbanTaskAction) -> Ph {
+        switch action {
+        case .complete: .check
+        case .block: .pause
+        case .unblock: .arrowUUpLeft
+        case .archive: .archive
         }
     }
 
@@ -3647,7 +3656,7 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionLabel("SEARCH SOURCES")
             HStack(spacing: 8) {
-                LucideImage(systemName: "magnifyingglass")
+                DockIcon(.magnifyingGlass)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockAccent)
                     .frame(width: 16)
@@ -3659,7 +3668,7 @@ struct WorkspaceActivitySidebar: View {
                     Button {
                         searchQuery = ""
                     } label: {
-                        LucideImage(systemName: "xmark.circle.fill")
+                        DockIcon(.xCircle, weight: .fill)
                             .font(.system(size: 12))
                             .foregroundStyle(Color.dockMetadataText)
                     }
@@ -3692,7 +3701,7 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             } else if control.searchResults.isEmpty {
-                emptyState(icon: "questionmark.circle", title: "No matches", detail: "Try a session title, project name, reminder, or Inbox detail.")
+                emptyState(icon: .question, title: "No matches", detail: "Try a session title, project name, reminder, or Inbox detail.")
             } else {
                 sectionLabel("RESULTS  ·  \(control.searchResults.count)")
                 ForEach(control.searchResults) { result in
@@ -3712,7 +3721,7 @@ struct WorkspaceActivitySidebar: View {
 
     private func searchResultRow(_ result: ControlSearchResult) -> some View {
         HStack(alignment: .top, spacing: 9) {
-            LucideImage(systemName: result.reference.source == .appleReminder ? "checklist" : "circle.dotted")
+            DockIcon(result.reference.source == .appleReminder ? .listChecks : .circleDashed)
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockAccent)
                 .frame(width: 15)
@@ -3733,7 +3742,7 @@ struct WorkspaceActivitySidebar: View {
                     .lineLimit(2)
             }
             if result.reference.source != .appleReminder && result.reference.source != .hermesCronJob {
-                LucideImage(systemName: "chevron.right")
+                DockIcon(.caretRight)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
             }
@@ -3756,7 +3765,7 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 11))
             }
             if visibleItems.isEmpty {
-                emptyState(icon: "checkmark.circle", title: "Nothing needs your attention", detail: "Approvals, failures, clarifications, and due reminders will appear here.")
+                emptyState(icon: .checkCircle, title: "Nothing needs your attention", detail: "Approvals, failures, clarifications, and due reminders will appear here.")
             } else {
                 ForEach(visibleItems) { item in
                     attentionItemRow(item, isSelected: selectedAttentionID == item.id)
@@ -3768,7 +3777,7 @@ struct WorkspaceActivitySidebar: View {
     private func attentionItemRow(_ item: AttentionItem, isSelected: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .top, spacing: 9) {
-                LucideImage(systemName: item.kind == .approval ? "exclamationmark.triangle" : "circle.dotted")
+                DockIcon(item.kind == .approval ? .warning : .circleDashed)
                     .font(.system(size: 12)).foregroundStyle(item.kind == .approval ? Color.dockWarning : Color.dockAccent)
                     .frame(width: 15)
                 VStack(alignment: .leading, spacing: 3) {
@@ -3839,7 +3848,7 @@ struct WorkspaceActivitySidebar: View {
             // Banner if delegation is globally paused
             if control.delegationPaused {
                 HStack(spacing: 8) {
-                    LucideImage(systemName: "pause.circle.fill")
+                    DockIcon(.pauseCircle, weight: .fill)
                         .font(.system(size: 14))
                         .foregroundStyle(Color.dockWarning)
                     VStack(alignment: .leading, spacing: 2) {
@@ -3880,7 +3889,7 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.dockAccent)
                 }
             } else {
-                attentionRow(icon: "checkmark.circle", title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .dockSuccess)
+                attentionRow(icon: .checkCircle, title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .dockSuccess)
             }
 
             // The feed is flattened across every persisted session, then sorted
@@ -3899,7 +3908,7 @@ struct WorkspaceActivitySidebar: View {
             if !latestActivities.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "waveform.path.ecg")
+                        DockIcon(.pulse)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                         Text("Recent activity  ·  \(latestActivities.count)")
@@ -3968,7 +3977,7 @@ struct WorkspaceActivitySidebar: View {
                                     .accessibilityLabel(activity.activityName)
                                 }
                                 Spacer(minLength: 0)
-                                LucideImage(systemName: "chevron.right")
+                                DockIcon(.caretRight)
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundStyle(Color.dockAccent)
                             }
@@ -3988,7 +3997,7 @@ struct WorkspaceActivitySidebar: View {
             if hasRunningWork {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "bolt.fill")
+                        DockIcon(.lightning)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                         Text("Running Now")
@@ -4004,7 +4013,7 @@ struct WorkspaceActivitySidebar: View {
                         // Display active subagents across all sessions
                         ForEach(control.activeAgents) { agent in
                             HStack(spacing: 8) {
-                                LucideImage(systemName: "person.2.fill")
+                                DockIcon(.users)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -4025,7 +4034,7 @@ struct WorkspaceActivitySidebar: View {
                         // Display active processes
                         ForEach(control.processes) { process in
                             HStack(spacing: 8) {
-                                LucideImage(systemName: "gearshape.2")
+                                DockIcon(.gearSix)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Color.dockSecondaryText)
                                 Text(process.name)
@@ -4043,7 +4052,7 @@ struct WorkspaceActivitySidebar: View {
                         // Display running background tasks
                         ForEach(model.backgroundTasks.filter { $0.status == .running }) { bgTask in
                             HStack(spacing: 8) {
-                                LucideImage(systemName: "terminal.fill")
+                                DockIcon(.terminal)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -4114,7 +4123,7 @@ struct WorkspaceActivitySidebar: View {
             if !control.cronJobs.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "calendar.badge.clock")
+                        DockIcon(.calendarDots)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockSecondaryText)
                         Text("Scheduled Work  ·  \(control.cronJobs.count)")
@@ -4165,7 +4174,7 @@ struct WorkspaceActivitySidebar: View {
             if !control.reminders.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "checklist")
+                        DockIcon(.listChecks)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockSecondaryText)
                         Text("REMINDERS  ·  \(control.reminders.count)")
@@ -4185,7 +4194,7 @@ struct WorkspaceActivitySidebar: View {
                                 isShowingReminderConfirmation = true
                             } label: {
                                 HStack(spacing: 8) {
-                                    LucideImage(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
+                                    DockIcon(reminder.isOverdue ? .warningCircle : .listChecks)
                                         .font(.system(size: 12))
                                         .foregroundStyle(reminder.isOverdue ? Color.dockWarning : Color.dockAccent)
                                     Text(reminder.title)
@@ -4209,7 +4218,7 @@ struct WorkspaceActivitySidebar: View {
             if !setupCapabilities.isEmpty {
                 Button { select(.core) } label: {
                     HStack(spacing: 9) {
-                        LucideImage(systemName: "exclamationmark.triangle")
+                        DockIcon(.warning)
                             .font(.system(size: 12))
                             .foregroundStyle(Color.dockWarning)
                             .frame(width: 15)
@@ -4223,7 +4232,7 @@ struct WorkspaceActivitySidebar: View {
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                         Spacer(minLength: 0)
-                        LucideImage(systemName: "chevron.right")
+                        DockIcon(.caretRight)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -4281,7 +4290,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             } else {
                 attentionRow(
-                    icon: "checkmark.circle",
+                    icon: .checkCircle,
                     title: "All clear",
                     detail: "No approvals, clarifications, or failures need a response.",
                     color: .dockSuccess
@@ -4293,7 +4302,7 @@ struct WorkspaceActivitySidebar: View {
             if hasRunningWork {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "bolt.fill")
+                        DockIcon(.lightning)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                         Text("Running Now")
@@ -4308,7 +4317,7 @@ struct WorkspaceActivitySidebar: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(control.activeAgents) { agent in
                             HStack(spacing: 8) {
-                                LucideImage(systemName: "person.2.fill")
+                                DockIcon(.users)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Color.dockAccent)
                                 VStack(alignment: .leading, spacing: 2) {
@@ -4346,7 +4355,7 @@ struct WorkspaceActivitySidebar: View {
                                             .lineLimit(1)
                                     }
                                     Spacer(minLength: 0)
-                                    LucideImage(systemName: "chevron.right")
+                                    DockIcon(.caretRight)
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(Color.dockAccent)
                                 }
@@ -4359,7 +4368,7 @@ struct WorkspaceActivitySidebar: View {
 
                         ForEach(control.processes) { process in
                             HStack(spacing: 8) {
-                                LucideImage(systemName: "gearshape.2")
+                                DockIcon(.gearSix)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Color.dockSecondaryText)
                                 Text(process.name)
@@ -4381,7 +4390,7 @@ struct WorkspaceActivitySidebar: View {
             if !model.agentActivities.isEmpty || !control.cronRuns.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "clock.arrow.circlepath")
+                        DockIcon(.clockCounterClockwise)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockSecondaryText)
                         Text("CHANGED · CURRENT RUNTIME WINDOW")
@@ -4419,7 +4428,7 @@ struct WorkspaceActivitySidebar: View {
             if !control.cronJobs.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "calendar.badge.clock")
+                        DockIcon(.calendarDots)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockSecondaryText)
                         Text("Scheduled Work  ·  \(control.cronJobs.count)")
@@ -4472,7 +4481,7 @@ struct WorkspaceActivitySidebar: View {
             if !control.reminders.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        LucideImage(systemName: "checklist")
+                        DockIcon(.listChecks)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockSecondaryText)
                         Text("REMINDERS  ·  \(control.reminders.count)")
@@ -4492,7 +4501,7 @@ struct WorkspaceActivitySidebar: View {
                                 isShowingReminderConfirmation = true
                             } label: {
                                 HStack(spacing: 8) {
-                                    LucideImage(systemName: reminder.isOverdue ? "exclamationmark.circle" : "checklist")
+                                    DockIcon(reminder.isOverdue ? .warningCircle : .listChecks)
                                         .font(.system(size: 12))
                                         .foregroundStyle(reminder.isOverdue ? Color.dockWarning : Color.dockAccent)
                                     Text(reminder.title)
@@ -4516,7 +4525,7 @@ struct WorkspaceActivitySidebar: View {
             if !setupCapabilities.isEmpty {
                 Button { select(.core) } label: {
                     HStack(spacing: 9) {
-                        LucideImage(systemName: "exclamationmark.triangle")
+                        DockIcon(.warning)
                             .font(.system(size: 12))
                             .foregroundStyle(Color.dockWarning)
                             .frame(width: 15)
@@ -4530,7 +4539,7 @@ struct WorkspaceActivitySidebar: View {
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                         Spacer(minLength: 0)
-                        LucideImage(systemName: "chevron.right")
+                        DockIcon(.caretRight)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -4553,7 +4562,7 @@ struct WorkspaceActivitySidebar: View {
             Button {
                 select(.today)
             } label: {
-                LucideLabel("WORKSPACE", icon: "chevron.left")
+                DockIconLabel("WORKSPACE", icon: .caretLeft)
             }
             .buttonStyle(.borderless)
             .font(.system(size: 11, weight: .semibold))
@@ -4624,25 +4633,25 @@ struct WorkspaceActivitySidebar: View {
             todayPulseMetric(
                 value: "\(attentionCount)",
                 label: "NEEDS YOU",
-                icon: "exclamationmark.circle",
+                icon: .warningCircle,
                 tint: attentionCount > 0 ? .dockWarning : .dockSuccess
             ) { select(.inbox) }
             todayPulseMetric(
                 value: "\(runningCount)",
                 label: "IN FLIGHT",
-                icon: "bolt.fill",
+                icon: .lightning,
                 tint: runningCount > 0 ? .dockAccent : .dockSecondaryText
             ) { select(.session) }
             todayPulseMetric(
                 value: "\(control.activeSessions.count)",
                 label: "SESSIONS",
-                icon: "bubble.left.and.bubble.right",
+                icon: .chats,
                 tint: control.activeSessions.isEmpty ? .dockSecondaryText : .dockAccent
             ) { select(.session) }
             todayPulseMetric(
                 value: "\(scheduledCount)",
                 label: "SCHEDULED",
-                icon: "calendar.badge.clock",
+                icon: .calendarDots,
                 tint: scheduledCount > 0 ? .dockSuccess : .dockSecondaryText
             ) { select(.automations) }
         }
@@ -4660,14 +4669,14 @@ struct WorkspaceActivitySidebar: View {
     private func todayPulseMetric(
         value: String,
         label: String,
-        icon: String,
+        icon: Ph,
         tint: Color,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 6) {
-                    LucideImage(systemName: icon)
+                    DockIcon(icon)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockOnAccentText)
                     Text(value)
@@ -4730,7 +4739,7 @@ struct WorkspaceActivitySidebar: View {
     private func missionFocusStrip(_ focus: MissionControlFocus) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
-                LucideImage(systemName: "scope").foregroundStyle(Color.dockAccent)
+                DockIcon(.crosshair).foregroundStyle(Color.dockAccent)
                 Text("MISSION CONTROL")
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(0.8).foregroundStyle(Color.dockAccent)
@@ -4763,7 +4772,7 @@ struct WorkspaceActivitySidebar: View {
         case .notApplicable: color = .dockSecondaryText
         }
         return HStack(alignment: .top, spacing: 9) {
-            LucideImage(systemName: readiness.state == .ready ? "checkmark.seal" : readiness.state == .blocked ? "xmark.octagon" : "exclamationmark.circle")
+            DockIcon(readiness.state == .ready ? .sealCheck : readiness.state == .blocked ? .xCircle : .warningCircle)
                 .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("READINESS · \(readiness.state.rawValue.uppercased())")
@@ -4785,12 +4794,14 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(0.7).foregroundStyle(Color.dockAccent)
                 Spacer()
-                if let sessionID, commandCenterPreferences.isPinnedReference(sessionID) {
+                let isPinned = sessionID.map(model.isSessionPinned) ?? false
+                if isPinned {
                     Text("PINNED").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
                 }
-                if let sessionID {
-                    Button(commandCenterPreferences.isPinnedReference(sessionID) ? "UNPIN" : "PIN") { commandCenterPreferences.togglePinnedReference(sessionID) }
+                if let session = (model.sessions + model.pinnedSessions).first(where: { $0.id == sessionID }) {
+                    Button(isPinned ? "UNPIN" : "PIN") { Task { await model.toggleSessionPinned(session) } }
                         .buttonStyle(.borderless).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                        .disabled(model.pinningSessionID != nil)
                 }
             }
             if let title = mission.focus.sessionTitle { Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1) }
@@ -4834,7 +4845,7 @@ struct WorkspaceActivitySidebar: View {
     private var repositoryContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 9) {
-                LucideImage(systemName: workflow.repository.isGitRepository ? "arrow.triangle.branch" : "folder")
+                DockIcon(workflow.repository.isGitRepository ? .gitBranch : .folder)
                     .foregroundStyle(workflow.repository.isGitRepository ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(workflow.repository.isGitRepository ? workflow.repository.branch : "No project folder selected")
@@ -4864,7 +4875,7 @@ struct WorkspaceActivitySidebar: View {
                                 }
                             } label: {
                                 if branch == workflow.repository.branch {
-                                    LucideLabel(branch, icon: "checkmark")
+                                    DockIconLabel(branch, icon: .check)
                                 } else {
                                     Text(branch)
                                 }
@@ -4873,9 +4884,9 @@ struct WorkspaceActivitySidebar: View {
                     }
                 } label: {
                     HStack(spacing: 5) {
-                        LucideImage(systemName: "arrow.triangle.branch")
+                        DockIcon(.gitBranch)
                         Text("SWITCH BRANCH")
-                        LucideImage(systemName: "chevron.down")
+                        DockIcon(.caretDown)
                             .font(.system(size: 8, weight: .bold))
                     }
                 }
@@ -4916,7 +4927,7 @@ struct WorkspaceActivitySidebar: View {
 
     private func providerSetupCard(_ capability: CapabilityState) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            LucideImage(systemName: "exclamationmark.triangle")
+            DockIcon(.warning)
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockWarning)
                 .frame(width: 15)
@@ -4957,9 +4968,9 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private func attentionRow(icon: String, title: String, detail: String, color: Color) -> some View {
+    private func attentionRow(icon: Ph, title: String, detail: String, color: Color) -> some View {
         HStack(alignment: .top, spacing: 9) {
-            LucideImage(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
+            DockIcon(icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
                 Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
@@ -5127,7 +5138,7 @@ struct WorkspaceActivitySidebar: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                     } label: {
-                        LucideLabel("COPY \(command)", icon: "doc.on.doc")
+                        DockIconLabel("COPY \(command)", icon: .copy)
                     }
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .semibold))
@@ -5236,7 +5247,7 @@ struct WorkspaceActivitySidebar: View {
         } message: {
             Text(verbatim: "The Dock will run the allow-listed command `\(HermesUpdateService.updateCommandDisplay)`. It pulls the latest code from NousResearch/hermes-agent, reinstalls dependencies, and may migrate new configuration options. Running Hermes sessions keep the current version until Hermes restarts.")
         }
-        .confirmationDialog("Restart Hermes Agent Dock?", isPresented: $isShowingDockRestartConfirmation) {
+        .confirmationDialog("Restart Herm?", isPresented: $isShowingDockRestartConfirmation) {
             Button("Restart Dock", role: .destructive) { onRestartDock() }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -5366,7 +5377,7 @@ struct WorkspaceActivitySidebar: View {
     private var agentUpdateSucceededContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                LucideImage(systemName: "checkmark.circle.fill")
+                DockIcon(.checkCircle, weight: .fill)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.dockSuccess)
                 Text("HERMES AGENT UPDATED")
@@ -5388,7 +5399,7 @@ struct WorkspaceActivitySidebar: View {
     private func agentUpdateFailedContent(_ reason: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
-                LucideImage(systemName: "exclamationmark.triangle.fill")
+                DockIcon(.warning)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.dockDestructive)
                 Text(reason)
@@ -5432,16 +5443,18 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 17) {
             if selectedSettingsCategory == .general {
                 generalPreferencesSection
-                settingsDisclosure(title: "Appearance", subtitle: appearanceSubtitle, icon: "sparkles", isExpanded: $isAppearanceExpanded) {
+                settingsDisclosure(title: "Appearance", subtitle: appearanceSubtitle, icon: .sparkle, isExpanded: $isAppearanceExpanded) {
                     appearanceSection
                 }
-                settingsDisclosure(title: "Agent update", subtitle: "Installed version and update channel", icon: "refresh-cw", isExpanded: $isAgentUpdateExpanded) {
+                settingsDisclosure(title: "Agent update", subtitle: "Installed version and update channel", icon: .arrowsClockwise, isExpanded: $isAgentUpdateExpanded) {
                     agentUpdateSection
                 }
             }
 
+            HermesConfigCategoryView(editor: control.configEditor, category: selectedSettingsCategory)
+
             if selectedSettingsCategory == .diagnostics, let insights = control.insightsSummary {
-                settingsDisclosure(title: "Usage insights", subtitle: "Last \(insights.days) days", icon: "chart.bar", isExpanded: $isInsightsExpanded) {
+                settingsDisclosure(title: "Usage insights", subtitle: "Last \(insights.days) days", icon: .chartBar, isExpanded: $isInsightsExpanded) {
                     VStack(alignment: .leading, spacing: 8) {
                         diagnosticRow(label: "Sessions", value: "\(insights.sessions)", color: Color.dockMetadataText)
                         diagnosticRow(label: "Messages", value: "\(insights.messages)", color: .dockMetadataText)
@@ -5456,7 +5469,7 @@ struct WorkspaceActivitySidebar: View {
             }
 
             if selectedSettingsCategory == .integrations, !unavailableSetupCapabilities.isEmpty {
-                settingsDisclosure(title: "Setup needed", subtitle: "\(unavailableSetupCapabilities.count) integrations need attention", icon: "exclamationmark.triangle", isExpanded: $isSetupExpanded, tint: .dockWarning) {
+                settingsDisclosure(title: "Setup needed", subtitle: "\(unavailableSetupCapabilities.count) integrations need attention", icon: .warning, isExpanded: $isSetupExpanded, tint: .dockWarning) {
                     ForEach(unavailableSetupCapabilities) { capability in
                         providerSetupCard(capability)
                     }
@@ -5464,12 +5477,12 @@ struct WorkspaceActivitySidebar: View {
             }
 
             if selectedSettingsCategory == .integrations {
-            settingsDisclosure(title: "Capabilities", subtitle: "Permission and integration readiness", icon: "checkmark.shield", isExpanded: $isCapabilitiesExpanded) {
+            settingsDisclosure(title: "Capabilities", subtitle: "Permission and integration readiness", icon: .shieldCheck, isExpanded: $isCapabilitiesExpanded) {
                 projectionRefreshNotice("core")
                 capabilityInventorySummary
                 if capabilityInventorySnapshot.states.isEmpty {
                     emptyState(
-                        icon: "refresh-cw",
+                        icon: .arrowsClockwise,
                         title: "Settings capabilities not yet available",
                         detail: "Refresh Settings or reconnect Hermes to request capability facts."
                     )
@@ -5491,7 +5504,7 @@ struct WorkspaceActivitySidebar: View {
             }
             if selectedSettingsCategory == .project {
             if control.projectFacts != nil || control.verification != nil {
-                settingsDisclosure(title: "Verification", subtitle: "Project facts and delivery evidence", icon: "checkmark.seal", isExpanded: $isVerificationExpanded) {
+                settingsDisclosure(title: "Verification", subtitle: "Project facts and delivery evidence", icon: .sealCheck, isExpanded: $isVerificationExpanded) {
                     if let facts = control.projectFacts {
                     diagnosticRow(label: "Project", value: facts.manifests.joined(separator: ", ").isEmpty ? "Code workspace" : facts.manifests.joined(separator: ", "), color: Color.dockMetadataText)
                     if !facts.packageManagers.isEmpty { diagnosticRow(label: "Tools", value: facts.packageManagers.joined(separator: ", "), color: Color.dockMetadataText) }
@@ -5545,7 +5558,7 @@ struct WorkspaceActivitySidebar: View {
             }
             let canSteerSession = model.status == .working && model.sessionID != nil
             if selectedSettingsCategory == .session, control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.restoreCheckpoints.isEmpty || control.isLoadingCheckpoints {
-                settingsDisclosure(title: "Session cockpit", subtitle: "Context, usage, and active-turn controls", icon: "waveform.path.ecg", isExpanded: $isSessionCockpitExpanded) {
+                settingsDisclosure(title: "Session cockpit", subtitle: "Context, usage, and active-turn controls", icon: .pulse, isExpanded: $isSessionCockpitExpanded) {
                     if let usage = control.sessionUsage {
                     diagnosticRow(label: "Tokens", value: "\(usage.totalTokens) total  ·  \(usage.inputTokens) in  ·  \(usage.outputTokens) out", color: Color.dockMetadataText)
                     if let model = usage.model { diagnosticRow(label: "Model", value: model, color: Color.dockMetadataText) }
@@ -5645,7 +5658,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if selectedSettingsCategory == .session {
-            settingsDisclosure(title: "Session actions", subtitle: "Rename, redirect, branch, or pause the active session", icon: "bolt.horizontal", isExpanded: $isSessionActionsExpanded) {
+            settingsDisclosure(title: "Session actions", subtitle: "Rename, redirect, branch, or pause the active session", icon: .lightning, isExpanded: $isSessionActionsExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         TextField("New session title", text: $sessionRenameText)
@@ -5701,7 +5714,7 @@ struct WorkspaceActivitySidebar: View {
                 SettingsSection(title: "Running work", subtitle: "Subagents and processes", tint: .dockAccent) {
                 ForEach(control.activeAgents) { agent in
                     HStack {
-                        LucideImage(systemName: "person.2.fill").foregroundStyle(Color.dockAccent)
+                        DockIcon(.users).foregroundStyle(Color.dockAccent)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(agent.name).foregroundStyle(Color.dockPrimaryText)
                             Text(agent.state.uppercased()).foregroundStyle(Color.dockMetadataText)
@@ -5717,7 +5730,7 @@ struct WorkspaceActivitySidebar: View {
                 }
                 ForEach(control.processes) { process in
                     HStack {
-                        LucideImage(systemName: "gearshape.2").foregroundStyle(Color.dockSecondaryText)
+                        DockIcon(.gearSix).foregroundStyle(Color.dockSecondaryText)
                         Text(process.name).foregroundStyle(Color.dockPrimaryText)
                         Spacer()
                         Button("Stop") { pendingProcess = process }
@@ -5729,7 +5742,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if selectedSettingsCategory == .diagnostics, !control.diagnostics.isEmpty {
-                settingsDisclosure(title: "Read-only diagnostics", subtitle: "Observed runtime detail", icon: "stethoscope", isExpanded: $isDiagnosticsExpanded) {
+                settingsDisclosure(title: "Read-only diagnostics", subtitle: "Observed runtime detail", icon: .stethoscope, isExpanded: $isDiagnosticsExpanded) {
                     ForEach(control.diagnostics) { diagnostic in
                     HStack(alignment: .top, spacing: 8) {
                         Circle()
@@ -5751,7 +5764,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if selectedSettingsCategory == .diagnostics, !control.journeyNodes.isEmpty || control.sessionStoreStatus != nil || control.memoryHealthStatus != nil {
-                settingsDisclosure(title: "Learning & storage", subtitle: "Session store, memory, and journey state", icon: "internaldrive", isExpanded: $isLearningExpanded) {
+                settingsDisclosure(title: "Learning & storage", subtitle: "Session store, memory, and journey state", icon: .hardDrive, isExpanded: $isLearningExpanded) {
                     ForEach([control.sessionStoreStatus, control.memoryHealthStatus].compactMap { $0 }) { status in
                     diagnosticRow(label: status.title.uppercased(), value: status.detail, color: status.isAvailable ? Color.dockSecondaryText : Color.dockWarning)
                 }
@@ -5772,7 +5785,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
             if selectedSettingsCategory == .runtime {
-            settingsDisclosure(title: "Runtime configuration", subtitle: "Default model, tools, skills, and plugins", icon: "gearshape.2", isExpanded: $isRuntimeConfigurationExpanded) {
+            settingsDisclosure(title: "Runtime configuration", subtitle: "Default model, tools, skills, and plugins", icon: .gearSix, isExpanded: $isRuntimeConfigurationExpanded) {
             HStack {
                 settingsSubheading("Default model")
                 Spacer()
@@ -5780,7 +5793,7 @@ struct WorkspaceActivitySidebar: View {
                     if model.isLoadingRuntimeConfiguration {
                         ProgressView().controlSize(.small).tint(Color.dockAccent)
                     } else {
-                        LucideImage(systemName: "refresh-cw")
+                        DockIcon(.arrowsClockwise)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -5811,7 +5824,7 @@ struct WorkspaceActivitySidebar: View {
                                 HStack {
                                     Text(option.displayName)
                                     if option.id == selectedModelID {
-                                        LucideImage(systemName: "checkmark")
+                                        Ph.check.image()
                                     }
                                 }
                             }
@@ -5824,7 +5837,7 @@ struct WorkspaceActivitySidebar: View {
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Spacer(minLength: 4)
-                            LucideImage(systemName: "chevron.up.chevron.down")
+                            DockIcon(.caretUpDown)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Color.dockSecondaryText)
                         }
@@ -5981,7 +5994,7 @@ struct WorkspaceActivitySidebar: View {
                     configurationList(configuration.plugins, empty: "")
                 }
             } else {
-                emptyState(icon: "exclamationmark.triangle", title: "Runtime unavailable", detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
+                emptyState(icon: .warning, title: "Runtime unavailable", detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
             }
             }
             }
@@ -5993,12 +6006,12 @@ struct WorkspaceActivitySidebar: View {
                control.activeAgents.isEmpty,
                control.processes.isEmpty,
                model.sessionID == nil {
-                emptyState(icon: "waveform.path.ecg", title: "Session data unavailable", detail: "Open a Hermes session or refresh Settings to load session controls.")
+                emptyState(icon: .pulse, title: "Session data unavailable", detail: "Open a Hermes session or refresh Settings to load session controls.")
             }
             if selectedSettingsCategory == .project,
                control.projectFacts == nil,
                control.verification == nil {
-                emptyState(icon: "checkmark.seal", title: "Project data unavailable", detail: "Select a repository and refresh Settings to load project facts and verification evidence.")
+                emptyState(icon: .sealCheck, title: "Project data unavailable", detail: "Select a repository and refresh Settings to load project facts and verification evidence.")
             }
             if selectedSettingsCategory == .diagnostics,
                control.insightsSummary == nil,
@@ -6006,7 +6019,7 @@ struct WorkspaceActivitySidebar: View {
                control.journeyNodes.isEmpty,
                control.sessionStoreStatus == nil,
                control.memoryHealthStatus == nil {
-                emptyState(icon: "stethoscope", title: "Diagnostics unavailable", detail: "Refresh Settings or reconnect Hermes to request read-only diagnostics.")
+                emptyState(icon: .stethoscope, title: "Diagnostics unavailable", detail: "Refresh Settings or reconnect Hermes to request read-only diagnostics.")
             }
         }
         .task {
@@ -6053,6 +6066,22 @@ struct WorkspaceActivitySidebar: View {
                             workflow.setRepositoryNotificationsEnabled(enabled)
                         }
                     ))
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Kanban in sidebar", detail: "List the Kanban board in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsKanbanInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Pull requests in sidebar", detail: "List pull requests in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsPullRequestsInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Issues in sidebar", detail: "List GitHub issues in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsIssuesInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show 3D Workspace in sidebar", detail: "List the 3D office workspace in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsOfficeInSidebar)
                 }
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(title: "Quick capture", detail: "Double-press Command to focus Ask from any app.") {
@@ -6156,7 +6185,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     Spacer(minLength: 0)
                     if selected {
-                        LucideImage(systemName: "checkmark")
+                        DockIcon(.check)
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -6199,7 +6228,7 @@ struct WorkspaceActivitySidebar: View {
     private var emergencyStopSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                LucideImage(systemName: control.emergencyStopActive == true ? "pause.circle.fill" : "play.circle")
+                DockIcon(control.emergencyStopActive == true ? .pauseCircle : .playCircle)
                     .foregroundStyle(control.emergencyStopActive == true ? Color.dockWarning : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(control.emergencyStopActive == true ? "New work paused" : control.emergencyStopActive == false ? "Dispatch resumed" : "Dispatch status unknown")
@@ -6273,7 +6302,7 @@ struct WorkspaceActivitySidebar: View {
             .toggleStyle(.switch)
             .tint(Color.dockAccent)
             Button { control.refresh() } label: {
-                LucideImage(systemName: "refresh-cw")
+                DockIcon(.arrowsClockwise)
                     .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderless)
@@ -6300,7 +6329,7 @@ struct WorkspaceActivitySidebar: View {
     private func settingsDisclosure<Content: View>(
         title: String,
         subtitle: String,
-        icon: String,
+        icon: Ph,
         isExpanded: Binding<Bool>,
         tint: Color = .dockAccent,
         @ViewBuilder content: @escaping () -> Content
@@ -6333,7 +6362,7 @@ struct WorkspaceActivitySidebar: View {
                     Text("\(readyCount) ready")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(readyCount == count ? Color.dockMetadataText : Color.dockWarning)
-                    LucideImage(systemName: isExpanded.wrappedValue ? "chevron.up" : "chevron.down")
+                    DockIcon(isExpanded.wrappedValue ? .caretUp : .caretDown)
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 18, height: 26)
@@ -6512,7 +6541,7 @@ struct WorkspaceActivitySidebar: View {
                     if let onToggle {
                         Button(action: onToggle) {
                             HStack(spacing: 4) {
-                                LucideImage(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                DockIcon(isExpanded ? .caretUp : .caretDown)
                                     .font(.system(size: 10, weight: .semibold))
                                 Text(isExpanded ? "SHOW FEWER" : "SHOW ALL \(values.count) SKILLS")
                             }
@@ -6532,9 +6561,9 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private func capabilityRow(icon: String, title: String, detail: String, state: String, color: Color) -> some View {
+    private func capabilityRow(icon: Ph, title: String, detail: String, state: String, color: Color) -> some View {
         HStack(spacing: 8) {
-            LucideImage(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
+            DockIcon(icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
                 Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
@@ -6548,9 +6577,9 @@ struct WorkspaceActivitySidebar: View {
         model.messages.reversed().compactMap(\.modelName).first
     }
 
-    private func emptyState(icon: String, title: String, detail: String) -> some View {
+    private func emptyState(icon: Ph, title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            LucideImage(systemName: icon).foregroundStyle(Color.dockMetadataText)
+            DockIcon(icon).foregroundStyle(Color.dockMetadataText)
             Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
             Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
         }
@@ -6579,6 +6608,13 @@ struct WorkspaceActivitySidebar: View {
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
     case runtime
+    case chat
+    case workspace
+    case safety
+    case browser
+    case memory
+    case voice
+    case advanced
     case integrations
     case session
     case project
@@ -6590,6 +6626,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .runtime: "Runtime"
+        case .chat: "Chat"
+        case .workspace: "Workspace"
+        case .safety: "Safety"
+        case .browser: "Browser"
+        case .memory: "Memory & Context"
+        case .voice: "Voice"
+        case .advanced: "Advanced"
         case .integrations: "Integrations"
         case .session: "Session"
         case .project: "Project"
@@ -6601,6 +6644,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .general: "Dock preferences and appearance"
         case .runtime: "Models, dispatch, and tools"
+        case .chat: "Personality, timezone, and attachments"
+        case .workspace: "Working directory, shell, and file access"
+        case .safety: "Approvals, privacy, and checkpoints"
+        case .browser: "Browser profile and private URLs"
+        case .memory: "Persistent memory and context compression"
+        case .voice: "Voice chat, speech to text, and text to speech"
+        case .advanced: "Agent limits, tools, terminal, and subagents"
         case .integrations: "Permissions and connected services"
         case .session: "Active session controls and context"
         case .project: "Repository facts and verification"
@@ -6608,14 +6658,21 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         }
     }
 
-    var icon: String {
+    var icon: Ph {
         switch self {
-        case .general: "slider.horizontal.3"
-        case .runtime: "gearshape.2"
-        case .integrations: "checkmark.shield"
-        case .session: "waveform.path.ecg"
-        case .project: "checkmark.seal"
-        case .diagnostics: "stethoscope"
+        case .general: .slidersHorizontal
+        case .runtime: .gearSix
+        case .chat: .chatText
+        case .workspace: .folder
+        case .safety: .shieldWarning
+        case .browser: .link
+        case .memory: .brain
+        case .voice: .microphone
+        case .advanced: .cpu
+        case .integrations: .shieldCheck
+        case .session: .pulse
+        case .project: .sealCheck
+        case .diagnostics: .stethoscope
         }
     }
 }
@@ -6639,7 +6696,7 @@ struct SettingsCategoryBadge: Equatable {
     let isWarning: Bool
 }
 
-private struct SettingsSection<Content: View>: View {
+struct SettingsSection<Content: View>: View {
     let title: String
     let subtitle: String
     let tint: Color
@@ -6678,7 +6735,7 @@ private struct SettingsSection<Content: View>: View {
     }
 }
 
-private struct SettingsPreferenceRow<Control: View>: View {
+struct SettingsPreferenceRow<Control: View>: View {
     let title: String
     let detail: String
     @ViewBuilder let control: () -> Control

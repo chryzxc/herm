@@ -61,6 +61,7 @@ struct MissionControlSidebarSnapshot: Equatable {
         var isRefreshingProjectNavigation: Bool
         var attention: [AttentionItem]
         var latestActivities: [LatestActivityItem]
+        var pinnedSessions: [HermesSession] = []
     }
 
     let inputs: Inputs
@@ -69,7 +70,6 @@ struct MissionControlSidebarSnapshot: Equatable {
     let attentionDots: [String: SessionAttentionDot]
     let linkedSessionIDs: Set<String>
     let projectNameBySessionID: [String: String]
-    let pinnedReferences: [PinnedSessionReference]
 
     init(inputs: Inputs) {
         self.inputs = inputs
@@ -89,9 +89,6 @@ struct MissionControlSidebarSnapshot: Equatable {
         }
         self.linkedSessionIDs = linkedSessionIDs
         self.projectNameBySessionID = projectNameBySessionID
-        self.pinnedReferences = self.conversations.map {
-            PinnedSessionReference(profileID: $0.profileID ?? inputs.profileScopeID ?? "", sessionID: $0.id)
-        }
     }
 
     @MainActor
@@ -116,7 +113,8 @@ struct MissionControlSidebarSnapshot: Equatable {
             isRefreshing: control.isRefreshing,
             isRefreshingProjectNavigation: control.isRefreshingProjectNavigation,
             attention: control.attention,
-            latestActivities: control.latestActivities
+            latestActivities: control.latestActivities,
+            pinnedSessions: model.pinnedSessions
         )
     }
 
@@ -164,6 +162,9 @@ struct MissionControlSidebarSnapshot: Equatable {
                 assigned.insert(summary.id)
             }
             let sessions = sessionsByID.values.sorted { sessionDate($0) > sessionDate($1) }
+            // Projects without conversations are noise in the rail. A project
+            // whose rows are still loading stays so its count is not lost.
+            guard !sessions.isEmpty || project.sessionCount > 0 else { continue }
             groups.append(
                 MissionControlConversationGroup(
                     id: "project:\(project.id)",
@@ -221,10 +222,14 @@ struct MissionControlSidebarSnapshot: Equatable {
                 )
             )
         }
-        // Project-tree order is the canonical navigation order. Ordering this
-        // list by changing session activity made it visibly jump while a
-        // refresh populated project session details.
-        return groups
+        // Most recently active project first; projects still loading their
+        // rows keep tree order after them so a refresh does not reshuffle.
+        return groups.enumerated().sorted { lhs, rhs in
+            let lhsDate = sessionDate(lhs.element.sessions.first)
+            let rhsDate = sessionDate(rhs.element.sessions.first)
+            if lhsDate != rhsDate { return lhsDate > rhsDate }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
     }
 
     private static func deduplicatedConversations(groups: [MissionControlConversationGroup]) -> [HermesSession] {

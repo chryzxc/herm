@@ -2,31 +2,6 @@ import AppKit
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
-struct VoiceWavePath: Shape {
-    let t: Double
-    var amplitude: Double = 12
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let cx = rect.midX
-        let cy = rect.midY
-        let base = min(rect.width, rect.height) / 2 - 14
-        let points = 80
-        for i in 0...points {
-            let angle = Double(i) / Double(points) * .pi * 2
-            let noise = sin(angle * 3 + t * 0.5) * 6
-                       + sin(angle * 5 - t * 0.3) * 4
-                       + sin(angle * 7 + t * 0.7) * 3
-            let r = base + noise + sin(t + Double(i) * 0.2) * amplitude
-            let x = cx + cos(angle) * r
-            let y = cy + sin(angle) * r
-            if i == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
-        }
-        path.closeSubpath()
-        return path
-    }
-}
-
 struct StartupAssistantView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let agentName: String
@@ -147,7 +122,7 @@ struct StartupAssistantView: View {
                 .frame(width: 82, height: 82)
                 .rotationEffect(.degrees(-t * 20))
 
-            LucideImage(systemName: "audio-lines")
+            DockIcon(.waveform)
                 .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(Color.dockAccent.opacity(0.9))
                 .shadow(color: Color.dockAccent.opacity(0.7), radius: 8)
@@ -161,83 +136,163 @@ struct StartupAssistantView: View {
     }
 }
 
+enum VoiceOrbMode: Equatable {
+    case idle, listening, transcribing, thinking, speaking
+}
+
+/// Eases every orb parameter toward its per-mode target each frame, so state
+/// changes read as one continuous motion instead of snapping. A reference type
+/// held in `@State`: mutating it from the timeline must not invalidate the view.
+final class VoiceOrbMotion {
+    struct Frame {
+        var energy = 0.04
+        var glow = 0.15
+        var scan = 0.0
+        var spin = 0.1
+        var rotation = 0.0
+    }
+
+    private(set) var frame = Frame()
+    private var lastTime: TimeInterval?
+
+    func advance(to time: TimeInterval, mode: VoiceOrbMode, level: Double) -> Frame {
+        let dt = min(max(time - (lastTime ?? time), 0), 0.1)
+        lastTime = time
+        let target = Self.target(mode: mode, level: level, time: time)
+        // ~160ms time constant; the level already arrives smoothed.
+        let k = 1 - exp(-dt * 6.5)
+        frame.energy += (target.energy - frame.energy) * k
+        frame.glow += (target.glow - frame.glow) * k
+        frame.scan += (target.scan - frame.scan) * k
+        frame.spin += (target.spin - frame.spin) * k
+        frame.rotation = (frame.rotation + frame.spin * dt).truncatingRemainder(dividingBy: .pi * 2)
+        return frame
+    }
+
+    static func target(mode: VoiceOrbMode, level: Double, time: TimeInterval) -> Frame {
+        switch mode {
+        case .idle:
+            return Frame(energy: 0.04, glow: 0.15, scan: 0, spin: 0.1)
+        case .listening:
+            return Frame(energy: 0.1 + level * 0.9, glow: 0.3 + level * 0.6, scan: 0, spin: 0.15)
+        case .transcribing:
+            return Frame(energy: 0.28, glow: 0.55, scan: 1, spin: 2.4)
+        case .thinking:
+            return Frame(energy: 0.32, glow: 0.5, scan: 0.75, spin: 1.1)
+        case .speaking:
+            // A syllable-rate envelope stands in for Hermes' speaker output,
+            // which the gateway does not stream back to clients.
+            let syllables = abs(sin(time * 6.3)) * (0.6 + 0.4 * sin(time * 1.7 + 1))
+            return Frame(energy: 0.35 + syllables * 0.5, glow: 0.65, scan: 0.2, spin: 0.4)
+        }
+    }
+}
+
 struct VoiceOrbView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let isListening: Bool
-    let isResponding: Bool
+    let mode: VoiceOrbMode
     let audioLevel: CGFloat
+    @State private var motion = VoiceOrbMotion()
 
     var body: some View {
-        let isActive = isListening || isResponding
-        if isActive && !reduceMotion {
-            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
-                orb(time: context.date.timeIntervalSinceReferenceDate, isActive: true)
-            }
+        if reduceMotion {
+            orb(VoiceOrbMotion.target(mode: mode, level: Double(audioLevel), time: 0), time: 0)
         } else {
-            // An idle or motion-reduced voice control must not keep the
-            // display link alive; render one static active frame instead.
-            orb(time: 0, isActive: isActive)
+            // Idle keeps a slow breathing cadence instead of a full display link.
+            TimelineView(.animation(minimumInterval: mode == .idle ? 1.0 / 15.0 : 1.0 / 60.0)) { context in
+                let time = context.date.timeIntervalSinceReferenceDate
+                orb(motion.advance(to: time, mode: mode, level: Double(audioLevel)), time: time)
+            }
         }
     }
 
-    private func orb(time animationTime: TimeInterval, isActive: Bool) -> some View {
-            let voiceLevel = Double(audioLevel)
-            let waveSpeed = isResponding ? 6.0 : (isListening ? 4.0 : 0)
-            let waveAmplitude = isResponding ? 22.0 : (isListening ? 4.0 + voiceLevel * 26.0 : 0)
-        return ZStack {
-                ForEach(0..<4) { i in
-                    let size = 140.0 + Double(i) * 60
-                    Circle()
-                        .stroke(
-                            Color.dockAccent.opacity(i % 2 == 0 ? 0.08 : 0.05),
-                            style: StrokeStyle(lineWidth: i % 2 == 0 ? 1 : 0.5, dash: i % 2 == 0 ? [] : [3, 4])
-                    )
-                    .frame(width: size, height: size)
-                    .scaleEffect(1 + (isResponding ? 0.16 : 0.1) * sin(animationTime * (isResponding ? 1.5 : 0.8) + Double(i) * 0.5))
-                    .opacity(isActive ? 0.25 + 0.15 * sin(animationTime * (isResponding ? 1.5 : 0.8) + Double(i) * 0.5) : 0.08)
+    private func orb(_ frame: VoiceOrbMotion.Frame, time: TimeInterval) -> some View {
+        ZStack {
+            Circle()
+                .fill(RadialGradient(
+                    colors: [Color.dockAccent.opacity(0.08 + frame.glow * 0.14), .clear],
+                    center: .center, startRadius: 30, endRadius: 160
+                ))
+                .scaleEffect(1 + frame.energy * 0.08)
+
+            Canvas { context, size in
+                Self.drawField(in: &context, size: size, frame: frame, time: time)
+            }
+
+            Circle()
+                .fill(RadialGradient(
+                    colors: [Color.white.opacity(0.10 + frame.glow * 0.12), Color.dockAccent.opacity(0.28), Color.dockAccent.opacity(0.06)],
+                    center: UnitPoint(x: 0.36, y: 0.3), startRadius: 1, endRadius: 58
+                ))
+                .overlay(Circle().stroke(Color.dockAccent.opacity(0.2 + frame.glow * 0.3), lineWidth: 0.7))
+                .frame(width: 92, height: 92)
+                .shadow(color: Color.dockAccent.opacity(0.15 + frame.glow * 0.35), radius: 14 + frame.glow * 24)
+                .scaleEffect(1 + frame.energy * 0.1 + 0.015 * sin(time * 1.6))
+                .overlay {
+                    DockIcon(mode == .listening || mode == .idle ? .waveform : (mode == .speaking ? .waveform : .brain))
+                        .font(.system(size: 26, weight: .medium))
+                        .foregroundStyle(Color.dockAccent.opacity(0.6 + frame.glow * 0.4))
+                        .id(mode == .listening || mode == .idle ? 0 : (mode == .speaking ? 1 : 2))
+                        .transition(.opacity.combined(with: .scale(scale: 0.7)))
                 }
-
-                ForEach(0..<48) { i in
-                    let phase = (1 + sin(animationTime * waveSpeed + Double(i) * 0.4)) / 2
-                    let barH = isResponding
-                        ? 4 + waveAmplitude * phase
-                        : (isListening ? 3 + waveAmplitude * (0.2 + 0.8 * phase) : 2)
-                    Capsule()
-                        .fill(Color.dockAccent)
-                        .frame(width: 2, height: barH)
-                        .offset(y: -92)
-                        .rotationEffect(.degrees(Double(i) / 48 * 360))
-                        .opacity(0.4)
-                }
-
-                VoiceWavePath(t: animationTime, amplitude: waveAmplitude)
-                    .stroke(Color.dockAccent.opacity(isActive ? (isResponding ? 0.8 : 0.5) : 0.16), lineWidth: isResponding ? 2 : 1.5)
-                    .frame(width: 200, height: 200)
-
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.dockAccent.opacity(0.3), Color.dockAccent.opacity(0.12), Color.dockAccent.opacity(0.04)],
-                            center: UnitPoint(x: 0.35, y: 0.35),
-                            startRadius: 0,
-                            endRadius: 55
-                        )
-                    )
-                    .frame(width: 90, height: 90)
-                    .overlay(Circle().stroke(Color.dockAccent.opacity(0.2), lineWidth: 0.5))
-                    .shadow(color: Color.dockAccent.opacity(0.25), radius: 30)
-                    .scaleEffect(
-                        1 + (isResponding
-                             ? 0.12 * sin(animationTime * .pi)
-                             : (isListening ? 0.025 + voiceLevel * 0.1 : 0))
-                    )
-                    .overlay {
-                        LucideImage(systemName: isResponding ? "waveform" : "audio-lines")
-                            .font(.system(size: 32))
-                            .foregroundStyle(Color.dockAccent)
-                            .scaleEffect(1 - 0.12 * (1 + sin(animationTime * .pi * 1.6)) / 2)
-                    }
         }
+        .animation(.dockEase(duration: 0.3), value: mode)
+    }
+
+    /// Rings, ticks, scanner arcs, and the voice membrane. Every angular term
+    /// uses an integer harmonic so the shapes close without a seam.
+    private static func drawField(in context: inout GraphicsContext, size: CGSize, frame: VoiceOrbMotion.Frame, time: TimeInterval) {
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let accent = Color.dockAccent
+
+        for (radius, opacity) in [(150.0, 0.07), (128.0, 0.05)] {
+            let ring = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+            context.stroke(ring, with: .color(accent.opacity(opacity + frame.glow * 0.05)), style: StrokeStyle(lineWidth: 0.6, dash: radius > 140 ? [] : [2, 6]))
+        }
+
+        // Scanner arcs sweep while Hermes transcribes or thinks.
+        if frame.scan > 0.01 {
+            for (offset, length, width) in [(0.0, 0.9, 1.6), (.pi, 0.55, 1.0)] {
+                var arc = Path()
+                let start = frame.rotation + offset
+                arc.addArc(center: center, radius: 112, startAngle: .radians(start), endAngle: .radians(start + length), clockwise: false)
+                context.stroke(arc, with: .color(accent.opacity(0.75 * frame.scan)), style: StrokeStyle(lineWidth: width, lineCap: .round))
+            }
+        }
+
+        let ticks = 72
+        for index in 0..<ticks {
+            let angle = Double(index) / Double(ticks) * .pi * 2
+            let wave = 0.5 + 0.5 * sin(angle * 4 + time * 3.1) * cos(angle * 3 - time * 1.9)
+            let length = 2.5 + frame.energy * 20 * wave
+            let sweep = pow(max(0, cos(angle - frame.rotation - 0.45)), 10) * frame.scan
+            var tick = Path()
+            tick.move(to: CGPoint(x: center.x + cos(angle) * 96, y: center.y + sin(angle) * 96))
+            tick.addLine(to: CGPoint(x: center.x + cos(angle) * (96 + length), y: center.y + sin(angle) * (96 + length)))
+            context.stroke(tick, with: .color(accent.opacity(0.22 + frame.energy * 0.35 + sweep * 0.5)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        }
+
+        for (phase, width, opacity) in [(0.0, 1.6, 0.75), (2.1, 0.8, 0.35)] {
+            context.stroke(
+                membrane(center: center, radius: 76, frame: frame, time: time + phase),
+                with: .color(accent.opacity(opacity * (0.35 + frame.glow * 0.65))),
+                lineWidth: width
+            )
+        }
+    }
+
+    private static func membrane(center: CGPoint, radius: Double, frame: VoiceOrbMotion.Frame, time: TimeInterval) -> Path {
+        var path = Path()
+        let points = 120
+        for index in 0...points {
+            let angle = Double(index) / Double(points) * .pi * 2
+            let ripple = sin(angle * 3 + time * 1.3) * 0.5 + sin(angle * 5 - time * 1.9) * 0.3 + sin(angle * 7 + time * 2.7) * 0.2
+            let r = radius + 1.5 * sin(angle * 2 + time * 0.6) + frame.energy * 16 * ripple
+            let point = CGPoint(x: center.x + cos(angle) * r, y: center.y + sin(angle) * r)
+            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -460,7 +515,7 @@ struct CronReportDetailSheet: View {
                     }
                 } else {
                     VStack(spacing: 10) {
-                        LucideImage(systemName: "exclamationmark.triangle")
+                        DockIcon(.warning)
                             .font(.system(size: 22))
                             .foregroundStyle(Color.dockWarning)
                         Text(loadError ?? "The report could not be loaded.")
@@ -510,7 +565,7 @@ struct RepositoryFleetRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
-                LucideImage(systemName: snapshot?.isGitRepository == true ? "arrow.triangle.branch" : "folder")
+                DockIcon(snapshot?.isGitRepository == true ? .gitBranch : .folder)
                     .foregroundStyle(snapshot?.isGitRepository == true ? Color.dockSuccess : Color.dockSecondaryText)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(URL(fileURLWithPath: path).lastPathComponent)
@@ -577,13 +632,13 @@ enum DockCommand: Identifiable, CaseIterable {
         }
     }
 
-    var icon: String {
+    var icon: Ph {
         switch self {
         case .tab(let tab): tab.icon
-        case .newChat: "message-circle-plus"
-        case .focusComposer: "text.cursor"
-        case .stop: "stop.circle"
-        case .voice: "mic"
+        case .newChat: .chatCircleDots
+        case .focusComposer: .cursorText
+        case .stop: .stopCircle
+        case .voice: .microphone
         }
     }
 }
@@ -617,7 +672,7 @@ struct DockCommandPalette: View {
                     select(command)
                     dismiss()
                 } label: {
-                    LucideLabel(command.title, icon: command.icon)
+                    DockIconLabel(command.title, icon: command.icon)
                         .font(.system(size: 13))
                         .foregroundStyle(Color.dockPrimaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -666,7 +721,7 @@ struct DockActionPalette: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 9) {
-                                LucideImage(systemName: command.icon).frame(width: 16)
+                                DockIcon(command.icon).frame(width: 16)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(command.title).font(.system(size: 13, weight: .medium))
                                     Text(command.isAvailable ? command.subtitle : (command.unavailableReason ?? command.subtitle))

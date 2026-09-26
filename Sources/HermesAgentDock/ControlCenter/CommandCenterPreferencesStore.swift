@@ -5,7 +5,6 @@ import Foundation
 @MainActor
 final class CommandCenterPreferencesStore: ObservableObject {
     @Published private(set) var pinnedRepositoryIDs: [String]
-    @Published private(set) var pinnedReferences: [String]
     @Published private(set) var collapsedSections: Set<String>
     @Published private(set) var sectionOrder: [String]
     @Published private(set) var recentActionIDs: [String]
@@ -21,7 +20,6 @@ final class CommandCenterPreferencesStore: ObservableObject {
         self.defaults = defaults
         let saved = defaults.dictionary(forKey: key) ?? [:]
         pinnedRepositoryIDs = saved["pinnedRepositoryIDs"] as? [String] ?? []
-        pinnedReferences = saved["pinnedReferences"] as? [String] ?? []
         collapsedSections = Set(saved["collapsedSections"] as? [String] ?? [])
         sectionOrder = saved["sectionOrder"] as? [String] ?? MissionControlSection.allCases.map(\.rawValue)
         recentActionIDs = saved["recentActionIDs"] as? [String] ?? []
@@ -38,14 +36,7 @@ final class CommandCenterPreferencesStore: ObservableObject {
         save()
     }
 
-    func togglePinnedReference(_ id: String) {
-        if let index = pinnedReferences.firstIndex(of: id) { pinnedReferences.remove(at: index) }
-        else { pinnedReferences.append(id) }
-        save()
-    }
-
     func isPinnedRepository(_ id: String) -> Bool { pinnedRepositoryIDs.contains(id) }
-    func isPinnedReference(_ id: String) -> Bool { pinnedReferences.contains(id) }
 
     func toggleCollapsed(_ section: MissionControlSection) {
         if collapsedSections.contains(section.rawValue) { collapsedSections.remove(section.rawValue) }
@@ -109,7 +100,6 @@ final class CommandCenterPreferencesStore: ObservableObject {
     private func save() {
         defaults.set([
             "pinnedRepositoryIDs": pinnedRepositoryIDs,
-            "pinnedReferences": pinnedReferences,
             "collapsedSections": Array(collapsedSections),
             "sectionOrder": sectionOrder,
             "recentActionIDs": recentActionIDs,

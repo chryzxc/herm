@@ -17,13 +17,13 @@ enum HermesStatus: Equatable {
         }
     }
 
-    var icon: String {
+    var icon: Ph {
         switch self {
-        case .idle: "sparkles"
-        case .working: "bolt.horizontal.circle"
-        case .needsApproval: "exclamationmark.circle"
-        case .needsClarification: "questionmark.circle"
-        case .offline: "wifi.slash"
+        case .idle: .sparkle
+        case .working: .lightning
+        case .needsApproval: .warningCircle
+        case .needsClarification: .question
+        case .offline: .wifiSlash
         }
     }
 }
@@ -32,40 +32,37 @@ enum HermesVoiceState: Equatable {
     case inactive
     case preparing
     case listening
+    /// Hermes stopped capturing and is running speech-to-text on the utterance.
+    case transcribing
     case interrupted
     case thinking
     case speaking
+    /// Hermes heard nothing for several captures. Voice mode stays on, but the
+    /// microphone is released until the user resumes.
+    case paused
     case localFallback(String)
 
     var isNativeConversationActive: Bool {
         switch self {
-        case .preparing, .listening, .interrupted, .thinking, .speaking: true
+        case .preparing, .listening, .transcribing, .interrupted, .thinking, .speaking, .paused: true
         case .inactive, .localFallback: false
         }
     }
 
-    var label: String {
-        switch self {
-        case .inactive: "VOICE OFF"
-        case .preparing: "CONNECTING VOICE"
-        case .listening: "HERMES IS LISTENING"
-        case .interrupted: "HEARD YOU — TRANSCRIBING"
-        case .thinking: "HERMES IS THINKING"
-        case .speaking: "HERMES IS SPEAKING"
-        case .localFallback: "LOCAL VOICE FALLBACK"
-        }
-    }
+    var label: String { label(agentName: "Hermes") }
 
     func label(agentName: String) -> String {
-        let name = agentName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return label }
+        let trimmed = agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = (trimmed.isEmpty ? "Hermes" : trimmed).uppercased()
         return switch self {
         case .inactive: "VOICE OFF"
-        case .preparing: "CONNECTING " + name.uppercased() + " VOICE"
-        case .listening: name.uppercased() + " IS LISTENING"
+        case .preparing: "CONNECTING " + name + " VOICE"
+        case .listening: name + " IS LISTENING"
+        case .transcribing: "TRANSCRIBING"
         case .interrupted: "HEARD YOU — TRANSCRIBING"
-        case .thinking: name.uppercased() + " IS THINKING"
-        case .speaking: name.uppercased() + " IS SPEAKING"
+        case .thinking: name + " IS THINKING"
+        case .speaking: name + " IS SPEAKING"
+        case .paused: "PAUSED — TAP TO RESUME"
         case .localFallback: "LOCAL VOICE FALLBACK"
         }
     }
@@ -293,29 +290,31 @@ struct SessionAgentStateStore {
 actor SessionAgentStateWriter {
     private let store: SessionAgentStateStore
     private var pending: [String: SessionAgentState]?
-    private var generation = 0
+    private var isCommitScheduled = false
     private var lastEncoded: Data?
 
     init(store: SessionAgentStateStore) { self.store = store }
 
+    /// Throttled, not debounced: every write re-encodes all sessions (~0.5 MB),
+    /// and a trailing 250 ms debounce still fired twice a second through agent
+    /// runs, dirtying 2 GB of disk in minutes. `flush()` covers session
+    /// switches and quit.
     func enqueue(_ states: [String: SessionAgentState]) {
         pending = states
-        generation &+= 1
-        let expected = generation
+        guard !isCommitScheduled else { return }
+        isCommitScheduled = true
         Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled, let self else { return }
-            await self.commitIfCurrent(expected)
+            try? await Task.sleep(for: .seconds(2))
+            await self?.commitScheduled()
         }
     }
 
     func flush() {
-        generation &+= 1
         commit()
     }
 
-    private func commitIfCurrent(_ expected: Int) {
-        guard expected == generation else { return }
+    private func commitScheduled() {
+        isCommitScheduled = false
         commit()
     }
 

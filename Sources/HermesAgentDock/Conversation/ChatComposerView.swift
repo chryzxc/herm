@@ -208,7 +208,7 @@ struct ChatComposerView: View {
                                     .frame(width: 32, height: 32)
                                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                                 Button(action: { model.removePendingImage(image) }) {
-                                    LucideImage(systemName: "xmark")
+                                    DockIcon(.x)
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockSecondaryText)
                                 }
@@ -224,14 +224,14 @@ struct ChatComposerView: View {
             }
             if let pdfURL = model.pendingPDFURL {
                 HStack(spacing: 7) {
-                    LucideImage(systemName: "doc.text")
+                    DockIcon(.fileText)
                         .foregroundStyle(Color.dockAccent)
                     Text(pdfURL.lastPathComponent)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                     Button { model.removePendingPDF() } label: {
-                        LucideImage(systemName: "xmark")
+                        DockIcon(.x)
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.dockSecondaryText)
                     }
@@ -262,7 +262,7 @@ struct ChatComposerView: View {
                     // Attachment popover keeps secondary actions discoverable
                     // without changing the composer's stable footprint.
                     Button { showingAttachmentPopover = true } label: {
-                        LucideIcon(name: .plus, size: 14, color: Color.dockSecondaryText)
+                        DockIcon(.plus, size: 14, color: Color.dockSecondaryText)
                             .frame(width: 28, height: 28)
                             .background(
                                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
@@ -290,11 +290,7 @@ struct ChatComposerView: View {
                         refreshError: model.runtimeModelOptionsError,
                         onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID) },
                         onSelect: { option in
-                            if model.sessionID == nil {
-                                model.updateRuntimeModel(option)
-                            } else {
-                                model.updateSessionModel(option)
-                            }
+                            model.updateSessionModel(option)
                         }
                     )
                     .font(DockTypography.control)
@@ -306,7 +302,7 @@ struct ChatComposerView: View {
                             .fill(Color.dockControlSurface)
                     )
                     .frame(minHeight: 44, alignment: .center)
-                    .disabled(model.sessionID == nil ? model.isLoadingRuntimeConfiguration : model.isUpdatingSessionModel)
+                    .disabled(model.isUpdatingSessionModel)
                     .help("Select model")
                 }
                 .layoutPriority(-1)
@@ -315,6 +311,8 @@ struct ChatComposerView: View {
 
                 // Right Toolbar Group: Thinking depth selector menu & circular submit button
                 HStack(alignment: .center, spacing: 8) {
+                    SessionTokenCounter(model: model, streaming: model.streamingText)
+
                     // Thinking depth variant selector menu
                     Menu {
                         ForEach(HermesReasoningVariant.allCases) { variant in
@@ -328,7 +326,7 @@ struct ChatComposerView: View {
                                 HStack {
                                     Text(variant.displayName)
                                     if variant == selectedReasoningVariant {
-                                        LucideImage(systemName: "checkmark")
+                                        Ph.check.image()
                                     }
                                 }
                             }
@@ -336,16 +334,16 @@ struct ChatComposerView: View {
                     } label: {
                         // A plain button-style menu renders this SwiftUI
                         // label as drawn; a borderless menu keeps only native
-                        // text and images and drops the Lucide glyph.
+                        // text and images and drops custom icon views.
                         HStack(spacing: 6) {
-                            LucideIcon(name: .brain, size: 13, color: Color.dockSecondaryText)
+                            DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
                             if ComposerToolbarPresentation.showsReasoningLabel(for: metrics) {
                                 Text(sessionReasoningDisplayName)
                                     .font(DockTypography.control)
                                     .foregroundStyle(Color.dockSecondaryText)
                                     .lineLimit(1)
                             }
-                            LucideIcon(name: .chevronDown, size: 10, color: Color.dockMetadataText)
+                            DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
                         }
                         .padding(.horizontal, 8)
                         .frame(height: 28)
@@ -366,7 +364,7 @@ struct ChatComposerView: View {
 
                     if showsInterruptControl {
                         Button(action: { onStop() }) {
-                            LucideImage(systemName: "stop.fill")
+                            DockIcon(.stop, weight: .fill)
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(Color.dockDestructive)
                                 .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
@@ -397,15 +395,15 @@ struct ChatComposerView: View {
                                 .frame(width: isFullscreen ? 36 : 32, height: isFullscreen ? 36 : 32)
 
                             if speechInput.isRecording {
-                                LucideImage(systemName: "stop.fill")
+                                DockIcon(.stop, weight: .fill)
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(Color.dockPrimaryText)
                             } else if showStop {
-                                LucideImage(systemName: "stop.fill")
+                                DockIcon(.stop, weight: .fill)
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(Color.dockDestructive)
                             } else {
-                                LucideImage(systemName: "arrow.up")
+                                DockIcon(.arrowUp)
                                     .font(.system(size: 12, weight: .semibold))
                                     // Use soft dockPrimaryText instead of stark white to prevent eye strain
                                     .foregroundStyle(canSubmit && !model.isSteering ? Color.dockOnAccentText : Color.dockSecondaryText.opacity(0.5))
@@ -607,14 +605,56 @@ struct ChatComposerView: View {
     }
 
     private var selectedModelOptionID: String? {
-        if model.sessionID != nil { return model.sessionModelOptionID }
-        guard let provider = model.runtimeConfiguration?.provider,
+        if let id = model.sessionModelOptionID { return id }
+        guard model.sessionID == nil, let provider = model.runtimeConfiguration?.provider,
               let modelName = model.runtimeConfiguration?.model else { return nil }
         return HermesModelOption(provider: provider, model: modelName).id
     }
 
     private var selectedReasoningVariant: HermesReasoningVariant? {
         model.sessionID == nil ? model.defaultReasoningVariant : model.sessionReasoningVariant
+    }
+}
+
+/// Session token total that climbs while a response streams. Observes
+/// StreamingText itself so per-flush updates re-render only this label.
+private struct SessionTokenCounter: View {
+    @ObservedObject var model: DockModel
+    @ObservedObject var streaming: StreamingText
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let committed = model.sessionTokenUsage.flatMap { $0.sessionID == model.sessionID ? $0.total : nil }
+        let live = model.isSending
+            ? DockModel.estimatedTokens(utf8Count: streaming.text.utf8.count + (model.reasoningState?.text.utf8.count ?? 0))
+            : 0
+        let total = (committed ?? 0) + live
+        Group {
+            if committed != nil || live > 0 {
+                HStack(spacing: 4) {
+                    if model.isSending {
+                        DockIcon(.arrowDown)
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    Text(Self.format(total))
+                        .contentTransition(.numericText(value: Double(total)))
+                }
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.dockMetadataText)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: total)
+                .help("Tokens used in this session\(model.isSending ? " (live estimate while streaming)" : "")")
+                .accessibilityLabel("\(total) tokens used in this session")
+            }
+        }
+        .task(id: model.sessionID) { model.refreshSessionTokenUsage() }
+    }
+
+    static func format(_ tokens: Int) -> String {
+        switch tokens {
+        case ..<1_000: "\(tokens) tokens"
+        case ..<1_000_000: String(format: "%.1fk tokens", Double(tokens) / 1_000)
+        default: String(format: "%.2fM tokens", Double(tokens) / 1_000_000)
+        }
     }
 }
 
@@ -638,7 +678,7 @@ private struct ClarificationChoiceChips: View {
                     onSelect(choice)
                 } label: {
                     HStack(spacing: 8) {
-                        LucideImage(systemName: "arrow.right")
+                        DockIcon(.arrowRight)
                             .font(.system(size: 10, weight: .semibold))
                         Text(choice)
                             .font(.system(size: 12, weight: .medium))
@@ -704,7 +744,7 @@ private struct BotMentionPicker: View {
                         .padding(14)
                     } else if bots.isEmpty {
                         HStack(spacing: 8) {
-                            LucideImage(systemName: "person.2.slash")
+                            DockIcon(.users)
                                 .foregroundStyle(Color.dockMetadataText)
                             Text("No matching Bots")
                         }
