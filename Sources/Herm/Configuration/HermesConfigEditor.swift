@@ -459,7 +459,7 @@ private struct HermesConfigFieldRow: View {
             .labelsHidden()
             .pickerStyle(.menu)
             .controlSize(.small)
-            .frame(maxWidth: 220)
+            .fixedSize(horizontal: true, vertical: false)
         } else {
             TextField(editor.type(of: key) == "number" ? "0" : "Default", text: $draft)
                 .textFieldStyle(.dockGlass)

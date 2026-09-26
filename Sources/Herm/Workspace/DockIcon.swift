@@ -84,7 +84,7 @@ extension Ph {
             return true
         }
         image.isTemplate = true
-        return Image(nsImage: image)
+        return Image(nsImage: image).renderingMode(.template)
     }
 }
 
