@@ -373,7 +373,13 @@ enum RepositoryService {
     }
 
     static func projectFiles(path: String, includeGenerated: Bool = false) async -> [ProjectFileEntry] {
-        let root = URL(fileURLWithPath: path).standardizedFileURL
+        // realpath (unlike resolvingSymlinksInPath, which strips /private) so
+        // the prefix matches the resolved URLs contentsOfDirectory returns.
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL
+        let root = realpath(standardized.path, nil).map { resolved in
+            defer { free(resolved) }
+            return URL(fileURLWithPath: String(cString: resolved))
+        } ?? standardized
         return await Task.detached(priority: .utility) {
             // Keep the project tree faithful to the filesystem. Hidden
             // project files such as .github, .husky, and dotfiles are useful

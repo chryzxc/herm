@@ -41,6 +41,9 @@ struct WorkspaceActivitySidebarTests {
             backing: .buffered,
             defer: false
         )
+        // ARC owns the window; the default release-on-close over-releases it
+        // and crashes the test runner on the next autorelease-pool drain.
+        window.isReleasedWhenClosed = false
         window.contentView = hostingView
         window.display()
         window.layoutIfNeeded()

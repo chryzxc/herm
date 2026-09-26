@@ -61,10 +61,15 @@ private func storedTranscript(turns: Int) -> [[String: Any]] {
     return rows
 }
 
+private struct WaitTimeout: Error {}
+
+/// Generous and loud: the suite shares the main actor with slow rendering
+/// tests, and a silent timeout used to let later indexing trap the runner.
 @MainActor
-private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 2) async throws {
+private func waitUntil(_ condition: @escaping () -> Bool, timeout: TimeInterval = 30) async throws {
     let deadline = Date().addingTimeInterval(timeout)
-    while !condition() && Date() < deadline {
+    while !condition() {
+        guard Date() < deadline else { throw WaitTimeout() }
         try await Task.sleep(for: .milliseconds(10))
     }
 }
@@ -198,7 +203,7 @@ struct TranscriptHistoryPagingTests {
         #expect(rpc.fetchedPaths.filter { $0.contains("/timeline") }.count == 4)
         let items = model.messageNavigatorItems
         // 160 unloaded prompts, then the 80 loaded messages.
-        #expect(items.count == 240)
+        try #require(items.count == 240)
         #expect(items.first?.preview == "question 0")
         #expect(items.first?.storedRowID == 1)
         #expect(items[160].storedRowID == nil)
