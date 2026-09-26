@@ -26,7 +26,7 @@ struct RepositoryChangesBrowser: View {
             browser(changes)
         } else if let projectPath {
             emptyState(
-                icon: workflow.isRefreshing ? "refresh-cw" : "folder",
+                icon: workflow.isRefreshing ? .arrowsClockwise : .folder,
                 title: workflow.isRefreshing ? "Inspecting project" : "Project is not a Git repository",
                 detail: workflow.isRefreshing ? projectPath : "\(projectPath) is available as a local project folder, but it has no Git working tree to inspect."
             )
@@ -51,7 +51,7 @@ struct RepositoryChangesBrowser: View {
             }
 
             if changes.files.isEmpty {
-                emptyState(icon: "checkmark.circle", title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
+                emptyState(icon: .checkCircle, title: "Working tree clean", detail: "No staged, unstaged, or untracked files were found.")
             } else {
                 let stagedFiles = changes.files.filter(\.isStaged)
                 let worktreeFiles = changes.files.filter { !$0.isStaged }
@@ -85,7 +85,7 @@ struct RepositoryChangesBrowser: View {
                 isExpanded.wrappedValue.toggle()
             } label: {
                 HStack(spacing: 7) {
-                    LucideImage(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                    DockIcon(isExpanded.wrappedValue ? .caretDown : .caretRight)
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color.dockSecondaryText)
                         .frame(width: 12)
@@ -172,7 +172,7 @@ struct RepositoryChangesBrowser: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
-                sourceControlIcon("refresh-cw", help: "Refresh source control") {
+                sourceControlIcon(.arrowsClockwise, help: "Refresh source control") {
                     Task { await onRefresh() }
                 }
             }
@@ -200,7 +200,7 @@ struct RepositoryChangesBrowser: View {
         if workflow.isAuthenticatingGitHub || workflow.githubAuthenticationNotice?.hasPrefix("GitHub connected") == true {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
-                    LucideImage(systemName: "checkmark.circle")
+                    DockIcon(.checkCircle)
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockSuccess)
                     Text(workflow.githubAuthenticationNotice ?? "GitHub connected. Refreshing pull requests…")
@@ -236,13 +236,13 @@ struct RepositoryChangesBrowser: View {
         case .noRemote:
             EmptyView()
         case .notLoaded:
-            githubStatusRow(icon: "refresh-cw", message: "GitHub status not loaded.", actionTitle: "Refresh") {
+            githubStatusRow(icon: .arrowsClockwise, message: "GitHub status not loaded.", actionTitle: "Refresh") {
                 Task { await workflow.refreshGitHub() }
             }
         case .unavailable(let error):
             if case .unauthorized = error {
                 HStack(spacing: 7) {
-                    LucideImage(systemName: "person.badge.key")
+                    DockIcon(.userGear)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockWarning)
                     Text("GitHub sign-in required.")
@@ -273,18 +273,18 @@ struct RepositoryChangesBrowser: View {
                         .accessibilityLabel("GitHub device code \(code)")
                 }
             } else {
-                githubStatusRow(icon: "exclamationmark.triangle", message: githubStatusMessage(for: error), actionTitle: "Retry") {
+                githubStatusRow(icon: .warning, message: githubStatusMessage(for: error), actionTitle: "Retry") {
                     Task { await workflow.refreshGitHub() }
                 }
             }
         case .stale:
-            githubStatusRow(icon: "exclamationmark.triangle", message: "Using last known GitHub data.", actionTitle: "Retry") {
+            githubStatusRow(icon: .warning, message: "Using last known GitHub data.", actionTitle: "Retry") {
                 Task { await workflow.refreshGitHub() }
             }
         case .available:
             if let github = workflow.githubRepository {
                 HStack(spacing: 7) {
-                    LucideImage(systemName: "checkmark.circle.fill")
+                    DockIcon(.checkCircle, weight: .fill)
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockSuccess)
                     Text("GitHub")
@@ -294,7 +294,7 @@ struct RepositoryChangesBrowser: View {
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
                     Spacer()
-                    sourceControlIcon(workflow.isRefreshingGitHub ? "ellipsis" : "refresh-cw", help: "Refresh GitHub") {
+                    sourceControlIcon(workflow.isRefreshingGitHub ? .dotsThree : .arrowsClockwise, help: "Refresh GitHub") {
                         Task { await workflow.refreshGitHub() }
                     }
                     .disabled(workflow.isRefreshingGitHub)
@@ -323,13 +323,13 @@ struct RepositoryChangesBrowser: View {
     }
 
     private func githubStatusRow(
-        icon: String,
+        icon: Ph,
         message: String,
         actionTitle: String = "Connect GitHub",
         action: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 7) {
-            LucideImage(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockWarning)
             Text(message)
@@ -345,9 +345,9 @@ struct RepositoryChangesBrowser: View {
         .frame(minHeight: 24)
     }
 
-    private func sourceControlIcon(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
+    private func sourceControlIcon(_ systemName: Ph, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            LucideImage(systemName: systemName)
+            DockIcon(systemName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockSecondaryText)
                 .frame(width: 28, height: 28)
@@ -394,7 +394,7 @@ struct RepositoryChangesBrowser: View {
 
     private func fileRowLabel(_ file: RepositoryFileChange, showsSelection: Bool) -> some View {
         HStack(spacing: 8) {
-            LucideImage(systemName: fileIcon(for: file))
+            DockIcon(fileIcon(for: file))
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(statusColor(for: file))
                 .frame(width: 17)
@@ -436,12 +436,12 @@ struct RepositoryChangesBrowser: View {
         file.path.split(separator: "/").dropLast().joined(separator: "/")
     }
 
-    private func fileIcon(for file: RepositoryFileChange) -> String {
+    private func fileIcon(for file: RepositoryFileChange) -> Ph {
         switch file.path.split(separator: ".").last?.lowercased() {
-        case "swift", "ts", "tsx", "js", "jsx", "py", "go", "rs": "doc.text"
-        case "json", "yaml", "yml", "toml": "doc.text"
-        case "md", "txt": "doc.plaintext"
-        default: "doc"
+        case "swift", "ts", "tsx", "js", "jsx", "py", "go", "rs": .fileText
+        case "json", "yaml", "yml", "toml": .fileText
+        case "md", "txt": .fileText
+        default: .file
         }
     }
 
@@ -482,9 +482,9 @@ struct RepositoryChangesBrowser: View {
         }.frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 10)
     }
 
-    private func emptyState(icon: String, title: String, detail: String) -> some View {
+    private func emptyState(icon: Ph, title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            LucideLabel(title, icon: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+            DockIconLabel(title, icon: icon).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
             Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

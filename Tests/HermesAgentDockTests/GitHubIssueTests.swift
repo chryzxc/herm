@@ -64,6 +64,8 @@ struct GitHubIssueTests {
         #expect(assigned.values == ["owner/repo", "Assigned to ada, bob", "2 min ago"])
         let unassigned = GitHubIssueRowMetadata.make(repository: "owner/repo", assignees: [], updated: nil)
         #expect(unassigned.values == ["owner/repo", "Unassigned"])
+        let viewer = GitHubIssueRowMetadata.make(repository: "owner/repo", assignees: ["Ada", "bob"], updated: nil, viewer: "ada")
+        #expect(viewer.assignment == "Assigned to you, bob")
     }
 
     @MainActor @Test func parserPreservesSecondaryAssignees() {

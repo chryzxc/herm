@@ -202,23 +202,42 @@ final class IssueCenterModel: ObservableObject {
     }
     var visible: [GitHubIssueRecord] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return records.filter { issue in
-            guard repositoryScope == nil || repositoryScope == issue.repository.id else { return false }
-            let matchesFilter: Bool
-            switch filter {
-            case .all: matchesFilter = true
-            case .authored: matchesFilter = viewerLogin.map { issue.author.caseInsensitiveCompare($0) == .orderedSame } ?? false
-            case .assigned: matchesFilter = viewerLogin.map { viewer in issue.assignees.contains { assignee in assignee.caseInsensitiveCompare(viewer) == .orderedSame } } ?? false
-            }
-            guard matchesFilter else { return false }
-            guard !needle.isEmpty else { return true }
-            return [issue.title, issue.repository.id, issue.author, issue.assignee ?? "", "#\(issue.number)"].joined(separator: " ").lowercased().contains(needle)
-        }.sorted { lhs, rhs in
+        return records.filter { matches($0, filter: filter, needle: needle) }.sorted { lhs, rhs in
             let left = lhs.updatedAt ?? .distantPast
             let right = rhs.updatedAt ?? .distantPast
             if left != right { return left > right }
             return lhs.id < rhs.id
         }
+    }
+
+    /// Visible issues grouped by repository, ordered by each group's most
+    /// recently updated issue.
+    var visibleGroups: [(repository: String, issues: [GitHubIssueRecord])] {
+        var order: [String] = []
+        var groups: [String: [GitHubIssueRecord]] = [:]
+        for issue in visible {
+            if groups[issue.repository.id] == nil { order.append(issue.repository.id) }
+            groups[issue.repository.id, default: []].append(issue)
+        }
+        return order.map { ($0, groups[$0] ?? []) }
+    }
+
+    func count(for filter: GitHubIssueFilter) -> Int {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return records.filter { matches($0, filter: filter, needle: needle) }.count
+    }
+
+    private func matches(_ issue: GitHubIssueRecord, filter: GitHubIssueFilter, needle: String) -> Bool {
+        guard repositoryScope == nil || repositoryScope == issue.repository.id else { return false }
+        let matchesFilter: Bool
+        switch filter {
+        case .all: matchesFilter = true
+        case .authored: matchesFilter = viewerLogin.map { issue.author.caseInsensitiveCompare($0) == .orderedSame } ?? false
+        case .assigned: matchesFilter = viewerLogin.map { viewer in issue.assignees.contains { assignee in assignee.caseInsensitiveCompare(viewer) == .orderedSame } } ?? false
+        }
+        guard matchesFilter else { return false }
+        guard !needle.isEmpty else { return true }
+        return [issue.title, issue.repository.id, issue.author, issue.assignee ?? "", "#\(issue.number)"].joined(separator: " ").lowercased().contains(needle)
     }
 
     func refresh(projects: [ProjectSummary]) async {
@@ -287,8 +306,10 @@ struct GitHubIssueRowMetadata: Equatable {
             }
     }
 
-    static func make(repository: String, assignees: [String], updated: String?) -> Self {
-        let names = assignees.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    static func make(repository: String, assignees: [String], updated: String?, viewer: String? = nil) -> Self {
+        let names = assignees
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { name in viewer.map { name.caseInsensitiveCompare($0) == .orderedSame } == true ? "you" : name }
         let assignment = names.isEmpty ? "Unassigned" : "Assigned to \(names.joined(separator: ", "))"
         return Self(repository: repository, assignment: assignment, updated: updated)
     }
@@ -297,45 +318,60 @@ struct GitHubIssueRowMetadata: Equatable {
 struct IssueRowView: View {
     let issue: GitHubIssueRecord
     let isSelected: Bool
+    var viewer: String?
     @State private var isHovered = false
 
     var body: some View {
-        let formatter = RelativeDateTimeFormatter()
         let metadata = GitHubIssueRowMetadata.make(
             repository: issue.repository.id,
             assignees: issue.assignees,
-            updated: issue.updatedAt.map { formatter.localizedString(for: $0, relativeTo: .now) }
+            updated: issue.updatedAt.map { HumanDateFormatting.relative($0) },
+            viewer: viewer
         )
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Text("#\(issue.displayNumber)")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.dockAccent)
+        HStack(alignment: .top, spacing: 10) {
+            DockIcon(.record, size: 14, color: issue.isOpen ? DockStatusTone.complete.color : Color.dockMetadataText)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 5) {
                 Text(issue.title)
-                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            HStack(spacing: 5) {
-                Text(metadata.repository)
-                Text("·")
-                Text(metadata.assignment)
-                if let updated = metadata.updated {
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockPrimaryText.opacity(0.9))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 5) {
+                    Text("#\(issue.displayNumber)")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
                     Text("·")
-                    Text(updated)
+                    Text(metadata.assignment)
+                    if let updated = metadata.updated {
+                        Text("·")
+                        Text(updated)
+                    }
                 }
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
             }
-            .font(.system(size: 11))
-            .foregroundStyle(Color.dockMetadataText)
-            .lineLimit(1)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 68, maxHeight: 68, alignment: .leading)
-        .background(isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.dockAccent.opacity(isSelected ? 0.35 : 0), lineWidth: 0.5)
+        )
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
     }
+}
+
+extension GitHubIssueRecord {
+    var isOpen: Bool { state.caseInsensitiveCompare("open") == .orderedSame }
 }
 
 struct IssueDetailView: View {
@@ -349,7 +385,7 @@ struct IssueDetailView: View {
                     .task(id: issue.id) { await center.loadSelectedDetail() }
             } else {
                 VStack(spacing: 10) {
-                    LucideIcon(name: .fileText, size: 28)
+                    DockIcon(.fileText, size: 28, color: Color.dockMetadataText)
                     Text(center.isRefreshing ? "Loading issues…" : "Select an issue")
                 }
                 .font(.system(size: 13, weight: .medium))
@@ -364,41 +400,48 @@ struct IssueDetailView: View {
     private func issueContent(_ issue: GitHubIssueRecord) -> some View {
         let displayedIssue = center.detailByID[issue.id] ?? issue
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    DockIcon(.folder, size: 12, color: Color.dockMetadataText)
                     Text(displayedIssue.repository.id)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                    Text("Issue #\(displayedIssue.number)")
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(Color.dockAccent)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .truncationMode(.middle)
+                    Text("/").foregroundStyle(Color.dockMetadataText)
+                    Text("#\(displayedIssue.number)").foregroundStyle(Color.dockAccent)
                 }
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .lineLimit(1)
                 Spacer(minLength: 12)
                 if center.loadingDetailID == issue.id {
                     ProgressView().controlSize(.small)
                 }
                 if let url = displayedIssue.webURL {
                     Link(destination: url) {
-                        LucideImage(systemName: "arrow.up.right.square")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .frame(width: 34, height: 32)
+                        HStack(spacing: 5) {
+                            DockIcon(.arrowSquareOut, size: 12, color: Color.dockSecondaryText)
+                            Text("GitHub")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .padding(.horizontal, 10)
+                        .frame(height: 26)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockControlSurface))
                     }
                     .buttonStyle(.plain)
                     .help("Open on GitHub")
                     .accessibilityLabel("Open issue on GitHub")
                 }
-                Button("Open in chat") { onOpenChat(displayedIssue) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockOnAccentText)
-                    .padding(.horizontal, 12)
-                    .frame(height: 32)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockAccent))
+                Button { onOpenChat(displayedIssue) } label: {
+                    HStack(spacing: 5) {
+                        DockIcon(.chatCircleDots, size: 12, color: Color.dockOnAccentText)
+                        Text("Open in chat")
+                    }
+                }
+                .buttonStyle(.dockPrimary)
+                .controlSize(.small)
             }
-            .padding(.horizontal, 18)
-            .frame(height: 56)
+            .padding(.horizontal, 24)
+            .frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             if let error = center.detailErrorMessage {
@@ -412,14 +455,14 @@ struct IssueDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(displayedIssue.title)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 21, weight: .semibold))
                         .foregroundStyle(Color.dockPrimaryText)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 28)
 
                     issueMetadata(displayedIssue)
-                        .padding(.top, 12)
-                        .padding(.bottom, 24)
+                        .padding(.top, 14)
+                        .padding(.bottom, 22)
 
                     Color.dockBorderLight.frame(height: 0.5)
 
@@ -436,25 +479,28 @@ struct IssueDetailView: View {
     }
 
     private func issueMetadata(_ issue: GitHubIssueRecord) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(issue.state.caseInsensitiveCompare("open") == .orderedSame ? Color.dockSuccess : Color.dockMetadataText)
-                .frame(width: 7, height: 7)
-            Text(issue.state.capitalized)
-            Text("·")
-            Text("by \(issue.author)")
-            if !issue.assignees.isEmpty {
+        let metadata = GitHubIssueRowMetadata.make(
+            repository: issue.repository.id,
+            assignees: issue.assignees,
+            updated: issue.updatedAt.map { "updated " + HumanDateFormatting.relative($0) },
+            viewer: center.viewerLogin
+        )
+        return HStack(spacing: 10) {
+            DockStatusPill(tone: issue.isOpen ? .complete : .inactive, text: issue.state.capitalized)
+            HStack(spacing: 5) {
+                Text(issue.author).fontWeight(.medium).foregroundStyle(Color.dockSecondaryText)
+                Text("opened this")
                 Text("·")
-                Text("Assigned to \(issue.assignees.joined(separator: ", "))")
+                Text(metadata.assignment)
+                if let updated = metadata.updated {
+                    Text("·")
+                    Text(updated)
+                }
             }
-            if let updatedAt = issue.updatedAt {
-                Text("·")
-                Text(RelativeDateTimeFormatter().localizedString(for: updatedAt, relativeTo: .now))
-            }
+            .lineLimit(1)
         }
         .font(.system(size: 12))
         .foregroundStyle(Color.dockMetadataText)
-        .lineLimit(1)
     }
 }
 
@@ -462,6 +508,7 @@ struct IssueWorkspace: View {
     @ObservedObject var center: IssueCenterModel
     let projects: [ProjectSummary]
     let onOpenChat: (GitHubIssueRecord) -> Void
+    @State private var collapsedRepositories: Set<String> = []
 
     var body: some View {
         HSplitView {
@@ -502,8 +549,22 @@ struct IssueWorkspace: View {
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     } else {
-                        ForEach(center.visible) { issue in
-                            Button { center.selectedIssueID = issue.id } label: { IssueRowView(issue: issue, isSelected: center.selectedIssueID == issue.id) }.buttonStyle(.plain)
+                        ForEach(center.visibleGroups, id: \.repository) { group in
+                            DockSectionHeader(
+                                title: group.repository,
+                                count: group.issues.count,
+                                isExpanded: expansion(for: group.repository),
+                                style: DockThemePalette(theme: DockThemeRuntime.current)
+                            )
+                            .padding(.top, 6)
+                            if !collapsedRepositories.contains(group.repository) {
+                                ForEach(group.issues) { issue in
+                                    Button { center.selectedIssueID = issue.id } label: {
+                                        IssueRowView(issue: issue, isSelected: center.selectedIssueID == issue.id, viewer: center.viewerLogin)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
                     }
                 }.padding(.horizontal, 8).padding(.vertical, 6)
@@ -515,7 +576,7 @@ struct IssueWorkspace: View {
     private var issueToolbar: some View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                LucideIcon(name: .search, size: 15, color: Color.dockMetadataText)
+                DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
                 TextField("Search issues", text: $center.query)
                     .textFieldStyle(.plain)
             }
@@ -526,7 +587,7 @@ struct IssueWorkspace: View {
 
             HStack(spacing: 4) {
                 ForEach(GitHubIssueFilter.allCases) { filter in
-                    RepositoryFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
+                    DockTabButton(title: center.hasLoaded ? "\(filter.rawValue)  \(center.count(for: filter))" : filter.rawValue, isSelected: center.filter == filter) {
                         center.filter = filter
                     }
                 }
@@ -538,11 +599,12 @@ struct IssueWorkspace: View {
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        LucideIcon(name: .folder, size: 12, color: Color.dockSecondaryText)
-                        Text(center.repositoryScope ?? "Repositories")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        DockIcon(.folder, size: 12, color: Color.dockSecondaryText)
+                        Text(center.repositoryScope ?? "All repositories")
+                            .font(.system(size: 11, weight: .medium))
                             .lineLimit(1)
-                        LucideIcon(name: .chevronDown, size: 9, color: Color.dockMetadataText)
+                            .truncationMode(.middle)
+                        DockIcon(.caretDown, size: 9, color: Color.dockMetadataText)
                     }
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(minHeight: 30)
@@ -550,19 +612,16 @@ struct IssueWorkspace: View {
                 .menuStyle(.borderlessButton)
             }
 
-            HStack(spacing: 6) {
-                if let error = center.errorMessage {
-                    LucideIcon(name: .triangleAlert, size: 12, color: Color.dockWarning)
+            if let error = center.errorMessage {
+                HStack(spacing: 6) {
+                    DockIcon(.warning, size: 12, color: Color.dockWarning)
                     Text(error).foregroundStyle(Color.dockWarning)
-                } else {
-                    Text("\(center.visible.count) open issues")
-                        .foregroundStyle(Color.dockMetadataText)
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+                .font(.system(size: 10))
+                .lineLimit(1)
+                .frame(height: 18, alignment: .leading)
             }
-            .font(.system(size: 10))
-            .lineLimit(1)
-            .frame(height: 18, alignment: .leading)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -577,6 +636,15 @@ struct IssueWorkspace: View {
         }
         .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
         .padding(.horizontal, 14)
+    }
+
+    private func expansion(for repository: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsedRepositories.contains(repository) },
+            set: { expanded in
+                if expanded { collapsedRepositories.remove(repository) } else { collapsedRepositories.insert(repository) }
+            }
+        )
     }
 
     private func refresh() {

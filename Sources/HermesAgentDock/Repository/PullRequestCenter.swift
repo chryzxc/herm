@@ -223,121 +223,15 @@ final class PullRequestDiffPresentationCache: ObservableObject {
     }
 }
 
-enum LucideIconName {
-    case gitPullRequest, gitBranch, refreshCw, search, arrowRight, arrowUp, arrowDown, pencil, check, checkCircle, xmark, fileText, braces, image
-    case sun, inbox, kanban, cube, gauge, clock, activity, audioLines, bot, fileSearch, users, user, folder, messages, messageCircle, messageCirclePlus, settings, panelOpen, panelClosed, chevronDown, chevronUp, chevronRight, chevronLeft, arrowDownUp, fileDiff, plus, ellipsis, circle, triangleAlert, trash, terminal, paperclip, mic, stop, pause, calendar, link, pin, externalLink, sliders, radio, cpu, brain, flame, eye, download, upload, expand, minimize, fullscreen, sparkles, circleDot, chevronsUpDown, eyeOff
-
-    static func from(systemName: String) -> Self {
-        switch systemName {
-        case "sun.max": return .sun
-        case "tray": return .inbox
-        case "rectangle.3.group": return .kanban
-        case "cube": return .cube
-        case "gauge.with.dots.needle.50percent", "gauge.with.dots.needle.bottom.50percent": return .gauge
-        case "clock.arrow.circlepath": return .clock
-        case "stopwatch": return .clock
-        case "waveform.path.ecg": return .activity
-        case "audio-lines": return .audioLines
-        case "speaker.wave.2", "speaker.wave.2.fill": return .audioLines
-        case "bot": return .bot
-        case "doc.text.magnifyingglass": return .fileSearch
-        case "person.2", "person.2.fill", "person.2.slash", "person.badge.key": return .users
-        case "folder", "folder.fill", "folder.badge.plus", "folder.badge.gearshape": return .folder
-        case "bubble.left.and.bubble.right": return .messages
-        case "gearshape", "gearshape.2": return .settings
-        case "chevron.down": return .chevronDown
-        case "chevron.up": return .chevronUp
-        case "chevron.right": return .chevronRight
-        case "chevron.left": return .chevronLeft
-        case "chevron.up.chevron.down": return .chevronDown
-        case "plus", "text.badge.plus": return .plus
-        case "magnifyingglass": return .search
-        case "scope": return .search
-        case "refresh-cw", "arrow.clockwise", "arrow.triangle.2.circlepath": return .refreshCw
-        case "arrow.right", "arrow.up.right", "arrow.up.forward.app": return .arrowRight
-        case "arrow.up": return .arrowUp
-        case "arrow.down": return .arrowDown
-        case "arrow.down.right.and.arrow.up.left": return .minimize
-        case "arrow.up.left.and.arrow.down.right": return .expand
-        case "arrow.triangle.branch": return .gitBranch
-        case "arrow.triangle.pull": return .gitPullRequest
-        case "pencil": return .pencil
-        case "square.and.pencil": return .messageCirclePlus
-        case "checkmark": return .check
-        case "checkmark.circle", "checkmark.circle.fill", "checkmark.seal", "checkmark.shield": return .checkCircle
-        case "doc", "doc.text", "doc.text.fill", "doc.badge.gearshape", "doc.on.doc", "list.bullet.indent", "number": return .fileText
-        case "checklist": return .checkCircle
-        case "rectangle": return .panelClosed
-        case "rectangle.split.2x1": return .panelOpen
-        case "ellipsis", "ellipsis.circle": return .ellipsis
-        case "circle", "circle.dotted": return .circle
-        case "smallcircle.filled.circle": return .circleDot
-        case "trash": return .trash
-        case "lock.slash", "exclamationmark.triangle", "exclamationmark.triangle.fill", "exclamationmark.circle", "exclamationmark.octagon", "exclamationmark.shield", "minus.circle": return .triangleAlert
-        case "xmark", "xmark.circle.fill", "xmark.octagon": return .xmark
-        case "waveform", "bolt.fill", "wand.and.stars", "sparkles": return .sparkles
-        case "terminal", "terminal.fill", "command": return .terminal
-        case "paperclip": return .paperclip
-        case "mic.fill": return .mic
-        case "stop.fill": return .stop
-        case "pause.circle.fill": return .pause
-        case "calendar.badge.clock": return .calendar
-        case "link", "link.badge.plus", "key.horizontal": return .link
-        case "pin", "pin.fill": return .pin
-        case "line.3.horizontal.decrease.circle": return .sliders
-        case "dot.radiowaves.left.and.right": return .radio
-        case "cpu.fill": return .cpu
-        case "brain", "brain.head.profile": return .brain
-        case "flame.fill": return .flame
-        case "eye": return .eye
-        case "eye.slash": return .eyeOff
-        case "square.and.arrow.down": return .download
-        case "arrow.up.forward.square": return .arrowRight
-        case "text.bubble": return .messageCircle
-        case "message-circle-plus", "plus.bubble": return .messageCirclePlus
-        case "person.fill": return .user
-        default: return .fileText
-        }
-    }
-}
-
-/// Small vendored subset of Lucide's 24px outline icons. Keeping the paths
-/// local makes the PR workspace use one icon family without a runtime package.
-struct LucideIcon: View {
-    let name: LucideIconName
-    var size: CGFloat = 17
-    var color: Color = Color.dockMetadataText
-    var body: some View {
-        LucideIconShape(name: name)
-            .stroke(color, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
-    }
-}
-
-/// Shared adapter for the existing semantic icon names used by the app. Names
-/// are mapped into the local Lucide catalog, so production views never
-/// instantiate SF Symbols directly.
-struct LucideImage: View {
-    let systemName: String
-    var body: some View {
-        LucideIcon(name: .from(systemName: systemName), size: 16)
-    }
-}
-
 private struct PullRequestReviewToolbarIcon: View {
-    let name: LucideIconName
+    let name: Ph
     let accessibilityLabel: String
     var isSelected = false
     var tooltip: String? = nil
     @State private var isHovered = false
 
     var body: some View {
-        LucideIcon(
-            name: name,
-            size: 14,
-            color: isSelected || isHovered ? Color.dockPrimaryText : Color.dockSecondaryText
-        )
+        DockIcon(name, size: 14, color: isSelected || isHovered ? Color.dockPrimaryText : Color.dockSecondaryText)
         .frame(width: 28, height: 28)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -350,200 +244,13 @@ private struct PullRequestReviewToolbarIcon: View {
     }
 }
 
-/// Text-and-icon controls use the same Lucide catalog as standalone icons.
-struct LucideLabel: View {
-    let title: String
-    let systemName: String
-    var iconColor: Color = .dockMetadataText
-
-    init(_ title: String, icon systemName: String, iconColor: Color = .dockMetadataText) {
-        self.title = title
-        self.systemName = systemName
-        self.iconColor = iconColor
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            LucideIcon(name: .from(systemName: systemName), size: 16, color: iconColor)
-            Text(title)
-        }
-    }
-}
-
-private struct LucideIconShape: Shape {
-    let name: LucideIconName
-    func path(in rect: CGRect) -> Path {
-        let s = min(rect.width, rect.height) / 24
-        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
-        var path = Path()
-        switch name {
-        case .gitPullRequest:
-            // Official Lucide `git-pull-request` path:
-            // two commit nodes, the source branch, and the requested branch.
-            path.addEllipse(in: CGRect(x: 15 * s, y: 15 * s, width: 6 * s, height: 6 * s))
-            path.addEllipse(in: CGRect(x: 3 * s, y: 3 * s, width: 6 * s, height: 6 * s))
-            path.move(to: p(13, 6)); path.addLine(to: p(16, 6)); path.addArc(center: p(16, 8), radius: 2 * s, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false); path.addLine(to: p(18, 15))
-            path.move(to: p(6, 9)); path.addLine(to: p(6, 21))
-        case .gitBranch:
-            path.addEllipse(in: CGRect(x: 3 * s, y: 3 * s, width: 6 * s, height: 6 * s)); path.addEllipse(in: CGRect(x: 15 * s, y: 15 * s, width: 6 * s, height: 6 * s)); path.move(to: p(6, 9)); path.addLine(to: p(6, 18)); path.addCurve(to: p(15, 18), control1: p(6, 13), control2: p(10, 18)); path.move(to: p(15, 9)); path.addLine(to: p(15, 15))
-        case .refreshCw:
-            // Official Lucide `refresh-cw`: two directional arcs rather than
-            // the single rotate arrow previously used by the shared adapter.
-            path.move(to: p(21, 12))
-            path.addCurve(to: p(12, 3), control1: p(21, 7.03), control2: p(16.97, 3))
-            path.addCurve(to: p(5.43, 5.82), control1: p(9.41, 3), control2: p(7.06, 4.08))
-            path.addLine(to: p(3, 8))
-            path.move(to: p(3, 3)); path.addLine(to: p(3, 8)); path.addLine(to: p(8, 8))
-            path.move(to: p(3, 12))
-            path.addCurve(to: p(12, 21), control1: p(3, 16.97), control2: p(7.03, 21))
-            path.addCurve(to: p(18.57, 18.18), control1: p(14.59, 21), control2: p(16.94, 19.92))
-            path.addLine(to: p(21, 16))
-            path.move(to: p(16, 16)); path.addLine(to: p(21, 16)); path.addLine(to: p(21, 21))
-        case .search:
-            path.addEllipse(in: CGRect(x: 3 * s, y: 3 * s, width: 13 * s, height: 13 * s)); path.move(to: p(14, 14)); path.addLine(to: p(21, 21))
-        case .arrowRight:
-            path.move(to: p(4, 12)); path.addLine(to: p(20, 12)); path.move(to: p(14, 6)); path.addLine(to: p(20, 12)); path.addLine(to: p(14, 18))
-        case .arrowUp:
-            path.move(to: p(12, 20)); path.addLine(to: p(12, 4)); path.move(to: p(6, 10)); path.addLine(to: p(12, 4)); path.addLine(to: p(18, 10))
-        case .arrowDown:
-            path.move(to: p(12, 4)); path.addLine(to: p(12, 20)); path.move(to: p(6, 14)); path.addLine(to: p(12, 20)); path.addLine(to: p(18, 14))
-        case .pencil:
-            path.move(to: p(4, 20)); path.addLine(to: p(5, 16)); path.addLine(to: p(16, 5)); path.addLine(to: p(19, 8)); path.addLine(to: p(8, 19)); path.closeSubpath(); path.move(to: p(14, 7)); path.addLine(to: p(17, 10))
-        case .checkCircle:
-            path.addEllipse(in: CGRect(x: 3 * s, y: 3 * s, width: 18 * s, height: 18 * s)); path.move(to: p(8, 12)); path.addLine(to: p(11, 15)); path.addLine(to: p(16, 9))
-        case .check:
-            path.move(to: p(5, 12)); path.addLine(to: p(10, 17)); path.addLine(to: p(19, 7))
-        case .xmark:
-            path.move(to: p(6, 6)); path.addLine(to: p(18, 18)); path.move(to: p(18, 6)); path.addLine(to: p(6, 18))
-        case .fileText:
-            path.move(to: p(14, 2)); path.addLine(to: p(20, 8)); path.addLine(to: p(20, 22)); path.addLine(to: p(4, 22)); path.addLine(to: p(4, 2)); path.closeSubpath(); path.move(to: p(14, 2)); path.addLine(to: p(14, 8)); path.addLine(to: p(20, 8)); path.move(to: p(8, 13)); path.addLine(to: p(16, 13)); path.move(to: p(8, 17)); path.addLine(to: p(16, 17))
-        case .braces:
-            path.move(to: p(9, 3)); path.addCurve(to: p(6, 8), control1: p(6, 3), control2: p(6, 5)); path.addLine(to: p(6, 10)); path.addCurve(to: p(4, 12), control1: p(6, 11), control2: p(5, 12)); path.addCurve(to: p(6, 14), control1: p(5, 12), control2: p(6, 13)); path.addLine(to: p(6, 16)); path.addCurve(to: p(9, 21), control1: p(6, 19), control2: p(6, 21)); path.move(to: p(15, 3)); path.addCurve(to: p(18, 8), control1: p(18, 3), control2: p(18, 5)); path.addLine(to: p(18, 10)); path.addCurve(to: p(20, 12), control1: p(18, 11), control2: p(19, 12)); path.addCurve(to: p(18, 14), control1: p(19, 12), control2: p(18, 13)); path.addLine(to: p(18, 16)); path.addCurve(to: p(15, 21), control1: p(18, 19), control2: p(18, 21))
-        case .image:
-            path.addRoundedRect(in: CGRect(x: 3 * s, y: 4 * s, width: 18 * s, height: 16 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.addEllipse(in: CGRect(x: 7 * s, y: 8 * s, width: 3 * s, height: 3 * s)); path.move(to: p(3, 17)); path.addLine(to: p(9, 12)); path.addLine(to: p(13, 16)); path.addLine(to: p(16, 13)); path.addLine(to: p(21, 17))
-        case .sun:
-            path.addEllipse(in: CGRect(x: 8 * s, y: 8 * s, width: 8 * s, height: 8 * s)); for angle in stride(from: 0.0, to: Double.pi * 2, by: Double.pi / 4) { path.move(to: p(12 + CGFloat(cos(angle)) * 8, 12 + CGFloat(sin(angle)) * 8)); path.addLine(to: p(12 + CGFloat(cos(angle)) * 10, 12 + CGFloat(sin(angle)) * 10)) }
-        case .inbox:
-            path.move(to: p(4, 5)); path.addLine(to: p(20, 5)); path.addLine(to: p(22, 17)); path.addLine(to: p(2, 17)); path.closeSubpath(); path.move(to: p(2, 17)); path.addCurve(to: p(7, 20), control1: p(3, 20), control2: p(5, 20)); path.addLine(to: p(17, 20)); path.addCurve(to: p(22, 17), control1: p(19, 20), control2: p(21, 20))
-        case .kanban:
-            path.addRect(CGRect(x: 3 * s, y: 4 * s, width: 5 * s, height: 7 * s)); path.addRect(CGRect(x: 3 * s, y: 14 * s, width: 5 * s, height: 6 * s)); path.addRect(CGRect(x: 11 * s, y: 4 * s, width: 10 * s, height: 16 * s))
-        case .cube:
-            path.move(to: p(12, 3)); path.addLine(to: p(21, 8)); path.addLine(to: p(21, 16)); path.addLine(to: p(12, 21)); path.addLine(to: p(3, 16)); path.addLine(to: p(3, 8)); path.closeSubpath(); path.move(to: p(3, 8)); path.addLine(to: p(12, 13)); path.addLine(to: p(21, 8)); path.move(to: p(12, 13)); path.addLine(to: p(12, 21))
-        case .gauge:
-            path.move(to: p(3, 15)); path.addCurve(to: p(21, 15), control1: p(5, 3), control2: p(19, 3)); path.move(to: p(5, 19)); path.addLine(to: p(19, 19)); path.move(to: p(12, 15)); path.addLine(to: p(16, 9)); path.addEllipse(in: CGRect(x: 10 * s, y: 13 * s, width: 4 * s, height: 4 * s))
-        case .clock:
-            path.addEllipse(in: CGRect(x: 3 * s, y: 3 * s, width: 18 * s, height: 18 * s)); path.move(to: p(12, 7)); path.addLine(to: p(12, 12)); path.addLine(to: p(16, 14))
-        case .activity:
-            path.move(to: p(3, 12)); path.addLine(to: p(7, 12)); path.addLine(to: p(10, 5)); path.addLine(to: p(14, 19)); path.addLine(to: p(17, 12)); path.addLine(to: p(21, 12))
-        case .audioLines:
-            path.move(to: p(4, 10)); path.addLine(to: p(4, 14)); path.move(to: p(8, 6)); path.addLine(to: p(8, 18)); path.move(to: p(12, 3)); path.addLine(to: p(12, 21)); path.move(to: p(16, 6)); path.addLine(to: p(16, 18)); path.move(to: p(20, 10)); path.addLine(to: p(20, 14))
-        case .bot:
-            path.addRoundedRect(in: CGRect(x: 5 * s, y: 7 * s, width: 14 * s, height: 12 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s)); path.move(to: p(12, 7)); path.addLine(to: p(12, 3)); path.move(to: p(9, 3)); path.addLine(to: p(15, 3)); path.addEllipse(in: CGRect(x: 9 * s, y: 11 * s, width: 2 * s, height: 2 * s)); path.addEllipse(in: CGRect(x: 13 * s, y: 11 * s, width: 2 * s, height: 2 * s)); path.move(to: p(2, 11)); path.addLine(to: p(5, 11)); path.move(to: p(19, 11)); path.addLine(to: p(22, 11))
-        case .fileSearch:
-            path.move(to: p(6, 2)); path.addLine(to: p(16, 2)); path.addLine(to: p(20, 6)); path.addLine(to: p(20, 15)); path.move(to: p(6, 2)); path.addLine(to: p(6, 22)); path.addLine(to: p(13, 22)); path.addEllipse(in: CGRect(x: 12 * s, y: 12 * s, width: 7 * s, height: 7 * s)); path.move(to: p(18, 18)); path.addLine(to: p(21, 21))
-        case .users:
-            path.addEllipse(in: CGRect(x: 4 * s, y: 4 * s, width: 6 * s, height: 6 * s)); path.addEllipse(in: CGRect(x: 14 * s, y: 4 * s, width: 6 * s, height: 6 * s)); path.addArc(center: p(7, 18), radius: 5 * s, startAngle: .degrees(200), endAngle: .degrees(-20), clockwise: false); path.addArc(center: p(17, 18), radius: 5 * s, startAngle: .degrees(200), endAngle: .degrees(-20), clockwise: false)
-        case .folder:
-            path.move(to: p(3, 6)); path.addLine(to: p(10, 6)); path.addLine(to: p(12, 8)); path.addLine(to: p(21, 8)); path.addLine(to: p(21, 20)); path.addLine(to: p(3, 20)); path.closeSubpath()
-        case .messages:
-            path.move(to: p(7, 5)); path.addLine(to: p(16, 5)); path.addCurve(to: p(18, 7), control1: p(18, 5), control2: p(18, 6)); path.addLine(to: p(18, 13)); path.addCurve(to: p(16, 15), control1: p(18, 14), control2: p(17, 15)); path.addLine(to: p(9, 15)); path.addLine(to: p(5, 18)); path.addLine(to: p(6, 15)); path.addCurve(to: p(4, 13), control1: p(4, 15), control2: p(4, 14)); path.addLine(to: p(4, 7)); path.addCurve(to: p(7, 5), control1: p(4, 5), control2: p(5, 5)); path.move(to: p(11, 9)); path.addLine(to: p(19, 9)); path.addCurve(to: p(21, 11), control1: p(21, 9), control2: p(21, 10)); path.addLine(to: p(21, 17)); path.addCurve(to: p(19, 19), control1: p(21, 18), control2: p(20, 19)); path.addLine(to: p(14, 19)); path.addLine(to: p(11, 21)); path.addLine(to: p(12, 19)); path.addLine(to: p(11, 19))
-        case .panelOpen:
-            // Lucide `panel-right`: the right-hand pane is visible.
-            path.addRoundedRect(in: CGRect(x: 3 * s, y: 3 * s, width: 18 * s, height: 18 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.move(to: p(15, 3)); path.addLine(to: p(15, 21))
-        case .panelClosed:
-            // Lucide `panel-right-open`: indicate that the pane can expand.
-            path.addRoundedRect(in: CGRect(x: 3 * s, y: 3 * s, width: 18 * s, height: 18 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.move(to: p(15, 3)); path.addLine(to: p(15, 21)); path.move(to: p(11, 9)); path.addLine(to: p(8, 12)); path.addLine(to: p(11, 15))
-        case .settings:
-            let gearPoints = (0..<24).map { index -> CGPoint in let angle = Double(index) * Double.pi / 12; let radius: CGFloat = index.isMultiple(of: 3) ? 10 : (index % 3 == 1 ? 8.5 : 8); return p(12 + CGFloat(cos(angle)) * radius, 12 + CGFloat(sin(angle)) * radius) }
-            path.move(to: gearPoints[0]); for point in gearPoints.dropFirst() { path.addLine(to: point) }; path.closeSubpath(); path.addEllipse(in: CGRect(x: 9 * s, y: 9 * s, width: 6 * s, height: 6 * s))
-        case .chevronDown:
-            path.move(to: p(6, 9)); path.addLine(to: p(12, 15)); path.addLine(to: p(18, 9))
-        case .chevronUp:
-            path.move(to: p(6, 15)); path.addLine(to: p(12, 9)); path.addLine(to: p(18, 15))
-        case .chevronRight:
-            path.move(to: p(9, 6)); path.addLine(to: p(15, 12)); path.addLine(to: p(9, 18))
-        case .chevronLeft:
-            path.move(to: p(15, 6)); path.addLine(to: p(9, 12)); path.addLine(to: p(15, 18))
-        case .arrowDownUp:
-            path.move(to: p(7, 3)); path.addLine(to: p(7, 21)); path.move(to: p(3, 7)); path.addLine(to: p(7, 3)); path.addLine(to: p(11, 7)); path.move(to: p(17, 21)); path.addLine(to: p(17, 3)); path.move(to: p(13, 17)); path.addLine(to: p(17, 21)); path.addLine(to: p(21, 17))
-        case .fileDiff:
-            path.move(to: p(14, 2)); path.addLine(to: p(20, 8)); path.addLine(to: p(20, 22)); path.addLine(to: p(4, 22)); path.addLine(to: p(4, 2)); path.closeSubpath(); path.move(to: p(14, 2)); path.addLine(to: p(14, 8)); path.addLine(to: p(20, 8)); path.move(to: p(8, 13)); path.addLine(to: p(12, 13)); path.move(to: p(10, 11)); path.addLine(to: p(10, 15)); path.move(to: p(15, 13)); path.addLine(to: p(17, 13))
-        case .plus:
-            path.move(to: p(12, 5)); path.addLine(to: p(12, 19)); path.move(to: p(5, 12)); path.addLine(to: p(19, 12))
-        case .ellipsis:
-            path.addEllipse(in: CGRect(x: 4 * s, y: 10 * s, width: 4 * s, height: 4 * s)); path.addEllipse(in: CGRect(x: 10 * s, y: 10 * s, width: 4 * s, height: 4 * s)); path.addEllipse(in: CGRect(x: 16 * s, y: 10 * s, width: 4 * s, height: 4 * s))
-        case .circle:
-            path.addEllipse(in: CGRect(x: 4 * s, y: 4 * s, width: 16 * s, height: 16 * s))
-        case .circleDot:
-            path.addEllipse(in: CGRect(x: 2 * s, y: 2 * s, width: 20 * s, height: 20 * s)); path.addEllipse(in: CGRect(x: 11 * s, y: 11 * s, width: 2 * s, height: 2 * s))
-        case .chevronsUpDown:
-            path.move(to: p(7, 15)); path.addLine(to: p(12, 20)); path.addLine(to: p(17, 15)); path.move(to: p(7, 9)); path.addLine(to: p(12, 4)); path.addLine(to: p(17, 9))
-        case .triangleAlert:
-            path.move(to: p(12, 3)); path.addLine(to: p(22, 20)); path.addLine(to: p(2, 20)); path.closeSubpath(); path.move(to: p(12, 9)); path.addLine(to: p(12, 14)); path.move(to: p(12, 17)); path.addLine(to: p(12, 17))
-        case .trash:
-            path.move(to: p(4, 7)); path.addLine(to: p(20, 7)); path.move(to: p(9, 7)); path.addLine(to: p(9, 4)); path.addCurve(to: p(11, 2), control1: p(9, 3), control2: p(10, 2)); path.addLine(to: p(13, 2)); path.addCurve(to: p(15, 4), control1: p(14, 2), control2: p(15, 3)); path.addLine(to: p(15, 7)); path.addRoundedRect(in: CGRect(x: 6 * s, y: 7 * s, width: 12 * s, height: 15 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.move(to: p(10, 11)); path.addLine(to: p(10, 18)); path.move(to: p(14, 11)); path.addLine(to: p(14, 18))
-        case .terminal:
-            path.addRoundedRect(in: CGRect(x: 3 * s, y: 4 * s, width: 18 * s, height: 16 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.move(to: p(7, 9)); path.addLine(to: p(10, 12)); path.addLine(to: p(7, 15)); path.move(to: p(13, 15)); path.addLine(to: p(17, 15))
-        case .paperclip:
-            path.move(to: p(21, 11)); path.addLine(to: p(12, 20)); path.addCurve(to: p(4, 12), control1: p(8, 24), control2: p(0, 16)); path.addLine(to: p(13, 3)); path.addCurve(to: p(19, 9), control1: p(16, 0), control2: p(22, 6)); path.addLine(to: p(10, 18)); path.addCurve(to: p(7, 15), control1: p(8, 20), control2: p(5, 17)); path.addLine(to: p(15, 8))
-        case .mic:
-            path.addRoundedRect(in: CGRect(x: 8 * s, y: 3 * s, width: 8 * s, height: 12 * s), cornerSize: CGSize(width: 4 * s, height: 4 * s)); path.move(to: p(5, 11)); path.addCurve(to: p(19, 11), control1: p(5, 20), control2: p(19, 20)); path.move(to: p(12, 20)); path.addLine(to: p(12, 23))
-        case .stop:
-            path.addRoundedRect(in: CGRect(x: 5 * s, y: 5 * s, width: 14 * s, height: 14 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s))
-        case .pause:
-            path.addRoundedRect(in: CGRect(x: 6 * s, y: 4 * s, width: 4 * s, height: 16 * s), cornerSize: CGSize(width: 1 * s, height: 1 * s)); path.addRoundedRect(in: CGRect(x: 14 * s, y: 4 * s, width: 4 * s, height: 16 * s), cornerSize: CGSize(width: 1 * s, height: 1 * s))
-        case .calendar:
-            path.addRoundedRect(in: CGRect(x: 3 * s, y: 5 * s, width: 18 * s, height: 16 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.move(to: p(3, 10)); path.addLine(to: p(21, 10)); path.move(to: p(8, 3)); path.addLine(to: p(8, 7)); path.move(to: p(16, 3)); path.addLine(to: p(16, 7))
-        case .link:
-            path.addRoundedRect(in: CGRect(x: 2 * s, y: 9 * s, width: 10 * s, height: 6 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s)); path.addRoundedRect(in: CGRect(x: 12 * s, y: 9 * s, width: 10 * s, height: 6 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s)); path.move(to: p(8, 12)); path.addLine(to: p(16, 12))
-        case .pin:
-            path.move(to: p(8, 3)); path.addLine(to: p(16, 3)); path.move(to: p(9, 3)); path.addLine(to: p(9, 8)); path.addLine(to: p(5, 12)); path.addLine(to: p(19, 12)); path.addLine(to: p(15, 8)); path.addLine(to: p(15, 3)); path.move(to: p(12, 12)); path.addLine(to: p(12, 21))
-        case .externalLink:
-            path.move(to: p(15, 3)); path.addLine(to: p(21, 3)); path.addLine(to: p(21, 9)); path.move(to: p(10, 14)); path.addLine(to: p(21, 3)); path.move(to: p(21, 14)); path.addLine(to: p(21, 19)); path.addCurve(to: p(19, 21), control1: p(21, 20), control2: p(20, 21)); path.addLine(to: p(5, 21)); path.addCurve(to: p(3, 19), control1: p(4, 21), control2: p(3, 20)); path.addLine(to: p(3, 5)); path.addCurve(to: p(5, 3), control1: p(3, 4), control2: p(4, 3)); path.addLine(to: p(10, 3))
-        case .sliders:
-            path.move(to: p(4, 7)); path.addLine(to: p(20, 7)); path.move(to: p(4, 12)); path.addLine(to: p(20, 12)); path.move(to: p(4, 17)); path.addLine(to: p(20, 17)); path.addEllipse(in: CGRect(x: 7 * s, y: 5 * s, width: 4 * s, height: 4 * s)); path.addEllipse(in: CGRect(x: 13 * s, y: 10 * s, width: 4 * s, height: 4 * s)); path.addEllipse(in: CGRect(x: 9 * s, y: 15 * s, width: 4 * s, height: 4 * s))
-        case .radio:
-            path.addEllipse(in: CGRect(x: 5 * s, y: 5 * s, width: 14 * s, height: 14 * s)); path.addEllipse(in: CGRect(x: 10 * s, y: 10 * s, width: 4 * s, height: 4 * s)); path.move(to: p(12, 2)); path.addLine(to: p(12, 5))
-        case .cpu:
-            path.addRoundedRect(in: CGRect(x: 6 * s, y: 6 * s, width: 12 * s, height: 12 * s), cornerSize: CGSize(width: 2 * s, height: 2 * s)); path.addRect(CGRect(x: 10 * s, y: 10 * s, width: 4 * s, height: 4 * s)); for value in [8.0, 12.0, 16.0] { path.move(to: p(value, 2)); path.addLine(to: p(value, 6)); path.move(to: p(value, 18)); path.addLine(to: p(value, 22)) }
-        case .brain:
-            path.addArc(center: p(9, 10), radius: 5 * s, startAngle: .degrees(90), endAngle: .degrees(270), clockwise: false); path.addArc(center: p(15, 10), radius: 5 * s, startAngle: .degrees(-90), endAngle: .degrees(90), clockwise: false); path.move(to: p(12, 5)); path.addLine(to: p(12, 19)); path.addLine(to: p(8, 19)); path.move(to: p(12, 12)); path.addLine(to: p(17, 12))
-        case .flame:
-            path.move(to: p(12, 2)); path.addCurve(to: p(6, 13), control1: p(7, 6), control2: p(4, 8)); path.addCurve(to: p(12, 22), control1: p(4, 20), control2: p(20, 23)); path.addCurve(to: p(18, 12), control1: p(20, 18), control2: p(16, 16)); path.addCurve(to: p(12, 2), control1: p(15, 8), control2: p(13, 5))
-        case .eye:
-            path.addEllipse(in: CGRect(x: 2 * s, y: 6 * s, width: 20 * s, height: 12 * s)); path.addEllipse(in: CGRect(x: 9 * s, y: 9 * s, width: 6 * s, height: 6 * s))
-        case .eyeOff:
-            path.addEllipse(in: CGRect(x: 2 * s, y: 6 * s, width: 20 * s, height: 12 * s)); path.addEllipse(in: CGRect(x: 9 * s, y: 9 * s, width: 6 * s, height: 6 * s)); path.move(to: p(3, 3)); path.addLine(to: p(21, 21))
-        case .download:
-            path.move(to: p(12, 3)); path.addLine(to: p(12, 16)); path.move(to: p(7, 11)); path.addLine(to: p(12, 16)); path.addLine(to: p(17, 11)); path.move(to: p(4, 20)); path.addLine(to: p(20, 20))
-        case .upload:
-            path.move(to: p(12, 21)); path.addLine(to: p(12, 8)); path.move(to: p(7, 13)); path.addLine(to: p(12, 8)); path.addLine(to: p(17, 13)); path.move(to: p(4, 4)); path.addLine(to: p(20, 4))
-        case .expand:
-            path.move(to: p(9, 3)); path.addLine(to: p(3, 3)); path.addLine(to: p(3, 9)); path.move(to: p(15, 3)); path.addLine(to: p(21, 3)); path.addLine(to: p(21, 9)); path.move(to: p(3, 15)); path.addLine(to: p(3, 21)); path.addLine(to: p(9, 21)); path.move(to: p(15, 21)); path.addLine(to: p(21, 21)); path.addLine(to: p(21, 15))
-        case .minimize:
-            path.move(to: p(3, 9)); path.addLine(to: p(9, 9)); path.addLine(to: p(9, 3)); path.move(to: p(15, 3)); path.addLine(to: p(15, 9)); path.addLine(to: p(21, 9)); path.move(to: p(3, 15)); path.addLine(to: p(9, 15)); path.addLine(to: p(9, 21)); path.move(to: p(15, 21)); path.addLine(to: p(15, 15)); path.addLine(to: p(21, 15))
-        case .user:
-            path.addEllipse(in: CGRect(x: 8 * s, y: 3 * s, width: 8 * s, height: 8 * s)); path.addArc(center: p(12, 21), radius: 8 * s, startAngle: .degrees(200), endAngle: .degrees(-20), clockwise: false)
-        case .messageCircle:
-            path.addRoundedRect(in: CGRect(x: 3 * s, y: 4 * s, width: 18 * s, height: 15 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s)); path.move(to: p(8, 19)); path.addLine(to: p(8, 22)); path.addLine(to: p(12, 19))
-        case .messageCirclePlus:
-            path.addRoundedRect(in: CGRect(x: 3 * s, y: 4 * s, width: 18 * s, height: 15 * s), cornerSize: CGSize(width: 3 * s, height: 3 * s)); path.move(to: p(8, 19)); path.addLine(to: p(8, 22)); path.addLine(to: p(12, 19)); path.move(to: p(12, 9)); path.addLine(to: p(12, 15)); path.move(to: p(9, 12)); path.addLine(to: p(15, 12))
-        case .fullscreen:
-            path.move(to: p(9, 3)); path.addLine(to: p(3, 3)); path.addLine(to: p(3, 9)); path.move(to: p(15, 3)); path.addLine(to: p(21, 3)); path.addLine(to: p(21, 9)); path.move(to: p(3, 15)); path.addLine(to: p(3, 21)); path.addLine(to: p(9, 21)); path.move(to: p(15, 21)); path.addLine(to: p(21, 21)); path.addLine(to: p(21, 15))
-        case .sparkles:
-            path.addEllipse(in: CGRect(x: 10 * s, y: 3 * s, width: 4 * s, height: 4 * s)); path.move(to: p(12, 1)); path.addLine(to: p(12, 9)); path.move(to: p(8, 5)); path.addLine(to: p(16, 5)); path.addEllipse(in: CGRect(x: 3 * s, y: 14 * s, width: 3 * s, height: 3 * s)); path.move(to: p(4.5, 12)); path.addLine(to: p(4.5, 19)); path.move(to: p(1, 15.5)); path.addLine(to: p(8, 15.5))
-        }
-        return path
-    }
-}
-
-/// Git pull-request glyph with Lucide's connected-points geometry.
+/// Git pull-request glyph with a check-status dot.
 struct PullRequestBranchIcon: View {
     enum Status { case success, failure, draft, neutral }
     let status: Status
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            LucideIcon(name: .gitPullRequest, size: 17, color: iconColor)
+            DockIcon(.gitPullRequest, size: 17, color: iconColor)
             if status == .success || status == .failure {
                 Circle().fill(status == .success ? Color.dockSuccess : Color.dockDestructive).frame(width: 6, height: 6).overlay(Circle().stroke(Color.dockSurface2, lineWidth: 1.1)).offset(x: 1, y: 1)
             }
@@ -875,24 +582,29 @@ final class PullRequestMutationCoordinator: ObservableObject {
 struct PullRequestRowView: View {
     let pullRequest: PullRequestRecord
     let isSelected: Bool
+    @State private var isHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 9) {
                 PullRequestBranchIcon(status: iconStatus).padding(.top, -1)
-                Text("#\(pullRequest.displayNumber)  \(pullRequest.title)")
+                (Text("#\(pullRequest.displayNumber) ").foregroundStyle(Color.dockMetadataText) + Text(pullRequest.title).foregroundStyle(Color.dockPrimaryText))
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
             }
             Text("\(pullRequest.repository.id) · \(pullRequest.headBranch)")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
+                .truncationMode(.middle)
             HStack {
                 Text(pullRequest.readinessLabel)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: 9, weight: .bold))
+                    .tracking(0.4)
                     .foregroundStyle(pullRequest.isDraft ? Color.dockMetadataText : Color.dockAccent)
+                    .padding(.horizontal, 6)
+                    .frame(height: 16)
+                    .background(Capsule().fill((pullRequest.isDraft ? Color.dockSurface4 : Color.dockAccent.opacity(0.16))))
                 Spacer()
                 if let adds = pullRequest.additions, let dels = pullRequest.deletions {
                     HStack(spacing: 8) {
@@ -905,14 +617,67 @@ struct PullRequestRowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Color.dockAccent.opacity(0.16) : Color.clear))
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Color.dockAccent.opacity(0.16) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
     }
 
     private var iconStatus: PullRequestBranchIcon.Status {
         guard !pullRequest.isDraft else { return .draft }
         if pullRequest.checks.contains(where: { $0.conclusion?.lowercased() == "failure" }) { return .failure }
         return .success
+    }
+}
+
+private struct PullRequestDiffStat: View {
+    let additions: Int
+    let deletions: Int
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if additions > 0 { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
+            if deletions > 0 { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
+        }
+        .font(.system(size: 10, weight: .medium, design: .monospaced))
+        .fixedSize()
+    }
+}
+
+private struct PullRequestFileTreeRow: View {
+    let node: PullRequestFileTreeNode
+    let icon: Ph
+    let iconColor: Color
+    let file: PullRequestFile?
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                DockIcon(icon, size: 13, color: node.isDirectory ? Color.dockMetadataText : iconColor)
+                    .frame(width: 14, height: 14)
+                Text(node.title)
+                    .font(.system(size: 12, weight: node.isDirectory ? .regular : .medium))
+                    .foregroundStyle(isSelected ? Color.dockPrimaryText : (node.isDirectory ? Color.dockMetadataText : Color.dockSecondaryText))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 6)
+                if let file { PullRequestDiffStat(additions: file.additions, deletions: file.deletions) }
+            }
+            .padding(.leading, CGFloat(node.depth) * 12 + 8)
+            .padding(.trailing, 8)
+            .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isSelected ? Color.dockAccent.opacity(0.16) : (isHovered && !node.isDirectory ? Color.dockSurface4.opacity(0.5) : Color.clear))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(node.isDirectory)
+        .onHover { isHovered = $0 }
+        .help(node.id)
     }
 }
 
@@ -925,28 +690,9 @@ private struct PullRequestShimmerBlock: View {
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(Color.dockSurface4.opacity(pulse ? 0.55 : 0.28))
-            .frame(width: width, height: height)
-            .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
-    }
-}
-
-struct RepositoryFilterTabButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isSelected ? Color.dockSurface4 : Color.clear))
-        }
-        .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .animation(pulse ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : nil, value: pulse)
+            .frame(maxWidth: width ?? .infinity, alignment: .leading)
+            .frame(height: height)
     }
 }
 
@@ -1078,7 +824,7 @@ struct PullRequestDetailView: View {
         }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    } else { VStack(spacing: 12) { LucideIcon(name: .gitPullRequest, size: 28); Text(center.isRefreshing ? "Loading pull requests…" : "Select a pull request").font(.system(size: 15, weight: .medium)) }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity) }
+    } else { VStack(spacing: 12) { DockIcon(.gitPullRequest, size: 28, color: Color.dockMetadataText); Text(center.isRefreshing ? "Loading pull requests…" : "Select a pull request").font(.system(size: 15, weight: .medium)) }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity) }
     }
 
     private var detailLoadingPane: some View {
@@ -1087,10 +833,10 @@ struct PullRequestDetailView: View {
                 PullRequestShimmerBlock(width: 72, height: 22, cornerRadius: 7, pulse: false)
                 PullRequestShimmerBlock(width: 48, height: 22, cornerRadius: 7, pulse: false)
                 Spacer()
-                PullRequestShimmerBlock(width: 114, height: 30, cornerRadius: 8, pulse: false)
+                PullRequestShimmerBlock(width: 88, height: 28, cornerRadius: 7, pulse: false)
             }
-            .padding(.horizontal, 24)
-            .frame(height: 56)
+            .padding(.horizontal, 16)
+            .frame(height: 44)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             ScrollView {
@@ -1139,7 +885,7 @@ struct PullRequestDetailView: View {
                 HStack(spacing: 6) {
                     if let url = pr.webURL {
                         Link(destination: url) {
-                            PullRequestReviewToolbarIcon(name: .externalLink, accessibilityLabel: "Open on GitHub")
+                            PullRequestReviewToolbarIcon(name: .arrowSquareOut, accessibilityLabel: "Open on GitHub")
                         }
                         .buttonStyle(.plain)
                         .help("Open on GitHub")
@@ -1162,7 +908,7 @@ struct PullRequestDetailView: View {
                 HStack(spacing: 10) {
                     Text(pr.headBranch)
                         .lineLimit(1)
-                    LucideIcon(name: .arrowRight, size: 14, color: Color.dockMetadataText)
+                    DockIcon(.arrowRight, size: 14, color: Color.dockMetadataText)
                     Text(pr.baseBranch)
                         .lineLimit(1)
                     Spacer(minLength: 16)
@@ -1179,7 +925,7 @@ struct PullRequestDetailView: View {
     }
     private func summary(_ pr: PullRequestRecord) -> some View { VStack(alignment: .leading, spacing: 0) {
         Text(pr.title)
-            .font(.system(size: 24, weight: .semibold))
+            .font(.system(size: 20, weight: .semibold))
             .foregroundStyle(Color.dockPrimaryText)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 26)
@@ -1193,15 +939,15 @@ struct PullRequestDetailView: View {
             }
         }
         .foregroundStyle(Color.dockMetadataText)
-        .padding(.top, 13)
-        .padding(.bottom, 30)
+        .padding(.top, 12)
+        .padding(.bottom, 22)
 
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 12) {
             summaryDetailRow(icon: .gitBranch, title: "Branch") {
-                HStack(spacing: 9) {
-                    Text(pr.headBranch).lineLimit(1).layoutPriority(1)
-                    LucideIcon(name: .arrowRight, size: 15, color: Color.dockMetadataText)
-                    Text(pr.baseBranch).lineLimit(1).layoutPriority(1)
+                HStack(spacing: 8) {
+                    Text(pr.headBranch).lineLimit(1).truncationMode(.middle).layoutPriority(1)
+                    DockIcon(.arrowRight, size: 13, color: Color.dockMetadataText)
+                    Text(pr.baseBranch).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                     if let additions = pr.additions { Text("+\(additions)").foregroundStyle(Color.dockSuccess).fixedSize(horizontal: true, vertical: false) }
                     if let deletions = pr.deletions { Text("−\(deletions)").foregroundStyle(Color.dockDestructive).fixedSize(horizontal: true, vertical: false) }
                 }
@@ -1209,7 +955,7 @@ struct PullRequestDetailView: View {
             summaryDetailRow(icon: .users, title: "Reviewers") {
                 Text(pr.requestedReviewers.isEmpty ? "No reviewers requested" : pr.requestedReviewers.joined(separator: ", "))
             }
-            summaryDetailRow(icon: .messages, title: "Comments") {
+            summaryDetailRow(icon: .chats, title: "Comments") {
                 Text(pr.comments == 0 ? "No comments" : "\(pr.comments) comment\(pr.comments == 1 ? "" : "s")")
             }
             summaryDetailRow(icon: .checkCircle, title: "Checks", color: checksColor(for: pr)) {
@@ -1222,38 +968,49 @@ struct PullRequestDetailView: View {
         }
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(Color.dockSecondaryText)
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface2))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
 
-        summarySectionHeader("Description", isExpanded: $descriptionExpanded).padding(.top, 34)
+        summarySectionHeader("Description", isExpanded: $descriptionExpanded).padding(.top, 20)
         if descriptionExpanded {
             if pr.body.isEmpty {
-                Text("No description provided.").font(.system(size: 14)).foregroundStyle(Color.dockMetadataText).padding(.top, 14).padding(.bottom, 26)
+                Text("No description provided.").font(.system(size: 13)).foregroundStyle(Color.dockMetadataText).padding(.top, 12)
             } else {
-                MarkdownMessageView(markdown: pr.body).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 14).padding(.bottom, 30)
+                MarkdownMessageView(markdown: pr.body).frame(maxWidth: .infinity, alignment: .leading).padding(.top, 12)
             }
         }
 
-        summarySectionHeader("Checks", isExpanded: $checksExpanded)
-            .padding(.top, descriptionExpanded ? 8 : 26)
-        if checksExpanded { checksSection(pr).padding(.top, 16).padding(.bottom, 30) }
+        summarySectionHeader("Checks", count: pr.checks.isEmpty ? nil : pr.checks.count, isExpanded: $checksExpanded)
+            .padding(.top, 20)
+        if checksExpanded { checksSection(pr).padding(.top, 12) }
 
         let activityCount = (center.commitsByID[pr.id] ?? []).count + (center.commentsByID[pr.id] ?? []).count + 1
         summarySectionHeader("Activity", count: activityCount, isExpanded: $activityExpanded)
+            .padding(.top, 20)
         if activityExpanded {
-            activitySection(pr).padding(.top, 16)
+            activitySection(pr).padding(.top, 12)
             commentComposer(pr).padding(.top, 18).padding(.bottom, 40)
         }
     }.frame(maxWidth: 720, alignment: .leading) }
 
     private func summarySectionHeader(_ title: String, count: Int? = nil, isExpanded: Binding<Bool>) -> some View {
         Button { isExpanded.wrappedValue.toggle() } label: {
-            HStack(spacing: 9) {
-                Text(title).font(.system(size: 14, weight: .medium))
-                LucideIcon(name: isExpanded.wrappedValue ? .chevronDown : .chevronRight, size: 14, color: Color.dockMetadataText)
-                if let count { Text("\(count)").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.dockMetadataText) }
+            HStack(spacing: 8) {
+                DockIcon(isExpanded.wrappedValue ? .caretDown : .caretRight, size: 13, color: Color.dockMetadataText)
+                Text(title).font(.system(size: 13, weight: .semibold))
+                if let count {
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .padding(.horizontal, 6)
+                        .frame(height: 18)
+                        .background(Capsule().fill(Color.dockSurface4))
+                }
                 Spacer()
             }
-            .foregroundStyle(Color.dockSecondaryText)
-            .padding(.vertical, 13)
+            .foregroundStyle(Color.dockPrimaryText)
+            .padding(.vertical, 10)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1272,7 +1029,7 @@ struct PullRequestDetailView: View {
                 Button {
                     Task { await center.refreshSelectedDetail() }
                 } label: {
-                    LucideIcon(name: .refreshCw, size: 15, color: Color.dockSecondaryText)
+                    DockIcon(.arrowsClockwise, size: 15, color: Color.dockSecondaryText)
                         .frame(width: 30, height: 30)
                 }
                 .buttonStyle(.plain)
@@ -1288,7 +1045,7 @@ struct PullRequestDetailView: View {
             VStack(spacing: 0) {
                 ForEach(pr.checks) { check in
                     HStack(spacing: 13) {
-                        LucideIcon(name: checkIcon(for: check), size: 14, color: checkColor(for: check))
+                        DockIcon(checkIcon(for: check), size: 14, color: checkColor(for: check))
                             .frame(width: 22, height: 22)
                             .background(Circle().fill(checkColor(for: check).opacity(0.12)))
                         if let url = check.detailsURL { Link(check.name, destination: url) } else { Text(check.name) }
@@ -1315,15 +1072,15 @@ struct PullRequestDetailView: View {
                 activityRow(icon: .gitBranch, iconColor: Color.dockMetadataText, title: commit.message, trailing: String(commit.id.prefix(7)), avatarURL: commit.authorAvatarURL, age: commit.committedAt.map(pullRequestAge))
             }
             ForEach(comments) { comment in
-                activityRow(icon: .messages, iconColor: Color.dockAccent, title: "\(comment.author) commented", detail: comment.body, avatarURL: comment.authorAvatarURL, age: comment.createdAt.map(pullRequestAge))
+                activityRow(icon: .chats, iconColor: Color.dockAccent, title: "\(comment.author) commented", detail: comment.body, avatarURL: comment.authorAvatarURL, age: comment.createdAt.map(pullRequestAge))
             }
             activityRow(icon: .gitPullRequest, iconColor: Color.dockSuccess, title: "\(pr.author) opened this pull request", age: pr.updatedAt.map(pullRequestAge))
         }
     }
 
-    private func activityRow(icon: LucideIconName, iconColor: Color, title: String, detail: String? = nil, trailing: String? = nil, avatarURL: URL? = nil, age: String? = nil) -> some View {
+    private func activityRow(icon: Ph, iconColor: Color, title: String, detail: String? = nil, trailing: String? = nil, avatarURL: URL? = nil, age: String? = nil) -> some View {
         HStack(spacing: 10) {
-            LucideIcon(name: icon, size: 14, color: iconColor)
+            DockIcon(icon, size: 14, color: iconColor)
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(Color.dockSurface4.opacity(0.55)))
             VStack(alignment: .leading, spacing: detail == nil ? 0 : 5) {
@@ -1368,7 +1125,7 @@ struct PullRequestDetailView: View {
                     mutationCoordinator.requestComment(draft, for: pr)
                 } label: {
                     if center.isPostingComment { ProgressView().controlSize(.small).frame(width: 34, height: 34) }
-                    else { LucideIcon(name: .arrowUp, size: 17, color: commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockMetadataText : Color.dockPrimaryText).frame(width: 34, height: 34).background(Circle().fill(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockSurface4 : Color.dockAccent)) }
+                    else { DockIcon(.arrowUp, size: 17, color: commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockMetadataText : Color.dockPrimaryText).frame(width: 34, height: 34).background(Circle().fill(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockSurface4 : Color.dockAccent)) }
                 }
                 .buttonStyle(.plain)
                 .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || center.isPostingComment)
@@ -1379,7 +1136,7 @@ struct PullRequestDetailView: View {
         }
     }
 
-    private func checkIcon(for check: GitHubCheckSummary) -> LucideIconName { checkColor(for: check) == Color.dockSuccess ? .check : (checkColor(for: check) == Color.dockDestructive ? .xmark : .clock) }
+    private func checkIcon(for check: GitHubCheckSummary) -> Ph { checkColor(for: check) == Color.dockSuccess ? .check : (checkColor(for: check) == Color.dockDestructive ? .x : .clock) }
     private func checkColor(for check: GitHubCheckSummary) -> Color {
         let conclusion = check.conclusion?.lowercased()
         if ["success", "neutral", "skipped"].contains(conclusion) { return Color.dockSuccess }
@@ -1411,14 +1168,14 @@ struct PullRequestDetailView: View {
         }
     }
     private var avatarFallback: some View {
-        LucideIcon(name: .user, size: 15, color: Color.dockMetadataText)
+        DockIcon(.user, size: 15, color: Color.dockMetadataText)
             .frame(width: 26, height: 26)
             .background(Circle().fill(Color.dockSurface2))
     }
-    private func summaryDetailRow<Content: View>(icon: LucideIconName, title: String, color: Color = Color.dockMetadataText, @ViewBuilder content: () -> Content) -> some View {
+    private func summaryDetailRow<Content: View>(icon: Ph, title: String, color: Color = Color.dockMetadataText, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 13) {
-            LucideIcon(name: icon, size: 15, color: color).frame(width: 22)
-            Text(title).frame(width: 120, alignment: .leading)
+            DockIcon(icon, size: 14, color: color).frame(width: 18)
+            Text(title).foregroundStyle(Color.dockMetadataText).frame(width: 84, alignment: .leading)
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -1432,7 +1189,7 @@ struct PullRequestDetailView: View {
                     HStack {
                         Text(status.rawValue)
                         Spacer()
-                        if status == current { LucideIcon(name: .check, size: 14, color: Color.dockSecondaryText) }
+                        if status == current { Ph.check.image(size: 14) }
                     }
                 }
                 .disabled(status == .draft && !pr.isDraft)
@@ -1441,7 +1198,7 @@ struct PullRequestDetailView: View {
             HStack(spacing: 7) {
                 if center.isUpdatingStatus { ProgressView().controlSize(.mini) }
                 Text(current.rawValue)
-                LucideIcon(name: .chevronDown, size: 15, color: Color.dockSecondaryText)
+                DockIcon(.caretDown, size: 15, color: Color.dockSecondaryText)
             }
             .padding(.horizontal, 11)
             .frame(height: 30)
@@ -1494,7 +1251,7 @@ struct PullRequestDetailView: View {
                 Text("No patch data is available. Open this pull request on GitHub to inspect its changes.")
                     .foregroundStyle(Color.dockMetadataText)
             case .loaded(let files):
-                HStack(alignment: .top, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
                     if reviewPreferences.showsFileTree { fileTree(files) }
                     ScrollViewReader { proxy in
                         ScrollView(.vertical) {
@@ -1525,16 +1282,20 @@ struct PullRequestDetailView: View {
                 Toggle("Enable rich preview", isOn: $reviewPreferences.richPreview)
                 Toggle("Enable word diffs", isOn: $reviewPreferences.wordDiffs)
             } label: {
-                PullRequestReviewToolbarIcon(name: .ellipsis, accessibilityLabel: "Review options", tooltip: "Review options")
+                PullRequestReviewToolbarIcon(name: .sliders, accessibilityLabel: "Review options", tooltip: "Review options")
             }
-            .menuStyle(.borderlessButton)
+            // `.borderlessButton` drops custom-shape labels on macOS, leaving only the indicator.
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
             .help("Review options")
 
             Button {
                 reviewPreferences.setAllExpanded(fileIDs)
             } label: {
                 PullRequestReviewToolbarIcon(
-                    name: .arrowDownUp,
+                    name: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? .arrowsInLineVertical : .caretUpDown,
                     accessibilityLabel: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? "Collapse all diffs" : "Expand all diffs",
                     tooltip: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? "Collapse all diffs" : "Expand all diffs"
                 )
@@ -1546,9 +1307,8 @@ struct PullRequestDetailView: View {
                 reviewPreferences.diffMode = reviewPreferences.diffMode == .unified ? .split : .unified
             } label: {
                 PullRequestReviewToolbarIcon(
-                    name: .fileDiff,
+                    name: reviewPreferences.diffMode == .unified ? .columns : .rows,
                     accessibilityLabel: "Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff",
-                    isSelected: reviewPreferences.diffMode == .split,
                     tooltip: "Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff"
                 )
             }
@@ -1559,7 +1319,7 @@ struct PullRequestDetailView: View {
                 reviewPreferences.showsFileTree.toggle()
             } label: {
                 PullRequestReviewToolbarIcon(
-                    name: .folder,
+                    name: .sidebar,
                     accessibilityLabel: reviewPreferences.showsFileTree ? "Hide file tree" : "Show file tree",
                     isSelected: reviewPreferences.showsFileTree,
                     tooltip: reviewPreferences.showsFileTree ? "Hide file tree" : "Show file tree"
@@ -1572,80 +1332,64 @@ struct PullRequestDetailView: View {
     }
 
     private func fileTree(_ files: [PullRequestFile]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 7) {
-                Text("FILES")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+        let filesByID = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("Changed files")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
                 Text("\(files.count)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.dockAccent)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.dockAccent.opacity(0.12)))
-                Spacer()
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .padding(.horizontal, 6)
+                    .frame(height: 18)
+                    .background(Capsule().fill(Color.dockSurface4))
+                Spacer(minLength: 4)
+                PullRequestDiffStat(additions: files.reduce(0) { $0 + $1.additions }, deletions: files.reduce(0) { $0 + $1.deletions })
             }
-            .foregroundStyle(Color.dockMetadataText)
-            .padding(.horizontal, 10)
-            .padding(.bottom, 8)
-
-            Color.dockBorderLight.frame(height: 0.5)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
 
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(PullRequestFileTreeBuilder.make(files: files)) { node in
-                        Button {
-                            if let fileID = node.fileID {
-                                selectedFileID = fileID
-                                if !reviewPreferences.expandedFileIDs.contains(fileID) { reviewPreferences.toggleExpanded(fileID) }
-                            }
-                        } label: {
-                            let appearance = fileTreeAppearance(for: node)
-                            HStack(spacing: 7) {
-                                LucideIcon(name: appearance.icon, size: 14, color: appearance.color)
-                                    .frame(width: 16, height: 18)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                            .fill(node.isDirectory ? Color.clear : appearance.color.opacity(0.10))
-                                    )
-                                Text(node.title).lineLimit(1)
-                                Spacer(minLength: 0)
-                            }
-                            .font(.system(size: 11, weight: node.isDirectory ? .medium : .regular, design: .monospaced))
-                            .foregroundStyle(selectedFileID == node.fileID ? Color.dockPrimaryText : Color.dockSecondaryText)
-                            .padding(.leading, CGFloat(node.depth * 13) + 8)
-                            .padding(.trailing, 8)
-                            .frame(maxWidth: .infinity, minHeight: 27, alignment: .leading)
-                            .background(selectedFileID == node.fileID ? Color.dockAccent.opacity(0.16) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        let appearance = fileTreeAppearance(for: node)
+                        PullRequestFileTreeRow(
+                            node: node,
+                            icon: appearance.icon,
+                            iconColor: appearance.color,
+                            file: node.fileID.flatMap { filesByID[$0] },
+                            // Folders have no fileID; comparing optionals would highlight them all when nothing is selected.
+                            isSelected: node.fileID != nil && selectedFileID == node.fileID
+                        ) {
+                            guard let fileID = node.fileID else { return }
+                            selectedFileID = fileID
+                            if !reviewPreferences.expandedFileIDs.contains(fileID) { reviewPreferences.toggleExpanded(fileID) }
                         }
-                        .buttonStyle(.plain)
-                        .disabled(node.isDirectory)
                     }
                 }
-                .padding(.vertical, 6)
+                .padding(.horizontal, 6)
+                .padding(.bottom, 8)
             }
         }
-        .frame(width: 214, alignment: .leading)
-        .padding(.vertical, 10)
-        .background(Color.dockSurface2.opacity(0.82))
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .frame(width: 240, alignment: .leading)
+        .overlay(alignment: .trailing) { Color.dockBorderLight.frame(width: 0.5) }
     }
 
-    private func fileTreeAppearance(for node: PullRequestFileTreeNode) -> (icon: LucideIconName, color: Color) {
+    private func fileTreeAppearance(for node: PullRequestFileTreeNode) -> (icon: Ph, color: Color) {
         guard !node.isDirectory, let path = node.fileID else { return (.folder, Color.dockSecondaryText) }
         let name = (path as NSString).lastPathComponent.lowercased()
         let ext = (path as NSString).pathExtension.lowercased()
         switch ext {
-        case "swift": return (.braces, Color.dockWarning)
-        case "js", "jsx", "ts", "tsx", "vue", "svelte": return (.braces, Color.dockAccent)
-        case "json", "yaml", "yml", "toml", "xml": return (.braces, Color.dockSuccess)
+        case "swift": return (.bracketsCurly, Color.dockWarning)
+        case "js", "jsx", "ts", "tsx", "vue", "svelte": return (.bracketsCurly, Color.dockAccent)
+        case "json", "yaml", "yml", "toml", "xml": return (.bracketsCurly, Color.dockSuccess)
         case "md", "markdown", "mdx": return (.fileText, Color.dockAccent)
         case "png", "jpg", "jpeg", "gif", "webp", "svg", "ico": return (.image, Color.dockWarning)
         case "sh", "zsh", "bash", "fish": return (.terminal, Color.dockSuccess)
         case "css", "scss", "sass", "html": return (.fileText, Color.dockDestructive)
         default:
-            return (name.hasPrefix(".env") ? .settings : .fileText, name.hasPrefix(".env") ? Color.dockWarning : Color.dockMetadataText)
+            return (name.hasPrefix(".env") ? .gear : .fileText, name.hasPrefix(".env") ? Color.dockWarning : Color.dockMetadataText)
         }
     }
 
@@ -1657,8 +1401,8 @@ struct PullRequestDetailView: View {
                 reviewPreferences.toggleExpanded(file.id)
             } label: {
                 HStack(spacing: 8) {
-                    LucideIcon(name: expanded ? .chevronDown : .chevronRight, size: 13, color: Color.dockMetadataText)
-                    LucideIcon(name: .fileText, size: 15, color: Color.dockSecondaryText)
+                    DockIcon(expanded ? .caretDown : .caretRight, size: 13, color: Color.dockMetadataText)
+                    DockIcon(.fileText, size: 15, color: Color.dockSecondaryText)
                     Text(file.path).font(.system(size: 12, weight: .semibold, design: .monospaced)).lineLimit(1)
                     Text(file.status.uppercased())
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -1785,7 +1529,7 @@ enum RepositoryReviewWorkspaceMode: Equatable {
     var subtitle: String {
         isIssues ? "GitHub issues across your repositories" : "Review open changes across your repositories"
     }
-    var icon: String { isIssues ? "doc.text" : "git.pull.request" }
+    var icon: Ph { isIssues ? .fileText : .gitPullRequest }
 }
 
 struct PullRequestWorkspace: View {
@@ -1836,9 +1580,7 @@ struct PullRequestWorkspace: View {
             if mode == .pullRequests, center.records.isEmpty { await center.refresh(projects: projects) }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                loadingPulse = true
-            }
+            loadingPulse = true
         }
         .onChange(of: center.filter) { _, _ in center.repairSelection() }
         .onChange(of: center.query) { _, _ in center.repairSelection() }
@@ -1855,7 +1597,7 @@ struct PullRequestWorkspace: View {
     private var listPane: some View { VStack(spacing: 0) {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                LucideIcon(name: .search, size: 15, color: Color.dockMetadataText)
+                DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
                 TextField("Search pull requests", text: $center.query)
                     .textFieldStyle(.plain)
             }
@@ -1866,7 +1608,7 @@ struct PullRequestWorkspace: View {
 
             HStack(spacing: 4) {
                 ForEach(PullRequestFilter.allCases) { filter in
-                    RepositoryFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
+                    DockTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
                         center.filter = filter
                     }
                 }
