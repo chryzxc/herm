@@ -36,6 +36,13 @@ struct EdgeNotchTask: Identifiable, Equatable {
         tone == .inactive ? "Status not current" : statusLabel
     }
 
+    /// A background session that was working is now finished; the open
+    /// session's own completion is announced from its live status instead.
+    static func newlyFinished(from previous: [EdgeNotchTask], to current: [EdgeNotchTask]) -> Bool {
+        let wasWorking = Set(previous.filter { !$0.isCurrent && $0.phase == .working }.map(\.id))
+        return current.contains { !$0.isCurrent && $0.phase == .finished && wasWorking.contains($0.id) }
+    }
+
     /// Needs-you first, then running work, then unopened results; the open
     /// session leads its group and the rest are newest first.
     static func build(current: EdgeNotchTask?, sessions: [HermesSession],
@@ -68,7 +75,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
 struct EdgeTaskPreview: View {
     let tasks: [EdgeNotchTask]
     let isOffline: Bool
-    let currentSessionTitle: String?
+    /// Set when a quota drop is announced alongside a task update.
+    var quotaChange: EdgeQuotaChange? = nil
     let openDock: () -> Void
     let openTask: (EdgeNotchTask) -> Void
     @State private var hoveredID: String?
@@ -79,7 +87,7 @@ struct EdgeTaskPreview: View {
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if tasks.isEmpty {
+                if tasks.isEmpty && quotaChange == nil {
                     emptyState
                 } else {
                     ScrollView {
@@ -87,6 +95,14 @@ struct EdgeTaskPreview: View {
                             VStack(alignment: .leading, spacing: 12) {
                                 section("In progress", inProgress, now: timeline.date)
                                 section("Finished, not opened", finished, now: timeline.date)
+                                if let quotaChange {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        DockSectionLabel(title: "Quota")
+                                        EdgeQuotaChangeCard(change: quotaChange, compact: true)
+                                            .id(quotaChange.current.updatedAt)
+                                            .padding(.horizontal, 10)
+                                    }
+                                }
                             }
                             .padding(.vertical, 12)
                         }
@@ -115,42 +131,43 @@ struct EdgeTaskPreview: View {
     }
 
     private func card(_ task: EdgeNotchTask, now: Date) -> some View {
-        Button { openTask(task) } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    DockStatusDot(tone: task.tone, pulses: true)
-                    Text(task.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 6)
-                    Text(trailing(for: task, now: now))
-                        .font(DockTypography.machineMetadata)
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-                HStack(spacing: 0) {
-                    Text(task.displayStatus)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(task.tone.color)
-                    if let detail = task.detail {
-                        Text(" · \(detail)")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.dockSecondaryText)
+        let isHovered = hoveredID == task.id
+        return Button { openTask(task) } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                DockStatusDot(tone: task.tone, pulses: true)
+                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(task.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        trailing(for: task, now: now)
                     }
-                }
-                .lineLimit(1)
-                .padding(.leading, 15)
-                if task.tone == .working {
-                    DockShimmerTrack(tone: task.tone)
-                        .padding(.leading, 15)
-                        .padding(.top, 2)
+                    HStack(spacing: 0) {
+                        // Hue only for trouble; everything else stays neutral.
+                        Text(task.displayStatus)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(task.tone == .attention ? task.tone.color : Color.dockSecondaryText)
+                        if let detail = task.detail {
+                            Text(" · \(detail)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.dockMetadataText)
+                        }
+                    }
+                    .lineLimit(1)
+                    if task.tone == .working {
+                        DockShimmerTrack(tone: task.tone).padding(.top, 3)
+                    }
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .dockSignageCard(tone: task.tone, emphasized: task.isCurrent, highlighted: hoveredID == task.id)
+            .background(
+                RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
+                    .fill(isHovered ? Color.dockSurface4.opacity(0.6) : task.isCurrent ? Color.dockSurface4.opacity(0.35) : .clear)
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -160,10 +177,22 @@ struct EdgeTaskPreview: View {
             .compactMap { $0 }.joined(separator: ". ") + ". Open session")
     }
 
-    private func trailing(for task: EdgeNotchTask, now: Date) -> String {
-        if task.isCurrent { return "Current" }
-        guard let updatedAt = task.updatedAt else { return "" }
-        return "\(EdgeQuotaPreview.shortDuration(now.timeIntervalSince(updatedAt))) ago"
+    @ViewBuilder
+    private func trailing(for task: EdgeNotchTask, now: Date) -> some View {
+        if task.isCurrent {
+            Text("Current")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.dockSecondaryText)
+                .padding(.horizontal, 6)
+                .frame(height: 16)
+                .background(Capsule().fill(Color.dockSurface4.opacity(0.8)))
+                .fixedSize()
+        } else if let updatedAt = task.updatedAt {
+            Text("\(EdgeQuotaPreview.shortDuration(now.timeIntervalSince(updatedAt))) ago")
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(Color.dockMetadataText)
+                .fixedSize()
+        }
     }
 
     private var emptyState: some View {
@@ -182,22 +211,53 @@ struct EdgeTaskPreview: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            if let currentSessionTitle {
-                Text(currentSessionTitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(1)
+        EdgePreviewFooterButton(title: "Open Dock", icon: .sidebarSimple, shortcut: "⌘ ⌘",
+                                shortcutHelp: "Double-tap Command", fillsWidth: true, action: openDock)
+            .padding(.vertical, 6)
+    }
+}
+
+/// The preview's one footer action: a quiet row that lifts on hover, with an
+/// optional keyboard hint. Replaces accent text links so the footer reads as
+/// part of the panel rather than a web link.
+struct EdgePreviewFooterButton: View {
+    let title: String
+    let icon: Ph
+    var shortcut: String?
+    var shortcutHelp: String?
+    var fillsWidth = false
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                DockIcon(icon, size: 13, color: isHovering ? .dockPrimaryText : .dockSecondaryText)
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(isHovering ? Color.dockPrimaryText : Color.dockSecondaryText)
+                if fillsWidth { Spacer(minLength: 8) }
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .padding(.horizontal, 5)
+                        .frame(height: 16)
+                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.dockBorder, lineWidth: 0.5))
+                        .help(shortcutHelp ?? "")
+                }
             }
-            Spacer(minLength: 0)
-            Button("Open Dock", action: openDock)
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.dockAccent)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(height: 36)
-                .contentShape(Rectangle())
-                .fixedSize()
+            .padding(.horizontal, 10)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 30, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
+                    .fill(isHovering ? Color.dockSurface4.opacity(0.6) : .clear)
+            )
+            .contentShape(Rectangle())
         }
-        .lineLimit(1)
+        .buttonStyle(.dockPress)
+        .onHover { isHovering = $0 }
+        .accessibilityLabel(title)
+        .accessibilityHint(shortcutHelp ?? "")
     }
 }

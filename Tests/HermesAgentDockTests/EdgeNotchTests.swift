@@ -17,6 +17,60 @@ struct EdgeNotchTests {
         #expect(state.displaysQuota)
     }
 
+    @MainActor @Test func quotaAnnouncementShowsQuotaWithoutChangingSelection() {
+        let state = EdgeNotchState()
+        state.showingAnnouncement = true
+        state.announcesQuota = true
+        #expect(state.displaysQuota)
+        state.showingAnnouncement = false
+        #expect(!state.displaysQuota)
+    }
+
+    @MainActor @Test func taskAndQuotaAnnouncedTogetherShareTheStatusView() {
+        let snapshot = ProviderQuotaSnapshot(provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
+                                             windows: [], safeDetail: nil)
+        let state = EdgeNotchState()
+        state.quotaChange = EdgeQuotaChange(previous: snapshot, current: snapshot)
+        state.showingAnnouncement = true
+        state.announcesQuota = true
+        #expect(state.displaysQuota && !state.displaysStatus)
+        state.announcesTasks = true
+        #expect(state.displaysStatus && !state.displaysQuota)
+        state.showingAnnouncement = false
+        #expect(!state.displaysStatus && !state.displaysQuota)
+    }
+
+    @Test func backgroundSessionFinishingAnnouncesOnce() {
+        func task(_ id: String, _ phase: EdgeNotchTask.Phase, current: Bool = false) -> EdgeNotchTask {
+            EdgeNotchTask(id: id, title: id, phase: phase, statusLabel: "", detail: nil, updatedAt: nil,
+                          isCurrent: current, isStatusCurrent: true, session: nil)
+        }
+        #expect(EdgeNotchTask.newlyFinished(from: [task("a", .working)], to: [task("a", .finished)]))
+        #expect(!EdgeNotchTask.newlyFinished(from: [task("a", .finished)], to: [task("a", .finished)]))
+        #expect(!EdgeNotchTask.newlyFinished(from: [], to: [task("a", .finished)]))
+        #expect(!EdgeNotchTask.newlyFinished(from: [task("a", .working, current: true)], to: [task("a", .finished, current: true)]))
+    }
+
+    @Test func quotaAnnouncesOnlyWhenAWindowDropsABand() {
+        func quota(_ remaining: Double?) -> [ProviderQuotaSnapshot] {
+            [ProviderQuotaSnapshot(provider: "codex", displayName: "Codex", model: nil, updatedAt: .now,
+                windows: [ProviderQuotaWindow(id: "session", label: "Session", remainingPercent: remaining,
+                    remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)],
+                safeDetail: nil)]
+        }
+        let full = EdgeQuotaBands.bands(quota(100))
+        #expect(!EdgeQuotaBands.dropped(from: full, to: EdgeQuotaBands.bands(quota(91))))
+        #expect(EdgeQuotaBands.dropped(from: full, to: EdgeQuotaBands.bands(quota(90))))
+        #expect(EdgeQuotaBands.dropped(from: EdgeQuotaBands.bands(quota(11)), to: EdgeQuotaBands.bands(quota(4))))
+        #expect(!EdgeQuotaBands.dropped(from: EdgeQuotaBands.bands(quota(4)), to: full))
+        #expect(!EdgeQuotaBands.dropped(from: full, to: EdgeQuotaBands.bands(quota(nil))))
+        #expect(EdgeQuotaBands.movedProviders(from: quota(80), to: quota(79)) == ["codex"])
+        #expect(EdgeQuotaBands.movedProviders(from: quota(80), to: quota(80)).isEmpty)
+        #expect(EdgeQuotaBands.movedProviders(from: quota(10), to: quota(100)).isEmpty)
+        #expect(EdgeQuotaBands.droppedProvider(from: ["codex/5h": 10, "glm/5h": 10, "glm/7d": 9],
+                                               to: ["codex/5h": 9, "glm/5h": 8, "glm/7d": 9]) == "glm")
+    }
+
     @Test func attentionTakesPriorityOverUnreadAndWork() {
         let activity = EdgeNotchActivity(status: .needsApproval, unread: true, runningCount: 2)
         #expect(activity.title == "Needs your approval")

@@ -6,7 +6,7 @@ enum EdgeQuotaLayout: String, CaseIterable {
     static let storageKey = "hermes.notch.quota.layout"
 
     var title: String { self == .list ? "List" : "Grid" }
-    var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
+    var symbol: Ph { self == .list ? .listBullets : .squaresFour }
 }
 
 /// Layout toggle and refresh control shown in the notch tab row while the
@@ -22,7 +22,7 @@ struct EdgeQuotaToolbar: View {
             HStack(spacing: 2) {
                 ForEach(EdgeQuotaLayout.allCases, id: \.self) { option in
                     Button { layout = option } label: {
-                        Image(systemName: option.symbol)
+                        DockIcon(option.symbol)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(layout == option ? Color.dockAccent : Color.dockSecondaryText)
                             .frame(width: 26, height: 22)
@@ -46,7 +46,7 @@ struct EdgeQuotaToolbar: View {
                     if refreshing {
                         ProgressView().controlSize(.small).scaleEffect(0.7)
                     } else {
-                        Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .semibold))
+                        DockIcon(.arrowClockwise).font(.system(size: 12, weight: .semibold))
                     }
                 }
                 .foregroundStyle(Color.dockSecondaryText)
@@ -66,6 +66,8 @@ struct EdgeQuotaToolbar: View {
 struct EdgeQuotaPreview: View {
     @ObservedObject var control: ControlCenterModel
     let openQuota: () -> Void
+    /// Set while a quota announcement is showing: only that provider is drawn.
+    var change: EdgeQuotaChange? = nil
     @AppStorage(EdgeQuotaLayout.storageKey) private var layout: EdgeQuotaLayout = .list
 
     private var refreshing: Bool { control.refreshState(for: "provider.quota")?.isRefreshing == true }
@@ -73,7 +75,11 @@ struct EdgeQuotaPreview: View {
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if control.providerQuotas.isEmpty {
+                if let change {
+                    EdgeQuotaChangeCard(change: change)
+                        .id(change.current.updatedAt)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                } else if control.providerQuotas.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(refreshing ? "Loading quota…" : "Quota unavailable")
                             .font(.system(size: 12, weight: .semibold))
@@ -112,14 +118,10 @@ struct EdgeQuotaPreview: View {
                 }
             }
             Spacer(minLength: 0)
-            Button("Open Quota", action: openQuota)
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.dockAccent)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(height: 36)
-                .contentShape(Rectangle())
+            EdgePreviewFooterButton(title: "Open Quota", icon: .arrowRight, action: openQuota)
         }
         .lineLimit(1)
+        .padding(.vertical, 6)
     }
 
     // MARK: List
@@ -319,8 +321,8 @@ struct EdgeQuotaPreview: View {
     /// reports, labelled compactly. Providers without those windows fall back
     /// to their first two windows under their own names.
     nonisolated static func compactWindows(_ windows: [ProviderQuotaWindow]) -> [(label: String, window: ProviderQuotaWindow)] {
-        let session = windows.first { $0.label == "Session" }
-        let weekly = windows.first { $0.label == "Weekly" }
+        let session = windows.first { $0.label == "Session" || $0.id == "gemini-5h" }
+        let weekly = windows.first { $0.label == "Weekly" || $0.id == "gemini-weekly" }
         let known = [session.map { ("5h", $0) }, weekly.map { ("7d", $0) }].compactMap { $0 }
         if !known.isEmpty { return known.map { (label: $0.0, window: $0.1) } }
         return windows.prefix(2).map { (label: $0.label, window: $0) }
@@ -340,4 +342,103 @@ struct EdgeQuotaPreview: View {
         guard let remaining, remaining.isFinite else { return nil }
         return min(100, max(0, remaining))
     }
+}
+
+/// One provider's reading before and after a quota drop.
+struct EdgeQuotaChange: Equatable {
+    let previous: ProviderQuotaSnapshot
+    let current: ProviderQuotaSnapshot
+
+    func previousRemaining(_ window: ProviderQuotaWindow) -> Double? {
+        previous.windows.first { $0.id == window.id }?.remainingPercent
+    }
+}
+
+/// The announced provider alone, its meters sliding from the previous
+/// reading to the current one so the drop reads at a glance.
+struct EdgeQuotaChangeCard: View {
+    let change: EdgeQuotaChange
+    /// Inside the combined status view: no header subtitle or outer padding.
+    var compact = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var settled = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 10 : 16) {
+            HStack(spacing: 8) {
+                ProviderMarkBadge(mark: ProviderMark(providerID: change.current.provider, displayName: change.current.displayName))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(change.current.displayName).font(.system(size: compact ? 12 : 13, weight: .semibold))
+                    if !compact {
+                        Text("Quota used since the last check")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockSecondaryText)
+                    }
+                }
+            }
+            ForEach(EdgeQuotaPreview.compactWindows(change.current.windows), id: \.window.id) { item in
+                meter(item.label, item.window)
+            }
+        }
+        .lineLimit(1)
+        .padding(.vertical, compact ? 0 : 14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .task {
+            guard !reduceMotion else { settled = true; return }
+            // Let the notch finish opening before the meters move.
+            try? await Task.sleep(for: .milliseconds(450))
+            withAnimation(.easeInOut(duration: 1.4)) { settled = true }
+        }
+    }
+
+    @ViewBuilder
+    private func meter(_ label: String, _ window: ProviderQuotaWindow) -> some View {
+        if let now = EdgeQuotaPreview.remainingPercent(window.remainingPercent) {
+            let before = EdgeQuotaPreview.remainingPercent(change.previousRemaining(window)) ?? now
+            let shown = settled ? now : before
+            let color = QuotaWorkspaceView.color(for: ProviderQuotaWindow.threshold(forRemaining: shown))
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(label == "5h" ? "5-hour" : label == "7d" ? "Weekly" : label)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockSecondaryText)
+                    Spacer(minLength: 0)
+                    if before - now >= 0.5 {
+                        Text("−\(Int((before - now).rounded()))%")
+                            .font(.system(size: 11, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(Color.dockWarning)
+                            .opacity(settled ? 1 : 0)
+                    }
+                    CountingPercent(value: shown)
+                        .font(.system(size: 20, weight: .semibold))
+                        .monospacedDigit()
+                }
+                GeometryReader { geometry in
+                    Capsule().fill(Color.dockBorder)
+                        .overlay(alignment: .leading) {
+                            // Where the window stood at the previous reading.
+                            Capsule().fill(color.opacity(0.25)).frame(width: geometry.size.width * before / 100)
+                        }
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(color).frame(width: geometry.size.width * shown / 100)
+                        }
+                }
+                .frame(height: 6)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(label == "5h" ? "5-hour window" : label == "7d" ? "Weekly window" : window.label), \(Int(before.rounded())) to \(Int(now.rounded())) percent remaining")
+        }
+    }
+}
+
+/// A percentage that counts through intermediate values while animating.
+private struct CountingPercent: View, @preconcurrency Animatable {
+    var value: Double
+    var animatableData: Double {
+        get { value }
+        set { value = newValue }
+    }
+
+    var body: some View { Text("\(Int(value.rounded()))%") }
 }

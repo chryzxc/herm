@@ -4,7 +4,7 @@ enum EdgeDockLayout {
     // The contour needs more breathing room above and below its shoulders than
     // beside the workspace. Keeping these separate avoids wasting horizontal
     // capacity in the expanded three-pane layout.
-    static let workspaceHorizontalInset: CGFloat = 12
+    static let workspaceHorizontalInset: CGFloat = 4
     static let workspaceVerticalInset: CGFloat = 32
 }
 
