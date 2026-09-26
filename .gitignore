@@ -18,3 +18,6 @@ dist/
 
 # Generated knowledge graph
 graphify-out/
+
+# Local git worktrees
+.worktrees/
