@@ -6,8 +6,8 @@
 set -eu
 
 PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-APP_IDENTIFIER="com.christian.HermesAgentDock"
-PROCESS_NAME="HermesAgentDock"
+APP_IDENTIFIER="com.christian.Herm"
+PROCESS_NAME="Herm"
 
 cd "$PROJECT_DIR"
 
@@ -37,8 +37,8 @@ BUILD_DIR=$(swift build \
     --cache-path "$DEBUG_CACHE_DIR/swiftpm-cache" \
     --scratch-path "$DEBUG_CACHE_DIR/scratch" \
     --show-bin-path)
-APP_PATH="$BUILD_DIR/HermesAgentDock.app"
-EXECUTABLE_PATH="$BUILD_DIR/HermesAgentDock"
+APP_PATH="$BUILD_DIR/Herm.app"
+EXECUTABLE_PATH="$BUILD_DIR/Herm"
 
 echo "[2/4] Closing running Herm instances..."
 existing_pids=$(pgrep -x "$PROCESS_NAME" 2>/dev/null || true)
@@ -77,15 +77,15 @@ fi
 
 echo "[3/4] Replacing and signing the debug app bundle..."
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
-cp "$EXECUTABLE_PATH" "$APP_PATH/Contents/MacOS/HermesAgentDock"
-cp "$PROJECT_DIR/Sources/HermesAgentDock/Info.plist" "$APP_PATH/Contents/Info.plist"
-cp "$PROJECT_DIR/Sources/HermesAgentDock/Resources/DockAppIcon.icns" "$APP_PATH/Contents/Resources/DockAppIcon.icns"
+cp "$EXECUTABLE_PATH" "$APP_PATH/Contents/MacOS/Herm"
+cp "$PROJECT_DIR/Sources/Herm/Info.plist" "$APP_PATH/Contents/Info.plist"
+cp "$PROJECT_DIR/Sources/Herm/Resources/DockAppIcon.icns" "$APP_PATH/Contents/Resources/DockAppIcon.icns"
 # Keep SwiftPM image resources inside the signed app so it remains self-contained.
-cp -R "$BUILD_DIR/HermesAgentDock_HermesAgentDock.bundle" "$APP_PATH/Contents/Resources/"
+cp -R "$BUILD_DIR/Herm_Herm.bundle" "$APP_PATH/Contents/Resources/"
 cp -Rf "$BUILD_DIR/SwiftTerm_SwiftTerm.bundle" "$APP_PATH/Contents/Resources/"
 # `cp` can retain a restrictive mode from an older bundle. Launch Services
 # requires the bundle executable to be discoverable as a normal app binary.
-chmod 755 "$APP_PATH/Contents/MacOS/HermesAgentDock"
+chmod 755 "$APP_PATH/Contents/MacOS/Herm"
 codesign --force --sign - --identifier "$APP_IDENTIFIER" "$APP_PATH"
 codesign --verify --strict "$APP_PATH"
 
@@ -107,7 +107,7 @@ if ! open -n "$APP_PATH" --args --show-panel $DEBUG_ARGS; then
     # use it as a deterministic fallback instead of reporting a false build
     # failure.
     echo "Launch Services unavailable; starting the bundle executable directly..."
-    "$APP_PATH/Contents/MacOS/HermesAgentDock" \
+    "$APP_PATH/Contents/MacOS/Herm" \
         --show-panel \
         $DEBUG_ARGS \
         >/private/tmp/hermes-debug-app.log 2>&1 &
@@ -124,7 +124,7 @@ done
 
 if ! pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
     echo "Herm exited during startup. Check the newest crash report in:" >&2
-    echo "  ~/Library/Logs/DiagnosticReports/HermesAgentDock-*.ips" >&2
+    echo "  ~/Library/Logs/DiagnosticReports/Herm-*.ips" >&2
     exit 1
 fi
 
@@ -133,7 +133,7 @@ fi
 sleep 2
 if ! pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
     echo "Herm crashed during initial presentation. Check the newest crash report in:" >&2
-    echo "  ~/Library/Logs/DiagnosticReports/HermesAgentDock-*.ips" >&2
+    echo "  ~/Library/Logs/DiagnosticReports/Herm-*.ips" >&2
     exit 1
 fi
 

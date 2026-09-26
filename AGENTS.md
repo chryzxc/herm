@@ -1,4 +1,4 @@
-# Hermes Agent Dock contributor guidance
+# Herm contributor guidance
 
 Read `DESIGN.md` before changing a user-facing view. It is the source of
 truth for Dock UI behavior and styling.

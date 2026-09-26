@@ -1,4 +1,4 @@
-# Hermes Agent Dock — Design Specification
+# Herm — Design Specification
 
 This document is the source of truth for Dock UI behavior and styling. It has
 five parts, and each has a different job:
@@ -17,7 +17,7 @@ specs follow the template in Surface specifications.
 
 ## Purpose
 
-Hermes Agent Dock is a native macOS menu-bar control surface for a local Hermes
+Herm is a native macOS menu-bar control surface for a local Hermes
 Agent session. It is an operational workspace, not a decorative dashboard or a
 second task manager. The interface must make live Hermes state easy to scan,
 safe actions obvious, and missing capability honest.

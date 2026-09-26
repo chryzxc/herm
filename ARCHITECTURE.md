@@ -1,11 +1,11 @@
-# hermes-agent-dock — Repo Map
+# Herm — Repo Map
 
 updated: 2026-09-15 · head: ba3719e
 
 ## Entry points
 
-- `HermesAgentDockApp` (`App/`) — @main SwiftUI Settings shell; all real UI lives in the menu-bar panel.
-- `HermesAgentDockDelegate` (`App/`) — NSApplicationDelegate: owns `DockModel`, builds `DockPanelController`, installs the double-tap-Command shortcut, requests notifications.
+- `HermApp` (`App/`) — @main SwiftUI Settings shell; all real UI lives in the menu-bar panel.
+- `HermDelegate` (`App/`) — NSApplicationDelegate: owns `DockModel`, builds `DockPanelController`, installs the double-tap-Command shortcut, requests notifications.
 - `DockPanelController` — menu-bar status item + popover; debug `--show-panel` launch flag.
 
 ## Modules
@@ -38,7 +38,7 @@ No databases. `WorkspaceStore` persists preferences/display state; transcripts a
 
 ## Test map
 
-- `Tests/HermesAgentDockTests/` — one suite per subsystem (`HermesCLIAdapterTests`, `CommandCenterModelsTests`, `DirectBotRoutingTests`, `SessionConversationIsolationTests`, `OfficePreviewSimulationTests`, ...). Run: `swift test`; focused: `swift test --filter <Suite>`.
+- `Tests/HermTests/` — one suite per subsystem (`HermesCLIAdapterTests`, `CommandCenterModelsTests`, `DirectBotRoutingTests`, `SessionConversationIsolationTests`, `OfficePreviewSimulationTests`, ...). Run: `swift test`; focused: `swift test --filter <Suite>`.
 
 ## Invariants
 

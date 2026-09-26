@@ -1,6 +1,6 @@
 # Hermes Command Center Contracts
 
-Hermes Agent Dock intentionally leaves these surfaces unavailable until Hermes
+Herm intentionally leaves these surfaces unavailable until Hermes
 advertises a runtime capability and returns bounded, redacted structured data.
 The Dock must never replace these contracts with terminal-table parsing or direct
 provider SDK calls.

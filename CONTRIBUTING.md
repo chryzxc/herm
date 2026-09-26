@@ -1,6 +1,6 @@
-# Contributing to Hermes Agent Dock
+# Contributing to Herm
 
-Hermes Agent Dock is a native macOS Swift package. Hermes remains the
+Herm is a native macOS Swift package. Hermes remains the
 authoritative owner of agent/runtime state; local repository, terminal, and
 integration features must preserve that boundary.
 
@@ -32,7 +32,7 @@ make lint          # formatter check, no edits
 make format        # explicitly rewrite Swift formatting
 make smoke-contract # launcher syntax + UI accessibility contract
 make run           # build/sign/launch the debug app bundle
-make package       # produce dist/HermesAgentDock.dmg
+make package       # produce dist/Herm.dmg
 ```
 
 The debug launcher is `Scripts/run-debug-app.sh`. Do not use `swift run` for

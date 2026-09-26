@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build HermesAgentDock as a signed .app bundle and package it into a .dmg.
+# Build Herm as a signed .app bundle and package it into a .dmg.
 #
 # Usage:
 #   Scripts/package-app.sh [version]
@@ -9,7 +9,7 @@
 set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-APP_NAME="HermesAgentDock"
+APP_NAME="Herm"
 APP_DISPLAY="Herm"
 VERSION="${1:-}"
 
@@ -26,7 +26,7 @@ mkdir -p "$OUTPUT_DIR"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BIN_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
-cp "$ROOT_DIR/Sources/HermesAgentDock/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp "$ROOT_DIR/Sources/Herm/Info.plist" "$APP_DIR/Contents/Info.plist"
 
 echo "==> Validating bundle metadata…"
 plutil -lint "$APP_DIR/Contents/Info.plist"

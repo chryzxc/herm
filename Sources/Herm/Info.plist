@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.christian.Herm</string>
+    <key>CFBundleName</key>
+    <string>Herm</string>
+    <key>CFBundleDisplayName</key>
+    <string>Herm</string>
+    <key>CFBundleExecutable</key>
+    <string>Herm</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleIconFile</key>
+    <string>DockAppIcon</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Herm uses the microphone to transcribe your spoken prompts.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Herm captures microphone audio while transcribing your spoken prompts.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Herm controls the Spotify app from the office record player.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Herm uses Speech Recognition to turn your voice into a prompt.</string>
+</dict>
+</plist>

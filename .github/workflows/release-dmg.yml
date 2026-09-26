@@ -82,15 +82,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s dist/HermesAgentDock.dmg
-          hdiutil imageinfo dist/HermesAgentDock.dmg >/dev/null
-          echo "Built HermesAgentDock-${VERSION}.dmg ($(du -h dist/HermesAgentDock.dmg | cut -f1))"
+          test -s dist/Herm.dmg
+          hdiutil imageinfo dist/Herm.dmg >/dev/null
+          echo "Built Herm-${VERSION}.dmg ($(du -h dist/Herm.dmg | cut -f1))"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: HermesAgentDock-${{ steps.version.outputs.value }}-dmg
-          path: dist/HermesAgentDock.dmg
+          name: Herm-${{ steps.version.outputs.value }}-dmg
+          path: dist/Herm.dmg
           if-no-files-found: error
 
       - name: Create or update GitHub release
@@ -108,4 +108,4 @@ jobs:
               gh release view "$TAG" >/dev/null
             fi
           fi
-          gh release upload "$TAG" dist/HermesAgentDock.dmg --clobber
+          gh release upload "$TAG" dist/Herm.dmg --clobber

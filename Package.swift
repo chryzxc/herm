@@ -3,18 +3,18 @@ import PackageDescription
 import Foundation
 
 let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().path
-let infoPlistPath = "\(packageDirectory)/Sources/HermesAgentDock/Info.plist"
+let infoPlistPath = "\(packageDirectory)/Sources/Herm/Info.plist"
 
 let package = Package(
-    name: "HermesAgentDock",
+    name: "Herm",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "HermesAgentDock", targets: ["HermesAgentDock"])],
+    products: [.executable(name: "Herm", targets: ["Herm"])],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.20.0")
     ],
     targets: [
         .executableTarget(
-            name: "HermesAgentDock",
+            name: "Herm",
             dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
             exclude: ["Info.plist", "Resources/DockAppIcon.icns"],
             resources: [.copy("Resources/DockAppIcon.png")],
@@ -28,8 +28,8 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "HermesAgentDockTests",
-            dependencies: ["HermesAgentDock"]
+            name: "HermTests",
+            dependencies: ["Herm"]
         )
     ]
 )

@@ -1,4 +1,4 @@
-# hermes-agent-dock — Engineering Standards
+# Herm — Engineering Standards
 
 updated: 2026-09-15 · enforced-by: Sentry review · exceptions: none without an ADR
 
@@ -12,7 +12,7 @@ Every failure has a user-visible honest state: unavailable, stale, or a safe dia
 
 ## Testing
 
-`swift test` before every submit; new parsing/state-transition behavior ships with unit tests in `Tests/HermesAgentDockTests/` — extract logic into testable helpers instead of testing view types. UI contract changes that Hermes gates (kanban commands, capability terms) get adapter-level tests asserting the exact quoted-word command. No test count targets; no mocked-up evidence labeled as real behavior.
+`swift test` before every submit; new parsing/state-transition behavior ships with unit tests in `Tests/HermTests/` — extract logic into testable helpers instead of testing view types. UI contract changes that Hermes gates (kanban commands, capability terms) get adapter-level tests asserting the exact quoted-word command. No test count targets; no mocked-up evidence labeled as real behavior.
 
 ## Definition of Done
 
