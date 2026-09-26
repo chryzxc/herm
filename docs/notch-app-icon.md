@@ -1,10 +1,16 @@
-# Dock app icon
+# App icon
 
-Generated with the built-in imagegen tool. The PNG is used by the notch and the
-ICNS is included in the signed macOS application bundle.
+Herm's icon is the MacBook notch worn like Hermes' winged helmet: gold wings
+spread from a black notch with a glowing status light, on an indigo tile. It is drawn in code so it can be tweaked and rebuilt:
 
-Source: `Sources/Herm/Resources/DockAppIcon.png`
+```sh
+swift Scripts/generate-app-icon.swift Sources/Herm/Resources/DockAppIcon.png
+mkdir -p /tmp/Herm.iconset
+for s in 16 32 128 256 512; do
+  sips -z $s $s Sources/Herm/Resources/DockAppIcon.png --out /tmp/Herm.iconset/icon_${s}x${s}.png
+  sips -z $((s*2)) $((s*2)) Sources/Herm/Resources/DockAppIcon.png --out /tmp/Herm.iconset/icon_${s}x${s}@2x.png
+done
+iconutil -c icns /tmp/Herm.iconset -o Sources/Herm/Resources/DockAppIcon.icns
+```
 
-Prompt:
-
-Create one polished macOS application icon for Herm, a desktop workspace that runs agents, tracks tasks and progress, and unfolds from a side-mounted screen notch. 1024x1024 square PNG with transparent background outside a macOS rounded-square tile. A restrained, distinctive industrial design: a graphite rounded-square tile, centered bold brushed-silver monitor/frame mark with a crisp cyan side-docking module attached to its right edge, and two short stacked work/task lines inside the monitor. The mark should be geometrically simple, substantial, beautifully proportioned, readable at 24px, with very subtle dimensional depth and crisp edges. No text, no letters, no stars, no sparkles, no magic wand, no robot face, no brain, no generic AI orb, no tiny circuitry, no extra decorative objects, no surrounding mockup. Single icon centered with macOS icon safe margins.
+The PNG is used in the notch; the ICNS goes into the signed app bundle.
