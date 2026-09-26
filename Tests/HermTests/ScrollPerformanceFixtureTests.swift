@@ -28,7 +28,7 @@ struct ScrollPerformanceFixtureTests {
             id: "session-1",
             title: "Build release",
             preview: "Preparing the release notes",
-            repositoryLabel: "hermes-agent-dock",
+            repositoryLabel: "herm",
             statusLabel: "Working",
             relativeTime: "now",
             isPinned: true,

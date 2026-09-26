@@ -225,12 +225,12 @@ struct ControlCenterProjectTests {
     }
     @Test func conversationBadgeNormalizesRepositoryNameAndHonorsAssociation() {
         let badge = ConversationRepositoryBadgePresentation.make(
-            projectName: "/Users/christian/Projects/hermes-agent-dock",
+            projectName: "/Users/christian/Projects/herm",
             isProjectLinked: true
         )
 
-        #expect(badge?.label == "hermes-agent-dock")
-        #expect(badge?.accessibilityLabel == "Repository hermes-agent-dock")
+        #expect(badge?.label == "herm")
+        #expect(badge?.accessibilityLabel == "Repository herm")
 
         #expect(ConversationRepositoryBadgePresentation.make(
             projectName: "/Users/christian/Projects/unlinked",
@@ -461,7 +461,7 @@ struct ControlCenterProjectTests {
         let projects = ControlCenterModel.parseProjects([
             "projects": [[
                 "id": "dock",
-                "name": "hermes-agent-dock",
+                "name": "herm",
                 "session_count": 0,
                 "repos": [["sessions": [["id": "session-1", "state": "active"]]]]
             ]]

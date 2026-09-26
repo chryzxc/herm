@@ -26,7 +26,7 @@ struct WorkspaceActivitySidebarTests {
         let sidebar = WorkspaceActivitySidebar(
             model: DockModel(),
             botMode: BotModeModel(),
-            store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/hermes-agent-dock-kanban-tests.json")),
+            store: WorkspaceStore(fileURL: URL(fileURLWithPath: "/tmp/herm-kanban-tests.json")),
             control: control,
             workflow: DeveloperWorkflowModel(),
             initialMode: .kanban,
