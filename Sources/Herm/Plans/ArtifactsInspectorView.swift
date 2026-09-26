@@ -871,6 +871,16 @@ struct ArtifactsInspectorView: View {
 
     private func open(_ value: String) {
         guard let url = artifactURL(value) else { return }
+        // Artifact paths come from agent output; opening an app bundle or an
+        // executable would run it. Reveal those in Finder instead.
+        var isDirectory: ObjCBool = false
+        if url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
+           isDirectory.boolValue
+            ? NSWorkspace.shared.isFilePackage(atPath: url.path)
+            : FileManager.default.isExecutableFile(atPath: url.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 

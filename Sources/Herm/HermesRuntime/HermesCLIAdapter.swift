@@ -235,8 +235,10 @@ final class HermesCLIAdapter {
     }
     func kanbanCreate(boardSlug: String? = nil, title: String, body: String?) async throws -> HermesCLIResult {
         var words = kanbanWords(boardSlug: boardSlug, action: "create") + ["--json"]
-        if let body, !body.isEmpty { words += ["--body", body] }
-        words.append(title)
+        // Free text goes after `--` or as `--opt=value`: argparse would
+        // otherwise read a title/body starting with "-" as an option.
+        if let body, !body.isEmpty { words.append("--body=\(body)") }
+        words += ["--", title]
         return try await run(words)
     }
     func kanbanAttributeSession(taskID: String, sessionID: String) async throws -> HermesCLIResult {
@@ -249,8 +251,8 @@ final class HermesCLIAdapter {
     func kanbanBlock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "block") + [taskID, "Blocked from Hermes Control"]) }
     func kanbanUnblock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "unblock") + [taskID, "--reason", "Unblocked from Hermes Control"]) }
     func kanbanArchive(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "archive") + [taskID]) }
-    func kanbanComment(boardSlug: String? = nil, taskID: String, text: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "comment") + [taskID, text]) }
-    func kanbanSchedule(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "schedule") + [taskID, reason]) }
+    func kanbanComment(boardSlug: String? = nil, taskID: String, text: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "comment") + [taskID, "--", text]) }
+    func kanbanSchedule(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "schedule") + [taskID, "--", reason]) }
     func kanbanAssign(boardSlug: String? = nil, taskID: String, profile: String, reassign: Bool, reclaim: Bool) async throws -> HermesCLIResult {
         var words = kanbanWords(boardSlug: boardSlug, action: reassign ? "reassign" : "assign")
         if reassign && reclaim { words.append("--reclaim") }
@@ -276,8 +278,8 @@ final class HermesCLIAdapter {
         _ = try await rpc.sendHTTP("PATCH", path: path, body: ["status": status])
         return HermesCLIResult(stdout: "", stderr: "", succeeded: true)
     }
-    func kanbanPromote(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "promote") + [taskID, reason]) }
-    func kanbanReclaim(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "reclaim") + ["--reason", reason, taskID]) }
+    func kanbanPromote(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "promote") + [taskID, "--", reason]) }
+    func kanbanReclaim(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "reclaim") + ["--reason=\(reason)", taskID]) }
 
     /// Removes one entry from Hermes' credential pool. Hermes performs any
     /// source-specific cleanup (such as its singleton device-code login).
@@ -290,7 +292,7 @@ final class HermesCLIAdapter {
     func cronEdit(jobID: String, changes: [CronEditField: String]) async throws -> HermesCLIResult {
         var words = ["hermes", "cron", "edit"]
         for field in CronEditField.allCases {
-            if let value = changes[field] { words += [field.flag, value] }
+            if let value = changes[field] { words.append("\(field.flag)=\(value)") }
         }
         words.append(jobID)
         return try await run(words)
@@ -309,7 +311,7 @@ final class HermesCLIAdapter {
     func emergencyStop(reason: String? = nil) async throws -> HermesCLIResult {
         var words = ["hermes", "pause"]
         if let reason, !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            words += ["--reason", reason]
+            words.append("--reason=\(reason)")
         }
         return try await run(words)
     }

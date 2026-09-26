@@ -128,12 +128,11 @@ struct PlanArtifactService {
     }
 
     private func reviewURL(for planPath: String, create: Bool) throws -> URL {
-        guard let documentPath = try? safeURL(for: planPath, allowReviews: false) else { throw PlanArtifactError.invalidPath }
+        guard (try? safeURL(for: planPath, allowReviews: false)) != nil else { throw PlanArtifactError.invalidPath }
         let digest = planPath.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ".md", with: "")
         let review = plansRoot.appendingPathComponent("reviews/\(digest).md").standardizedFileURL
         let resolvedReview = create ? try validatedWriteURL(review) : review
         if create { try fileManager.createDirectory(at: resolvedReview.deletingLastPathComponent(), withIntermediateDirectories: true) }
-        _ = documentPath
         return resolvedReview
     }
 
@@ -174,10 +173,7 @@ struct PlanArtifactService {
         return url.path == root.path || url.path.hasPrefix(rootPath)
     }
 
-    private func isContained(_ url: URL) -> Bool {
-        let root = plansRoot.path.hasSuffix("/") ? plansRoot.path : plansRoot.path + "/"
-        return url.path == plansRoot.path || url.path.hasPrefix(root)
-    }
+    private func isContained(_ url: URL) -> Bool { isContained(url, within: plansRoot) }
 
     private func isRegularOrSafeSymlink(_ url: URL) -> Bool {
         let resolved = url.resolvingSymlinksInPath().standardizedFileURL

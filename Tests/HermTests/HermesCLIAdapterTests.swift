@@ -23,8 +23,8 @@ struct HermesCLIAdapterTests {
         _ = try await adapter.cronEdit(jobID: "job-1", changes: [.schedule: "0 9 * * 1", .name: "Weekly review"])
 
         let command = client.commands.last ?? ""
-        #expect(command.contains("'--name' 'Weekly review'"))
-        #expect(command.contains("'--schedule' '0 9 * * 1'"))
+        #expect(command.contains("'--name=Weekly review'"))
+        #expect(command.contains("'--schedule=0 9 * * 1'"))
         #expect(!command.contains("'--prompt'"))
         #expect(command.hasSuffix("'job-1'"))
     }
@@ -65,7 +65,18 @@ struct HermesCLIAdapterTests {
 
         _ = try await adapter.kanbanCreate(title: "Session work", body: nil)
 
-        #expect(client.commands.last == "'hermes' 'kanban' 'create' '--json' 'Session work'")
+        #expect(client.commands.last == "'hermes' 'kanban' 'create' '--json' '--' 'Session work'")
+    }
+
+    @Test func dashLeadingFreeTextIsNeverParsedAsAnOption() async throws {
+        let client = CLITestRPCClient()
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+
+        _ = try await adapter.kanbanCreate(title: "--help", body: "- bullet")
+        #expect(client.commands.last == "'hermes' 'kanban' 'create' '--json' '--body=- bullet' '--' '--help'")
+
+        _ = try await adapter.kanbanComment(taskID: "t_1", text: "- fixed it")
+        #expect(client.commands.last == "'hermes' 'kanban' 'comment' 't_1' '--' '- fixed it'")
     }
 
     @Test func kanbanAttributeSessionUsesUserStateHelper() async throws {

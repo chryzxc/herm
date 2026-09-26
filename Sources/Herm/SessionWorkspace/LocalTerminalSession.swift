@@ -90,22 +90,26 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         emulator.reset()
         var size = winsize(ws_row: 24, ws_col: 120, ws_xpixel: 0, ws_ypixel: 0)
         var fd: Int32 = -1
+        // Only async-signal-safe calls may run between fork and exec in a
+        // multithreaded process (malloc/setenv can deadlock the child), so
+        // every C string is allocated before forking.
+        var environment = ProcessInfo.processInfo.environment
+        environment["TERM"] = "xterm-256color"
+        let directoryPath = strdup(url.path)
+        let arguments: [UnsafeMutablePointer<CChar>?] = [strdup("/bin/zsh"), strdup("-il"), nil]
+        let environmentPointers: [UnsafeMutablePointer<CChar>?] = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
+        defer {
+            free(directoryPath)
+            (arguments + environmentPointers).forEach { free($0) }
+        }
         let child = forkpty(&fd, nil, nil, &size)
         guard child >= 0 else {
             state = .failed(String(cString: strerror(errno)))
             return
         }
         if child == 0 {
-            _ = chdir(url.path)
-            setenv("TERM", "xterm-256color", 1)
-            var arguments: [UnsafeMutablePointer<CChar>?] = [
-                strdup("/bin/zsh"),
-                strdup("-il"),
-                nil
-            ]
-            arguments.withUnsafeMutableBufferPointer { buffer in
-                _ = execv(buffer[0], buffer.baseAddress)
-            }
+            _ = chdir(directoryPath)
+            _ = execve(arguments[0], arguments, environmentPointers)
             _exit(127)
         }
         masterFD = fd

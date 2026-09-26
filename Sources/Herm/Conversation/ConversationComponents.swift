@@ -498,11 +498,7 @@ struct MarkdownMessageView: View, Equatable {
   }
 
   private static func inlineMarkdown(_ value: String) -> AttributedString {
-    let parsed = (try? AttributedString(
-      markdown: value,
-      options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-    )) ?? AttributedString(value)
-    return linkAffordances(in: parsed)
+    linkAffordances(in: NativeMarkdownAttributedTextBuilder.inlineMarkdown(value))
   }
 }
 

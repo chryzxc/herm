@@ -926,11 +926,23 @@ enum NativeMarkdownAttributedTextBuilder {
         return Output(string: result, quoteRanges: [])
     }
 
+    /// Markdown here includes agent output and third-party GitHub PR/issue
+    /// bodies, so a link like `file:///…/Evil.app` or a custom app scheme must
+    /// never become clickable. Unsafe links keep their text, lose the link.
+    static let safeLinkSchemes: Set<String> = ["http", "https", "mailto"]
+
     static func inlineMarkdown(_ value: String) -> AttributedString {
-        (try? AttributedString(
+        var parsed = (try? AttributedString(
             markdown: value,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         )) ?? AttributedString(value)
+        for run in parsed.runs {
+            guard let link = run.link else { continue }
+            if !safeLinkSchemes.contains(link.scheme?.lowercased() ?? "") {
+                parsed[run.range].link = nil
+            }
+        }
+        return parsed
     }
 
     /// Converts Foundation inline presentation intents to AppKit fonts. An

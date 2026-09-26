@@ -222,4 +222,12 @@ struct ConversationRenderOptimizationTests {
         // A zero-width proposal must never lay text out one glyph per line.
         #expect(NativeMarkdownDocumentContainerView(frame: .zero).intrinsicContentSize.height == 0)
     }
+    @Test func markdownKeepsOnlyWebAndMailLinksClickable() {
+        let parsed = NativeMarkdownAttributedTextBuilder.inlineMarkdown(
+            "[a](https://x.dev) [b](file:///Applications/Calculator.app) [c](vscode://x) [d](mailto:a@b.c)"
+        )
+        let links = parsed.runs.compactMap(\.link).map(\.absoluteString)
+        #expect(links == ["https://x.dev", "mailto:a@b.c"])
+        #expect(String(parsed.characters).contains("b c"))
+    }
 }
