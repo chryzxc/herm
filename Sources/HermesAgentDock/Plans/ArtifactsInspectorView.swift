@@ -56,6 +56,7 @@ struct ArtifactsInspectorView: View {
     @State private var errorMessage: String?
     @State private var failedSessionCount = 0
     @State private var selectedArtifactID: String?
+    @State private var textPreview: ArtifactTextPreview?
 
     private let imagesPerPage = 24
     private let filesPerPage = 100
@@ -67,14 +68,15 @@ struct ArtifactsInspectorView: View {
         case link = "Links"
 
         var id: String { rawValue }
-        var icon: String {
+        var icon: Ph {
             switch self {
-            case .all: "square.grid.2x2"
-            case .image: "photo"
-            case .file: "doc"
-            case .link: "link"
+            case .all: .squaresFour
+            case .image: .image
+            case .file: .file
+            case .link: .link
             }
         }
+        var showsIcon: Bool { self != .all }
     }
 
     private var visibleRecords: [ArtifactRecord] {
@@ -142,17 +144,6 @@ struct ArtifactsInspectorView: View {
         .background(Color.dockCanvas)
     }
 
-    private var pageBody: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            pageHeader
-            Divider().overlay(Color.dockBorderLight)
-            pageToolbar
-            Divider().overlay(Color.dockBorderLight)
-            pageContent
-        }
-        .background(Color.dockCanvas)
-    }
-
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
@@ -170,7 +161,7 @@ struct ArtifactsInspectorView: View {
                 }
                 Spacer(minLength: 8)
                 Button { Task { await refresh() } } label: {
-                    LucideImage(systemName: isLoading ? "hourglass" : "refresh-cw")
+                    DockIcon(isLoading ? .hourglass : .arrowsClockwise)
                         .font(.system(size: 11, weight: .semibold))
                 }
                 .buttonStyle(.borderless)
@@ -195,74 +186,97 @@ struct ArtifactsInspectorView: View {
         .padding(.vertical, 16)
     }
 
-    private var pageHeader: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Artifacts")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                Text(pageSummaryText)
-                    .font(.system(size: 11))
-                    .foregroundStyle(failedSessionCount > 0 ? Color.dockWarning : Color.dockSecondaryText)
-                    .lineLimit(1)
+
+    private var pageBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageHeader
+            if failedSessionCount > 0 && !records.isEmpty {
+                partialFailureBanner
             }
-            Spacer(minLength: 8)
-            Button { Task { await refresh() } } label: {
-                Group {
-                    if isLoading {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        LucideImage(systemName: "refresh-cw")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                }
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Color.dockAccent)
-            .disabled(isLoading)
-            .help(isLoading ? "Refreshing artifacts…" : "Refresh artifacts")
-            .accessibilityLabel(isLoading ? "Refreshing artifacts" : "Refresh artifacts")
+            Divider().overlay(Color.dockBorderLight)
+            pageContent
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .background(Color.dockCanvas)
     }
 
-    private var pageToolbar: some View {
-        HStack(spacing: 10) {
-            TextField("Search by name, path, URL, or session…", text: $query)
-                .textFieldStyle(.dockGlass)
-                .accessibilityLabel("Search artifacts")
-
-            Picker("Artifact type", selection: $filter) {
-                ForEach(ArtifactFilter.allCases) { item in
-                    Text("\(item.rawValue)  \(count(for: item))")
-                        .tag(item)
+    private var pageHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Artifacts")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text(pageSummaryText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
                 }
+                Spacer(minLength: 8)
+                Button { Task { await refresh() } } label: {
+                    Group {
+                        if isLoading {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            DockIcon(.arrowsClockwise)
+                        }
+                    }
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockAccent)
+                .disabled(isLoading)
+                .help(isLoading ? "Refreshing artifacts…" : "Refresh artifacts")
+                .accessibilityLabel(isLoading ? "Refreshing artifacts" : "Refresh artifacts")
             }
-            .pickerStyle(.segmented)
-            .frame(width: 330)
-            .accessibilityLabel("Artifact type")
+
+            HStack(spacing: 10) {
+                TextField("Search by name, path, URL, or session…", text: $query)
+                    .textFieldStyle(.dockGlass)
+                    .frame(maxWidth: 420)
+                    .accessibilityLabel("Search artifacts")
+                filterBar
+                Spacer(minLength: 0)
+            }
         }
         .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
+    }
+
+    private var partialFailureBanner: some View {
+        HStack(spacing: 8) {
+            DockIcon(.warning)
+                .foregroundStyle(Color.dockWarning)
+            Text("\(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s") couldn't be read. Showing what loaded.")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockSecondaryText)
+            Spacer(minLength: 8)
+            Button("Retry") { Task { await refresh() } }
+                .buttonStyle(.borderless)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
+                .disabled(isLoading)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 8)
+        .background(Color.dockWarning.opacity(0.08))
     }
 
     @ViewBuilder
     private var pageContent: some View {
         if let errorMessage, records.isEmpty {
-            pageState(title: "Artifacts unavailable", detail: errorMessage, icon: "exclamationmark.triangle", actionTitle: "Retry") {
+            pageState(title: "Artifacts unavailable", detail: errorMessage, icon: .warning, actionTitle: "Retry") {
                 Task { await refresh() }
             }
         } else if records.isEmpty && isLoading {
-            pageState(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: "hourglass", actionTitle: nil, action: nil)
+            pageState(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: .hourglass, actionTitle: nil, action: nil)
         } else if visibleRecords.isEmpty {
+            let filtered = !query.isEmpty || filter != .all
             pageState(
-                title: query.isEmpty ? "No generated outputs" : "No matching artifacts",
-                detail: query.isEmpty ? "Generated images, files, and links will appear here as sessions produce them." : "Try another search or clear the current filter.",
-                icon: "square.grid.2x2",
-                actionTitle: query.isEmpty ? nil : "Clear search"
+                title: filtered ? "No matching artifacts" : "No generated outputs yet",
+                detail: filtered ? "Try another search or clear the current filter." : "Files Hermes writes, images it produces, and links it shares will appear here.",
+                icon: .squaresFour,
+                actionTitle: filtered ? "Clear filters" : nil
             ) {
                 query = ""
                 filter = .all
@@ -270,7 +284,7 @@ struct ArtifactsInspectorView: View {
         } else {
             HSplitView {
                 artifactBrowser
-                    .frame(minWidth: 280, idealWidth: 320, maxWidth: 420)
+                    .frame(minWidth: 300, idealWidth: 360, maxWidth: 460)
                 artifactDetail
                     .frame(minWidth: 360)
             }
@@ -278,16 +292,35 @@ struct ArtifactsInspectorView: View {
     }
 
     private var artifactBrowser: some View {
-        List(visibleRecords, selection: $selectedArtifactID) { record in
-            artifactBrowserRow(record)
-                .tag(record.id)
-                .listRowInsets(EdgeInsets(top: 2, leading: 10, bottom: 2, trailing: 10))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .contextMenu { artifactContextActions(record) }
-                .onTapGesture(count: 2) { open(record.value) }
+        List(selection: $selectedArtifactID) {
+            ForEach(ArtifactDaySection.group(visibleRecords)) { section in
+                Section {
+                    ForEach(section.records) { record in
+                        artifactBrowserRow(record)
+                            .tag(record.id)
+                            .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
+                            .listRowSeparator(.hidden)
+                    }
+                } header: {
+                    HStack(spacing: 6) {
+                        Text(section.title.uppercased())
+                            .tracking(0.8)
+                        Text("\(section.records.count)")
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.dockSectionText)
+                }
+            }
         }
-        .listStyle(.inset)
+        .contextMenu(forSelectionType: String.self) { ids in
+            if let record = ids.first.flatMap({ id in visibleRecords.first { $0.id == id } }) {
+                artifactContextActions(record)
+            }
+        } primaryAction: { ids in
+            ids.compactMap { id in visibleRecords.first { $0.id == id } }.forEach { open($0.value) }
+        }
+        .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .background(Color.dockCanvas)
     }
@@ -297,29 +330,49 @@ struct ArtifactsInspectorView: View {
             artifactRowIcon(record)
                 .frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 3) {
-                Text(record.label)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                HStack(spacing: 6) {
+                    Text(record.label)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Text(record.timestamp, format: .relative(presentation: .named, unitsStyle: .abbreviated))
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
                 HStack(spacing: 5) {
-                    Text(record.kind.rawValue.capitalized)
-                    Text("·")
+                    originBadge(record.origin)
                     Text(record.sessionTitle)
                         .lineLimit(1)
-                    Text("·")
-                    Text(record.timestamp, style: .relative)
-                        .monospacedDigit()
+                        .truncationMode(.tail)
                 }
                 .font(.system(size: 10))
-                .foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1)
+                .foregroundStyle(Color.dockSecondaryText)
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(minHeight: 56)
+        .padding(.vertical, 5)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(record.label), \(record.origin.rawValue.lowercased()) in \(record.sessionTitle)")
+    }
+
+    private func originBadge(_ origin: ArtifactOrigin) -> some View {
+        Text(origin.rawValue)
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(originColor(origin))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(originColor(origin).opacity(0.14), in: Capsule())
+    }
+
+    private func originColor(_ origin: ArtifactOrigin) -> Color {
+        switch origin {
+        case .generated: .dockSuccess
+        case .shared: .dockAccent
+        }
     }
 
     @ViewBuilder
@@ -329,8 +382,7 @@ struct ArtifactsInspectorView: View {
                 .scaledToFill()
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         } else {
-            LucideImage(systemName: record.kind == .link ? "link" : fileIcon(for: record.label))
-                .font(.system(size: 14, weight: .medium))
+            DockIcon(record.kind == .link ? .link : fileIcon(for: record.label))
                 .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -342,26 +394,32 @@ struct ArtifactsInspectorView: View {
         if let record = selectedRecord {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    detailPreview(record)
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(record.label)
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(Color.dockPrimaryText)
                             .textSelection(.enabled)
-                        Text(record.kind.rawValue.capitalized)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.dockMetadataText)
+                        HStack(spacing: 6) {
+                            originBadge(record.origin)
+                            Text(record.location)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color.dockMetadataText)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
                     }
                     detailActions(record)
+                    detailPreview(record)
                     detailMetadata(record)
                 }
-                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: 760, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(24)
             }
             .background(Color.dockCanvas)
+            .task(id: record.id) { await loadTextPreview(for: record) }
         } else {
-            pageState(title: "Select an artifact", detail: "Choose an output to preview its contents and actions.", icon: "doc.text.magnifyingglass", actionTitle: nil, action: nil)
+            pageState(title: "Select an artifact", detail: "Choose an output to preview its contents and actions.", icon: .fileMagnifyingGlass, actionTitle: nil, action: nil)
         }
     }
 
@@ -375,20 +433,63 @@ struct ArtifactsInspectorView: View {
             imagePreview(for: record)
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 260, maxHeight: 440)
+                .frame(minHeight: 260, maxHeight: 480)
                 .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        } else {
-            VStack(spacing: 10) {
-                LucideImage(systemName: record.kind == .link ? "link" : fileIcon(for: record.label))
-                    .font(.system(size: 32, weight: .light))
-                    .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
-                Text(record.kind == .link ? "Web link" : "File output")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.dockSecondaryText)
+        } else if let textPreview, textPreview.id == record.id {
+            switch textPreview.content {
+            case .text(let text, let truncated):
+                VStack(alignment: .leading, spacing: 0) {
+                    ScrollView(.horizontal) {
+                        Text(text)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .textSelection(.enabled)
+                            .fixedSize()
+                            .padding(14)
+                    }
+                    if truncated {
+                        Divider().overlay(Color.dockBorderLight)
+                        Text("Preview truncated — open the file to see the rest.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.dockMetadataText)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight))
+            case .missing:
+                previewPlaceholder(icon: .warning, title: "File no longer exists", detail: "It was moved or deleted after the session produced it.")
+            case .binary:
+                previewPlaceholder(icon: fileIcon(for: record.label), title: "No inline preview", detail: "Open it with its default app.")
             }
-            .frame(maxWidth: .infinity, minHeight: 260)
-            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else if record.kind == .link {
+            previewPlaceholder(icon: .link, title: record.location, detail: record.value)
+        } else {
+            previewPlaceholder(icon: fileIcon(for: record.label), title: "Loading preview…", detail: nil)
         }
+    }
+
+    private func previewPlaceholder(icon: Ph, title: String, detail: String?) -> some View {
+        VStack(spacing: 8) {
+            DockIcon(icon)
+                .foregroundStyle(Color.dockSecondaryText)
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.dockPrimaryText)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, minHeight: 180)
+        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func detailActions(_ record: ArtifactRecord) -> some View {
@@ -396,36 +497,31 @@ struct ArtifactsInspectorView: View {
             Button("Open") { open(record.value) }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.dockAccent)
-                .frame(minHeight: 44)
-            Button("Copy") { copy(record.value) }
+            Button("Copy \(record.kind == .link ? "link" : "path")") { copy(record.value) }
                 .buttonStyle(.bordered)
-                .frame(minHeight: 44)
             if isLocalFile(record) {
                 Button("Reveal in Finder") { reveal(record.value) }
                     .buttonStyle(.bordered)
-                    .frame(minHeight: 44)
             }
             if let session = model.sessions.first(where: { $0.id == record.sessionID }) {
                 Button("Open session") { model.resumeSession(session) }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.dockAccent)
-                    .frame(minHeight: 44)
+                    .buttonStyle(.bordered)
             }
         }
-        .controlSize(.small)
+        .controlSize(.regular)
     }
 
     private func detailMetadata(_ record: ArtifactRecord) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 8) {
             metadataRow("Location", value: record.value)
             metadataRow("Session", value: record.sessionTitle)
-            metadataRow("Created", value: record.timestamp.formatted(date: .abbreviated, time: .shortened))
+            metadataRow("Updated", value: record.timestamp.formatted(date: .abbreviated, time: .shortened))
         }
         .font(.system(size: 11))
     }
 
     private func metadataRow(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        GridRow {
             Text(label.uppercased())
                 .font(.system(size: 9, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.dockMetadataText)
@@ -448,9 +544,9 @@ struct ArtifactsInspectorView: View {
         }
     }
 
-    private func pageState(title: String, detail: String, icon: String, actionTitle: String?, action: (() -> Void)?) -> some View {
+    private func pageState(title: String, detail: String, icon: Ph, actionTitle: String?, action: (() -> Void)?) -> some View {
         VStack(spacing: 10) {
-            LucideLabel(title, icon: icon)
+            DockIconLabel(title, icon: icon)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
@@ -458,6 +554,7 @@ struct ArtifactsInspectorView: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .buttonStyle(.borderedProminent)
@@ -469,33 +566,36 @@ struct ArtifactsInspectorView: View {
         .padding(24)
     }
 
+    private var pageSummaryText: String {
+        if isLoading && records.isEmpty { return "Indexing recent Hermes sessions…" }
+        let count = records.count
+        let sessions = Set(records.map(\.sessionID)).count
+        return "\(count) \(count == 1 ? "output" : "outputs") across \(sessions) session\(sessions == 1 ? "" : "s")"
+    }
+
+    private func loadTextPreview(for record: ArtifactRecord) async {
+        guard record.kind == .file, let url = artifactURL(record.value), url.isFileURL else { return }
+        let content = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
+        textPreview = ArtifactTextPreview(id: record.id, content: content)
+    }
+
     private var summaryText: String {
         if isLoading && records.isEmpty { return "Indexing recent Hermes sessions…" }
         let count = visibleRecords.count
         return "\(count) \(count == 1 ? "output" : "outputs") from recent sessions"
     }
 
-    private var pageSummaryText: String {
-        if isLoading && records.isEmpty { return "Indexing recent Hermes sessions…" }
-        let count = records.count
-        let output = "\(count) \(count == 1 ? "output" : "outputs") from recent sessions"
-        if failedSessionCount > 0 {
-            return "\(output) · \(failedSessionCount) session\(failedSessionCount == 1 ? "" : "s") unavailable"
-        }
-        return output
-    }
-
     private var content: some View {
         Group {
             if let errorMessage, records.isEmpty {
-                state(title: "Artifacts unavailable", detail: errorMessage, icon: "exclamationmark.triangle")
+                state(title: "Artifacts unavailable", detail: errorMessage, icon: .warning)
             } else if records.isEmpty && isLoading {
-                state(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: "hourglass")
+                state(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: .hourglass)
             } else if visibleRecords.isEmpty {
                 state(
                     title: query.isEmpty ? "No artifacts found" : "No matching artifacts",
                     detail: query.isEmpty ? "Generated images, files, and links will appear here as sessions produce them." : "Try another search or choose a different artifact type.",
-                    icon: "square.grid.2x2"
+                    icon: .squaresFour
                 )
             } else {
                 artifactResults
@@ -526,10 +626,45 @@ struct ArtifactsInspectorView: View {
         }
     }
 
+    private var filterBar: some View {
+        HStack(spacing: 2) {
+            ForEach(ArtifactFilter.allCases) { item in
+                filterSegment(item)
+            }
+        }
+        .padding(3)
+        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.dockBorderLight))
+    }
+
+    private func filterSegment(_ item: ArtifactFilter) -> some View {
+        let selected = filter == item
+        return Button { filter = item } label: {
+            HStack(spacing: 6) {
+                if item.showsIcon {
+                    DockIcon(item.icon, size: 13, color: selected ? .dockAccent : .dockMetadataText)
+                }
+                Text(item.rawValue)
+                    .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                Text("\(count(for: item))")
+                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                    .foregroundStyle(selected ? Color.dockAccent : Color.dockMetadataText)
+            }
+            .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
+            .padding(.horizontal, 10)
+            .frame(height: 26)
+            .background(selected ? Color.dockAccent.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(item.rawValue), \(count(for: item)) artifacts")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
     private func filterButton(_ item: ArtifactFilter) -> some View {
         Button { filter = item } label: {
             HStack(spacing: 6) {
-                LucideImage(systemName: item.icon)
+                DockIcon(item.icon)
                 Text(item.rawValue)
                 Text("\(count(for: item))")
                     .font(.system(size: 10, design: .monospaced))
@@ -602,11 +737,9 @@ struct ArtifactsInspectorView: View {
 
     @ViewBuilder
     private func imagePreview(for record: ArtifactRecord) -> some View {
-        if let url = artifactURL(record.value), url.isFileURL, let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-        } else if let url = artifactURL(record.value) {
+        // AsyncImage loads file URLs too, off the main thread; a synchronous
+        // NSImage(contentsOf:) here decoded every image on each scroll render.
+        if let url = artifactURL(record.value) {
             AsyncImage(url: url) { phase in
                 if let image = phase.image {
                     image.resizable().scaledToFill()
@@ -621,7 +754,7 @@ struct ArtifactsInspectorView: View {
 
     private var previewUnavailable: some View {
         VStack(spacing: 5) {
-            LucideImage(systemName: "photo")
+            DockIcon(.image)
             Text("Preview unavailable")
                 .font(.system(size: 10))
         }
@@ -631,7 +764,7 @@ struct ArtifactsInspectorView: View {
 
     private func fileRow(_ record: ArtifactRecord) -> some View {
         HStack(spacing: 12) {
-            LucideImage(systemName: record.kind == .link ? "link" : fileIcon(for: record.label))
+            DockIcon(record.kind == .link ? .link : fileIcon(for: record.label))
                 .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
                 .frame(width: 30, height: 30)
                 .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -683,14 +816,14 @@ struct ArtifactsInspectorView: View {
     private func pagination(current: Int, total: Int, select: @escaping (Int) -> Void) -> some View {
         HStack(spacing: 8) {
             Button { select(max(1, current - 1)) } label: {
-                LucideImage(systemName: "chevron.left")
+                DockIcon(.caretLeft)
             }
             .disabled(current <= 1)
             Text("Page \(current) of \(total)")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundStyle(Color.dockSecondaryText)
             Button { select(min(total, current + 1)) } label: {
-                LucideImage(systemName: "chevron.right")
+                DockIcon(.caretRight)
             }
             .disabled(current >= total)
         }
@@ -701,9 +834,9 @@ struct ArtifactsInspectorView: View {
         .accessibilityLabel("Page \(current) of \(total)")
     }
 
-    private func state(title: String, detail: String, icon: String) -> some View {
+    private func state(title: String, detail: String, icon: Ph) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            LucideLabel(title, icon: icon)
+            DockIconLabel(title, icon: icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
@@ -715,13 +848,13 @@ struct ArtifactsInspectorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func fileIcon(for label: String) -> String {
+    private func fileIcon(for label: String) -> Ph {
         switch URL(fileURLWithPath: label).pathExtension.lowercased() {
-        case "pdf": "doc.richtext"
-        case "csv", "xls", "xlsx": "tablecells"
-        case "html", "htm": "globe"
-        case "json", "yaml", "yml", "toml", "txt", "md": "doc.text"
-        default: "doc"
+        case "pdf": .fileText
+        case "csv", "xls", "xlsx": .table
+        case "html", "htm": .globe
+        case "json", "yaml", "yml", "toml", "txt", "md": .fileText
+        default: .file
         }
     }
 
@@ -766,36 +899,94 @@ struct ArtifactsInspectorView: View {
         )
     }
 
+
     private func refresh() async {
         guard !isLoading else { return }
         isLoading = true
         errorMessage = nil
-        var next: [ArtifactRecord] = []
-        var failures = 0
-        var failedSessionIDs = Set<String>()
         let previous = records
-        for session in model.sessions.prefix(50) {
-            do {
-                next.append(contentsOf: ArtifactService.extract(session: session, messages: try await model.artifactMessages(for: session)))
-            } catch {
-                failures += 1
-                failedSessionIDs.insert(session.id)
+        let sessions = Array(model.sessions.prefix(50))
+        // Requests interleave on the main actor while each awaits the network.
+        let tasks = sessions.map { session in
+            (session.id, Task { @MainActor in
+                ArtifactService.extract(session: session, messages: try await model.artifactMessages(for: session))
+            })
+        }
+        var next: [ArtifactRecord] = []
+        var failedSessionIDs = Set<String>()
+        var lastFailure: String?
+        for (sessionID, task) in tasks {
+            switch await task.result {
+            case .success(let found): next.append(contentsOf: found)
+            case .failure(let error):
+                failedSessionIDs.insert(sessionID)
+                lastFailure = error.localizedDescription
             }
         }
         // Keep the prior artifacts for sessions that could not be read this
         // cycle, while allowing successful sessions and removed sessions to
         // converge to the latest authoritative index.
         next.append(contentsOf: previous.filter { failedSessionIDs.contains($0.sessionID) })
-        let refreshed = Dictionary(grouping: next, by: \.id)
+        failedSessionCount = failedSessionIDs.count
+        records = Dictionary(grouping: next, by: \.id)
             .compactMap(\.value.first)
             .sorted { $0.timestamp > $1.timestamp }
-        failedSessionCount = failures
-        records = refreshed
-        if failures > 0 && records.isEmpty {
-            errorMessage = "Some recent session outputs could not be read. Try refreshing."
+        if !failedSessionIDs.isEmpty && records.isEmpty {
+            errorMessage = "Hermes couldn't read \(failedSessionIDs.count) of \(sessions.count) sessions. \(lastFailure ?? "")"
         }
         resetPages()
         reconcileSelection()
         isLoading = false
     }
+}
+
+struct ArtifactDaySection: Identifiable {
+    let title: String
+    let records: [ArtifactRecord]
+    var id: String { title }
+
+    /// Groups already time-sorted records into Today / Yesterday / weekday / month buckets.
+    static func group(_ records: [ArtifactRecord], now: Date = .now, calendar: Calendar = .current) -> [Self] {
+        var order: [String] = []
+        var buckets: [String: [ArtifactRecord]] = [:]
+        for record in records {
+            let title: String
+            if calendar.isDate(record.timestamp, inSameDayAs: now) {
+                title = "Today"
+            } else if calendar.isDateInYesterday(record.timestamp) {
+                title = "Yesterday"
+            } else if let days = calendar.dateComponents([.day], from: record.timestamp, to: now).day, days < 7 {
+                title = record.timestamp.formatted(.dateTime.weekday(.wide))
+            } else {
+                title = record.timestamp.formatted(.dateTime.month(.wide).year())
+            }
+            if buckets[title] == nil { order.append(title) }
+            buckets[title, default: []].append(record)
+        }
+        return order.map { Self(title: $0, records: buckets[$0] ?? []) }
+    }
+}
+
+struct ArtifactTextPreview: Equatable {
+    enum Content: Equatable {
+        case text(String, truncated: Bool)
+        case binary
+        case missing
+
+        private static let limit = 48_000
+
+        static func load(_ url: URL) -> Self {
+            guard let handle = try? FileHandle(forReadingFrom: url) else { return .missing }
+            defer { try? handle.close() }
+            let data = (try? handle.read(upToCount: limit + 1)) ?? Data()
+            let slice = data.prefix(limit)
+            guard !slice.contains(0), let text = String(data: slice, encoding: .utf8) ?? String(data: slice.dropLast(3), encoding: .utf8) else {
+                return .binary
+            }
+            return .text(text, truncated: data.count > limit)
+        }
+    }
+
+    let id: String
+    let content: Content
 }

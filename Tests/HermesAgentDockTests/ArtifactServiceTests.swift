@@ -34,25 +34,42 @@ struct ArtifactServiceTests {
             ["role": "assistant", "content": "MEDIA: /tmp/chart.png"]
         ]
 
-        let records = ArtifactService.extract(session: session, messages: messages)
+        let records = ArtifactService.extract(session: session, messages: messages).sorted { $0.label < $1.label }
 
         #expect(records.map(\.kind) == [.image, .link, .file])
         #expect(records.map(\.label) == ["chart.png", "report", "report.docx"])
         #expect(records.map(\.sessionTitle) == ["Quarterly report", "Quarterly report", "Quarterly report"])
     }
 
-    @Test func deduplicatesSameArtifactWithinSessionAndClassifiesDocumentExtensions() {
-        let session = HermesSession(id: "s1", title: "Files", preview: "", startedAt: nil, messageCount: 2, source: "hermes")
+    @Test func matchesDesktopRulesForDeliverablesOnly() {
+        let session = HermesSession(id: "s1", title: "Files", preview: "", startedAt: nil, messageCount: 5, source: "hermes")
         let messages: [[String: Any]] = [
-            ["role": "assistant", "content": "Written /tmp/report.xlsx and /tmp/report.xlsx"],
-            ["role": "tool", "name": "files_written", "content": ["path": "/tmp/report.xlsx"]]
+            // Code edits and bare source paths are not deliverables.
+            ["role": "assistant", "content": "Patched /tmp/app.swift and `/tmp/plan.md`", "timestamp": 100.0,
+             "tool_calls": #"[{"function":{"name":"patch","arguments":"{\"path\":\"/tmp/app.swift\"}"}}]"#],
+            ["role": "tool", "tool_name": "terminal", "content": #"{"output": "/tmp/unrelated.txt"}"#],
+            ["role": "tool", "tool_name": "image_generate", "content": #"{"image_path": "/tmp/cat.png", "note": "/tmp/skip.pdf"}"#, "timestamp": 200.0],
+            ["role": "tool", "tool_name": "text_to_speech", "content": "MEDIA:/tmp/voice", "timestamp": 250.0],
+            ["role": "assistant", "content": "See [anchor](#top) and [src](./Sources/App.swift)", "timestamp": 300.0]
         ]
 
         let records = ArtifactService.extract(session: session, messages: messages)
 
-        #expect(records.count == 1)
-        #expect(records.first?.kind == .file)
-        #expect(records.first?.value == "/tmp/report.xlsx")
+        #expect(records.map(\.value) == ["/tmp/voice", "/tmp/cat.png", "/tmp/plan.md"])
+        #expect(records.map(\.origin) == [.generated, .generated, .shared])
+        #expect(records.map(\.kind) == [.file, .image, .file])
+    }
+
+    @Test func groupsRecordsByDay() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let records = [0.0, 3_600, 86_400 * 1.2, 86_400 * 40].map {
+            ArtifactRecord(value: "/tmp/\($0)", sessionID: "s", sessionTitle: "S", timestamp: now.addingTimeInterval(-$0))
+        }
+        let sections = ArtifactDaySection.group(records, now: now, calendar: calendar)
+        #expect(sections.first?.title == "Today")
+        #expect(sections.first?.records.count == 2)
+        #expect(sections.count == 3)
     }
 
     @Test func filtersSearchAcrossLabelsPathsAndSessionTitles() {

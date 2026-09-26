@@ -85,7 +85,7 @@ struct PlanArtifactsInspectorView: View {
 
             Divider().overlay(Color.dockBorderLight)
             HStack(spacing: 6) {
-                LucideImage(systemName: "doc.text")
+                DockIcon(.fileText)
                     .font(.system(size: 10))
                 Text("\(filteredArtifacts.count) shown")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -115,7 +115,7 @@ struct PlanArtifactsInspectorView: View {
                 }
                 Spacer(minLength: 4)
                 Button { Task { await refresh() } } label: {
-                    LucideImage(systemName: "refresh-cw")
+                    DockIcon(.arrowsClockwise)
                         .font(.system(size: 11, weight: .semibold))
                 }
                 .buttonStyle(.borderless)
@@ -188,7 +188,7 @@ struct PlanArtifactsInspectorView: View {
 
     private func header(document: PlanArtifactDocument) -> some View {
         HStack(spacing: 14) {
-            LucideImage(systemName: "doc.text.fill")
+            DockIcon(.fileText)
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(Color.dockAccent)
                 .frame(width: 36, height: 36)
@@ -208,7 +208,7 @@ struct PlanArtifactsInspectorView: View {
             Button {
                 revisionDraft = PlanArtifactService(plansRoot: plansRoot).revisionDraft(for: document)
             } label: {
-                LucideLabel("New revision", icon: "plus")
+                DockIconLabel("New revision", icon: .plus)
                     .font(.system(size: 11, weight: .semibold))
             }
             .buttonStyle(.borderless)
@@ -222,7 +222,7 @@ struct PlanArtifactsInspectorView: View {
     private func documentUtilities(_ presentation: PlanArtifactPresentation) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                LucideLabel("Canonical artifact", icon: "checkmark.seal")
+                DockIconLabel("Canonical artifact", icon: .sealCheck)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.dockAccent)
                 Text("SHA \(presentation.summary.sha256.map { String($0.prefix(12)) } ?? "unavailable")")
@@ -247,7 +247,7 @@ struct PlanArtifactsInspectorView: View {
                 }
                 .padding(.top, 10)
             } label: {
-                LucideLabel("Document outline · \(presentation.headings.count)", icon: "list.bullet.indent")
+                DockIconLabel("Document outline · \(presentation.headings.count)", icon: .listBullets)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.dockSecondaryText)
             }
@@ -259,12 +259,12 @@ struct PlanArtifactsInspectorView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    LucideLabel("Add annotation", icon: "text.badge.plus")
+                    DockIconLabel("Add annotation", icon: .listPlus)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Color.dockPrimaryText)
                     Spacer()
                     Button(action: clearAnnotationSelection) {
-                        LucideImage(systemName: "xmark")
+                        DockIcon(.x)
                             .font(.system(size: 10, weight: .semibold))
                     }
                     .buttonStyle(.borderless)
@@ -330,7 +330,7 @@ struct PlanArtifactsInspectorView: View {
 
     private func revisionPanel(_ draft: PlanRevisionDraft) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            LucideLabel("Revision Draft · \(draft.relativePath)", icon: "doc.badge.gearshape")
+            DockIconLabel("Revision Draft · \(draft.relativePath)", icon: .fileText)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.dockAccent)
             Text("Saving creates a new plan and preserves the canonical source.")

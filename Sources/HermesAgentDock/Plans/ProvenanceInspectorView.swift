@@ -4,7 +4,7 @@ struct ProvenanceInspectorView: View {
     let presentation: ProvenancePresentation
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            LucideLabel("Provenance", icon: "link")
+            DockIconLabel("Provenance", icon: .link)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.dockAccent)
             provenanceRow("SOURCE", presentation.sourceLabel)
@@ -32,7 +32,7 @@ struct CapacityRunwayView: View {
     let presentation: CapacityRunwayPresentation
     var body: some View {
         HStack(spacing: 8) {
-            LucideImage(systemName: "gauge.with.dots.needle.bottom.50percent")
+            DockIcon(.gauge)
                 .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("CAPACITY · \(presentation.state.rawValue.uppercased())")
