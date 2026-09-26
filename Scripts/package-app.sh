@@ -10,7 +10,7 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 APP_NAME="HermesAgentDock"
-APP_DISPLAY="Hermes Agent Dock"
+APP_DISPLAY="Herm"
 VERSION="${1:-}"
 
 echo "==> Building release (this may take a while)…"

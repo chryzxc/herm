@@ -60,6 +60,13 @@ final class SpeechInput: ObservableObject {
         audioLevel = 0
     }
 
+    /// Submits the partial transcript now instead of waiting for silence.
+    func finishUtterance() {
+        guard isRecording else { return }
+        completedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        stop()
+    }
+
     func consumeCompletedTranscript() {
         completedTranscript = nil
     }
@@ -78,14 +85,14 @@ final class SpeechInput: ObservableObject {
         guard Bundle.main.bundleURL.pathExtension == "app" else {
             isStarting = false
             isUnavailable = true
-            errorMessage = "Voice input requires the packaged Hermes Agent Dock app."
+            errorMessage = "Voice input requires the packaged Herm app."
             return
         }
         guard hasUsageDescription("NSSpeechRecognitionUsageDescription"),
               hasUsageDescription("NSMicrophoneUsageDescription") else {
             isStarting = false
             isUnavailable = true
-            errorMessage = "This app build is missing voice permissions. Rebuild the Hermes Agent Dock app bundle."
+            errorMessage = "This app build is missing voice permissions. Rebuild the Herm app bundle."
             return
         }
         Task { [weak self] in
@@ -135,7 +142,7 @@ final class SpeechInput: ObservableObject {
         }
     }
 
-    private nonisolated static func normalizedAudioLevel(_ buffer: AVAudioPCMBuffer) -> CGFloat {
+    nonisolated static func normalizedAudioLevel(_ buffer: AVAudioPCMBuffer) -> CGFloat {
         guard let channels = buffer.floatChannelData else { return 0 }
         let frameCount = Int(buffer.frameLength)
         guard frameCount > 0 else { return 0 }
@@ -238,5 +245,62 @@ final class SpeechInput: ObservableObject {
         // Fast attack keeps speech responsive; a slower release avoids a jittery orb.
         let smoothing: CGFloat = level > audioLevel ? 0.52 : 0.14
         audioLevel += (level - audioLevel) * smoothing
+    }
+}
+
+/// Level-only microphone tap for the voice orb while Hermes' gateway owns
+/// capture and transcription. CoreAudio shares input devices between
+/// processes, so this never competes with Hermes' recorder.
+@MainActor
+final class MicLevelMeter: ObservableObject {
+    @Published private(set) var level: CGFloat = 0
+    private var engine: AVAudioEngine?
+    private var generation = 0
+
+    func start() {
+        guard engine == nil, Bundle.main.bundleURL.pathExtension == "app" else { return }
+        generation &+= 1
+        let expected = generation
+        Task { [weak self] in
+            let granted = await withCheckedContinuation { continuation in
+                AVCaptureDevice.requestAccess(for: .audio) { continuation.resume(returning: $0) }
+            }
+            guard granted, let self, self.generation == expected, self.engine == nil else { return }
+            self.startEngine()
+        }
+    }
+
+    func stop() {
+        generation &+= 1
+        engine?.stop()
+        engine?.inputNode.removeTap(onBus: 0)
+        engine = nil
+        level = 0
+    }
+
+    private func startEngine() {
+        let engine = AVAudioEngine()
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { return }
+        Self.installTap(on: input) { [weak self] value in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let smoothing: CGFloat = value > self.level ? 0.5 : 0.12
+                self.level += (value - self.level) * smoothing
+            }
+        }
+        do {
+            try engine.start()
+            self.engine = engine
+        } catch {
+            input.removeTap(onBus: 0)
+        }
+    }
+
+    private nonisolated static func installTap(on input: AVAudioInputNode, onLevel: @escaping @Sendable (CGFloat) -> Void) {
+        input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
+            onLevel(SpeechInput.normalizedAudioLevel(buffer))
+        }
     }
 }

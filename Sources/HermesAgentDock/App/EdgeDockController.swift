@@ -23,6 +23,11 @@ final class EdgeDockController: NSObject {
     private var latestToolID: String?
     private var latestToolComplete = false
     private var latestSessions: [HermesSession] = []
+    private var lastQuotas: [ProviderQuotaSnapshot]?
+    /// Quota readers whose usage has moved; these are the services being
+    /// spent (by Hermes or any other app), so they are read on every tick.
+    private var hotQuotaReaders = Set<String>()
+    private var quotaTick = 0
     private var displayID: NSNumber?
     private var fraction: CGFloat = 0.5
     private let defaults: UserDefaults
@@ -74,6 +79,16 @@ final class EdgeDockController: NSObject {
         model.$activityPresentationRevision
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
             .sink { [weak self] _ in self?.refreshProgress() }
+            .store(in: &subscriptions)
+        controlCenter.$providerQuotas
+            .receive(on: RunLoop.main)
+            .sink { [weak self] quotas in self?.quotaChanged(quotas) }
+            .store(in: &subscriptions)
+        // The workspace only polls quota while its Quota page is open; keep
+        // reading it with the Dock closed so drops surface here. Quota is spent
+        // by other apps too, so this runs whether or not Hermes is working.
+        Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+            .sink { [weak self] _ in self?.pollQuota() }
             .store(in: &subscriptions)
         model.$currentSessionTitle.combineLatest(model.$runtimeConfiguration)
             .receive(on: RunLoop.main)
@@ -147,7 +162,12 @@ final class EdgeDockController: NSObject {
     /// session list is cached from the publisher rather than read back.
     private func refreshNoteworthySessions(_ sessions: [HermesSession]) {
         latestSessions = sessions
+        let previous = state.tasks
         rebuildTasks()
+        if EdgeNotchTask.newlyFinished(from: previous, to: state.tasks) {
+            announce()
+            pollQuota(afterWork: true)
+        }
     }
 
     /// Every session in progress or finished-but-unopened, with the open
@@ -191,6 +211,7 @@ final class EdgeDockController: NSObject {
         } else {
             position(animated: true)
         }
+        if newCompletion || responseFinished { pollQuota(afterWork: true) }
     }
 
     private func refreshProgress() {
@@ -220,8 +241,39 @@ final class EdgeDockController: NSObject {
         }
     }
 
+    /// Every 30s tick reads the providers being spent; every other tick
+    /// reads them all, so a provider that starts moving is picked up. Right
+    /// after work finishes, the spent providers are read at once so their
+    /// final usage joins the completion preview.
+    private func pollQuota(afterWork: Bool = false) {
+        guard !workspacePresented,
+              controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
+        controlCenter.bind(to: model)
+        quotaTick &+= 1
+        let fullRead = hotQuotaReaders.isEmpty || (!afterWork && quotaTick.isMultiple(of: 2))
+        controlCenter.refreshProviderQuota(only: fullRead ? nil : hotQuotaReaders)
+    }
+
+    private func quotaChanged(_ quotas: [ProviderQuotaSnapshot]) {
+        // An empty list is a reset (rebind or failed read), not a reading.
+        guard !quotas.isEmpty else { return }
+        defer { lastQuotas = quotas }
+        if let previousQuotas = lastQuotas {
+            for provider in EdgeQuotaBands.movedProviders(from: previousQuotas, to: quotas) {
+                if let reader = controlCenter.quotaReaderID(for: provider) { hotQuotaReaders.insert(reader) }
+            }
+        }
+        guard let previousQuotas = lastQuotas,
+              let provider = EdgeQuotaBands.droppedProvider(from: EdgeQuotaBands.bands(previousQuotas),
+                                                            to: EdgeQuotaBands.bands(quotas)),
+              let previous = previousQuotas.first(where: { $0.provider == provider }),
+              let current = quotas.first(where: { $0.provider == provider }) else { return }
+        state.quotaChange = EdgeQuotaChange(previous: previous, current: current)
+        announce(quota: true)
+    }
+
     private func updateDetail() {
-        state.sessionTitle = model.currentSessionTitle ?? (model.sessionID == nil ? "Hermes Dock" : "Current session")
+        state.sessionTitle = model.currentSessionTitle ?? (model.sessionID == nil ? "Herm" : "Current session")
         state.updateTitle = state.activity.title
         if state.activity.attention {
             state.detail = "Open this session to review and respond"
@@ -241,9 +293,17 @@ final class EdgeDockController: NSObject {
         rebuildTasks()
     }
 
-    private func announce() {
+    private func announce(quota: Bool = false) {
         guard !workspacePresented, !dragging else { return }
-        if !hovering { state.showingAnnouncement = true }
+        if !hovering {
+            // Updates landing while one is showing join it rather than replace it.
+            if !state.showingAnnouncement {
+                state.announcesTasks = false
+                state.announcesQuota = false
+            }
+            state.showingAnnouncement = true
+            if quota { state.announcesQuota = true } else { state.announcesTasks = true }
+        }
         state.expanded = true
         position(animated: true)
         scheduleCollapse(after: 6)
@@ -372,11 +432,52 @@ struct EdgeNotchActivity: Equatable {
         if status == .working || status == .offline { return status.title }
         return "Open Dock"
     }
-    var symbol: String {
+    var symbol: Ph {
         if attention { return status.icon }
-        if unread { return "bubble.left.fill" }
-        if backgroundCompleted || responseCompleted { return "checkmark" }
-        return status == .offline ? "wifi.slash" : "rectangle.righthalf.inset.filled"
+        if unread { return .chat }
+        if backgroundCompleted || responseCompleted { return .check }
+        return status == .offline ? .wifiSlash : .sidebarSimple
+    }
+}
+
+/// Quota surfaces when a window's remaining share falls into a lower 10-point
+/// band (crossing 90%, 80%, … 0%), so steady use announces a handful of times
+/// per window rather than on every refresh. Resets only raise the baseline.
+enum EdgeQuotaBands {
+    static func bands(_ quotas: [ProviderQuotaSnapshot]) -> [String: Int] {
+        var bands: [String: Int] = [:]
+        for snapshot in quotas {
+            for window in snapshot.windows {
+                guard let remaining = window.remainingPercent, remaining.isFinite else { continue }
+                bands["\(snapshot.provider)/\(window.id)"] = Int((min(100, max(0, remaining)) / 10).rounded(.up))
+            }
+        }
+        return bands
+    }
+
+    static func dropped(from previous: [String: Int], to current: [String: Int]) -> Bool {
+        droppedProvider(from: previous, to: current) != nil
+    }
+
+    /// Providers whose remaining share fell at all since the last reading.
+    static func movedProviders(from previous: [ProviderQuotaSnapshot], to current: [ProviderQuotaSnapshot]) -> [String] {
+        current.filter { snapshot in
+            guard let old = previous.first(where: { $0.provider == snapshot.provider }) else { return false }
+            return snapshot.windows.contains { window in
+                guard let now = window.remainingPercent,
+                      let before = old.windows.first(where: { $0.id == window.id })?.remainingPercent else { return false }
+                return now < before
+            }
+        }.map(\.provider)
+    }
+
+    /// The provider whose window fell the most bands, so an announcement
+    /// shows one provider rather than the whole inventory.
+    static func droppedProvider(from previous: [String: Int], to current: [String: Int]) -> String? {
+        current.compactMap { key, band -> (provider: String, drop: Int)? in
+            guard let old = previous[key], band < old else { return nil }
+            return (String(key.prefix { $0 != "/" }), old - band)
+        }.max { $0.drop < $1.drop }?.provider
     }
 }
 
@@ -386,11 +487,19 @@ final class EdgeNotchState: ObservableObject {
     @Published var side: EdgeDockSide = .right
     @Published var activity = EdgeNotchActivity()
     @Published var name = "Hermes"
-    @Published var sessionTitle = "Hermes Dock"
+    @Published var sessionTitle = "Herm"
     @Published var updateTitle = "No activity yet"
     @Published var showsQuota = false
     @Published var showingAnnouncement = false
-    var displaysQuota: Bool { showsQuota && !showingAnnouncement }
+    /// Which tab a temporary announcement shows; the user's choice returns after.
+    @Published var announcesQuota = false
+    @Published var announcesTasks = false
+    /// The provider reading behind the latest quota announcement.
+    @Published var quotaChange: EdgeQuotaChange?
+    var announcedQuotaChange: EdgeQuotaChange? { showingAnnouncement && announcesQuota ? quotaChange : nil }
+    /// A task update and a quota drop announced together share one status view.
+    var displaysStatus: Bool { showingAnnouncement && announcesTasks && announcedQuotaChange != nil }
+    var displaysQuota: Bool { showingAnnouncement ? announcesQuota && !announcesTasks : showsQuota }
     @Published var detail = "Open your conversation"
     /// Sessions in progress or finished with a result not yet opened,
     /// including the current session when it has live activity.
@@ -471,7 +580,7 @@ struct EdgeNotchView: View {
             Button("Move to left edge") { onSideChange(.left) }
             Button("Move to right edge") { onSideChange(.right) }
             Divider()
-            Button("Quit Hermes Dock") { NSApp.terminate(nil) }
+            Button("Quit Herm") { NSApp.terminate(nil) }
         }
         .accessibilityLabel("\(state.name), \(state.activity.title). Open Dock")
         .accessibilityHint("Drag to move along either screen edge")
@@ -480,18 +589,22 @@ struct EdgeNotchView: View {
 
     private var preview: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 20) {
-                tabButton("Tasks", isSelected: !state.displaysQuota) {
-                    state.showingAnnouncement = false; state.showsQuota = false
+            HStack(spacing: 8) {
+                HStack(spacing: 2) {
+                    tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
+                        state.showingAnnouncement = false; state.showsQuota = false
+                    }
+                    tabButton("Quota", isSelected: state.displaysQuota) {
+                        state.showingAnnouncement = false; state.showsQuota = true; onQuotaRequested()
+                    }
                 }
-                tabButton("Quota", isSelected: state.displaysQuota) {
-                    state.showingAnnouncement = false; state.showsQuota = true; onQuotaRequested()
-                }
+                .padding(2)
+                .background(Capsule().fill(Color.dockSurface4.opacity(0.6)))
                 Spacer()
                 if state.displaysQuota {
                     EdgeQuotaToolbar(control: controlCenter)
                 } else if state.activity.status == .offline {
-                    DockStatusPill(tone: .inactive, text: "Offline", symbol: "wifi.slash")
+                    DockStatusPill(tone: .inactive, text: "Offline", symbol: .wifiSlash)
                         .accessibilityLabel("Hermes is offline. Task status is not current.")
                 }
             }
@@ -499,26 +612,28 @@ struct EdgeNotchView: View {
             .padding(.horizontal, 12)
             Divider().overlay(Color.dockBorderLight)
             if state.displaysQuota {
-                EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota)
+                EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota, change: state.announcedQuotaChange)
             } else {
                 EdgeTaskPreview(tasks: state.tasks, isOffline: state.activity.status == .offline,
-                                currentSessionTitle: state.sessionTitle, openDock: openDock, openTask: onOpenTask)
+                                quotaChange: state.displaysStatus ? state.announcedQuotaChange : nil,
+                                openDock: openDock, openTask: onOpenTask)
             }
         }
     }
 
     private func tabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 7) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
-                Capsule()
-                    .fill(isSelected ? Color.dockAccent : Color.clear)
-                    .frame(height: 2)
-            }
+            Text(title)
+                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .padding(.horizontal, 12)
+                .frame(height: 24)
+                .background(Capsule().fill(isSelected ? Color.dockSurface : .clear))
+                .shadow(color: .black.opacity(isSelected ? 0.18 : 0), radius: 1.5, y: 1)
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -538,9 +653,9 @@ private struct EdgeNotchStatusIndicator: View {
     var body: some View {
         VStack(spacing: 7) {
             if activity.attention {
-                Image(systemName: "exclamationmark").font(.system(size: 10, weight: .bold))
+                DockIcon(.warningCircle).font(.system(size: 10, weight: .bold))
             } else if activity.status == .offline {
-                Image(systemName: "slash.circle").font(.system(size: 10))
+                DockIcon(.prohibit).font(.system(size: 10))
             }
             if activity.working {
                 ZStack {
@@ -553,12 +668,32 @@ private struct EdgeNotchStatusIndicator: View {
                 Capsule().fill(Color.dockSecondaryText.opacity(0.45))
                     .frame(width: 3, height: 16)
             } else if activity.hasUpdate {
-                Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
+                EdgeNotchCompletedBar(color: color, reduceMotion: reduceMotion)
             }
         }
         .foregroundStyle(color)
         .onAppear { traveling = true }
         .accessibilityHidden(true)
+    }
+}
+
+/// Completion resolves the working track: the traveling segment fills it solid.
+private struct EdgeNotchCompletedBar: View {
+    let color: Color
+    let reduceMotion: Bool
+    @State private var filled = false
+
+    var body: some View {
+        ZStack {
+            Capsule().fill(color.opacity(0.18))
+            Capsule().fill(color)
+                .scaleEffect(y: filled || reduceMotion ? 1 : 10.0 / 28.0)
+                .shadow(color: color.opacity(filled ? 0.55 : 0), radius: 4)
+        }
+        .frame(width: 3, height: 28)
+        .onAppear {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { filled = true }
+        }
     }
 }
 

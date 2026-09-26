@@ -5,9 +5,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.christian.HermesAgentDock</string>
     <key>CFBundleName</key>
-    <string>HermesWorkspace</string>
+    <string>Herm</string>
     <key>CFBundleDisplayName</key>
-    <string>Hermes Workspace</string>
+    <string>Herm</string>
     <key>CFBundleExecutable</key>
     <string>HermesAgentDock</string>
     <key>CFBundlePackageType</key>
@@ -19,12 +19,12 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Hermes uses the microphone to transcribe your spoken prompts.</string>
+    <string>Herm uses the microphone to transcribe your spoken prompts.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Hermes captures microphone audio while transcribing your spoken prompts.</string>
+    <string>Herm captures microphone audio while transcribing your spoken prompts.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Hermes controls the Spotify app from the office record player.</string>
+    <string>Herm controls the Spotify app from the office record player.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>Hermes uses Speech Recognition to turn your voice into a prompt.</string>
+    <string>Herm uses Speech Recognition to turn your voice into a prompt.</string>
 </dict>
 </plist>

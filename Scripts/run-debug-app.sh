@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build and launch Hermes Agent Dock as a real macOS app bundle.
+# Build and launch Herm as a real macOS app bundle.
 # Running `swift run` directly does not reliably transfer keyboard focus from
 # the invoking terminal to this menu-bar application.
 
@@ -21,7 +21,7 @@ export CLANG_MODULE_CACHE_PATH="$DEBUG_CACHE_DIR/clang-module-cache"
 # Always ask SwiftPM to build. It is incremental, but it owns the full input
 # graph (including generated sources and package metadata), unlike a shell
 # timestamp probe that can incorrectly reuse an old executable after edits.
-echo "[1/4] Building Hermes Agent Dock..."
+echo "[1/4] Building Herm..."
 swift build \
     --disable-automatic-resolution \
     --disable-sandbox \
@@ -40,7 +40,7 @@ BUILD_DIR=$(swift build \
 APP_PATH="$BUILD_DIR/HermesAgentDock.app"
 EXECUTABLE_PATH="$BUILD_DIR/HermesAgentDock"
 
-echo "[2/4] Closing running Hermes Agent Dock instances..."
+echo "[2/4] Closing running Herm instances..."
 existing_pids=$(pgrep -x "$PROCESS_NAME" 2>/dev/null || true)
 if [ -n "$existing_pids" ]; then
     # A live process can keep an older signed executable and status-item host
@@ -123,7 +123,7 @@ while ! pgrep -x "$PROCESS_NAME" >/dev/null 2>&1 && [ "$attempt" -lt 50 ]; do
 done
 
 if ! pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
-    echo "Hermes Agent Dock exited during startup. Check the newest crash report in:" >&2
+    echo "Herm exited during startup. Check the newest crash report in:" >&2
     echo "  ~/Library/Logs/DiagnosticReports/HermesAgentDock-*.ips" >&2
     exit 1
 fi
@@ -132,12 +132,12 @@ fi
 # registered, so ensure the process also survives that first presentation.
 sleep 2
 if ! pgrep -x "$PROCESS_NAME" >/dev/null 2>&1; then
-    echo "Hermes Agent Dock crashed during initial presentation. Check the newest crash report in:" >&2
+    echo "Herm crashed during initial presentation. Check the newest crash report in:" >&2
     echo "  ~/Library/Logs/DiagnosticReports/HermesAgentDock-*.ips" >&2
     exit 1
 fi
 
-echo "Hermes Agent Dock is running."
+echo "Herm is running."
 if [ -f /private/tmp/hermes-status-item-diagnostic.txt ]; then
     echo "Status-item diagnostic:"
     sed -n '1,5p' /private/tmp/hermes-status-item-diagnostic.txt

@@ -118,3 +118,22 @@ struct VoiceTurnTelemetryTests {
         #expect(conversationalReply > shortReply)
     }
 }
+
+struct VoiceConversationStateTests {
+    @Test func pausedAndTranscribingKeepNativeVoiceActive() {
+        #expect(HermesVoiceState.paused.isNativeConversationActive)
+        #expect(HermesVoiceState.transcribing.isNativeConversationActive)
+        #expect(HermesVoiceState.paused.label(agentName: "Nexus") == "PAUSED — TAP TO RESUME")
+        #expect(HermesVoiceState.listening.label(agentName: " ") == "HERMES IS LISTENING")
+    }
+
+    @Test func orbMotionEasesBetweenModesInsteadOfSnapping() {
+        let motion = VoiceOrbMotion()
+        _ = motion.advance(to: 0, mode: .idle, level: 0)
+        let first = motion.advance(to: 0.016, mode: .transcribing, level: 0)
+        #expect(first.scan > 0 && first.scan < 0.2)
+        var settled = first
+        for step in 2...120 { settled = motion.advance(to: Double(step) * 0.016, mode: .transcribing, level: 0) }
+        #expect(abs(settled.scan - 1) < 0.01)
+    }
+}
