@@ -125,7 +125,7 @@ struct QuotaWorkspaceView: View {
             }
 
             DockIconButton(
-                icon: .refreshCw,
+                icon: .arrowsClockwise,
                 label: refreshState?.isRefreshing == true ? "Refreshing provider quota" : "Refresh provider quota",
                 isBusy: refreshState?.isRefreshing == true,
                 style: DockThemePalette(theme: DockThemeRuntime.current)
@@ -145,7 +145,7 @@ struct QuotaWorkspaceView: View {
             .pickerStyle(.inline)
         } label: {
             HStack(spacing: 5) {
-                LucideIcon(name: .clock, size: 13, color: Color.dockMetadataText)
+                DockIcon(.clock, size: 13, color: Color.dockMetadataText)
                 Text(autoRefreshMinutes == 0 ? "Auto off" : "Every \(autoRefreshMinutes)m")
                     .font(DockTypography.control)
                     .foregroundStyle(Color.dockSecondaryText)
@@ -350,7 +350,7 @@ struct QuotaWorkspaceView: View {
                     .accessibilityLabel("Removing \(snapshot.displayName) from Hermes")
             } else {
                 Menu { providerActions(snapshot) } label: {
-                    LucideIcon(name: .ellipsis, size: 15, color: Color.dockSecondaryText)
+                    DockIcon(.dotsThree, size: 15, color: Color.dockSecondaryText)
                         .frame(width: DockControlMetrics.compactHeight, height: DockControlMetrics.compactHeight)
                         .contentShape(Rectangle())
                 }
@@ -377,7 +377,7 @@ struct QuotaWorkspaceView: View {
     }
 
     private func dragHandle(_ snapshot: ProviderQuotaSnapshot) -> some View {
-        Image(systemName: "line.3.horizontal")
+        DockIcon(.list)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Color.dockMetadataText)
             .frame(width: 16, height: DockControlMetrics.compactHeight)
@@ -409,33 +409,33 @@ struct QuotaWorkspaceView: View {
 
     @ViewBuilder
     private func providerActions(_ snapshot: ProviderQuotaSnapshot) -> some View {
-        Button("Rename…", systemImage: "pencil") { beginRename(snapshot) }
+        Button("Rename…", icon: .pencilSimple) { beginRename(snapshot) }
         if control.getProviderNickname(for: snapshot.provider) != nil {
-            Button("Restore reported name", systemImage: "arrow.counterclockwise") {
+            Button("Restore reported name", icon: .arrowCounterClockwise) {
                 control.removeProviderNickname(for: snapshot.provider)
             }
         }
         if canReorder {
             let ids = control.providerQuotas.map(\.provider)
             Divider()
-            Button("Move up", systemImage: "arrow.up") {
+            Button("Move up", icon: .arrowUp) {
                 withReorderAnimation { control.moveProviderQuota(snapshot.provider, by: -1) }
             }
             .disabled(ids.first == snapshot.provider)
-            Button("Move down", systemImage: "arrow.down") {
+            Button("Move down", icon: .arrowDown) {
                 withReorderAnimation { control.moveProviderQuota(snapshot.provider, by: 1) }
             }
             .disabled(ids.last == snapshot.provider)
         }
         if let website = QuotaWorkspacePresentation.descriptor(forProvider: snapshot.provider)?.website {
             Divider()
-            Button("Open provider website", systemImage: "arrow.up.right.square") {
+            Button("Open provider website", icon: .arrowSquareOut) {
                 NSWorkspace.shared.open(website)
             }
         }
         if snapshot.hermesCredential != nil {
             Divider()
-            Button("Remove from Hermes…", systemImage: "trash", role: .destructive) {
+            Button("Remove from Hermes…", icon: .trash, role: .destructive) {
                 removalCandidate = snapshot
             }
         }
@@ -585,9 +585,9 @@ struct QuotaWorkspaceView: View {
         }
     }
 
-    private func insight(_ text: String, color: Color, icon: LucideIconName? = nil) -> some View {
+    private func insight(_ text: String, color: Color, icon: Ph? = nil) -> some View {
         HStack(spacing: 4) {
-            if let icon { LucideIcon(name: icon, size: 11, color: color == .dockSecondaryText ? .dockMetadataText : color) }
+            if let icon { DockIcon(icon, size: 11, color: color == .dockSecondaryText ? .dockMetadataText : color) }
             Text(text)
                 .font(DockTypography.metadata)
                 .foregroundStyle(color)
@@ -632,7 +632,7 @@ struct QuotaWorkspaceView: View {
             .buttonStyle(.bordered)
             if let website = descriptor.website {
                 Link(destination: website) {
-                    LucideIcon(name: .externalLink, size: 13, color: Color.dockSecondaryText)
+                    DockIcon(.arrowSquareOut, size: 13, color: Color.dockSecondaryText)
                         .frame(width: DockControlMetrics.hitTarget, height: DockControlMetrics.hitTarget)
                         .contentShape(Rectangle())
                 }
@@ -660,10 +660,10 @@ struct QuotaWorkspaceView: View {
     }
 
     /// Shared with the notch Quota tab so both surfaces use the same hues.
-    /// Healthy stays neutral: hue appears only when a window needs attention.
+    /// Traffic-light hues for meters and rings: green, orange, red.
     static func color(for threshold: ProviderQuotaThreshold) -> Color {
         switch threshold {
-        case .healthy: .dockSecondaryText
+        case .healthy: .dockSuccess
         case .warning: .dockWarning
         case .critical: .dockDestructive
         case .unknown: .dockMetadataText

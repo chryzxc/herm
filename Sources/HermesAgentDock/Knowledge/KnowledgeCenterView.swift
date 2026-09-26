@@ -62,15 +62,15 @@ struct KnowledgeCenterView: View {
 
     private var statusCards: some View {
         HStack(spacing: 10) {
-            statusCard(title: "CURATOR", status: inventory.curator.status.displayName, icon: "wand.and.stars")
-            statusCard(title: "MEMORY", status: inventory.memory.status.displayName, icon: "brain")
-            statusCard(title: "MUTATIONS", status: "Unavailable", icon: "lock.shield")
+            statusCard(title: "CURATOR", status: inventory.curator.status.displayName, icon: .magicWand)
+            statusCard(title: "MEMORY", status: inventory.memory.status.displayName, icon: .brain)
+            statusCard(title: "MUTATIONS", status: "Unavailable", icon: .shieldCheck)
         }
     }
 
-    private func statusCard(title: String, status: String, icon: String) -> some View {
+    private func statusCard(title: String, status: String, icon: Ph) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            LucideLabel(title, icon: icon)
+            DockIconLabel(title, icon: icon)
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(Color.dockMetadataText)
             Text(status)
@@ -169,7 +169,7 @@ struct KnowledgeCenterView: View {
 
     private var unavailableState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            LucideLabel("Skill inventory unavailable", icon: "exclamationmark.triangle")
+            DockIconLabel("Skill inventory unavailable", icon: .warning)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text(inventory.diagnostic.isEmpty ? "Hermes did not provide a verified structured inventory." : inventory.diagnostic)

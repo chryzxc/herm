@@ -138,7 +138,7 @@ struct SessionKanbanActivityView: View {
                         }
                     } label: {
                         HStack {
-                            LucideImage(systemName: showsCompleted ? "chevron.down" : "chevron.right")
+                            DockIcon(showsCompleted ? .caretDown : .caretRight)
                             Text("\(snapshot.completedCount) COMPLETED")
                             Spacer()
                         }
@@ -156,7 +156,7 @@ struct SessionKanbanActivityView: View {
 
             if let error = refreshState?.error {
                 HStack(alignment: .top, spacing: 7) {
-                    LucideImage(systemName: "exclamationmark.triangle")
+                    DockIcon(.warning)
                     Text(refreshState?.isStale == true ? "STALE · \(error)" : error)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -176,7 +176,7 @@ struct SessionKanbanActivityView: View {
                     HStack {
                         Text("OPEN FULL KANBAN BOARD")
                         Spacer()
-                        LucideImage(systemName: "arrow.up.right")
+                        DockIcon(.arrowUpRight)
                     }
                 }
                 .buttonStyle(.borderless)
@@ -201,7 +201,7 @@ struct SessionKanbanActivityView: View {
             Button {
                 if let sessionID { control.refreshSessionKanban(for: sessionID) }
             } label: {
-                LucideImage(systemName: "refresh-cw")
+                DockIcon(.arrowsClockwise)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.dockAccent)
@@ -267,7 +267,7 @@ struct SessionKanbanActivityView: View {
                                 .foregroundStyle(statusColor(row.status))
                         }
                         Spacer(minLength: 0)
-                        LucideImage(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
+                        DockIcon(.caretRight).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 8)
@@ -314,7 +314,7 @@ struct SessionKanbanActivityView: View {
                             .lineLimit(2)
                     }
                 }
-                LucideImage(systemName: "chevron.right")
+                DockIcon(.caretRight)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
                     .padding(.top, 3)

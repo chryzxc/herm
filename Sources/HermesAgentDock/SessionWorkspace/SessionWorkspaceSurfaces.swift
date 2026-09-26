@@ -122,14 +122,14 @@ struct SessionPullRequestsSurface: View {
         HStack(spacing: 10) {
             HStack(spacing: 3) {
                 ForEach(PullRequestFilter.allCases) { filter in
-                    RepositoryFilterTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
+                    DockTabButton(title: filter.rawValue, isSelected: center.filter == filter) {
                         center.filter = filter
                     }
                 }
             }
             Divider().frame(height: 22)
             HStack(spacing: 8) {
-                LucideIcon(name: .search, size: 16)
+                DockIcon(.magnifyingGlass, size: 16, color: Color.dockMetadataText)
                 TextField("Search pull requests", text: $center.query)
                     .textFieldStyle(.plain)
             }
@@ -142,7 +142,7 @@ struct SessionPullRequestsSurface: View {
                 Button {
                     Task { await center.refreshScoped(repositoryPath: repositoryPath) }
                 } label: {
-                    LucideIcon(name: .refreshCw, size: 15, color: Color.dockSecondaryText)
+                    DockIcon(.arrowsClockwise, size: 15, color: Color.dockSecondaryText)
                         .frame(width: 30, height: 30)
                 }
                 .buttonStyle(DockPressButtonStyle())
@@ -166,7 +166,7 @@ struct SessionProjectRequiredState: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                LucideImage(systemName: "folder.badge.questionmark")
+                DockIcon(.folderDashed)
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(Color.dockMetadataText)
                     .frame(width: 22, height: 22)
@@ -211,7 +211,7 @@ struct SessionChangeDiffPreview: View {
             .background(Color.dockCanvas)
         } else {
             SessionSurfacePreviewPlaceholder(
-                icon: "doc.text.magnifyingglass",
+                icon: .fileMagnifyingGlass,
                 title: "No file selected",
                 detail: "Select a changed file to preview its diff here."
             )
@@ -220,7 +220,7 @@ struct SessionChangeDiffPreview: View {
 
     private func header(_ file: RepositoryFileChange) -> some View {
         HStack(spacing: 10) {
-            LucideImage(systemName: "doc.text")
+            DockIcon(.fileText)
                 .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.path.split(separator: "/").last.map(String.init) ?? file.path)
@@ -300,13 +300,13 @@ struct SessionChangeDiffPreview: View {
 }
 
 struct SessionSurfacePreviewPlaceholder: View {
-    let icon: String
+    let icon: Ph
     let title: String
     let detail: String
 
     var body: some View {
         VStack(spacing: 8) {
-            LucideImage(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 20, weight: .medium))
                 .foregroundStyle(Color.dockMetadataText)
             Text(title)

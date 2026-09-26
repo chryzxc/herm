@@ -85,7 +85,7 @@ struct RepositoryCodeWorkspaceView: View {
         HStack(spacing: 10) {
             if !isStandalonePane {
                 Button(action: requestClose) {
-                            LucideImage(systemName: "chevron.left")
+                            DockIcon(.caretLeft)
                             .font(.system(size: 11, weight: .bold))
                             .frame(width: 44, height: 44)
                 }
@@ -95,7 +95,7 @@ struct RepositoryCodeWorkspaceView: View {
                 .help("Back to files")
             }
 
-            LucideImage(systemName: "doc.text")
+            DockIcon(.fileText)
                 .foregroundStyle(Color.dockAccent)
             Text(document.path)
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -110,7 +110,7 @@ struct RepositoryCodeWorkspaceView: View {
                     .help("Unsaved changes")
             }
             Button(action: save) {
-                    LucideImage(systemName: isSaving ? "ellipsis" : "square.and.arrow.down")
+                    DockIcon(isSaving ? .dotsThree : .downloadSimple)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(hasUnsavedChanges ? Color.dockAccent : Color.dockMetadataText)
                     .frame(width: 44, height: 44)
@@ -198,7 +198,7 @@ struct RepositoryCodeWorkspaceView: View {
 
     private func blameDetail(_ line: RepositoryBlameLine) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            LucideLabel("LINE \(line.lineNumber)", icon: "number")
+            DockIconLabel("LINE \(line.lineNumber)", icon: .hash)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             Text(line.commit.author)

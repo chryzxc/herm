@@ -33,7 +33,7 @@ struct ResponseDurationLabel: View {
     }
 
     private func label(for seconds: TimeInterval) -> some View {
-        LucideLabel(ResponseDurationFormatting.string(seconds: seconds), icon: "stopwatch")
+        DockIconLabel(ResponseDurationFormatting.string(seconds: seconds), icon: .timer)
     }
 }
 

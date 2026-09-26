@@ -19,7 +19,7 @@ struct ChatImagePreviewModal: View {
                 .frame(maxWidth: 900, maxHeight: 700)
                 .padding(28)
             Button(action: { dismiss() }) {
-                LucideImage(systemName: "xmark")
+                DockIcon(.x)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Color.white)
                     .frame(width: 32, height: 32)

@@ -237,7 +237,7 @@ final class InlineBlameTextView: NSTextView {
             let x = annotationColumnX
             guard x < self.bounds.width - 4 || lineNumber == self.selectedBlameLineNumber else { continue }
             let y = fragmentRect.minY + self.textContainerOrigin.y
-            let date = line.commit.authoredAt.map { RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: .now) } ?? "unknown date"
+            let date = line.commit.authoredAt.map { HumanDateFormatting.relative($0) } ?? "unknown date"
             let value = line.commit.isUncommitted ? "UNCOMMITTED · WORKING TREE" : "\(line.commit.author) · \(date) · \(line.commit.shortHash)"
             let backgroundRect = NSRect(x: x - 4, y: y, width: max(0, self.bounds.width - x + 4), height: lineHeight)
             NSColor.dockCanvas.withAlphaComponent(0.96).setFill()
@@ -315,7 +315,7 @@ final class InlineBlameAnnotationView: NSView {
     }
 
     private func drawMetadata(_ commit: RepositoryBlameCommit, at y: CGFloat) {
-        let date = commit.authoredAt.map { RelativeDateTimeFormatter().localizedString(for: $0, relativeTo: .now) } ?? "unknown date"
+        let date = commit.authoredAt.map { HumanDateFormatting.relative($0) } ?? "unknown date"
         let value = commit.isUncommitted ? "UNCOMMITTED · WORKING TREE" : "\(commit.author) · \(date) · \(commit.shortHash)"
         let font = textView?.font ?? NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         let lineHeight = textView?.layoutManager?.defaultLineHeight(for: font) ?? 16

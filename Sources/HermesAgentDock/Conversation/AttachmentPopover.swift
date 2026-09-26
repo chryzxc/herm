@@ -24,14 +24,14 @@ enum AttachmentPopoverAction: String, CaseIterable, Identifiable {
         }
     }
 
-    var systemImage: String {
+    var icon: Ph {
         switch self {
-        case .files: "doc"
-        case .folder: "folder"
-        case .images: "photo"
-        case .pasteImage: "doc.on.clipboard"
-        case .url: "link"
-        case .promptSnippets: "text.quote"
+        case .files: .file
+        case .folder: .folder
+        case .images: .image
+        case .pasteImage: .clipboardText
+        case .url: .link
+        case .promptSnippets: .quotes
         }
     }
 }
@@ -151,7 +151,7 @@ struct AttachmentPopover: View {
             onSelect(action)
         } label: {
             HStack(spacing: 9) {
-                LucideImage(systemName: action.systemImage)
+                DockIcon(action.icon)
                     .frame(width: 16)
                 Text(action.title)
                 Spacer()
@@ -175,7 +175,7 @@ struct AttachmentPopover: View {
     private var urlRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 9) {
-                LucideImage(systemName: AttachmentPopoverAction.url.systemImage)
+                DockIcon(AttachmentPopoverAction.url.icon)
                     .frame(width: 16)
                 Text("URL")
                     .font(.system(size: 12, weight: .medium))
@@ -204,11 +204,11 @@ struct AttachmentPopover: View {
             }
         } label: {
             HStack(spacing: 9) {
-                LucideImage(systemName: AttachmentPopoverAction.promptSnippets.systemImage)
+                DockIcon(AttachmentPopoverAction.promptSnippets.icon)
                     .frame(width: 16)
                 Text(AttachmentPopoverAction.promptSnippets.title)
                 Spacer()
-                LucideImage(systemName: "chevron.right")
+                DockIcon(.caretRight)
                     .font(.system(size: 9, weight: .semibold))
             }
             .font(.system(size: 12, weight: .medium))

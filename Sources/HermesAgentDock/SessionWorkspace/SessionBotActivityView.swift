@@ -110,9 +110,8 @@ struct SessionBotActivityView: View {
                         )
                     )
                     .overlay {
-                        LucideImage(systemName: BotAvatarPresentation.symbol(for: record.botID))
+                        DockIcon(BotAvatarPresentation.symbol(for: record.botID))
                             .font(.system(size: 16, weight: .semibold))
-                            .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.white.opacity(0.96))
                     }
                     .frame(width: 34, height: 34)
@@ -145,7 +144,7 @@ struct SessionBotActivityView: View {
                     expandedRecordIDs.insert(record.id)
                 }
             } label: {
-                LucideImage(systemName: expandedRecordIDs.contains(record.id) ? "chevron.up" : "chevron.down")
+                DockIcon(expandedRecordIDs.contains(record.id) ? .caretUp : .caretDown)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
             }

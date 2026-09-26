@@ -22,7 +22,7 @@ struct RuntimeToolsView: View {
             }
             ForEach(snapshot.backends) { backend in
                 HStack(spacing: 10) {
-                    LucideImage(systemName: icon(for: backend.id))
+                    DockIcon(icon(for: backend.id))
                         .foregroundStyle(color(for: backend.state))
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 3) {
@@ -49,7 +49,7 @@ struct RuntimeToolsView: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .padding(.top, 4)
                 ForEach(snapshot.toolsets) { toolset in
-                    LucideLabel(toolset.id, icon: toolset.isEnabled ? "checkmark.circle" : "circle")
+                    DockIconLabel(toolset.id, icon: toolset.isEnabled ? .checkCircle : .circle)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(toolset.isEnabled ? Color.dockSuccess : Color.dockMetadataText)
                 }
@@ -66,7 +66,7 @@ struct RuntimeToolsView: View {
         switch state { case .available: .dockSuccess; case .requiresSetup: .dockWarning; case .unavailable, .unsupported: .dockMetadataText }
     }
 
-    private func icon(for toolset: RuntimeToolset) -> String {
-        switch toolset { case .terminal: "terminal"; case .browser: "globe"; case .computerUse: "cursorarrow.click"; case .lsp: "curlybraces" }
+    private func icon(for toolset: RuntimeToolset) -> Ph {
+        switch toolset { case .terminal: .terminal; case .browser: .globe; case .computerUse: .cursorClick; case .lsp: .bracketsCurly }
     }
 }

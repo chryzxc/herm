@@ -39,7 +39,7 @@ struct AgentAvatar: View {
       Circle()
         .fill(statusColor.opacity(0.12))
         .overlay {
-          LucideImage(systemName: "person.fill")
+          DockIcon(.user)
             .font(.system(size: 11, weight: .medium))
             .foregroundStyle(statusColor)
         }

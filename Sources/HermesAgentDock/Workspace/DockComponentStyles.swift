@@ -137,6 +137,7 @@ struct DockPressButtonStyle: ButtonStyle {
 struct DockPrimaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlSize) private var controlSize
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         let isCompact = controlSize == .small || controlSize == .mini
@@ -147,9 +148,38 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
             .background(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-            .shadow(color: Color.dockAccent.opacity(configuration.isPressed ? 0 : 0.14), radius: 6)
+            .shadow(color: Color.dockAccent.opacity(configuration.isPressed || !isEnabled ? 0 : 0.14), radius: 6)
+            .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+/// The outlined companion to the primary action (Cancel, Remove, Copy). A
+/// destructive role tints the label instead of filling the control.
+struct DockSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.controlSize) private var controlSize
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let isCompact = controlSize == .small || controlSize == .mini
+        configuration.label
+            .font(isCompact ? .system(size: 12, weight: .medium) : .body.weight(.medium))
+            .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
+            .padding(.horizontal, isCompact ? 10 : 12)
+            .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6))
+                    .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.42)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
+            .onHover { isHovering = $0 }
     }
 }
 
@@ -211,7 +241,7 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
 /// The consistent title treatment for full workspace destinations. Keeping it
 /// shared prevents individual pages from inventing competing title bars.
 struct DockPageHeader<Trailing: View>: View {
-    let icon: String
+    let icon: Ph
     let title: String
     let subtitle: String
     let onRefresh: (() -> Void)?
@@ -219,7 +249,7 @@ struct DockPageHeader<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     init(
-        icon: String,
+        icon: Ph,
         title: String,
         subtitle: String,
         onRefresh: (() -> Void)? = nil,
@@ -236,7 +266,7 @@ struct DockPageHeader<Trailing: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            LucideImage(systemName: icon)
+            DockIcon(icon)
                     .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.dockOnAccentText)
                 .frame(width: 30, height: 30)
@@ -260,7 +290,7 @@ struct DockPageHeader<Trailing: View>: View {
                         if isRefreshing {
                             ProgressView().controlSize(.small)
                         } else {
-                            LucideImage(systemName: "refresh-cw")
+                            DockIcon(.arrowsClockwise)
                                 .font(.system(size: 14, weight: .medium))
                         }
                     }
@@ -282,7 +312,7 @@ struct DockPageHeader<Trailing: View>: View {
 }
 
 extension DockPageHeader where Trailing == EmptyView {
-    init(icon: String, title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false) {
+    init(icon: Ph, title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false) {
         self.init(icon: icon, title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) { EmptyView() }
     }
 }
@@ -309,12 +339,51 @@ struct DockActionLabel: View {
     }
 }
 
+/// Placeholder for a page or panel whose first load is still in flight, so it
+/// never renders blank or a false "nothing here" state while Hermes answers.
+struct DockLoadingState: View {
+    let title: String
+    var detail: String? = nil
+    var minHeight: CGFloat = 120
+
+    @State private var isVisible = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.regular)
+                .tint(Color.dockAccent)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            if let detail {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 360)
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, minHeight: minHeight, maxHeight: .infinity)
+        .opacity(isVisible ? 1 : 0)
+        .onAppear { withAnimation(.dockEase(duration: 0.2)) { isVisible = true } }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+    }
+}
+
 extension ButtonStyle where Self == DockPressButtonStyle {
     static var dockPress: Self { Self() }
 }
 
 extension ButtonStyle where Self == DockPrimaryButtonStyle {
     static var dockPrimary: Self { Self() }
+}
+
+extension ButtonStyle where Self == DockSecondaryButtonStyle {
+    static var dockSecondary: Self { Self() }
 }
 
 extension TextFieldStyle where Self == DockGlassTextFieldStyle {
@@ -367,5 +436,41 @@ extension View {
                 RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                     .stroke(Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.hairline)
             }
+    }
+}
+
+/// The standard tab control for mutually exclusive scopes on every page.
+struct DockTabButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11, weight: isSelected ? .medium : .regular))
+                .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isSelected ? Color.dockSurface4 : Color.clear))
+        }
+        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// A row of `DockTabButton`s bound to a selection, replacing segmented pickers.
+struct DockTabBar<Option: Hashable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(options, id: \.self) { option in
+                DockTabButton(title: title(option), isSelected: selection == option) { selection = option }
+            }
+        }
     }
 }

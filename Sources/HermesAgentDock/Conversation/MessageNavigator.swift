@@ -347,7 +347,7 @@ struct MessageNavigatorView: View {
     private var searchPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                LucideIcon(name: .search, size: 13, color: Color.dockMetadataText)
+                DockIcon(.magnifyingGlass, size: 13, color: Color.dockMetadataText)
                 TextField("Find a message", text: $searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
@@ -362,7 +362,7 @@ struct MessageNavigatorView: View {
                         .foregroundStyle(Color.dockMetadataText)
                 }
                 Button { isSearchPresented = false } label: {
-                    LucideIcon(name: .xmark, size: 11, color: Color.dockSecondaryText)
+                    DockIcon(.x, size: 11, color: Color.dockSecondaryText)
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }

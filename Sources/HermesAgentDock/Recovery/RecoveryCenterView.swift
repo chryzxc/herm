@@ -15,7 +15,7 @@ struct RecoveryCenterView: View {
 
             ForEach(snapshot.items) { item in
                 HStack(spacing: 10) {
-                    LucideImage(systemName: icon(for: item.id))
+                    DockIcon(icon(for: item.id))
                         .foregroundStyle(color(for: item.state))
                         .frame(width: 18)
                     VStack(alignment: .leading, spacing: 3) {
@@ -56,13 +56,13 @@ struct RecoveryCenterView: View {
         }
     }
 
-    private func icon(for feature: RecoveryFeature) -> String {
+    private func icon(for feature: RecoveryFeature) -> Ph {
         switch feature {
-        case .backup: "externaldrive"
-        case .import, .importAgent: "square.and.arrow.down"
-        case .migration, .openClawMigration: "arrow.triangle.2.circlepath"
-        case .sync: "arrow.triangle.2.circlepath.circle"
-        case .update: "arrow.down.circle"
+        case .backup: .hardDrive
+        case .import, .importAgent: .downloadSimple
+        case .migration, .openClawMigration: .arrowsClockwise
+        case .sync: .arrowsClockwise
+        case .update: .arrowCircleDown
         }
     }
 }

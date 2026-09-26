@@ -245,7 +245,9 @@ struct SessionActivityOverviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             pageHeader
-            if !snapshot.hasContent {
+            if !snapshot.hasContent, refreshState?.isRefreshing == true, refreshState?.lastSuccess == nil {
+                DockLoadingState(title: "Loading session activity…")
+            } else if !snapshot.hasContent {
                 unifiedEmptyState
             } else {
                 if !snapshot.work.isEmpty || refreshState?.error != nil { currentWorkSection }
@@ -268,7 +270,7 @@ struct SessionActivityOverviewView: View {
                     if botMode.isRefreshing || refreshState?.isRefreshing == true {
                         ProgressView().controlSize(.small)
                     } else {
-                        LucideImage(systemName: "refresh-cw")
+                        DockIcon(.arrowsClockwise)
                             .font(.system(size: 13, weight: .medium))
                     }
                 }
@@ -298,7 +300,7 @@ struct SessionActivityOverviewView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(agentView.rawValue)
-                        LucideImage(systemName: "chevron.down")
+                        DockIcon(.caretDown)
                             .font(.system(size: 9, weight: .semibold))
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -363,7 +365,7 @@ struct SessionActivityOverviewView: View {
                     Text(row.agent.status.capitalized)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(row.isLive ? Color.dockSuccess : Color.dockSecondaryText)
-                    LucideImage(systemName: selected ? "chevron.up" : "chevron.down")
+                    DockIcon(selected ? .caretUp : .caretDown)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Color.dockMetadataText)
                 }
@@ -429,7 +431,7 @@ struct SessionActivityOverviewView: View {
                     }
                     Spacer(minLength: 6)
                     if let updatedAt = row.updatedAt { Text(HumanDateFormatting.timeOnly(updatedAt)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText) }
-                    LucideImage(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
+                    DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
                 .frame(minHeight: 48)
@@ -467,7 +469,7 @@ struct SessionActivityOverviewView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(timelineLimit >= snapshot.timeline.count ? "Show recent" : "Show \(min(20, snapshot.timeline.count - timelineLimit)) more")
-                            LucideImage(systemName: timelineLimit >= snapshot.timeline.count ? "chevron.up" : "chevron.down")
+                            DockIcon(timelineLimit >= snapshot.timeline.count ? .caretUp : .caretDown)
                         }
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Color.dockAccent)
@@ -505,7 +507,7 @@ struct SessionActivityOverviewView: View {
                         .foregroundStyle(Color.dockMetadataText)
                     }
                     Spacer(minLength: 4)
-                    LucideImage(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
+                    DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 10)
@@ -548,7 +550,7 @@ struct SessionActivityOverviewView: View {
 
     private var unifiedEmptyState: some View {
         VStack(alignment: .leading, spacing: 5) {
-            LucideImage(systemName: "waveform.path.ecg").foregroundStyle(Color.dockMetadataText)
+            DockIcon(.pulse).foregroundStyle(Color.dockMetadataText)
             Text("No session activity yet.").font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
             Text("Hermes activity will appear here when agents or session-linked work begin.").font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
         }

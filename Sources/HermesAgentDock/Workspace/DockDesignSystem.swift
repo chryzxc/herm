@@ -35,19 +35,6 @@ enum DockControlMetrics {
     static let denseRowHeight: CGFloat = 36
 }
 
-/// Shared segmented-control treatment for mutually exclusive local scopes.
-/// It intentionally retains native macOS behavior while giving every page the
-/// same compact geometry and palette-aware surrounding spacing.
-extension View {
-    func dockSegmentedControl() -> some View {
-        self
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .frame(minHeight: DockControlMetrics.standardHeight)
-    }
-}
-
 // MARK: - Status vocabulary
 
 /// The single status vocabulary shared by the office scene, its HUD, and the
@@ -133,12 +120,12 @@ struct DockStatusDot: View {
 struct DockStatusPill: View {
     let tone: DockStatusTone
     let text: String
-    var symbol: String?
+    var symbol: Ph?
 
     var body: some View {
         HStack(spacing: 6) {
             if let symbol {
-                Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                DockIcon(symbol).font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(tone.color)
             } else {
                 DockStatusDot(tone: tone, size: 6)
@@ -162,9 +149,8 @@ struct DockSectionLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(title.uppercased())
-                .font(DockTypography.sectionLabel)
-                .tracking(0.6)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.dockSectionText)
             if let count {
                 Text("\(count)")
@@ -237,7 +223,7 @@ extension View {
 /// so the primary, Tools, and footer groups line up.
 struct DockNavRow: View {
     let title: String
-    let icon: String
+    let icon: Ph
     let isSelected: Bool
     var showsUpdateBadge = false
     let style: DockThemePalette
@@ -248,11 +234,7 @@ struct DockNavRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                LucideIcon(
-                    name: .from(systemName: icon),
-                    size: 15,
-                    color: isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText
-                )
+                DockIcon(icon, size: 15, color: isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 18)
                 Text(title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
@@ -269,7 +251,7 @@ struct DockNavRow: View {
                         .accessibilityLabel("Update available")
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
@@ -292,7 +274,7 @@ struct DockNavRow: View {
 /// Square icon action for sidebar headers: quiet until hovered; prominent
 /// actions keep an accent tint so the primary action reads at a glance.
 struct DockIconButton: View {
-    let icon: LucideIconName
+    let icon: Ph
     let label: String
     var isProminent = false
     var isBusy = false
@@ -307,11 +289,7 @@ struct DockIconButton: View {
                 if isBusy {
                     ProgressView().controlSize(.mini)
                 } else {
-                    LucideIcon(
-                        name: icon,
-                        size: size * 0.5,
-                        color: isProminent ? style.accent : isHovering ? style.primaryText : style.secondaryText
-                    )
+                    DockIcon(icon, size: size * 0.5, color: isProminent ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 }
             }
             .frame(width: size, height: size)
@@ -357,7 +335,7 @@ struct DockSectionHeader<Actions: View>: View {
             }
             actions()
         }
-        .padding(.leading, 10)
+        .padding(.leading, 8)
         .padding(.trailing, 2)
         .frame(minHeight: 30)
         .onHover { isHovering = $0 }
@@ -371,14 +349,14 @@ struct DockSectionHeader<Actions: View>: View {
                 .foregroundStyle(isHovering && isExpanded != nil ? style.secondaryText : style.metadataText)
             if let count {
                 Text(count > 99 ? "99+" : "\(count)")
-                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                    .font(.caption.weight(.medium).monospacedDigit())
                     .foregroundStyle(style.secondaryText)
                     .padding(.horizontal, 5)
                     .frame(minWidth: 18, minHeight: 16)
                     .background(Capsule().fill(style.surface4.opacity(0.8)))
             }
             if let isExpanded {
-                LucideIcon(name: .chevronRight, size: 10, color: style.metadataText)
+                DockIcon(.caretRight, size: 10, color: style.metadataText)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .opacity(isHovering || !isExpanded ? 1 : 0.5)
             }

@@ -123,16 +123,17 @@ struct ModelPickerView: View {
             // Plain-button menu draws this SwiftUI label as-is, so long
             // provider/model names truncate instead of widening the toolbar.
             HStack(spacing: 4) {
-                Text(selectedOption?.displayName ?? "Select model")
+                Text(selectedOption?.model ?? "Select model")
                     .lineLimit(1)
                     .truncationMode(.middle)
-                LucideIcon(name: .chevronDown, size: 10, color: Color.dockMetadataText)
+                DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
             }
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .help(selectedOption?.provider ?? "")
         .accessibilityLabel("Select model, currently \(selectedOption?.displayName ?? "none")")
         .sheet(isPresented: $showingEditor) {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
@@ -148,20 +149,20 @@ struct ModelPickerView: View {
         Button {
             onRefresh()
         } label: {
-            Label(isRefreshing ? "Refreshing models…" : "Refresh models", systemImage: "arrow.clockwise")
+            Label(isRefreshing ? "Refreshing models…" : "Refresh models", icon: .arrowClockwise)
         }
         .disabled(isRefreshing)
         Divider()
 
         switch refreshState {
         case .pending:
-            Label("Loading model catalog…", systemImage: "hourglass")
+            Label("Loading model catalog…", icon: .hourglass)
         case .unavailable:
-            Label("Model catalog unavailable", systemImage: "exclamationmark.triangle")
+            Label("Model catalog unavailable", icon: .warning)
         case .empty:
-            Label("No models available", systemImage: "tray")
+            Label("No models available", icon: .tray)
         case .stale:
-            Label("Model catalog unavailable; showing last results", systemImage: "exclamationmark.triangle")
+            Label("Model catalog unavailable; showing last results", icon: .warning)
             modelRows
         case .success:
             modelRows
@@ -176,7 +177,7 @@ struct ModelPickerView: View {
     private var modelRows: some View {
         let groups = catalog.groups(matching: query, disabledIDs: disabledModelIDs, activeID: selectedID)
             if groups.isEmpty {
-                Label("No matching models", systemImage: "magnifyingglass")
+                Label("No matching models", icon: .magnifyingGlass)
             } else {
                 ForEach(groups) { group in
                     Section(group.provider) {
@@ -188,7 +189,7 @@ struct ModelPickerView: View {
                                     Text(option.model)
                                     if option.id == selectedID {
                                         Spacer()
-                                        Image(systemName: "checkmark")
+                                        DockIcon(.check)
                                     }
                                 }
                             }

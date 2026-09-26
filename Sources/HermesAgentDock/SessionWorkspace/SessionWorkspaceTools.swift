@@ -64,13 +64,13 @@ struct SessionFilesView: View {
             statusSlot
 
             if !isLoading, entries.isEmpty {
-                empty("folder", "No files to show", showsGeneratedFiles ? "The selected project folder has no readable files." : "Generated folders are hidden. Use Explorer options to show them.")
+                empty(.folder, "No files to show", showsGeneratedFiles ? "The selected project folder has no readable files." : "Generated folders are hidden. Use Explorer options to show them.")
             } else {
                 ForEach(visibleEntries) { entry in
                     if entry.isDirectory {
                         Button { toggle(entry.path) } label: {
                             explorerRow(
-                                icon: expandedDirectories.contains(entry.path) ? "folder.fill" : "folder",
+                                icon: expandedDirectories.contains(entry.path) ? .folder : .folder,
                                 title: entryName(entry),
                                 path: entry.path,
                                 depth: entry.depth,
@@ -113,10 +113,10 @@ struct SessionFilesView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func explorerRow(icon: String, title: String, path: String?, depth: Int, isDirectory: Bool, isExpanded: Bool, color: Color) -> some View {
+    private func explorerRow(icon: Ph, title: String, path: String?, depth: Int, isDirectory: Bool, isExpanded: Bool, color: Color) -> some View {
         HStack(spacing: 7) {
             if isDirectory {
-                LucideImage(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                DockIcon(isExpanded ? .caretDown : .caretRight)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 12)
@@ -124,7 +124,7 @@ struct SessionFilesView: View {
                 Color.clear.frame(width: 12)
             }
 
-            LucideImage(systemName: icon)
+            DockIcon(icon)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(color)
                 .frame(width: 18)
@@ -220,18 +220,18 @@ struct SessionFilesView: View {
         }
     }
 
-    private func fileIcon(for entry: ProjectFileEntry) -> String {
+    private func fileIcon(for entry: ProjectFileEntry) -> Ph {
         switch entry.path.split(separator: ".").last.map(String.init)?.lowercased() {
-        case "ts", "tsx", "js", "jsx", "swift", "py", "go", "rs": "curlybraces"
-        case "json", "yaml", "yml", "toml": "doc.text"
-        case "md", "txt": "doc.plaintext"
-        default: "doc"
+        case "ts", "tsx", "js", "jsx", "swift", "py", "go", "rs": .bracketsCurly
+        case "json", "yaml", "yml", "toml": .fileText
+        case "md", "txt": .fileText
+        default: .file
         }
     }
 
     private var explorerHeader: some View {
         HStack(spacing: 8) {
-            LucideImage(systemName: "folder")
+            DockIcon(.folder)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Color.dockSecondaryText)
             Text(projectName)
@@ -246,7 +246,7 @@ struct SessionFilesView: View {
             Button { Task { await refresh() } } label: {
                 Group {
                     if isRefreshing { ProgressView().controlSize(.small) }
-                    else { LucideImage(systemName: "arrow.clockwise").font(.system(size: 14, weight: .medium)) }
+                    else { DockIcon(.arrowClockwise).font(.system(size: 14, weight: .medium)) }
                 }
                 .frame(width: 44, height: 44)
             }
@@ -259,7 +259,7 @@ struct SessionFilesView: View {
                 Button("Collapse all folders") { collapseAll() }
                 Toggle("Show generated files", isOn: $showsGeneratedFiles)
             } label: {
-                LucideImage(systemName: "ellipsis")
+                DockIcon(.dotsThree)
                     .font(.system(size: 14, weight: .medium))
                     .frame(width: 44, height: 44)
             }
@@ -274,7 +274,7 @@ struct SessionFilesView: View {
 
     private var filterField: some View {
         HStack(spacing: 7) {
-            LucideImage(systemName: "magnifyingglass")
+            DockIcon(.magnifyingGlass)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.dockMetadataText)
             TextField("Filter files…", text: $filterText)
@@ -283,7 +283,7 @@ struct SessionFilesView: View {
                 .foregroundStyle(Color.dockPrimaryText)
             if !filterText.isEmpty {
                 Button { filterText = "" } label: {
-                    LucideImage(systemName: "xmark.circle.fill")
+                    DockIcon(.xCircle, weight: .fill)
                         .font(.system(size: 12))
                 }
                 .buttonStyle(.borderless)
@@ -304,7 +304,7 @@ struct SessionFilesView: View {
                 ProgressView().controlSize(.small)
                 Text("Loading files…")
             } else if let error {
-                LucideImage(systemName: "exclamationmark.triangle")
+                DockIcon(.warning)
                 Text(error)
             } else {
                 Color.clear.frame(width: 1, height: 1)
@@ -337,9 +337,9 @@ struct SessionFilesView: View {
         isLoading = false
     }
 
-    private func empty(_ icon: String, _ title: String, _ detail: String) -> some View {
+    private func empty(_ icon: Ph, _ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            LucideLabel(title, icon: icon).font(.system(size: 12, weight: .semibold))
+            DockIconLabel(title, icon: icon).font(.system(size: 12, weight: .semibold))
             Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
         }
         .foregroundStyle(Color.dockPrimaryText)
@@ -453,7 +453,7 @@ struct SessionTerminalView: View {
             Button {
                 terminalTabs.add(directory: directory)
             } label: {
-                LucideImage(systemName: "plus")
+                DockIcon(.plus)
                     .font(.system(size: 16, weight: .light))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 44, height: 44)
@@ -469,7 +469,7 @@ struct SessionTerminalView: View {
 
     private func terminalTab(_ session: LocalTerminalSession) -> some View {
         HStack(spacing: 7) {
-            LucideImage(systemName: "terminal")
+            DockIcon(.terminal)
                 .font(.system(size: 10, weight: .semibold))
             Text("Shell \((terminalTabs.sessions.firstIndex(where: { $0.id == session.id }) ?? 0) + 1)")
                 .font(.system(size: 12))
@@ -478,7 +478,7 @@ struct SessionTerminalView: View {
                 terminalTabs.selectedID = session.id
                 terminalTabs.closeSelected()
             } label: {
-                LucideImage(systemName: "xmark")
+                DockIcon(.x)
                     .font(.system(size: 9, weight: .semibold))
             }
             .buttonStyle(.borderless)
@@ -525,7 +525,7 @@ struct SessionTerminalView: View {
                         }
                     }
                 } label: {
-                    Label("Run check", systemImage: "checkmark.seal")
+                    Label("Run check", icon: .sealCheck)
                         .font(.system(size: 11, weight: .semibold))
                 }
                 .menuStyle(.borderlessButton)
@@ -542,7 +542,7 @@ struct SessionTerminalView: View {
                     .disabled(!canInterrupt)
                 Button("Restart shell") { terminal.start(directory: directory) }
             } label: {
-                LucideImage(systemName: "ellipsis").frame(width: 44, height: 44)
+                DockIcon(.dotsThree).frame(width: 44, height: 44)
             }
             .menuStyle(.borderlessButton)
             .accessibilityLabel("Terminal options")

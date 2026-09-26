@@ -59,7 +59,6 @@ struct ConversationMessageRowTests {
             "Branch from this message",
             "Refresh this response"
         ])
-        #expect(LucideIconName.from(systemName: "speaker.wave.2") == .audioLines)
     }
 
     @Test func messageActionStateTracksOnlyTheInitiatingAction() async {

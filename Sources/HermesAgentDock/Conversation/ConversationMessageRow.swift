@@ -9,12 +9,12 @@ enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var icon: String {
+    var icon: Ph {
         switch self {
-        case .copy: "doc.on.doc"
-        case .readAloud: "speaker.wave.2"
-        case .branch: "arrow.triangle.branch"
-        case .refresh: "arrow.clockwise"
+        case .copy: .copy
+        case .readAloud: .speakerHigh
+        case .branch: .gitBranch
+        case .refresh: .arrowClockwise
         }
     }
 
@@ -195,9 +195,8 @@ struct ConversationMessageRow: View, Equatable {
                                     Circle()
                                         .stroke(.white.opacity(0.20), lineWidth: 0.6)
                                         .frame(width: 15, height: 15)
-                                    LucideImage(systemName: BotAvatarPresentation.symbol(for: botProfileID))
+                                    DockIcon(BotAvatarPresentation.symbol(for: botProfileID))
                                         .font(.system(size: 8, weight: .semibold))
-                                        .symbolRenderingMode(.hierarchical)
                                         .foregroundStyle(.white.opacity(0.96))
                                 }
                                 .frame(width: 24, height: 24)
@@ -224,7 +223,7 @@ struct ConversationMessageRow: View, Equatable {
                                 StreamingMessageText(streaming: streamingText)
                             } else if message.isError {
                                 HStack(alignment: .top, spacing: 10) {
-                                    LucideIcon(name: .triangleAlert, size: 13, color: Color.dockWarning)
+                                    DockIcon(.warning, size: 13, color: Color.dockWarning)
                                         .padding(.top, 1)
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text("Request could not be completed")
@@ -341,7 +340,7 @@ struct ConversationMessageRow: View, Equatable {
         HStack(spacing: 6) {
             Text(message.timeLabel)
             if let durationLabel = message.durationLabel {
-                LucideLabel(durationLabel, icon: "stopwatch")
+                DockIconLabel(durationLabel, icon: .timer)
             }
             if let modelName = message.modelName {
                 Text("· \(modelName)")
@@ -367,7 +366,7 @@ struct ConversationMessageRow: View, Equatable {
         action: @escaping () -> Void,
         isAvailable: Bool = true
     ) -> some View {
-        let icon = kind == .readAloud && isSpeaking ? "stop.fill" : kind.icon
+        let icon = kind == .readAloud && isSpeaking ? .stop : kind.icon
         let label = kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
         let isPending = pendingAction == kind
         let anotherMutationIsPending = pendingAction != nil
@@ -380,11 +379,7 @@ struct ConversationMessageRow: View, Equatable {
             if isPending {
                 ProgressView().controlSize(.small)
             } else {
-                LucideIcon(
-                    name: .from(systemName: icon),
-                    size: 12,
-                    color: iconColor
-                )
+                DockIcon(icon, size: 12, color: iconColor)
             }
         }
         .buttonStyle(DockPressButtonStyle())

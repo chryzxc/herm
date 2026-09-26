@@ -268,7 +268,7 @@ struct AgentBoardView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(color(for: subagent.status))
                 .frame(minWidth: 62, alignment: .trailing)
-            LucideImage(systemName: isSelected ? "chevron.up" : "chevron.down")
+            DockIcon(isSelected ? .caretUp : .caretDown)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.dockMetadataText)
         }
@@ -304,7 +304,7 @@ struct AgentBoardView: View {
             Spacer()
 
             Button(action: onClose) {
-                LucideImage(systemName: "chevron.left")
+                DockIcon(.caretLeft)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 36, height: 36)
@@ -344,7 +344,7 @@ struct AgentBoardView: View {
 
     private func emptyState(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            LucideImage(systemName: "person.2.slash")
+            DockIcon(.users)
                 .font(.system(size: 13))
                 .foregroundStyle(Color.dockMetadataText)
             Text(title)
@@ -432,7 +432,7 @@ struct AgentBoardView: View {
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
-                                LucideImage(systemName: expandedActivityID == activity.id ? "chevron.up" : "chevron.down")
+                                DockIcon(expandedActivityID == activity.id ? .caretUp : .caretDown)
                                     .font(.system(size: 9, weight: .semibold))
                                     .foregroundStyle(Color.dockMetadataText)
                             }
@@ -480,7 +480,7 @@ struct AgentBoardView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             Text(item.agent).foregroundStyle(Color.dockAccent).frame(width: 88, alignment: .leading).lineLimit(1)
-                            LucideImage(systemName: expandedPipelineItemID == item.id ? "chevron.up" : "chevron.down")
+                            DockIcon(expandedPipelineItemID == item.id ? .caretUp : .caretDown)
                                 .font(.system(size: 9, weight: .semibold))
                                 .foregroundStyle(Color.dockMetadataText)
                         }

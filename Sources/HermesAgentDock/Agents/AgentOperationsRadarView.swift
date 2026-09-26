@@ -7,7 +7,7 @@ struct AgentOperationsRadarView: View {
         let rows = AgentOperationsPresentation.rows(agents: agents)
 
         VStack(alignment: .leading, spacing: 10) {
-            LucideLabel("OPERATIONS RADAR", icon: "dot.radiowaves.left.and.right")
+            DockIconLabel("OPERATIONS RADAR", icon: .broadcast)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .tracking(0.8)
                 .foregroundStyle(Color.dockAccent)

@@ -229,7 +229,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         process.standardError = outputPipe
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else { handle.readabilityHandler = nil; return }
             let output = String(decoding: data, as: UTF8.self)
             DispatchQueue.main.async {
                 guard let self, self.githubAuthenticationProcess != nil else { return }

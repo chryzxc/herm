@@ -37,9 +37,9 @@ public struct ExtensionsCenterView: View {
             }
 
             Section("Actions") {
-                LucideLabel("Server and plugin changes are unavailable until Hermes exposes a verified contract.", icon: "lock.slash")
+                DockIconLabel("Server and plugin changes are unavailable until Hermes exposes a verified contract.", icon: .lockOpen)
                     .foregroundStyle(.secondary)
-                LucideLabel("Third-party MCP tool invocation is upstream-blocked until Hermes exposes a structured catalog and invocation schema.", icon: "exclamationmark.triangle")
+                DockIconLabel("Third-party MCP tool invocation is upstream-blocked until Hermes exposes a structured catalog and invocation schema.", icon: .warning)
                     .foregroundStyle(.secondary)
             }
         }
@@ -47,7 +47,7 @@ public struct ExtensionsCenterView: View {
         .overlay {
             if inventory == nil {
                 VStack(spacing: 10) {
-                    LucideIcon(name: .sparkles, size: 28, color: .secondary)
+                    DockIcon(.sparkle, size: 28, color: .secondary)
                     Text("Extensions unavailable")
                         .font(.headline)
                     Text("Refresh from Hermes to load a typed MCP/plugin inventory.")
@@ -81,7 +81,7 @@ public struct ExtensionsCenterView: View {
     }
 
     private func emptyRow(_ text: String) -> some View {
-        LucideLabel(text, icon: "minus.circle")
+        DockIconLabel(text, icon: .minusCircle)
             .foregroundStyle(.secondary)
     }
 }

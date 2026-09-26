@@ -211,7 +211,7 @@ struct ProviderConnectSheet: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
             SecureField("API key", text: $apiKeyInput)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.dockGlass)
             HStack(spacing: 8) {
                 Button {
                     control.saveProviderAPIKey(apiKeyInput, for: descriptor)
@@ -262,7 +262,7 @@ struct ProviderConnectSheet: View {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(command, forType: .string)
                 } label: {
-                    LucideImage(systemName: "doc.on.doc")
+                    DockIcon(.copy)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.dockAccent)
@@ -280,7 +280,7 @@ struct ProviderConnectSheet: View {
                 }
                 HStack(spacing: 8) {
                     TextField("Paste the code from the browser page", text: $callbackCodeInput)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.dockGlass)
                         .onSubmit { submitCallbackCode() }
                     Button("Submit") { submitCallbackCode() }
                         .buttonStyle(.borderedProminent)
@@ -293,7 +293,7 @@ struct ProviderConnectSheet: View {
             } else {
                 HStack(spacing: 8) {
                     Button { login.start(command: command) } label: {
-                        LucideLabel("Log In with \(descriptor.displayName)", icon: "arrow.up.forward.square")
+                        DockIconLabel("Log In with \(descriptor.displayName)", icon: .arrowSquareOut)
                     }
                     .buttonStyle(.borderedProminent)
                     Spacer()
@@ -341,7 +341,7 @@ struct ProviderConnectSheet: View {
                 Button {
                     control.openProviderApplication(named: applicationName)
                 } label: {
-                    LucideLabel("Open \(applicationName)", icon: "arrow.up.forward.app")
+                    DockIconLabel("Open \(applicationName)", icon: .arrowSquareOut)
                 }
                 .buttonStyle(.borderedProminent)
                 Spacer()

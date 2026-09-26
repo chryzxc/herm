@@ -33,12 +33,12 @@ struct SessionInspector: View {
             case .changes: "Changes"
             }
         }
-        var icon: String {
+        var icon: Ph {
             switch self {
-            case .activity: "waveform.path.ecg"
-            case .files: "folder"
-            case .changes: "arrow.triangle.branch"
-            case .terminal: "terminal"
+            case .activity: .pulse
+            case .files: .folder
+            case .changes: .gitBranch
+            case .terminal: .terminal
             }
         }
     }
@@ -52,7 +52,7 @@ struct SessionInspector: View {
 
             if let workflowError = workflow.error {
                 HStack(spacing: 8) {
-                    LucideImage(systemName: "exclamationmark.triangle")
+                    DockIcon(.warning)
                         .foregroundStyle(Color.dockWarning)
                     Text(workflowError)
                         .font(.system(size: 11))
@@ -132,7 +132,7 @@ struct SessionInspector: View {
 
     private var inspectorHeader: some View {
         HStack(alignment: .center, spacing: 9) {
-            LucideImage(systemName: "bubble.left.and.bubble.right")
+            DockIcon(.chats)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             VStack(alignment: .leading, spacing: 2) {
@@ -141,7 +141,7 @@ struct SessionInspector: View {
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
                 if let sessionProjectName {
-                    LucideLabel(sessionProjectName, icon: "folder")
+                    DockIconLabel(sessionProjectName, icon: .folder)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
@@ -213,15 +213,15 @@ struct SessionInspector: View {
     private func sessionTelemetryStrip(focus: MissionControlFocus) -> some View {
         struct TelemetryItem: Identifiable {
             let id: String
-            let icon: String
+            let icon: Ph
             let label: String
             let value: String
         }
 
         let items: [TelemetryItem] = [
-            focus.branch.map { TelemetryItem(id: "branch", icon: "arrow.triangle.branch", label: "BRANCH", value: $0) },
-            focus.contextPercent.map { TelemetryItem(id: "context", icon: "chart.bar.fill", label: "CONTEXT", value: "\(Int($0.rounded()))%") },
-            focus.changedFiles.map { TelemetryItem(id: "files", icon: "doc.badge.gearshape", label: "CHANGED", value: "\($0) files") }
+            focus.branch.map { TelemetryItem(id: "branch", icon: .gitBranch, label: "BRANCH", value: $0) },
+            focus.contextPercent.map { TelemetryItem(id: "context", icon: .chartBar, label: "CONTEXT", value: "\(Int($0.rounded()))%") },
+            focus.changedFiles.map { TelemetryItem(id: "files", icon: .fileText, label: "CHANGED", value: "\($0) files") }
         ].compactMap { $0 }
 
         return Group {
@@ -238,7 +238,7 @@ struct SessionInspector: View {
                                     }
                                 } label: {
                                     if branchName == workflow.repository.branch {
-                                        LucideLabel(branchName, icon: "checkmark")
+                                        DockIconLabel(branchName, icon: .check)
                                     } else {
                                         Text(branchName)
                                     }
@@ -246,7 +246,7 @@ struct SessionInspector: View {
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                LucideImage(systemName: isSwitchingBranch ? "refresh-cw" : branch.icon)
+                                DockIcon(isSwitchingBranch ? .arrowsClockwise : branch.icon)
                                     .font(.system(size: 11))
                                     .foregroundStyle(Color.dockAccent)
                                 Text(branch.value)
@@ -254,7 +254,7 @@ struct SessionInspector: View {
                                     .foregroundStyle(Color.dockPrimaryText)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
-                                LucideImage(systemName: "chevron.down")
+                                DockIcon(.caretDown)
                                     .font(.system(size: 8, weight: .bold))
                                     .foregroundStyle(Color.dockSecondaryText)
                             }
@@ -273,7 +273,7 @@ struct SessionInspector: View {
 
                     ForEach(items.filter { $0.id != "branch" }) { item in
                         HStack(spacing: 6) {
-                            LucideImage(systemName: item.icon)
+                            DockIcon(item.icon)
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.dockAccent)
                             VStack(alignment: .leading, spacing: 1) {
@@ -310,7 +310,7 @@ struct SessionInspector: View {
 
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                LucideImage(systemName: "checkmark.shield")
+                DockIcon(.shieldCheck)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(color)
                 Text("PRE-FLIGHT READINESS")
@@ -342,7 +342,7 @@ struct SessionInspector: View {
     private func attentionRow(_ attention: AttentionItem) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                LucideImage(systemName: "exclamationmark.triangle.fill")
+                DockIcon(.warning)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockWarning)
                 Text(attention.title)
