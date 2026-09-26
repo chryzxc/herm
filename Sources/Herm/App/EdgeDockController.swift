@@ -348,6 +348,16 @@ final class EdgeDockController: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
     }
 
+    /// Keyboard counterpart to hovering the notch: stays open while the
+    /// pointer is over it, otherwise folds back after a few seconds.
+    func toggleQuickPreview() {
+        guard !workspacePresented, !dragging else { return }
+        if state.expanded { return setExpanded(false) }
+        state.showingAnnouncement = false
+        setExpanded(true)
+        scheduleCollapse(after: 5)
+    }
+
     private func setExpanded(_ expanded: Bool) {
         guard !workspacePresented else { return }
         collapseTask?.cancel()
@@ -625,11 +635,11 @@ struct EdgeNotchView: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
                 .padding(.horizontal, 12)
                 .frame(height: 24)
-                .background(Capsule().fill(isSelected ? Color.dockSurface : .clear))
-                .shadow(color: .black.opacity(isSelected ? 0.18 : 0), radius: 1.5, y: 1)
+                .background(Capsule().fill(isSelected ? Color.dockAccentMuted : .clear))
+                .overlay(Capsule().strokeBorder(isSelected ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)

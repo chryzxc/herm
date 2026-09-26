@@ -15,6 +15,8 @@ final class CommandCenterPreferencesStore: ObservableObject {
     private var lastSeen: [String: TimeInterval]
     private let defaults: UserDefaults
     private let key = "hermes.command-center.preferences.v1"
+    /// The panel reopens in whichever mode was last used; the Settings toggle resets it.
+    static let opensFullscreenKey = "hermes.panel.opens-fullscreen"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -83,6 +85,7 @@ final class CommandCenterPreferencesStore: ObservableObject {
 
     func setLaunchesExpandedByDefault(_ enabled: Bool) {
         launchesExpandedByDefault = enabled
+        defaults.set(enabled, forKey: Self.opensFullscreenKey)
         save()
     }
 

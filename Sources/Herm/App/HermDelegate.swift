@@ -43,6 +43,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private var dockPanel: DockPanelController?
     private var edgeDock: EdgeDockController?
     private var commandDoubleTapDetector = CommandDoubleTapDetector()
+    private var optionDoubleTapDetector = CommandDoubleTapDetector()
     private var commandEventMonitors: [Any] = []
 
     override init() {
@@ -139,6 +140,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         }
         if let globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: { [weak self] _ in
             self?.commandDoubleTapDetector.noteKeyActivity()
+            self?.optionDoubleTapDetector.noteKeyActivity()
         }) {
             commandEventMonitors.append(globalKeyMonitor)
         }
@@ -147,15 +149,22 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private func handleCommandEvent(_ event: NSEvent) {
         if event.type == .keyDown {
             commandDoubleTapDetector.noteKeyActivity()
+            optionDoubleTapDetector.noteKeyActivity()
             return
         }
-        // 54 and 55 are the right and left Command keys on macOS keyboards.
-        guard event.keyCode == 54 || event.keyCode == 55 else { return }
-        if commandDoubleTapDetector.handle(
-            isCommandDown: event.modifierFlags.contains(.command),
-            at: event.timestamp
-        ) {
-            dockPanel?.toggleFromShortcut()
+        switch event.keyCode {
+        // 54 and 55 are the right and left Command keys: ⌘⌘ toggles the panel.
+        case 54, 55:
+            if commandDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(.command), at: event.timestamp) {
+                dockPanel?.toggleFromShortcut()
+            }
+        // 58 and 61 are the left and right Option keys: ⌥⌥ peeks the notch quick preview.
+        case 58, 61:
+            if optionDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(.option), at: event.timestamp) {
+                edgeDock?.toggleQuickPreview()
+            }
+        default:
+            break
         }
     }
 
@@ -470,7 +479,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private func show(fromShortcut: Bool = false) {
         pointerExitTask?.cancel()
         if !isWorkspaceVisible {
-            isFullscreen = preferences.launchesExpandedByDefault
+            // Read fresh: Settings and the fullscreen toggle both write this key.
+            isFullscreen = UserDefaults.standard.object(forKey: CommandCenterPreferencesStore.opensFullscreenKey) as? Bool
+                ?? preferences.launchesExpandedByDefault
         }
         onWillShow()
         isWorkspaceVisible = true
@@ -512,6 +523,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private func toggleFullscreen() {
         isFullscreen.toggle()
+        UserDefaults.standard.set(isFullscreen, forKey: CommandCenterPreferencesStore.opensFullscreenKey)
         if isFullscreen {
             enterFullscreen()
         } else {

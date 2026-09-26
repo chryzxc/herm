@@ -68,6 +68,7 @@ The status colors match the rest of the app: blue means active, green means heal
 | **Quota tab** | Shows provider usage and reset times, so you know how much allowance is left before starting a long task. |
 | **Click** | Expands the notch into the full workspace in the same window. |
 | **Double-tap ⌘** | Opens or closes the workspace from anywhere. |
+| **Double-tap ⌥** | Opens or closes the hover preview from the keyboard. |
 | **Drag** | Moves the notch along either screen edge. Its position is saved. |
 | **Right-click** | Moves the notch to the left or right edge, or quits the app. |
 
