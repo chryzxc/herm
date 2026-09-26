@@ -1,6 +1,6 @@
 # Herm
 
-[![CI](https://github.com/chryzxc/hermes-agent-dock/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/hermes-agent-dock/actions/workflows/ci.yml)
+[![CI](https://github.com/chryzxc/herm/actions/workflows/ci.yml/badge.svg)](https://github.com/chryzxc/herm/actions/workflows/ci.yml)
 [![platform: macOS 14+](https://img.shields.io/badge/platform-macOS%2014%2B-1f6feb)](#requirements)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138)](#development)
 [![local-first](https://img.shields.io/badge/local-first-f0883e)](#how-it-works)
@@ -15,8 +15,8 @@ Glance at the notch to see what your agents are doing. Hover to see which tasks 
 Herm is a **frontend for Hermes**. It doesn't run models, keep its own copy of your sessions, or replace the Hermes CLI. It connects to the Hermes runtime already installed on your Mac and gives it a native interface. It's an unofficial community project, separate from the official Hermes Agent Desktop app ([more](#disclaimer)).
 
 ```sh
-git clone https://github.com/chryzxc/hermes-agent-dock.git
-cd hermes-agent-dock
+git clone https://github.com/chryzxc/herm.git
+cd herm
 swift run
 ```
 
@@ -86,7 +86,7 @@ All notch animations respect **Reduce Motion**.
 - **Message actions**: branch from a message, copy it, have it read aloud, or refresh it from Hermes.
 - **Pinned conversations** use Hermes' own pin, so pins are shared with Hermes Agent Desktop and `hermes sessions pin`.
 - **Model picker** grouped by provider, with search.
-- **Context guardrails**: context usage is labelled normal, warning (80%), or critical (90%), with actions to branch, compress, or hand off.
+- **Context guardrails**: the composer shows context progress without a session token total. Context usage is labelled normal, warning (80%), or critical (90%), with actions to branch, compress, or hand off.
 - **Dangerous-command approvals**: *Deny*, *Allow once*, or *Always allow*. *Always allow* is saved to the Hermes allowlist.
 
 ### 🎙️ Voice
@@ -139,11 +139,13 @@ All notch animations respect **Reduce Motion**.
 - **Artifacts**: images, files, and links produced in recent sessions.
 - **Core**: token usage, context breakdown, rollback checkpoints, skills, MCP servers, plugins, and Hermes health.
 
+Settings shows each configured MCP server once, with its connection details and status when Hermes provides them. Dropdown settings align with the right edge of their preference rows.
+
 ### ⏱️ Automations and quota
 
 - **Automations**: view, create, run, and remove Hermes cron jobs, and see their run history.
 - **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity.
-- **Hermes updates**: runs `hermes update` with streamed progress, only after you confirm. It never updates automatically.
+- **Hermes updates**: runs `hermes update` only after you confirm. Settings shows the current activity and elapsed time; expand Output to inspect the streamed log. It never updates automatically.
 
 ## Requirements
 
@@ -158,8 +160,8 @@ All notch animations respect **Reduce Motion**.
 2. **Clone Herm and run it:**
 
    ```sh
-   git clone https://github.com/chryzxc/hermes-agent-dock.git
-   cd hermes-agent-dock
+   git clone https://github.com/chryzxc/herm.git
+   cd herm
    swift run
    ```
 
