@@ -127,6 +127,19 @@ final class ConversationScrollMetricsTests: XCTestCase {
         )
     }
 
+    func testAppendAtBottomOfShortTranscriptStopsGrowingAtInitialLimit() {
+        var range: Range<Int> = 0..<3
+        for count in 3..<200 {
+            range = ConversationMessageWindow.rangeAfterCountChange(
+                range,
+                oldCount: count,
+                newCount: count + 1,
+                isAtBottom: true
+            )
+        }
+        XCTAssertEqual(range, (200 - ConversationMessageWindow.initialLimit)..<200)
+    }
+
     func testLiveTailIsDerivedFromTheWindowEdge() {
         XCTAssertTrue(ConversationMessageWindow.isLiveTail(488..<500, totalCount: 500))
         XCTAssertFalse(ConversationMessageWindow.isLiveTail(380..<480, totalCount: 500))

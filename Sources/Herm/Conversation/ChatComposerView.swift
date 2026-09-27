@@ -149,19 +149,6 @@ struct ChatComposerView: View {
                 QueuedPromptList(prompts: queuedPrompts, onRemove: model.removeQueuedPrompt)
             }
 
-            if model.status == .needsClarification, !model.clarificationChoices.isEmpty {
-                ClarificationChoiceChips(
-                    choices: model.clarificationChoices,
-                    isDisabled: model.isRespondingToClarification || model.isRestoringSession,
-                    onSelect: { choice in
-                        // A suggested response is a complete answer, so send it
-                        // directly instead of making the user copy it into the
-                        // editor and submit a second time.
-                        model.respondToClarification(choice)
-                    }
-                )
-            }
-
             VStack(spacing: 6) {
 
             // Main multi-line text input area at top of card container.
@@ -833,55 +820,6 @@ private struct QueuedPromptList: View {
         if let pdf = prompt.pdfURL { parts.append("[PDF: \(pdf.lastPathComponent)]") }
         if !prompt.text.isEmpty { parts.append(prompt.text) }
         return parts.joined(separator: " ")
-    }
-}
-
-private struct ClarificationChoiceChips: View {
-    let choices: [String]
-    let isDisabled: Bool
-    let onSelect: (String) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("SUGGESTED RESPONSES")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(0.6)
-                .foregroundStyle(Color.dockMetadataText)
-
-            ForEach(Array(choices.enumerated()), id: \.offset) { item in
-                let choice = item.element
-                Button {
-                    onSelect(choice)
-                } label: {
-                    HStack(spacing: 8) {
-                        DockIcon(.arrowRight)
-                            .font(.system(size: 10, weight: .semibold))
-                        Text(choice)
-                            .font(.system(size: 12, weight: .medium))
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(isDisabled ? Color.dockMetadataText : Color.dockAccent)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .fill(Color.dockAccent.opacity(isDisabled ? 0.04 : 0.10))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .stroke(Color.dockAccent.opacity(isDisabled ? 0.16 : 0.42), lineWidth: DockLayout.hairline)
-                        }
-                )
-                .disabled(isDisabled)
-                .help("Send suggested response: \(choice)")
-                .accessibilityLabel("Send suggested response: \(choice)")
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Suggested clarification responses")
     }
 }
 

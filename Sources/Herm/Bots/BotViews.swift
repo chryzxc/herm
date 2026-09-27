@@ -102,7 +102,6 @@ struct BotRosterPage: View {
 
     private var header: some View {
         DockPageHeader(
-            icon: .robot,
             title: "Bots",
             subtitle: "\(model.visibleBots.count) Bots · \(model.activeNowBots.count) active",
             onRefresh: { Task { await model.refreshNow(force: true) } },

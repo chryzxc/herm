@@ -184,10 +184,10 @@ struct ControlCenterAttentionTests {
         model.respond(to: item, action: .respond, response: "production")
         for _ in 0..<20 { await Task.yield() }
 
-        let clarificationCalls = client.calls.filter { $0.method == "clarify.respond" }
+        let clarificationCalls = client.calls.filter { $0.method == "request.answer" }
         #expect(clarificationCalls.count == 1)
-        #expect(clarificationCalls.first?.params["request_id"] as? String == "clarify-response-42")
-        #expect(clarificationCalls.first?.params["answer"] as? String == "production")
+        #expect(clarificationCalls.first?.params["id"] as? String == "clarify-response-42")
+        #expect((clarificationCalls.first?.params["result"] as? [String: Any])?["answer"] as? String == "production")
         #expect(model.attention.first?.state == .resolved)
     }
 
@@ -204,7 +204,7 @@ struct ControlCenterAttentionTests {
         model.respond(to: item, action: .respond, response: "production")
         for _ in 0..<20 { await Task.yield() }
 
-        #expect(client.calls.filter { $0.method == "clarify.respond" }.isEmpty)
+        #expect(client.calls.filter { $0.method == "request.answer" }.isEmpty)
         #expect(model.attention.first?.state == .open)
     }
 
@@ -224,7 +224,7 @@ struct ControlCenterAttentionTests {
         model.respond(to: item, action: .respond, response: "production")
         for _ in 0..<20 { await Task.yield() }
 
-        #expect(client.calls.filter { $0.method == "clarify.respond" }.isEmpty)
+        #expect(client.calls.filter { $0.method == "request.answer" }.isEmpty)
         #expect(model.attention.first?.state == .open)
     }
 

@@ -113,6 +113,40 @@ final class HermesGateway: NSObject {
         onConnectionChange?(true)
         DebugLog.write("connect: WebSocket task resumed")
         receiveNext()
+        // Hermes fails approval/clarify requests fast for a WebSocket client
+        // that never says it answers server→client requests.
+        Task { [weak self] in
+            _ = try? await self?.request("client.capabilities", params: ["server_requests": true])
+        }
+    }
+
+    /// Hermes asks approval and clarify questions as server→client JSON-RPC
+    /// requests (`{id: "srq-…", method, params}`). Project them onto the
+    /// `approval.request` / `clarify.request` events the models already
+    /// handle; the request id is the one `request.answer` resolves.
+    static func event(forServerRequest frame: [String: Any]) -> (type: String, params: [String: Any])? {
+        guard let id = frame["id"] as? String, let method = frame["method"] as? String else { return nil }
+        var payload = frame["params"] as? [String: Any] ?? [:]
+        let sessionID = payload["session_id"] as? String ?? ""
+        switch method {
+        case "approval":
+            break // Keeps Hermes' own approval `request_id`.
+        case "clarify":
+            // A batch keeps `questions`; the first one also fills the single-question
+            // fields for surfaces that show one question (Inbox, notifications).
+            if payload["question"] == nil, let first = (payload["questions"] as? [[String: Any]])?.first {
+                payload["question"] = first["question"]
+                payload["choices"] = first["choices"]
+            }
+            payload["request_id"] = id
+        case _ where ValuePrompt.methods.contains(method):
+            payload["request_id"] = id
+            payload["method"] = method
+            return ("prompt.request", ["session_id": sessionID, "payload": payload])
+        default:
+            return nil
+        }
+        return ("\(method).request", ["session_id": sessionID, "payload": payload])
     }
 
     static func webSocketRequest(port: Int, token: String) -> URLRequest {
@@ -236,6 +270,12 @@ final class HermesGateway: NSObject {
         }
     }
 
+    private func sendFrame(_ frame: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: frame),
+              let text = String(data: data, encoding: .utf8) else { return }
+        socket?.send(.string(text)) { _ in }
+    }
+
     private func receiveNext() {
         socket?.receive { [weak self] result in
             switch result {
@@ -293,9 +333,27 @@ final class HermesGateway: NSObject {
             }
             return
         }
+        if let requestID = object["id"] as? String, let method = object["method"] as? String {
+            if let event = Self.event(forServerRequest: object) {
+                DebugLog.write("receive: server request \(method)")
+                onEvent?(event.type, event.params)
+            } else {
+                // Unhandled requests (desktop previews, tours, …) must not park the agent until its deadline.
+                sendFrame(["jsonrpc": "2.0", "id": requestID,
+                           "error": ["code": -32601, "message": "Herm does not handle \(method) requests"]])
+            }
+            return
+        }
         guard object["method"] as? String == "event",
-              let params = object["params"] as? [String: Any],
-              let type = params["type"] as? String else { return }
+              var params = object["params"] as? [String: Any],
+              var type = params["type"] as? String else { return }
+        // A withdrawn server request (answered elsewhere, timed out, interrupted).
+        if type == "request.cancel", let payload = params["payload"] as? [String: Any],
+           let method = payload["method"] as? String,
+           method == "clarify" || method == "approval" || ValuePrompt.methods.contains(method) {
+            type = ValuePrompt.methods.contains(method) ? "prompt.expire" : "\(method).expire"
+            params["payload"] = ["request_id": payload["id"] ?? "", "reason": payload["reason"] ?? ""]
+        }
         // Delta frames arrive at stream rate; logging each one would put
         // console and file I/O on the main actor for every chunk of text.
         if !HermesHighFrequencyEvent.includes(type) {

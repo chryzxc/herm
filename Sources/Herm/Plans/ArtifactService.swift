@@ -98,7 +98,7 @@ struct ArtifactService {
         }
     }
 
-    private static func mediaValues(_ text: String) -> [String] {
+    static func mediaValues(_ text: String) -> [String] {
         guard text.contains("MEDIA:") else { return [] }
         return matches(mediaPattern, in: text).map { raw in
             let trimmed = raw.trimmingCharacters(in: .whitespaces)

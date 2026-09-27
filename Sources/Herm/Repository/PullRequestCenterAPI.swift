@@ -85,13 +85,16 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         do {
             var page = 1
             var files: [PullRequestFile] = []
-            while !Task.isCancelled {
+            while true {
+                try Task.checkCancellation()
                 let payload = try await request(path: record.repository.apiRepositoryPath + "/pulls/\(record.number)/files", query: ["per_page": "100", "page": "\(page)"])
+                try Task.checkCancellation()
                 guard let batch = Self.parseFilesPayload(payload) else { throw GitHubCodeHostError.malformedResponse }
                 files.append(contentsOf: batch)
                 guard batch.count == 100 else { break }
                 page += 1
             }
+            try Task.checkCancellation()
             return files
         } catch {
             return nil

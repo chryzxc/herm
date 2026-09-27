@@ -223,22 +223,14 @@ struct ConversationMessageRow: View, Equatable {
                                 // snapshot captured by the last row render.
                                 StreamingMessageText(streaming: streamingText)
                             } else if message.isError {
-                                HStack(alignment: .top, spacing: 10) {
-                                    DockIcon(.warning, size: 13, color: Color.dockWarning)
-                                        .padding(.top, 1)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text("Request could not be completed")
-                                            .font(.system(size: 12, weight: .semibold))
-                                        Text(message.text)
-                                            .font(DockTypography.body)
-                                            .foregroundStyle(Color.dockSecondaryText)
-                                            .textSelection(.enabled)
-                                    }
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
+                                DockCallout(
+                                    tone: .danger,
+                                    icon: .warningCircle,
+                                    title: "Request could not be completed",
+                                    message: message.text
+                                )
                             } else {
-                                messageMarkdownView(message.text, cacheKey: messageRenderCacheKey)
+                                assistantBody
                             }
                         }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -246,14 +238,6 @@ struct ConversationMessageRow: View, Equatable {
                             .padding(.vertical, 6)
                             .foregroundStyle(Color.dockPrimaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(message.isError ? Color.dockWarning.opacity(0.08) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
-                            .overlay {
-                                if message.isError {
-                                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                                        .stroke(Color.dockWarning.opacity(0.4), lineWidth: 0.5)
-                                }
-                            }
                     }
 
                     if !message.isError, message.hasBodyText {
@@ -295,21 +279,41 @@ struct ConversationMessageRow: View, Equatable {
         "message:\(message.id.uuidString):\(message.contentRevision):theme:\(themeRevision)"
     }
 
-    private var markdownRenderKey: MarkdownRenderKey {
+    private func markdownRenderKey(segment: Int) -> MarkdownRenderKey {
         MarkdownRenderKey(
             messageID: message.id,
             contentRevision: message.contentRevision,
-            themeRevision: themeRevision
+            themeRevision: themeRevision,
+            segment: segment
         )
     }
 
     @ViewBuilder
-    private func messageMarkdownView(_ markdown: String, cacheKey: String) -> some View {
+    private var assistantBody: some View {
+        let segments = ChatMediaSegment.split(message.text)
+        if segments == [.markdown(message.text)] {
+            messageMarkdownView(message.text, cacheKey: messageRenderCacheKey)
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                    switch segment {
+                    case .markdown(let text):
+                        messageMarkdownView(text, cacheKey: "\(messageRenderCacheKey):\(index)", segment: index)
+                    case .media(let path):
+                        ChatMediaAttachmentCard(path: path)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func messageMarkdownView(_ markdown: String, cacheKey: String, segment: Int = 0) -> some View {
         if CompletedMarkdownRendererPolicy.usesNativeRenderer(for: markdown) {
             let retainedSections = streamingText?
                 .completionChunks(matching: markdown, messageID: message.id)
                 .map(MarkdownRenderDocumentBuilder.sections(for:))
-            NativeMarkdownDocumentHost(source: markdown, key: markdownRenderKey, streamingSections: retainedSections)
+            NativeMarkdownDocumentHost(source: markdown, key: markdownRenderKey(segment: segment), streamingSections: retainedSections)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
             MarkdownMessageView(markdown: markdown, cacheKey: cacheKey)

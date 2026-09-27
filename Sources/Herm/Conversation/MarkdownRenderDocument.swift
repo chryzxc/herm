@@ -8,6 +8,8 @@ struct MarkdownRenderKey: Hashable, Sendable {
     let messageID: UUID
     let contentRevision: Int
     let themeRevision: Int
+    /// Distinguishes markdown runs split around inline attachments in one message.
+    var segment: Int = 0
 }
 
 indirect enum MarkdownContinuationContext: Equatable, Sendable {
@@ -67,7 +69,7 @@ enum MarkdownRenderDocumentCache {
     }
 
     static func document(for source: String, key: MarkdownRenderKey) -> MarkdownRenderDocument {
-        let cacheKey = "\(key.messageID.uuidString):\(key.contentRevision):\(key.themeRevision)" as NSString
+        let cacheKey = "\(key.messageID.uuidString):\(key.contentRevision):\(key.themeRevision):\(key.segment)" as NSString
         if let entry = cache.object(forKey: cacheKey) {
             DebugLog.writePerformance("markdown_document_cache_hit bytes=\(source.utf8.count)")
             return entry.document
@@ -708,7 +710,7 @@ struct NativeMarkdownPalette {
     let surface: NSColor
 
     init() {
-        primary = NSColor(Color.dockPrimaryText)
+        primary = NSColor(Color.dockMarkdownText)
         secondary = NSColor(Color.dockSecondaryText)
         metadata = NSColor(Color.dockMetadataText)
         accent = NSColor(Color.dockAccent)

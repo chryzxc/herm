@@ -1,3 +1,4 @@
+import CoreAudio
 import Foundation
 
 /// Timing markers for a single native Hermes voice turn. Keeping this as a
@@ -171,5 +172,55 @@ enum NativeVoicePlaybackDrain {
         // About 135 spoken words/minute, plus synthesis startup per sentence
         // and an acoustic tail so CoreAudio has released the output device.
         return max(2.5, (Double(words) / 2.25) + (Double(sentences) * 0.65) + 0.8)
+    }
+}
+
+/// Ends the post-reply microphone hold when the speakers actually go quiet,
+/// instead of always waiting out the word-count estimate (which is kept as the
+/// cap for when other audio, like music, keeps the output device busy).
+struct NativeVoicePlaybackGate {
+    let startedAt: TimeInterval
+    let cap: TimeInterval
+    /// Longer than Hermes' gap between two streamed TTS sentences (~0.5s).
+    var quietHold: TimeInterval = 1.0
+    /// Before any playback is heard, synthesis may still be starting.
+    var startupGrace: TimeInterval = 3.0
+    private var sawPlayback = false
+    private var quietSince: TimeInterval?
+
+    init(startedAt: TimeInterval, cap: TimeInterval) {
+        self.startedAt = startedAt
+        self.cap = cap
+    }
+
+    mutating func isDrained(outputRunning: Bool, at now: TimeInterval) -> Bool {
+        let elapsed = now - startedAt
+        if elapsed >= cap { return true }
+        if outputRunning {
+            sawPlayback = true
+            quietSince = nil
+            return false
+        }
+        let since = quietSince ?? now
+        quietSince = since
+        return now - since >= quietHold && (sawPlayback || elapsed >= startupGrace)
+    }
+
+    /// Whether any process is playing through the default output device.
+    /// Hermes plays each TTS sentence with `afplay`; nil if CoreAudio fails.
+    static func isOutputRunning() -> Bool? {
+        var device = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return nil }
+        var running: UInt32 = 0
+        size = UInt32(MemoryLayout<UInt32>.size)
+        address.mSelector = kAudioDevicePropertyDeviceIsRunningSomewhere
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &running) == noErr else { return nil }
+        return running != 0
     }
 }

@@ -254,6 +254,15 @@ final class SpeechInput: ObservableObject {
 @MainActor
 final class MicLevelMeter: ObservableObject {
     @Published private(set) var level: CGFloat = 0
+    /// Called once per utterance when `isEndpointing` and the speaker stops.
+    var onUtteranceEnd: (() -> Void)?
+    /// Hermes' own VAD uses a fixed RMS threshold, so steady room noise keeps
+    /// it recording until the user presses send. While this is on, Herm ends
+    /// the turn itself against an adaptive noise floor.
+    var isEndpointing = false {
+        didSet { if isEndpointing != oldValue { endpoint.beginTurn() } }
+    }
+    private var endpoint = VoiceEndpointDetector()
     private var engine: AVAudioEngine?
     private var generation = 0
 
@@ -288,6 +297,10 @@ final class MicLevelMeter: ObservableObject {
                 guard let self else { return }
                 let smoothing: CGFloat = value > self.level ? 0.5 : 0.12
                 self.level += (value - self.level) * smoothing
+                if self.isEndpointing,
+                   self.endpoint.ingest(level: Double(value), at: ProcessInfo.processInfo.systemUptime) {
+                    self.onUtteranceEnd?()
+                }
             }
         }
         do {
@@ -302,5 +315,53 @@ final class MicLevelMeter: ObservableObject {
         input.installTap(onBus: 0, bufferSize: 1_024, format: nil) { buffer, _ in
             onLevel(SpeechInput.normalizedAudioLevel(buffer))
         }
+    }
+}
+
+/// End-of-speech detection on normalized mic levels (0...1 over -55...-10 dB).
+/// Speech is anything `margin` above a noise floor that follows the room, so a
+/// fan or air conditioner no longer reads as endless talking.
+struct VoiceEndpointDetector {
+    /// Calibration knobs: ~8 dB above the floor, 0.3s to confirm speech (skips
+    /// Hermes' start beep and clicks), 0.8s of quiet ends the turn.
+    var margin = 0.18
+    var minSpeech: TimeInterval = 0.3
+    var endSilence: TimeInterval = 0.8
+    private(set) var noiseFloor: Double?
+    private var speechStart: TimeInterval?
+    private var silenceStart: TimeInterval?
+    private var hasSpoken = false
+
+    /// Keeps the learned noise floor; forgets any half-heard utterance.
+    mutating func beginTurn() {
+        speechStart = nil
+        silenceStart = nil
+        hasSpoken = false
+    }
+
+    /// Returns true once, when confirmed speech is followed by `endSilence` of quiet.
+    mutating func ingest(level: Double, at time: TimeInterval) -> Bool {
+        let floor = noiseFloor ?? min(level, 0.25)
+        let isLoud = level > floor + margin
+        // Quiet frames pull the floor quickly; loud ones only creep it up, so
+        // a noise source that switches on is learned within ~10s.
+        noiseFloor = floor + (level - floor) * (isLoud ? 0.002 : 0.05)
+
+        if isLoud {
+            silenceStart = nil
+            let start = speechStart ?? time
+            speechStart = start
+            if time - start >= minSpeech { hasSpoken = true }
+            return false
+        }
+        guard hasSpoken else {
+            speechStart = nil
+            return false
+        }
+        let quietSince = silenceStart ?? time
+        silenceStart = quietSince
+        guard time - quietSince >= endSilence else { return false }
+        beginTurn()
+        return true
     }
 }

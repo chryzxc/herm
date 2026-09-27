@@ -211,7 +211,7 @@ struct MarkdownMessageView: View, Equatable {
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
         switch block {
         case .heading(let level, let text):
-          renderedText(text).font(.system(size: Self.headingSize(level), weight: .semibold)).foregroundStyle(Color.dockPrimaryText).padding(
+          renderedText(text).font(.system(size: Self.headingSize(level), weight: .semibold)).foregroundStyle(Color.dockMarkdownText).padding(
             .top, 2)
         case .paragraph(let text): renderedText(text).font(.system(size: 14)).lineSpacing(3)
         case .listItem(let text, let marker):
@@ -245,11 +245,11 @@ struct MarkdownMessageView: View, Equatable {
   }
 
   private func renderedText(_ value: AttributedString) -> some View {
-    // Explicitly apply soft dockPrimaryText text color to eliminate pure white glare.
+    // Keep long-form Markdown softer than chrome while retaining theme colors.
     // Native AttributedString links retain AppKit/SwiftUI pointer and keyboard
     // focus behavior; styling only their ranges keeps safe URL opening intact.
     Text(value)
-      .foregroundStyle(Color.dockPrimaryText)
+      .foregroundStyle(Color.dockMarkdownText)
       .tint(Color.dockAccent)
       .fixedSize(horizontal: false, vertical: true)
   }
@@ -277,7 +277,7 @@ struct MarkdownMessageView: View, Equatable {
       }.padding(.leading, 10).padding(.trailing, 4).frame(height: 28)
       Rectangle().fill(Color.dockBorder).frame(height: 0.5)
       ScrollView(.horizontal, showsIndicators: false) {
-        Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.dockPrimaryText).frame(
+        Text(code).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Color.dockMarkdownText).frame(
           maxWidth: .infinity, alignment: .leading
         ).padding(.horizontal, 10).padding(.vertical, 8)
       }
@@ -578,12 +578,12 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
         if index > 0 { result.append(NSAttributedString(string: "\n")) }
         switch block {
         case .heading(let level, let text):
-          append(text, to: result, font: .systemFont(ofSize: headingSize(level), weight: .semibold), color: NSColor(Color.dockPrimaryText))
+          append(text, to: result, font: .systemFont(ofSize: headingSize(level), weight: .semibold), color: NSColor(Color.dockMarkdownText))
         case .paragraph(let text):
-          append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockPrimaryText))
+          append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockMarkdownText))
         case .listItem(let text, let marker):
           append(NSAttributedString(string: "\(marker) "), to: result, font: .systemFont(ofSize: 14, weight: .medium), color: NSColor(Color.dockAccent))
-          append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockPrimaryText))
+          append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockMarkdownText))
         case .quote(let text):
           append(NSAttributedString(string: "│ "), to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockSecondaryText))
           append(text, to: result, font: .systemFont(ofSize: 14), color: NSColor(Color.dockSecondaryText))
@@ -591,11 +591,11 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
           if let language, !language.isEmpty {
             append(NSAttributedString(string: language.uppercased() + "\n"), to: result, font: .monospacedSystemFont(ofSize: 12, weight: .medium), color: NSColor(Color.dockMetadataText))
           }
-          append(NSAttributedString(string: code), to: result, font: .monospacedSystemFont(ofSize: 12.5, weight: .regular), color: NSColor(Color.dockPrimaryText))
+          append(NSAttributedString(string: code), to: result, font: .monospacedSystemFont(ofSize: 12.5, weight: .regular), color: NSColor(Color.dockMarkdownText))
         case .tableRow(let columns):
           for (columnIndex, column) in columns.enumerated() {
             if columnIndex > 0 { append(NSAttributedString(string: "  │  "), to: result, font: .systemFont(ofSize: 12.5), color: NSColor(Color.dockMetadataText)) }
-            append(column, to: result, font: .systemFont(ofSize: 12.5), color: NSColor(Color.dockPrimaryText))
+            append(column, to: result, font: .systemFont(ofSize: 12.5), color: NSColor(Color.dockMarkdownText))
           }
         }
         if index < blocks.count - 1 { result.append(NSAttributedString(string: "\n")) }
@@ -899,6 +899,7 @@ struct TurnActivityView: View {
   let duration: TimeInterval?
   @State private var isExpanded = false
   @State private var expandedThoughtIDs: Set<String> = []
+  @State private var expandedDiffIDs: Set<String> = []
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
@@ -997,16 +998,57 @@ struct TurnActivityView: View {
     DockIcon(icon, size: 13, color: Color.dockSecondaryText).frame(width: 16, height: 16)
   }
 
+  @ViewBuilder
   private func toolRow(_ call: ActiveToolCall) -> some View {
-        HStack(spacing: 8) {
-          stepIcon(Self.icon(for: call.name))
-          Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
-            .font(.system(size: 12))
-            .foregroundStyle(Color.dockSecondaryText)
-            .lineLimit(1).truncationMode(.tail)
-          if !call.isComplete { ProgressView().controlSize(.mini) }
+    if let diff = call.diffPreview, let stats = call.diffStats {
+      // Edits carry their diff, collapsed until asked for.
+      let isOpen = expandedDiffIDs.contains(call.id)
+      VStack(alignment: .leading, spacing: 4) {
+        Button {
+          withAnimation(.dockEase(duration: 0.18)) {
+            if isOpen { expandedDiffIDs.remove(call.id) } else { expandedDiffIDs.insert(call.id) }
+          }
+        } label: {
+          HStack(spacing: 8) {
+            toolLabel(call)
+            Text("+\(stats.added)").foregroundStyle(Color.dockSuccess)
+            Text("−\(stats.removed)").foregroundStyle(Color.dockDestructive)
+            DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+          }
+          .font(.system(size: 11, weight: .medium, design: .monospaced))
+          .contentShape(Rectangle())
         }
-        .help(call.result ?? call.input)
+        .buttonStyle(.plain)
+        .accessibilityLabel(isOpen ? "Hide changes" : "Show changes")
+        if isOpen {
+          ScrollView([.horizontal, .vertical]) {
+            VStack(alignment: .leading, spacing: 0) {
+              ForEach(PullRequestDiffPresentation.lines(diff)) { line in
+                PullRequestDiffLineView(line: line)
+              }
+            }
+          }
+          .frame(maxHeight: 280)
+          .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockCanvas))
+          .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+          .padding(.leading, 24)
+        }
+      }
+    } else {
+      toolLabel(call)
+    }
+  }
+
+  private func toolLabel(_ call: ActiveToolCall) -> some View {
+    HStack(spacing: 8) {
+      stepIcon(Self.icon(for: call.name))
+      Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
+        .font(.system(size: 12))
+        .foregroundStyle(Color.dockSecondaryText)
+        .lineLimit(1).truncationMode(.tail)
+      if !call.isComplete { ProgressView().controlSize(.mini) }
+    }
+    .help(call.result ?? call.input)
   }
 
   static func icon(for toolName: String) -> Ph {
@@ -1024,6 +1066,19 @@ struct TurnActivityView: View {
       if name.contains("memory") || name.contains("skill") { return .brain }
       return .wrench
     }
+  }
+}
+
+extension ActiveToolCall {
+  /// Added and removed line counts of `diffPreview`, ignoring file headers.
+  var diffStats: (added: Int, removed: Int)? {
+    guard let diffPreview, !diffPreview.isEmpty else { return nil }
+    var added = 0, removed = 0
+    for line in diffPreview.split(separator: "\n", omittingEmptySubsequences: false) {
+      if line.hasPrefix("+"), !line.hasPrefix("+++") { added += 1 }
+      if line.hasPrefix("-"), !line.hasPrefix("---") { removed += 1 }
+    }
+    return (added, removed)
   }
 }
 

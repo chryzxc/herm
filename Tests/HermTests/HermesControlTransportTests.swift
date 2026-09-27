@@ -198,11 +198,10 @@ struct HermesControlTransportTests {
 
         _ = try await rpc.respondToClarification(requestID: "clarify-1", answer: "Work")
 
-        #expect(client.calls.last?.method == "clarify.respond")
-        #expect(client.calls.last?.params["request_id"] as? String == "clarify-1")
-        #expect(client.calls.last?.params["answer"] as? String == "Work")
+        #expect(client.calls.last?.method == "request.answer")
+        #expect(client.calls.last?.params["id"] as? String == "clarify-1")
+        #expect((client.calls.last?.params["result"] as? [String: Any])?["answer"] as? String == "Work")
         #expect(client.calls.last?.params["session_id"] == nil)
-        #expect(client.calls.last?.params["response"] == nil)
     }
 
     @Test func workflowRPCsUseHermesContracts() async throws {
@@ -297,5 +296,43 @@ struct HermesControlTransportTests {
         #expect(result["title"] as? String == "Updated fixture title")
         #expect(client.calls.map(\.method) == ["session.title", "session.title"])
         #expect(client.calls.allSatisfy { $0.params["session_id"] as? String == HermesOfflineContractFixtures.sessionID })
+    }
+}
+
+@MainActor
+struct HermesServerRequestTests {
+    @Test func clarifyServerRequestBecomesClarifyEventKeyedByRequestID() throws {
+        let event = try #require(HermesGateway.event(forServerRequest: [
+            "jsonrpc": "2.0", "id": "srq-abc", "method": "clarify",
+            "params": ["session_id": "s1", "question": "Which env?", "choices": ["Staging"]]
+        ]))
+        let payload = try #require(event.params["payload"] as? [String: Any])
+        #expect(event.type == "clarify.request")
+        #expect(event.params["session_id"] as? String == "s1")
+        #expect(payload["request_id"] as? String == "srq-abc")
+        #expect(payload["question"] as? String == "Which env?")
+    }
+
+    @Test func approvalServerRequestKeepsItsPayloadAndUnknownMethodsAreRejected() throws {
+        let event = try #require(HermesGateway.event(forServerRequest: [
+            "id": "srq-1", "method": "approval",
+            "params": ["session_id": "s1", "request_id": "ap-1", "command": "rm -rf build"]
+        ]))
+        #expect(event.type == "approval.request")
+        #expect((event.params["payload"] as? [String: Any])?["command"] as? String == "rm -rf build")
+        #expect(HermesGateway.event(forServerRequest: ["id": "srq-2", "method": "tour", "params": [:]]) == nil)
+        #expect(HermesGateway.event(forServerRequest: ["id": 3, "method": "approval"]) == nil)
+    }
+
+    @Test func vaultSaveLoginAnswersWithIdentifierAndPasswordJSON() throws {
+        let event = try #require(HermesGateway.event(forServerRequest: [
+            "id": "srq-v", "method": "vault.save_login", "params": ["session_id": "s1", "origin": "https://x.dev", "site": "x.dev"]
+        ]))
+        #expect(event.type == "prompt.request")
+        let payload = try #require(event.params["payload"] as? [String: Any])
+        let prompt = try #require(ValuePrompt.from(payload: payload))
+        #expect(prompt.asksForLogin)
+        let answer = try #require(JSONSerialization.jsonObject(with: Data(prompt.answer(value: "pw", identifier: "me").utf8)) as? [String: String])
+        #expect(answer == ["identifier": "me", "password": "pw"])
     }
 }

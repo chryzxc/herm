@@ -48,6 +48,7 @@ final class ControlCenterModel: ObservableObject {
     /// Canonical unfiltered aggregate, independent of the board page's visible filters.
     @Published private(set) var globalKanbanTasks: [KanbanTaskSummary] = []
     @Published private(set) var globalKanbanIsCurrent = false
+    @Published var requestedKanbanTask: KanbanTaskSummary?
     @Published private(set) var sessionKanbanTasks: [KanbanTaskSummary] = []
     @Published private(set) var sessionKanbanSessionID: String?
     @Published private(set) var kanbanDetail: KanbanTaskDetail?
@@ -388,6 +389,7 @@ final class ControlCenterModel: ObservableObject {
         case "latest.activity": return latestActivities.count
         case "cron.jobs": return cronJobs.count
         case "reminders": return reminders.count
+        case "kanban.global": return globalKanbanTasks.count
         default: return 0
         }
     }
@@ -517,6 +519,7 @@ final class ControlCenterModel: ObservableObject {
             kanbanTasks = []
             globalKanbanTasks = []
             globalKanbanIsCurrent = false
+            requestedKanbanTask = nil
             sessionKanbanTasks = []
             sessionKanbanSessionID = nil
             kanbanDetail = nil
@@ -1770,6 +1773,7 @@ final class ControlCenterModel: ObservableObject {
         // just because that separate probe has not completed yet.
         guard let cli else {
             recordProjectionUnavailable("kanban.board")
+            if scope.isAggregate { recordProjectionUnavailable("kanban.global") }
             if scope.isAggregate { globalKanbanIsCurrent = false }
             return
         }
@@ -1788,7 +1792,10 @@ final class ControlCenterModel: ObservableObject {
         if shouldPublishRefreshState {
             beginProjectionRefresh("kanban.board")
         }
-        if scope.isAggregate { globalKanbanIsCurrent = false }
+        if scope.isAggregate {
+            globalKanbanIsCurrent = false
+            beginProjectionRefresh("kanban.global")
+        }
         let requestedBoardSlug = scope.isAggregate ? nil : selectedKanbanBoardSlug
         // Global aggregation deliberately omits --board; session activity has
         // its own board-aware projection and never uses this request.
@@ -1817,17 +1824,22 @@ final class ControlCenterModel: ObservableObject {
                 let result = scope.isAggregate
                     ? try await cli.kanbanListAggregate(filter: activeFilter)
                     : try await cli.kanbanList(boardSlug: requestedBoardSlug, filter: activeFilter)
+                let parsed = result.succeeded
+                    ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
+                    : nil
                 guard result.succeeded else {
                     guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
                     let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure("kanban.board", error: message)
+                    if scope.isAggregate { recordProjectionFailure("kanban.global", error: message) }
                     lastError = message
                     return
                 }
                 guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
-                guard let parsedTasks = Self.parseKanbanTasksStrict(result.stdout, boardSlug: requestedBoardSlug) else {
+                guard let parsedTasks = parsed else {
                     let message = "Hermes returned malformed Kanban data."
                     recordProjectionFailure("kanban.board", error: message)
+                    if scope.isAggregate { recordProjectionFailure("kanban.global", error: message) }
                     lastError = message
                     return
                 }
@@ -1870,6 +1882,7 @@ final class ControlCenterModel: ObservableObject {
                 if shouldPublishRefreshState || taskDataChanged {
                     recordProjectionSuccess("kanban.board")
                 }
+                if scope.isAggregate { recordProjectionSuccess("kanban.global") }
                 if trigger == .user {
                     refreshKanbanSupportingProjections()
                 }
@@ -1877,6 +1890,7 @@ final class ControlCenterModel: ObservableObject {
                 guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
                 let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 recordProjectionFailure("kanban.board", error: message)
+                if scope.isAggregate { recordProjectionFailure("kanban.global", error: message) }
                 lastError = message
             }
         }
@@ -1933,11 +1947,11 @@ final class ControlCenterModel: ObservableObject {
     /// Refreshes the global Kanban projection. Board inventory and board
     /// selection are global controls, so they must never resurrect a session
     /// filter retained from an Activity shortcut.
-    func refreshGlobalKanban(filter: KanbanListFilter? = nil) {
+    func refreshGlobalKanban(filter: KanbanListFilter? = nil, trigger: KanbanRefreshTrigger = .user) {
         refreshKanban(
             filter: Self.globalKanbanFilter(filter ?? KanbanListFilter()),
             scope: .aggregate,
-            trigger: .user
+            trigger: trigger
         )
     }
 
@@ -1999,6 +2013,9 @@ final class ControlCenterModel: ObservableObject {
                     boardSlug: requestedBoardSlug,
                     filter: KanbanListFilter(sessionID: requestedSessionID, sort: "updated")
                 )
+                let parsed = result.succeeded
+                    ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
+                    : nil
                 guard Self.isCurrentSessionKanbanResult(
                     generationMatches: generation == self.sessionKanbanRefreshGeneration,
                     publishedSessionID: self.sessionKanbanSessionID,
@@ -2015,7 +2032,7 @@ final class ControlCenterModel: ObservableObject {
                     return
                 }
                 var sessionTasks = Self.filterSessionKanbanTasks(
-                    Self.parseKanbanTasks(result.stdout, boardSlug: requestedBoardSlug),
+                    parsed ?? [],
                     sessionID: requestedSessionID
                 )
 
@@ -2128,8 +2145,13 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func selectKanbanBoard(_ board: KanbanBoardSummary) {
-        guard !board.archived, selectedKanbanBoardSlug != board.slug else { return }
-        selectedKanbanBoardSlug = board.slug
+        guard !board.archived else { return }
+        selectKanbanBoard(slug: board.slug)
+    }
+
+    private func selectKanbanBoard(slug: String) {
+        guard selectedKanbanBoardSlug != slug else { return }
+        selectedKanbanBoardSlug = slug
         visibleKanbanRefreshGeneration = UUID()
         kanbanStatsGeneration = UUID()
         kanbanAssigneesGeneration = UUID()
@@ -2148,6 +2170,15 @@ final class ControlCenterModel: ObservableObject {
         refreshVisibleKanban()
         refreshSessionKanban(for: dockModel?.kanbanSessionID)
         refreshKanbanDiagnostics()
+    }
+
+    func revealKanbanTask(_ task: KanbanTaskSummary) {
+        kanbanFilter = KanbanListFilter()
+        if let slug = task.boardSlug, selectedKanbanBoardSlug != slug {
+            selectKanbanBoard(slug: slug)
+        }
+        refreshVisibleKanban(filter: KanbanListFilter())
+        requestedKanbanTask = task
     }
 
     /// Board inventory establishes the global board selector. It must not
@@ -2953,10 +2984,13 @@ final class ControlCenterModel: ObservableObject {
 
     /// Lane drops PATCH the same plugin route the board is read from, so the
     /// board being loaded is the capability.
-    var canMoveKanbanTasks: Bool { capabilityAvailable(HermesFeatureIDs.ID.kanban.rawValue) }
+    var canMoveKanbanTasks: Bool {
+        guard cli != nil, let state = refreshState(for: "kanban.board") else { return false }
+        return state.lastSuccess != nil && !state.isStale
+    }
 
-    /// Drag-to-move for Triage/Todo/Ready. The card moves immediately; a
-    /// refused transition surfaces Hermes' reason and the refresh restores it.
+    /// Drag-to-move for Triage/Todo/Ready. Keep the current card in place until
+    /// Hermes accepts the transition, then refresh the authoritative board.
     func moveKanbanTask(_ task: KanbanTaskSummary, to lane: KanbanLane) {
         guard let cli, canMoveKanbanTasks else {
             lastError = "Moving Kanban tasks is unavailable through the installed Hermes."
@@ -2965,7 +2999,6 @@ final class ControlCenterModel: ObservableObject {
         guard case .move = KanbanBoardPresentation.dropOutcome(taskStatus: task.status, target: lane) else { return }
         let actionID = kanbanMoveActionID(task)
         guard beginAction(actionID) else { return }
-        setKanbanTask(task.id) { $0.status = lane.status }
         Task {
             defer { finishAction(actionID) }
             do {
@@ -3795,7 +3828,7 @@ final class ControlCenterModel: ObservableObject {
         return "\(rows.count):" + rows.compactMap { $0["id"] as? String }.joined(separator: "\u{1F}")
     }
 
-    private static func activityDate(_ value: Any?) -> Date? {
+    nonisolated private static func activityDate(_ value: Any?) -> Date? {
         if let value, !(value is Bool), let number = value as? NSNumber {
             return Date(timeIntervalSince1970: number.doubleValue)
         }
@@ -4148,6 +4181,14 @@ final class ControlCenterModel: ObservableObject {
         return nil
     }
 
+    /// Large boards take tens of milliseconds to scan and decode; polling on
+    /// the main actor made every refresh a visible scroll hitch.
+    nonisolated static func parseKanbanTasksOffMain(_ output: String, boardSlug: String?) async -> [KanbanTaskSummary]? {
+        await Task.detached(priority: .utility) {
+            parseKanbanTasksStrict(output, boardSlug: boardSlug)
+        }.value
+    }
+
     static func parseKanbanTasks(_ output: String, boardSlug: String? = nil) -> [KanbanTaskSummary] {
         parseKanbanTasksStrict(output, boardSlug: boardSlug) ?? []
     }
@@ -4155,7 +4196,7 @@ final class ControlCenterModel: ObservableObject {
     /// Returns nil when the CLI response is not a top-level task array. The
     /// optional result distinguishes malformed output from a genuine empty
     /// board, whose valid `[]` response must still replace the projection.
-    static func parseKanbanTasksStrict(_ output: String, boardSlug: String? = nil) -> [KanbanTaskSummary]? {
+    nonisolated static func parseKanbanTasksStrict(_ output: String, boardSlug: String? = nil) -> [KanbanTaskSummary]? {
         // A JSON value starting at a bracket can only end at its matching
         // bracket, so parse one candidate per start. Trying every later
         // closing bracket was quadratic and stalled the main thread for
@@ -4173,7 +4214,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     /// Index of the bracket closing the one at `start`, skipping JSON strings.
-    private static func matchingJSONBracket(in bytes: [UInt8], from start: Int) -> Int? {
+    nonisolated private static func matchingJSONBracket(in bytes: [UInt8], from start: Int) -> Int? {
         var depth = 0
         var inString = false
         var escaped = false
@@ -4197,7 +4238,7 @@ final class ControlCenterModel: ObservableObject {
         return nil
     }
 
-    private static func kanbanTaskRows(from value: Any) -> [[String: Any]]? {
+    nonisolated private static func kanbanTaskRows(from value: Any) -> [[String: Any]]? {
         if let rows = value as? [[String: Any]] { return rows }
         if let encoded = value as? String,
            let data = encoded.data(using: .utf8),
@@ -4252,7 +4293,7 @@ final class ControlCenterModel: ObservableObject {
         )
     }
 
-    private static func parseKanbanTaskSummary(
+    nonisolated private static func parseKanbanTaskSummary(
         _ row: [String: Any],
         boardSlug: String?,
         sessionID: String? = nil
@@ -4380,7 +4421,7 @@ final class ControlCenterModel: ObservableObject {
 
     /// Hermes stores skills and links as JSON arrays; older rows may hold a
     /// comma-separated string.
-    private static func kanbanStringList(_ value: Any?) -> [String] {
+    nonisolated private static func kanbanStringList(_ value: Any?) -> [String] {
         if let values = value as? [Any] {
             return values.compactMap { stringValue($0).flatMap(nonEmpty) }
         }
@@ -4410,7 +4451,7 @@ final class ControlCenterModel: ObservableObject {
         return nil
     }
 
-    private static func nonEmpty(_ value: String?) -> String? {
+    nonisolated private static func nonEmpty(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
         return trimmed
     }
@@ -4663,7 +4704,7 @@ final class ControlCenterModel: ObservableObject {
         )
     }
 
-    private static func stringValue(_ value: Any?) -> String? {
+    nonisolated private static func stringValue(_ value: Any?) -> String? {
         if let string = value as? String { return string }
         if let number = value as? NSNumber { return number.stringValue }
         return nil

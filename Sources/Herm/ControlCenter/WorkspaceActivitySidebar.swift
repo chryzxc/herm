@@ -233,7 +233,6 @@ struct WorkspaceActivitySidebar: View {
     private var pageHeader: some View {
         if selectedMode == .kanban {
             AnyView(DockPageHeader(
-                icon: selectedMode.pageHeaderIcon,
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
                 onRefresh: { applyKanbanFilters() },
@@ -241,7 +240,6 @@ struct WorkspaceActivitySidebar: View {
             ))
         } else if selectedMode == .automations {
             AnyView(DockPageHeader(
-                icon: selectedMode.pageHeaderIcon,
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
                 onRefresh: refreshAutomations,
@@ -256,7 +254,6 @@ struct WorkspaceActivitySidebar: View {
             ))
         } else if selectedMode == .core {
             AnyView(DockPageHeader(
-                icon: selectedMode.pageHeaderIcon,
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
                 onRefresh: { control.refresh() },
@@ -264,7 +261,6 @@ struct WorkspaceActivitySidebar: View {
             ))
         } else {
             AnyView(DockPageHeader(
-                icon: selectedMode.pageHeaderIcon,
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle
             ))
@@ -2176,7 +2172,7 @@ struct WorkspaceActivitySidebar: View {
                 if expandedCronReportIDs.contains(job.id) {
                     MarkdownMessageView(markdown: report)
                         .padding(10)
-                        .background(Color.black.opacity(0.16))
+                        .background(Color.dockSurface2.opacity(0.72))
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -2700,7 +2696,6 @@ struct WorkspaceActivitySidebar: View {
             // height so each lane scrolls its own cards.
             VStack(alignment: .leading, spacing: 0) {
                 pageHeader
-                    .padding(.horizontal, 16)
 
                 VStack(alignment: .leading, spacing: 12) {
                         kanbanToolbar
@@ -2804,7 +2799,20 @@ struct WorkspaceActivitySidebar: View {
                 .frame(maxHeight: .infinity, alignment: .top)
             }
             .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+            .onChange(of: control.requestedKanbanTask, initial: true) { _, task in
+                guard let task else { return }
+                control.requestedKanbanTask = nil
+                kanbanStatusFilter = "All"
+                kanbanAssigneeFilter = "All"
+                kanbanMineOnly = false
+                kanbanCurrentSessionOnly = false
+                applyKanbanFilters()
+                selectKanbanTask(task)
+            }
             .onChange(of: control.kanbanTasks.map(\.id)) { _, ids in
+                // Board navigation clears the old list while fetching the new
+                // board. Keep a notch-selected card through that transition.
+                if ids.isEmpty, control.isKanbanRefreshPending { return }
                 if let selectedKanbanTask, !ids.contains(selectedKanbanTask.id) {
                     self.selectedKanbanTask = nil
                 }
@@ -2832,7 +2840,7 @@ struct WorkspaceActivitySidebar: View {
             avatarImages: botMode.avatarImages,
             selectedTaskID: selectedKanbanTask?.id,
             actions: KanbanCardActionAvailability(
-                details: control.capabilityAvailable("kanban.taskDetails"),
+                details: true,
                 complete: control.capabilityAvailable("kanban.complete"),
                 block: control.capabilityAvailable("kanban.block"),
                 unblock: control.capabilityAvailable("kanban.unblock"),
@@ -5457,7 +5465,7 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 17) {
             if selectedSettingsCategory == .general {
                 generalPreferencesSection
-                settingsDisclosure(title: "Appearance", subtitle: appearanceSubtitle, icon: .sparkle, isExpanded: $isAppearanceExpanded) {
+                settingsDisclosure(title: "Appearance", subtitle: "", icon: .sparkle, isExpanded: $isAppearanceExpanded) {
                     appearanceSection
                 }
                 settingsDisclosure(title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")", icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded) {
@@ -6130,15 +6138,6 @@ struct WorkspaceActivitySidebar: View {
             .tint(Color.dockAccent)
     }
 
-    private var appearanceSubtitle: String {
-        guard let projection = control.appearanceProjection,
-              control.appearanceProjectionAvailable else {
-            return "Herm themes and Hermes skin status unavailable"
-        }
-        let mapped = projection.skins.filter { skin in DockThemeID.allCases.contains { $0.hermesSkinID == skin.id } }.count
-        return "\(DockThemeID.allCases.count) Herm skins · \(mapped) Hermes skins detected"
-    }
-
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
@@ -6148,11 +6147,6 @@ struct WorkspaceActivitySidebar: View {
                     themeOption(option)
                 }
             }
-            Text("Choosing a Herm skin doesn't change the active Hermes skin.")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
-
             if !control.appearanceProjectionAvailable {
                 SettingsInlineNotice(text: "Hermes skin status unavailable. Refresh Settings to retry.", tint: Color.dockWarning)
             } else if let projection = control.appearanceProjection {

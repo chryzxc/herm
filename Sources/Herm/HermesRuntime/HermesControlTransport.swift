@@ -177,7 +177,7 @@ final class HermesControlRPC {
     }
     func respondToApproval(sessionID: String, choice: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: ["session_id": sessionID, "choice": choice]) }
     func respondToClarification(requestID: String, answer: String) async throws -> [String: Any] {
-        try await client.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: ["request_id": requestID, "answer": answer])
+        try await client.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: ["id": requestID, "result": ["answer": answer]])
     }
     func delegationStatus() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.delegationStatus.rawValue, params: [:]) }
     func cron(action: String, jobID: String? = nil) async throws -> [String: Any] {

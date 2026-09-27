@@ -79,6 +79,7 @@ separator, or window colors, or ad hoc literals.
 | `dockSurface`, `dockSurface2` | Raised content, such as signage cards and inspector groups |
 | `dockSurface4`, `dockControlSurface` | Controls, hovered cards, and segmented tracks |
 | `dockPrimaryText` | Titles and body text |
+| `dockMarkdownText` | Long-form Markdown reading text, slightly softened from primary chrome text |
 | `dockSecondaryText`, `dockSectionText` | Supporting text and section labels |
 | `dockMetadataText` | Timestamps, counts, and IDs |
 | `dockBorderLight`, `dockBorder`, `dockBorderStrong` | Dividers, panel hairlines, and contours |
@@ -233,6 +234,11 @@ refresh action passes `isBusy` so its spinner replaces the icon in place. One
 header style serves every group; do not mix title-case disclosure rows with
 uppercase labels in the same pane.
 
+**Page header anatomy.** Full workspace destinations start with a text title
+and subtitle aligned to the page gutter, with actions on the right and a
+hairline divider below. Do not add a decorative destination icon beside the
+title. Use the shared `DockPageHeader` treatment.
+
 **Header bar anatomy.** Identity on the left, actions on the right, a hairline
 divider below. Identity is a 28pt avatar and a two-line stack (13pt
 semibold name, 11pt role). When the identity can be switched, the block is a
@@ -290,7 +296,9 @@ will appear or what to do next.
 
 Herm has one global theme preference stored under
 `hermes.dock.theme.v1`. Native macOS is the default and follows the system
-Light/Dark setting. Hermes palettes map stable skin IDs (`default`, `ares`,
+Light/Dark setting. It composites translucent graphite role colors over
+AppKit's popover material and uses macOS label, accent, and status hues; the
+other themes keep opaque authored canvases. Hermes palettes map stable skin IDs (`default`, `ares`,
 `mono`, `slate`, `daylight`, `warm-lightmode`, `poseidon`, `sisyphus`, and
 `charizard`) to semantic Herm roles. Daylight and Warm Light force light
 appearance; the other Hermes palettes use dark appearance. Theme selection is
@@ -429,44 +437,85 @@ has three parts:
 - A 40pt tab row with a Tasks / Quota segmented pill (selected segment on
   `surface`, track on `surface4`), and a trailing fixed slot.
 - A scrolling body.
-- A fixed footer holding one `EdgePreviewFooterButton`: a quiet icon row that
-  lifts on hover, never an accent text link.
+- A fixed footer holding `EdgePreviewFooterButton` actions: quiet icon rows
+  that lift on hover, never accent text links.
 
 The tab selection survives collapse and reopening. Automatic announcements
 show Tasks without changing the stored selection. The preview has no close
 button, upward arrow, or duplicate icon rail; pointer exit handles dismissal.
 
-**Tasks tab.** The Tasks tab lists every session that is working, waiting on
-the user, or finished with a result the user has not opened. The list has no
-cap; the body scrolls.
+**Tasks tab.** Activity is selected by default. The header's trailing slot
+holds a quiet "Activity" / "Kanban" text filter: no container or pill, the
+selected word is just brighter and semibold so Tasks/Quota stays the only tab
+bar (list/grid glyphs would read as a layout switch), followed by refresh for the selected source. Tooltips and accessibility labels
+name both choices. The choice survives collapse and reopening. An automatic
+announcement temporarily shows its source without changing that choice.
+
+Activity lists every session that is working, waiting on the user, or finished
+with a result the user has not opened. The list has no cap; the body scrolls.
 
 - It has two sections, each with a `DockSectionLabel` and a live count:
   - **In progress:** needs-you first, then working.
   - **Finished, not opened:** newest first.
 
   An empty section is omitted.
-- Each session is a borderless row (hover `surface4` at 60%; the current
-  session rests at 35% with a neutral "Current" chip). Only the status dot
-  carries hue; the status label is neutral unless it needs attention.
+- Rows are quiet: no border or surface at rest, a `dockSurface4` fill on hover
+  and a fainter one for the current session. A one-line 12pt semibold title
+  sits beside the status dot and trailing metadata. The next line is the 11pt
+  status label, colored only for attention, then " · detail" in metadata text.
+  Current sessions carry a quiet "Current" chip.
   The status label is "Needs your approval", "Needs your answer", "Working", or "Finished", or a more specific label such
   as "New response" or "2 background tasks running". The detail line is the
   running tool, the latest response excerpt, or the session preview. Trailing
   metadata is the time since the last update. Working cards pulse and show the
   shimmer. No percentage is ever implied.
 - The open session appears only while it has live activity or an unseen
-  completion. It leads its group, uses the emphasized border, and shows
+  completion. It leads its group, uses the faint current fill, and shows
   "Current" instead of a time.
 - Background tasks roll up into their parent session rather than appearing as
   separate rows.
 - Selecting a card resumes that session in the workspace, which clears its
   unread state. The current session's card opens the workspace.
-- While Hermes is offline, the trailing slot shows an Offline status pill. The
-  last list stays. Working and needs-you cards switch to the `inactive` tone,
+- While Hermes is offline, the refresh slot shows a warning icon with an
+  accessible unavailable label. The last list stays. Working and needs-you cards switch to the `inactive` tone,
   labelled "Status not current". Finished results keep their tone.
-- The empty state reads "No tasks in progress" or "Hermes is offline", with
-  one line saying what will appear.
-- The footer is a full-width Open Herm row with a `⌘ ⌘` keycap hint for the
-  double-tap Command shortcut.
+- The empty state reads "No activity in progress", "No Kanban activity", or
+  "Hermes is offline", with one line saying what will appear. A failed Kanban
+  read explicitly shows "Kanban is unavailable" when no cards are cached.
+- The footer holds Quick message and Open Herm actions. Quick message replaces
+  the scrolling body with a compact text composer inside the same fixed panel.
+  It always starts a new session, even when another chat is selected or busy.
+  Each session row also has Reply, which opens a composer beneath that row
+  and captures the session identity and profile. Command-Return submits either
+  composer. Neither action changes the workspace selection. Reply drafts stay
+  with their target session; a composing row stays visible through refreshes.
+  A failed new-session submission retains its created session for retry. The workspace draft and attachments remain untouched. Pending
+  and rejected sends stay in place; rejected text remains available for retry.
+  Busy chats and offline state explain why sending is unavailable.
+- Explicitly entering the composer gives the panel keyboard focus and prevents
+  pointer-exit dismissal and automatic announcements from interrupting typing.
+  Back, Escape, tab changes, or Open Herm leave composition. The separate draft
+  survives preview collapse in memory.
+
+**Kanban activity.** The Kanban selection shows all running, blocked, and
+review cards across boards,
+plus up to 30 recently changed cards until opened. Rows reuse the session row
+layout, with the canonical card status, board and assignee, and a short
+observed transition such as “Running → Review”. Assigned rows show the bot's
+stored avatar (or shared bot fallback), with a small status dot; unknown
+assignees use the existing initial avatar. Clicking a row opens its board
+and card inspector. Recent changes lead the list so the announced move is
+visible immediately. Queued and review rows never imply running work.
+
+The first successful all-board read is a silent baseline. Subsequent confirmed
+card additions, edits, and status moves use the same six-second automatic
+announcement as session activity. The notch refreshes the shared unfiltered
+Kanban projection every five seconds, including while the workspace is closed.
+Unchanged reads, visible-board filters, optimistic moves, and failed reads do
+not announce. Failures retain the last cards with inactive live status; refresh
+in flight does not flicker the rows. Snapshot comparison can miss intermediate
+moves between reads. The rail includes running and blocked Kanban work even
+when no conversation is active.
 
 New responses, completions, and requests for attention expand the preview
 automatically for six seconds. Rapid tool chains are limited to one automatic
@@ -862,8 +911,8 @@ collapsed from its header chevron. Cards prioritize
 title, priority/assignee, model metadata, summary/current step, and relative
 activity. Selecting a card opens the existing detail inspector. Details, Done,
 Block, Unblock, and Archive are progressive actions in More and the native
-context menu, appearing on hover, keyboard focus, or selection rather than as
-permanent chips. Health diagnostics stay behind a compact disclosure above the
+context menu. The More control stays visible at rest, and Details always opens
+the available board summary even when CLI detail enrichment is unavailable. Health diagnostics stay behind a compact disclosure above the
 board. Apart from the lane-drop move described below, the board and its
 toolbar are presentation-only.
 
@@ -871,8 +920,8 @@ Kanban cards are essential-compact: a two-line 13pt title first, one summary
 line, then a single footer with priority, assignee avatar/name, compact
 relative activity (minute resolution), and a subdued task ID. Cards use a
 hairline border that strengthens on hover and an accent border when selected;
-More appears as a top-trailing overlay on hover or selection without changing
-card layout. Provider/model and execution diagnostics belong in the task
+More stays in a top-trailing overlay without changing card layout; its icon
+becomes a spinner while a card mutation is pending. Provider/model and execution diagnostics belong in the task
 inspector, not on every card. Collapsed lane labels stack upright letters;
 rotated lane labels are not used. Selecting a card immediately opens a fallback-first inspector so
 the authoritative board summary remains visible while Hermes enriches it. The
@@ -883,10 +932,13 @@ Cards drag between lanes, matching the Hermes desktop board. Expanded lanes and
 collapsed rails are both drop targets and highlight in the lane color while a
 droppable card is over them. Running, Review, and Scheduled are system-owned:
 cards can leave them but never enter, and those lanes show the forbidden cursor
-instead of a highlight. Triage, Todo, and Ready drops move the card immediately
-through the Kanban plugin's task route; Done and Blocked drops release a worker
-claim, so they use the same confirmation as the card menu. A refused transition
-surfaces Hermes' reason in the error banner and the refresh puts the card back.
+instead of a highlight. Triage, Todo, and Ready drops use the Kanban plugin's
+task route, enabled by a current successful HTTP board projection rather than
+the separate CLI probe. The Move to submenu exposes the same destinations.
+Done and Blocked drops require their CLI capabilities and use the same
+confirmation as the card menu because they release a worker claim. Cards stay
+in their current lane until Hermes confirms the change and the board refreshes.
+A refused transition surfaces Hermes' reason in the error banner.
 Assignment is one step from the card's More and context menus ("Assign to"),
 listing Bot profiles with the current assignee checked plus Unassign. Like the
 desktop assignee menu, it reassigns and reclaims a live worker first, so a

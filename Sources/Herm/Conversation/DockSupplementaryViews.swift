@@ -229,11 +229,8 @@ struct VoiceOrbView: View {
                 .shadow(color: Color.dockAccent.opacity(0.15 + frame.glow * 0.35), radius: 14 + frame.glow * 24)
                 .scaleEffect(1 + frame.energy * 0.1 + 0.015 * sin(time * 1.6))
                 .overlay {
-                    DockIcon(mode == .listening || mode == .idle ? .waveform : (mode == .speaking ? .waveform : .brain))
-                        .font(.system(size: 26, weight: .medium))
-                        .foregroundStyle(Color.dockAccent.opacity(0.6 + frame.glow * 0.4))
-                        .id(mode == .listening || mode == .idle ? 0 : (mode == .speaking ? 1 : 2))
-                        .transition(.opacity.combined(with: .scale(scale: 0.7)))
+                    VoiceCoreBars(heights: VoiceCoreBars.heights(mode: mode, level: Double(audioLevel), time: time))
+                        .foregroundStyle(Color.dockAccent.opacity(0.7 + frame.glow * 0.3))
                 }
         }
         .animation(.dockEase(duration: 0.3), value: mode)
@@ -293,6 +290,46 @@ struct VoiceOrbView: View {
         }
         path.closeSubpath()
         return path
+    }
+}
+
+/// The orb core's voice line: bars that pulse while the agent talks and
+/// follow the mic while it listens.
+struct VoiceCoreBars: View {
+    /// Per-bar height, 0 flat ... 1 full.
+    let heights: [Double]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(heights.indices, id: \.self) { index in
+                Capsule().frame(width: 4, height: 3 + 30 * heights[index])
+            }
+        }
+        .frame(height: 34)
+        .accessibilityHidden(true)
+    }
+
+    static func heights(mode: VoiceOrbMode, level: Double, time: TimeInterval) -> [Double] {
+        // Centre bars run tallest so the line reads as a voice, not a meter.
+        let shape = [0.45, 0.75, 1.0, 0.75, 0.45]
+        return shape.indices.map { index in
+            let phase = Double(index) * 1.3
+            switch mode {
+            case .idle:
+                return 0
+            case .listening:
+                return shape[index] * min(1, level * 1.4) * (0.75 + 0.25 * sin(time * 9 + phase))
+            case .transcribing, .thinking:
+                // A slow travelling ripple while Hermes works.
+                return 0.18 * max(0, sin(time * 4 - phase))
+            case .speaking:
+                // Hermes plays TTS itself and does not stream its audio back, so
+                // the bars follow a syllable-like envelope, not the real audio.
+                let syllables = sin(time * 7.3 + phase) * 0.5 + sin(time * 11.9 + phase * 2) * 0.3 + sin(time * 3.1) * 0.35
+                let phrasePause = sin(time * 0.8) > -0.75 ? 1.0 : 0.1
+                return shape[index] * min(1, max(0.08, syllables + 0.35)) * phrasePause
+            }
+        }
     }
 }
 

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 /// SwiftUI surface match its silhouette without resetting conversation state.
 final class DockPanelPresentation: ObservableObject {
     @Published var quotaRequest = 0
+    @Published var kanbanRequest = 0
     @Published var isEdgeAttached = false
     @Published var edgeSide: EdgeDockSide = .right
     @Published var compactHeight: CGFloat = 720
@@ -259,6 +260,9 @@ struct DockPopover: View {
     var onClose: () -> Void = {}
     var onFullscreenToggle: () -> Void = {}
     @State private var isConversationAtBottom = true
+    @State private var clarificationSelection: [String] = []
+    @State private var valuePromptText = ""
+    @State private var valuePromptIdentifier = ""
     @State private var unseenMessageCount = 0
     @State private var isShowingMessageSearch = false
     @State private var isSessionIdentityHovering = false
@@ -293,6 +297,10 @@ struct DockPopover: View {
     @StateObject private var missionControlNavigation = MissionControlNavigationState()
     @State private var sessionWorkspaceMode: SessionWorkspaceMode = .chat
     @State private var suppressNextVoiceResponse = false
+    /// Full voice mode: the voice stage covers the navigation and inspector.
+    @State private var isVoiceImmersive = false
+    @State private var voiceSubtitles = VoiceSubtitleTrack()
+    @State private var isVoiceTranscriptVisible = false
     @State private var sessionPendingDeletion: HermesSession?
     // These selections are owned by the active session/repository scope. The
     // request IDs invalidate completions from an older scope or selection.
@@ -514,6 +522,12 @@ struct DockPopover: View {
 
     private var rootPopoverContent: some View {
         layoutContent
+            .overlay {
+                if isVoiceImmersive && sessionWorkspaceMode == .voice {
+                    immersiveVoiceStage.transition(.opacity.combined(with: .scale(scale: 1.02)))
+                }
+            }
+            .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
             .frame(width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth), height: isFullscreen ? nil : panelPresentation.compactHeight)
             .padding(.horizontal, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceHorizontalInset : 0)
             .padding(.vertical, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceVerticalInset : 0)
@@ -522,6 +536,13 @@ struct DockPopover: View {
             .onChange(of: panelPresentation.isFullscreen, initial: true) { _, fullscreen in
                 applyFullscreen(fullscreen)
             }
+            .onChange(of: panelPresentation.kanbanRequest, initial: true) { _, request in
+                guard request > 0 else { return }
+                panelPresentation.kanbanRequest = 0
+                missionControlNavigation.selectGlobal(.kanban)
+                fullscreenGlobalTab = .kanban
+                fullscreenSurface = .global
+            }
             .onChange(of: panelPresentation.quotaRequest, initial: true) { _, request in
                 guard request > 0 else { return }
                 panelPresentation.quotaRequest = 0
@@ -529,7 +550,7 @@ struct DockPopover: View {
                 fullscreenGlobalTab = .quota
                 fullscreenSurface = .global
             }
-            .background(Color.dockCanvas)
+            .background { DockWindowBackground() }
             .clipShape(DockPanelSurfaceShape(
                 isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
                 cornerRadius: isFullscreen ? 0 : 22,
@@ -636,8 +657,17 @@ struct DockPopover: View {
         FullscreenPanelSplitView(
             leading: missionControlQueue,
             trailing: desktopTrailingWorkspace,
-            leadingFraction: DesktopWorkspaceFractions.queue
+            leadingFraction: DesktopWorkspaceFractions.queue,
+            minimumTrailingWidth: desktopTrailingMinimumWidth
         )
+    }
+
+    /// The outer split must leave room for the conversation's minimum plus
+    /// the inspector's, or the inner split squeezes the conversation.
+    private var desktopTrailingMinimumWidth: CGFloat {
+        guard !isGlobalSurfaceActive, sessionWorkspaceMode != .explorer else { return 360 }
+        let conversation = DesktopWorkspaceFractions.minimumConversationWidth
+        return isInspectorVisibleForDesktopWorkspace ? conversation + 1 + 360 : conversation
     }
 
     private var desktopTrailingWorkspace: AnyView {
@@ -656,7 +686,7 @@ struct DockPopover: View {
                     // conversation / inspector) rather than an even split.
                     leadingFraction: sessionWorkspaceMode == .explorer ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
                     initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
-                    minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : 320,
+                    minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : DesktopWorkspaceFractions.minimumConversationWidth,
                     maximumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
                     minimumTrailingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
                     leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil
@@ -702,7 +732,7 @@ struct DockPopover: View {
     }
 
     private var popupWidth: CGFloat {
-        if !isNarrowLayout { return showsDesktopContextPanel || isGlobalSurfaceActive ? 1_200 : 720 }
+        if !isNarrowLayout { return showsDesktopContextPanel || isGlobalSurfaceActive ? 1_200 : 820 }
         return 500
     }
 
@@ -723,7 +753,7 @@ struct DockPopover: View {
         _ = onWorkspaceWidthChange(popupWidth)
     }
 
-    private var desktopRequiredWidth: CGFloat { 1_040 }
+    private var desktopRequiredWidth: CGFloat { 1_110 }
     private var conversationMetrics: ConversationWorkspaceMetrics {
         .resolve(isFullscreen: isFullscreen)
     }
@@ -746,7 +776,12 @@ struct DockPopover: View {
                     metrics: conversationMetrics
                 )
             case .voice:
-                voiceMode
+                if isVoiceImmersive {
+                    // Full voice mode renders the stage over the whole shell.
+                    Color.clear
+                } else {
+                    voiceMode
+                }
             case .explorer:
                 SessionExplorerSurface(
                     scope: activeSessionRepositoryScope,
@@ -787,6 +822,8 @@ struct DockPopover: View {
         // Hermes' gateway owns the microphone in native mode; a passive meter
         // lets the orb follow the user's voice anyway.
         if state.isNativeConversationActive { micLevelMeter.start() } else { micLevelMeter.stop() }
+        micLevelMeter.onUtteranceEnd = { [model] in model.finishVoiceUtterance() }
+        micLevelMeter.isEndpointing = state == .listening
         if state == .interrupted {
             // The native gateway has accepted a spoken interruption. Stop
             // any fallback playback immediately before it resumes capture.
@@ -804,6 +841,7 @@ struct DockPopover: View {
 
     private func handleSessionModeChange(previousMode: SessionWorkspaceMode, mode: SessionWorkspaceMode) {
         guard previousMode == .voice, mode != .voice else { return }
+        isVoiceImmersive = false
         // Leaving voice mode must always release both fallback and native
         // voice capture, including a microphone that is still starting.
         micLevelMeter.stop()
@@ -1413,7 +1451,7 @@ struct DockPopover: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .layoutPriority(0)
 
-                if !model.messageNavigatorItems.isEmpty {
+                if sessionWorkspaceMode == .chat, !model.messageNavigatorItems.isEmpty {
                     DockIconButton(
                         icon: .magnifyingGlass,
                         label: isShowingMessageSearch ? "Close message search" : "Find a message (⌘F)",
@@ -1855,14 +1893,30 @@ struct DockPopover: View {
         }
     }
 
-    private var voiceMode: some View {
+    private var voiceMode: some View { voiceStage(immersive: false) }
+
+    /// Full voice mode: the stage covers the navigation and inspector panels,
+    /// with activity cards popping in around the orb.
+    private var immersiveVoiceStage: some View {
+        ZStack {
+            Color.dockCanvas
+            RadialGradient(colors: [Color.dockAccent.opacity(0.10), .clear], center: .center, startRadius: 40, endRadius: 700)
+            voiceStage(immersive: true)
+        }
+        .ignoresSafeArea()
+    }
+
+    private func voiceStage(immersive: Bool) -> some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         let captions = voiceCaptions
+        let orbScale: CGFloat = immersive ? 1.45 : 1
         return VStack(spacing: 0) {
             Spacer(minLength: 12)
             Button(action: handleVoiceOrbTap) {
                 VoiceOrbView(mode: voiceOrbMode, audioLevel: max(speechInput.audioLevel, micLevelMeter.level))
                     .frame(width: 320, height: 320)
+                    .scaleEffect(orbScale)
+                    .frame(width: 320 * orbScale, height: 320 * orbScale)
                     .contentShape(Circle())
             }
             .buttonStyle(.borderless)
@@ -1872,6 +1926,14 @@ struct DockPopover: View {
             voiceStatusLabel
                 .frame(height: 40)
 
+            if hasPendingVoicePrompt {
+                // Approvals and questions block the turn, so they take the
+                // captions' place until answered.
+                voicePromptCard
+                    .frame(maxWidth: immersive ? 520 : 420)
+                    .padding(.horizontal, 16)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+            } else {
             VStack(spacing: 8) {
                 if let user = captions.user {
                     Text(user)
@@ -1881,27 +1943,51 @@ struct DockPopover: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
                 if let reply = captions.reply {
-                    Text(reply)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(4)
-                        .truncationMode(.head)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    TimelineView(.periodic(from: .now, by: 0.25)) { context in
+                        let cue = voiceSubtitles.cue(
+                            messageID: reply.id,
+                            text: reply.text,
+                            now: context.date.timeIntervalSinceReferenceDate
+                        )
+                        Text(cue ?? "")
+                            .font(.system(size: immersive ? 17 : 14, weight: .medium))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(3)
+                            .id(cue)
+                            .transition(.opacity)
+                            .animation(.dockEase(duration: 0.2), value: cue)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
             .multilineTextAlignment(.center)
-            .frame(maxWidth: 360, minHeight: 96, alignment: .top)
+            .frame(maxWidth: immersive ? 560 : 360, minHeight: 96, alignment: .top)
             .padding(.horizontal, 16)
+            }
 
             voiceControls(style: style)
                 .padding(.top, 10)
             Spacer(minLength: 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
+        .background {
+            VoiceActivityPillsLayer(model: model, cardWidth: immersive ? 280 : 200)
+                .padding(immersive ? 24 : 12)
+        }
+        .overlay(alignment: .top) {
+            if isVoiceTranscriptVisible {
+                VoiceRecentTranscript(messages: model.messages)
+                    .frame(maxWidth: immersive ? 520 : 400)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.dockEase(duration: 0.25), value: isVoiceTranscriptVisible)
         .animation(.dockEase(duration: 0.3), value: model.voiceState)
         .animation(.dockEase(duration: 0.25), value: captions.user)
         .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
+        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: hasPendingVoicePrompt)
         .onAppear { beginVoiceConversation() }
     }
 
@@ -1938,17 +2024,11 @@ struct DockPopover: View {
                 .frame(maxWidth: 300)
         } else if model.voiceState.isNativeConversationActive {
             VStack(spacing: 4) {
-                Text(model.voiceState.label(agentName: model.agentDisplayName))
+                Text(model.isVoiceMicMuted ? "MIC MUTED — TAP TO RESUME" : model.voiceState.label(agentName: model.agentDisplayName))
                     .font(.system(size: 12, weight: .semibold))
                     .tracking(0.75)
                     .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent))
                     .contentTransition(.opacity)
-                if let timing = model.voiceTelemetry.summary {
-                    Text(timing)
-                        .font(.system(size: 11, weight: .medium))
-                        .tracking(0.45)
-                        .foregroundStyle(Color.dockMetadataText)
-                }
             }
         } else if model.status == .working && !speechInput.isRecording {
             voiceActivityIndicator
@@ -1961,20 +2041,42 @@ struct DockPopover: View {
         }
     }
 
+    private var hasPendingVoicePrompt: Bool {
+        model.approvalText != nil
+            || (model.status == .needsClarification && model.clarificationQuestion != nil)
+            || model.valuePrompt != nil
+    }
+
+    /// The same prompt rows the chat shows, floated on the voice stage.
+    @ViewBuilder
+    private var voicePromptCard: some View {
+        if let approval = model.approvalText {
+            approvalRow(model.approvalDetails ?? ApprovalPresentation(
+                title: model.approvalTitle ?? "Review requested action",
+                detail: approval,
+                detailIsCommand: model.approvalTitle == "Run command"
+            ))
+        } else if model.status == .needsClarification, model.clarificationQuestion != nil {
+            clarificationRow
+        } else if let prompt = model.valuePrompt {
+            valuePromptRow(prompt)
+        }
+    }
+
     /// What you said and what the agent is saying, so the conversation reads
     /// like live captions rather than a hidden transcript.
-    private var voiceCaptions: (user: String?, reply: String?) {
+    private var voiceCaptions: (user: String?, reply: (id: UUID, text: String)?) {
         if speechInput.isRecording {
             let partial = speechInput.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
             return (partial.isEmpty ? nil : partial, nil)
         }
         guard voiceOrbMode != .listening, voiceOrbMode != .idle,
               let userIndex = model.messages.lastIndex(where: { $0.role == .user }) else { return (nil, nil) }
-        let reply = model.messages[(userIndex + 1)...].last { $0.role == .hermes }?.text
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let reply = model.messages[(userIndex + 1)...].last { $0.role == .hermes }
+        let text = reply?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return (
             "“" + model.messages[userIndex].text + "”",
-            reply.flatMap { $0.isEmpty ? nil : String($0.suffix(280)) }
+            reply.flatMap { text.isEmpty ? nil : ($0.id, text) }
         )
     }
 
@@ -1988,17 +2090,41 @@ struct DockPopover: View {
                     size: 34,
                     style: style
                 ) { model.toggleVoiceReplies() }
+                DockIconButton(
+                    icon: model.isVoiceMicMuted ? .microphoneSlash : .microphone,
+                    label: model.isVoiceMicMuted ? "Unmute microphone" : "Mute microphone",
+                    isProminent: model.isVoiceMicMuted,
+                    size: 34,
+                    style: style
+                ) { model.toggleVoiceMicMuted() }
             }
+            DockIconButton(
+                icon: .chatCircleText,
+                label: isVoiceTranscriptVisible ? "Hide recent conversation" : "Show recent conversation",
+                isProminent: isVoiceTranscriptVisible,
+                size: 34,
+                style: style
+            ) { isVoiceTranscriptVisible.toggle() }
             switch voiceOrbMode {
             case .listening:
                 DockIconButton(icon: .arrowUp, label: "Send now", size: 34, style: style, action: handleVoiceOrbTap)
             case .thinking, .speaking:
                 DockIconButton(icon: .stop, label: "Interrupt", size: 34, style: style, action: handleVoiceOrbTap)
             case .idle:
-                DockIconButton(icon: .microphone, label: "Resume listening", size: 34, style: style, action: handleVoiceOrbTap)
+                // While muted, the mute toggle is the resume control.
+                if !model.isVoiceMicMuted {
+                    DockIconButton(icon: .play, label: "Resume listening", size: 34, style: style, action: handleVoiceOrbTap)
+                }
             case .transcribing:
                 DockIconButton(icon: .microphone, label: "Transcribing", isBusy: true, size: 34, style: style) {}
             }
+            DockIconButton(
+                icon: isVoiceImmersive ? .cornersIn : .cornersOut,
+                label: isVoiceImmersive ? "Exit full voice mode" : "Full voice mode",
+                size: 34,
+                style: style
+            ) { isVoiceImmersive.toggle() }
+            .keyboardShortcut(isVoiceImmersive ? .cancelAction : nil)
             DockIconButton(icon: .x, label: "End voice conversation", size: 34, style: style, action: exitVoiceMode)
         }
     }
@@ -2136,14 +2262,20 @@ struct DockPopover: View {
                                         .id(message.id)
                                 }
                                 if let approval = model.approvalText {
-                                    approvalRow(
+                                    approvalRow(model.approvalDetails ?? ApprovalPresentation(
                                         title: model.approvalTitle ?? "Review requested action",
                                         detail: approval,
-                                        alwaysAllowCaption: ApprovalPresentation.alwaysAllowCaption(
-                                            title: model.approvalTitle ?? "Review requested action",
-                                            detail: approval)
-                                    )
+                                        detailIsCommand: model.approvalTitle == "Run command"
+                                    ))
                                         .id("approval")
+                                }
+                                if model.status == .needsClarification, model.clarificationQuestion != nil {
+                                    clarificationRow
+                                        .id("clarification")
+                                }
+                                if let prompt = model.valuePrompt {
+                                    valuePromptRow(prompt)
+                                        .id("value-prompt")
                                 }
                             }
                             .padding(.vertical, 12)
@@ -2318,6 +2450,17 @@ struct DockPopover: View {
                         }
                     }
                     .onChange(of: model.approvalText) { _, _ in
+                        guard isConversationAtBottom else { return }
+                        scheduleTransientTailAdjustment(proxy)
+                    }
+                    .onChange(of: model.valuePrompt?.requestID) { _, _ in
+                        valuePromptText = ""
+                        valuePromptIdentifier = ""
+                        guard isConversationAtBottom else { return }
+                        scheduleTransientTailAdjustment(proxy)
+                    }
+                    .onChange(of: model.clarificationQuestion) { _, _ in
+                        clarificationSelection = []
                         guard isConversationAtBottom else { return }
                         scheduleTransientTailAdjustment(proxy)
                     }
@@ -2631,9 +2774,9 @@ struct DockPopover: View {
         guard !scrollBookkeeping.isTransientTailAdjustmentScheduled else { return }
         scrollBookkeeping.isTransientTailAdjustmentScheduled = true
         Task { @MainActor in
-            // Clarification chips resize the composer while approval/activity
-            // rows resize the transcript. Wait through both layout turns and
-            // issue one footer request only for a viewport that was pinned.
+            // Approval, clarification, and activity rows resize the transcript.
+            // Wait through the layout turns and issue one footer request only
+            // for a viewport that was pinned.
             await Task.yield()
             await Task.yield()
             scrollBookkeeping.isTransientTailAdjustmentScheduled = false
@@ -2732,124 +2875,194 @@ struct DockPopover: View {
         )
     }
 
-    private func approvalRow(title: String, detail: String, alwaysAllowCaption: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 9) {
-                DockIcon(.warning, size: 16, color: Color.white)
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(
-                        Circle()
-                            .fill(Color.dockWarning)
-                    )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Approval required")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.dockWarning)
-                        .lineLimit(2)
+    private func approvalRow(_ approval: ApprovalPresentation) -> some View {
+        let isPending = model.isRespondingToApproval
+        let choices = approval.choices
+        let alwaysAllowCaption = ApprovalPresentation.alwaysAllowCaption(for: approval)
+        return DockCallout(tone: .warning, icon: .shieldWarning, title: "Approval required", message: approval.title, badge: "WAITING") {
+            VStack(alignment: .leading, spacing: 10) {
+                ScrollView(.vertical) {
+                    Text(approval.detail)
+                        .font(approval.detailIsCommand ? .system(size: 12, design: .monospaced) : .system(size: 12.5))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .textSelection(.enabled)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .foregroundStyle(Color.dockPrimaryText)
-                Spacer()
-                Text("ACTION NEEDED")
-                    .font(.system(size: 12, weight: .semibold))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.dockWarning)
-            }
-
-            ScrollView(.vertical) {
-                Text(detail)
-                    .font(.system(size: 12.5))
-                    .textSelection(.enabled)
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
                 .frame(maxHeight: 160)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 9)
+                .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.black.opacity(0.16))
-                        .stroke(Color.dockBorderLight, lineWidth: 0.5)
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                        .fill(Color.dockSurface2)
+                        .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
                 )
 
-            HStack(spacing: 6) {
-                Button { model.respondToApproval("deny") } label: {
-                    DockActionLabel(
-                        title: "Deny",
-                        pendingTitle: "Working…",
-                        isPending: model.isRespondingToApproval,
-                        tint: Color.dockWarning
-                    )
+                if let reason = approval.reason {
+                    Label { Text(reason) } icon: { DockIcon(.info, size: 12) }
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockWarning)
-                .frame(minWidth: 88, minHeight: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.dockWarning.opacity(0.08))
-                        .stroke(Color.dockWarning.opacity(0.34), lineWidth: 0.5)
-                )
-                .disabled(model.isRespondingToApproval)
-                Button { model.respondToApproval("once") } label: {
-                    DockActionLabel(
-                        title: "Allow once",
-                        pendingTitle: "Allowing…",
-                        isPending: model.isRespondingToApproval,
-                        tint: Color.dockOnAccentText
-                    )
+
+                HStack(spacing: 8) {
+                    if choices.contains(ApprovalChoice.once) {
+                        Button { model.respondToApproval(ApprovalChoice.once) } label: {
+                            DockActionLabel(title: "Allow once", pendingTitle: "Allowing…", isPending: isPending, tint: .dockOnAccentText)
+                        }
+                        .buttonStyle(DockPrimaryButtonStyle())
+                    }
+                    if choices.contains(ApprovalChoice.session) {
+                        Button { model.respondToApproval(ApprovalChoice.session) } label: {
+                            Text("Allow this session")
+                        }
+                        .buttonStyle(DockSecondaryButtonStyle())
+                        .help("Don't ask again for this command until the session ends.")
+                    }
+                    if choices.contains(ApprovalChoice.always) {
+                        Button { model.respondToApproval(ApprovalChoice.always) } label: {
+                            Text("Always allow")
+                        }
+                        .buttonStyle(DockSecondaryButtonStyle())
+                        .help(alwaysAllowCaption)
+                    }
+                    Spacer(minLength: 0)
+                    Button(role: .destructive) { model.respondToApproval(ApprovalChoice.deny) } label: {
+                        Text("Deny")
+                    }
+                    .buttonStyle(DockSecondaryButtonStyle())
                 }
-                .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockOnAccentText)
-                .frame(minWidth: 112, minHeight: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.dockAccent)
-                )
-                .disabled(model.isRespondingToApproval)
-                Button { model.respondToApproval(ApprovalChoice.always) } label: {
-                    DockActionLabel(
-                        title: "Always allow",
-                        pendingTitle: "Allowing…",
-                        isPending: model.isRespondingToApproval,
-                        tint: Color.dockOnAccentText
-                    )
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockOnAccentText)
-                .frame(minWidth: 112, minHeight: 36)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.dockAccent.opacity(0.82))
-                )
-                .disabled(model.isRespondingToApproval)
+                .controlSize(.small)
+                .disabled(isPending)
+
+                Text(approval.smartDenied
+                     ? "Hermes' safety check blocked this. You can override it once."
+                     : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : "Hermes asks again next time.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text(alwaysAllowCaption)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.dockSurface)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.dockWarning.opacity(0.035))
+        .padding(.horizontal, conversationMetrics.contentInset + 4)
+        .padding(.vertical, 8)
+    }
+
+    /// The question itself stays in the transcript as Hermes' message; this
+    /// card sits under it with the ways to answer.
+    private var clarificationRow: some View {
+        let choices = model.clarificationChoices
+        let isMultiSelect = model.clarificationMultiSelect
+        let isDisabled = model.isRespondingToClarification || model.isRestoringSession
+        return DockCallout(tone: .info, icon: .question, title: "Hermes is waiting for your answer",
+                           message: model.clarificationProgress, badge: "WAITING") {
+            VStack(alignment: .leading, spacing: 8) {
+                if !choices.isEmpty {
+                    VStack(spacing: 6) {
+                        ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
+                            let isSelected = clarificationSelection.contains(choice)
+                            Button {
+                                if !isMultiSelect {
+                                    model.respondToClarification(choice)
+                                } else if isSelected {
+                                    clarificationSelection.removeAll { $0 == choice }
+                                } else {
+                                    clarificationSelection.append(choice)
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if isMultiSelect {
+                                        DockIcon(isSelected ? .checkSquare : .square, size: 14,
+                                                 weight: isSelected ? .fill : .regular,
+                                                 color: isSelected ? .dockAccent : .dockMetadataText)
+                                    }
+                                    Text(choice)
+                                        .multilineTextAlignment(.leading)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Spacer(minLength: 0)
+                                    if !isMultiSelect {
+                                        DockIcon(.arrowRight, size: 12, color: .dockAccent)
+                                    }
+                                }
+                                .padding(.vertical, 5)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(DockSecondaryButtonStyle())
+                            .accessibilityLabel(isMultiSelect ? choice : "Send suggested response: \(choice)")
+                            .accessibilityAddTraits(isMultiSelect && isSelected ? .isSelected : [])
+                        }
+                    }
+                    .controlSize(.small)
+                    .disabled(isDisabled)
                 }
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.dockWarning.opacity(0.22), lineWidth: 0.6)
+                if isMultiSelect {
+                    Button {
+                        let selection = clarificationSelection
+                        model.respondToClarification(ClarifyQuestion.multiSelectAnswer(selection),
+                                                     displayText: selection.joined(separator: ", "))
+                    } label: {
+                        Text(clarificationSelection.isEmpty ? "Select one or more" : "Send \(clarificationSelection.count) selected")
+                    }
+                    .buttonStyle(DockPrimaryButtonStyle())
+                    .controlSize(.small)
+                    .disabled(isDisabled || clarificationSelection.isEmpty)
+                }
+                Text(choices.isEmpty ? "Type your answer in the message box below." : "Or type a different answer below.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, conversationMetrics.contentInset + 4)
+        .padding(.vertical, 8)
+    }
+
+    private func valuePromptRow(_ prompt: ValuePrompt) -> some View {
+        let isPending = model.isRespondingToValuePrompt
+        let canSubmit = !valuePromptText.isEmpty && (!prompt.asksForLogin || !valuePromptIdentifier.isEmpty)
+        let submit = {
+            guard canSubmit else { return }
+            model.respondToValuePrompt(prompt.answer(value: valuePromptText, identifier: valuePromptIdentifier))
+        }
+        return DockCallout(tone: .warning, icon: prompt.isSecret ? .lockKey : .key, title: prompt.title,
+                           message: prompt.message, badge: "WAITING") {
+            VStack(alignment: .leading, spacing: 8) {
+                if prompt.asksForLogin {
+                    TextField("Username or email", text: $valuePromptIdentifier)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.username)
+                }
+                Group {
+                    if prompt.isSecret {
+                        SecureField(prompt.fieldLabel, text: $valuePromptText)
+                    } else {
+                        TextField(prompt.fieldLabel, text: $valuePromptText)
+                            .textContentType(.oneTimeCode)
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+                .onSubmit(submit)
+
+                HStack(spacing: 8) {
+                    Button(action: submit) {
+                        DockActionLabel(title: "Send", pendingTitle: "Sending…", isPending: isPending, tint: .dockOnAccentText)
+                    }
+                    .buttonStyle(DockPrimaryButtonStyle())
+                    .disabled(!canSubmit)
+                    Spacer(minLength: 0)
+                    Button { model.respondToValuePrompt("") } label: { Text("Skip") }
+                        .buttonStyle(DockSecondaryButtonStyle())
+                }
+                .controlSize(.small)
+                .disabled(isPending)
+
+                Text(model.valuePromptError ?? "Sent only to your local Hermes. Herm does not store it.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(model.valuePromptError == nil ? Color.dockMetadataText : Color.dockDestructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, conversationMetrics.contentInset + 4)
         .padding(.vertical, 8)
     }
 
@@ -3191,6 +3404,15 @@ private struct MissionControlQueue: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 profileHeader(style: style)
+                DockIconButton(
+                    icon: .chartBar,
+                    label: "Usage",
+                    isProminent: navigationState.selection.isGlobalSelected(.usage),
+                    style: style
+                ) {
+                    navigationState.selectGlobal(.usage)
+                    onOpenGlobal(.usage)
+                }
                 if showsFullscreenToggle {
                     DockIconButton(
                         icon: isFullscreen ? .cornersIn : .cornersOut,
@@ -3218,7 +3440,6 @@ private struct MissionControlQueue: View {
             }
 
             VStack(spacing: 2) {
-                globalRailDestination(.usage, style: style)
                 globalRailDestination(.quota, style: style)
                 globalRailDestination(.core, style: style)
             }
@@ -4456,11 +4677,9 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             if pendingAction != nil {
                 ProgressView().controlSize(.mini).frame(width: 24, height: 24)
             } else {
-                // Menu labels on macOS only render Text/Image; a custom
-                // icon view is dropped and the button goes invisible.
+                // Menu labels on macOS only reliably render Text/Image.
                 Menu { contextActions } label: {
-                    Ph.dotsThree.image(size: 13)
-                        .foregroundStyle(style.secondaryText)
+                    Ph.dotsThree.image(size: 13, color: .secondaryLabelColor)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -4534,6 +4753,10 @@ private struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: 
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSplitView, context: Context) -> CGSize? {
+        splitPaneSize(proposal)
+    }
+
     func makeNSView(context: Context) -> NSSplitView {
         let splitView = NSSplitView()
         splitView.isVertical = true
@@ -4566,9 +4789,9 @@ private struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: 
 
     @MainActor
     final class Coordinator: NSObject, NSSplitViewDelegate {
-        let queueHost = NSHostingView(rootView: AnyView(EmptyView()))
-        let workspaceHost = NSHostingView(rootView: AnyView(EmptyView()))
-        let inspectorHost = NSHostingView(rootView: AnyView(EmptyView()))
+        let queueHost = splitPaneHost()
+        let workspaceHost = splitPaneHost()
+        let inspectorHost = splitPaneHost()
         weak var splitView: NSSplitView?
         var hasSetInitialPositions = false
 
@@ -4593,14 +4816,32 @@ private struct MissionControlSplitView<Queue: View, Workspace: View, Inspector: 
     }
 }
 
+/// The split views fill whatever SwiftUI offers. Without these, SwiftUI
+/// sizes the representable through Auto Layout `fittingSize`, which walks
+/// every constraint of the nested transcript on each layout pass — the main
+/// cost of scrolling a long conversation.
+private func splitPaneSize(_ proposal: ProposedViewSize) -> CGSize {
+    proposal.replacingUnspecifiedDimensions(by: CGSize(width: 800, height: 600))
+}
+
+@MainActor
+private func splitPaneHost() -> NSHostingView<AnyView> {
+    let host = NSHostingView(rootView: AnyView(EmptyView()))
+    // The split view places panes by frame; don't publish SwiftUI's
+    // intrinsic/min/max size as constraints for the outer layout to solve.
+    host.sizingOptions = []
+    return host
+}
+
 /// Named target proportions for the desktop three-column shell (queue rail /
 /// conversation / inspector), applied identically whether the Dock is
 /// fullscreen or in its windowed/minimized popover presentation. The center
 /// conversation column is intentionally the largest share.
 private enum DesktopWorkspaceFractions {
     static let queue: CGFloat = 0.22
-    static let conversation: CGFloat = 0.48
-    static let inspector: CGFloat = 0.30
+    static let conversation: CGFloat = 0.51
+    static let inspector: CGFloat = 0.27
+    static let minimumConversationWidth: CGFloat = 520
     /// The inner split only sees the space left after the outer queue split,
     /// so its leading fraction must be re-derived against that remainder.
     static let conversationOfRemainder: CGFloat = conversation / (conversation + inspector)
@@ -4648,6 +4889,10 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
             minimumTrailingWidth: minimumTrailingWidth,
             leadingWidth: leadingWidth
         )
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSplitView, context: Context) -> CGSize? {
+        splitPaneSize(proposal)
     }
 
     func makeNSView(context: Context) -> NSSplitView {
@@ -4700,8 +4945,8 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
         let minimumLeadingWidth: CGFloat
         let maximumLeadingWidth: CGFloat?
         let minimumTrailingWidth: CGFloat
-        let leadingHost = NSHostingView(rootView: AnyView(EmptyView()))
-        let trailingHost = NSHostingView(rootView: AnyView(EmptyView()))
+        let leadingHost = splitPaneHost()
+        let trailingHost = splitPaneHost()
         weak var splitView: NSSplitView?
         var hasSetInitialPosition = false
         var leadingWidth: Binding<CGFloat>?

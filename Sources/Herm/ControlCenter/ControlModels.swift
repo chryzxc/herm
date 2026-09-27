@@ -191,6 +191,13 @@ struct ApprovalPresentation: Equatable {
     let title: String
     let detail: String
     let detailIsCommand: Bool
+    /// Why Hermes flagged the command (its `description`), shown under the command.
+    var reason: String? = nil
+    /// The decisions Hermes offers for this request, in order (once / session / always / deny).
+    var choices: [String] = ApprovalChoice.all
+    var requestID: String? = nil
+    /// Hermes' safety check denied this; the owner may still override it once.
+    var smartDenied = false
 
     static func from(payload: [String: Any]) -> ApprovalPresentation {
         let command = stringValue(in: payload, keys: ["command", "cmd"])
@@ -204,7 +211,27 @@ struct ApprovalPresentation: Equatable {
         let title = stringValue(in: payload, keys: ["title", "approval_title", "action_title"])
             ?? (command != nil ? "Run command" : "Review requested action")
 
-        return ApprovalPresentation(title: title, detail: detail, detailIsCommand: command != nil)
+        let description = stringValue(in: payload, keys: ["description", "reason"])
+        let smartDenied = payload["smart_denied"] as? Bool == true
+        // Mirror Hermes' `_approval_request_payload` when an older backend omits `choices`.
+        var choices = (payload["choices"] as? [String])?.filter(ApprovalChoice.all.contains) ?? []
+        if choices.isEmpty {
+            choices = [ApprovalChoice.once]
+            if !smartDenied, payload["allow_session"] as? Bool != false {
+                choices.append(ApprovalChoice.session)
+                if payload["allow_permanent"] as? Bool != false { choices.append(ApprovalChoice.always) }
+            }
+            choices.append(ApprovalChoice.deny)
+        }
+        return ApprovalPresentation(
+            title: title,
+            detail: detail,
+            detailIsCommand: command != nil,
+            reason: command != nil && description != detail ? description : nil,
+            choices: choices,
+            requestID: stringValue(in: payload, keys: ["request_id"]),
+            smartDenied: smartDenied
+        )
     }
 
     static func alwaysAllowCaption(for presentation: ApprovalPresentation) -> String {
@@ -236,6 +263,8 @@ enum ApprovalChoice {
     static let deny = "deny"
     static let once = "once"
     static let always = "always"
+    static let session = "session"
+    static let all = [once, session, always, deny]
 }
 
 enum ControlSource: String, Codable, Hashable {
@@ -1525,8 +1554,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .usage: .chartBar
         }
     }
-
-    var pageHeaderIcon: Ph { icon }
 
     var pageHeaderTitle: String {
         switch self {

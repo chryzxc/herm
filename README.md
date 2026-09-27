@@ -57,6 +57,11 @@ The notch changes to reflect what Hermes is doing, so you don't have to keep a t
 | **Finished** | A short announcement when a task completes, which stays marked until you open the result. |
 | **Offline** | A clear indicator when the local Hermes runtime isn't reachable. |
 
+The Tasks preview opens on **Activity** by default. Its list/grid toggle switches between session activity and **Kanban** cards, using the same controls as Quota. Both views use Herm’s compact status cards. Kanban shows running, blocked, and review cards across boards. Confirmed card moves and edits automatically expand the Kanban preview without changing your selected view; click a card to open its board and inspector. Kanban refreshes every five seconds while the workspace is closed. The initial load stays quiet, and unchanged or failed refreshes do not announce. Up to 30 recent card updates remain until opened; active cards stay visible.
+
+Choose **Quick message** in either Tasks view to start a new session without opening the workspace. Choose **Reply** on a session row to compose directly beneath it. Replies stay tied to that session, and neither action changes the workspace’s selected chat. The compact composer keeps its own draft, preserves workspace attachments, and stays open while typing; **Back** or Escape leaves it. Failed sends keep the text for retry. Kanban rows show the assigned bot’s stored avatar or its existing fallback identity.
+
+
 The status colors match the rest of the app: blue means active, green means healthy or done, amber means a warning or that Hermes needs you, and red means a failure.
 
 ### How to use it
@@ -77,6 +82,13 @@ A typical workflow: start a long task in chat, collapse the workspace, and keep 
 All notch animations respect **Reduce Motion**.
 
 ## Features
+
+Workspace page headers use consistent text titles and subtitles, with refresh
+and other actions on the right.
+
+The default **Native macOS** appearance follows the system Light/Dark setting
+and uses the real macOS popover material, graphite surfaces, and system accent
+colors. The other Herm themes keep their authored opaque palettes.
 
 ### 💬 Conversations
 
@@ -123,6 +135,7 @@ All notch animations respect **Reduce Motion**.
 ### 📋 Kanban
 
 - Reads and edits the **real Hermes board**: create, complete, block or unblock, archive, comment on, schedule, assign, promote, and reclaim tasks.
+- Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
 - Filters for status, assignee, "mine", and session are passed to Hermes.
 
 ### 🏢 Office Preview

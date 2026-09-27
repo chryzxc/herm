@@ -336,7 +336,7 @@ final class InlineBlameAnnotationView: NSView {
     static func apply(to textView: NSTextView, filePath: String) {
         let text = textView.string
         let baseFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        let baseColor = NSColor(calibratedRed: 0.76, green: 0.80, blue: 0.88, alpha: 1)
+        let baseColor = NSColor.dockForeground
         let storage = NSMutableAttributedString(string: text, attributes: [.font: baseFont, .foregroundColor: baseColor])
         let isMarkdown = filePath.lowercased().hasSuffix(".md") || filePath.lowercased().hasSuffix(".markdown")
 
@@ -372,13 +372,13 @@ final class InlineBlameAnnotationView: NSView {
 }
 
 private extension NSColor {
-    static let dockCanvas = NSColor(calibratedRed: 0.055, green: 0.065, blue: 0.115, alpha: 1)
-    static let dockForeground = NSColor(calibratedRed: 0.76, green: 0.80, blue: 0.88, alpha: 1)
-    static let dockAccent = NSColor(calibratedRed: 0.02, green: 0.65, blue: 0.95, alpha: 1)
-    static let dockSecondaryText = NSColor(calibratedRed: 0.60, green: 0.64, blue: 0.71, alpha: 1)
-    static let dockMetadataText = NSColor(calibratedRed: 0.46, green: 0.50, blue: 0.58, alpha: 1)
-    static let dockPrimaryText = NSColor(calibratedRed: 0.70, green: 0.74, blue: 0.81, alpha: 1)
-    static let dockSuccess = NSColor(calibratedRed: 0.16, green: 0.78, blue: 0.25, alpha: 1)
-    static let dockFolder = NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.30, alpha: 1)
-    static let dockWarning = NSColor(calibratedRed: 1.0, green: 0.67, blue: 0.12, alpha: 1)
+    static var dockCanvas: NSColor { NSColor(Color.dockCanvas) }
+    static var dockForeground: NSColor { NSColor(Color.dockMarkdownText) }
+    static var dockAccent: NSColor { NSColor(Color.dockAccent) }
+    static var dockSecondaryText: NSColor { NSColor(Color.dockSecondaryText) }
+    static var dockMetadataText: NSColor { NSColor(Color.dockMetadataText) }
+    static var dockPrimaryText: NSColor { NSColor(Color.dockPrimaryText) }
+    static var dockSuccess: NSColor { NSColor(Color.dockSuccess) }
+    static var dockFolder: NSColor { NSColor(Color.dockWarning) }
+    static var dockWarning: NSColor { NSColor(Color.dockWarning) }
 }

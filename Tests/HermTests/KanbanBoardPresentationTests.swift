@@ -91,6 +91,19 @@ struct KanbanBoardPresentationTests {
         #expect(KanbanInspectorTab.allCases.map(\.rawValue) == ["Overview", "Activity"])
     }
 
+    @Test func menuAndDragDestinationsRespectAvailableActions() {
+        let unavailable = KanbanCardActionAvailability()
+        #expect(unavailable.details)
+        #expect(unavailable.destinations(for: "todo").isEmpty)
+        let moves = KanbanCardActionAvailability(move: true)
+        #expect(moves.destinations(for: "todo") == [.triage, .ready])
+        #expect(moves.destinations(for: "scheduled") == [.triage, .todo, .ready])
+        let all = KanbanCardActionAvailability(complete: true, block: true, move: true)
+        #expect(all.destinations(for: "running") == [.triage, .todo, .ready, .blocked, .done])
+        #expect(!all.destinations(for: "completed").contains(.done))
+        #expect(!all.destinations(for: "blocked").contains(.blocked))
+    }
+
     @Test func dropsFollowTheDesktopWorkflowRules() {
         typealias P = KanbanBoardPresentation
         #expect(P.dropOutcome(taskStatus: "todo", target: .ready) == .move(.ready))

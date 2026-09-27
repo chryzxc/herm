@@ -137,8 +137,7 @@ struct DockNotificationTests {
         #expect(!model.isSending)
         #expect(model.messages.last?.role == .hermes)
         #expect(model.messages.last?.text.contains("Which task list should I check?") == true)
-        #expect(model.messages.last?.text.contains("- Personal") == true)
-        #expect(model.messages.last?.text.contains("- Work") == true)
+        #expect(model.messages.last?.text == "Which task list should I check?")
     }
 
     @Test func clarificationReplyUsesHermesRequestIDAndAnswerFields() async throws {
@@ -152,11 +151,60 @@ struct DockNotificationTests {
         model.respondToClarification("Work")
         await Task.yield()
 
-        let request = try #require(client.requests.first(where: { $0.method == "clarify.respond" }))
-        #expect(request.params["request_id"] as? String == "clarify-123")
-        #expect(request.params["answer"] as? String == "Work")
-        #expect(request.params["response"] == nil)
+        let request = try #require(client.requests.first(where: { $0.method == "request.answer" }))
+        #expect(request.params["id"] as? String == "clarify-123")
+        #expect((request.params["result"] as? [String: Any])?["answer"] as? String == "Work")
         #expect(model.clarificationQuestion == nil)
+    }
+
+    @Test func batchClarificationLocksEachAnswerAndAdvances() async throws {
+        let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
+        let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
+        model.receiveGatewayEvent("clarify.request", params: [
+            "session_id": "session-clarify",
+            "payload": ["request_id": "srq-batch", "question": "Which env?", "questions": [
+                ["qid": "env", "question": "Which env?", "choices": ["Staging", "Prod"]],
+                ["qid": "tags", "question": "Which tags?", "choices": ["a", "b"], "multi_select": true],
+            ]]
+        ])
+        #expect(model.clarificationProgress == "Question 1 of 2")
+
+        model.respondToClarification("Staging")
+        for _ in 0..<5 { await Task.yield() }
+        #expect(model.clarificationQuestion == "Which tags?")
+        #expect(model.clarificationMultiSelect)
+        #expect(model.status == .needsClarification)
+
+        model.respondToClarification(ClarifyQuestion.multiSelectAnswer(["a", "b"]), displayText: "a, b")
+        for _ in 0..<5 { await Task.yield() }
+        let locks = client.requests.filter { $0.method == "clarify.lock" }
+        #expect(locks.map { $0.params["question_id"] as? String } == ["env", "tags"])
+        #expect(locks.last?.params["answer"] as? String == "[\"a\",\"b\"]")
+        #expect(model.messages.contains { $0.role == .user && $0.text == "a, b" })
+        #expect(model.clarificationQuestion == nil)
+    }
+
+    @Test func valuePromptAnswersWithValueAndClearsOnCancel() async throws {
+        let client = InterruptTestRPCClient(result: .success(["status": "ok"]))
+        let model = DockModel(initialSessionID: "session-clarify", rpcClient: client)
+        let sudo = try #require(HermesGateway.event(forServerRequest: [
+            "id": "srq-sudo", "method": "sudo", "params": ["session_id": "session-clarify", "command": "apt install x"]
+        ]))
+        model.receiveGatewayEvent(sudo.type, params: sudo.params)
+        #expect(model.valuePrompt?.isSecret == true)
+
+        model.respondToValuePrompt("hunter2")
+        for _ in 0..<5 { await Task.yield() }
+        let answer = try #require(client.requests.first(where: { $0.method == "request.answer" }))
+        #expect(answer.params["id"] as? String == "srq-sudo")
+        #expect((answer.params["result"] as? [String: Any])?["value"] as? String == "hunter2")
+        #expect(model.valuePrompt == nil)
+
+        model.receiveGatewayEvent("prompt.request", params: ["session_id": "session-clarify", "payload": [
+            "request_id": "srq-code", "method": "vault.code", "site": "github.com"]])
+        #expect(model.valuePrompt?.title == "Verification code for github.com")
+        model.receiveGatewayEvent("prompt.expire", params: ["session_id": "session-clarify", "payload": ["request_id": "srq-code"]])
+        #expect(model.valuePrompt == nil)
     }
 
     @Test func clarificationResumeAppendsTheNextHermesReplyAfterTheAnswer() {

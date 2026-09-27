@@ -90,9 +90,11 @@ struct RepositoryCodeWorkspaceTests {
     }
 
     @Test func pullRequestFilesProjectionDistinguishesUnavailableFromEmpty() {
-        #expect(PullRequestFilesProjection.state(files: nil, isLoading: false) == .unavailable)
-        #expect(PullRequestFilesProjection.state(files: [], isLoading: false) == .empty)
-        #expect(PullRequestFilesProjection.state(files: nil, isLoading: true) == .loading)
+        #expect(PullRequestFilesProjection.state(files: nil, isLoading: false, expectedFileCount: nil) == .unavailable)
+        #expect(PullRequestFilesProjection.state(files: [], isLoading: false, expectedFileCount: nil) == .unavailable)
+        #expect(PullRequestFilesProjection.state(files: [], isLoading: false, expectedFileCount: 2) == .unavailable)
+        #expect(PullRequestFilesProjection.state(files: [], isLoading: false, expectedFileCount: 0) == .empty)
+        #expect(PullRequestFilesProjection.state(files: nil, isLoading: true, expectedFileCount: nil) == .loading)
     }
 
     @Test func pullRequestFileTreeGroupsNestedPaths() {

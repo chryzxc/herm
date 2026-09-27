@@ -38,21 +38,25 @@ public struct ExtensionsCenterView: View {
 
             Section("Actions") {
                 DockIconLabel("Server and plugin changes are unavailable until Hermes exposes a verified contract.", icon: .lockOpen)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.dockSecondaryText)
                 DockIconLabel("Third-party MCP tool invocation is upstream-blocked until Hermes exposes a structured catalog and invocation schema.", icon: .warning)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.dockSecondaryText)
             }
         }
+        .scrollContentBackground(.hidden)
+        .foregroundStyle(Color.dockPrimaryText)
+        .tint(Color.dockAccent)
+        .background(Color.dockCanvas)
         .navigationTitle("Extensions")
         .overlay {
             if inventory == nil {
                 VStack(spacing: 10) {
-                    DockIcon(.sparkle, size: 28, color: .secondary)
+                    DockIcon(.sparkle, size: 28, color: .dockSecondaryText)
                     Text("Extensions unavailable")
                         .font(.headline)
                     Text("Refresh from Hermes to load a typed MCP/plugin inventory.")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.dockSecondaryText)
                         .multilineTextAlignment(.center)
                 }
                 .padding(24)
@@ -72,18 +76,19 @@ public struct ExtensionsCenterView: View {
                 }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.dockSecondaryText)
             Text(id)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(Color.dockMetadataText)
         }
         .accessibilityElement(children: .combine)
     }
 
     private func emptyRow(_ text: String) -> some View {
         DockIconLabel(text, icon: .minusCircle)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.dockSecondaryText)
     }
+
 }
 
 #Preview {

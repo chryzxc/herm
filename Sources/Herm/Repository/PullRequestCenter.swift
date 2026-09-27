@@ -38,9 +38,13 @@ enum PullRequestFilesProjection: Equatable {
     case empty
     case loaded([PullRequestFile])
 
-    static func state(files: [PullRequestFile]?, isLoading: Bool) -> Self {
+    static func state(files: [PullRequestFile]?, isLoading: Bool, expectedFileCount: Int?) -> Self {
         guard let files else { return isLoading ? .loading : .unavailable }
-        return files.isEmpty ? .empty : .loaded(files)
+        guard files.isEmpty else { return .loaded(files) }
+        // An empty `/files` response is authoritative only when the PR detail
+        // agrees that there are no changed files. A canceled or incomplete
+        // request must remain retryable instead of being cached as empty.
+        return expectedFileCount == 0 ? .empty : .unavailable
     }
 }
 
@@ -328,6 +332,7 @@ final class PullRequestCenterModel: ObservableObject {
     }
 
     var isLoadingDetail: Bool { !loadingDetailIDs.isEmpty }
+    func isLoadingDetail(for id: String) -> Bool { loadingDetailIDs.contains(id) }
     var selected: PullRequestRecord? { records.first { $0.id == selectedID } }
     var isInitialLoad: Bool { isRefreshing && records.isEmpty }
 
@@ -481,10 +486,12 @@ final class PullRequestCenterModel: ObservableObject {
         async let files = api.files(selected)
         async let comments = api.comments(selected)
         async let commits = api.commits(selected)
-        if let updated = await detail, let index = records.firstIndex(where: { $0.id == selected.id }) { records[index] = updated }
-        if let files = await files { filesByID[selected.id] = files }
-        commentsByID[selected.id] = await comments ?? []
-        commitsByID[selected.id] = await commits ?? []
+        let (updated, loadedFiles, loadedComments, loadedCommits) = await (detail, files, comments, commits)
+        guard !Task.isCancelled else { return }
+        if let updated, let index = records.firstIndex(where: { $0.id == selected.id }) { records[index] = updated }
+        if let loadedFiles { filesByID[selected.id] = loadedFiles }
+        commentsByID[selected.id] = loadedComments ?? []
+        commitsByID[selected.id] = loadedCommits ?? []
     }
 
     func refreshSelectedDetail() async {
@@ -681,21 +688,6 @@ private struct PullRequestFileTreeRow: View {
     }
 }
 
-private struct PullRequestShimmerBlock: View {
-    let width: CGFloat?
-    let height: CGFloat
-    let cornerRadius: CGFloat
-    let pulse: Bool
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.dockSurface4.opacity(pulse ? 0.55 : 0.28))
-            .animation(pulse ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : nil, value: pulse)
-            .frame(maxWidth: width ?? .infinity, alignment: .leading)
-            .frame(height: height)
-    }
-}
-
 struct PullRequestDiffLineView: View {
     let line: PullRequestDiffLine
     var counterpart: String? = nil
@@ -755,7 +747,7 @@ struct PullRequestDetailView: View {
 
     private var isLoadingSelectedDetail: Bool {
         guard let selected = center.selected else { return false }
-        return center.isLoadingDetail && center.filesByID[selected.id] == nil
+        return center.isLoadingDetail(for: selected.id) && center.filesByID[selected.id] == nil
     }
 
     var body: some View {
@@ -830,10 +822,10 @@ struct PullRequestDetailView: View {
     private var detailLoadingPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                PullRequestShimmerBlock(width: 72, height: 22, cornerRadius: 7, pulse: false)
-                PullRequestShimmerBlock(width: 48, height: 22, cornerRadius: 7, pulse: false)
+                RepositoryShimmerBlock(width: 72, height: 22, cornerRadius: 7)
+                RepositoryShimmerBlock(width: 48, height: 22, cornerRadius: 7)
                 Spacer()
-                PullRequestShimmerBlock(width: 88, height: 28, cornerRadius: 7, pulse: false)
+                RepositoryShimmerBlock(width: 88, height: 28, cornerRadius: 7)
             }
             .padding(.horizontal, 16)
             .frame(height: 44)
@@ -847,22 +839,22 @@ struct PullRequestDetailView: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.dockMetadataText)
                     }
-                    PullRequestShimmerBlock(width: nil, height: 28, cornerRadius: 7, pulse: false)
-                    PullRequestShimmerBlock(width: 390, height: 28, cornerRadius: 7, pulse: false)
+                    RepositoryShimmerBlock(width: nil, height: 28, cornerRadius: 7)
+                    RepositoryShimmerBlock(width: 390, height: 28, cornerRadius: 7)
                     HStack(spacing: 10) {
-                        PullRequestShimmerBlock(width: 32, height: 32, cornerRadius: 16, pulse: false)
-                        PullRequestShimmerBlock(width: 126, height: 12, cornerRadius: 4, pulse: false)
+                        RepositoryShimmerBlock(width: 32, height: 32, cornerRadius: 16)
+                        RepositoryShimmerBlock(width: 126, height: 12, cornerRadius: 4)
                     }
-                    PullRequestShimmerBlock(width: nil, height: 1, cornerRadius: 0, pulse: false)
+                    RepositoryShimmerBlock(width: nil, height: 1, cornerRadius: 0)
                     ForEach(0..<5, id: \.self) { index in
                         HStack(spacing: 14) {
-                            PullRequestShimmerBlock(width: 88, height: 11, cornerRadius: 4, pulse: false)
-                            PullRequestShimmerBlock(width: index.isMultiple(of: 2) ? 236 : 176, height: 11, cornerRadius: 4, pulse: false)
+                            RepositoryShimmerBlock(width: 88, height: 11, cornerRadius: 4)
+                            RepositoryShimmerBlock(width: index.isMultiple(of: 2) ? 236 : 176, height: 11, cornerRadius: 4)
                         }
                     }
-                    PullRequestShimmerBlock(width: nil, height: 1, cornerRadius: 0, pulse: false)
-                    PullRequestShimmerBlock(width: 112, height: 15, cornerRadius: 5, pulse: false)
-                    PullRequestShimmerBlock(width: nil, height: 82, cornerRadius: 10, pulse: false)
+                    RepositoryShimmerBlock(width: nil, height: 1, cornerRadius: 0)
+                    RepositoryShimmerBlock(width: 112, height: 15, cornerRadius: 5)
+                    RepositoryShimmerBlock(width: nil, height: 82, cornerRadius: 10)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
@@ -884,11 +876,10 @@ struct PullRequestDetailView: View {
                 Spacer()
                 HStack(spacing: 6) {
                     if let url = pr.webURL {
-                        Link(destination: url) {
-                            PullRequestReviewToolbarIcon(name: .arrowSquareOut, accessibilityLabel: "Open on GitHub")
-                        }
-                        .buttonStyle(.plain)
-                        .help("Open on GitHub")
+                        GitHubLinkButton(
+                            destination: url,
+                            accessibilityLabel: "Open pull request on GitHub"
+                        )
                         Divider().frame(height: 16)
                     }
                     Button("Open chat") { onOpenChat(pr) }
@@ -1239,17 +1230,27 @@ struct PullRequestDetailView: View {
         .buttonStyle(.plain)
     }
     private func code(_ pr: PullRequestRecord) -> some View {
-        let projection = PullRequestFilesProjection.state(files: center.filesByID[pr.id], isLoading: center.isLoadingDetail)
+        let projection = PullRequestFilesProjection.state(
+            files: center.filesByID[pr.id],
+            isLoading: center.isLoadingDetail(for: pr.id),
+            expectedFileCount: pr.changedFiles
+        )
         return VStack(alignment: .leading, spacing: 10) {
             switch projection {
             case .loading:
                 ProgressView("Loading changed files…").foregroundStyle(Color.dockMetadataText)
             case .unavailable:
-                Text("Changed files are unavailable. Refresh or open this pull request on GitHub to inspect its changes.")
-                    .foregroundStyle(Color.dockMetadataText)
+                codeState(
+                    title: "Changed files unavailable",
+                    detail: "GitHub did not return the expected file data.",
+                    actionTitle: "Retry"
+                )
             case .empty:
-                Text("No patch data is available. Open this pull request on GitHub to inspect its changes.")
-                    .foregroundStyle(Color.dockMetadataText)
+                codeState(
+                    title: "No changed files",
+                    detail: "GitHub reports that this pull request currently has no changed files.",
+                    actionTitle: "Refresh"
+                )
             case .loaded(let files):
                 HStack(alignment: .top, spacing: 14) {
                     if reviewPreferences.showsFileTree { fileTree(files) }
@@ -1273,6 +1274,25 @@ struct PullRequestDetailView: View {
         .padding(.top, 14)
         .padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func codeState(title: String, detail: String, actionTitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            Text(detail)
+                .font(DockTypography.body)
+                .foregroundStyle(Color.dockSecondaryText)
+            Button(actionTitle) {
+                Task { await center.refreshSelectedDetail() }
+            }
+            .buttonStyle(.dockSecondary)
+            .controlSize(.small)
+            .disabled(center.isLoadingDetail(for: center.selectedID ?? ""))
+            .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
     }
 
     private func codeToolbar(fileIDs: Set<String>) -> some View {
@@ -1538,7 +1558,6 @@ struct PullRequestWorkspace: View {
     let onOpenChat: (PullRequestRecord) -> Void
     var onOpenIssueChat: (GitHubIssueRecord) -> Void = { _ in }
     let mode: RepositoryReviewWorkspaceMode
-    @State private var loadingPulse = false
     @StateObject private var issueCenter = IssueCenterModel()
 
     init(
@@ -1558,7 +1577,6 @@ struct PullRequestWorkspace: View {
     var body: some View {
         VStack(spacing: 0) {
             DockPageHeader(
-                icon: mode.icon,
                 title: mode.title,
                 subtitle: mode.subtitle,
                 onRefresh: { Task { await refreshActiveWorkspace() } },
@@ -1578,9 +1596,6 @@ struct PullRequestWorkspace: View {
         .background(Color.dockCanvas)
         .task {
             if mode == .pullRequests, center.records.isEmpty { await center.refresh(projects: projects) }
-        }
-        .onAppear {
-            loadingPulse = true
         }
         .onChange(of: center.filter) { _, _ in center.repairSelection() }
         .onChange(of: center.query) { _, _ in center.repairSelection() }
@@ -1638,11 +1653,11 @@ struct PullRequestWorkspace: View {
     private func listLoadingRow(index: Int) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 9) {
-                PullRequestShimmerBlock(width: 18, height: 18, cornerRadius: 5, pulse: loadingPulse)
-                PullRequestShimmerBlock(width: index.isMultiple(of: 2) ? 184 : 228, height: 12, cornerRadius: 4, pulse: loadingPulse)
+                RepositoryShimmerBlock(width: 18, height: 18, cornerRadius: 5)
+                RepositoryShimmerBlock(width: index.isMultiple(of: 2) ? 184 : 228, height: 12, cornerRadius: 4)
             }
-            PullRequestShimmerBlock(width: index.isMultiple(of: 3) ? 122 : 160, height: 9, cornerRadius: 3, pulse: loadingPulse)
-            PullRequestShimmerBlock(width: 48, height: 8, cornerRadius: 3, pulse: loadingPulse)
+            RepositoryShimmerBlock(width: index.isMultiple(of: 3) ? 122 : 160, height: 9, cornerRadius: 3)
+            RepositoryShimmerBlock(width: 48, height: 8, cornerRadius: 3)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)

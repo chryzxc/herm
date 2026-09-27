@@ -1,10 +1,11 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
 /// Card actions the adapter currently supports. Values, not the model, so the
 /// board can skip re-rendering when unrelated control-center state publishes.
 struct KanbanCardActionAvailability: Equatable {
-    var details = false
+    var details = true
     var complete = false
     var block = false
     var unblock = false
@@ -14,7 +15,16 @@ struct KanbanCardActionAvailability: Equatable {
     /// One-step assign/reassign to a bot profile.
     var assign = false
 
-    var canDrag: Bool { move || complete || block }
+    func destinations(for status: String) -> [KanbanLane] {
+        KanbanLane.allCases.filter { lane in
+            switch KanbanBoardPresentation.dropOutcome(taskStatus: status, target: lane) {
+            case .move: return move
+            case .confirm(.complete): return complete
+            case .confirm(.block): return block
+            default: return false
+            }
+        }
+    }
 }
 
 /// The Kanban lanes and cards. The board takes plain values and is compared
@@ -76,6 +86,8 @@ struct KanbanBoardView: View, Equatable {
                         .onDrop(of: [UTType.text], delegate: KanbanLaneDropDelegate(
                             lane: lane,
                             tasks: tasks,
+                            actions: actions,
+                            pendingActionIDs: pendingActionIDs,
                             draggingTaskID: $draggingTaskID,
                             targetedLane: $targetedLane,
                             drop: onDrop
@@ -161,6 +173,7 @@ struct KanbanBoardView: View, Equatable {
                                 draggingTaskID: $draggingTaskID,
                                 onSelect: onSelect,
                                 onAction: onAction,
+                                onMove: onDrop,
                                 onAssign: onAssign
                             )
                         }
@@ -173,6 +186,7 @@ struct KanbanBoardView: View, Equatable {
         .frame(maxHeight: .infinity, alignment: .top)
         .background(targetedLane == lane ? lane.color.opacity(0.10) : Color.dockSurface.opacity(0.20))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(Rectangle())
         .overlay {
             if targetedLane == lane {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -188,6 +202,8 @@ struct KanbanBoardView: View, Equatable {
 private struct KanbanLaneDropDelegate: DropDelegate {
     let lane: KanbanLane
     let tasks: [KanbanTaskSummary]
+    let actions: KanbanCardActionAvailability
+    let pendingActionIDs: Set<String>
     @Binding var draggingTaskID: String?
     @Binding var targetedLane: KanbanLane?
     let drop: @MainActor (KanbanTaskSummary, KanbanLane) -> Void
@@ -198,11 +214,9 @@ private struct KanbanLaneDropDelegate: DropDelegate {
     }
 
     private var accepts: Bool {
-        guard let draggedTask else { return false }
-        switch KanbanBoardPresentation.dropOutcome(taskStatus: draggedTask.status, target: lane) {
-        case .move, .confirm: return true
-        case .none, .refused: return false
-        }
+        guard let draggedTask,
+              !pendingActionIDs.contains(where: { $0.hasSuffix(":\(draggedTask.id)") }) else { return false }
+        return actions.destinations(for: draggedTask.status).contains(lane)
     }
 
     func validateDrop(info: DropInfo) -> Bool { draggedTask != nil }
@@ -311,12 +325,14 @@ private struct KanbanTaskCard: View {
     @Binding var draggingTaskID: String?
     let onSelect: (KanbanTaskSummary) -> Void
     let onAction: (KanbanTaskSummary, KanbanTaskAction) -> Void
+    let onMove: @MainActor (KanbanTaskSummary, KanbanLane) -> Void
     let onAssign: (KanbanTaskSummary, String?) -> Void
 
     // Hover is local so it re-renders one card, not the board.
     @State private var isHovered = false
 
     var body: some View {
+        let isDraggable = !actions.destinations(for: task.status).isEmpty && !isMutationPending
         VStack(alignment: .leading, spacing: 6) {
             Text(task.title)
                 .font(.system(size: 13, weight: .medium))
@@ -324,7 +340,7 @@ private struct KanbanTaskCard: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.trailing, showsMenu ? 24 : 0)
+                .padding(.trailing, 24)
 
             if let summary = summary ?? nonEmpty(task.detail) {
                 Text(summary)
@@ -374,7 +390,7 @@ private struct KanbanTaskCard: View {
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onTapGesture { onSelect(task) }
         .modifier(KanbanCardDragSource(
-            isEnabled: actions.canDrag && !isMovePending,
+            isEnabled: isDraggable,
             taskID: task.id,
             draggingTaskID: $draggingTaskID,
             preview: dragPreview
@@ -384,8 +400,13 @@ private struct KanbanTaskCard: View {
         // does not tear it down.
         .overlay(alignment: .topTrailing) {
             Menu { actionMenu } label: {
-                Ph.dotsThree.image(size: 14)
-                    .foregroundStyle(Color.dockSecondaryText)
+                Group {
+                    if isMutationPending {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Ph.dotsThree.image(size: 14, color: .secondaryLabelColor)
+                    }
+                }
                     .frame(width: 28, height: 22)
                     .background(Color.dockSurface2.opacity(0.9), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .contentShape(Rectangle())
@@ -397,20 +418,22 @@ private struct KanbanTaskCard: View {
             .fixedSize()
             .padding(.top, 6)
             .padding(.trailing, 6)
-            .opacity(showsMenu ? 1 : 0)
-            .allowsHitTesting(showsMenu)
+            .disabled(isMutationPending)
             .help("More Kanban actions")
             .accessibilityLabel("More actions for \(task.title)")
         }
         .onHover { isHovered = $0 }
+        .modifier(KanbanCardDragCursor(
+            isEnabled: isDraggable,
+            isDragging: draggingTaskID == task.id
+        ))
         .contextMenu { actionMenu }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel("\(task.title), \(lane.rawValue)")
     }
 
-    private var showsMenu: Bool { isHovered || isSelected }
-    private var isMovePending: Bool { pendingActionIDs.contains("kanban.move:\(task.id)") }
+    private var isMutationPending: Bool { pendingActionIDs.contains { $0.hasSuffix(":\(task.id)") } }
     private var isAssignPending: Bool { pendingActionIDs.contains("kanban.reassign:\(task.id)") }
 
     private var dragPreview: some View {
@@ -466,6 +489,15 @@ private struct KanbanTaskCard: View {
             Button("Details", icon: .fileText) { onSelect(task) }
                 .disabled(isLoadingDetail)
         }
+        let destinations = actions.destinations(for: task.status)
+        if !destinations.isEmpty {
+            Menu("Move to") {
+                ForEach(destinations) { destination in
+                    Button(destination.rawValue) { onMove(task, destination) }
+                }
+            }
+            .disabled(isMutationPending)
+        }
         if lane == .done, actions.archive {
             actionButton("Archive", icon: .archive, action: .archive)
         } else if lane == .blocked, actions.unblock {
@@ -496,15 +528,6 @@ private struct KanbanTaskCard: View {
             }
             .disabled(isAssignPending)
         }
-        if !hasAnyAction {
-            Text("No actions available")
-        }
-    }
-
-    private var hasAnyAction: Bool {
-        actions.details || actions.complete || actions.block
-            || (lane == .done && actions.archive) || (lane == .blocked && actions.unblock)
-            || (actions.assign && !assignableBots.isEmpty)
     }
 
     private func isAssigned(to bot: BotSummary) -> Bool {
@@ -519,6 +542,40 @@ private struct KanbanTaskCard: View {
     private func nonEmpty(_ value: String?) -> String? {
         guard let value, !value.isEmpty else { return nil }
         return value
+    }
+}
+
+/// Uses the standard macOS grab cursors without leaving an entry on the
+/// cursor stack when a card becomes disabled or leaves the view hierarchy.
+private struct KanbanCardDragCursor: ViewModifier {
+    let isEnabled: Bool
+    let isDragging: Bool
+
+    @State private var isHovering = false
+    @State private var hasPushedCursor = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHovering = hovering
+                refreshCursor()
+            }
+            .onChange(of: isDragging) { _, _ in refreshCursor() }
+            .onChange(of: isEnabled) { _, _ in refreshCursor() }
+            .onDisappear { removeCursor() }
+    }
+
+    private func refreshCursor() {
+        removeCursor()
+        guard isEnabled, isHovering else { return }
+        (isDragging ? NSCursor.closedHand : NSCursor.openHand).push()
+        hasPushedCursor = true
+    }
+
+    private func removeCursor() {
+        guard hasPushedCursor else { return }
+        NSCursor.pop()
+        hasPushedCursor = false
     }
 }
 

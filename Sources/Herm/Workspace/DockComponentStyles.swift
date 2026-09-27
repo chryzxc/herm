@@ -9,7 +9,6 @@ private func dockAdaptiveColor(light: NSColor, dark: NSColor) -> Color {
 
 extension Color {
     // The notch is an extension of the workspace and follows its global palette.
-    static var dockNotchCanvas: Color { dockCanvas }
     static var dockNotchText: Color { dockPrimaryText }
     static var dockNotchSecondaryText: Color { dockSecondaryText }
 
@@ -37,6 +36,9 @@ extension Color {
     static var dockAccentMuted: Color { dockAccent.opacity(0.14) }
     static let dockAccentGlow = Color.clear
     static var dockPrimaryText: Color { DockThemePalette(theme: DockThemeRuntime.current).primaryText }
+    // Markdown bodies are long-form reading surfaces; keep them a little softer
+    // than primary chrome while preserving each theme's contrast and hue.
+    static var dockMarkdownText: Color { dockPrimaryText.opacity(0.86) }
     static var dockSecondaryText: Color { DockThemePalette(theme: DockThemeRuntime.current).secondaryText }
     static var dockMetadataText: Color { DockThemePalette(theme: DockThemeRuntime.current).metadataText }
     static var dockSectionText: Color { dockSecondaryText }
@@ -87,9 +89,9 @@ extension View {
     }
 }
 
-/// AppKit's actual menu-bar popover material. Keeping this as a view instead
-/// of approximating it with layered SwiftUI colors gives the panel the same
-/// appearance-aware blur used by macOS system menus.
+/// AppKit's popover material — the same heavy backdrop blur macOS uses for menu-bar extras like
+/// Battery and Wi-Fi. Keeping this as a view instead of approximating it with
+/// layered SwiftUI colors gives the panel the real appearance-aware blur.
 struct NativePopoverBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -103,6 +105,20 @@ struct NativePopoverBackground: NSViewRepresentable {
         nsView.material = .popover
         nsView.blendingMode = .behindWindow
         nsView.state = .active
+    }
+}
+
+/// The workspace's base layer. Native macOS uses the real system popover
+/// material under the shared palette; authored Herm themes keep their solid
+/// canvas so selecting a theme never changes its intended color treatment.
+struct DockWindowBackground: View {
+    var body: some View {
+        if DockThemeRuntime.current.usesNativeMaterial {
+            NativePopoverBackground()
+                .overlay(DockThemePalette(theme: .nativeMacOS).windowBackground)
+        } else {
+            Color.dockCanvas
+        }
     }
 }
 
@@ -241,7 +257,6 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
 /// The consistent title treatment for full workspace destinations. Keeping it
 /// shared prevents individual pages from inventing competing title bars.
 struct DockPageHeader<Trailing: View>: View {
-    let icon: Ph
     let title: String
     let subtitle: String
     let onRefresh: (() -> Void)?
@@ -249,14 +264,12 @@ struct DockPageHeader<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     init(
-        icon: Ph,
         title: String,
         subtitle: String,
         onRefresh: (() -> Void)? = nil,
         isRefreshing: Bool = false,
         @ViewBuilder trailing: @escaping () -> Trailing
     ) {
-        self.icon = icon
         self.title = title
         self.subtitle = subtitle
         self.onRefresh = onRefresh
@@ -266,14 +279,6 @@ struct DockPageHeader<Trailing: View>: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            DockIcon(icon)
-                    .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.dockOnAccentText)
-                .frame(width: 30, height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.dockAccent.opacity(0.14))
-                )
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 16, weight: .semibold))
@@ -312,8 +317,8 @@ struct DockPageHeader<Trailing: View>: View {
 }
 
 extension DockPageHeader where Trailing == EmptyView {
-    init(icon: Ph, title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false) {
-        self.init(icon: icon, title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) { EmptyView() }
+    init(title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false) {
+        self.init(title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) { EmptyView() }
     }
 }
 
@@ -336,6 +341,83 @@ struct DockActionLabel: View {
         }
         .lineLimit(1)
         .contentTransition(.opacity)
+    }
+}
+
+/// The standard inline notice: errors, warnings, and questions Hermes is
+/// waiting on. One shape — tinted icon tile, title, message, optional badge,
+/// then any body or actions — so every alert in a list reads the same.
+struct DockCallout<Content: View>: View {
+    enum Tone {
+        case info, warning, danger
+
+        var color: Color {
+            switch self {
+            case .info: .dockAccent
+            case .warning: .dockWarning
+            case .danger: .dockDestructive
+            }
+        }
+    }
+
+    let tone: Tone
+    let icon: Ph
+    let title: String
+    var message: String?
+    var badge: String?
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        let tint = tone.color
+        let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
+        HStack(alignment: .top, spacing: 10) {
+            DockIcon(icon, size: 15, weight: .fill, color: tint)
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tint.opacity(0.14)))
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        if let badge {
+                            Text(badge)
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.6)
+                                .foregroundStyle(tint)
+                                .padding(.horizontal, 7)
+                                .frame(height: 18)
+                                .background(Capsule().fill(tint.opacity(0.12)))
+                        }
+                    }
+                    if let message, !message.isEmpty {
+                        Text(message)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineSpacing(2)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                content()
+            }
+            .padding(.top, 4)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(shape.fill(Color.dockSurface).overlay(shape.fill(tint.opacity(0.05))))
+        .overlay(alignment: .leading) { tint.frame(width: 3) }
+        .clipShape(shape)
+        .overlay(shape.stroke(tint.opacity(0.3), lineWidth: DockLayout.hairline))
+        .accessibilityElement(children: .contain)
+    }
+}
+
+extension DockCallout where Content == EmptyView {
+    init(tone: Tone, icon: Ph, title: String, message: String? = nil, badge: String? = nil) {
+        self.init(tone: tone, icon: icon, title: title, message: message, badge: badge) { EmptyView() }
     }
 }
 

@@ -68,6 +68,8 @@ final class DockModel: ObservableObject {
     @Published private(set) var queuedPrompts: [QueuedPrompt] = []
     @Published var approvalTitle: String?
     @Published var approvalText: String?
+    /// Full request (reason, offered choices, request id) behind `approvalTitle`/`approvalText`.
+    @Published private(set) var approvalDetails: ApprovalPresentation?
     /// Approval requests arrive on the shared gateway stream, including while
     /// another conversation is selected. Retain the latest unresolved request
     /// by Hermes session identity and project only the selected session here.
@@ -76,6 +78,7 @@ final class DockModel: ObservableObject {
     private struct PendingApproval: Equatable {
         let title: String
         let detail: String
+        let presentation: ApprovalPresentation
     }
     private var pendingApprovalsBySessionID: [String: PendingApproval] = [:]
     private var pendingApprovalAliasesBySessionID: [String: Set<String>] = [:]
@@ -83,19 +86,30 @@ final class DockModel: ObservableObject {
         let question: String
         let choices: [String]
         let requestID: String?
+        var multiSelect = false
+        /// Batch clarify: every question, and the answers Hermes has already locked.
+        var batch: [ClarifyQuestion] = []
+        var lockedAnswers: [String: String] = [:]
 
-        var transcriptText: String {
-            choices.isEmpty
-                ? question
-                : "\(question)\n\nSuggested responses:\n" + choices.map { "- \($0)" }.joined(separator: "\n")
-        }
+        var current: ClarifyQuestion? { batch.first { lockedAnswers[$0.id] == nil } }
+        var remainingCount: Int { batch.filter { lockedAnswers[$0.id] == nil }.count }
+        /// Choices live on the in-chat answer card, not in the transcript.
+        var transcriptText: String { current?.question ?? question }
     }
+    private var activeClarification: PendingClarification?
     private var pendingClarificationsBySessionID: [String: PendingClarification] = [:]
     private var pendingClarificationAliasesBySessionID: [String: Set<String>] = [:]
     private var resolvedClarificationRequestIDs = Set<String>()
     private var resolvedClarificationRequestIDOrder: [String] = []
     @Published private(set) var clarificationQuestion: String?
     @Published private(set) var clarificationChoices: [String] = []
+    @Published private(set) var clarificationMultiSelect = false
+    /// "Question 2 of 3" while answering a batch.
+    @Published private(set) var clarificationProgress: String?
+    /// A sudo / secret / vault prompt Hermes is blocked on.
+    @Published private(set) var valuePrompt: ValuePrompt?
+    @Published private(set) var valuePromptError: String?
+    @Published private(set) var isRespondingToValuePrompt = false
     /// Hermes assigns this identifier to the blocking clarify request. A reply
     /// must echo it so the backend can release the exact waiting turn.
     @Published private(set) var clarificationRequestID: String?
@@ -188,6 +202,8 @@ final class DockModel: ObservableObject {
     @Published private(set) var voiceTelemetry = VoiceTurnTelemetry()
     /// Mirrors Hermes' process-wide `HERMES_VOICE_TTS` flag for this voice chat.
     @Published private(set) var voiceRepliesEnabled = true
+    /// Keeps the call open with the microphone closed.
+    @Published private(set) var isVoiceMicMuted = false
     @Published private(set) var composerFocusRequest = 0
     @Published var isComposerEditing = false
     @Published private(set) var controlInboxRequest = 0
@@ -531,9 +547,88 @@ final class DockModel: ObservableObject {
         DebugLog.write("model: shutdown complete")
     }
 
-    /// Sends the composer draft, or `queued` (a prompt parked during the
-    /// previous turn) without touching whatever the composer holds now.
-    func send(_ queued: QueuedPrompt? = nil) {
+    func quickMessageUnavailableReason(for target: HermesSession?) -> String? {
+        if status == .offline { return "Hermes is offline. Reconnect in Herm to send a message." }
+        if let target, currentSessionIDs.contains(target.id),
+           target.profileID == nil || target.profileID == sessionProfileID {
+            if isRestoringSession || isCreatingSession || isUpdatingSessionModel {
+                return "Wait for the conversation to finish loading."
+            }
+            if isSending || status != .idle {
+                return "This session is busy. Reply when its current turn finishes."
+            }
+        }
+        return nil
+    }
+
+    /// A nil target explicitly creates an independent session. Existing targets
+    /// are captured by identity; neither path changes the workspace selection.
+    func sendQuickMessage(_ text: String, to target: HermesSession? = nil,
+                          onCreated: @escaping (HermesSession) -> Void = { _ in },
+                          completion: @escaping (String?) -> Void) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let reason = quickMessageUnavailableReason(for: target) { completion(reason); return }
+        guard !clean.isEmpty else { completion("Enter a message first."); return }
+        guard !clean.hasPrefix("/") else { completion("Use Herm for slash commands."); return }
+        if let target, currentSessionIDs.contains(target.id),
+           target.profileID == nil || target.profileID == sessionProfileID {
+            send(QueuedPrompt(sessionID: target.id, text: clean, images: [], pdfURL: nil), onSubmission: completion)
+            return
+        }
+        let profile = target?.profileID ?? profileScopeID
+        Task {
+            do {
+                try await sessionRPCClient.connect()
+                var params: [String: Any] = [:]
+                if let profile { params["profile"] = profile }
+                let destination: HermesSession
+                let runtimeID: String
+                if let target {
+                    var resumeParams = params
+                    resumeParams["session_id"] = target.id
+                    resumeParams["source"] = "herm"
+                    resumeParams["omit_messages"] = true
+                    let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: resumeParams)
+                    runtimeID = (result["session_id"] as? String) ?? target.id
+                    guard Self.resumeResponseProvesSessionOwnership(requestedSessionID: target.id,
+                            resolvedSessionID: runtimeID, result: result) else {
+                        completion("Hermes returned a different session. Refresh Activity and try again."); return
+                    }
+                    guard (result["running"] as? Bool) != true else {
+                        completion("This session is busy. Reply when its current turn finishes."); return
+                    }
+                    destination = target
+                } else {
+                    var createParams = params
+                    createParams["source"] = "herm"
+                    let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: createParams)
+                    guard let id = result["session_id"] as? String, !id.isEmpty else {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    runtimeID = id
+                    destination = HermesSession(id: Self.stableSessionID(from: result) ?? id,
+                        profileID: profile, title: result["title"] as? String ?? "", preview: clean,
+                        startedAt: .now, messageCount: 0, source: "herm")
+                    // Retain the created identity even if prompt submission fails.
+                    onCreated(destination)
+                }
+                params["session_id"] = runtimeID
+                params["text"] = clean
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: params)
+                if !sessions.contains(where: { $0.scopedID == destination.scopedID }) { sessions.insert(destination, at: 0) }
+                updateSessionActivity(sessionID: destination.id, isWorking: true)
+                touchSession(sessionID: destination.id, at: .now, preview: clean)
+                completion(nil)
+                loadSessions()
+            } catch {
+                completion(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+        }
+    }
+
+    /// Sends the composer draft, or a queued prompt without touching the draft.
+    /// The optional callback reports RPC submission, not completion of the turn.
+    func send(_ queued: QueuedPrompt? = nil, onSubmission: ((String?) -> Void)? = nil) {
         let prompt = (queued?.text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImages = queued?.images ?? pendingImages
         let attachedPDF = queued == nil ? pendingPDFURL : queued?.pdfURL
@@ -570,6 +665,10 @@ final class DockModel: ObservableObject {
         DebugLog.write("model: send started (\(prompt.count) characters, images: \(attachedImages.count))")
 
         Task {
+            var submissionReported = false
+            defer {
+                if !submissionReported { onSubmission?("The selected conversation changed. Check Activity before retrying.") }
+            }
             do {
                 try await sessionRPCClient.connect()
                 guard self.sessionResumeGeneration == sendGeneration,
@@ -634,6 +733,8 @@ final class DockModel: ObservableObject {
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": text]))
+                submissionReported = true
+                onSubmission?(nil)
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
                 pendingImages.removeAll { attachedImage in
@@ -671,6 +772,8 @@ final class DockModel: ObservableObject {
                 }
                 status = transportFailure ? .offline : .idle
                 isSending = false
+                submissionReported = true
+                onSubmission?(message)
             }
         }
     }
@@ -1524,13 +1627,14 @@ final class DockModel: ObservableObject {
         }
         streamingText.clearPresentation()
         newSessionCreationAuthorized = false
-        clarificationQuestion = nil
-        clarificationChoices = []
-        clarificationRequestID = nil
+        showClarification(nil)
         presentedClarificationRequestIDs = []
+        valuePrompt = nil
+        valuePromptError = nil
         clarificationResponseError = nil
         approvalTitle = nil
         approvalText = nil
+        approvalDetails = nil
         isRespondingToApproval = false
         isRespondingToClarification = false
         sessionModelOptionID = nil
@@ -1642,6 +1746,12 @@ final class DockModel: ObservableObject {
                 loadTranscriptTimeline(generation: resumeGeneration)
             }
             restorePendingClarification(for: [session.id, resolvedSessionID, sessionStorageID])
+            // Questions still waiting on this session (Herm was detached when Hermes asked).
+            for request in result["open_requests"] as? [[String: Any]] ?? [] {
+                if let event = HermesGateway.event(forServerRequest: request) {
+                    receiveGatewayEvent(event.type, params: event.params)
+                }
+            }
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
             projectBotMessagesIntoActivity()
             scrollToLatestMessageRequest &+= 1
@@ -2149,13 +2259,14 @@ final class DockModel: ObservableObject {
         sessionStorageID = nil
         newSessionCreationAuthorized = true
         newSessionProjectPath = projectPath
-        clarificationQuestion = nil
-        clarificationChoices = []
-        clarificationRequestID = nil
+        showClarification(nil)
         presentedClarificationRequestIDs = []
+        valuePrompt = nil
+        valuePromptError = nil
         clarificationResponseError = nil
         approvalTitle = nil
         approvalText = nil
+        approvalDetails = nil
         isRespondingToApproval = false
         isRespondingToClarification = false
         defaults.removeObject(forKey: lastSessionIDKey(for: sessionProfileID ?? profileScopeID))
@@ -2296,6 +2407,7 @@ final class DockModel: ObservableObject {
         capturePendingClarification(type: type, params: params)
         let eventPayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (eventPayload["session_id"] as? String)
+        if type == "approval.expire", let eventSessionID { resolveApproval(for: eventSessionID) }
         if type == "message.start" || type == "message.complete" || type == "sessions.changed" {
             touchSession(sessionID: eventSessionID, at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
         }
@@ -2509,7 +2621,8 @@ final class DockModel: ObservableObject {
         let approval = ApprovalPresentation.from(payload: payload)
         let pendingApproval = PendingApproval(
             title: approval.title,
-            detail: approval.detail
+            detail: approval.detail,
+            presentation: approval
         )
         let aliases = pendingApprovalAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
         for alias in aliases {
@@ -2524,6 +2637,7 @@ final class DockModel: ObservableObject {
         guard let approval = identities.compactMap({ pendingApprovalsBySessionID[$0] }).first else {
             approvalTitle = nil
             approvalText = nil
+            approvalDetails = nil
             return
         }
         // A resume may reveal runtime and durable aliases for the same
@@ -2539,6 +2653,7 @@ final class DockModel: ObservableObject {
         }
         approvalTitle = approval.title
         approvalText = approval.detail
+        approvalDetails = approval.presentation
         status = .needsApproval
     }
 
@@ -2583,9 +2698,7 @@ final class DockModel: ObservableObject {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         guard let clarification = identities.compactMap({ pendingClarificationsBySessionID[$0] }).first else {
-            clarificationQuestion = nil
-            clarificationChoices = []
-            clarificationRequestID = nil
+            showClarification(nil)
             clarificationResponseError = nil
             return
         }
@@ -2597,9 +2710,7 @@ final class DockModel: ObservableObject {
             pendingClarificationsBySessionID[identity] = clarification
             pendingClarificationAliasesBySessionID[identity] = aliases
         }
-        clarificationQuestion = clarification.question
-        clarificationChoices = clarification.choices
-        clarificationRequestID = clarification.requestID
+        showClarification(clarification)
         clarificationResponseError = nil
         if messages.last?.role != .hermes || messages.last?.text != clarification.transcriptText {
             messages.append(ChatMessage(role: .hermes, text: clarification.transcriptText, modelName: currentModelName))
@@ -2627,11 +2738,30 @@ final class DockModel: ObservableObject {
             ?? "Hermes needs more information."
         let choices = nestedClarificationStrings(keys: ["choices", "options", "suggested_responses"], in: params)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let payload = params["payload"] as? [String: Any] ?? params
         return PendingClarification(
             question: question,
             choices: choices,
-            requestID: nestedClarificationString(keys: ["request_id"], in: params)
+            requestID: nestedClarificationString(keys: ["request_id"], in: params),
+            multiSelect: payload["multi_select"] as? Bool == true && !choices.isEmpty,
+            batch: ClarifyQuestion.batch(from: payload),
+            lockedAnswers: payload["answers"] as? [String: String] ?? [:]
         )
+    }
+
+    private func showClarification(_ clarification: PendingClarification?) {
+        activeClarification = clarification
+        let current = clarification?.current
+        clarificationQuestion = current?.question ?? clarification?.question
+        clarificationChoices = current?.choices ?? clarification?.choices ?? []
+        clarificationMultiSelect = current?.multiSelect ?? clarification?.multiSelect ?? false
+        clarificationRequestID = clarification?.requestID
+        if let clarification, let current, clarification.batch.count > 1,
+           let index = clarification.batch.firstIndex(of: current) {
+            clarificationProgress = "Question \(index + 1) of \(clarification.batch.count)"
+        } else {
+            clarificationProgress = nil
+        }
     }
 
     private func markClarificationResolved(_ requestID: String) {
@@ -2911,6 +3041,7 @@ final class DockModel: ObservableObject {
                 }
                 guard voiceConversationGeneration == generation else { return }
                 voiceRepliesEnabled = true
+                isVoiceMicMuted = false
                 skipNextVoicePlaybackDrain = false
                 voiceTelemetry.beginListening()
                 voiceState = .listening
@@ -2992,6 +3123,7 @@ final class DockModel: ObservableObject {
         voiceConversationGeneration &+= 1
         let wasNative = voiceState.isNativeConversationActive
         skipNextVoicePlaybackDrain = false
+        isVoiceMicMuted = false
         nativeVoiceCapture.reset()
         voiceState = .inactive
         guard wasNative else { return }
@@ -3031,9 +3163,29 @@ final class DockModel: ObservableObject {
     /// Re-opens the microphone after a no-speech pause (or a cut-off reply).
     func resumeVoiceListening(force: Bool = false) {
         guard voiceState == .paused || force, voiceState.isNativeConversationActive else { return }
+        isVoiceMicMuted = false
         nativeVoiceCapture.reset()
         voiceState = .listening
         armNativeVoiceCapture()
+    }
+
+    /// Muting mid-utterance discards it: the forced stop's transcript lands
+    /// while paused and is dropped. Every re-arm path checks the flag.
+    func toggleVoiceMicMuted() {
+        guard voiceState.isNativeConversationActive else { return }
+        guard !isVoiceMicMuted else {
+            // Mid-turn, the playback drain re-arms once the reply ends.
+            isVoiceMicMuted = false
+            resumeVoiceListening()
+            return
+        }
+        isVoiceMicMuted = true
+        guard voiceState == .listening, let sessionID else { return }
+        nativeVoiceCapture.reset()
+        voiceState = .paused
+        Task {
+            _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+        }
     }
 
     func toggleVoiceReplies() {
@@ -3060,7 +3212,9 @@ final class DockModel: ObservableObject {
                 }
             }
             do {
-                _ = try await gateway.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: ["session_id": sessionID, "choice": choice])
+                var params: [String: Any] = ["session_id": sessionID, "choice": choice]
+                if let requestID = approvalDetails?.requestID { params["request_id"] = requestID }
+                _ = try await gateway.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
                 guard self.sessionResumeGeneration == responseGeneration,
                       self.sessionID == sessionID else { return }
                 resolveApproval(for: sessionID)
@@ -3070,7 +3224,7 @@ final class DockModel: ObservableObject {
         }
     }
 
-    func respondToClarification(_ response: String) {
+    func respondToClarification(_ response: String, displayText: String? = nil) {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRespondingToClarification else { return }
         guard let responseSessionID = sessionID, !responseSessionID.isEmpty else { return }
@@ -3079,8 +3233,46 @@ final class DockModel: ObservableObject {
             clarificationResponseError = "Hermes did not provide an ID for this question. Please ask it again."
             return
         }
+        let batchQuestion = activeClarification?.requestID == requestID ? activeClarification?.current : nil
         draft = ""
-        messages.append(ChatMessage(role: .user, text: trimmed))
+        messages.append(ChatMessage(role: .user, text: displayText ?? trimmed))
+        if let batchQuestion, var batch = activeClarification, batch.remainingCount > 1 {
+            // Earlier batch answers are locked one by one; the last lock resumes the turn.
+            isRespondingToClarification = true
+            clarificationResponseError = nil
+            Task {
+                defer {
+                    if self.sessionResumeGeneration == responseGeneration,
+                       self.sessionID == responseSessionID {
+                        self.isRespondingToClarification = false
+                    }
+                }
+                do {
+                    let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyLock.rawValue, params: [
+                        "request_id": requestID, "question_id": batchQuestion.id, "answer": trimmed
+                    ])
+                    if result["status"] as? String == "expired" {
+                        throw NSError(domain: "Hermes", code: 410, userInfo: [NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."])
+                    }
+                    batch.lockedAnswers[batchQuestion.id] = trimmed
+                    for alias in pendingClarificationAliasesBySessionID[responseSessionID] ?? [responseSessionID]
+                    where pendingClarificationsBySessionID[alias]?.requestID == requestID {
+                        pendingClarificationsBySessionID[alias] = batch
+                    }
+                    guard self.sessionResumeGeneration == responseGeneration,
+                          self.sessionID == responseSessionID else { return }
+                    showClarification(batch)
+                    messages.append(ChatMessage(role: .hermes, text: batch.transcriptText, modelName: currentModelName))
+                } catch {
+                    guard self.sessionResumeGeneration == responseGeneration,
+                          self.sessionID == responseSessionID else { return }
+                    let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
+                    clarificationResponseError = diagnostic
+                    DebugLog.write("model: clarification lock failed: \(diagnostic)")
+                }
+            }
+            return
+        }
         beginStreamingMessage()
         isAwaitingClarificationResume = true
         isRespondingToClarification = true
@@ -3096,17 +3288,26 @@ final class DockModel: ObservableObject {
                 }
             }
             do {
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
-                    "request_id": requestID,
-                    "answer": trimmed
-                ])
+                let answer: [String: Any]
+                if let batchQuestion {
+                    // The last batch lock resolves the whole request with every answer.
+                    answer = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyLock.rawValue, params: [
+                        "request_id": requestID, "question_id": batchQuestion.id, "answer": trimmed
+                    ])
+                } else {
+                    answer = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
+                        "id": requestID,
+                        "result": ["answer": trimmed]
+                    ])
+                }
+                if answer["status"] as? String == "expired" {
+                    throw NSError(domain: "Hermes", code: 410, userInfo: [NSLocalizedDescriptionKey: "This question expired before Hermes received an answer."])
+                }
                 markClarificationResolved(requestID)
                 _ = removePendingClarification(for: responseSessionID, requestID: requestID)
                 guard self.sessionResumeGeneration == responseGeneration,
                       self.sessionID == responseSessionID else { return }
-                clarificationQuestion = nil
-                clarificationChoices = []
-                clarificationRequestID = nil
+                showClarification(nil)
                 setInFlightBotActivityWorking(for: responseSessionID)
             } catch {
                 guard self.sessionResumeGeneration == responseGeneration,
@@ -3118,6 +3319,30 @@ final class DockModel: ObservableObject {
                 let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
                 clarificationResponseError = diagnostic
                 DebugLog.write("model: clarification response failed: \(diagnostic)")
+            }
+        }
+    }
+
+    /// Answers the open sudo / secret / vault prompt; an empty value skips it.
+    /// The value is never logged or kept after the request is sent.
+    func respondToValuePrompt(_ value: String) {
+        guard let prompt = valuePrompt, !isRespondingToValuePrompt else { return }
+        isRespondingToValuePrompt = true
+        valuePromptError = nil
+        Task {
+            defer { self.isRespondingToValuePrompt = false }
+            do {
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: [
+                    "id": prompt.requestID, "result": ["value": value]
+                ])
+                if valuePrompt?.requestID == prompt.requestID { valuePrompt = nil }
+                if result["status"] as? String == "expired" {
+                    DebugLog.write("model: value prompt expired before the answer arrived")
+                }
+            } catch {
+                let diagnostic = Self.safeUserDiagnostic(error.localizedDescription)
+                valuePromptError = diagnostic
+                DebugLog.write("model: value prompt response failed: \(diagnostic)")
             }
         }
     }
@@ -3138,6 +3363,7 @@ final class DockModel: ObservableObject {
         }
         approvalTitle = nil
         approvalText = nil
+        approvalDetails = nil
         if status == .needsApproval {
             status = .working
             setInFlightBotActivityWorking(for: resolvedSessionID)
@@ -3233,7 +3459,7 @@ final class DockModel: ObservableObject {
             backgroundTasks[index].output = payload["text"] as? String
             backgroundTasks[index].completedAt = .now
         case "voice.transcript":
-            guard voiceState.isNativeConversationActive else { return }
+            guard voiceState.isNativeConversationActive, !isVoiceMicMuted else { return }
             let transcript = (payload["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             nativeVoiceCapture.receivedTranscript(hasText: !transcript.isEmpty)
             if (payload["stop_phrase"] as? Bool) == true {
@@ -3350,9 +3576,8 @@ final class DockModel: ObservableObject {
                 }
                 approvalTitle = nil
                 approvalText = nil
-                clarificationQuestion = nil
-                clarificationChoices = []
-                clarificationRequestID = nil
+                approvalDetails = nil
+                showClarification(nil)
                 clarificationResponseError = nil
                 steeringError = nil
             }
@@ -3410,6 +3635,7 @@ final class DockModel: ObservableObject {
             let isPresentingApproval = approvalText == nil
             approvalTitle = approval.title
             approvalText = approval.detail
+            approvalDetails = approval
             status = .needsApproval
             if isPresentingApproval {
                 playApprovalSound()
@@ -3422,7 +3648,6 @@ final class DockModel: ObservableObject {
             // is not replaced by the generic fallback text.
             let clarification = Self.pendingClarification(from: params)
             let question = clarification.question
-            let choices = clarification.choices
             let requestID = clarification.requestID
             if let requestID, resolvedClarificationRequestIDs.contains(requestID) {
                 break
@@ -3437,21 +3662,24 @@ final class DockModel: ObservableObject {
             if messages.last?.role != .hermes || messages.last?.text != messageText {
                 messages.append(ChatMessage(role: .hermes, text: messageText, modelName: currentModelName))
             }
-            clarificationQuestion = question
-            clarificationChoices = choices
-            clarificationRequestID = requestID
+            showClarification(clarification)
             clarificationResponseError = nil
             setInFlightBotActivityWaiting(for: eventSessionID, requestID: requestID)
             isSending = false
             status = .needsClarification
             conversationActivityPhase = .idle
             notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")")
+        case "prompt.request":
+            guard let prompt = ValuePrompt.from(payload: payload) else { break }
+            valuePrompt = prompt
+            valuePromptError = nil
+            notify(title: prompt.title, body: "Hermes is waiting for your input.", identifier: "prompt:\(sessionID ?? "hermes")")
+        case "prompt.expire":
+            if payload["request_id"] as? String == valuePrompt?.requestID { valuePrompt = nil }
         case "clarify.expire", "clarification.expire":
             let expiredRequestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
             guard expiredRequestID == nil || expiredRequestID == clarificationRequestID else { return }
-            clarificationQuestion = nil
-            clarificationChoices = []
-            clarificationRequestID = nil
+            showClarification(nil)
             clarificationResponseError = "This question expired before Hermes received an answer."
             if let expiredRequestID {
                 updateInFlightBotActivity(
@@ -4099,6 +4327,10 @@ final class DockModel: ObservableObject {
         if let expectedGeneration, !nativeVoiceCapture.isCurrent(generation: expectedGeneration) {
             return
         }
+        if isVoiceMicMuted, voiceState.isNativeConversationActive {
+            voiceState = .paused
+            return
+        }
         guard voiceState.isNativeConversationActive,
               !isSending,
               let sessionID,
@@ -4150,9 +4382,16 @@ final class DockModel: ObservableObject {
     private func awaitNativeVoicePlaybackDrain(generation: Int, responseText: String) {
         let delay = NativeVoicePlaybackDrain.estimatedDuration(for: responseText)
         let formattedDelay = String(format: "%.1f", delay)
-        DebugLog.write("voice: holding microphone for \(formattedDelay)s while TTS drains")
+        DebugLog.write("voice: holding microphone up to \(formattedDelay)s while TTS drains")
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+            var gate = NativeVoicePlaybackGate(startedAt: ProcessInfo.processInfo.systemUptime, cap: delay)
+            repeat {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard let self, self.nativeVoiceCapture.isCurrent(generation: generation) else { return }
+            } while !gate.isDrained(
+                outputRunning: NativeVoicePlaybackGate.isOutputRunning() ?? true,
+                at: ProcessInfo.processInfo.systemUptime
+            )
             guard let self,
                   self.voiceState.isNativeConversationActive,
                   self.nativeVoiceCapture.playbackDrainCompleted(generation: generation) else { return }

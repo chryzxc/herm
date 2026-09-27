@@ -68,6 +68,21 @@ struct AutomationWorkspaceRowPresentation: Equatable {
     }
 }
 
+enum AutomationWorkspaceRunHistoryPresentation {
+    static func emptyMessage(
+        scope: AutomationWorkspaceHistoryScope,
+        historyAvailable: Bool,
+        hasAnyRuns: Bool,
+        hasScopedRuns: Bool,
+        isStale: Bool
+    ) -> String? {
+        guard !hasScopedRuns else { return nil }
+        if isStale && !hasAnyRuns { return "Run history is unavailable while Hermes reconnects." }
+        if !historyAvailable && !hasAnyRuns { return "Run history is unavailable through this Hermes CLI." }
+        return scope == .selected ? "No runs recorded for this schedule." : "No automation runs recorded."
+    }
+}
+
 struct AutomationWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
 
@@ -234,7 +249,7 @@ struct AutomationWorkspaceView: View {
             .buttonStyle(.dockPrimary)
             .disabled(!control.capabilityAvailable("rpc-scheduling"))
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, 16)
         .padding(.vertical, 14)
     }
 
@@ -343,18 +358,19 @@ struct AutomationWorkspaceView: View {
                     .disabled(pendingRun)
                     .help("Run now")
                 }
-                Menu { menuActions(for: job) } label: {
-                    Ph.dotsThree.image(size: 14)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                if hasMenuActions(for: job) {
+                    Menu { menuActions(for: job) } label: {
+                        Ph.dotsThree.image(size: 14, color: .secondaryLabelColor)
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .help("More actions")
+                    .accessibilityLabel("More actions for \(job.name)")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .fixedSize()
-                .help("More actions")
-                .accessibilityLabel("More actions for \(job.name)")
             }
             .frame(width: Self.actionsWidth, alignment: .trailing)
         }
@@ -424,6 +440,12 @@ struct AutomationWorkspaceView: View {
                 isShowingRemoveConfirmation = true
             }
         }
+    }
+
+    private func hasMenuActions(for job: CronSummary) -> Bool {
+        control.capabilityAvailable("cron.runNow")
+            || (control.capabilityAvailable("cron.edit") && !job.editableFields.isEmpty)
+            || control.capabilityAvailable("rpc-scheduling")
     }
 
     private func automationInspector(job: CronSummary, onClose: (() -> Void)? = nil) -> some View {
@@ -498,17 +520,19 @@ struct AutomationWorkspaceView: View {
                         .foregroundStyle(Color.dockAccent)
                 }
                 Spacer(minLength: 0)
-                Menu { menuActions(for: job) } label: {
-                    Ph.dotsThree.image(size: 14)
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
+                if hasMenuActions(for: job) {
+                    Menu { menuActions(for: job) } label: {
+                        Ph.dotsThree.image(size: 14, color: .secondaryLabelColor)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .help("More actions")
+                    .accessibilityLabel("More actions for \(job.name)")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .fixedSize()
-                .help("More actions")
             }
         }
         .padding(18)
@@ -540,7 +564,7 @@ struct AutomationWorkspaceView: View {
                     tint: overdue ? Color.dockWarning : Color.dockPrimaryText
                 )
                 statTile(
-                    "Last run",
+                    latest == nil && job.lastStatus != nil ? "Last reported run" : "Last run",
                     value: result.result.title,
                     detail: result.detail.map(HumanDateFormatting.dateAndTime),
                     tint: result.result == .failed ? Color.dockDestructive : (result.result == .succeeded ? Color.dockSuccess : Color.dockPrimaryText)
@@ -669,17 +693,23 @@ struct AutomationWorkspaceView: View {
         let runs = historyScope == .selected
             ? control.cronRuns.filter { $0.jobID == job.id }
             : control.cronRuns
+        let historyIsStale = control.refreshState(for: "cron.history")?.isStale == true
+        let emptyMessage = AutomationWorkspaceRunHistoryPresentation.emptyMessage(
+            scope: historyScope,
+            historyAvailable: control.cronHistoryAvailable,
+            hasAnyRuns: !control.cronRuns.isEmpty,
+            hasScopedRuns: !runs.isEmpty,
+            isStale: historyIsStale
+        )
         return VStack(alignment: .leading, spacing: 12) {
             DockTabBar(options: AutomationWorkspaceHistoryScope.allCases, selection: $historyScope, title: \.title)
-            if let state = control.refreshState(for: "cron.history"), state.isStale {
+            if historyIsStale, !control.cronRuns.isEmpty {
                 Text("History is stale while Hermes reconnects.")
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockWarning)
             }
-            if !control.cronHistoryAvailable && control.cronRuns.isEmpty {
-                inspectorEmpty("Run history is unavailable through this Hermes CLI.")
-            } else if runs.isEmpty {
-                inspectorEmpty(historyScope == .selected ? "No runs recorded for this schedule." : "No automation runs recorded.")
+            if let emptyMessage {
+                inspectorEmpty(emptyMessage)
             } else {
                 ForEach(runs) { run in
                     runRow(run)

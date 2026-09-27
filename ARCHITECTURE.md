@@ -6,7 +6,7 @@ updated: 2026-09-15 · head: ba3719e
 
 - `HermApp` (`App/`) — @main SwiftUI Settings shell; all real UI lives in the menu-bar panel.
 - `HermDelegate` (`App/`) — NSApplicationDelegate: owns `DockModel`, builds `DockPanelController`, installs the double-tap-Command shortcut, requests notifications.
-- `DockPanelController` — menu-bar status item + popover; debug `--show-panel` launch flag.
+- `DockPanelController` — menu-bar status item + popover; debug `--show-panel` launch flag peeks the notch.
 
 ## Modules
 

@@ -858,31 +858,14 @@ struct ArtifactsInspectorView: View {
         }
     }
 
-    private func artifactURL(_ value: String) -> URL? {
-        if value.hasPrefix("http://") || value.hasPrefix("https://") { return URL(string: value) }
-        if value.hasPrefix("data:image/") { return URL(string: value) }
-        return URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
-    }
+    private func artifactURL(_ value: String) -> URL? { ArtifactOpener.url(value) }
 
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
     }
 
-    private func open(_ value: String) {
-        guard let url = artifactURL(value) else { return }
-        // Artifact paths come from agent output; opening an app bundle or an
-        // executable would run it. Reveal those in Finder instead.
-        var isDirectory: ObjCBool = false
-        if url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
-           isDirectory.boolValue
-            ? NSWorkspace.shared.isFilePackage(atPath: url.path)
-            : FileManager.default.isExecutableFile(atPath: url.path) {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-            return
-        }
-        NSWorkspace.shared.open(url)
-    }
+    private func open(_ value: String) { ArtifactOpener.open(value) }
 
     private func isLocalFile(_ record: ArtifactRecord) -> Bool {
         ArtifactActionPresentation.make(
@@ -891,10 +874,7 @@ struct ArtifactsInspectorView: View {
         ).canRevealInFinder && artifactURL(record.value)?.isFileURL == true
     }
 
-    private func reveal(_ value: String) {
-        guard let url = artifactURL(value), url.isFileURL else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
+    private func reveal(_ value: String) { ArtifactOpener.reveal(value) }
 
     private func resetPages() {
         imagePage = 1

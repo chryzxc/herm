@@ -92,14 +92,21 @@ struct DockStatusDot: View {
     let tone: DockStatusTone
     var size: CGFloat = 7
     var pulses = false
+    /// Theme ink without the glow, for chrome that should read as plain UI.
+    var muted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dimmed = false
 
+    private var fill: Color {
+        guard muted else { return tone.color }
+        return tone == .attention ? .dockWarning : .dockSecondaryText
+    }
+
     var body: some View {
         Circle()
-            .fill(tone.color)
+            .fill(fill)
             .frame(width: size, height: size)
-            .shadow(color: tone.color.opacity(0.6), radius: 3)
+            .shadow(color: muted ? .clear : tone.color.opacity(0.6), radius: 3)
             .opacity(dimmed ? 0.3 : 1)
             .onAppear(perform: updatePulse)
             .onChange(of: tone) { updatePulse() }
@@ -166,6 +173,8 @@ struct DockSectionLabel: View {
 /// never implies a measured percentage and holds still under Reduce Motion.
 struct DockShimmerTrack: View {
     let tone: DockStatusTone
+    /// A plain theme-ink segment instead of the glowing tone gradient.
+    var muted = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sweeping = false
 
@@ -174,9 +183,15 @@ struct DockShimmerTrack: View {
             let width = geometry.size.width
             Capsule().fill(Color.dockPrimaryText.opacity(0.08))
                 .overlay(alignment: .leading) {
-                    LinearGradient(colors: [tone.color.opacity(0), tone.color, tone.color.opacity(0)],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: min(80, width * 0.4))
+                    Group {
+                        if muted {
+                            Capsule().fill(Color.dockSecondaryText.opacity(0.55))
+                        } else {
+                            LinearGradient(colors: [tone.color.opacity(0), tone.color, tone.color.opacity(0)],
+                                           startPoint: .leading, endPoint: .trailing)
+                        }
+                    }
+                    .frame(width: min(80, width * 0.4))
                         .offset(x: reduceMotion ? width * 0.3 : sweeping ? width : -80)
                 }
                 .clipShape(Capsule())

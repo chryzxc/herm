@@ -157,9 +157,10 @@ enum ConversationMessageWindow {
         guard newCount > oldCount else { return bounds }
         guard isAtBottom, bounds.upperBound == oldCount else { return bounds }
         guard !bounds.isEmpty else { return tailRange(totalCount: newCount) }
-        // Preserve the lower bound at 0 if viewing from the start of the conversation.
-        // Only slide the window forward if viewing history from the middle/end.
-        let start = bounds.lowerBound == 0 ? 0 : max(0, newCount - bounds.count)
+        // A short transcript grows its window up to the initial limit, then
+        // slides. Pinning the start at 0 here would mount every message of a
+        // conversation that began short, however long it becomes.
+        let start = max(0, newCount - max(bounds.count, initialLimit))
         return start..<newCount
     }
 

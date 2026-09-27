@@ -275,7 +275,9 @@ final class IssueCenterModel: ObservableObject {
         defer {
             if loadingDetailID == issue.id { loadingDetailID = nil }
         }
-        if let detail = await api.detail(issue) {
+        let detail = await api.detail(issue)
+        guard !Task.isCancelled, selectedIssueID == issue.id else { return }
+        if let detail {
             detailByID[issue.id] = detail
         } else {
             detailErrorMessage = "Could not refresh full issue details. Showing the latest available summary."
@@ -381,8 +383,14 @@ struct IssueDetailView: View {
     var body: some View {
         Group {
             if let issue = center.selected {
-                issueContent(issue)
-                    .task(id: issue.id) { await center.loadSelectedDetail() }
+                Group {
+                    if shouldShowLoadingState(for: issue) {
+                        detailLoadingPane
+                    } else {
+                        issueContent(issue)
+                    }
+                }
+                .task(id: issue.id) { await center.loadSelectedDetail() }
             } else {
                 VStack(spacing: 10) {
                     DockIcon(.fileText, size: 28, color: Color.dockMetadataText)
@@ -394,6 +402,65 @@ struct IssueDetailView: View {
             }
         }
         .background(Color.dockCanvas)
+    }
+
+    private func shouldShowLoadingState(for issue: GitHubIssueRecord) -> Bool {
+        center.detailByID[issue.id] == nil && center.detailErrorMessage == nil
+    }
+
+    private var detailLoadingPane: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                RepositoryShimmerBlock(width: 188, height: 11, cornerRadius: 4)
+                Spacer(minLength: 12)
+                RepositoryShimmerBlock(width: 76, height: 26, cornerRadius: 7)
+                RepositoryShimmerBlock(width: 104, height: 28, cornerRadius: 7)
+            }
+            .padding(.horizontal, 24)
+            .frame(height: 52)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading issue")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    .padding(.top, 28)
+
+                    RepositoryShimmerBlock(width: nil, height: 26, cornerRadius: 7)
+                        .padding(.top, 14)
+                    RepositoryShimmerBlock(width: 420, height: 26, cornerRadius: 7)
+                        .padding(.top, 8)
+
+                    HStack(spacing: 10) {
+                        RepositoryShimmerBlock(width: 64, height: 22, cornerRadius: 11)
+                        RepositoryShimmerBlock(width: 248, height: 11, cornerRadius: 4)
+                    }
+                    .padding(.top, 16)
+                    .padding(.bottom, 22)
+
+                    RepositoryShimmerBlock(width: nil, height: 1, cornerRadius: 0)
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        RepositoryShimmerBlock(width: nil, height: 11, cornerRadius: 4)
+                        RepositoryShimmerBlock(width: nil, height: 11, cornerRadius: 4)
+                        RepositoryShimmerBlock(width: 520, height: 11, cornerRadius: 4)
+                        RepositoryShimmerBlock(width: 370, height: 11, cornerRadius: 4)
+                    }
+                    .padding(.top, 24)
+                    .padding(.bottom, 48)
+                }
+                .frame(maxWidth: 820, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 28)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading issue")
     }
 
     @ViewBuilder
@@ -416,20 +483,10 @@ struct IssueDetailView: View {
                     ProgressView().controlSize(.small)
                 }
                 if let url = displayedIssue.webURL {
-                    Link(destination: url) {
-                        HStack(spacing: 5) {
-                            DockIcon(.arrowSquareOut, size: 12, color: Color.dockSecondaryText)
-                            Text("GitHub")
-                        }
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .padding(.horizontal, 10)
-                        .frame(height: 26)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockControlSurface))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Open on GitHub")
-                    .accessibilityLabel("Open issue on GitHub")
+                    GitHubLinkButton(
+                        destination: url,
+                        accessibilityLabel: "Open issue on GitHub"
+                    )
                 }
                 Button { onOpenChat(displayedIssue) } label: {
                     HStack(spacing: 5) {

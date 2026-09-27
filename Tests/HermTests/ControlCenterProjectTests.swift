@@ -85,6 +85,26 @@ struct ControlCenterProjectTests {
         #expect(all.map(\.id) == ["run-a", "run-b", "run-unlinked"])
     }
 
+    @Test func unavailableAutomationHistoryDoesNotClaimThereWereNoRuns() {
+        let message = AutomationWorkspaceRunHistoryPresentation.emptyMessage(
+            scope: .selected,
+            historyAvailable: true,
+            hasAnyRuns: false,
+            hasScopedRuns: false,
+            isStale: true
+        )
+        #expect(message == "Run history is unavailable while Hermes reconnects.")
+
+        let knownEmpty = AutomationWorkspaceRunHistoryPresentation.emptyMessage(
+            scope: .selected,
+            historyAvailable: true,
+            hasAnyRuns: false,
+            hasScopedRuns: false,
+            isStale: false
+        )
+        #expect(knownEmpty == "No runs recorded for this schedule.")
+    }
+
     @Test func projectSessionActionPresentationKeepsPinDirectAndProtectsActiveDeletion() {
         let active = ProjectSessionActionPresentation(
             isPinned: true,

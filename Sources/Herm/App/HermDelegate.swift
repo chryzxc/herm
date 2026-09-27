@@ -116,13 +116,18 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Apply the saved theme's appearance before any Dock window draws.
         _ = DockThemeStore.shared
+        // AppKit's first tooltip waits ~1s; later ones are instant. Make the
+        // first match so icon-only buttons explain themselves on hover.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
         let edge = EdgeDockController(model: model, controlCenter: controlCenter, openQuota: { [weak self] in
             self?.dockPanel?.showQuota()
+        }, openKanban: { [weak self] task in
+            self?.dockPanel?.showKanban(task)
         }, openDock: { [weak self] in
             self?.dockPanel?.showFromNotification()
         })
         edgeDock = edge
-        dockPanel = DockPanelController(model: model, controlCenter: controlCenter, panel: edge.panel,
+        dockPanel = DockPanelController(model: model, controlCenter: controlCenter, notchPanel: edge.panel,
             placement: { [weak edge] in edge?.placement },
             onWillShow: { [weak edge] in edge?.prepareForWorkspace() },
             onHide: { [weak edge] in edge?.restoreNotch() })
@@ -149,9 +154,10 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         if CommandLine.arguments.contains("--show-panel") {
             // The production app starts quietly in the menu bar. The debug
             // launcher passes this explicit argument so a manual run provides
-            // immediate visible confirmation that the freshly built app is up.
+            // immediate visible confirmation that the freshly built app is up —
+            // a notch peek, not the full workspace.
             DispatchQueue.main.async { [weak self] in
-                self?.dockPanel?.showFromDebugLaunch()
+                self?.edgeDock?.toggleQuickPreview()
             }
         }
     }
@@ -268,7 +274,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private let preferences = CommandCenterPreferencesStore()
     private let statusItem: NSStatusItem
     private let unreadBadge = UnreadBadgeView(frame: .zero)
-    private let panel: DockPanel
+    private let panel = DockPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    private let notchPanel: NSWindow
     private let panelPresentation = DockPanelPresentation()
     private var cancellables = Set<AnyCancellable>()
     private var outsideClickMonitors: [Any] = []
@@ -286,11 +293,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     var statusItemDiagnostic: NSStatusBarButton? { statusItem.button }
     var statusItemIsVisible: Bool { statusItem.isVisible }
 
-    init(model: DockModel, controlCenter: ControlCenterModel, panel: DockPanel, placement: @escaping () -> EdgeDockPlacement?,
+    init(model: DockModel, controlCenter: ControlCenterModel, notchPanel: NSWindow, placement: @escaping () -> EdgeDockPlacement?,
          onWillShow: @escaping () -> Void, onHide: @escaping () -> Void) {
         self.model = model
         self.controlCenter = controlCenter
-        self.panel = panel
+        self.notchPanel = notchPanel
         self.placement = placement
         self.onWillShow = onWillShow
         self.onHide = onHide
@@ -526,18 +533,15 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         if !isWorkspaceVisible { show() }
     }
 
+    func showKanban(_ task: KanbanTaskSummary) {
+        controlCenter.revealKanbanTask(task)
+        showFromNotification()
+        panelPresentation.kanbanRequest &+= 1
+    }
+
     func showQuota() {
         showFromNotification()
         panelPresentation.quotaRequest &+= 1
-    }
-
-    func showFromDebugLaunch() {
-        // An accessory/menu-bar app may register its item in an overflow area
-        // or on a different display. A debug launch must still reveal a
-        // concrete surface on the active desktop.
-        show()
-        panel.orderFrontRegardless()
-        panel.makeKey()
     }
 
     private func show(fromShortcut: Bool = false) {
@@ -552,6 +556,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panel.onCancel = { [weak self] in self?.hide() }
         panelPresentation.isEdgeAttached = true
         panelPresentation.edgeSide = placement()?.side ?? .right
+        // The compact workspace grows out of the notch's spot.
+        if !panel.isVisible { panel.setFrame(notchPanel.frame, display: false) }
         installPanelContentIfNeeded()
         if isFullscreen {
             enterFullscreen()
@@ -581,6 +587,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         }
         isFullscreen = false
         isWorkspaceVisible = false
+        panel.orderOut(nil)
         model.markPopoverHidden()
         onHide()
     }

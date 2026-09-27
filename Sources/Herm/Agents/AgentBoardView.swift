@@ -118,7 +118,7 @@ struct AgentBoardView: View {
                 .blur(radius: 80)
                 .offset(x: -230, y: -220)
             Circle()
-                .fill(Color(red: 0.02, green: 0.16, blue: 0.38).opacity(embedded ? 0.06 : 0.18))
+                .fill(Color.dockAccent.opacity(embedded ? 0.04 : 0.10))
                 .frame(width: 300, height: 300)
                 .blur(radius: 80)
                 .offset(x: 250, y: 180)

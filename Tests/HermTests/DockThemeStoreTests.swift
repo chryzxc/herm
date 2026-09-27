@@ -60,9 +60,44 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.hermesClassic.hermesSkinID == "default")
         #expect(DockThemeID.warmLight.hermesSkinID == "warm-lightmode")
         #expect(DockThemeID.nativeMacOS.appearance == .system)
+        #expect(DockThemeID.nativeMacOS.usesNativeMaterial)
+        #expect(!DockThemeID.poseidon.usesNativeMaterial)
         #expect(DockThemeID.daylight.appearance == .light)
         #expect(DockThemeID.poseidon.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
+    }
+
+    @Test func nativePaletteUsesMacOSSemanticHuesAndTranslucentSurfaces() {
+        let palette = DockThemePalette(theme: .nativeMacOS)
+        var darkBackground: NSColor?
+        var darkAccent: NSColor?
+        NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
+            darkBackground = NSColor(palette.background).usingColorSpace(.sRGB)
+            darkAccent = NSColor(palette.accent).usingColorSpace(.sRGB)
+        }
+
+        #expect(darkBackground != nil)
+        #expect(abs((darkBackground?.alphaComponent ?? 0) - 0.16) < 0.01)
+        #expect((darkBackground?.brightnessComponent ?? 1) < 0.15)
+        #expect((darkAccent?.blueComponent ?? 0) > 0.9)
+    }
+
+    @Test func runtimeChangesBeforePublishedThemeValueIsObserved() {
+        let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
+        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let store = DockThemeStore(defaults: defaults, appliesToApplication: true)
+        var runtimeSeenBySubscriber: DockThemeID?
+        let observation = store.$selectedThemeID.dropFirst().sink { _ in
+            runtimeSeenBySubscriber = DockThemeRuntime.current
+        }
+
+        store.selectedThemeID = .warmLight
+
+        #expect(runtimeSeenBySubscriber == .warmLight)
+        _ = observation
     }
 
     @Test func appearanceCatalogJoinsMappedSkinsAndDeduplicatesUnknowns() {

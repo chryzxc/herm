@@ -9,6 +9,60 @@ enum EdgeQuotaLayout: String, CaseIterable {
     var symbol: Ph { self == .list ? .listBullets : .squaresFour }
 }
 
+/// Shared inset icon selector for the Tasks source and Quota layout.
+struct EdgePreviewModeToggle<Option: Hashable>: View {
+    let options: [Option]
+    let selection: Option
+    let title: (Option) -> String
+    /// Nil draws text segments; icons only suit options whose glyph says what they do.
+    let symbol: ((Option) -> Ph)?
+    let select: (Option) -> Void
+
+    var body: some View {
+        if symbol == nil {
+            // Secondary filter under the Tasks/Quota tabs: plain text so it never reads as a second tab bar.
+            HStack(spacing: 10) {
+                ForEach(options, id: \.self) { option in
+                    Button { select(option) } label: {
+                        Text(title(option))
+                            .font(.system(size: 11, weight: selection == option ? .semibold : .regular))
+                            .foregroundStyle(selection == option ? Color.dockPrimaryText : Color.dockMetadataText)
+                            .frame(height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(title(option))
+                    .accessibilityLabel(title(option))
+                    .accessibilityAddTraits(selection == option ? .isSelected : [])
+                }
+            }
+        } else {
+            segmented
+        }
+    }
+
+    private var segmented: some View {
+        HStack(spacing: 2) {
+            ForEach(options, id: \.self) { option in
+                Button { select(option) } label: {
+                    DockIcon(symbol?(option) ?? .circle, size: 13,
+                             color: selection == option ? .dockAccent : .dockSecondaryText)
+                        .frame(width: 26, height: 22)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(selection == option ? Color.dockAccentMuted : .clear))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(title(option))
+                .accessibilityLabel(title(option))
+                .accessibilityAddTraits(selection == option ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockSurface4))
+    }
+}
+
 /// Layout toggle and refresh control shown in the notch tab row while the
 /// Quota tab is selected, so the preview body can spend its height on providers.
 struct EdgeQuotaToolbar: View {
@@ -19,27 +73,8 @@ struct EdgeQuotaToolbar: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            HStack(spacing: 2) {
-                ForEach(EdgeQuotaLayout.allCases, id: \.self) { option in
-                    Button { layout = option } label: {
-                        DockIcon(option.symbol)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(layout == option ? Color.dockAccent : Color.dockSecondaryText)
-                            .frame(width: 26, height: 22)
-                            .background(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .fill(layout == option ? Color.dockAccentMuted : Color.clear)
-                            )
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help("\(option.title) layout")
-                    .accessibilityLabel("\(option.title) layout")
-                    .accessibilityAddTraits(layout == option ? .isSelected : [])
-                }
-            }
-            .padding(2)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockSurface4))
+            EdgePreviewModeToggle(options: EdgeQuotaLayout.allCases, selection: layout,
+                                  title: { "\($0.title) layout" }, symbol: { $0.symbol }) { layout = $0 }
 
             Button { control.refreshProviderQuota() } label: {
                 Group {

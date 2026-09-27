@@ -89,7 +89,8 @@ enum HermesFeatureIDs {
         case subagentInterrupt = "subagent.interrupt"
         case processKill = "process.kill"
         case approvalRespond = "approval.respond"
-        case clarifyRespond = "clarify.respond"
+        case clarifyRespond = "request.answer"
+        case clarifyLock = "clarify.lock"
         case delegationStatus = "delegation.status"
         case cronManage = "cron.manage"
         case reloadMCP = "reload.mcp"
@@ -130,7 +131,7 @@ enum HermesFeatureIDs {
         "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create", "session.close", "session.set_hidden", "session.events.since", "project.facts",
         "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "bot_relay.deliver", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
-        "approval.respond", "clarify.respond", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
+        "approval.respond", "request.answer", "clarify.lock", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "config.get",
         "config.set", "model.options", "shell.exec", "image.attach_bytes", "pdf.attach",
         "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore",

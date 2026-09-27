@@ -48,7 +48,7 @@ struct OfficePreviewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            DockPageHeader(icon: .buildingOffice, title: "Office", subtitle: subtitle,
+            DockPageHeader(title: "Office", subtitle: subtitle,
                            onRefresh: onRefresh, isRefreshing: isRefreshing)
 
             GeometryReader { geometry in

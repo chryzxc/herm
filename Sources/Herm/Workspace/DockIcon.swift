@@ -1,4 +1,5 @@
 import AppKit
+import os
 import SwiftUI
 
 /// The app's icon view. Phosphor (`PhosphorIcons.swift`) is the only icon
@@ -67,26 +68,53 @@ struct DockIconLabel: View {
 }
 
 extension Ph {
+    /// Parsed once per glyph: SwiftUI asks for shape paths on every draw and
+    /// hover hit test, which made scrolling re-parse SVG strings per frame.
     func cgPath(_ weight: DockIcon.Weight = .regular) -> CGPath {
-        PhosphorPathParser.parse(weight == .fill ? fillPath ?? regularPath : regularPath)
+        let key = PhosphorPathCacheKey(icon: self, weight: weight)
+        if let cached = phosphorPathCache.withLock({ $0[key] }) { return cached.cgPath }
+        let path = Path(PhosphorPathParser.parse(weight == .fill ? fillPath ?? regularPath : regularPath))
+        phosphorPathCache.withLock { $0[key] = path }
+        return path.cgPath
     }
 
-    /// Fixed-size template image for menus and `Label`s, where SwiftUI only
-    /// renders `Image` icons.
-    func image(size: CGFloat = 16, weight: DockIcon.Weight = .regular) -> Image {
+    /// Native macOS menus flatten SwiftUI `Image` values before applying the
+    /// surrounding foreground style. Draw with AppKit's appearance-aware menu
+    /// text color so icons and labels remain identical in both appearances.
+    func appKitMenuImage(
+        size: CGFloat = 16,
+        weight: DockIcon.Weight = .regular,
+        color: NSColor = .labelColor
+    ) -> NSImage {
         let path = cgPath(weight)
         let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.scaleBy(x: rect.width / 256, y: rect.height / 256)
             context.addPath(path)
-            context.setFillColor(NSColor.black.cgColor)
+            context.setFillColor(color.cgColor)
             context.fillPath()
             return true
         }
-        image.isTemplate = true
-        return Image(nsImage: image).renderingMode(.template)
+        image.isTemplate = false
+        return image
+    }
+
+    func image(
+        size: CGFloat = 16,
+        weight: DockIcon.Weight = .regular,
+        color: NSColor = .labelColor
+    ) -> Image {
+        Image(nsImage: appKitMenuImage(size: size, weight: weight, color: color))
+            .renderingMode(.original)
     }
 }
+
+private struct PhosphorPathCacheKey: Hashable {
+    let icon: Ph
+    let weight: DockIcon.Weight
+}
+
+private let phosphorPathCache = OSAllocatedUnfairLock<[PhosphorPathCacheKey: Path]>(initialState: [:])
 
 struct PhosphorShape: Shape {
     let icon: Ph
