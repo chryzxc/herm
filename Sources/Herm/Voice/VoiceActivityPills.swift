@@ -249,13 +249,13 @@ private struct VoicePillCard: View {
         .padding(.vertical, 10)
         .frame(maxWidth: maxWidth, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
                 .fill(Color.dockSurface6.opacity(0.92))
                 .stroke(tint.opacity(0.3), lineWidth: 0.6)
         )
         .shadow(color: tint.opacity(0.18), radius: 16)
         .fixedSize(horizontal: false, vertical: true)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -296,7 +296,7 @@ struct VoiceRecentTranscript: View {
         .frame(maxHeight: 220)
         .fixedSize(horizontal: false, vertical: true)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
                 .fill(Color.dockSurface6.opacity(0.95))
                 .stroke(Color.dockAccent.opacity(0.25), lineWidth: 0.6)
         )

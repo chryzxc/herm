@@ -57,7 +57,7 @@ struct RepositoryCodeWorkspaceView: View {
         .clipShape(RoundedRectangle(cornerRadius: isStandalonePane ? 0 : 14, style: .continuous))
         .overlay {
             if !isStandalonePane {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
                     .stroke(Color.dockBorderStrong, lineWidth: 0.5)
             }
         }
@@ -221,11 +221,11 @@ struct RepositoryCodeWorkspaceView: View {
         .padding(12)
         .frame(width: 260, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                 .fill(Color.dockCanvas)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                 .stroke(Color.dockBorderStrong, lineWidth: 0.5)
         )
     }

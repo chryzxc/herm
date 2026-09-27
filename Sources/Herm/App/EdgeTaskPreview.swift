@@ -215,7 +215,7 @@ struct EdgeTaskPreview: View {
         Button { isReplying ? closeReply() : reply(task) } label: {
             DockIcon(isReplying ? .x : .arrowBendUpLeft, size: 13, color: .dockSecondaryText)
                 .frame(width: 24, height: 24)
-                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockSurface4.opacity(isReplying ? 0.9 : 0.5)))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockSurface4.opacity(isReplying ? 0.9 : 0.5)))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.dockPress)

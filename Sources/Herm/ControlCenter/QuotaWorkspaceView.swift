@@ -461,11 +461,11 @@ struct QuotaWorkspaceView: View {
             .padding(.horizontal, 6)
             .frame(maxWidth: 280, minHeight: 22)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                     .fill(Color.dockControlSurface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                     .stroke(Color.dockAccent.opacity(0.7), lineWidth: 1)
             )
             .accessibilityLabel("Provider name")

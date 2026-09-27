@@ -245,8 +245,8 @@ struct SessionKanbanActivityView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 9)
                     .background(Color.dockSurface4.opacity(0.68))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
                 }
             }
         }
@@ -272,7 +272,7 @@ struct SessionKanbanActivityView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .background(Color.dockSurface4.opacity(0.68))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(onOpenTask == nil)
@@ -323,8 +323,8 @@ struct SessionKanbanActivityView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
             .background(Color.dockSurface4.opacity(0.68))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .disabled(onOpenTask == nil && onOpenBoard == nil)

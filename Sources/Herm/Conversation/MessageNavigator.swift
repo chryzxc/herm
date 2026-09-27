@@ -411,7 +411,7 @@ struct MessageNavigatorView: View {
                                     .padding(.vertical, 6)
                                     .background(
                                         item.target == hoveredResult ? Color.dockSurface4 : Color.clear,
-                                        in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                                     )
                                     .contentShape(Rectangle())
                                     .onHover { hoveredResult = $0 ? item.target : (hoveredResult == item.target ? nil : hoveredResult) }
@@ -425,8 +425,8 @@ struct MessageNavigatorView: View {
                 }
             }
         }
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
         .shadow(color: .black.opacity(0.22), radius: 14, y: 6)
         .onAppear { isSearchFocused = true }
     }
@@ -509,8 +509,8 @@ struct MessageNavigatorView: View {
                 .padding(.horizontal, 9)
                 .padding(.vertical, 7)
                 .frame(width: 160, alignment: .leading)
-                .background(Color.dockSurface4, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+                .background(Color.dockSurface4, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
                 .position(x: size.width - 100, y: min(max(previewY, 52), max(52, size.height - 40)))
                 .transition(.opacity)

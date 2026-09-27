@@ -192,7 +192,7 @@ struct PlanArtifactsInspectorView: View {
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(Color.dockAccent)
                 .frame(width: 36, height: 36)
-                .background(Color.dockAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.dockAccent.opacity(0.12), in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text(document.summary.title)
                     .font(.system(size: 19, weight: .semibold))
@@ -281,7 +281,7 @@ struct PlanArtifactsInspectorView: View {
                     .lineLimit(5)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.dockCanvas.opacity(0.65), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color.dockCanvas.opacity(0.65), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             }
             .padding(18)
 

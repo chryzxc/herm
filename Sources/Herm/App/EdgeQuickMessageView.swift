@@ -53,8 +53,8 @@ struct EdgeQuickMessageView: View {
             }
             .padding(.leading, 10)
             .padding(.trailing, 3)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockCanvas.opacity(0.6)))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockCanvas.opacity(0.6)))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(focused ? Color.dockAccent.opacity(0.5) : Color.dockBorderLight, lineWidth: 0.5))
             Text(state.quickResult ?? unavailableReason ?? "⌘↩ to send")
                 .font(.system(size: 11))

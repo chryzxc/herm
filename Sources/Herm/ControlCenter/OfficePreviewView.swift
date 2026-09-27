@@ -68,8 +68,8 @@ struct OfficePreviewView: View {
 
                     hud(in: geometry.size)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.dockBorder, lineWidth: 0.5))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4).stroke(Color.dockBorder, lineWidth: 0.5))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -332,8 +332,8 @@ private struct OfficeRosterPanel: View {
             }
             .padding(.horizontal, 8)
             .frame(height: 44)
-            .background(RoundedRectangle(cornerRadius: 8).fill(isSelected ? Color.dockAccentMuted : Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isSelected ? Color.dockAccent.opacity(0.5) : .clear, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isSelected ? Color.dockAccentMuted : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius).stroke(isSelected ? Color.dockAccent.opacity(0.5) : .clear, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -378,7 +378,7 @@ private struct OfficeToolbar: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isOn ? Color.dockAccent : Color.dockSecondaryText)
                 .frame(width: 32, height: 30)
-                .background(RoundedRectangle(cornerRadius: 8).fill(isOn ? Color.dockAccentMuted : .clear))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isOn ? Color.dockAccentMuted : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -640,7 +640,7 @@ private struct OfficeBoardInspector: View {
                             }
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 7).fill(Color.dockSurface2))
+                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface2))
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -650,8 +650,8 @@ private struct OfficeBoardInspector: View {
                 .padding([.horizontal, .bottom], 10)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.dockSurface.opacity(0.7)))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 
     static func status(for lane: OfficePreviewLane) -> OfficeAgentStatus {
@@ -686,8 +686,8 @@ private struct OfficeCard<Content: View>: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9).fill(Color.dockSurface.opacity(0.7)))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).fill(Color.dockSurface.opacity(0.7)))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 }
 

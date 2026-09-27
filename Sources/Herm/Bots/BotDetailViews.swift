@@ -158,7 +158,7 @@ struct BotProfileEditorSheet: View {
                         .frame(height: 140)
                         .scrollContentBackground(.hidden)
                         .background(Color.dockCanvas)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2))
                 }
             }
         }
@@ -321,7 +321,7 @@ private struct BotEditorLoadingState: View {
             }
             .padding(.bottom, 4)
             ForEach(0..<3, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                     .fill(Color.dockControlSurface)
                     .frame(height: 38)
                     .overlay(alignment: .leading) {

@@ -138,8 +138,8 @@ struct OfficeMusicControl: View {
         .buttonStyle(.borderless)
         .disabled(music.isBusy)
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.dockBorder, lineWidth: 0.5))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2).stroke(Color.dockBorder, lineWidth: 0.5))
         .fixedSize()
     }
 }

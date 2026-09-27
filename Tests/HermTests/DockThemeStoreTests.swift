@@ -65,6 +65,12 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.daylight.appearance == .light)
         #expect(DockThemeID.poseidon.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
+        #expect(DockThemeID.hermOnly == [.nativeMacOS, .cartoon, .terminal, .flat, .brutalist])
+        #expect(DockThemeID.terminal.appearance == .dark && DockThemeID.terminal.style.fontDesign == .monospaced)
+        #expect(DockThemeID.flat.appearance == .system && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
+        #expect(DockThemeID.cartoon.appearance == .light)
+        #expect(DockThemeID.cartoon.style.stickerShadow > 0 && DockThemeID.cartoon.style.fontDesign == .rounded)
+        #expect(DockThemeID.poseidon.style == DockThemeStyle())
     }
 
     @Test func nativePaletteUsesMacOSSemanticHuesAndTranslucentSurfaces() {

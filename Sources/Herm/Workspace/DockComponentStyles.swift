@@ -62,8 +62,9 @@ enum DockLayout {
     static let compactInset: CGFloat = 12
     static let controlHeight: CGFloat = 36
     static let iconControlSize: CGFloat = 28
-    static let controlRadius: CGFloat = 8
-    static let paneRadius: CGFloat = 10
+    static var controlRadius: CGFloat { DockThemeStyle.current.controlRadius }
+    static var paneRadius: CGFloat { DockThemeStyle.current.paneRadius }
+    static var outline: CGFloat { DockThemeStyle.current.outlineWidth }
 }
 
 extension Animation {
@@ -86,6 +87,16 @@ extension View {
     func dockThemedRoot() -> some View {
         foregroundStyle(Color.dockPrimaryText)
             .tint(Color.dockAccent)
+            .fontDesign(DockThemeStyle.current.fontDesign)
+    }
+
+    /// Cartoon-style hard shadow: an ink copy of `shape` offset behind the
+    /// view. Themes without a sticker shadow draw nothing.
+    func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false) -> some View {
+        let offset = DockThemeStyle.current.stickerShadow * (pressed ? 0.35 : 1)
+        return background {
+            if offset > 0 { shape.fill(Color.dockBorderStrong).offset(x: offset, y: offset) }
+        }
     }
 }
 
@@ -112,6 +123,9 @@ struct NativePopoverBackground: NSViewRepresentable {
 /// material under the shared palette; authored Herm themes keep their solid
 /// canvas so selecting a theme never changes its intended color treatment.
 struct DockWindowBackground: View {
+    // Observed so the canvas repaints on theme switch; it has no other inputs.
+    @ObservedObject private var themeStore = DockThemeStore.shared
+
     var body: some View {
         if DockThemeRuntime.current.usesNativeMaterial {
             NativePopoverBackground()
@@ -133,14 +147,14 @@ struct DockPressButtonStyle: ButtonStyle {
         configuration.label
             .padding(3)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                     .fill(isHovering ? Color.dockAccent.opacity(0.12) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(isHovering ? Color.dockAccent.opacity(0.28) : Color.clear, lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
+                    .stroke(isHovering ? Color.dockAccent.opacity(0.28) : Color.clear, lineWidth: DockLayout.outline)
             )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .opacity(configuration.isPressed ? 0.86 : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: isHovering)
@@ -162,11 +176,15 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Color.dockOnAccentText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
-            .background(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1))
-            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1))
+                    .stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline)
+            )
+            .dockStickerShadow(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), pressed: configuration.isPressed)
             .shadow(color: Color.dockAccent.opacity(configuration.isPressed || !isEnabled ? 0 : 0.14), radius: 6)
             .opacity(isEnabled ? 1 : 0.42)
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
     }
 }
@@ -189,11 +207,12 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .background(
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6))
-                    .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                    .stroke(Color.dockBorder, lineWidth: DockLayout.outline)
             )
+            .dockStickerShadow(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), pressed: configuration.isPressed)
             .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .opacity(isEnabled ? 1 : 0.42)
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
             .onHover { isHovering = $0 }
     }
@@ -216,7 +235,7 @@ struct DockToggleStyle: ToggleStyle {
                         .fill(configuration.isOn ? Color.dockAccent.opacity(0.24) : Color.dockSurface6)
                         .overlay {
                             Capsule()
-                                .stroke(configuration.isOn ? Color.dockAccent.opacity(0.72) : Color.dockBorderStrong, lineWidth: 0.7)
+                                .stroke(configuration.isOn ? Color.dockAccent.opacity(0.72) : Color.dockBorderStrong, lineWidth: max(0.7, DockLayout.outline))
                         }
                     Circle()
                         .fill(configuration.isOn ? Color.dockAccent : Color.dockSecondaryText)
@@ -249,7 +268,7 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
                     // The shared canvas keeps inputs consistent across panes;
                     // the plain field style removes the warm native field fill.
                     .fill(Color.dockControlSurface)
-                    .stroke(Color.dockBorder, lineWidth: 0.5)
+                    .stroke(Color.dockBorder, lineWidth: DockLayout.outline)
             )
     }
 }
@@ -373,7 +392,7 @@ struct DockCallout<Content: View>: View {
         HStack(alignment: .top, spacing: 10) {
             DockIcon(icon, size: 15, weight: .fill, color: tint)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(tint.opacity(0.14)))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(tint.opacity(0.14)))
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -494,7 +513,7 @@ extension View {
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                     .fill(isHighlighted ? Color.dockAccent.opacity(0.10) : Color.clear)
             )
             .overlay(alignment: .bottom) {
@@ -516,8 +535,9 @@ extension View {
             )
             .overlay {
                 RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .stroke(Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.hairline)
+                    .stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline)
             }
+            .dockStickerShadow(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
     }
 }
 
@@ -534,10 +554,11 @@ struct DockTabButton: View {
                 .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(isSelected ? Color.dockSurface4 : Color.clear))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(isSelected ? Color.dockSurface4 : Color.clear))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
         }
         .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

@@ -162,7 +162,7 @@ struct AgentHandoffMapView: View {
         // height so it cannot paint into the pipeline below it.
         return ScrollView(.horizontal, showsIndicators: true) {
             ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
                     .fill(Color.dockCanvas.opacity(0.86))
                     .overlay(alignment: .topLeading) { grid }
                 ambientLight
@@ -229,8 +229,8 @@ struct AgentHandoffMapView: View {
         .frame(minWidth: min(layout.contentSize.width, 480))
         .frame(height: layout.contentSize.height)
         .background(Color.dockCanvas.opacity(0.86))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 0.5))
     }
 
     private var grid: some View {

@@ -1402,7 +1402,7 @@ struct DockPopover: View {
                         .foregroundStyle(inspectorScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
                         .frame(width: 82, height: 34)
                         .background {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                                 .fill(inspectorScope == scope ? Color.dockAccent.opacity(0.10) : Color.clear)
                         }
                         .overlay(alignment: .bottom) {
@@ -1548,7 +1548,7 @@ struct DockPopover: View {
             DockIcon(.dotsThree, size: 14, color: isSessionMenuHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 28, height: 28)
                 .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                         .fill(isSessionMenuHovering ? style.surface4.opacity(0.7) : .clear)
                 )
                 .contentShape(Rectangle())
@@ -1766,9 +1766,9 @@ struct DockPopover: View {
         }
         .foregroundStyle(Color.dockPrimaryText)
         .background(Color.dockSurface4)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockBorder, lineWidth: 0.5)
         }
     }
@@ -1809,7 +1809,7 @@ struct DockPopover: View {
             sessionList
         }
         .background(Color.dockCanvas)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous))
     }
 
     private var sessionList: some View {
@@ -2869,7 +2869,7 @@ struct DockPopover: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .fill(Color.dockSurface)
                 .stroke(Color.dockBorderLight, lineWidth: 0.5)
         )
@@ -3533,7 +3533,7 @@ private struct MissionControlQueue: View {
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 28)
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(style.selectedFill)
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(style.selectedFill)
                     DockIcon(.robot, size: 15, color: style.secondaryText)
                 }
                 .frame(width: 28, height: 28)
@@ -3978,7 +3978,7 @@ private struct MissionControlQueue: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .background(isTaskSelected(task) ? Color.dockAccent.opacity(0.14) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         }
         .buttonStyle(.borderless)
         .help(task.sessionID == nil ? "Open this task in Kanban" : "Open task conversation")

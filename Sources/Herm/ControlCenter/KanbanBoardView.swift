@@ -185,11 +185,11 @@ struct KanbanBoardView: View, Equatable {
         .frame(width: Self.laneWidth)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(targetedLane == lane ? lane.color.opacity(0.10) : Color.dockSurface.opacity(0.20))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .contentShape(Rectangle())
         .overlay {
             if targetedLane == lane {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                     .stroke(lane.color.opacity(0.7), lineWidth: 1)
             }
         }
@@ -289,14 +289,14 @@ private struct KanbanLaneRail: View {
             .frame(width: KanbanBoardView.railWidth)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(railBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
             .overlay {
                 if isDropTarget {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                         .stroke(lane.color.opacity(0.7), lineWidth: 1)
                 }
             }
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
@@ -378,7 +378,7 @@ private struct KanbanTaskCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background)
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(isSelected ? Color.dockAccent.opacity(0.7) : (isHovered ? Color.dockBorder : Color.dockBorderLight), lineWidth: isSelected ? 1 : 0.5)
         }
         .overlay(alignment: .leading) {
@@ -386,8 +386,8 @@ private struct KanbanTaskCard: View {
                 lane.color.frame(width: 2).padding(.vertical, 8)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .onTapGesture { onSelect(task) }
         .modifier(KanbanCardDragSource(
             isEnabled: isDraggable,
@@ -408,7 +408,7 @@ private struct KanbanTaskCard: View {
                     }
                 }
                     .frame(width: 28, height: 22)
-                    .background(Color.dockSurface2.opacity(0.9), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(Color.dockSurface2.opacity(0.9), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
                     .contentShape(Rectangle())
             }
             // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
@@ -445,8 +445,8 @@ private struct KanbanTaskCard: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(Color.dockSurface2)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(lane.color.opacity(0.6), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(lane.color.opacity(0.6), lineWidth: 1))
     }
 
     private var background: Color {

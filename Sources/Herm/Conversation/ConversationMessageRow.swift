@@ -133,10 +133,10 @@ struct ConversationMessageRow: View, Equatable {
                                         .resizable()
                                         .scaledToFit()
                                         .frame(maxWidth: 220, maxHeight: 220)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
-                                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
                                 .help("Open image preview")
                             }
                         }

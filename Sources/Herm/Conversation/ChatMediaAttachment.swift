@@ -89,7 +89,7 @@ struct ChatMediaAttachmentCard: View {
         HStack(spacing: 12) {
             DockIcon(icon, size: 14, color: Color.dockSecondaryText)
                 .frame(width: 30, height: 30)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.system(size: 12, weight: .medium))
@@ -120,8 +120,8 @@ struct ChatMediaAttachmentCard: View {
                 .disabled(!exists)
         }
         .padding(10)
-        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         .contextMenu {
             if isLocal { Button("Reveal in Finder") { ArtifactOpener.reveal(path) } }
             Button("Copy Path") {
@@ -152,7 +152,7 @@ struct ChatMediaAttachmentCard: View {
             .foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

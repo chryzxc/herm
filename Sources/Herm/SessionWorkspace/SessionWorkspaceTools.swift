@@ -294,7 +294,7 @@ struct SessionFilesView: View {
         .padding(.horizontal, 9)
         .frame(height: 32)
         .background(Color.dockSurface2.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .padding(.vertical, 8)
     }
 
@@ -488,7 +488,7 @@ struct SessionTerminalView: View {
         .padding(.horizontal, 8)
         .frame(height: 28)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .fill(terminalTabs.selectedID == session.id ? Color.dockSurface6 : Color.clear)
         )
         .contentShape(Rectangle())

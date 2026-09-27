@@ -450,7 +450,7 @@ private struct DailyUsageChart: View {
             .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockCanvas))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 1))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockCanvas))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 1))
     }
 }

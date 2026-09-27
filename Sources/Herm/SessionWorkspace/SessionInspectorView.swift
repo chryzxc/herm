@@ -117,7 +117,7 @@ struct SessionInspector: View {
                 .padding(.horizontal, 10)
                 .frame(minHeight: 32)
                 .background(selectedSection == section ? Color.dockAccentMuted : hoveredSection == section ? Color.dockSurface2 : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }

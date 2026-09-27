@@ -380,12 +380,12 @@ struct ArtifactsInspectorView: View {
         if record.kind == .image {
             imagePreview(for: record)
                 .scaledToFill()
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
         } else {
             DockIcon(record.kind == .link ? .link : fileIcon(for: record.label))
                 .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
         }
     }
 
@@ -434,7 +434,7 @@ struct ArtifactsInspectorView: View {
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 260, maxHeight: 480)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         } else if let textPreview, textPreview.id == record.id {
             switch textPreview.content {
             case .text(let text, let truncated):
@@ -457,8 +457,8 @@ struct ArtifactsInspectorView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight))
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight))
             case .missing:
                 previewPlaceholder(icon: .warning, title: "File no longer exists", detail: "It was moved or deleted after the session produced it.")
             case .binary:
@@ -489,7 +489,7 @@ struct ArtifactsInspectorView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, minHeight: 180)
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
     }
 
     private func detailActions(_ record: ArtifactRecord) -> some View {
@@ -633,8 +633,8 @@ struct ArtifactsInspectorView: View {
             }
         }
         .padding(3)
-        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.dockBorderLight))
+        .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).stroke(Color.dockBorderLight))
     }
 
     private func filterSegment(_ item: ArtifactFilter) -> some View {
@@ -653,7 +653,7 @@ struct ArtifactsInspectorView: View {
             .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockSecondaryText)
             .padding(.horizontal, 10)
             .frame(height: 26)
-            .background(selected ? Color.dockAccent.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .background(selected ? Color.dockAccent.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -709,7 +709,7 @@ struct ArtifactsInspectorView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 118)
                 .background(Color.dockSurface2)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             Text(record.label)
                 .font(.system(size: 12, weight: .semibold))
@@ -730,7 +730,7 @@ struct ArtifactsInspectorView: View {
             }
         }
         .padding(10)
-        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Image \(record.label), from \(record.sessionTitle)")
     }
@@ -767,7 +767,7 @@ struct ArtifactsInspectorView: View {
             DockIcon(record.kind == .link ? .link : fileIcon(for: record.label))
                 .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
                 .frame(width: 30, height: 30)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.label)
@@ -801,7 +801,7 @@ struct ArtifactsInspectorView: View {
             artifactAction("Open") { open(record.value) }
         }
         .padding(10)
-        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(record.kind == .link ? "Link" : "File") \(record.label), from \(record.sessionTitle)")
     }

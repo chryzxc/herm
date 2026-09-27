@@ -593,7 +593,7 @@ struct AutomationWorkspaceView: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(10)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(RoundedRectangle(cornerRadius: 6).fill(Color.dockSurface.opacity(0.5)))
+                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2).fill(Color.dockSurface.opacity(0.5)))
                     }
                 }
             }
@@ -651,8 +651,8 @@ struct AutomationWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.dockSurface.opacity(0.5)))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.dockBorderLight, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(Color.dockSurface.opacity(0.5)))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius).strokeBorder(Color.dockBorderLight, lineWidth: 0.5))
     }
 
     private func callout(_ title: String, message: String, tint: Color) -> some View {
@@ -669,9 +669,9 @@ struct AutomationWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(tint.opacity(0.08)))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(tint.opacity(0.08)))
         .overlay(alignment: .leading) { tint.frame(width: 2) }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius))
     }
 
     private func detailRow(_ label: String, _ value: String, monospaced: Bool = false) -> some View {

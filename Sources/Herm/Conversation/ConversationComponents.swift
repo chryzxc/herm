@@ -236,8 +236,8 @@ struct MarkdownMessageView: View, Equatable {
           }
           .padding(.horizontal, 8)
           .padding(.vertical, 4)
-          .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockSurface4))
-          .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+          .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockSurface4))
+          .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
         }
       }
     }
@@ -282,7 +282,7 @@ struct MarkdownMessageView: View, Equatable {
         ).padding(.horizontal, 10).padding(.vertical, 8)
       }
     }.background(
-      RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface4).stroke(
+      RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface4).stroke(
         Color.dockBorder, lineWidth: 0.5))
   }
   private static func headingSize(_ level: Int) -> CGFloat {
@@ -1029,8 +1029,8 @@ struct TurnActivityView: View {
             }
           }
           .frame(maxHeight: 280)
-          .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockCanvas))
-          .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+          .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockCanvas))
+          .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
           .padding(.leading, 24)
         }
       }

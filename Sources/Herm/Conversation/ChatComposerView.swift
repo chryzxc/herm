@@ -221,7 +221,7 @@ struct ChatComposerView: View {
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 32, height: 32)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
                                 Button(action: { model.removePendingImage(image) }) {
                                     DockIcon(.x)
                                         .font(.system(size: 10, weight: .bold))
@@ -232,7 +232,7 @@ struct ChatComposerView: View {
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 4)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface))
+                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
                         }
                     }
                 }
@@ -255,7 +255,7 @@ struct ChatComposerView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.dockSurface))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
             }
             if let pdfError = model.pendingPDFError {
                 Text(pdfError)
@@ -461,10 +461,10 @@ struct ChatComposerView: View {
             .padding(.top, 6)
             .padding(.bottom, 0)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
                     .fill(Color.dockSurface2)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
                             .stroke(
                                 speechInput.isRecording
                                     ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)

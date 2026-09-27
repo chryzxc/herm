@@ -16,7 +16,7 @@ struct GitHubLinkButton: View {
             .padding(.horizontal, 10)
             .frame(height: 26)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                     .fill(Color.dockControlSurface)
             )
         }

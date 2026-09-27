@@ -238,10 +238,10 @@ private struct PullRequestReviewToolbarIcon: View {
         DockIcon(name, size: 14, color: isSelected || isHovered ? Color.dockPrimaryText : Color.dockSecondaryText)
         .frame(width: 28, height: 28)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                 .fill(isSelected ? Color.dockSurface4 : (isHovered ? Color.dockSurface4.opacity(0.72) : Color.clear))
         )
-        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .onHover { isHovered = $0 }
         .help(tooltip ?? accessibilityLabel)
         .accessibilityLabel(accessibilityLabel)
@@ -624,7 +624,7 @@ struct PullRequestRowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(isSelected ? Color.dockAccent.opacity(0.16) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).fill(isSelected ? Color.dockAccent.opacity(0.16) : (isHovered ? Color.dockSurface4.opacity(0.5) : Color.clear)))
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
     }
@@ -676,7 +676,7 @@ private struct PullRequestFileTreeRow: View {
             .padding(.trailing, 8)
             .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
                     .fill(isSelected ? Color.dockAccent.opacity(0.16) : (isHovered && !node.isDirectory ? Color.dockSurface4.opacity(0.5) : Color.clear))
             )
             .contentShape(Rectangle())
@@ -888,7 +888,7 @@ struct PullRequestDetailView: View {
                         .foregroundStyle(Color.dockPrimaryText)
                         .padding(.horizontal, 10)
                         .frame(height: 28)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockSurface4))
+                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(Color.dockSurface4))
                 }
             }
             .padding(.horizontal, 16)
@@ -960,8 +960,8 @@ struct PullRequestDetailView: View {
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(Color.dockSecondaryText)
         .padding(16)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface2))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
 
         summarySectionHeader("Description", isExpanded: $descriptionExpanded).padding(.top, 20)
         if descriptionExpanded {
@@ -1031,7 +1031,7 @@ struct PullRequestDetailView: View {
             .padding(.leading, 12)
             .padding(.trailing, 8)
             .frame(minHeight: 44)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface2))
+            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
         } else {
             VStack(spacing: 0) {
                 ForEach(pr.checks) { check in
@@ -1050,8 +1050,8 @@ struct PullRequestDetailView: View {
                     if check.id != pr.checks.last?.id { Divider().padding(.leading, 47) }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface2))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
     }
 
@@ -1087,8 +1087,8 @@ struct PullRequestDetailView: View {
         .foregroundStyle(Color.dockSecondaryText)
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface2))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 
     private func commentComposer(_ pr: PullRequestRecord) -> some View {
@@ -1098,8 +1098,8 @@ struct PullRequestDetailView: View {
                 .scrollContentBackground(.hidden)
                 .padding(12)
                 .frame(minHeight: 104)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.dockSurface2))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+                .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
             if commentDraft.isEmpty {
                 Text("Leave a comment")
                     .font(.system(size: 13))
@@ -1225,7 +1225,7 @@ struct PullRequestDetailView: View {
                 .foregroundStyle(selected ? Color.dockPrimaryText : Color.dockMetadataText)
                 .padding(.horizontal, 10)
                 .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(selected ? Color.dockSurface4 : Color.clear))
+                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(selected ? Color.dockSurface4 : Color.clear))
         }
         .buttonStyle(.plain)
     }
@@ -1442,8 +1442,8 @@ struct PullRequestDetailView: View {
             if expanded { fileContent(file) }
         }
         .background(Color.dockCanvas)
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
     }
 
     @ViewBuilder
@@ -1497,7 +1497,7 @@ struct PullRequestDetailView: View {
         }
         .font(.system(size: 11, design: .monospaced))
         .textSelection(.enabled)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
     }
 
     @ViewBuilder
@@ -1619,7 +1619,7 @@ struct PullRequestWorkspace: View {
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
             .background(Color.dockControlSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             HStack(spacing: 4) {
                 ForEach(PullRequestFilter.allCases) { filter in
@@ -1662,7 +1662,7 @@ struct PullRequestWorkspace: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.dockSurface2))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1, style: .continuous).fill(Color.dockSurface2))
         .accessibilityHidden(true)
     }
 }

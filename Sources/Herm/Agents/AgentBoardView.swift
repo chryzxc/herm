@@ -72,7 +72,7 @@ struct AgentBoardView: View {
         .clipShape(RoundedRectangle(cornerRadius: embedded ? 0 : 14, style: .continuous))
         .overlay {
             if !embedded {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
                     .stroke(Color.dockBorderStrong, lineWidth: 0.5)
                     .overlay(alignment: .top) {
                         LinearGradient(
@@ -146,7 +146,7 @@ struct AgentBoardView: View {
                 expandedActivity(for: selectedAgent)
                     .padding(12)
                     .background(Color.dockSurface4)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -183,7 +183,7 @@ struct AgentBoardView: View {
                             .foregroundStyle(agentScope == scope ? Color.dockPrimaryText : Color.dockSecondaryText)
                             .frame(width: 50, height: 30)
                             .background(agentScope == scope ? Color.dockAccentMuted : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(agentScope == scope ? .isSelected : [])
@@ -191,8 +191,8 @@ struct AgentBoardView: View {
             }
             .padding(2)
             .background(Color.dockSurface4)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Active agents scope")
         }
@@ -222,10 +222,10 @@ struct AgentBoardView: View {
                 }
                 .background(Color.dockSurface4.opacity(expandedAgentID == subagent.id ? 1 : 0.72))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                         .stroke(expandedAgentID == subagent.id ? Color.dockAccent.opacity(0.55) : Color.dockBorderLight, lineWidth: 0.5)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -309,7 +309,7 @@ struct AgentBoardView: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 36, height: 36)
                     .background(Color.dockSurface4)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
             }
             .buttonStyle(.borderless)
             .frame(minWidth: 44, minHeight: 44)
@@ -546,8 +546,8 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockSurface4))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockSurface4))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
     @ViewBuilder
@@ -582,8 +582,8 @@ struct AgentBoardView: View {
         .padding(.leading, 12)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.dockSurface4))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockSurface4))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
     private func contentField(_ label: String, _ value: String, accent: Color) -> some View {

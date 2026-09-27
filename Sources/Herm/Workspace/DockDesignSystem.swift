@@ -29,8 +29,8 @@ enum DockControlMetrics {
     static let compactHeight: CGFloat = 28
     static let standardHeight: CGFloat = 36
     static let hitTarget: CGFloat = 44
-    static let cornerRadius: CGFloat = 8
-    static let paneRadius: CGFloat = 10
+    static var cornerRadius: CGFloat { DockThemeStyle.current.controlRadius }
+    static var paneRadius: CGFloat { DockThemeStyle.current.paneRadius }
     static let rowHeight: CGFloat = 44
     static let denseRowHeight: CGFloat = 36
 }
@@ -211,8 +211,8 @@ extension View {
     func dockHUDPanel() -> some View {
         self
             .background(Color.dockCanvas.opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.dockBorder, lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius + 2))
+            .overlay(RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius + 2).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
             .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
     }
 
@@ -228,8 +228,9 @@ extension View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                    .stroke(tone.color.opacity(strong ? 0.9 : highlighted ? 0.6 : 0.35), lineWidth: emphasized ? 1.5 : 1)
+                    .stroke(tone.color.opacity(strong ? 0.9 : highlighted ? 0.6 : 0.35), lineWidth: max(emphasized ? 1.5 : 1, DockLayout.outline))
             )
+            .dockStickerShadow(RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous))
     }
 }
 
@@ -309,7 +310,7 @@ struct DockIconButton: View {
             }
             .frame(width: size, height: size)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                     .fill(isProminent
                           ? style.accent.opacity(isHovering ? 0.24 : 0.14)
                           : isHovering ? style.surface4.opacity(0.7) : .clear)

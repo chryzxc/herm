@@ -101,7 +101,7 @@ struct SessionBotActivityView: View {
             if let bot = botMode.visibleBots.first(where: { $0.id == record.botID }) {
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 34)
             } else {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: BotAvatarPresentation.palette(for: record.botID),
@@ -155,10 +155,10 @@ struct SessionBotActivityView: View {
         .padding(.vertical, 9)
         .background(Color.dockSurface4.opacity(0.72))
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockBorderLight, lineWidth: 0.5)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(record.botName), \(record.summary), \(record.state.label)")
             if expandedRecordIDs.contains(record.id) {

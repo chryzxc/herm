@@ -360,11 +360,11 @@ struct IssueRowView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .fill(isSelected ? Color.dockAccent.opacity(0.12) : (isHovered ? Color.dockSurface4.opacity(0.45) : Color.clear))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockAccent.opacity(isSelected ? 0.35 : 0), lineWidth: 0.5)
         )
         .contentShape(Rectangle())
@@ -640,7 +640,7 @@ struct IssueWorkspace: View {
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
             .background(Color.dockControlSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             HStack(spacing: 4) {
                 ForEach(GitHubIssueFilter.allCases) { filter in

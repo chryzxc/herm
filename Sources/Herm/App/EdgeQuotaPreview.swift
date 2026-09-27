@@ -59,7 +59,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
             }
         }
         .padding(2)
-        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockSurface4))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(Color.dockSurface4))
     }
 }
 

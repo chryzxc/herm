@@ -900,7 +900,7 @@ struct WorkspaceActivitySidebar: View {
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 8)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                         .fill(clarificationResponse == choice ? Color.dockAccent.opacity(0.12) : Color.dockControlSurface)
                                         .stroke(clarificationResponse == choice ? Color.dockAccent.opacity(0.65) : Color.dockBorder, lineWidth: 0.5)
                                 )
@@ -1032,7 +1032,7 @@ struct WorkspaceActivitySidebar: View {
         .padding(.horizontal, 10)
         .frame(minHeight: 32)
         .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .contentShape(Rectangle())
     }
 
@@ -1109,7 +1109,7 @@ struct WorkspaceActivitySidebar: View {
         .padding(.horizontal, 10)
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
         .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .contentShape(Rectangle())
     }
 
@@ -1144,7 +1144,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
             .background(selectedMode == mode ? Color.dockAccent.opacity(0.14) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
@@ -1292,7 +1292,7 @@ struct WorkspaceActivitySidebar: View {
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.dockWarning.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             }
             if let review = workflow.review {
                 HStack(spacing: 8) {
@@ -2033,7 +2033,7 @@ struct WorkspaceActivitySidebar: View {
         .padding(.trailing, 2)
         .frame(minHeight: 66)
         .background(isSelected ? Color.dockAccent.opacity(0.12) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         .contextMenu { cronContextActions(job) }
     }
@@ -2173,7 +2173,7 @@ struct WorkspaceActivitySidebar: View {
                     MarkdownMessageView(markdown: report)
                         .padding(10)
                         .background(Color.dockSurface2.opacity(0.72))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             } else if job.sessionID != nil {
@@ -2297,7 +2297,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.vertical, 8)
             .frame(minHeight: 36)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .fill(Color.dockSurface)
                     .stroke(Color.dockBorder, lineWidth: 0.5)
             )
@@ -2768,7 +2768,7 @@ struct WorkspaceActivitySidebar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(Color.dockWarning.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             }
 
             if control.kanbanTasks.isEmpty, control.refreshState(for: "kanban.board")?.lastSuccess == nil,
@@ -2790,8 +2790,8 @@ struct WorkspaceActivitySidebar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
                 .background(Color.dockWarning.opacity(0.07))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockWarning.opacity(0.34), lineWidth: 0.5))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockWarning.opacity(0.34), lineWidth: 0.5))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             }
                 }
                 .padding(.horizontal, 16)
@@ -3102,7 +3102,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(isSelected ? Color.dockAccent.opacity(0.11) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -3151,7 +3151,7 @@ struct WorkspaceActivitySidebar: View {
             HStack(spacing: 10) {
                 if assignee == "All" {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
                             .fill(Color.dockAccent.opacity(0.18))
                         DockIcon(.users)
                             .font(.system(size: 12, weight: .semibold))
@@ -3181,7 +3181,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(isSelected ? Color.dockAccent.opacity(0.11) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -3238,12 +3238,12 @@ struct WorkspaceActivitySidebar: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(Color.dockSurface)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         }
         .padding(12)
         .background(Color.dockSurface2)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
     }
 
     private func selectKanbanTask(_ task: KanbanTaskSummary) {
@@ -3564,7 +3564,7 @@ struct WorkspaceActivitySidebar: View {
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Color.dockSecondaryText)
             .frame(width: 28, height: 28)
-            .background(Color.dockSurface2.opacity(0.6), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(Color.dockSurface2.opacity(0.6), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
             .contentShape(Rectangle())
     }
 
@@ -3640,7 +3640,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.horizontal, 10)
             .frame(minHeight: 36)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .fill(Color.dockControlSurface)
                     .stroke(Color.dockBorder, lineWidth: 0.5)
             )
@@ -3784,7 +3784,7 @@ struct WorkspaceActivitySidebar: View {
         }
         .padding(12)
         .dockGlassPane()
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(isSelected ? Color.dockAccent : .clear, lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(isSelected ? Color.dockAccent : .clear, lineWidth: 0.5))
     }
 
     /// Global operations overview. It deliberately excludes the active chat's
@@ -3830,7 +3830,7 @@ struct WorkspaceActivitySidebar: View {
                 }
                 .padding(10)
                 .dockGlassPane()
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
+                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
             }
 
             todayOverviewHeader(
@@ -4199,7 +4199,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     .padding(12)
                     .dockGlassPane()
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
@@ -4506,7 +4506,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     .padding(12)
                     .dockGlassPane()
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
+                    .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
@@ -4618,11 +4618,11 @@ struct WorkspaceActivitySidebar: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous)
                 .fill(Color.dockSurface.opacity(0.34))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous)
                 .stroke(Color.dockBorderLight, lineWidth: 0.5)
         }
     }
@@ -4673,11 +4673,11 @@ struct WorkspaceActivitySidebar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .fill(Color.dockSurface.opacity(0.34))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .stroke(Color.dockBorderLight, lineWidth: 0.5)
         }
 
@@ -4920,7 +4920,7 @@ struct WorkspaceActivitySidebar: View {
         }
         .padding(12)
         .dockGlassPane()
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
     }
 
     private var unavailableSetupCapabilities: [CapabilityState] {
@@ -5041,8 +5041,8 @@ struct WorkspaceActivitySidebar: View {
             .frame(width: 82, alignment: .leading)
             .padding(8)
             .background(selectedAgentID == id ? color.opacity(0.12) : Color.dockSurface4)
-            .overlay(RoundedRectangle(cornerRadius: 9).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.dockBorder, lineWidth: 0.5))
-            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.dockBorder, lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1))
         }
         .buttonStyle(.borderless)
         .help(status)
@@ -5325,7 +5325,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
             .background(statusColor.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
             Text("Source  ·  NousResearch/hermes-agent" + (agentUpdateService.lastChecked.map { "  ·  checked " + HumanDateFormatting.timeOnly($0) } ?? ""))
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockMetadataText)
@@ -5870,8 +5870,8 @@ struct WorkspaceActivitySidebar: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .frame(height: 36)
                         .background(Color.dockControlSurface)
-                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     }
                     .menuStyle(.borderlessButton)
                     .buttonStyle(.borderless)
@@ -6142,8 +6142,8 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 12) {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
                 let skins = control.appearanceProjection?.skins ?? []
-                let nativeOption = DockAppearanceOption(themeID: .nativeMacOS, hermesSkin: nil)
-                ForEach([nativeOption] + DockAppearanceCatalog.installedOptions(installedSkins: skins)) { option in
+                let hermOptions = DockThemeID.hermOnly.map { DockAppearanceOption(themeID: $0, hermesSkin: nil) }
+                ForEach(hermOptions + DockAppearanceCatalog.installedOptions(installedSkins: skins)) { option in
                     themeOption(option)
                 }
             }
@@ -6229,11 +6229,11 @@ struct WorkspaceActivitySidebar: View {
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .fill(selected ? Color.dockSurface4 : Color.dockSurface2.opacity(0.6))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .stroke(selected ? Color.dockAccent.opacity(0.6) : Color.dockBorderLight, lineWidth: selected ? 1 : 0.5)
             )
             .contentShape(Rectangle())
@@ -6743,11 +6743,11 @@ struct SettingsSection<Content: View>: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                     .fill(Color.dockSurface.opacity(0.34))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
                     .stroke(Color.dockBorderLight, lineWidth: 0.5)
             )
         }

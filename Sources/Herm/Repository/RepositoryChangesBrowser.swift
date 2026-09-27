@@ -421,10 +421,10 @@ struct RepositoryChangesBrowser: View {
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
         .background {
             if showsSelection {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.dockAccent.opacity(0.13))
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(Color.dockAccent.opacity(0.13))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         .contentShape(Rectangle())
     }
 

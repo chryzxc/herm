@@ -136,7 +136,7 @@ struct SessionPullRequestsSurface: View {
             .padding(.horizontal, 10)
             .frame(maxWidth: .infinity, minHeight: 34)
             .background(Color.dockCanvas.opacity(0.55))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
 
             if let repositoryPath {
                 Button {

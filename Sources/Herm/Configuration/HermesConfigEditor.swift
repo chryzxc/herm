@@ -419,8 +419,8 @@ private struct HermesConfigFieldRow: View {
                     .frame(minHeight: 54, maxHeight: 120)
                     .padding(6)
                     .background(Color.dockControlSurface)
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     .padding(.bottom, 10)
             }
             .onAppear { listDraft = listText }
