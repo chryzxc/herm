@@ -1085,7 +1085,7 @@ struct WorkspaceActivitySidebar: View {
     /// Compact mode mirrors the fullscreen rail's daily operator destinations.
     /// Repository and setup surfaces remain available from More.
     private var compactRailNavigation: [ControlTab] {
-        [.today, .inbox, .kanban, .quota, .automations]
+        [.today, .inbox, .missionControl, .kanban, .quota, .automations]
     }
 
     private var compactOverflowNavigation: [ControlTab] {
