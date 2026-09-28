@@ -77,6 +77,9 @@ final class ControlCenterModel: ObservableObject {
     /// missing providers render disabled with their diagnostic, never invented.
     @Published private(set) var providerQuotaDiagnostics: [String: String] = [:]
     @Published private(set) var kanbanDiagnostics: [KanbanDiagnosticSummary] = []
+    @Published private(set) var stuckCardQueue: StuckCardQueue?
+    /// Why the queue could not load, or which cards an action failed on.
+    @Published private(set) var missionControlMessage: String?
     @Published private(set) var kanbanAttachments: [KanbanAttachmentSummary] = []
     /// Keyed task detail for inspectors that sit beside the Kanban page (the
     /// 3D office). Separate from `kanbanDetail`, so the two never clobber.
@@ -406,6 +409,8 @@ final class ControlCenterModel: ObservableObject {
     private var visibleKanbanRefreshActionID: String { "kanban.refresh.visible" }
     var refreshKanbanBoardsActionID: String { "kanban.boards.refresh" }
     var emergencyStopActionID: String { "dispatch.pause" }
+    var missionControlRefreshActionID: String { "missionControl.refresh" }
+    var missionControlActActionID: String { "missionControl.act" }
 
     private func beginAction(_ id: String) -> Bool {
         guard !pendingActionIDs.contains(id) else { return false }
@@ -2934,6 +2939,72 @@ final class ControlCenterModel: ObservableObject {
             } catch {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
+        }
+    }
+
+    func refreshMissionControl() {
+        guard let cli, beginAction(missionControlRefreshActionID) else { return }
+        Task {
+            defer { finishAction(missionControlRefreshActionID) }
+            do {
+                let result = try await cli.softwareDeliveryQueue()
+                if let queue = StuckCardQueue.parse(result.stdout) {
+                    stuckCardQueue = queue
+                    missionControlMessage = nil
+                } else {
+                    let detail = Self.safeUserDiagnostic(result.stderr)
+                    missionControlMessage = detail.isEmpty
+                        ? "The software-delivery plugin did not return a queue. Is it installed and enabled?"
+                        : detail
+                }
+            } catch {
+                missionControlMessage = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+        }
+    }
+
+    /// Continue or archive stuck cards. A note is recorded on each card: as
+    /// the unblock reason, or as a comment before the move.
+    func missionControlAct(_ cards: [StuckCardQueue.Card], archive: Bool, note: String) {
+        guard let cli, !cards.isEmpty, beginAction(missionControlActActionID) else { return }
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        Task {
+            defer { finishAction(missionControlActActionID) }
+            var failures: [String] = []
+            for card in cards {
+                let board = card.kanbanTask.boardSlug
+                do {
+                    let step = StuckCardQueue.continueStep(for: card.status)
+                    if !note.isEmpty, archive || step != .unblock {
+                        _ = try await cli.kanbanComment(boardSlug: board, taskID: card.id, text: note)
+                    }
+                    let result: HermesCLIResult
+                    if archive {
+                        result = try await cli.kanbanArchive(boardSlug: board, taskID: card.id)
+                    } else {
+                        switch step {
+                        case .unblock:
+                            result = try await cli.kanbanUnblock(boardSlug: board, taskID: card.id, reason: note.isEmpty ? "Continued from Mission Control" : note)
+                        case .moveToTodo:
+                            result = try await cli.kanbanMove(boardSlug: board, taskID: card.id, status: "todo")
+                        case .promote:
+                            result = try await cli.kanbanPromote(boardSlug: board, taskID: card.id, reason: note.isEmpty ? "Continued from Mission Control" : note)
+                        case .unsupported:
+                            failures.append("\(card.id): nothing to continue from \(card.status)")
+                            continue
+                        }
+                    }
+                    if !result.succeeded {
+                        let detail = Self.safeUserDiagnostic(result.stderr)
+                        failures.append("\(card.id): \(detail.isEmpty ? "Hermes refused the change" : detail)")
+                    }
+                } catch {
+                    failures.append("\(card.id): \(Self.safeUserDiagnostic(error.localizedDescription))")
+                }
+            }
+            missionControlMessage = failures.isEmpty ? nil : failures.joined(separator: "\n")
+            refreshMissionControl()
+            refreshKanban()
         }
     }
 
