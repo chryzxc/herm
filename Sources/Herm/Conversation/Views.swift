@@ -3640,7 +3640,10 @@ private struct MissionControlQueue: View {
         // every conversation and project row was built on each layout pass.
         return LazyVStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                if showsKanban { globalRailDestination(.kanban, style: style) }
+                if showsKanban {
+                    globalRailDestination(.missionControl, style: style)
+                    globalRailDestination(.kanban, style: style)
+                }
                 if showsPullRequests { pullRequestsDestinationRow(style: style) }
                 if showsIssues { issuesDestinationRow(style: style) }
                 globalRailDestination(.automations, style: style)
