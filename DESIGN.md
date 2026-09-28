@@ -162,6 +162,14 @@ command-like values, and section labels. Roles live in `DockTypography`.
 | Capsule | — | Status pills, chips, tab indicators |
 | `DockLayout.hairline` | 0.5pt | Dividers and panel borders. Signage cards use 1pt (1.5pt emphasized) |
 
+Shared controls and surfaces resolve their silhouette through
+`DockThemeShape`. The default silhouette is the continuous rounded rectangle
+defined by the radius tokens above. Custom themes may replace that silhouette
+without changing layout or hit targets. Origami uses clipped opposing corners
+on controls and panels, plus one quiet crease in the top trailing corner of
+larger surfaces. Status pills and other semantic capsules remain capsules so
+their meaning stays consistent across themes.
+
 ### Elevation
 
 There are three levels. Do not add others.

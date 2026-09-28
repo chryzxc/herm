@@ -34,7 +34,7 @@ enum SessionActivityOverviewPresentation {
         let source: Source
         let title: String
         let status: String
-        let actor: String
+        let actor: String?
         let updatedAt: Date?
         let detail: String?
         let result: String?
@@ -45,7 +45,7 @@ enum SessionActivityOverviewPresentation {
         let source: Source
         let title: String
         let status: String
-        let actor: String
+        let actor: String?
         let timestamp: Date?
         let detail: String?
         let diffPreview: String?
@@ -116,11 +116,12 @@ enum SessionActivityOverviewPresentation {
         if isTurnActive {
             turnWork = agentSnapshot.pipeline.filter { $0.status == "Running" }.map { item in
                 WorkRow(id: "turn:\(item.id)", source: .agent, title: item.task, status: "Working",
-                        actor: item.agent, updatedAt: item.startedAt ?? item.timestamp, detail: item.detail, result: nil)
+                        actor: namedSubagentName(item.agentID, in: agentSnapshot.displayedSubagents),
+                        updatedAt: item.startedAt ?? item.timestamp, detail: item.detail, result: nil)
             }
             if turnWork.isEmpty {
                 turnWork = [WorkRow(id: "turn", source: .agent, title: "Working on this session’s request",
-                                    status: "Working", actor: "Orchestrator", updatedAt: nil, detail: nil, result: nil)]
+                                    status: "Working", actor: nil, updatedAt: nil, detail: nil, result: nil)]
             }
         }
         let work = turnWork + (kanbanWork + botWork).sorted { lhs, rhs in
@@ -133,7 +134,9 @@ enum SessionActivityOverviewPresentation {
         var timeline = agentSnapshot.pipeline.map { item in
             TimelineRow(
                 id: "agent:\(item.id)", source: .agent, title: item.task,
-                status: item.status, actor: item.agent, timestamp: item.timestamp,
+                status: item.status,
+                actor: namedSubagentName(item.agentID, in: agentSnapshot.displayedSubagents),
+                timestamp: item.timestamp,
                 detail: item.detail, diffPreview: item.diffPreview,
                 durationSeconds: item.durationSeconds, startedAt: item.startedAt,
                 completedAt: item.completedAt
@@ -183,6 +186,14 @@ enum SessionActivityOverviewPresentation {
     private static func uniqueAgents(_ agents: [HermesSubagent]) -> [HermesSubagent] {
         var seen = Set<String>()
         return agents.filter { seen.insert($0.id).inserted }
+    }
+
+    private static func namedSubagentName(_ id: String?, in agents: [HermesSubagent]) -> String? {
+        guard let id,
+              let name = agents.first(where: { $0.id == id })?.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty,
+              name.caseInsensitiveCompare("agent") != .orderedSame else { return nil }
+        return name
     }
 }
 
@@ -400,7 +411,7 @@ struct SessionActivityOverviewView: View {
     }
 
     private func agentHistory(for row: SessionActivityOverviewPresentation.AgentRow) -> some View {
-        let items = snapshot.timeline.filter { $0.actor == row.displayName || $0.actor.contains(row.displayName) }.prefix(5)
+        let items = snapshot.timeline.filter { $0.actor == row.displayName || $0.actor?.contains(row.displayName) == true }.prefix(5)
         return VStack(alignment: .leading, spacing: 5) {
             if items.isEmpty {
                 Text("No recorded activity for this agent yet.")
@@ -442,7 +453,9 @@ struct SessionActivityOverviewView: View {
                     statusDot(row.status)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(row.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-                        Text("\(row.status) · \(row.actor)").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(statusColor(row.status)).lineLimit(1)
+                        Text(row.actor.map { "\(row.status) · \($0)" } ?? row.status)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(statusColor(row.status)).lineLimit(1)
                     }
                     Spacer(minLength: 6)
                     if let updatedAt = row.updatedAt { Text(HumanDateFormatting.timeOnly(updatedAt)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText) }
@@ -512,14 +525,10 @@ struct SessionActivityOverviewView: View {
                     statusDot(row.status).padding(.top, 5)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(row.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-                        HStack(spacing: 5) {
-                            Text(row.status)
-                            Text("·")
-                            Text(row.actor).lineLimit(1)
-                            if let timestamp = row.timestamp { Text("·"); Text(HumanDateFormatting.timeOnly(timestamp)).monospacedDigit() }
-                        }
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockMetadataText)
+                        Text(([row.status, row.actor, row.timestamp.map(HumanDateFormatting.timeOnly)].compactMap { $0 }).joined(separator: " · "))
+                            .lineLimit(1)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockMetadataText)
                     }
                     Spacer(minLength: 4)
                     DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)

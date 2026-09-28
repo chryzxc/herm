@@ -67,6 +67,56 @@ enum DockLayout {
     static var outline: CGFloat { DockThemeStyle.current.outlineWidth }
 }
 
+enum DockThemeShapeRole {
+    case control
+    case pane
+
+    var foldSize: CGFloat {
+        guard DockThemeStyle.current.geometry == .folded else { return 0 }
+        return self == .control ? 6 : 10
+    }
+}
+
+/// One shared silhouette for themed controls and surfaces. Rounded themes use
+/// the existing continuous rectangle; Origami clips opposing corners so the
+/// component geometry changes without special-casing individual screens.
+struct DockThemeShape: Shape {
+    let cornerRadius: CGFloat
+    var role: DockThemeShapeRole = .control
+
+    func path(in rect: CGRect) -> Path {
+        let fold = min(role.foldSize, min(rect.width, rect.height) * 0.38)
+        guard fold > 0 else {
+            return RoundedRectangle(cornerRadius: max(0, cornerRadius), style: .continuous).path(in: rect)
+        }
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + fold * 0.55, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - fold, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + fold))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - fold * 0.55))
+        path.addLine(to: CGPoint(x: rect.maxX - fold * 0.55, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + fold, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - fold))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + fold * 0.55))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct DockFoldCrease: Shape {
+    let size: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.maxX - size, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - size, y: rect.minY + size))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + size))
+        path.closeSubpath()
+        return path
+    }
+}
+
 extension Animation {
     static func dockEase(duration: TimeInterval = 0.3) -> Animation {
         .timingCurve(0.2, 0.8, 0.2, 1, duration: duration)
@@ -91,11 +141,32 @@ extension View {
     }
 
     /// Cartoon-style hard shadow: an ink copy of `shape` offset behind the
-    /// view. Themes without a sticker shadow draw nothing.
+    /// view. Themes without a sticker shadow draw nothing. An opaque canvas
+    /// copy sits between the ink and the view so translucent fills don't
+    /// blend with the shadow into a muddy tone.
     func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false) -> some View {
         let offset = DockThemeStyle.current.stickerShadow * (pressed ? 0.35 : 1)
         return background {
-            if offset > 0 { shape.fill(Color.dockBorderStrong).offset(x: offset, y: offset) }
+            if offset > 0 {
+                ZStack {
+                    shape.fill(Color.dockBorderStrong).offset(x: offset, y: offset)
+                    shape.fill(Color.dockCanvas)
+                }
+            }
+        }
+    }
+
+    /// A quiet crease on larger Origami surfaces. It uses existing semantic
+    /// colors and does not add content, state, or a new elevation level.
+    func dockFoldCrease() -> some View {
+        overlay {
+            if DockThemeStyle.current.geometry == .folded {
+                let crease = DockFoldCrease(size: DockThemeShapeRole.pane.foldSize)
+                crease
+                    .fill(Color.dockCanvas.opacity(0.72))
+                    .overlay(crease.stroke(Color.dockBorder.opacity(0.75), lineWidth: DockLayout.hairline))
+                    .allowsHitTesting(false)
+            }
         }
     }
 }
@@ -144,16 +215,11 @@ struct DockPressButtonStyle: ButtonStyle {
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         configuration.label
             .padding(3)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                    .fill(isHovering ? Color.dockAccent.opacity(0.12) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                    .stroke(isHovering ? Color.dockAccent.opacity(0.28) : Color.clear, lineWidth: DockLayout.outline)
-            )
+            .background(shape.fill(isHovering ? Color.dockAccent.opacity(0.12) : Color.clear))
+            .overlay(shape.stroke(isHovering ? Color.dockAccent.opacity(0.28) : Color.clear, lineWidth: DockLayout.outline))
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .opacity(configuration.isPressed ? 0.86 : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
@@ -171,17 +237,14 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let isCompact = controlSize == .small || controlSize == .mini
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration.label
             .font(isCompact ? .system(size: 12, weight: .semibold) : .body.weight(.semibold))
             .foregroundStyle(Color.dockOnAccentText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1))
-                    .stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline)
-            )
-            .dockStickerShadow(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), pressed: configuration.isPressed)
+            .background(shape.fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1)).stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
+            .dockStickerShadow(shape, pressed: configuration.isPressed)
             .shadow(color: Color.dockAccent.opacity(configuration.isPressed || !isEnabled ? 0 : 0.14), radius: 6)
             .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
@@ -199,18 +262,15 @@ struct DockSecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let isCompact = controlSize == .small || controlSize == .mini
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration.label
             .font(isCompact ? .system(size: 12, weight: .medium) : .body.weight(.medium))
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    .fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6))
-                    .stroke(Color.dockBorder, lineWidth: DockLayout.outline)
-            )
-            .dockStickerShadow(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous), pressed: configuration.isPressed)
-            .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+            .background(shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+            .dockStickerShadow(shape, pressed: configuration.isPressed)
+            .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
@@ -256,6 +316,7 @@ struct DockToggleStyle: ToggleStyle {
 
 struct DockGlassTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration
             .textFieldStyle(.plain)
             .font(.body)
@@ -263,13 +324,9 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(minHeight: DockLayout.controlHeight)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                    // The shared canvas keeps inputs consistent across panes;
-                    // the plain field style removes the warm native field fill.
-                    .fill(Color.dockControlSurface)
-                    .stroke(Color.dockBorder, lineWidth: DockLayout.outline)
-            )
+            // The shared canvas keeps inputs consistent across panes; the
+            // plain field style removes the warm native field fill.
+            .background(shape.fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
     }
 }
 
@@ -388,11 +445,11 @@ struct DockCallout<Content: View>: View {
 
     var body: some View {
         let tint = tone.color
-        let shape = RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
+        let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
         HStack(alignment: .top, spacing: 10) {
             DockIcon(icon, size: 15, weight: .fill, color: tint)
                 .frame(width: 28, height: 28)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(tint.opacity(0.14)))
+                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).fill(tint.opacity(0.14)))
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -430,6 +487,7 @@ struct DockCallout<Content: View>: View {
         .overlay(alignment: .leading) { tint.frame(width: 3) }
         .clipShape(shape)
         .overlay(shape.stroke(tint.opacity(0.3), lineWidth: DockLayout.hairline))
+        .dockFoldCrease()
         .accessibilityElement(children: .contain)
     }
 }
@@ -508,14 +566,12 @@ extension View {
     /// Divider-led rows keep operational lists dense without turning each item
     /// into a separate card.
     func dockListRow(isHighlighted: Bool = false) -> some View {
-        self
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
+        return self
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                    .fill(isHighlighted ? Color.dockAccent.opacity(0.10) : Color.clear)
-            )
+            .background(shape.fill(isHighlighted ? Color.dockAccent.opacity(0.10) : Color.clear))
             .overlay(alignment: .bottom) {
                 Color.dockBorderLight
                     .opacity(isHighlighted ? 0 : 1)
@@ -527,17 +583,13 @@ extension View {
     /// Shared compact surface for secondary inspectors and detail groups.
     /// It uses the same low-contrast treatment as the main Control panel.
     func dockCard(padding: CGFloat = 12) -> some View {
-        self
+        let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
+        return self
             .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .fill(Color.dockSurface.opacity(0.26))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline)
-            }
-            .dockStickerShadow(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+            .background(shape.fill(Color.dockSurface.opacity(0.26)))
+            .overlay(shape.stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline))
+            .dockStickerShadow(shape)
+            .dockFoldCrease()
     }
 }
 
@@ -548,17 +600,18 @@ struct DockTabButton: View {
     let action: () -> Void
 
     var body: some View {
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11, weight: isSelected ? .medium : .regular))
                 .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(isSelected ? Color.dockSurface4 : Color.clear))
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
+                .background(shape.fill(isSelected ? Color.dockSurface4 : Color.clear))
+                .overlay(shape.stroke(isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
         }
         .buttonStyle(.plain)
-        .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+        .contentShape(shape)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

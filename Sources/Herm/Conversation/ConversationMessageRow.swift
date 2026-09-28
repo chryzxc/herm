@@ -142,7 +142,7 @@ struct ConversationMessageRow: View, Equatable {
                         }
                     }
                     if !userText.isEmpty {
-                        messageMarkdownView(userText, cacheKey: messageRenderCacheKey)
+                        messageMarkdownView(userText)
                             .fixedSize(horizontal: false, vertical: true)
                             .foregroundStyle(Color.dockPrimaryText)
                             .padding(.horizontal, 14)
@@ -154,6 +154,7 @@ struct ConversationMessageRow: View, Equatable {
                                         message.isSteering ? Color.dockAccent.opacity(0.45) : Color.dockBorderStrong,
                                         lineWidth: 0.5
                                     )
+                                    .allowsHitTesting(false)
                             }
                     }
 
@@ -163,6 +164,7 @@ struct ConversationMessageRow: View, Equatable {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(Color.dockAccent)
                         }
+                        actionButton(.copy, action: onCopy)
                         Text(message.timeLabel)
                             .font(DockTypography.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
@@ -275,30 +277,17 @@ struct ConversationMessageRow: View, Equatable {
         return "Steering · \(status)"
     }
 
-    private var messageRenderCacheKey: String {
-        "message:\(message.id.uuidString):\(message.contentRevision):theme:\(themeRevision)"
-    }
-
-    private func markdownRenderKey(segment: Int) -> MarkdownRenderKey {
-        MarkdownRenderKey(
-            messageID: message.id,
-            contentRevision: message.contentRevision,
-            themeRevision: themeRevision,
-            segment: segment
-        )
-    }
-
     @ViewBuilder
     private var assistantBody: some View {
         let segments = ChatMediaSegment.split(message.text)
         if segments == [.markdown(message.text)] {
-            messageMarkdownView(message.text, cacheKey: messageRenderCacheKey)
+            messageMarkdownView(message.text)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                     switch segment {
                     case .markdown(let text):
-                        messageMarkdownView(text, cacheKey: "\(messageRenderCacheKey):\(index)", segment: index)
+                        messageMarkdownView(text)
                     case .media(let path):
                         ChatMediaAttachmentCard(path: path)
                     }
@@ -308,17 +297,9 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     @ViewBuilder
-    private func messageMarkdownView(_ markdown: String, cacheKey: String, segment: Int = 0) -> some View {
-        if CompletedMarkdownRendererPolicy.usesNativeRenderer(for: markdown) {
-            let retainedSections = streamingText?
-                .completionChunks(matching: markdown, messageID: message.id)
-                .map(MarkdownRenderDocumentBuilder.sections(for:))
-            NativeMarkdownDocumentHost(source: markdown, key: markdownRenderKey(segment: segment), streamingSections: retainedSections)
-                .fixedSize(horizontal: false, vertical: true)
-        } else {
-            MarkdownMessageView(markdown: markdown, cacheKey: cacheKey)
-                .equatable()
-        }
+    private func messageMarkdownView(_ markdown: String) -> some View {
+        NativeMarkdownMessageView(markdown: markdown, themeRevision: themeRevision)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var messageActions: some View {

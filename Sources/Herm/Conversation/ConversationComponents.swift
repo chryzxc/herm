@@ -502,9 +502,9 @@ struct MarkdownMessageView: View, Equatable {
   }
 }
 
-/// Long messages use AppKit's text system instead of one SwiftUI `Text` per
-/// Markdown block.  The outer conversation scroll view still owns scrolling;
-/// this view only owns text storage and intrinsic-height measurement.
+/// Long streaming messages use AppKit's text system to keep incremental
+/// rendering responsive. Completed messages use one native text view below so
+/// a selection can span every Markdown block.
 enum CompletedMarkdownRendererPolicy {
   static let nativeThresholdBytes = 8_192
 
@@ -516,16 +516,13 @@ enum CompletedMarkdownRendererPolicy {
 @MainActor
 struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
   let markdown: String
-  let seedChunks: [StreamingPresentationChunk]?
   let themeRevision: Int
 
   init(
     markdown: String,
-    seedChunks: [StreamingPresentationChunk]? = nil,
     themeRevision: Int = DockThemeRuntime.revision
   ) {
     self.markdown = markdown
-    self.seedChunks = seedChunks
     self.themeRevision = themeRevision
   }
 
@@ -535,42 +532,34 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
-  func makeNSView(context: Context) -> NativeMarkdownTextView {
-    let view = NativeMarkdownTextView()
-    context.coordinator.update(view, markdown: markdown, seedChunks: seedChunks, themeRevision: themeRevision)
+  func makeNSView(context: Context) -> NativeMarkdownTextSectionView {
+    let view = NativeMarkdownTextSectionView()
+    view.update(markdown: markdown, kind: .prose)
     return view
   }
 
-  func updateNSView(_ nsView: NativeMarkdownTextView, context: Context) {
-    context.coordinator.update(nsView, markdown: markdown, seedChunks: seedChunks, themeRevision: themeRevision)
+  func updateNSView(_ nsView: NativeMarkdownTextSectionView, context: Context) {
+    nsView.update(markdown: markdown, kind: .prose)
+  }
+
+  func sizeThatFits(
+    _ proposal: ProposedViewSize,
+    nsView: NativeMarkdownTextSectionView,
+    context: Context
+  ) -> CGSize? {
+    let width: CGFloat
+    if let proposed = proposal.width, proposed.isFinite, proposed > 1 {
+      width = proposed
+    } else if nsView.bounds.width > 1 {
+      width = nsView.bounds.width
+    } else {
+      width = NativeMarkdownDocumentSizing.fallbackWidth
+    }
+    return CGSize(width: width, height: nsView.measuredHeight(forWidth: width))
   }
 
   @MainActor
   final class Coordinator {
-    private var renderedMarkdown: String?
-    private var renderedThemeRevision: Int?
-
-    func update(
-      _ view: NativeMarkdownTextView,
-      markdown: String,
-      seedChunks: [StreamingPresentationChunk]? = nil,
-      themeRevision: Int
-    ) {
-      guard renderedMarkdown != markdown || renderedThemeRevision != themeRevision else { return }
-      renderedMarkdown = markdown
-      renderedThemeRevision = themeRevision
-      view.linkTextAttributes = [
-        .foregroundColor: NSColor(Color.dockAccent),
-        .underlineStyle: NSUnderlineStyle.single.rawValue
-      ]
-      let started = DispatchTime.now().uptimeNanoseconds
-      let attributed = seedChunks.map(Self.attributedString(for:)) ?? Self.attributedString(for: markdown)
-      view.textStorage?.setAttributedString(attributed)
-      view.invalidateIntrinsicContentSize()
-      let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
-      DebugLog.writePerformance("markdown_native_update mode=completed bytes=\(markdown.utf8.count) duration_ms=\(String(format: "%.2f", elapsed))")
-    }
-
     static func attributedString(for markdown: String) -> NSAttributedString {
       let result = NSMutableAttributedString()
       let blocks = MarkdownMessageView.renderBlocks(for: markdown)

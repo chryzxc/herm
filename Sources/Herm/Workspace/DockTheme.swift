@@ -2,21 +2,21 @@ import AppKit
 import SwiftUI
 
 enum DockThemeID: String, CaseIterable, Identifiable, Codable {
-    case nativeMacOS, hermesClassic, ares, mono, slate, daylight, warmLight, poseidon, sisyphus, charizard, cartoon, terminal, flat, brutalist
+    case nativeMacOS, hermesClassic, ares, mono, slate, daylight, warmLight, poseidon, sisyphus, charizard, cartoon, terminal, flat, brutalist, origami
     var id: String { rawValue }
     var hermesSkinID: String? {
-        switch self { case .nativeMacOS: nil; case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .daylight: "daylight"; case .warmLight: "warm-lightmode"; case .poseidon: "poseidon"; case .sisyphus: "sisyphus"; case .charizard: "charizard"; case .cartoon, .terminal, .flat, .brutalist: nil }
+        switch self { case .nativeMacOS: nil; case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .daylight: "daylight"; case .warmLight: "warm-lightmode"; case .poseidon: "poseidon"; case .sisyphus: "sisyphus"; case .charizard: "charizard"; case .cartoon, .terminal, .flat, .brutalist, .origami: nil }
     }
     var title: String {
-        switch self { case .nativeMacOS: "Native macOS"; case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .daylight: "Daylight"; case .warmLight: "Warm Light"; case .poseidon: "Poseidon"; case .sisyphus: "Sisyphus"; case .charizard: "Volcanic"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .flat: "Flat"; case .brutalist: "Brutalist" }
+        switch self { case .nativeMacOS: "Native macOS"; case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .daylight: "Daylight"; case .warmLight: "Warm Light"; case .poseidon: "Poseidon"; case .sisyphus: "Sisyphus"; case .charizard: "Volcanic"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .flat: "Flat"; case .brutalist: "Brutalist"; case .origami: "Origami" }
     }
     var detail: String {
-        switch self { case .nativeMacOS: "System menu blur with neutral surfaces and macOS accent colors."; case .hermesClassic: "Gold identity accents with calm midnight surfaces."; case .ares: "Crimson actions, bronze labels, and a warm operational tone."; case .mono: "A focused grayscale palette with minimal distraction."; case .slate: "Developer-focused blue surfaces with crisp cool contrast."; case .daylight: "Bright surfaces with dark text and clear blue actions."; case .warmLight: "Warm paper surfaces with brown and gold hierarchy."; case .poseidon: "Deep ocean blue with seafoam highlights."; case .sisyphus: "Austere grayscale built for persistent work."; case .charizard: "Burnt orange controls with ember-colored emphasis."; case .cartoon: "Chunky ink outlines, sticker shadows, rounded type, and bright comic colors."; case .terminal: "Phosphor green on black, monospaced type, and square corners."; case .flat: "Borderless, quiet surfaces with small corners and no depth."; case .brutalist: "Square corners, heavy black borders, hard offset shadows, and loud color." }
+        switch self { case .nativeMacOS: "System menu blur with neutral surfaces and macOS accent colors."; case .hermesClassic: "Gold identity accents with calm midnight surfaces."; case .ares: "Crimson actions, bronze labels, and a warm operational tone."; case .mono: "A focused grayscale palette with minimal distraction."; case .slate: "Developer-focused blue surfaces with crisp cool contrast."; case .daylight: "Bright surfaces with dark text and clear blue actions."; case .warmLight: "Warm paper surfaces with brown and gold hierarchy."; case .poseidon: "Deep ocean blue with seafoam highlights."; case .sisyphus: "Austere grayscale built for persistent work."; case .charizard: "Burnt orange controls with ember-colored emphasis."; case .cartoon: "Chunky ink outlines, sticker shadows, rounded type, and bright comic colors."; case .terminal: "Phosphor green on black, monospaced type, and square corners."; case .flat: "Borderless, quiet surfaces with small corners and no depth."; case .brutalist: "Square corners, heavy black borders, hard offset shadows, and loud color."; case .origami: "Folded corners, crisp paper layers, angular controls, and indigo ink accents." }
     }
     var appearance: DockThemeAppearance {
         switch self {
         case .nativeMacOS, .flat: .system
-        case .daylight, .warmLight, .cartoon, .brutalist: .light
+        case .daylight, .warmLight, .cartoon, .brutalist, .origami: .light
         default: .dark
         }
     }
@@ -29,9 +29,15 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .terminal: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 1, fontDesign: .monospaced, pressScale: 1)
         case .flat: DockThemeStyle(controlRadius: 6, paneRadius: 8, outlineWidth: 0.5, pressScale: 0.98)
         case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, pressScale: 1)
+        case .origami: DockThemeStyle(controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, pressScale: 0.98)
         default: DockThemeStyle()
         }
     }
+}
+
+enum DockThemeGeometry: Equatable {
+    case rounded
+    case folded
 }
 
 /// Component geometry a theme controls beyond color. Shared controls, cards,
@@ -43,6 +49,7 @@ struct DockThemeStyle: Equatable {
     var outlineWidth: CGFloat = 0.5
     /// Offset of a hard, blur-free ink shadow under controls and cards; 0 = none.
     var stickerShadow: CGFloat = 0
+    var geometry: DockThemeGeometry = .rounded
     var fontDesign: Font.Design = .default
     var pressScale: CGFloat = 0.96
 
@@ -120,6 +127,7 @@ struct DockThemePalette {
         case .terminal: return ("#0F1511", "#18211B", "#131A15", "#253329", "#EEF6F0", "#B4CCBB", "#8AA894", "#4ADE80", "#1F4A2B", "#3D5C46", "#4ADE80", "#F2C94C", "#FF6B6B")
         case .flat: return isDark ? ("#16181D", "#1D2026", "#16181D", "#262A31", "#E6E8EC", "#A3A9B5", "#7A808C", "#4C9AFF", "#1E3A5F", "#23262D", "#57D9A3", "#FFAB00", "#FF5630") : ("#FFFFFF", "#F4F5F7", "#FFFFFF", "#EBECF0", "#172B4D", "#505F79", "#7A869A", "#0065FF", "#DEEBFF", "#EBECF0", "#00875A", "#FF8B00", "#DE350B")
         case .brutalist: return ("#FFFFFF", "#FFFFFF", "#F2F2F2", "#FFE500", "#000000", "#222222", "#555555", "#0047FF", "#FFE500", "#000000", "#00A152", "#FF9900", "#FF1F1F")
+        case .origami: return ("#F2EEE6", "#FFFDF8", "#E9E2D7", "#DED4C5", "#29251F", "#625A50", "#867B6E", "#6252B5", "#DED8F5", "#A89D8E", "#2F7D62", "#A95F1E", "#B63E42")
         case .charizard: return isDark ? ("#2B160E", "#351B11", "#1E0F09", "#4A1B07", "#E6D9C1", "#C6A47E", "#9A7A5E", "#F29C38", "#5A260D", "#7B593A", "#6BCB77", "#F29C38", "#EF5350") : ("#FFF5E9", "#F8E8D0", "#FFFAF3", "#F5D2A8", "#3A2114", "#765741", "#96704F", "#C75B1D", "#F5D2A8", "#D8B487", "#2E7D32", "#F29C38", "#C62828")
         }
     }

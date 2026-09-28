@@ -209,10 +209,12 @@ extension View {
     /// The floating panel treatment for anything drawn over a scene or edge:
     /// 92% canvas, hairline border, 12pt radius, and a soft drop shadow.
     func dockHUDPanel() -> some View {
-        self
+        let shape = DockThemeShape(cornerRadius: DockControlMetrics.paneRadius + 2, role: .pane)
+        return self
             .background(Color.dockCanvas.opacity(0.92))
-            .clipShape(RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius + 2))
-            .overlay(RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius + 2).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+            .clipShape(shape)
+            .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+            .dockFoldCrease()
             .shadow(color: .black.opacity(0.28), radius: 14, y: 6)
     }
 
@@ -221,16 +223,12 @@ extension View {
     /// current session) and cards that need attention use a stronger border.
     func dockSignageCard(tone: DockStatusTone, emphasized: Bool = false, highlighted: Bool = false) -> some View {
         let strong = emphasized || tone == .attention
+        let shape = DockThemeShape(cornerRadius: DockControlMetrics.paneRadius, role: .pane)
         return self
-            .background(
-                RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                    .fill(highlighted ? Color.dockSurface4 : Color.dockSurface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous)
-                    .stroke(tone.color.opacity(strong ? 0.9 : highlighted ? 0.6 : 0.35), lineWidth: max(emphasized ? 1.5 : 1, DockLayout.outline))
-            )
-            .dockStickerShadow(RoundedRectangle(cornerRadius: DockControlMetrics.paneRadius, style: .continuous))
+            .background(shape.fill(highlighted ? Color.dockSurface4 : Color.dockSurface))
+            .overlay(shape.stroke(tone.color.opacity(strong ? 0.9 : highlighted ? 0.6 : 0.35), lineWidth: max(emphasized ? 1.5 : 1, DockLayout.outline)))
+            .dockStickerShadow(shape)
+            .dockFoldCrease()
     }
 }
 
@@ -248,6 +246,7 @@ struct DockNavRow: View {
     @State private var isHovering = false
 
     var body: some View {
+        let shape = DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius)
         Button(action: action) {
             HStack(spacing: 10) {
                 DockIcon(icon, size: 15, color: isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
@@ -269,10 +268,7 @@ struct DockNavRow: View {
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                    .fill(isSelected ? style.selectedFill : isHovering ? style.surface4.opacity(0.6) : .clear)
-            )
+            .background(shape.fill(isSelected ? style.selectedFill : isHovering ? style.surface4.opacity(0.6) : .clear))
             .overlay(alignment: .leading) {
                 if isSelected {
                     Capsule().fill(style.accent).frame(width: 3, height: 14)
@@ -300,6 +296,7 @@ struct DockIconButton: View {
     @State private var isHovering = false
 
     var body: some View {
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         Button(action: action) {
             Group {
                 if isBusy {
@@ -309,12 +306,9 @@ struct DockIconButton: View {
                 }
             }
             .frame(width: size, height: size)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                    .fill(isProminent
-                          ? style.accent.opacity(isHovering ? 0.24 : 0.14)
-                          : isHovering ? style.surface4.opacity(0.7) : .clear)
-            )
+            .background(shape.fill(isProminent
+                                   ? style.accent.opacity(isHovering ? 0.24 : 0.14)
+                                   : isHovering ? style.surface4.opacity(0.7) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockPress)
