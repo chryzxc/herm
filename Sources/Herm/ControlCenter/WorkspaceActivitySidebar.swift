@@ -76,6 +76,9 @@ struct WorkspaceActivitySidebar: View {
     @State private var kanbanChangeRequest: KanbanChangeRequest?
     @State private var isShowingKanbanChangeConfirmation = false
     @State private var selectedKanbanTask: KanbanTaskSummary?
+    @State private var missionControlPicked: Set<String> = []
+    @State private var missionControlNote = ""
+    @State private var isConfirmingMissionControlArchive = false
     @State private var kanbanInspectorTab: KanbanInspectorTab = .overview
     @State private var kanbanMutationRequest: KanbanMutationRequest?
     @State private var cronEditJob: CronSummary?
@@ -194,6 +197,8 @@ struct WorkspaceActivitySidebar: View {
                 settingsWorkspaceContent
             } else if selectedMode == .kanban {
                 kanbanContent
+            } else if selectedMode == .missionControl {
+                missionControlContent
             } else if selectedMode == .officePreview {
                 officePreviewContent
             } else if selectedMode == .automations {
@@ -215,6 +220,7 @@ struct WorkspaceActivitySidebar: View {
                             case .projects: projectsContent
                             case .search: searchContent
                             case .kanban: kanbanContent
+                            case .missionControl: missionControlContent
                             case .officePreview: officePreviewContent
                             case .core: coreContent
                             case .quota: quotaContent
@@ -231,7 +237,14 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var pageHeader: some View {
-        if selectedMode == .kanban {
+        if selectedMode == .missionControl {
+            AnyView(DockPageHeader(
+                title: selectedMode.pageHeaderTitle,
+                subtitle: pageHeaderSubtitle,
+                onRefresh: { control.refreshMissionControl() },
+                isRefreshing: control.isActionPending(control.missionControlRefreshActionID)
+            ))
+        } else if selectedMode == .kanban {
             AnyView(DockPageHeader(
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
@@ -448,6 +461,10 @@ struct WorkspaceActivitySidebar: View {
 
     private var pageHeaderSubtitle: String {
         switch selectedMode {
+        case .missionControl:
+            guard let queue = control.stuckCardQueue else { return selectedMode.pageHeaderSubtitle }
+            let stuck = queue.total == 1 ? "1 card not moving" : "\(queue.total) cards not moving"
+            return queue.providerWalled ? "\(stuck) · provider rate limited, retries paused" : stuck
         case .today:
             return projectionHeaderSubtitle(
                 control.projectionState(for: "sessions"),
@@ -1177,6 +1194,7 @@ struct WorkspaceActivitySidebar: View {
         // direct refresh can retain the session filter set by Activity, then
         // make the global board look empty while active cards exist.
         if mode == .kanban { applyKanbanFilters() }
+        if mode == .missionControl { control.refreshMissionControl() }
         if mode == .verification { control.refreshVerification() }
         if mode == .changes { Task { await refreshRepository() } }
     }
@@ -2690,6 +2708,157 @@ struct WorkspaceActivitySidebar: View {
         .dockGlassPane()
     }
 
+    private var missionControlContent: some View {
+        HSplitView {
+            VStack(alignment: .leading, spacing: 0) {
+                pageHeader
+                    .padding(.horizontal, 16)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        missionControlToolbar
+                        if let message = control.missionControlMessage {
+                            Text(message)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.dockWarning)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let queue = control.stuckCardQueue {
+                            if queue.groups.isEmpty {
+                                attentionRow(icon: .checkCircle, title: "Nothing stuck", detail: "Every card on the board is moving.", color: .dockSuccess)
+                            }
+                            ForEach(queue.groups) { missionControlGroup($0) }
+                        } else if control.missionControlMessage == nil {
+                            HStack(spacing: 7) {
+                                ProgressView().controlSize(.small)
+                                Text("Loading stuck cards…")
+                            }
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockMetadataText)
+                        }
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
+
+            if let task = selectedKanbanTask {
+                kanbanDetailPanel(task, presentation: KanbanBoardPresentation.makeSnapshot(
+                    tasks: [],
+                    bots: botMode.bots,
+                    visibleBots: botMode.visibleBots
+                ))
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .confirmationDialog("Archive \(missionControlPickedCards.count) Cards?", isPresented: $isConfirmingMissionControlArchive) {
+            Button("Archive", role: .destructive) { missionControlAct(archive: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Archived cards leave the board. The note, if any, is recorded on each card first.")
+        }
+    }
+
+    private var missionControlPickedCards: [StuckCardQueue.Card] {
+        (control.stuckCardQueue?.groups ?? []).flatMap(\.cards).filter { missionControlPicked.contains($0.id) }
+    }
+
+    private func missionControlAct(archive: Bool) {
+        control.missionControlAct(missionControlPickedCards, archive: archive, note: missionControlNote)
+        missionControlPicked = []
+        missionControlNote = ""
+        selectedKanbanTask = nil
+    }
+
+    private var missionControlToolbar: some View {
+        let picked = missionControlPickedCards.count
+        let busy = control.isActionPending(control.missionControlActActionID)
+        return VStack(alignment: .leading, spacing: 8) {
+            TextField("Decision or instruction, recorded on each selected card", text: $missionControlNote, axis: .vertical)
+                .lineLimit(1...4)
+                .textFieldStyle(.dockGlass)
+            HStack(spacing: 8) {
+                Button(action: { missionControlAct(archive: false) }) {
+                    DockIconLabel(picked == 0 ? "Continue" : "Continue \(picked)", icon: .play, iconColor: .dockOnAccentText)
+                }
+                .buttonStyle(.dockPrimary)
+                .disabled(picked == 0 || busy)
+                Button(picked == 0 ? "Archive" : "Archive \(picked)") { isConfirmingMissionControlArchive = true }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockDestructive)
+                    .disabled(picked == 0 || busy)
+                if busy { ProgressView().controlSize(.small) }
+                Spacer(minLength: 0)
+                Text("Continue unblocks, releases triage to todo, or promotes todo.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .font(.system(size: 12, weight: .semibold))
+        }
+    }
+
+    private func missionControlGroup(_ group: StuckCardQueue.Group) -> some View {
+        let ids = Set(group.cards.map(\.id))
+        let allPicked = ids.isSubset(of: missionControlPicked)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                sectionLabel("\(group.heading.uppercased()) · \(group.cards.count)")
+                Spacer(minLength: 0)
+                Button(allPicked ? "Clear" : "Select all") {
+                    if allPicked { missionControlPicked.subtract(ids) } else { missionControlPicked.formUnion(ids) }
+                }
+                .buttonStyle(.borderless)
+                .font(.system(size: 10, weight: .semibold))
+            }
+            if !group.hint.isEmpty {
+                Text(group.hint.replacingOccurrences(of: "`", with: ""))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            ForEach(group.cards) { missionControlRow($0) }
+        }
+    }
+
+    private func missionControlRow(_ card: StuckCardQueue.Card) -> some View {
+        let isSelected = selectedKanbanTask?.id == card.id
+        return HStack(alignment: .top, spacing: 8) {
+            Toggle("", isOn: Binding(
+                get: { missionControlPicked.contains(card.id) },
+                set: { if $0 { missionControlPicked.insert(card.id) } else { missionControlPicked.remove(card.id) } }
+            ))
+            .toggleStyle(.checkbox)
+            .labelsHidden()
+            .accessibilityLabel("Select \(card.title)")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(card.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                if !card.reason.isEmpty {
+                    Text(card.reason)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(2)
+                }
+                HStack(spacing: 6) {
+                    Text(card.id).font(.system(size: 10, design: .monospaced))
+                    kanbanMetadataPill(card.status.capitalized, tint: .dockWarning)
+                    if let assignee = card.assignee { Text(assignee) }
+                    Text(card.age)
+                    if !card.openParents.isEmpty { Text("waits on \(card.openParents.joined(separator: ", "))") }
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(Color.dockMetadataText)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .background(isSelected ? Color.dockAccent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { selectKanbanTask(card.kanbanTask) }
+    }
+
     private var kanbanContent: some View {
         HSplitView {
             // Header and toolbar stay fixed; the board takes the remaining
@@ -3443,6 +3612,7 @@ struct WorkspaceActivitySidebar: View {
                                 taskProvider: detail.providerOverride ?? task.providerOverride,
                                 bot: presentation.bot(for: detail.assignee ?? task.assignee)
                             ))
+                            if let why = detail.blockExplanation { kanbanBlockExplanation(why) }
                             if let body = detail.body, !body.isEmpty {
                                 MarkdownMessageView(markdown: body)
                                     .textSelection(.enabled)
@@ -3541,6 +3711,28 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
+        }
+    }
+
+    private func kanbanBlockExplanation(_ why: KanbanTaskDetail.BlockExplanation) -> some View {
+        kanbanInspectorSection("WHY BLOCKED" + (why.kind.map { " · \($0.replacingOccurrences(of: "_", with: " "))" } ?? "")) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(why.reason ?? "No reason was recorded.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockWarning)
+                if let error = why.lastError {
+                    Text("Last run: \(error)").font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+                }
+                if let diagnostic = why.diagnostic {
+                    Text(diagnostic)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
+            }
+            .textSelection(.enabled)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.dockWarning.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }
     }
 

@@ -803,6 +803,53 @@ struct ControlCenterProjectTests {
         #expect(enriched?.runs.isEmpty == true)
     }
 
+    @Test func explainsWhyAKanbanTaskIsBlocked() {
+        let fallback = KanbanTaskSummary(id: "k1", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
+        let detail = ControlCenterModel.parseKanbanTaskDetail("""
+        {"task":{"id":"k1","title":"Plan","status":"blocked","last_failure_error":"pid gone"},
+         "comments":[{"id":1,"author":"why-blocked","body":"old"},{"id":2,"author":"archon","body":"hi"},{"id":3,"author":"why-blocked","body":"Unknown provider"}],
+         "events":[{"id":1,"kind":"blocked","payload":{"reason":"first"}},{"id":2,"kind":"gave_up","payload":{"reason":"crashed twice"}},{"id":3,"kind":"commented"}]}
+        """, fallback: fallback)
+
+        let why = detail?.blockExplanation
+        #expect(why?.kind == "gave_up")
+        #expect(why?.reason == "crashed twice")
+        #expect(why?.lastError == "pid gone")
+        #expect(why?.diagnostic == "Unknown provider")
+
+        let running = ControlCenterModel.parseKanbanTaskDetail("""
+        {"task":{"id":"k1","title":"Plan","status":"running"},"events":[{"id":1,"kind":"blocked","payload":{"reason":"x"}}]}
+        """, fallback: fallback)
+        #expect(running?.blockExplanation == nil)
+    }
+
+    @Test func parsesStuckCardQueueAroundHermesNotices() {
+        let output = """
+        ◆ Reclaim ~60% of your session database disk
+        {"groups": [{"key": "decide", "heading": "Needs your decision", "hint": "reply `continue <id>`", "cards": [{"id": "t_1", "title": "Plan", "status": "blocked", "assignee": "", "reason": "Pick A or B", "age": "2d", "open_parents": ["t_0"]}]}], "total": 1, "provider_walled": true}
+        Run when convenient: hermes sessions optimize-storage
+        """
+        let queue = StuckCardQueue.parse(output)
+
+        #expect(queue?.total == 1)
+        #expect(queue?.providerWalled == true)
+        #expect(queue?.groups.first?.id == "decide")
+        let card = queue?.groups.first?.cards.first
+        #expect(card?.reason == "Pick A or B")
+        #expect(card?.assignee == nil)
+        #expect(card?.openParents == ["t_0"])
+        #expect(card?.kanbanTask.boardSlug == "default")
+        #expect(StuckCardQueue.parse("usage: hermes ...") == nil)
+    }
+
+    @Test func continuingAStuckCardDependsOnItsStatus() {
+        #expect(StuckCardQueue.continueStep(for: "blocked") == .unblock)
+        #expect(StuckCardQueue.continueStep(for: "scheduled") == .unblock)
+        #expect(StuckCardQueue.continueStep(for: "triage") == .moveToTodo)
+        #expect(StuckCardQueue.continueStep(for: "todo") == .promote)
+        #expect(StuckCardQueue.continueStep(for: "running") == .unsupported)
+    }
+
     @Test func parsesWrappedKanbanTaskDetailResponses() {
         let fallback = KanbanTaskSummary(id: "k1", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
         let detail = ControlCenterModel.parseKanbanTaskDetail(
