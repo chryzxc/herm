@@ -90,7 +90,7 @@ struct SessionInspector: View {
         // There is no overflow menu competing with the same navigation model.
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                ForEach([Section.files, .terminal, .activity, .changes]) { section in
+                ForEach([Section.activity, .terminal, .files, .changes]) { section in
                     sectionButton(section)
                 }
             }

@@ -1108,6 +1108,25 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         heights.removeAll()
         invalidateIntrinsicContentSize()
         needsDisplay = true
+        window?.invalidateCursorRects(for: self)
+    }
+
+    /// NSTextView's own link cursor is lost when hosted in SwiftUI, so the
+    /// pointing hand is registered explicitly over each link's line rects.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard let storage = textStorage, let layoutManager, let textContainer else { return }
+        let origin = textContainerOrigin
+        storage.enumerateAttribute(.link, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+            guard value != nil else { return }
+            let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            layoutManager.enumerateEnclosingRects(
+                forGlyphRange: glyphs, withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+                in: textContainer
+            ) { rect, _ in
+                self.addCursorRect(rect.offsetBy(dx: origin.x, dy: origin.y), cursor: .pointingHand)
+            }
+        }
     }
 
     func measuredHeight(forWidth width: CGFloat) -> CGFloat {

@@ -25,6 +25,10 @@ enum HermesConfigCatalog {
     // `desktop.*` (configures the Electron app only).
     static let pages: [SettingsCategory: [Page]] = [
         .runtime: [
+            Page(title: "Tool access", fields: [
+                .init("toolsets", "Enabled Toolsets", nil),
+                .init("agent.tool_use_enforcement", "Tool-Use Enforcement", nil),
+            ]),
             Page(title: "Main model", fields: [
                 .init("model_context_length", "Main model context window (override)", "Overrides the detected context window of the MAIN chat model only (tokens). Leave at 0 to use the selected model's detected value. Does not affect auxiliary/MoA models."),
             ]),
@@ -42,6 +46,14 @@ enum HermesConfigCatalog {
         .workspace: [
             Page(title: "Projects & discovery", fields: [
                 .init("terminal.cwd", "Working Directory", "Default project folder for tool and terminal work."),
+            ]),
+            Page(title: "Terminal backend", fields: [
+                .init("terminal.backend", "Execution Backend", nil),
+                .init("terminal.timeout", "Command Timeout", nil),
+                .init("terminal.docker_image", "Docker Image", "Container image used when the execution backend is Docker."),
+                .init("terminal.singularity_image", "Singularity Image", "Image used when the execution backend is Singularity."),
+                .init("terminal.modal_image", "Modal Image", "Image used when the execution backend is Modal."),
+                .init("terminal.daytona_image", "Daytona Image", "Image used when the execution backend is Daytona."),
             ]),
             Page(title: "Shell environment", fields: [
                 .init("terminal.persistent_shell", "Persistent Shell", "Keep shell state between commands when the backend supports it."),
@@ -65,6 +77,7 @@ enum HermesConfigCatalog {
             ]),
             Page(title: "Checkpoints", fields: [
                 .init("checkpoints.enabled", "File Checkpoints", "Create rollback snapshots before file edits."),
+                .init("checkpoints.max_snapshots", "Checkpoint Limit", nil),
             ]),
         ],
         .browser: [
@@ -147,26 +160,16 @@ enum HermesConfigCatalog {
                 .init("tts.deepinfra.voice", "DeepInfra Voice", nil),
             ]),
         ],
-        .advanced: [
-            Page(title: "Desktop & startup", fields: [
+        .updates: [
+            Page(title: "Hermes update behavior", fields: [
                 .init("updates.non_interactive_local_changes", "In-App Update Local Changes", "When Hermes updates itself from the app (no terminal prompt), keep local source edits (stash) or throw them away (discard). Terminal updates always ask."),
             ]),
+        ],
+        .advanced: [
             Page(title: "Agent limits", fields: [
                 .init("agent.max_turns", "Max Agent Steps", "Upper bound for tool-calling turns before Hermes stops a run."),
                 .init("agent.api_max_retries", "API Retries", nil),
                 .init("agent.service_tier", "Service Tier", nil),
-            ]),
-            Page(title: "Tool access", fields: [
-                .init("toolsets", "Enabled Toolsets", nil),
-                .init("agent.tool_use_enforcement", "Tool-Use Enforcement", nil),
-            ]),
-            Page(title: "Terminal backend", fields: [
-                .init("terminal.backend", "Execution Backend", nil),
-                .init("terminal.timeout", "Command Timeout", nil),
-                .init("terminal.docker_image", "Docker Image", "Container image used when the execution backend is Docker."),
-                .init("terminal.singularity_image", "Singularity Image", "Image used when the execution backend is Singularity."),
-                .init("terminal.modal_image", "Modal Image", "Image used when the execution backend is Modal."),
-                .init("terminal.daytona_image", "Daytona Image", "Image used when the execution backend is Daytona."),
             ]),
             Page(title: "Subagents", fields: [
                 .init("delegation.model", "Subagent Model", nil),
@@ -180,7 +183,6 @@ enum HermesConfigCatalog {
                 .init("tool_output.max_bytes", "Terminal Output Limit", nil),
                 .init("tool_output.max_lines", "File Page Limit", nil),
                 .init("tool_output.max_line_length", "Line Length Limit", nil),
-                .init("checkpoints.max_snapshots", "Checkpoint Limit", nil),
             ]),
         ],
     ]

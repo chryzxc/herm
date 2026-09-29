@@ -2838,7 +2838,8 @@ struct DockPopover: View {
                     messageActionState.run(message.id, action: .refresh) {
                         await model.refreshCurrentSession()
                     }
-                }
+                },
+                loadKanbanSummary: { notice in await controlCenter.kanbanNoticeSummary(notice) }
             )
             .equatable()
         }
@@ -3269,6 +3270,7 @@ private struct MissionControlQueue: View {
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
     @State private var creatingProjectPath: String?
+    @State private var isShowingProjectSheet = false
     @StateObject private var sidebarSessionSeenStore = SidebarSessionSeenStore()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -3307,7 +3309,7 @@ private struct MissionControlQueue: View {
         self.agentUpdateService = agentUpdateService
         self.navigationState = navigationState
         self.dockThemeStore = dockThemeStore
-        _sidebar = StateObject(wrappedValue: MissionControlSidebarModel(model: model, control: controlCenter))
+        _sidebar = StateObject(wrappedValue: MissionControlSidebarModel(model: model, control: controlCenter, store: workspaceStore))
         self._sessionPendingDeletion = sessionPendingDeletion
         self.activeSessionID = activeSessionID
         self.activeGlobalTab = activeGlobalTab
@@ -3641,7 +3643,6 @@ private struct MissionControlQueue: View {
         return LazyVStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
                 if showsKanban {
-                    globalRailDestination(.missionControl, style: style)
                     globalRailDestination(.kanban, style: style)
                 }
                 if showsPullRequests { pullRequestsDestinationRow(style: style) }
@@ -3699,6 +3700,7 @@ private struct MissionControlQueue: View {
                     onRefresh: {
                         controlCenter.refreshProjectNavigation()
                     },
+                    onAddProject: { isShowingProjectSheet = true },
                     onNewChatInProject: { projectPath in
                         creatingProjectPath = projectPath
                         navigationState.beginProjectChat()
@@ -3717,6 +3719,13 @@ private struct MissionControlQueue: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $isShowingProjectSheet) {
+            ProjectFolderSheet(
+                projects: controlCenter.projects.filter(\.isRenderableProject),
+                onCreate: { await controlCenter.createProject(name: $0, folder: $1) },
+                onAddFolder: { await controlCenter.addProjectFolder($0, folder: $1) }
+            )
+        }
     }
 
     /// Hermes renders Bots beside Sessions in the left sidebar and opens the
@@ -3835,6 +3844,11 @@ private struct MissionControlQueue: View {
             },
             onRequestDelete: { selected in
             sessionPendingDeletion = selected
+            },
+            projectTargets: sidebarSnapshot.projectNameBySessionID[session.id] == nil ? sidebarSnapshot.projectTargets : [],
+            onAddToProject: { selected, target in
+                workspaceStore.ensureTask(title: selected.displayTitle, sessionID: selected.id)
+                workspaceStore.attachProject(at: target.path, toSessionID: selected.id)
             }
         )
         .equatable()
@@ -4233,6 +4247,7 @@ private struct MissionControlProjectList: View {
     let creatingProjectPath: String?
     let onSelectSession: (HermesSession) -> Void
     let onRefresh: () -> Void
+    let onAddProject: () -> Void
     let onNewChatInProject: (String) -> Void
     @State private var disclosureState = ProjectDisclosureState()
     @State private var isExpanded = true
@@ -4246,6 +4261,7 @@ private struct MissionControlProjectList: View {
     @ViewBuilder
     var body: some View {
         DockSectionHeader(title: "Projects", count: groups.count, isExpanded: $isExpanded, style: style) {
+            DockIconButton(icon: .plus, label: "New project or add folder", size: 24, style: style, action: onAddProject)
             DockIconButton(
                 icon: .arrowsClockwise,
                 label: isRefreshing ? "Refreshing projects…" : "Refresh projects",
@@ -4292,6 +4308,11 @@ private struct MissionControlProjectList: View {
                         .truncationMode(.middle)
                         .layoutPriority(1)
                     Spacer(minLength: 0)
+                    if group.hasGit {
+                        DockIcon(.gitBranch, size: 11, color: style.metadataText)
+                            .help("Git repository")
+                            .accessibilityLabel("Git repository")
+                    }
                     Text(compactCount(sessionCount))
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(style.metadataText)
@@ -4332,7 +4353,7 @@ private struct MissionControlProjectList: View {
         .background(Color.clear)
         if !isCollapsed {
             if group.sessions.isEmpty {
-                projectStatusRow("Loading linked sessions…", leading: 0)
+                projectStatusRow(sessionCount == 0 ? "No conversations yet" : "Loading linked sessions…", leading: 0)
                     .padding(.leading, 12)
             } else {
                 ForEach(sessions, id: \.[sidebarSection: group.id]) { session in sessionRow(session).padding(.leading, 12) }
@@ -4430,6 +4451,12 @@ private extension HermesSession {
     subscript(sidebarSection section: String) -> String { "\(section):\(id)" }
 }
 
+struct SidebarProjectTarget: Identifiable, Equatable {
+    let title: String
+    let path: String
+    var id: String { path }
+}
+
 private struct MissionControlSidebarSessionRow: View, Equatable {
     let session: HermesSession
     let selectedSessionID: String?
@@ -4446,6 +4473,8 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     let onRename: (HermesSession, String) async -> Bool
     let onToggleHidden: (HermesSession, Bool) async -> Bool
     let onRequestDelete: (HermesSession) -> Void
+    var projectTargets: [SidebarProjectTarget] = []
+    var onAddToProject: (HermesSession, SidebarProjectTarget) -> Void = { _, _ in }
     @State private var isHovered = false
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
@@ -4488,6 +4517,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             && lhs.isDeleting == rhs.isDeleting
             && lhs.isUpdatingVisibility == rhs.isUpdatingVisibility
             && lhs.isRenaming == rhs.isRenaming
+            && lhs.projectTargets == rhs.projectTargets
     }
 
     var body: some View {
@@ -4709,6 +4739,13 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             }
         }
         .disabled(isUpdatingVisibility || isDeleting)
+        if !projectTargets.isEmpty {
+            Menu("Add to project") {
+                ForEach(projectTargets) { target in
+                    Button(target.title) { onAddToProject(session, target) }
+                }
+            }
+        }
         Divider()
         Button("Delete", icon: .trash, role: .destructive) {
             onRequestDelete(session)

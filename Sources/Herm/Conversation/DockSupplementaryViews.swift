@@ -530,12 +530,12 @@ struct CronReportDetailSheet: View {
         } footer: {
             Spacer()
             if let report {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(report.markdown, forType: .string)
-                } label: {
-                    DockIconLabel("Copy Markdown", icon: .copy)
-                }
+                DockCopyButton(
+                    report.markdown,
+                    label: "Copy Markdown",
+                    accessibilityLabel: "Copy Markdown",
+                    iconSize: 16
+                )
                 .buttonStyle(.dockSecondary)
             }
             Button("Done") { dismiss() }

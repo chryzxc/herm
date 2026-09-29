@@ -37,10 +37,10 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
     /// Shared by the read-only pull-request center. Tokens are never stored
     /// by Dock; this only consults the launch environment or `gh` keychain.
     ///
-    /// The `gh` lookup spawns subprocesses and blocks on `waitUntilExit()`,
-    /// so it runs on a detached task and is cached briefly — called from a
-    /// `@MainActor` refresh, the synchronous prefix of this call otherwise
-    /// ran on the main thread and produced multi-second UI hangs.
+    /// The `gh` lookup spawns a subprocess, so it runs on a detached task and
+    /// is cached briefly. Concurrent callers share that lookup, and the
+    /// subprocess has a deadline so credential resolution cannot pin a loading
+    /// state indefinitely.
     static func localGitHubToken() async -> String? {
         let environment = ProcessInfo.processInfo.environment
         if let token = [environment["GH_TOKEN"], environment["GITHUB_TOKEN"]]
@@ -48,12 +48,7 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
             .first(where: { !$0.isEmpty }) {
             return token
         }
-        if let cached = await GitHubTokenCache.shared.cachedToken() {
-            return cached
-        }
-        let token = await Task.detached(priority: .utility) { resolveGHCLIToken() }.value
-        await GitHubTokenCache.shared.store(token)
-        return token
+        return await GitHubTokenCache.shared.token { resolveGHCLIToken() }
     }
 
     private static func resolveGHCLIToken() -> String? {
@@ -76,9 +71,14 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
             let output = Pipe()
             process.standardOutput = output
             process.standardError = Pipe()
+            let finished = DispatchSemaphore(value: 0)
+            process.terminationHandler = { _ in finished.signal() }
             do {
                 try process.run()
-                process.waitUntilExit()
+                guard finished.wait(timeout: .now() + 5) == .success else {
+                    process.terminate()
+                    return nil
+                }
                 guard process.terminationStatus == 0 else { continue }
                 let token = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -189,19 +189,30 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
 /// Short-lived cache for the resolved `gh` CLI token so repeated refreshes
 /// don't each spawn subprocesses. `nil` results are cached too, so an
 /// unsigned-in `gh` doesn't get re-probed on every refresh.
-private actor GitHubTokenCache {
+actor GitHubTokenCache {
     static let shared = GitHubTokenCache()
     private var token: String?
     private var fetchedAt: Date?
-    private let ttl: TimeInterval = 60
+    private var inFlight: Task<String?, Never>?
+    private let ttl: TimeInterval
 
-    func cachedToken() -> String?? {
-        guard let fetchedAt, Date().timeIntervalSince(fetchedAt) < ttl else { return nil }
-        return .some(token)
+    init(ttl: TimeInterval = 60) {
+        self.ttl = ttl
     }
 
-    func store(_ token: String?) {
+    func token(resolving resolver: @escaping @Sendable () -> String?) async -> String? {
+        if let fetchedAt, Date().timeIntervalSince(fetchedAt) < ttl {
+            return token
+        }
+        if let inFlight {
+            return await inFlight.value
+        }
+        let task = Task.detached(priority: .utility, operation: resolver)
+        inFlight = task
+        let token = await task.value
+        inFlight = nil
         self.token = token
         self.fetchedAt = Date()
+        return token
     }
 }

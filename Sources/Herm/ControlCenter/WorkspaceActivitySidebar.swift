@@ -76,9 +76,6 @@ struct WorkspaceActivitySidebar: View {
     @State private var kanbanChangeRequest: KanbanChangeRequest?
     @State private var isShowingKanbanChangeConfirmation = false
     @State private var selectedKanbanTask: KanbanTaskSummary?
-    @State private var missionControlPicked: Set<String> = []
-    @State private var missionControlNote = ""
-    @State private var isConfirmingMissionControlArchive = false
     @State private var kanbanInspectorTab: KanbanInspectorTab = .overview
     @State private var kanbanMutationRequest: KanbanMutationRequest?
     @State private var cronEditJob: CronSummary?
@@ -91,7 +88,6 @@ struct WorkspaceActivitySidebar: View {
     @State private var isAgentUpdateExpanded = true
     @State private var isAppUpdateExpanded = true
     @ObservedObject private var appUpdater = HermAppUpdater.shared
-    @State private var isAppearanceExpanded = false
     @State private var isInsightsExpanded = false
     @State private var isCapabilitiesExpanded = true
     @State private var isSetupExpanded = true
@@ -100,7 +96,7 @@ struct WorkspaceActivitySidebar: View {
     @State private var isSessionActionsExpanded = false
     @State private var isDiagnosticsExpanded = false
     @State private var isLearningExpanded = false
-    @State private var isRuntimeConfigurationExpanded = false
+    @State private var isRuntimeConfigurationExpanded = true
     @State private var kanbanStatusFilter = "All"
     @State private var isShowingKanbanStatusFilter = false
     @State private var kanbanAssigneeFilter = "All"
@@ -197,8 +193,6 @@ struct WorkspaceActivitySidebar: View {
                 settingsWorkspaceContent
             } else if selectedMode == .kanban {
                 kanbanContent
-            } else if selectedMode == .missionControl {
-                missionControlContent
             } else if selectedMode == .officePreview {
                 officePreviewContent
             } else if selectedMode == .automations {
@@ -220,7 +214,6 @@ struct WorkspaceActivitySidebar: View {
                             case .projects: projectsContent
                             case .search: searchContent
                             case .kanban: kanbanContent
-                            case .missionControl: missionControlContent
                             case .officePreview: officePreviewContent
                             case .core: coreContent
                             case .quota: quotaContent
@@ -237,14 +230,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var pageHeader: some View {
-        if selectedMode == .missionControl {
-            AnyView(DockPageHeader(
-                title: selectedMode.pageHeaderTitle,
-                subtitle: pageHeaderSubtitle,
-                onRefresh: { control.refreshMissionControl() },
-                isRefreshing: control.isActionPending(control.missionControlRefreshActionID)
-            ))
-        } else if selectedMode == .kanban {
+        if selectedMode == .kanban {
             AnyView(DockPageHeader(
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
@@ -312,8 +298,14 @@ struct WorkspaceActivitySidebar: View {
     private var settingsCategoryRail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(SettingsCategory.allCases) { category in
-                    settingsCategoryRow(category)
+                ForEach(SettingsCategoryGroup.allCases) { group in
+                    DockSectionLabel(title: group.rawValue)
+                        .padding(.horizontal, 10)
+                        .padding(.top, group == .app ? 0 : 16)
+                        .padding(.bottom, 6)
+                    ForEach(group.categories) { category in
+                        settingsCategoryRow(category)
+                    }
                 }
             }
             .padding(.horizontal, 10)
@@ -324,8 +316,12 @@ struct WorkspaceActivitySidebar: View {
 
     private var settingsCategoryMenu: some View {
         Picker("Settings category", selection: $selectedSettingsCategory) {
-            ForEach(SettingsCategory.allCases) { category in
-                Text(category.title).tag(category)
+            ForEach(SettingsCategoryGroup.allCases) { group in
+                Section(group.rawValue) {
+                    ForEach(group.categories) { category in
+                        Text(category.title).tag(category)
+                    }
+                }
             }
         }
         .pickerStyle(.menu)
@@ -373,7 +369,10 @@ struct WorkspaceActivitySidebar: View {
 
     private func settingsCategoryBadge(for category: SettingsCategory) -> SettingsCategoryBadge? {
         switch category {
-        case .general:
+        case .updates:
+            if case .readyToInstall = appUpdater.phase {
+                return SettingsCategoryBadge(kind: .dot, isWarning: true)
+            }
             return agentUpdateService.phase == .updateAvailable
                 ? SettingsCategoryBadge(kind: .dot, isWarning: true)
                 : nil
@@ -383,22 +382,30 @@ struct WorkspaceActivitySidebar: View {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .runtime, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
+        case .general, .appearance, .notifications, .runtime, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
             return nil
         }
     }
 
     private var settingsDetailScroll: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(selectedSettingsCategory.title)
+                        .font(DockTypography.pageTitle)
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text(selectedSettingsCategory.subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
                 coreContent
-                    .frame(maxWidth: 920, alignment: .leading)
-                    .padding(.top, 20)
-                    .padding(.bottom, 24)
             }
+            .frame(maxWidth: 920, alignment: .leading)
+            .padding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
         }
+        .id(selectedSettingsCategory)
     }
 
     private var officeKanbanIsCurrent: Bool {
@@ -461,10 +468,6 @@ struct WorkspaceActivitySidebar: View {
 
     private var pageHeaderSubtitle: String {
         switch selectedMode {
-        case .missionControl:
-            guard let queue = control.stuckCardQueue else { return selectedMode.pageHeaderSubtitle }
-            let stuck = queue.total == 1 ? "1 card not moving" : "\(queue.total) cards not moving"
-            return queue.providerWalled ? "\(stuck) · provider rate limited, retries paused" : stuck
         case .today:
             return projectionHeaderSubtitle(
                 control.projectionState(for: "sessions"),
@@ -1085,7 +1088,7 @@ struct WorkspaceActivitySidebar: View {
     /// Compact mode mirrors the fullscreen rail's daily operator destinations.
     /// Repository and setup surfaces remain available from More.
     private var compactRailNavigation: [ControlTab] {
-        [.today, .inbox, .missionControl, .kanban, .quota, .automations]
+        [.today, .inbox, .kanban, .quota, .automations]
     }
 
     private var compactOverflowNavigation: [ControlTab] {
@@ -1194,7 +1197,6 @@ struct WorkspaceActivitySidebar: View {
         // direct refresh can retain the session filter set by Activity, then
         // make the global board look empty while active cards exist.
         if mode == .kanban { applyKanbanFilters() }
-        if mode == .missionControl { control.refreshMissionControl() }
         if mode == .verification { control.refreshVerification() }
         if mode == .changes { Task { await refreshRepository() } }
     }
@@ -2708,157 +2710,6 @@ struct WorkspaceActivitySidebar: View {
         .dockGlassPane()
     }
 
-    private var missionControlContent: some View {
-        HSplitView {
-            VStack(alignment: .leading, spacing: 0) {
-                pageHeader
-                    .padding(.horizontal, 16)
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        missionControlToolbar
-                        if let message = control.missionControlMessage {
-                            Text(message)
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.dockWarning)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if let queue = control.stuckCardQueue {
-                            if queue.groups.isEmpty {
-                                attentionRow(icon: .checkCircle, title: "Nothing stuck", detail: "Every card on the board is moving.", color: .dockSuccess)
-                            }
-                            ForEach(queue.groups) { missionControlGroup($0) }
-                        } else if control.missionControlMessage == nil {
-                            HStack(spacing: 7) {
-                                ProgressView().controlSize(.small)
-                                Text("Loading stuck cards…")
-                            }
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.dockMetadataText)
-                        }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
-            }
-            .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
-
-            if let task = selectedKanbanTask {
-                kanbanDetailPanel(task, presentation: KanbanBoardPresentation.makeSnapshot(
-                    tasks: [],
-                    bots: botMode.bots,
-                    visibleBots: botMode.visibleBots
-                ))
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .confirmationDialog("Archive \(missionControlPickedCards.count) Cards?", isPresented: $isConfirmingMissionControlArchive) {
-            Button("Archive", role: .destructive) { missionControlAct(archive: true) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Archived cards leave the board. The note, if any, is recorded on each card first.")
-        }
-    }
-
-    private var missionControlPickedCards: [StuckCardQueue.Card] {
-        (control.stuckCardQueue?.groups ?? []).flatMap(\.cards).filter { missionControlPicked.contains($0.id) }
-    }
-
-    private func missionControlAct(archive: Bool) {
-        control.missionControlAct(missionControlPickedCards, archive: archive, note: missionControlNote)
-        missionControlPicked = []
-        missionControlNote = ""
-        selectedKanbanTask = nil
-    }
-
-    private var missionControlToolbar: some View {
-        let picked = missionControlPickedCards.count
-        let busy = control.isActionPending(control.missionControlActActionID)
-        return VStack(alignment: .leading, spacing: 8) {
-            TextField("Decision or instruction, recorded on each selected card", text: $missionControlNote, axis: .vertical)
-                .lineLimit(1...4)
-                .textFieldStyle(.dockGlass)
-            HStack(spacing: 8) {
-                Button(action: { missionControlAct(archive: false) }) {
-                    DockIconLabel(picked == 0 ? "Continue" : "Continue \(picked)", icon: .play, iconColor: .dockOnAccentText)
-                }
-                .buttonStyle(.dockPrimary)
-                .disabled(picked == 0 || busy)
-                Button(picked == 0 ? "Archive" : "Archive \(picked)") { isConfirmingMissionControlArchive = true }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.dockDestructive)
-                    .disabled(picked == 0 || busy)
-                if busy { ProgressView().controlSize(.small) }
-                Spacer(minLength: 0)
-                Text("Continue unblocks, releases triage to todo, or promotes todo.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            .font(.system(size: 12, weight: .semibold))
-        }
-    }
-
-    private func missionControlGroup(_ group: StuckCardQueue.Group) -> some View {
-        let ids = Set(group.cards.map(\.id))
-        let allPicked = ids.isSubset(of: missionControlPicked)
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                sectionLabel("\(group.heading.uppercased()) · \(group.cards.count)")
-                Spacer(minLength: 0)
-                Button(allPicked ? "Clear" : "Select all") {
-                    if allPicked { missionControlPicked.subtract(ids) } else { missionControlPicked.formUnion(ids) }
-                }
-                .buttonStyle(.borderless)
-                .font(.system(size: 10, weight: .semibold))
-            }
-            if !group.hint.isEmpty {
-                Text(group.hint.replacingOccurrences(of: "`", with: ""))
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            ForEach(group.cards) { missionControlRow($0) }
-        }
-    }
-
-    private func missionControlRow(_ card: StuckCardQueue.Card) -> some View {
-        let isSelected = selectedKanbanTask?.id == card.id
-        return HStack(alignment: .top, spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { missionControlPicked.contains(card.id) },
-                set: { if $0 { missionControlPicked.insert(card.id) } else { missionControlPicked.remove(card.id) } }
-            ))
-            .toggleStyle(.checkbox)
-            .labelsHidden()
-            .accessibilityLabel("Select \(card.title)")
-            VStack(alignment: .leading, spacing: 3) {
-                Text(card.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                if !card.reason.isEmpty {
-                    Text(card.reason)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(2)
-                }
-                HStack(spacing: 6) {
-                    Text(card.id).font(.system(size: 10, design: .monospaced))
-                    kanbanMetadataPill(card.status.capitalized, tint: .dockWarning)
-                    if let assignee = card.assignee { Text(assignee) }
-                    Text(card.age)
-                    if !card.openParents.isEmpty { Text("waits on \(card.openParents.joined(separator: ", "))") }
-                }
-                .font(.system(size: 10))
-                .foregroundStyle(Color.dockMetadataText)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(8)
-        .background(isSelected ? Color.dockAccent.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture { selectKanbanTask(card.kanbanTask) }
-    }
-
     private var kanbanContent: some View {
         HSplitView {
             // Header and toolbar stay fixed; the board takes the remaining
@@ -3722,11 +3573,6 @@ struct WorkspaceActivitySidebar: View {
                     .foregroundStyle(Color.dockWarning)
                 if let error = why.lastError {
                     Text("Last run: \(error)").font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
-                }
-                if let diagnostic = why.diagnostic {
-                    Text(diagnostic)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.dockSecondaryText)
                 }
             }
             .textSelection(.enabled)
@@ -5099,13 +4945,15 @@ struct WorkspaceActivitySidebar: View {
                         .lineLimit(2)
                 }
                 if let command = capability.recoveryCommand {
-                    Button("COPY \(command)") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(command, forType: .string)
-                    }
+                    DockCopyButton(
+                        command,
+                        label: "COPY \(command)",
+                        accessibilityLabel: "Copy recovery command",
+                        presentation: .text,
+                        color: .dockAccent
+                    )
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
                 }
             }
             Spacer(minLength: 0)
@@ -5287,15 +5135,15 @@ struct WorkspaceActivitySidebar: View {
                     Text(recovery).font(.system(size: 12)).foregroundStyle(Color.dockWarning).lineLimit(2)
                 }
                 if let command = capability.recoveryCommand {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(command, forType: .string)
-                    } label: {
-                        DockIconLabel("COPY \(command)", icon: .copy)
-                    }
+                    DockCopyButton(
+                        command,
+                        label: "COPY \(command)",
+                        accessibilityLabel: "Copy recovery command",
+                        iconSize: 16,
+                        color: .dockAccent
+                    )
                     .buttonStyle(.borderless)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
                 }
             }
             Spacer(minLength: 0)
@@ -5657,15 +5505,33 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 17) {
             if selectedSettingsCategory == .general {
                 generalPreferencesSection
-                settingsDisclosure(title: "Appearance", subtitle: "", icon: .sparkle, isExpanded: $isAppearanceExpanded) {
+            }
+            if selectedSettingsCategory == .notifications {
+                notificationPreferencesSection
+            }
+            if selectedSettingsCategory == .appearance {
+                SettingsSection(title: "Theme", subtitle: "Colors and skins", tint: .dockAccent) {
                     appearanceSection
                 }
+                sidebarPreferencesSection
+                SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
+                    NotchDisplaySettings()
+                }
+                SettingsSection(title: "Hermes companion", subtitle: "", tint: .dockAccent) {
+                    HermesPetSettingsView(pet: control.pet)
+                }
+            }
+            if selectedSettingsCategory == .updates {
                 settingsDisclosure(title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")", icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded) {
                     appUpdateSection
                 }
                 settingsDisclosure(title: "Agent update", subtitle: "Version and updates", icon: .arrowsClockwise, isExpanded: $isAgentUpdateExpanded) {
                     agentUpdateSection
                 }
+            }
+
+            if selectedSettingsCategory == .runtime {
+                runtimeSettingsSection
             }
 
             HermesConfigCategoryView(editor: control.configEditor, category: selectedSettingsCategory)
@@ -5733,13 +5599,14 @@ struct WorkspaceActivitySidebar: View {
                                 Text(recipe.command).font(.system(size: 11)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                             }
                             Spacer()
-                            Button("Copy") {
-                                NSPasteboard.general.clearContents()
-                                NSPasteboard.general.setString(recipe.command, forType: .string)
-                            }
+                            DockCopyButton(
+                                recipe.command,
+                                accessibilityLabel: "Copy \(recipe.title.lowercased()) command",
+                                presentation: .text,
+                                color: .dockAccent
+                            )
                             .buttonStyle(.borderless)
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
                             Button("Ask Hermes") {
                                 let repoPath = control.developmentContext?.path ?? "the selected repository"
                                 let prompt = "Run this exact verification command in " + repoPath + ": " + recipe.command + ". Do not edit files. Report the result and exit code."
@@ -6001,7 +5868,49 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
             }
-            if selectedSettingsCategory == .runtime {
+            if selectedSettingsCategory == .session,
+               control.sessionUsage == nil,
+               control.sessionContext == nil,
+               control.restoreCheckpoints.isEmpty,
+               control.activeAgents.isEmpty,
+               control.processes.isEmpty,
+               model.sessionID == nil {
+                emptyState(icon: .pulse, title: "Session data unavailable", detail: "Open a Hermes session or refresh Settings to load session controls.")
+            }
+            if selectedSettingsCategory == .project,
+               control.projectFacts == nil,
+               control.verification == nil {
+                emptyState(icon: .sealCheck, title: "Project data unavailable", detail: "Select a repository and refresh Settings to load project facts and verification evidence.")
+            }
+            if selectedSettingsCategory == .diagnostics,
+               control.insightsSummary == nil,
+               control.diagnostics.isEmpty,
+               control.journeyNodes.isEmpty,
+               control.sessionStoreStatus == nil,
+               control.memoryHealthStatus == nil {
+                emptyState(icon: .stethoscope, title: "Diagnostics unavailable", detail: "Refresh Settings or reconnect Hermes to request read-only diagnostics.")
+            }
+        }
+        .task {
+            model.refreshRuntimeConfiguration()
+            model.refreshRuntimeModelOptions()
+        }
+        .onChange(of: model.runtimeConfiguration) { _, configuration in
+            guard let configuration,
+                  let matching = model.runtimeModelOptions.first(where: { $0.model == configuration.model && $0.provider == configuration.provider }) else { return }
+            selectedModelID = matching.id
+        }
+        .onChange(of: model.runtimeModelOptions) { _, options in
+            guard let configuration = model.runtimeConfiguration else { return }
+            let matching = options.first { option in
+                option.model == configuration.model && option.provider == configuration.provider
+            }
+            guard let matching else { return }
+            selectedModelID = matching.id
+        }
+    }
+
+    private var runtimeSettingsSection: some View {
             settingsDisclosure(title: "Runtime configuration", subtitle: "Default model, tools, skills, and plugins", icon: .gearSix, isExpanded: $isRuntimeConfigurationExpanded) {
             HStack {
                 settingsSubheading("Default model")
@@ -6211,60 +6120,42 @@ struct WorkspaceActivitySidebar: View {
                 emptyState(icon: .warning, title: "Runtime unavailable", detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
             }
             }
-            }
-
-            if selectedSettingsCategory == .session,
-               control.sessionUsage == nil,
-               control.sessionContext == nil,
-               control.restoreCheckpoints.isEmpty,
-               control.activeAgents.isEmpty,
-               control.processes.isEmpty,
-               model.sessionID == nil {
-                emptyState(icon: .pulse, title: "Session data unavailable", detail: "Open a Hermes session or refresh Settings to load session controls.")
-            }
-            if selectedSettingsCategory == .project,
-               control.projectFacts == nil,
-               control.verification == nil {
-                emptyState(icon: .sealCheck, title: "Project data unavailable", detail: "Select a repository and refresh Settings to load project facts and verification evidence.")
-            }
-            if selectedSettingsCategory == .diagnostics,
-               control.insightsSummary == nil,
-               control.diagnostics.isEmpty,
-               control.journeyNodes.isEmpty,
-               control.sessionStoreStatus == nil,
-               control.memoryHealthStatus == nil {
-                emptyState(icon: .stethoscope, title: "Diagnostics unavailable", detail: "Refresh Settings or reconnect Hermes to request read-only diagnostics.")
-            }
-        }
-        .task {
-            model.refreshRuntimeConfiguration()
-            model.refreshRuntimeModelOptions()
-        }
-        .onChange(of: model.runtimeConfiguration) { _, configuration in
-            guard let configuration,
-                  let matching = model.runtimeModelOptions.first(where: { $0.model == configuration.model && $0.provider == configuration.provider }) else { return }
-            selectedModelID = matching.id
-        }
-        .onChange(of: model.runtimeModelOptions) { _, options in
-            guard let configuration = model.runtimeConfiguration else { return }
-            let matching = options.first { option in
-                option.model == configuration.model && option.provider == configuration.provider
-            }
-            guard let matching else { return }
-            selectedModelID = matching.id
-        }
     }
 
     private var generalPreferencesSection: some View {
-        SettingsSection(title: "Preferences", subtitle: "", tint: .dockAccent) {
-            VStack(alignment: .leading, spacing: 0) {
-                SettingsPreferenceRow(title: "Launch in expanded view", detail: "Open the full workspace instead of the compact popup.") {
-                    settingsSwitch(isOn: Binding(
-                        get: { commandCenterPreferences.launchesExpandedByDefault },
-                        set: { commandCenterPreferences.setLaunchesExpandedByDefault($0) }
-                    ))
+        VStack(alignment: .leading, spacing: 17) {
+            SettingsSection(title: "Hermes gateway", subtitle: "Messaging service", tint: .dockAccent) {
+                HermesGatewaySettingsView(service: control.gatewayService)
+            }
+            SettingsSection(title: "Startup", subtitle: "", tint: .dockAccent) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsPreferenceRow(title: "Launch in expanded view", detail: "Open the full workspace instead of the compact popup.") {
+                        settingsSwitch(isOn: Binding(
+                            get: { commandCenterPreferences.launchesExpandedByDefault },
+                            set: { commandCenterPreferences.setLaunchesExpandedByDefault($0) }
+                        ))
+                    }
                 }
-                Divider().overlay(Color.dockBorderLight)
+                .padding(.vertical, -8)
+            }
+            SettingsSection(title: "Keyboard shortcuts", subtitle: "", tint: .dockAccent) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsPreferenceRow(title: "Open workspace", detail: "Open or hide the workspace from any app. It reopens compact or fullscreen, whichever you used last.") {
+                        shortcutPicker($workspaceShortcut, excluding: notchShortcut)
+                    }
+                    Divider().overlay(Color.dockBorderLight)
+                    SettingsPreferenceRow(title: "Notch quick view", detail: "Peek at tasks and quota in the notch from any app.") {
+                        shortcutPicker($notchShortcut, excluding: workspaceShortcut)
+                    }
+                }
+                .padding(.vertical, -8)
+            }
+        }
+    }
+
+    private var notificationPreferencesSection: some View {
+        SettingsSection(title: "Notifications", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
                 SettingsPreferenceRow(title: "Completion alerts", detail: "Notify when Hermes finishes a request while Herm is hidden.") {
                     settingsSwitch(isOn: Binding(
                         get: { model.completionNotificationsEnabled },
@@ -6281,7 +6172,14 @@ struct WorkspaceActivitySidebar: View {
                         }
                     ))
                 }
-                Divider().overlay(Color.dockBorderLight)
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    private var sidebarPreferencesSection: some View {
+        SettingsSection(title: "Sidebar", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
                 SettingsPreferenceRow(title: "Show Kanban in sidebar", detail: "List the Kanban board in the workspace side panel.") {
                     settingsSwitch(isOn: $showsKanbanInSidebar)
                 }
@@ -6296,14 +6194,6 @@ struct WorkspaceActivitySidebar: View {
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(title: "Show Office in sidebar", detail: "List the Office in the workspace side panel.") {
                     settingsSwitch(isOn: $showsOfficeInSidebar)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(title: "Open workspace", detail: "Open or hide the workspace from any app. It reopens compact or fullscreen, whichever you used last.") {
-                    shortcutPicker($workspaceShortcut, excluding: notchShortcut)
-                }
-                Divider().overlay(Color.dockBorderLight)
-                SettingsPreferenceRow(title: "Notch quick view", detail: "Peek at tasks and quota in the notch from any app.") {
-                    shortcutPicker($notchShortcut, excluding: workspaceShortcut)
                 }
             }
             .padding(.vertical, -8)
@@ -6342,22 +6232,6 @@ struct WorkspaceActivitySidebar: View {
             if !control.appearanceProjectionAvailable {
                 SettingsInlineNotice(text: "Hermes skin status unavailable. Refresh Settings to retry.", tint: Color.dockWarning)
             } else if let projection = control.appearanceProjection {
-                if !projection.installedPets.isEmpty {
-                    VStack(alignment: .leading, spacing: 0) {
-                        settingsSubheading("Hermes companion")
-                        ForEach(projection.installedPets, id: \.id) { pet in
-                            HStack(spacing: 8) {
-                                Circle().fill(pet.isActive ? Color.dockAccent : Color.dockMetadataText).frame(width: 6, height: 6)
-                                Text(pet.name).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
-                                Spacer()
-                                Text(pet.isActive ? "Active" : "Installed")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Color.dockMetadataText)
-                            }
-                            .frame(minHeight: 36)
-                        }
-                    }
-                }
                 let unknownSkins = DockAppearanceCatalog.unknownSkins(projection.skins)
                 if !unknownSkins.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
@@ -6816,8 +6690,28 @@ struct WorkspaceActivitySidebar: View {
     }
 }
 
+enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
+    case app = "App"
+    case agent = "Agent"
+    case tools = "Tools & access"
+    case activity = "Activity & maintenance"
+
+    var id: Self { self }
+
+    var categories: [SettingsCategory] {
+        switch self {
+        case .app: [.general, .appearance, .notifications]
+        case .agent: [.runtime, .chat, .memory, .voice, .advanced]
+        case .tools: [.workspace, .browser, .safety, .integrations]
+        case .activity: [.session, .project, .diagnostics, .updates]
+        }
+    }
+}
+
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case appearance
+    case notifications
     case runtime
     case chat
     case workspace
@@ -6830,30 +6724,37 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case session
     case project
     case diagnostics
+    case updates
 
     var id: Self { self }
 
     var title: String {
         switch self {
         case .general: "General"
-        case .runtime: "Runtime"
+        case .appearance: "Appearance"
+        case .notifications: "Notifications"
+        case .updates: "Updates"
+        case .runtime: "Models & tools"
         case .chat: "Chat"
-        case .workspace: "Workspace"
-        case .safety: "Safety"
+        case .workspace: "Files & terminal"
+        case .safety: "Privacy & safety"
         case .browser: "Browser"
         case .memory: "Memory & Context"
         case .voice: "Voice"
         case .advanced: "Advanced"
         case .integrations: "Integrations"
-        case .session: "Session"
-        case .project: "Project"
+        case .session: "Active session"
+        case .project: "Project checks"
         case .diagnostics: "Diagnostics"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .general: "Herm preferences and appearance"
+        case .general: "Startup and keyboard shortcuts"
+        case .appearance: "Themes, sidebar, notch, and companion"
+        case .notifications: "Completion alerts and repository changes"
+        case .updates: "Herm and Hermes versions and updates"
         case .runtime: "Models, dispatch, and tools"
         case .chat: "Personality, timezone, and attachments"
         case .workspace: "Working directory, shell, and file access"
@@ -6861,7 +6762,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .browser: "Browser profile and private URLs"
         case .memory: "Persistent memory and context compression"
         case .voice: "Voice chat, speech to text, and text to speech"
-        case .advanced: "Agent limits, tools, terminal, and subagents"
+        case .advanced: "Agent limits, subagents, and output limits"
         case .integrations: "Permissions and connected services"
         case .session: "Active session controls and context"
         case .project: "Repository facts and verification"
@@ -6872,6 +6773,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var icon: Ph {
         switch self {
         case .general: .slidersHorizontal
+        case .appearance: .sparkle
+        case .notifications: .bell
+        case .updates: .arrowsClockwise
         case .runtime: .gearSix
         case .chat: .chatText
         case .workspace: .folder

@@ -21,6 +21,13 @@ enum HermesSkillsUnavailableReason: Equatable, Sendable {
 /// identifiers; callers must not invent spelling variants at the call site.
 enum HermesFeatureIDs {
     enum ID: String, CaseIterable, Sendable {
+        case petInfo = "pet.info"
+        case petInfoMeta = "pet.info.meta"
+        case petGallery = "pet.gallery"
+        case petThumb = "pet.thumb"
+        case petSelect = "pet.select"
+        case petDisable = "pet.disable"
+        case petScale = "pet.scale"
         case gateway
         case hermesVersion = "hermes-version"
         case rpcSessions = "rpc-sessions"
@@ -104,6 +111,7 @@ enum HermesFeatureIDs {
         case projectsArchive = "projects.archive"
         case projectsDelete = "projects.delete"
         case projectsSetActive = "projects.set_active"
+        case projectsAddFolder = "projects.add_folder"
         case voiceToggle = "voice.toggle"
         case voiceRecord = "voice.record"
         case configGet = "config.get"
@@ -127,6 +135,7 @@ enum HermesFeatureIDs {
     }
 
     static let transportIDs: [String] = [
+        "pet.info", "pet.info.meta", "pet.gallery", "pet.thumb", "pet.select", "pet.disable", "pet.scale",
         "session.list", "session.active_list", "session.activate", "session.delete", "session.resume",
         "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create", "session.close", "session.set_hidden", "session.events.since", "project.facts",
         "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "bot_relay.deliver", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
@@ -135,7 +144,7 @@ enum HermesFeatureIDs {
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "config.get",
         "config.set", "model.options", "shell.exec", "image.attach_bytes", "pdf.attach",
         "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore",
-        "projects.create", "projects.archive", "projects.delete", "projects.set_active"
+        "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder"
     ]
     static let all = ID.allCases.map(\.rawValue)
     static let capabilityIDs = ID.allCases.filter { !transportIDs.contains($0.rawValue) }.map(\.rawValue)

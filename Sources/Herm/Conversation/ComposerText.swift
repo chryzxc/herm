@@ -74,6 +74,8 @@ final class ComposerText: ObservableObject {
     /// UTF-16 caret the editor applies after a completion rewrites the text.
     var pendingCaret: Int?
     private var historyIndex: Int?
+    /// True while the text is an unedited recalled prompt.
+    var isBrowsingHistory: Bool { historyIndex != nil }
     private var restoreDraft = ""
     private var isUpdatingFromHistory = false
 

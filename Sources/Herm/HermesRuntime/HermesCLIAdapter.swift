@@ -250,8 +250,6 @@ final class HermesCLIAdapter {
     func kanbanComplete(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "complete") + [taskID, "--summary", "Completed from Hermes Control"]) }
     func kanbanBlock(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "block") + [taskID, "Blocked from Hermes Control"]) }
     func kanbanUnblock(boardSlug: String? = nil, taskID: String, reason: String = "Unblocked from Hermes Control") async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "unblock") + [taskID, "--reason", reason]) }
-    /// Stuck-card queue from the software-delivery plugin (Mission Control).
-    func softwareDeliveryQueue() async throws -> HermesCLIResult { try await run(["hermes", "software-delivery", "queue"]) }
     func kanbanArchive(boardSlug: String? = nil, taskID: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "archive") + [taskID]) }
     func kanbanComment(boardSlug: String? = nil, taskID: String, text: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "comment") + [taskID, "--", text]) }
     func kanbanSchedule(boardSlug: String? = nil, taskID: String, reason: String) async throws -> HermesCLIResult { try await run(kanbanWords(boardSlug: boardSlug, action: "schedule") + [taskID, "--", reason]) }

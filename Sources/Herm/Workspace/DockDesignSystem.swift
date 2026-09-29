@@ -319,6 +319,129 @@ struct DockIconButton: View {
     }
 }
 
+/// A copy action with consistent, in-place success feedback. Both states stay
+/// in the layout so changing from Copy to Copied never shifts nearby controls.
+/// Callers can apply the button style that belongs to their surface.
+struct DockCopyButton: View {
+    enum Presentation {
+        case icon
+        case text
+        case iconAndText
+    }
+
+    let label: String
+    let accessibilityLabel: String
+    var presentation: Presentation = .iconAndText
+    var iconSize: CGFloat = 14
+    var color: Color = .dockSecondaryText
+    var confirmationColor: Color = .dockSuccess
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var didCopy = false
+    @State private var resetTask: Task<Void, Never>?
+
+    init(
+        _ value: String,
+        label: String = "Copy",
+        accessibilityLabel: String,
+        presentation: Presentation = .iconAndText,
+        iconSize: CGFloat = 14,
+        color: Color = .dockSecondaryText,
+        confirmationColor: Color = .dockSuccess
+    ) {
+        self.label = label
+        self.accessibilityLabel = accessibilityLabel
+        self.presentation = presentation
+        self.iconSize = iconSize
+        self.color = color
+        self.confirmationColor = confirmationColor
+        self.action = {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(value, forType: .string)
+        }
+    }
+
+    init(
+        label: String = "Copy",
+        accessibilityLabel: String,
+        presentation: Presentation = .iconAndText,
+        iconSize: CGFloat = 14,
+        color: Color = .dockSecondaryText,
+        confirmationColor: Color = .dockSuccess,
+        action: @escaping () -> Void
+    ) {
+        self.label = label
+        self.accessibilityLabel = accessibilityLabel
+        self.presentation = presentation
+        self.iconSize = iconSize
+        self.color = color
+        self.confirmationColor = confirmationColor
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: copy) {
+            ZStack {
+                buttonLabel(isConfirmation: false)
+                    .opacity(didCopy ? 0 : 1)
+                    .scaleEffect(didCopy ? 0.72 : 1)
+                buttonLabel(isConfirmation: true)
+                    .opacity(didCopy ? 1 : 0)
+                    .scaleEffect(didCopy ? 1 : 0.72)
+            }
+            .contentShape(Rectangle())
+        }
+        .help(didCopy ? "Copied" : accessibilityLabel)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(didCopy ? "Copied" : "")
+        .onDisappear { resetTask?.cancel() }
+    }
+
+    @ViewBuilder
+    private func buttonLabel(isConfirmation: Bool) -> some View {
+        let icon: Ph = isConfirmation ? .check : .copy
+        let title = isConfirmation ? "Copied" : label
+        let foreground = isConfirmation ? confirmationColor : color
+
+        switch presentation {
+        case .icon:
+            DockIcon(icon, size: iconSize, color: foreground)
+        case .text:
+            HStack(spacing: 5) {
+                if isConfirmation { DockIcon(icon, size: iconSize, color: foreground) }
+                Text(title)
+            }
+            .foregroundStyle(foreground)
+        case .iconAndText:
+            HStack(spacing: 6) {
+                DockIcon(icon, size: iconSize, color: foreground)
+                Text(title)
+            }
+            .foregroundStyle(foreground)
+        }
+    }
+
+    private func copy() {
+        action()
+        resetTask?.cancel()
+        setCopied(true)
+        resetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            setCopied(false)
+        }
+    }
+
+    private func setCopied(_ copied: Bool) {
+        if reduceMotion {
+            didCopy = copied
+        } else {
+            withAnimation(.dockEase(duration: 0.18)) { didCopy = copied }
+        }
+    }
+}
+
 /// One header for every sidebar group: a quiet uppercase label, a count pill,
 /// a rotating disclosure chevron when collapsible, and trailing actions.
 struct DockSectionHeader<Actions: View>: View {

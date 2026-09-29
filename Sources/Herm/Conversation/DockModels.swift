@@ -417,8 +417,10 @@ struct ChatMessage: Identifiable, Equatable {
     let durationLabel: String?
     /// Tool calls Hermes ran while producing this response, oldest first.
     let activity: [ActiveToolCall]
+    /// Set only for Hermes kanban wake notices, which render as a status card.
+    let kanbanNotice: KanbanNotice?
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = []) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil) {
         self.id = id
         self.role = role
         self.text = text
@@ -434,9 +436,12 @@ struct ChatMessage: Identifiable, Equatable {
         self.botDisplayName = botDisplayName
         self.contentRevision = contentRevision ?? Self.revision(for: text)
         self.hasBodyText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        self.timeLabel = timestamp.formatted(date: .omitted, time: .shortened)
+        self.timeLabel = Calendar.current.isDateInToday(timestamp)
+            ? timestamp.formatted(date: .omitted, time: .shortened)
+            : timestamp.formatted(date: .abbreviated, time: .shortened)
         self.durationLabel = responseDuration.map { ResponseDurationFormatting.string(seconds: $0) }
         self.activity = activity
+        self.kanbanNotice = kanbanNotice
     }
 
     var image: NSImage? { images.first }
@@ -466,11 +471,66 @@ struct ChatMessage: Identifiable, Equatable {
             botProfileID: botProfileID,
             botDisplayName: botDisplayName,
             contentRevision: contentRevision,
-            activity: activity
+            activity: activity,
+            kanbanNotice: kanbanNotice
         )
     }
 
     enum Role { case user, hermes }
+}
+
+/// One kanban wake notice (`✔ Kanban t_c891be93 done — Title` plus summary
+/// lines), split for the status card. Only the glyph and card id are stable
+/// Hermes output, so the label falls back to the glyph when wording changes.
+struct KanbanNotice: Equatable {
+    let taskID: String
+    let label: String
+    let tone: DockStatusTone
+    let title: String?
+    let detail: String?
+
+    init?(text: String) {
+        var lines = text.components(separatedBy: .newlines)
+        let head = lines.removeFirst()
+        guard let id = head.firstMatch(of: /\bt_[0-9a-f]{8}\b/) else { return nil }
+        taskID = String(id.0)
+        let glyph = head.prefix { $0 != " " }
+        var event = head[id.range.upperBound...].trimmingCharacters(in: .whitespaces)
+        var title: String?
+        var reason: String?
+        // Whichever separator comes first: `done — <title>` or `blocked: <reason>`.
+        let dash = event.range(of: " — "), colon = event.range(of: ": ")
+        if let dash, colon.map({ dash.lowerBound < $0.lowerBound }) ?? true {
+            title = String(event[dash.upperBound...])
+            event = String(event[..<dash.lowerBound])
+        } else if let colon {
+            reason = String(event[colon.upperBound...])
+            event = String(event[..<colon.lowerBound])
+        }
+        let lower = event.lowercased()
+        (label, tone) = switch true {
+        case lower.contains("changes"): ("Changes requested", .attention)
+        case lower.contains("triage"): ("Triage", .attention)
+        case lower.contains("blocked"): ("Blocked", .attention)
+        case lower.contains("gave up"): ("Gave up", .attention)
+        case lower.contains("crash"), lower.contains("stopped unexpectedly"): ("Crashed", .attention)
+        case lower.contains("timed out"), lower.contains("ran past"): ("Timed out", .attention)
+        case lower.contains("review"): ("Ready for review", .review)
+        case lower.hasPrefix("done"), lower.contains("complete"): ("Done", .complete)
+        case lower.hasPrefix("→"): ("Moved to \(event.dropFirst().trimmingCharacters(in: .whitespaces))", .queued)
+        default: switch glyph {
+            case "✔", "✅": ("Done", .complete)
+            case "👀": ("Ready for review", .review)
+            case "🔄": ("Updated", .queued)
+            case "⏸", "⛔", "🛑", "✖", "✘", "⏱": ("Needs attention", .attention)
+            default: ("Update", .inactive)
+            }
+        }
+        self.title = title
+        let detail = ([reason] + lines.map(Optional.some)).compactMap { $0 }
+            .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        self.detail = detail.isEmpty ? nil : detail
+    }
 }
 
 struct HermesSession: Identifiable, Equatable {

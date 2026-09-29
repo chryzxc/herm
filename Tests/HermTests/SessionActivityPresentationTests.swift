@@ -48,8 +48,28 @@ struct SessionActivityPresentationTests {
             botRecords: [], kanbanTasks: [task]
         )
 
-        #expect(snapshot.timeline.map(\.id) == ["agent:event-1", "kanban:card-1:10.0"])
-        #expect(snapshot.timeline.last?.status == "CUSTOM_STATE")
+        // An unfinished card sits in its status section, not in Recent.
+        #expect(snapshot.timeline.map(\.id) == ["agent:event-1"])
+        #expect(snapshot.work.first?.status == "CUSTOM_STATE")
+    }
+
+    @Test func kanbanCardsShowOnceInTheirStatusSection() {
+        let at = Date(timeIntervalSince1970: 10)
+        func card(_ id: String, _ status: String) -> KanbanTaskSummary {
+            KanbanTaskSummary(id: id, title: id, status: status, detail: nil, priority: nil, assignee: nil, latestEventAt: at)
+        }
+        let snapshot = SessionActivityOverviewPresentation.makeSnapshot(
+            agentSnapshot: emptyAgentSnapshot, botRecords: [],
+            kanbanTasks: [card("b", "blocked"), card("t", "triage"), card("r", "running"),
+                          card("s", "scheduled"), card("d", "done")]
+        )
+
+        let lanes = Dictionary(uniqueKeysWithValues: snapshot.work.map { ($0.id, $0.lane) })
+        #expect(lanes == ["kanban:b": .blocked, "kanban:t": .blocked, "kanban:r": .inProgress, "kanban:s": .queued])
+        #expect(snapshot.work.first { $0.id == "kanban:t" }?.status == "TRIAGE")
+        #expect(snapshot.blockedWorkCount == 2)
+        #expect(snapshot.timeline.map(\.id) == ["kanban:d:10.0"])
+        #expect(snapshot.timeline.first?.kanbanTask?.id == "d")
     }
 
     @Test func activeTurnLeadsInProgressWithItsRunningStep() {

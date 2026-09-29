@@ -497,7 +497,12 @@ struct ArtifactsInspectorView: View {
             Button("Open") { open(record.value) }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.dockAccent)
-            Button("Copy \(record.kind == .link ? "link" : "path")") { copy(record.value) }
+            DockCopyButton(
+                record.value,
+                label: "Copy \(record.kind == .link ? "link" : "path")",
+                accessibilityLabel: "Copy \(record.kind == .link ? "link" : "path")",
+                presentation: .text
+            )
                 .buttonStyle(.bordered)
             if isLocalFile(record) {
                 Button("Reveal in Finder") { reveal(record.value) }
@@ -725,7 +730,7 @@ struct ArtifactsInspectorView: View {
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(Color.dockMetadataText)
                 Spacer(minLength: 4)
-                artifactAction("Copy") { copy(record.value) }
+                artifactCopyAction(record.value)
                 artifactAction("Open") { open(record.value) }
             }
         }
@@ -797,7 +802,7 @@ struct ArtifactsInspectorView: View {
             Text(record.timestamp, format: .dateTime.month(.abbreviated).day())
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(Color.dockMetadataText)
-            artifactAction("Copy") { copy(record.value) }
+            artifactCopyAction(record.value)
             artifactAction("Open") { open(record.value) }
         }
         .padding(10)
@@ -811,6 +816,18 @@ struct ArtifactsInspectorView: View {
             .font(.system(size: 10, weight: .semibold))
             .buttonStyle(.borderless)
             .foregroundStyle(Color.dockAccent)
+    }
+
+    private func artifactCopyAction(_ value: String) -> some View {
+        DockCopyButton(
+            value,
+            accessibilityLabel: "Copy artifact location",
+            presentation: .text,
+            iconSize: 10,
+            color: .dockAccent
+        )
+        .font(.system(size: 10, weight: .semibold))
+        .buttonStyle(.borderless)
     }
 
     private func pagination(current: Int, total: Int, select: @escaping (Int) -> Void) -> some View {

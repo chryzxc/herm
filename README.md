@@ -45,6 +45,35 @@ swift run
 
 The notch is the main way to use Herm. It sits against the left or right edge of your screen, stays out of the way while nothing is happening, and shows you when Hermes needs attention.
 
+### Hermes companion
+
+Herm displays the selected profile's enabled Hermes pet just below the notch, outside its contour. Its
+poses follow task activity: hover over it for a greeting or
+click to pet it, without opening the notch. It stays below the expanded preview,
+with an occasional celebration after successful work. Hover the notch itself
+for status and Quick Message. The pet uses the same assets and selection as Hermes
+Desktop and the TUI. All pet surfaces use the same renderer, with Hermes' row
+order mapped to native image coordinates so animation does not cycle through
+another row's blank padding.
+
+In **Settings → Appearance → Hermes companion**, choose a pet from
+the always-visible **Select a pet** gallery, enable or disable it, and adjust its Hermes size.
+**Apply to Hermes** confirms the shared change; Hermes handles any download.
+After **Apply to Hermes**, the floating pet uses the saved size (100% is the
+sprite's native frame size). Its window and roaming bounds resize with it;
+the Settings thumbnail remains compact. Oversized pets fit within the display.
+Notch announcements, including quota changes, share a centralized pet-reaction
+mapping; hovering and petting remain short-lived interactions.
+This requires Hermes' `pet.*` gateway methods. Older runtimes keep the ordinary
+notch and show companion availability guidance in Settings. Reduced Motion
+displays a static sprite.
+
+Enable **Roam from the notch** in the companion settings for walks across
+the current display's bottom edge with directional animation, pauses, and periodic
+returns home. Task activity and hovering pause movement; drag repositions it.
+Right-click the notch or pet and choose **Call pet home** to return it. Roaming
+is local to Herm, defaults off, and is disabled by Reduce Motion.
+
 ### What the notch shows
 
 The notch changes to reflect what Hermes is doing, so you don't have to keep a terminal open:
@@ -58,6 +87,8 @@ The notch changes to reflect what Hermes is doing, so you don't have to keep a t
 | **Offline** | A clear indicator when the local Hermes runtime isn't reachable. |
 
 The Tasks preview opens on **Activity** by default. Its list/grid toggle switches between session activity and **Kanban** cards, using the same controls as Quota. Both views use Herm’s compact status cards. Kanban shows running, blocked, and review cards across boards. Confirmed card moves and edits automatically expand the Kanban preview without changing your selected view; click a card to open its board and inspector. Kanban refreshes every five seconds while the workspace is closed. The initial load stays quiet, and unchanged or failed refreshes do not announce. Up to 30 recent card updates remain until opened; active cards stay visible.
+
+The Activity preview separates **Needs your attention**, **In progress**, and **Finished, not opened**. Approval requests and clarification questions show their own status and a short summary, including requests from other sessions. New requests open the preview; select the row to review and respond in the workspace.
 
 Choose **Quick message** in either Tasks view to start a new session without opening the workspace. Choose **Reply** on a session row to compose directly beneath it. Replies stay tied to that session, and neither action changes the workspace’s selected chat. The compact composer keeps its own draft, preserves workspace attachments, and stays open while typing; **Back** or Escape leaves it. Failed sends keep the text for retry. Kanban rows show the assigned bot’s stored avatar or its existing fallback identity.
 
@@ -79,7 +110,7 @@ The status colors match the rest of the app: blue means active, green means heal
 
 A typical workflow: start a long task in chat, collapse the workspace, and keep working. When the notch turns amber, hover over it to see which session needs approval, click that session, approve, and collapse again. When the task finishes, the notch tells you.
 
-All notch animations respect **Reduce Motion**.
+Choose **Dots**, **Vertical line**, or **Ring** in **Settings → Appearance → Notch**. The selection applies immediately and is saved across launches. The vertical line sweeps while work runs; the ring rotates. All notch animations respect **Reduce Motion**.
 
 ## Features
 
@@ -148,11 +179,15 @@ colors. The other Herm themes keep their authored opaque palettes.
 
 - **Today**: your current focus, approvals, failures, due Apple Reminders, active work, and scheduled jobs.
 - **Inbox**: approvals, clarifications, failures, and completed work. You can dismiss or snooze items.
-- **Activity**: delegated agents that are running, an animated map of handoffs between agents, and background tasks.
+- **Activity**: delegated agents that are running, an animated map of handoffs between agents, and background tasks. Session Kanban activity spans all active boards and refreshes every five seconds while visible, with immediate refresh requests when session tools reference a card.
 - **Artifacts**: images, files, and links produced in recent sessions.
 - **Core**: token usage, context breakdown, rollback checkpoints, skills, MCP servers, plugins, and Hermes health.
 
+Settings groups navigation into **App**, **Agent**, **Tools & access**, and **Activity & maintenance**. Find startup and keyboard shortcuts in **General**; themes, sidebar visibility, notch display, and the companion in **Appearance**; alerts in **Notifications**; and app/agent updates in **Updates**. **Files & terminal** brings the working directory, execution backend, and shell settings together. Each page includes a short description, and compact windows use the same grouped category menu.
+
 Settings shows each configured MCP server once, with its connection details and status when Hermes provides them. Dropdown settings align with the right edge of their preference rows.
+
+**Settings → General → Hermes gateway** shows whether the default-profile messaging gateway is running. Status refreshes every 15 seconds while visible, with a manual refresh button. **Restart gateway** runs Hermes' restart command after confirmation and checks status again. This requires a Hermes launchd service; manually launched gateways remain managed in Terminal. Restarting may briefly interrupt messaging channels and scheduled work.
 
 ### ⏱️ Automations and quota
 

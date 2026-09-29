@@ -29,10 +29,12 @@ struct EdgeKanbanActivityTests {
         for status in ["todo", "ready", "running", "review", "blocked", "scheduled", "done"] {
             let task = card(status: status)
             let announced4 = activity.ingest([task])
-            #expect(announced4)
+            let queued = ["todo", "ready", "scheduled"].contains(status)
+            #expect(announced4 == !queued)
             let announced5 = activity.ingest([task])
             #expect(!announced5)
             let row = activity.rows(isCurrent: true).first
+            if queued { #expect(row == nil); previous = status; continue }
             #expect(row?.statusLabel == status.capitalized)
             #expect(row?.detail?.contains("\(previous.capitalized) → \(status.capitalized)") == true)
             #expect(row?.kanbanTask == task)
@@ -52,10 +54,10 @@ struct EdgeKanbanActivityTests {
         var activity = EdgeKanbanActivity()
         let announced6 = activity.ingest([])
         #expect(!announced6)
-        let announced7 = activity.ingest([card(status: "todo")])
+        let announced7 = activity.ingest([card(status: "review")])
         #expect(announced7)
         #expect(activity.rows(isCurrent: true).first?.detail?.contains("Card added") == true)
-        let announced8 = activity.ingest([card(status: "todo", title: "Fix logout")])
+        let announced8 = activity.ingest([card(status: "review", title: "Fix logout")])
         #expect(announced8)
         #expect(activity.rows(isCurrent: true).first?.title == "Fix logout")
         #expect(activity.rows(isCurrent: true).first?.detail?.contains("Card updated") == true)
@@ -109,38 +111,21 @@ struct EdgeKanbanActivityTests {
         #expect(activity.rows(isCurrent: true).isEmpty)
     }
 
-    @MainActor @Test func tasksDefaultToActivityAndAnnouncementsDoNotOverwriteSelection() {
-        let state = EdgeNotchState()
-        #expect(state.displaysTaskSource == .activity)
-        state.announcedTaskSource = .kanban
-        state.announcesTasks = true
-        state.showingAnnouncement = true
-        #expect(state.displaysTaskSource == .kanban)
-        #expect(state.taskSource == .activity)
-        state.showingAnnouncement = false
-        #expect(state.displaysTaskSource == .activity)
-        state.selectTaskSource(.kanban)
-        state.expanded = false
-        state.expanded = true
-        #expect(state.displaysTaskSource == .kanban)
-        state.announcedTaskSource = .activity
-        state.showingAnnouncement = true
-        #expect(state.displaysTaskSource == .activity)
-        state.selectTaskSource(.kanban)
-        #expect(!state.showingAnnouncement)
-        #expect(state.displaysTaskSource == .kanban)
-    }
-
-    @Test func taskSourcesDoNotMixSessionAndKanbanRows() {
+    @Test func mergedListOrdersInProgressFinishedReviewAttention() {
+        func row(_ id: String, _ phase: EdgeNotchTask.Phase, _ age: TimeInterval?, current: Bool = false) -> EdgeNotchTask {
+            EdgeNotchTask(id: id, title: id, phase: phase, statusLabel: "", detail: nil,
+                updatedAt: age.map { Date(timeIntervalSince1970: 1_000 - $0) },
+                isCurrent: current, isStatusCurrent: true, session: nil)
+        }
         var activity = EdgeKanbanActivity()
         _ = activity.ingest([card()])
-        let session = EdgeNotchTask(id: "session", title: "Session", phase: .working,
-            statusLabel: "Working", detail: nil, updatedAt: nil,
-            isCurrent: true, isStatusCurrent: true, session: nil)
-        let rows = [session] + activity.rows(isCurrent: true)
-        #expect(rows.filter(EdgeTaskSource.activity.includes) == [session])
-        #expect(rows.filter(EdgeTaskSource.kanban.includes).count == 1)
-        #expect(rows.filter(EdgeTaskSource.kanban.includes).first?.kanbanTask?.id == "task")
+        let kanban = activity.rows(isCurrent: true)
+        let rows = EdgeNotchTask.merged([
+            row("done", .finished, 1), row("blocked", .attention, 1), row("old", .working, 50),
+            row("queued", .pending, 5), row("current", .working, nil, current: true),
+        ] + kanban)
+        #expect(rows.map(\.id) == ["current", "old", "kanban:4:main:task", "done", "queued", "blocked"])
+        #expect(rows.map(\.section) == [.inProgress, .inProgress, .inProgress, .finished, .review, .attention])
     }
 
     @MainActor @Test func railReflectsKanbanWithoutInventingCurrentSessionActivity() {

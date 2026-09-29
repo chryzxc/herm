@@ -49,6 +49,7 @@ struct ConversationMessageRow: View, Equatable {
     let onBranch: () -> Void
     let onReadAloud: () -> Void
     let onRefresh: () -> Void
+    let loadKanbanSummary: ((KanbanNotice) async -> String?)?
     init(
         message: ChatMessage,
         isStreamingMessage: Bool,
@@ -66,7 +67,8 @@ struct ConversationMessageRow: View, Equatable {
         onCopy: @escaping () -> Void = {},
         onBranch: @escaping () -> Void = {},
         onReadAloud: @escaping () -> Void = {},
-        onRefresh: @escaping () -> Void = {}
+        onRefresh: @escaping () -> Void = {},
+        loadKanbanSummary: ((KanbanNotice) async -> String?)? = nil
     ) {
         self.message = message
         self.isStreamingMessage = isStreamingMessage
@@ -85,6 +87,7 @@ struct ConversationMessageRow: View, Equatable {
         self.onBranch = onBranch
         self.onReadAloud = onReadAloud
         self.onRefresh = onRefresh
+        self.loadKanbanSummary = loadKanbanSummary
     }
 
     nonisolated static func == (lhs: ConversationMessageRow, rhs: ConversationMessageRow) -> Bool {
@@ -215,7 +218,13 @@ struct ConversationMessageRow: View, Equatable {
                         .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
                     }
 
-                    if !message.text.isEmpty || isStreamingMessage {
+                    if let notice = message.kanbanNotice {
+                        KanbanNoticeCard(notice: notice, loadFullSummary: loadKanbanSummary.map { load in { await load(notice) } })
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        messageMetadata
+                    } else if !message.text.isEmpty || isStreamingMessage {
                         Group {
                             if isStreamingMessage, let streamingText {
                                 // The row is an equatable boundary that does
@@ -242,7 +251,9 @@ struct ConversationMessageRow: View, Equatable {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    if !message.isError, message.hasBodyText {
+                    if message.kanbanNotice != nil {
+                        EmptyView()
+                    } else if !message.isError, message.hasBodyText {
                         messageActions
                     } else if isStreamingMessage, let streamingText {
                         StreamingResponseMetadata(
@@ -298,7 +309,12 @@ struct ConversationMessageRow: View, Equatable {
 
     @ViewBuilder
     private func messageMarkdownView(_ markdown: String) -> some View {
-        NativeMarkdownMessageView(markdown: markdown, themeRevision: themeRevision)
+        // Trailing blank lines would render as empty paragraphs and open a gap
+        // above the action row.
+        NativeMarkdownMessageView(
+            markdown: markdown.trimmingCharacters(in: .whitespacesAndNewlines),
+            themeRevision: themeRevision
+        )
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -325,7 +341,10 @@ struct ConversationMessageRow: View, Equatable {
         HStack(spacing: 6) {
             Text(message.timeLabel)
             if let durationLabel = message.durationLabel {
-                DockIconLabel(durationLabel, icon: .timer)
+                HStack(spacing: 4) {
+                    DockIcon(.timer, size: 12, color: .dockMetadataText)
+                    Text(durationLabel)
+                }
             }
             if let tokenCount = message.tokenCount {
                 Text("· \(SessionTokenFormatting.format(tokenCount))")
@@ -350,34 +369,122 @@ struct ConversationMessageRow: View, Equatable {
         }
     }
 
+    @ViewBuilder
     private func actionButton(
         _ kind: ConversationMessageActionKind,
         action: @escaping () -> Void,
         isAvailable: Bool = true
     ) -> some View {
-        let icon = kind == .readAloud && isSpeaking ? .stop : kind.icon
-        let label = kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
-        let isPending = pendingAction == kind
-        let anotherMutationIsPending = pendingAction != nil
-            && (kind == .branch || kind == .refresh)
-            && !isPending
-        let iconColor = kind == .readAloud && isSpeaking
-            ? Color.dockAccent
-            : Color.dockSecondaryText
-        return Button(action: action) {
-            if isPending {
-                ProgressView().controlSize(.small)
-            } else {
-                DockIcon(icon, size: 12, color: iconColor)
+        if kind == .copy {
+            DockCopyButton(
+                accessibilityLabel: kind.label,
+                presentation: .icon,
+                iconSize: 12,
+                action: action
+            )
+            .buttonStyle(DockPressButtonStyle())
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+        } else {
+            let icon = kind == .readAloud && isSpeaking ? Ph.stop : kind.icon
+            let label = kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
+            let isPending = pendingAction == kind
+            let anotherMutationIsPending = pendingAction != nil
+                && (kind == .branch || kind == .refresh)
+                && !isPending
+            let iconColor = kind == .readAloud && isSpeaking
+                ? Color.dockAccent
+                : Color.dockSecondaryText
+            Button(action: action) {
+                if isPending {
+                    ProgressView().controlSize(.small)
+                } else {
+                    DockIcon(icon, size: 12, color: iconColor)
+                }
             }
+            .buttonStyle(DockPressButtonStyle())
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+            .help(label)
+            .accessibilityLabel(label)
+            .accessibilityValue(isAvailable ? "Available" : "Unavailable until a conversation session is selected")
+            .disabled(isPending || anotherMutationIsPending || !isAvailable)
         }
-        .buttonStyle(DockPressButtonStyle())
-        .frame(width: 28, height: 28)
-        .contentShape(Rectangle())
-        .help(label)
-        .accessibilityLabel(label)
-        .accessibilityValue(isAvailable ? "Available" : "Unavailable until a conversation session is selected")
-        .disabled(isPending || anotherMutationIsPending || !isAvailable)
     }
 
+}
+
+/// Kanban wake notice as a signage card (DESIGN.md anatomy): status dot,
+/// card title and id, then the status label in the tone hue with one detail
+/// line. Clicking reveals the full handoff, fetched from the card because
+/// Hermes clips the notice to its first line.
+struct KanbanNoticeCard: View {
+    let notice: KanbanNotice
+    var loadFullSummary: (() async -> String?)?
+    @State private var isExpanded = false
+    @State private var isHovering = false
+    @State private var fullSummary: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DockSpacing.micro) {
+            Button {
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+            } label: {
+                VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                    HStack(spacing: DockSpacing.tight) {
+                        DockStatusDot(tone: notice.tone)
+                        Text(notice.title ?? "Kanban \(notice.taskID)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1)
+                        Spacer(minLength: DockSpacing.control)
+                        Text(notice.taskID)
+                            .font(DockTypography.machineMetadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    if !isExpanded {
+                        (Text(notice.label).foregroundStyle(notice.tone.color).fontWeight(.medium)
+                            + Text(notice.detail.map { " · \($0)" } ?? "").foregroundStyle(Color.dockSecondaryText))
+                            .font(DockTypography.body)
+                            .lineLimit(1)
+                            .padding(.leading, 7 + DockSpacing.tight)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isExpanded ? "Hide handoff" : "Show full handoff")
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                    Text(notice.label)
+                        .font(DockTypography.body.weight(.medium))
+                        .foregroundStyle(notice.tone.color)
+                    if let text = fullSummary ?? notice.detail {
+                        Text(text)
+                            .font(DockTypography.body)
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(.leading, 7 + DockSpacing.tight)
+                .task {
+                    guard fullSummary == nil, let loadFullSummary else { return }
+                    fullSummary = await loadFullSummary()
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, DockSpacing.control)
+        .frame(maxWidth: 520, alignment: .leading)
+        .dockSignageCard(tone: notice.tone, highlighted: isHovering)
+        .onHover { hovering in
+            withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) { isHovering = hovering }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Kanban \(notice.taskID): \(notice.label)\(notice.title.map { ", \($0)" } ?? "")")
+    }
 }

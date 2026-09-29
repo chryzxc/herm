@@ -391,10 +391,12 @@ struct IssueDetailView: View {
                     }
                 }
                 .task(id: issue.id) { await center.loadSelectedDetail() }
+            } else if center.isRefreshing && center.records.isEmpty {
+                detailLoadingPane
             } else {
                 VStack(spacing: 10) {
                     DockIcon(.fileText, size: 28, color: Color.dockMetadataText)
-                    Text(center.isRefreshing ? "Loading issues…" : "Select an issue")
+                    Text("Select an issue")
                 }
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.dockMetadataText)

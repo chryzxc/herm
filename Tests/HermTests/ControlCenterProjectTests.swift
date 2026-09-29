@@ -807,7 +807,6 @@ struct ControlCenterProjectTests {
         let fallback = KanbanTaskSummary(id: "k1", title: "Fallback", status: "todo", detail: nil, priority: nil, assignee: nil)
         let detail = ControlCenterModel.parseKanbanTaskDetail("""
         {"task":{"id":"k1","title":"Plan","status":"blocked","last_failure_error":"pid gone"},
-         "comments":[{"id":1,"author":"why-blocked","body":"old"},{"id":2,"author":"archon","body":"hi"},{"id":3,"author":"why-blocked","body":"Unknown provider"}],
          "events":[{"id":1,"kind":"blocked","payload":{"reason":"first"}},{"id":2,"kind":"gave_up","payload":{"reason":"crashed twice"}},{"id":3,"kind":"commented"}]}
         """, fallback: fallback)
 
@@ -815,39 +814,11 @@ struct ControlCenterProjectTests {
         #expect(why?.kind == "gave_up")
         #expect(why?.reason == "crashed twice")
         #expect(why?.lastError == "pid gone")
-        #expect(why?.diagnostic == "Unknown provider")
 
         let running = ControlCenterModel.parseKanbanTaskDetail("""
         {"task":{"id":"k1","title":"Plan","status":"running"},"events":[{"id":1,"kind":"blocked","payload":{"reason":"x"}}]}
         """, fallback: fallback)
         #expect(running?.blockExplanation == nil)
-    }
-
-    @Test func parsesStuckCardQueueAroundHermesNotices() {
-        let output = """
-        ◆ Reclaim ~60% of your session database disk
-        {"groups": [{"key": "decide", "heading": "Needs your decision", "hint": "reply `continue <id>`", "cards": [{"id": "t_1", "title": "Plan", "status": "blocked", "assignee": "", "reason": "Pick A or B", "age": "2d", "open_parents": ["t_0"]}]}], "total": 1, "provider_walled": true}
-        Run when convenient: hermes sessions optimize-storage
-        """
-        let queue = StuckCardQueue.parse(output)
-
-        #expect(queue?.total == 1)
-        #expect(queue?.providerWalled == true)
-        #expect(queue?.groups.first?.id == "decide")
-        let card = queue?.groups.first?.cards.first
-        #expect(card?.reason == "Pick A or B")
-        #expect(card?.assignee == nil)
-        #expect(card?.openParents == ["t_0"])
-        #expect(card?.kanbanTask.boardSlug == "default")
-        #expect(StuckCardQueue.parse("usage: hermes ...") == nil)
-    }
-
-    @Test func continuingAStuckCardDependsOnItsStatus() {
-        #expect(StuckCardQueue.continueStep(for: "blocked") == .unblock)
-        #expect(StuckCardQueue.continueStep(for: "scheduled") == .unblock)
-        #expect(StuckCardQueue.continueStep(for: "triage") == .moveToTodo)
-        #expect(StuckCardQueue.continueStep(for: "todo") == .promote)
-        #expect(StuckCardQueue.continueStep(for: "running") == .unsupported)
     }
 
     @Test func parsesWrappedKanbanTaskDetailResponses() {
@@ -1243,6 +1214,68 @@ struct ControlCenterProjectTests {
         #expect(model.todaySnapshot.currentFocus?.sessionID == "session-1")
     }
 
+    @Test func lateCardDetailCannotReplaceAnotherSessionsActivity() async throws {
+        let client = DelayedSessionCardClient()
+        let dock = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"), rpcClient: client)
+        dock.receiveGatewayEvent("tool.start", params: [
+            "session_id": "session-a",
+            "payload": ["name": "terminal", "input": "hermes kanban show t_latecard --json"]
+        ])
+        let model = ControlCenterModel()
+        model.bind(to: dock)
+        for _ in 0..<500 where client.pending == nil { try? await Task.sleep(for: .milliseconds(10)) }
+        let pending = try #require(client.pending)
+        model.refreshSessionKanban(for: "session-b")
+        for _ in 0..<500 where model.sessionKanbanTasks.first?.id != "task-b" { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.sessionKanbanTasks.first?.id == "task-b")
+        let success = model.refreshState(for: "kanban.session")?.lastSuccess
+        pending.resume(returning: ["code": 0, "stdout": "{\"id\":\"t_latecard\",\"title\":\"Old session\",\"status\":\"running\"}"])
+        client.pending = nil
+        for _ in 0..<100 { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.sessionKanbanSessionID == "session-b")
+        #expect(model.sessionKanbanTasks.map(\.id) == ["task-b"])
+        #expect(model.refreshState(for: "kanban.session")?.lastSuccess == success)
+        model.focus(sessionID: nil)
+    }
+
+    @Test func sessionActivityReadsOtherBoardsDespiteGlobalSelection() async {
+        let client = SessionKanbanCacheClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        model.selectKanbanBoard(KanbanBoardSummary(slug: "unrelated", name: "Unrelated", description: nil, isCurrent: true, archived: false, total: 0, counts: [:]))
+        model.refreshSessionKanban(for: "session-a")
+        for _ in 0..<500 where model.sessionKanbanTasks.isEmpty { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.selectedKanbanBoardSlug == "unrelated")
+        #expect(model.sessionKanbanTasks.map(\.id) == ["task-a"])
+        #expect(model.sessionKanbanTasks.first?.boardSlug == "default")
+        model.focus(sessionID: nil)
+    }
+
+    @Test func refreshDuringSessionReadFetchesAgainWithoutAnotherUserAction() async throws {
+        let client = QueuedSessionKanbanClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+        model.refreshSessionKanban(for: "session-a")
+        for _ in 0..<500 where client.pending == nil { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(client.pending != nil)
+        model.refreshSessionKanban(for: "session-a")
+        model.refreshSessionKanban(for: "session-a")
+        client.pending?.resume(returning: ["columns": []])
+        client.pending = nil
+        for _ in 0..<500 where model.sessionKanbanTasks.first?.status != "done" { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(client.calls == 2)
+        #expect(model.sessionKanbanTasks.first?.status == "done")
+        model.focus(sessionID: nil)
+    }
+
+    @Test func observedCardsKeepBoardIdentityWithoutAdoptingOtherSessions() throws {
+        let tasks = ControlCenterModel.parseKanbanTasks("""
+        [{"id":"ours","title":"Ours","status":"running","board_slug":"other"},
+         {"id":"theirs","title":"Theirs","status":"running","session_id":"session-b"}]
+        """)
+        let scoped = ControlCenterModel.filterSessionKanbanTasks(tasks, sessionID: "session-a", observedIDs: ["ours", "theirs"])
+        #expect(scoped.map(\.id) == ["ours"])
+        #expect(scoped.first?.boardSlug == "other")
+    }
+
     @Test func restoringSessionAfterFocusClearStartsANewSessionKanbanQuery() async throws {
         let client = DelayedSessionKanbanClient()
         let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
@@ -1260,6 +1293,31 @@ struct ControlCenterProjectTests {
         }
 
         #expect(client.kanbanListCalls == 2)
+        model.focus(sessionID: nil)
+    }
+
+    @Test func switchingSessionsRestoresCachedKanbanActivityImmediately() async throws {
+        let client = SessionKanbanCacheClient()
+        let model = ControlCenterModel(rpc: HermesControlRPC(client: client))
+
+        model.focus(sessionID: "session-a")
+        for _ in 0..<1_000 where model.sessionKanbanTasks.map(\.id) != ["task-a"] {
+            await Task.yield()
+        }
+        #expect(model.sessionKanbanTasks.map(\.id) == ["task-a"])
+
+        model.focus(sessionID: "session-b")
+        for _ in 0..<1_000 where model.sessionKanbanTasks.map(\.id) != ["task-b"] {
+            await Task.yield()
+        }
+        #expect(model.sessionKanbanTasks.map(\.id) == ["task-b"])
+
+        model.focus(sessionID: "session-a")
+
+        // The previous successful snapshot is restored synchronously. A fresh
+        // read still starts, but navigation never presents a false empty list.
+        #expect(model.sessionKanbanSessionID == "session-a")
+        #expect(model.sessionKanbanTasks.map(\.id) == ["task-a"])
         model.focus(sessionID: nil)
     }
 
@@ -1579,6 +1637,29 @@ private final class DelayedSessionKanbanClient: HermesRPCClientProtocol {
 }
 
 @MainActor
+private final class SessionKanbanCacheClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+
+    func connect() async throws {}
+    func close() {}
+
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if path == "/api/plugins/kanban/boards" {
+            return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
+        }
+        if path == "/api/plugins/kanban/board?board=default" {
+            return ["columns": [["tasks": [
+                ["id": "task-a", "title": "First session", "status": "running", "session_id": "session-a"],
+                ["id": "task-b", "title": "Second session", "status": "running", "session_id": "session-b"]
+            ]]]]
+        }
+        return [:]
+    }
+
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+}
+
+@MainActor
 private final class SessionProjectMembershipClient: HermesRPCClientProtocol {
     var onEvent: ((String, [String: Any]) -> Void)?
     var returnCompactTree = false
@@ -1669,5 +1750,39 @@ private final class ProjectSessionActionRPCClient: HermesRPCClientProtocol {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         requests.append((method, params))
         return [:]
+    }
+}
+
+@MainActor
+private final class QueuedSessionKanbanClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var pending: CheckedContinuation<[String: Any], Never>?
+    var calls = 0
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] { [:] }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if path == "/api/plugins/kanban/boards" { return ["boards": [["slug": "default"]]] }
+        calls += 1
+        if calls == 1 { return await withCheckedContinuation { pending = $0 } }
+        return ["columns": [["tasks": [["id": "task-a", "title": "Finished", "status": "done", "session_id": "session-a"]]]]]
+    }
+}
+
+@MainActor
+private final class DelayedSessionCardClient: HermesRPCClientProtocol {
+    var onEvent: ((String, [String: Any]) -> Void)?
+    var pending: CheckedContinuation<[String: Any], Never>?
+    func connect() async throws {}
+    func close() {}
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        if method == "shell.exec", let command = params["command"] as? String, command.contains("'show'") {
+            return await withCheckedContinuation { pending = $0 }
+        }
+        return [:]
+    }
+    func fetchHTTP(_ path: String) async throws -> [String: Any] {
+        if path == "/api/plugins/kanban/boards" { return ["boards": [["slug": "default"]]] }
+        return ["columns": [["tasks": [["id": "task-b", "title": "Second session", "status": "running", "session_id": "session-b"]]]]]
     }
 }

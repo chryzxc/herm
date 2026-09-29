@@ -78,8 +78,16 @@ struct ChatComposerView: View {
                             }
                             if let direction,
                                firstResponder.isEditable,
-                               MainActor.assumeIsolated({
-                                   !composerText.isCompletionOpen && dockModel.navigateComposerHistory(direction: direction)
+                               MainActor.assumeIsolated({ () -> Bool in
+                                   guard !composerText.isCompletionOpen else { return false }
+                                   // In a draft, arrows move the caret first; history only
+                                   // takes over once the caret can't move further that way.
+                                   if !composerText.isBrowsingHistory, !firstResponder.string.isEmpty {
+                                       let before = firstResponder.selectedRange()
+                                       if direction < 0 { firstResponder.moveUp(nil) } else { firstResponder.moveDown(nil) }
+                                       if firstResponder.selectedRange() != before { return true }
+                                   }
+                                   return dockModel.navigateComposerHistory(direction: direction)
                                }) {
                                 return nil
                             }
@@ -864,7 +872,7 @@ private struct ComposerInputEditor: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
-        textView.string = text
+        textView.string = text.displayBullets
         textView.font = .systemFont(ofSize: 14)
         textView.textColor = NSColor(Color.dockPrimaryText)
         textView.insertionPointColor = NSColor(Color.dockAccent)
@@ -892,9 +900,9 @@ private struct ComposerInputEditor: NSViewRepresentable {
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
-        if textView.string != text {
+        if textView.string.markdownBullets != text {
             context.coordinator.isSynchronizingText = true
-            textView.string = text
+            textView.string = text.displayBullets
             context.coordinator.isSynchronizingText = false
         }
         if let caret = takePendingCaret() {
@@ -926,16 +934,31 @@ private struct ComposerInputEditor: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            if !isSynchronizingText, parent.text != textView.string {
-                parent.text = textView.string
-                parent.onTextChanged(textView.string, textView.selectedRange().location)
+            if !isSynchronizingText { bulletizeCurrentLine(textView) }
+            let markdown = textView.string.markdownBullets
+            if !isSynchronizingText, parent.text != markdown {
+                parent.text = markdown
+                parent.onTextChanged(markdown, textView.selectedRange().location)
             }
             reportContentHeight(for: textView)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             guard !isSynchronizingText, let textView = notification.object as? NSTextView else { return }
-            parent.onCaretMoved(textView.string, textView.selectedRange().location)
+            parent.onCaretMoved(textView.string.markdownBullets, textView.selectedRange().location)
+        }
+
+        /// Typing "- " at a line start shows a "•" bullet; the binding keeps markdown "- ".
+        private func bulletizeCurrentLine(_ textView: NSTextView) {
+            let ns = textView.string as NSString
+            let caret = textView.selectedRange().location
+            let line = ns.lineRange(for: NSRange(location: caret, length: 0))
+            guard caret >= line.location + 2, ns.substring(with: line).hasPrefix("- ") else { return }
+            let range = NSRange(location: line.location, length: 2)
+            if textView.shouldChangeText(in: range, replacementString: "• ") {
+                textView.replaceCharacters(in: range, with: "• ")
+                textView.didChangeText()
+            }
         }
 
         func reportContentHeight(for textView: NSTextView) {
@@ -965,6 +988,30 @@ private final class ComposerInputTextView: NSTextView {
             onSubmit?()
             return
         }
+        if event.keyCode == 36, event.modifierFlags.contains(.shift), continueBullet() { return }
         super.keyDown(with: event)
     }
+
+    /// Shift+Return on a "• " line continues the list; on an empty bullet it ends it.
+    private func continueBullet() -> Bool {
+        let ns = string as NSString
+        let line = ns.lineRange(for: NSRange(location: selectedRange().location, length: 0))
+        let content = ns.substring(with: line).trimmingCharacters(in: .newlines)
+        guard content.hasPrefix("• ") else { return false }
+        if content == "• " {
+            let range = NSRange(location: line.location, length: 2)
+            if shouldChangeText(in: range, replacementString: "") {
+                replaceCharacters(in: range, with: "")
+                didChangeText()
+            }
+        } else {
+            insertText("\n• ", replacementRange: selectedRange())
+        }
+        return true
+    }
+}
+
+private extension String {
+    var markdownBullets: String { replacingOccurrences(of: "(?m)^• ", with: "- ", options: .regularExpression) }
+    var displayBullets: String { replacingOccurrences(of: "(?m)^- ", with: "• ", options: .regularExpression) }
 }

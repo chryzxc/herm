@@ -1,15 +1,5 @@
 import SwiftUI
 
-enum EdgeTaskSource: String, CaseIterable {
-    case activity, kanban
-
-    var title: String { self == .activity ? "Activity" : "Kanban" }
-
-    func includes(_ task: EdgeNotchTask) -> Bool {
-        self == .kanban ? task.kanbanTask != nil : task.kanbanTask == nil
-    }
-}
-
 /// One row in the notch’s Tasks tab: session work or canonical Kanban activity.
 struct EdgeNotchTask: Identifiable, Equatable {
     enum Phase: Int, Comparable {
@@ -30,8 +20,53 @@ struct EdgeNotchTask: Identifiable, Equatable {
     let isStatusCurrent: Bool
     let session: HermesSession?
     var kanbanTask: KanbanTaskSummary? = nil
+    /// One-tap answers shown under an attention row (approval, clarify, queued card question).
+    var choices: [String] = []
+    var deliveryQuestion: EdgeDeliveryQuestion? = nil
+
+    static func choiceLabel(_ choice: String) -> String {
+        switch choice {
+        case ApprovalChoice.once: "Allow once"
+        case ApprovalChoice.deny: "Deny"
+        default: choice
+        }
+    }
 
     var isInProgress: Bool { phase != .finished }
+
+    /// The notch groups sessions and Kanban cards together. Only running work
+    /// is in progress; Kanban cards waiting in review get their own section.
+    enum Section: Int, CaseIterable {
+        case inProgress, finished, review, attention
+        var title: String {
+            switch self {
+            case .inProgress: "In progress"
+            case .finished: "Finished"
+            case .review: "Review"
+            case .attention: "Needs your attention"
+            }
+        }
+    }
+
+    var section: Section {
+        switch phase {
+        case .working: .inProgress
+        case .finished: .finished
+        case .pending: .review
+        case .attention: .attention
+        }
+    }
+
+    /// One list for sessions and Kanban: by section, the open session first,
+    /// then newest first. Sorted once per data change, not per render.
+    static func merged(_ tasks: [EdgeNotchTask]) -> [EdgeNotchTask] {
+        tasks.sorted { lhs, rhs in
+            if lhs.section != rhs.section { return lhs.section.rawValue < rhs.section.rawValue }
+            if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+            if lhs.updatedAt != rhs.updatedAt { return (lhs.updatedAt ?? .distantPast) > (rhs.updatedAt ?? .distantPast) }
+            return lhs.id < rhs.id
+        }
+    }
 
     var tone: DockStatusTone {
         guard isStatusCurrent || phase == .finished else { return .inactive }
@@ -69,7 +104,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
     /// A working row shows its latest activity, never the session's opening
     /// prompt, which says nothing about what is happening now.
     static func build(current: EdgeNotchTask?, sessions: [HermesSession], activity: [String: String] = [:],
-                      currentSessionIDs: Set<String>, isOnline: Bool) -> [EdgeNotchTask] {
+                      currentSessionIDs: Set<String>, isOnline: Bool,
+                      attention: [String: DockModel.SessionAttention] = [:]) -> [EdgeNotchTask] {
         // Without a live row of its own, the open session's index row stands in.
         // The open session can be known by a runtime alias its index row does
         // not carry, so an in-progress row with its title is the same chat.
@@ -79,18 +115,19 @@ struct EdgeNotchTask: Identifiable, Equatable {
                 return !currentSessionIDs.contains(session.id)
                     && !(current.isInProgress && session.isWorking && session.displayTitle == current.title)
             }
-            .filter { $0.isWorking || $0.hasUnreadUpdate }
+            .filter { $0.isWorking || $0.hasUnreadUpdate || attention[$0.id] != nil }
             .map { session in
                 EdgeNotchTask(
                     id: session.id,
                     title: session.displayTitle,
-                    phase: session.isWorking ? .working : .finished,
-                    statusLabel: session.isWorking ? "Working" : "Finished",
-                    detail: session.isWorking ? activity[session.id] : session.displayPreview,
+                    phase: attention[session.id] != nil ? .attention : session.isWorking ? .working : .finished,
+                    statusLabel: attention[session.id]?.status.title ?? (session.isWorking ? "Working" : "Finished"),
+                    detail: attention[session.id]?.summary ?? (session.isWorking ? activity[session.id] : session.displayPreview),
                     updatedAt: session.lastUpdatedAt,
                     isCurrent: false,
                     isStatusCurrent: isOnline,
-                    session: session
+                    session: session,
+                    choices: attention[session.id]?.choices ?? []
                 )
             }
         return ([current].compactMap { $0 } + others).sorted { lhs, rhs in
@@ -101,11 +138,10 @@ struct EdgeNotchTask: Identifiable, Equatable {
     }
 }
 
-/// The notch’s Tasks tab shares compact activity rows between sessions and Kanban.
+/// The notch’s Tasks tab: one list of session and Kanban rows, pre-sorted by `merged`.
 struct EdgeTaskPreview: View {
     let tasks: [EdgeNotchTask]
     let isOffline: Bool
-    var source: EdgeTaskSource = .activity
     /// Set when a quota drop is announced alongside a task update.
     var quotaChange: EdgeQuotaChange? = nil
     var kanbanUnavailable = false
@@ -116,30 +152,27 @@ struct EdgeTaskPreview: View {
     var quickState: EdgeNotchState? = nil
     var quickModel: DockModel? = nil
     var closeReply: () -> Void = {}
+    var answer: ((EdgeNotchTask, String) -> Void)? = nil
     let openDock: () -> Void
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     let openTask: (EdgeNotchTask) -> Void
     @State private var hoveredID: String?
 
-    private var visibleTasks: [EdgeNotchTask] { tasks.filter(source.includes) }
-    private var inProgress: [EdgeNotchTask] { tasks.filter { $0.kanbanTask == nil && $0.isInProgress } }
-    private var finished: [EdgeNotchTask] { tasks.filter { $0.kanbanTask == nil && !$0.isInProgress } }
-
     var body: some View {
-        VStack(spacing: 0) {
+        // One pass per render; grouping keeps the pre-sorted order.
+        let groups = Dictionary(grouping: tasks, by: \.section)
+        let botLookup = KanbanBoardPresentation.makeSnapshot(tasks: [], bots: bots)
+        return VStack(spacing: 0) {
             Group {
-                if visibleTasks.isEmpty && quotaChange == nil {
+                if tasks.isEmpty && quotaChange == nil {
                     emptyState
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
                             TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                                VStack(alignment: .leading, spacing: 12) {
-                                    if source == .kanban {
-                                        section("Kanban activity", visibleTasks, now: timeline.date)
-                                    } else {
-                                        section("In progress", inProgress, now: timeline.date)
-                                        section("Finished, not opened", finished, now: timeline.date)
+                                LazyVStack(alignment: .leading, spacing: 12) {
+                                    ForEach(EdgeNotchTask.Section.allCases, id: \.self) { section in
+                                        self.section(section.title, groups[section] ?? [], bots: botLookup, now: timeline.date)
                                     }
                                     if let quotaChange {
                                         VStack(alignment: .leading, spacing: 6) {
@@ -171,26 +204,29 @@ struct EdgeTaskPreview: View {
     }
 
     @ViewBuilder
-    private func section(_ title: String, _ items: [EdgeNotchTask], now: Date) -> some View {
+    private func section(_ title: String, _ items: [EdgeNotchTask], bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            LazyVStack(alignment: .leading, spacing: 6) {
                 DockSectionLabel(title: title, count: items.count)
-                ForEach(items) { card($0, now: now) }
+                ForEach(items) { card($0, bots: bots, now: now) }
             }
         }
     }
 
-    private func card(_ task: EdgeNotchTask, now: Date) -> some View {
+    private func card(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
         let isHovered = hoveredID == task.id
         let isReplying = quickState?.composing == true && quickState?.quickReplyTask?.id == task.id
         return VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
-                taskButton(task, now: now)
-                if task.kanbanTask == nil, let reply, task.session != nil || task.isCurrent {
+                taskButton(task, bots: bots, now: now)
+                if task.kanbanTask == nil, task.phase != .attention, let reply, task.session != nil || task.isCurrent {
                     replyToggle(task, isReplying: isReplying, visible: isHovered || isReplying || task.isCurrent, reply: reply)
                         .padding(.top, 5)
                         .padding(.trailing, 4)
                 }
+            }
+            if task.phase == .attention, !task.choices.isEmpty, let answer {
+                choiceButtons(task, answer: answer)
             }
             if isReplying, let quickState, let quickModel {
                 EdgeQuickMessageView(model: quickModel, state: quickState, inline: true,
@@ -209,6 +245,37 @@ struct EdgeTaskPreview: View {
         .animation(.dockEase(duration: 0.16), value: isReplying)
     }
 
+    /// The full question and its answers, so a background decision never needs the chat open.
+    private func choiceButtons(_ task: EdgeNotchTask, answer: @escaping (EdgeNotchTask, String) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let detail = task.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(task.choices, id: \.self) { choice in
+                Button { answer(task, choice) } label: {
+                    Text(EdgeNotchTask.choiceLabel(choice))
+                        .font(.system(size: 11, weight: .medium))
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
+                            .fill(choice == ApprovalChoice.deny ? Color.dockSurface4.opacity(0.5) : Color.dockAccentMuted))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockPress)
+                .accessibilityLabel("Answer \(EdgeNotchTask.choiceLabel(choice))")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, 8)
+    }
+
     /// Reply lives inside the card and turns into a close button while composing.
     private func replyToggle(_ task: EdgeNotchTask, isReplying: Bool, visible: Bool,
                              reply: @escaping (EdgeNotchTask) -> Void) -> some View {
@@ -225,11 +292,11 @@ struct EdgeTaskPreview: View {
         .accessibilityLabel(isReplying ? "Close reply" : "Reply to \(task.title)")
     }
 
-    private func taskButton(_ task: EdgeNotchTask, now: Date) -> some View {
+    private func taskButton(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
         Button { openTask(task) } label: {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let assignee = task.kanbanTask?.assignee, !assignee.isEmpty {
-                    let bot = KanbanBoardPresentation.makeSnapshot(tasks: [], bots: bots).bot(for: assignee)
+                    let bot = bots.bot(for: assignee)
                     Group {
                         if let bot {
                             BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 26)
@@ -261,7 +328,7 @@ struct EdgeTaskPreview: View {
                         Text(task.displayStatus)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(task.tone == .attention ? task.tone.color : Color.dockSecondaryText)
-                        if let detail = task.detail, !detail.isEmpty {
+                        if let detail = task.detail, !detail.isEmpty, task.choices.isEmpty {
                             Text(" · \(detail)")
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.dockMetadataText)
@@ -317,17 +384,13 @@ struct EdgeTaskPreview: View {
 
     private var emptyTitle: String {
         if isOffline { return "Hermes is offline" }
-        if source == .kanban { return kanbanUnavailable ? "Kanban is unavailable" : "No Kanban activity" }
-        return "No activity in progress"
+        return kanbanUnavailable ? "Kanban is unavailable" : "Nothing in progress"
     }
 
     private var emptyDetail: String {
         if isOffline { return "Updates will resume when Herm reconnects." }
-        if source == .kanban {
-            return kanbanUnavailable ? "The board could not be refreshed. Herm will retry automatically."
-                : "Running cards and recent board changes appear here."
-        }
-        return "Running sessions and unopened results appear here."
+        return kanbanUnavailable ? "The board could not be refreshed. Herm will retry automatically."
+            : "Running sessions, Kanban cards and unopened results appear here."
     }
 
     private var footer: some View {
@@ -421,5 +484,46 @@ private struct EdgeHoverTip: ViewModifier {
                 }
             }
             .animation(.dockEase(duration: 0.12), value: shown)
+    }
+}
+
+/// A clarify question a headless coordinator turn queued for the user (software-delivery plugin,
+/// `$HERMES_HOME/delivery/questions/<card>.json`). Answered by messaging the asking session.
+struct EdgeDeliveryQuestion: Equatable {
+    let taskID: String
+    let sessionID: String
+    var profileID: String? = nil
+    let question: String
+    let choices: [String]
+    let file: URL
+
+    func answerText(_ choice: String) -> String { "ANSWER \(taskID): \(choice)" }
+
+    static var directory: URL {
+        let home = ProcessInfo.processInfo.environment["HERMES_HOME"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".hermes")
+        return home.appendingPathComponent("delivery/questions")
+    }
+
+    static func load(from directory: URL = directory) -> [EdgeDeliveryQuestion] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "json" }.sorted { $0.path < $1.path }.compactMap { file in
+            guard let data = try? Data(contentsOf: file),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let taskID = json["task_id"] as? String,
+                  let first = (json["questions"] as? [[String: Any]])?.first,
+                  let question = first["question"] as? String else { return nil }
+            return EdgeDeliveryQuestion(taskID: taskID, sessionID: json["session_id"] as? String ?? "",
+                                        profileID: json["profile"] as? String, question: question, choices: first["choices"] as? [String] ?? [], file: file)
+        }
+    }
+
+    var row: EdgeNotchTask {
+        EdgeNotchTask(id: "question-\(taskID)", title: "Kanban \(taskID)", phase: .attention,
+                      statusLabel: "Needs your answer", detail: question, updatedAt: nil, isCurrent: false,
+                      isStatusCurrent: true,
+                      session: sessionID.isEmpty ? nil : HermesSession(id: sessionID, profileID: profileID, title: "Bot Chat", preview: "",
+                                                                        startedAt: nil, messageCount: 0, source: "desktop"),
+                      choices: choices, deliveryQuestion: self)
     }
 }

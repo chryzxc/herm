@@ -222,6 +222,9 @@ final class HermesControlRPC {
         if let id, !id.isEmpty { params["id"] = id }
         return try await client.request(HermesFeatureIDs.ID.projectsSetActive.rawValue, params: Self.profileParams(params, profileID: profileID))
     }
+    func addProjectFolder(id: String, path: String, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.projectsAddFolder.rawValue, params: Self.profileParams(["id": id, "path": path], profileID: profileID))
+    }
     func setSessionHidden(sessionID: String, hidden: Bool, profileID: String? = nil) async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.sessionSetHidden.rawValue, params: Self.profileParams(["session_id": sessionID, "hidden": hidden], profileID: profileID))
     }

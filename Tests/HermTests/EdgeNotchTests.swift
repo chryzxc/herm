@@ -3,6 +3,54 @@ import Testing
 @testable import Herm
 
 struct EdgeNotchTests {
+    @MainActor @Test func pendingRequestsStayVisibleUntilResolved() {
+        let model = DockModel()
+        model.receiveGatewayEvent("approval.request", params: ["session_id": "approval", "payload": ["title": "Run migration", "request_id": "a1"]])
+        model.receiveGatewayEvent("clarify.request", params: ["session_id": "question", "payload": ["question": "Which environment?", "request_id": "q1"]])
+        let sessions = ["approval", "question"].map {
+            HermesSession(id: $0, title: $0, preview: "", startedAt: nil, messageCount: 1, source: "herm")
+        }
+        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: true,
+                                        attention: model.sessionAttention)
+        #expect(tasks.count == 2)
+        #expect(tasks.allSatisfy { $0.phase == .attention })
+        #expect(tasks.first { $0.id == "approval" }?.displayStatus == "Needs your approval")
+        #expect(tasks.first { $0.id == "question" }?.detail == "Which environment?")
+        let state = EdgeNotchState()
+        state.tasks = tasks
+        #expect(state.railActivity.attention)
+        #expect(state.railActivity.title == "Needs your attention")
+        let stale = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: false,
+                                        attention: model.sessionAttention)
+        #expect(stale.allSatisfy { $0.displayStatus == "Status not current" })
+        model.resolveApproval(for: "approval")
+        #expect(model.sessionAttention["approval"] == nil)
+        #expect(model.sessionAttention["question"] != nil)
+        model.receiveGatewayEvent("clarify.expire", params: ["session_id": "question", "payload": ["request_id": "q1"]])
+        #expect(model.sessionAttention.isEmpty)
+    }
+
+    @MainActor @Test func attentionRowsCarryOneTapAnswers() throws {
+        let model = DockModel()
+        model.receiveGatewayEvent("approval.request", params: ["session_id": "a", "payload": ["title": "Run migration", "request_id": "a1"]])
+        model.receiveGatewayEvent("clarify.request", params: ["session_id": "q", "payload": ["question": "Which env?", "choices": ["staging", "prod"], "request_id": "q1"]])
+        let sessions = ["a", "q"].map { HermesSession(id: $0, title: $0, preview: "", startedAt: nil, messageCount: 1, source: "herm") }
+        let tasks = EdgeNotchTask.build(current: nil, sessions: sessions, currentSessionIDs: [], isOnline: true, attention: model.sessionAttention)
+        #expect(tasks.first { $0.id == "a" }?.choices.map(EdgeNotchTask.choiceLabel) == ["Allow once", "Deny"])
+        #expect(tasks.first { $0.id == "q" }?.choices == ["staging", "prod"])
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try #"{"task_id": "t_1234abcd", "session_id": "bot", "profile": "default", "questions": [{"question": "Ship it?", "choices": ["Yes", "No"]}]}"#
+            .write(to: dir.appendingPathComponent("t_1234abcd.json"), atomically: true, encoding: .utf8)
+        let question = try #require(EdgeDeliveryQuestion.load(from: dir).first)
+        #expect(question.row.phase == .attention)
+        #expect(question.row.choices == ["Yes", "No"])
+        #expect(question.row.session?.id == "bot")
+        #expect(question.answerText("Yes") == "ANSWER t_1234abcd: Yes")
+    }
+
     @MainActor @Test func quotaSelectionSurvivesCollapseAndTemporaryAnnouncements() {
         let state = EdgeNotchState()
         state.showsQuota = true

@@ -18,7 +18,36 @@ private final class PullRequestMutationFake: PullRequestMutationExecuting {
     }
 }
 
+private final class GitHubTokenResolverProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func resolve() -> String? {
+        lock.lock()
+        count += 1
+        lock.unlock()
+        Thread.sleep(forTimeInterval: 0.05)
+        return "token"
+    }
+
+    var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+}
+
 struct RepositoryCodeWorkspaceTests {
+    @Test func repositoryShimmerTravelsOnlyLeadingToTrailingWithinEachCycle() {
+        let width: CGFloat = 600
+        let times = stride(from: 0.0, through: 1.5, by: 0.3)
+        let offsets = times.map { RepositoryShimmerMotion.offset(containerWidth: width, at: $0) }
+
+        #expect(zip(offsets, offsets.dropFirst()).allSatisfy { $0.0 < $0.1 })
+        #expect(offsets.first == -RepositoryShimmerMotion.bandWidth(for: width))
+        #expect(RepositoryShimmerMotion.offset(containerWidth: width, at: RepositoryShimmerMotion.duration) == offsets.first)
+    }
+
     @Test func sessionRepositoryScopeKeepsSessionsDistinctForOnePath() {
         let first = SessionRepositoryScope(sessionID: "session-a", repositoryPath: "/workspace/repo")
         let second = SessionRepositoryScope(sessionID: "session-b", repositoryPath: "/workspace/repo")
@@ -68,6 +97,19 @@ struct RepositoryCodeWorkspaceTests {
         #expect(!center.isLoadingDetail)
     }
 
+    @Test func concurrentGitHubTokenRequestsShareOneResolver() async {
+        let cache = GitHubTokenCache(ttl: 60)
+        let probe = GitHubTokenResolverProbe()
+
+        async let first = cache.token { probe.resolve() }
+        async let second = cache.token { probe.resolve() }
+        async let third = cache.token { probe.resolve() }
+        let values = await [first, second, third]
+
+        #expect(values == ["token", "token", "token"])
+        #expect(probe.callCount == 1)
+    }
+
     @Test func githubPullRequestFilesResponsePreservesChangedFiles() {
         let payload: Any = [
             [
@@ -95,6 +137,7 @@ struct RepositoryCodeWorkspaceTests {
         #expect(PullRequestFilesProjection.state(files: [], isLoading: false, expectedFileCount: 2) == .unavailable)
         #expect(PullRequestFilesProjection.state(files: [], isLoading: false, expectedFileCount: 0) == .empty)
         #expect(PullRequestFilesProjection.state(files: nil, isLoading: true, expectedFileCount: nil) == .loading)
+        #expect(PullRequestFilesProjection.state(files: [], isLoading: true, expectedFileCount: 2) == .loading)
     }
 
     @Test func pullRequestFileTreeGroupsNestedPaths() {

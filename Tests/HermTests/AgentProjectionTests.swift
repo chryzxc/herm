@@ -261,7 +261,7 @@ struct AgentProjectionTests {
     }
 
     @Test func activeSessionRetainsKanbanReferenceAfterTerminalToolActivity() {
-        let model = DockModel(initialSessionID: "session-a")
+        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
 
         model.receiveGatewayEvent("tool.start", params: [
             "session_id": "session-a",
@@ -282,8 +282,21 @@ struct AgentProjectionTests {
         #expect(model.observedKanbanTaskRevision == 1)
     }
 
+    @Test func repeatedKanbanReferenceRequestsFreshStatus() {
+        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
+        let params: [String: Any] = [
+            "session_id": "session-a",
+            "payload": ["name": "terminal", "input": "hermes kanban show t_33604ca9 --json"]
+        ]
+        model.receiveGatewayEvent("tool.start", params: params)
+        let revision = model.observedKanbanTaskRevision
+        model.receiveGatewayEvent("tool.complete", params: params)
+        #expect(model.observedKanbanTaskIDs == ["t_33604ca9"])
+        #expect(model.observedKanbanTaskRevision == revision + 1)
+    }
+
     @Test func restoredBoundedToolHistoryCanRecoverAnObservedKanbanCard() {
-        let model = DockModel(initialSessionID: "session-a")
+        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
         model.recentEvents = [AgentEvent(
             id: UUID(),
             type: "tool.complete",

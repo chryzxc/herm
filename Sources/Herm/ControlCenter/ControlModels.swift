@@ -712,99 +712,22 @@ struct KanbanTaskDetail: Identifiable, Equatable {
 
 extension KanbanTaskDetail {
     /// Why the card stopped, for blocked/triage cards: the latest block event's
-    /// reason, the last run's error, and the `why-blocked` diagnostic comment
-    /// the software-delivery plugin writes (log lines from the failed run).
+    /// reason and the last run's error from Hermes' Kanban projection.
     struct BlockExplanation: Equatable {
         var kind: String?
         var reason: String?
         var lastError: String?
-        var diagnostic: String?
     }
 
     var blockExplanation: BlockExplanation? {
         guard ["blocked", "triage"].contains(status.lowercased()) else { return nil }
         let event = events.last { ["blocked", "gave_up", "block_loop_detected"].contains($0.kind) }
-        let diagnostic = comments.last { $0.author == "why-blocked" }?.body
         let explanation = BlockExplanation(
             kind: event?.kind,
             reason: event?.note,
-            lastError: lastFailureError.flatMap { $0 == event?.note ? nil : $0 },
-            diagnostic: diagnostic
+            lastError: lastFailureError.flatMap { $0 == event?.note ? nil : $0 }
         )
         return explanation == BlockExplanation() ? nil : explanation
-    }
-}
-
-/// `hermes software-delivery queue`: stuck cards on the default board,
-/// grouped by what they need from the operator (software-delivery plugin).
-struct StuckCardQueue: Equatable {
-    struct Card: Identifiable, Equatable {
-        let id: String
-        let title: String
-        let status: String
-        let assignee: String?
-        let reason: String
-        let age: String
-        let openParents: [String]
-
-        /// The plugin reads the default board, so cards open there too.
-        var kanbanTask: KanbanTaskSummary {
-            KanbanTaskSummary(id: id, boardSlug: "default", title: title, status: status, detail: reason, priority: nil, assignee: assignee)
-        }
-    }
-
-    struct Group: Identifiable, Equatable {
-        let id: String
-        let heading: String
-        let hint: String
-        let cards: [Card]
-    }
-
-    /// What "Continue" does for a card in a given status.
-    enum ContinueStep: Equatable { case unblock, moveToTodo, promote, unsupported }
-
-    var groups: [Group]
-    var total: Int
-    var providerWalled: Bool
-
-    static func continueStep(for status: String) -> ContinueStep {
-        switch status.lowercased() {
-        case "blocked", "scheduled": .unblock
-        case "triage": .moveToTodo
-        case "todo": .promote
-        default: .unsupported
-        }
-    }
-
-    /// Hermes can print notices around the command's output, so parse only
-    /// the one JSON line the plugin prints.
-    static func parse(_ output: String) -> StuckCardQueue? {
-        guard let start = output.range(of: "{\"groups\"")?.lowerBound else { return nil }
-        let line = output[start...].prefix { $0 != "\n" }
-        guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-              let rows = object["groups"] as? [[String: Any]] else { return nil }
-        let groups: [Group] = rows.compactMap { row in
-            guard let key = row["key"] as? String else { return nil }
-            let cards: [Card] = ((row["cards"] as? [[String: Any]]) ?? []).compactMap { card in
-                guard let id = card["id"] as? String else { return nil }
-                let assignee = (card["assignee"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-                return Card(
-                    id: id,
-                    title: card["title"] as? String ?? id,
-                    status: card["status"] as? String ?? "",
-                    assignee: assignee,
-                    reason: card["reason"] as? String ?? "",
-                    age: card["age"] as? String ?? "",
-                    openParents: card["open_parents"] as? [String] ?? []
-                )
-            }
-            return Group(id: key, heading: row["heading"] as? String ?? key, hint: row["hint"] as? String ?? "", cards: cards)
-        }
-        return StuckCardQueue(
-            groups: groups,
-            total: object["total"] as? Int ?? groups.reduce(0) { $0 + $1.cards.count },
-            providerWalled: object["provider_walled"] as? Bool ?? false
-        )
     }
 }
 
@@ -919,7 +842,7 @@ struct KanbanLaneExpansionState: Equatable {
 /// Identifies the authoritative scope of an in-flight session Kanban query.
 /// Multiple workspace surfaces can observe the same session; identical reads
 /// must share one request rather than canceling one another.
-struct SessionKanbanProjectionRequest: Equatable {
+struct SessionKanbanProjectionRequest: Hashable {
     let sessionID: String?
     let boardSlug: String?
 }
@@ -1591,7 +1514,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case automations = "Automations"
     case projects = "Projects"
     case search = "Search"
-    case missionControl = "Mission Control"
     case kanban = "Kanban"
     case officePreview = "Office Preview"
     case core = "Core"
@@ -1604,7 +1526,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban]
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
-    static let globalNavigation: [ControlTab] = [.today, .inbox, .missionControl, .kanban, .projects, .quota, .usage]
+    static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota, .usage]
     static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
     static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .officePreview, .core]
@@ -1646,7 +1568,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .automations: .clockCounterClockwise
         case .projects: .folder
         case .search: .magnifyingGlass
-        case .missionControl: .lightning
         case .kanban: .kanban
         case .officePreview: .buildingOffice
         case .core: .gear
@@ -1677,7 +1598,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .automations: "Recurring work, visible at a glance"
         case .projects: "Repositories and connected sessions"
         case .search: "Search across connected Hermes sources"
-        case .missionControl: "Stuck cards, grouped by what they need from you"
         case .kanban: "Move work through the board"
         case .officePreview: "Live bot assignments in a simulated 3D office"
         case .core: "Runtime health, permissions, and session tools"
@@ -1743,7 +1663,7 @@ struct ControlTabBadgeState: Equatable {
         case .activity: activityCount
         case .changes: changeCount
         case .verification: verificationCount
-        case .automations, .projects, .search, .missionControl, .kanban, .officePreview, .core, .quota, .usage: 0
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage: 0
         }
     }
 
@@ -1754,7 +1674,7 @@ struct ControlTabBadgeState: Equatable {
         case .inbox: urgentAttentionCount > 0
         case .changes: changeCount > 0
         case .verification: verificationCount > 0
-        case .activity, .automations, .projects, .search, .missionControl, .kanban, .officePreview, .core, .quota, .usage: false
+        case .activity, .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage: false
         }
     }
 }

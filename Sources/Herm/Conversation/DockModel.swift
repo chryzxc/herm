@@ -80,7 +80,9 @@ final class DockModel: ObservableObject {
         let detail: String
         let presentation: ApprovalPresentation
     }
-    private var pendingApprovalsBySessionID: [String: PendingApproval] = [:]
+    private var pendingApprovalsBySessionID: [String: PendingApproval] = [:] {
+        didSet { refreshSessionAttention() }
+    }
     private var pendingApprovalAliasesBySessionID: [String: Set<String>] = [:]
     private struct PendingClarification: Equatable {
         let question: String
@@ -97,7 +99,32 @@ final class DockModel: ObservableObject {
         var transcriptText: String { current?.question ?? question }
     }
     private var activeClarification: PendingClarification?
-    private var pendingClarificationsBySessionID: [String: PendingClarification] = [:]
+    private var pendingClarificationsBySessionID: [String: PendingClarification] = [:] {
+        didSet { refreshSessionAttention() }
+    }
+
+    struct SessionAttention: Equatable {
+        let status: HermesStatus
+        let summary: String
+        let requestID: String?
+        /// Answers the notch can send without opening the chat; empty when it must open.
+        var choices: [String] = []
+    }
+    @Published private(set) var sessionAttention: [String: SessionAttention] = [:]
+
+    private func refreshSessionAttention() {
+        var requests = pendingClarificationsBySessionID.mapValues {
+            SessionAttention(status: .needsClarification, summary: String($0.transcriptText.prefix(180)), requestID: $0.requestID,
+                             choices: $0.batch.count > 1 || $0.multiSelect ? [] : $0.choices)
+        }
+        for (id, approval) in pendingApprovalsBySessionID {
+            let what = approval.detail.isEmpty ? approval.title : "\(approval.title): \(approval.detail)"
+            requests[id] = SessionAttention(status: .needsApproval, summary: String(what.prefix(180)),
+                                            requestID: approval.presentation.requestID,
+                                            choices: [ApprovalChoice.once, ApprovalChoice.deny])
+        }
+        if requests != sessionAttention { sessionAttention = requests }
+    }
     private var pendingClarificationAliasesBySessionID: [String: Set<String>] = [:]
     private var resolvedClarificationRequestIDs = Set<String>()
     private var resolvedClarificationRequestIDOrder: [String] = []
@@ -2462,13 +2489,11 @@ final class DockModel: ObservableObject {
         let aliases = [currentSessionID, sessionStorageID, kanbanAttributionSessionID, kanbanSessionID]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        var changed = false
         for alias in aliases {
             let existing = observedKanbanTaskIDsBySessionID[alias, default: []]
             let merged = existing.union(taskIDs)
             if merged != existing {
                 observedKanbanTaskIDsBySessionID[alias] = merged
-                changed = true
             }
         }
         // Preserve the trusted card reference so a null `task.session_id`
@@ -2487,7 +2512,8 @@ final class DockModel: ObservableObject {
                 linkedCardID: taskID
             ))
         }
-        guard changed else { return }
+        // Repeated references can carry status changes for an existing card.
+        // Notify Activity for those as well as newly discovered IDs.
         observedKanbanTaskRevision &+= 1
         DebugLog.write("kanban: observed exact task reference in session activity")
     }
@@ -2968,7 +2994,7 @@ final class DockModel: ObservableObject {
 
     /// Control-center actions share the user-facing Hermes gateway so they do
     /// not create a second backend or bypass the normal approval/event stream.
-    var controlRPCClient: HermesRPCClientProtocol { gateway }
+    var controlRPCClient: HermesRPCClientProtocol { sessionRPCClient }
 
     func requestControl(_ method: HermesFeatureIDs.ID, params: [String: Any]) async throws -> [String: Any] {
         try await gateway.request(method.rawValue, params: params)
@@ -3224,6 +3250,35 @@ final class DockModel: ObservableObject {
         }
     }
 
+    /// The notch's one-tap answer for any session's approval or single clarify question.
+    func answerAttention(sessionID: String, choice: String) {
+        if let approval = pendingApprovalsBySessionID[sessionID] {
+            Task {
+                var params: [String: Any] = ["session_id": sessionID, "choice": choice]
+                if let requestID = approval.presentation.requestID { params["request_id"] = requestID }
+                do {
+                    _ = try await gateway.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
+                    resolveApproval(for: sessionID)
+                } catch {
+                    DebugLog.write("model: notch approval failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                }
+            }
+            return
+        }
+        guard let requestID = pendingClarificationsBySessionID[sessionID]?.requestID else { return }
+        if currentSessionIDs.contains(sessionID) { return respondToClarification(choice) }
+        Task {
+            do {
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue,
+                                                       params: ["id": requestID, "result": ["answer": choice]])
+                markClarificationResolved(requestID)
+                _ = removePendingClarification(for: sessionID, requestID: requestID)
+            } catch {
+                DebugLog.write("model: notch clarification failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            }
+        }
+    }
+
     func respondToClarification(_ response: String, displayText: String? = nil) {
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRespondingToClarification else { return }
@@ -3446,6 +3501,12 @@ final class DockModel: ObservableObject {
                 if compactingSessionID != nil { recordTurnCompaction(isComplete: true) }
                 compactingSessionID = nil
                 refreshSessionTokenUsage()
+            case "process":
+                for notice in Self.kanbanNotices(from: payload["text"] as? String ?? "") ?? [] {
+                    messages.append(ChatMessage(role: .hermes, text: notice.body,
+                                                botProfileID: notice.profileID, botDisplayName: notice.displayName,
+                                                kanbanNotice: KanbanNotice(text: notice.body)))
+                }
             default: break
             }
         case "background.complete", "btw.complete":
@@ -5769,6 +5830,18 @@ final class DockModel: ObservableObject {
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.imageFileURLs.isEmpty else { continue }
             let timestamp = rowTimestamp ?? Date()
             guard role == "user" || role == "assistant" || role == "hermes" else { continue }
+            if role == "user", let notices = kanbanNotices(from: text) {
+                pendingActivity = []
+                turnStartedAt = rowTimestamp
+                for (index, notice) in notices.enumerated() {
+                    let message = ChatMessage(role: .hermes, text: notice.body, timestamp: timestamp,
+                                              botProfileID: notice.profileID, botDisplayName: notice.displayName,
+                                              kanbanNotice: KanbanNotice(text: notice.body))
+                    messages.append(message)
+                    if index == 0, let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") { rowIDs[rowID] = message.id }
+                }
+                continue
+            }
             let attribution = role == "user" ? nil : botAttribution(from: text)
             var activity: [ActiveToolCall] = []
             if role == "user" {
@@ -5886,6 +5959,31 @@ final class DockModel: ObservableObject {
         guard !displayName.isEmpty, !profileID.isEmpty, !body.isEmpty else { return nil }
         return (displayName, profileID, body)
     }
+
+    /// Hermes' kanban wake text, e.g. `✔ [board] @sentry Kanban t_c891be93 done — …`.
+    /// Hermes tags these rows with nothing, so match only the stable parts: a
+    /// leading status glyph and a card id (`t_` + 8 hex). The wording around
+    /// them may change. One notice per head line; following lines belong to it.
+    /// Stored as `user` rows and streamed live as `status.update` `process`
+    /// text; both render as a bubble from the card's bot (first `@name`).
+    static func kanbanNotices(from text: String) -> [(profileID: String, displayName: String?, body: String)]? {
+        var notices: [(profileID: String, displayName: String?, body: String)] = []
+        for line in text.components(separatedBy: .newlines) {
+            if line.hasPrefix("[INTERNAL NOTIFICATION") { continue }
+            if let match = line.wholeMatch(of: kanbanNoticeHead) {
+                let profile = match.2.firstMatch(of: /@([\w-]+)/).map { String($0.1) }
+                let event = match.2.replacing(/^(?:\[[^\]]+\] )?(?:@[\w-]+ )?/, with: "")
+                notices.append((profile ?? "kanban", profile == nil ? "Kanban" : nil, "\(match.1) \(event)"))
+            } else if !notices.isEmpty {
+                notices[notices.count - 1].body += "\n" + line
+            } else if !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                return nil
+            }
+        }
+        return notices.isEmpty ? nil : notices.map { ($0.profileID, $0.displayName, $0.body.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    }
+
+    private nonisolated(unsafe) static let kanbanNoticeHead = /([^\p{L}\p{N}\s\[@`*#>-]\S*) (.*\bt_[0-9a-f]{8}\b.*)/
 
     private static func messageText(_ value: Any?) -> String {
         if let text = value as? String { return text }

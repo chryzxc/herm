@@ -14,6 +14,8 @@ struct MissionControlConversationGroup: Identifiable, Equatable {
     /// creating a project-scoped chat.
     let projectPath: String?
     let isLinked: Bool
+    /// The project folder is a git checkout (`.git` dir, or file for worktrees).
+    var hasGit = false
 }
 
 /// Immutable row input for future native and SwiftUI rail renderers. Keeping
@@ -62,6 +64,9 @@ struct MissionControlSidebarSnapshot: Equatable {
         var attention: [AttentionItem]
         var latestActivities: [LatestActivityItem]
         var pinnedSessions: [HermesSession] = []
+        /// Dock-local session → project folder links for conversations Hermes
+        /// has no project for (its cwd-based membership can't be edited from here).
+        var localProjectPathBySessionID: [String: String] = [:]
     }
 
     let inputs: Inputs
@@ -70,6 +75,12 @@ struct MissionControlSidebarSnapshot: Equatable {
     let attentionDots: [String: SessionAttentionDot]
     let linkedSessionIDs: Set<String>
     let projectNameBySessionID: [String: String]
+    /// Real projects an unlinked conversation can be added to.
+    var projectTargets: [SidebarProjectTarget] {
+        linkedProjectGroups.compactMap { group in
+            group.projectPath.map { SidebarProjectTarget(title: group.title, path: $0) }
+        }
+    }
 
     init(inputs: Inputs) {
         self.inputs = inputs
@@ -92,7 +103,7 @@ struct MissionControlSidebarSnapshot: Equatable {
     }
 
     @MainActor
-    static func inputs(model: DockModel, control: ControlCenterModel) -> Inputs {
+    static func inputs(model: DockModel, control: ControlCenterModel, localProjectPaths: [String: String] = [:]) -> Inputs {
         Inputs(
             activeSessionID: model.navigationSessionID,
             activeStatus: model.status,
@@ -114,7 +125,8 @@ struct MissionControlSidebarSnapshot: Equatable {
             isRefreshingProjectNavigation: control.isRefreshingProjectNavigation,
             attention: control.attention,
             latestActivities: control.latestActivities,
-            pinnedSessions: model.pinnedSessions
+            pinnedSessions: model.pinnedSessions,
+            localProjectPathBySessionID: localProjectPaths
         )
     }
 
@@ -140,6 +152,7 @@ struct MissionControlSidebarSnapshot: Equatable {
             var sessionsByID = Dictionary(recentSessions.compactMap { session -> (String, HermesSession)? in
                 let isMember = project.sessionIDs.contains(session.id)
                     || inputs.projectIDBySessionID[session.id] == project.id
+                    || inputs.localProjectPathBySessionID[session.id] == project.name
                 guard isMember else { return nil }
                 assigned.insert(session.id)
                 return (session.id, session)
@@ -162,9 +175,6 @@ struct MissionControlSidebarSnapshot: Equatable {
                 assigned.insert(summary.id)
             }
             let sessions = sessionsByID.values.sorted { sessionDate($0) > sessionDate($1) }
-            // Projects without conversations are noise in the rail. A project
-            // whose rows are still loading stays so its count is not lost.
-            guard !sessions.isEmpty || project.sessionCount > 0 else { continue }
             groups.append(
                 MissionControlConversationGroup(
                     id: "project:\(project.id)",
@@ -173,7 +183,8 @@ struct MissionControlSidebarSnapshot: Equatable {
                     declaredSessionCount: project.sessionCount,
                     projectID: project.id,
                     projectPath: project.name,
-                    isLinked: true
+                    isLinked: true,
+                    hasGit: FileManager.default.fileExists(atPath: (project.name as NSString).appendingPathComponent(".git"))
                 )
             )
         }
@@ -280,14 +291,16 @@ final class MissionControlSidebarModel: ObservableObject {
 
     private let model: DockModel
     private let control: ControlCenterModel
+    private let store: WorkspaceStore
     private var cancellables: Set<AnyCancellable> = []
 
-    init(model: DockModel, control: ControlCenterModel) {
+    init(model: DockModel, control: ControlCenterModel, store: WorkspaceStore) {
         self.model = model
         self.control = control
-        self.snapshot = MissionControlSidebarSnapshot(inputs: MissionControlSidebarSnapshot.inputs(model: model, control: control))
+        self.store = store
+        self.snapshot = MissionControlSidebarSnapshot(inputs: MissionControlSidebarSnapshot.inputs(model: model, control: control, localProjectPaths: Self.localPaths(store)))
 
-        Publishers.Merge(model.sidebarPresentationChanges, control.sidebarPresentationChanges)
+        Publishers.Merge3(model.sidebarPresentationChanges, control.sidebarPresentationChanges, store.objectWillChange.map { _ in })
             // objectWillChange fires before the mutation lands; one main-queue
             // hop reads the settled values and coalesces same-tick bursts.
             .receive(on: DispatchQueue.main)
@@ -296,9 +309,15 @@ final class MissionControlSidebarModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    private static func localPaths(_ store: WorkspaceStore) -> [String: String] {
+        store.tasks.reduce(into: [:]) { result, task in
+            if let id = task.sessionID, let path = task.projectPath, !path.isEmpty { result[id] = path }
+        }
+    }
+
     func refresh() {
         let startedAt = Date()
-        let inputs = MissionControlSidebarSnapshot.inputs(model: model, control: control)
+        let inputs = MissionControlSidebarSnapshot.inputs(model: model, control: control, localProjectPaths: Self.localPaths(store))
         guard inputs != snapshot.inputs else { return }
         snapshot = MissionControlSidebarSnapshot(inputs: inputs)
         DebugLog.writePerformance(

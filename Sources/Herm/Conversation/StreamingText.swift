@@ -33,7 +33,10 @@ struct ResponseDurationLabel: View {
     }
 
     private func label(for seconds: TimeInterval) -> some View {
-        DockIconLabel(ResponseDurationFormatting.string(seconds: seconds), icon: .timer)
+        HStack(spacing: 4) {
+            DockIcon(.timer, size: 12, color: .dockMetadataText)
+            Text(ResponseDurationFormatting.string(seconds: seconds))
+        }
     }
 }
 

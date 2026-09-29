@@ -256,14 +256,12 @@ struct ProviderConnectSheet: View {
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
                     Spacer(minLength: 8)
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(command, forType: .string)
-                    } label: {
-                        DockIcon(.copy).foregroundStyle(Color.dockSecondaryText)
-                    }
+                    DockCopyButton(
+                        command,
+                        accessibilityLabel: "Copy command",
+                        presentation: .icon
+                    )
                     .buttonStyle(.dockPress)
-                    .help("Copy command")
                 }
                 .padding(.horizontal, 10)
                 .frame(minHeight: DockLayout.controlHeight)

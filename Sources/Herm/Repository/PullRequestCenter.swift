@@ -39,11 +39,12 @@ enum PullRequestFilesProjection: Equatable {
     case loaded([PullRequestFile])
 
     static func state(files: [PullRequestFile]?, isLoading: Bool, expectedFileCount: Int?) -> Self {
-        guard let files else { return isLoading ? .loading : .unavailable }
+        if isLoading { return .loading }
+        guard let files else { return .unavailable }
         guard files.isEmpty else { return .loaded(files) }
         // An empty `/files` response is authoritative only when the PR detail
-        // agrees that there are no changed files. A canceled or incomplete
-        // request must remain retryable instead of being cached as empty.
+        // agrees that there are no changed files. Otherwise expose the retry
+        // action instead of presenting a failed response as a valid empty PR.
         return expectedFileCount == 0 ? .empty : .unavailable
     }
 }
@@ -489,7 +490,12 @@ final class PullRequestCenterModel: ObservableObject {
         let (updated, loadedFiles, loadedComments, loadedCommits) = await (detail, files, comments, commits)
         guard !Task.isCancelled else { return }
         if let updated, let index = records.firstIndex(where: { $0.id == selected.id }) { records[index] = updated }
-        if let loadedFiles { filesByID[selected.id] = loadedFiles }
+        // `nil` means this selection has never attempted a detail load. Store
+        // an empty terminal value on failure so selection changes cannot leave
+        // the detail task eligible for an immediate retry loop. The code-tab
+        // projection still distinguishes an unavailable response from a
+        // genuine empty pull request using `changedFiles`.
+        filesByID[selected.id] = loadedFiles ?? []
         commentsByID[selected.id] = loadedComments ?? []
         commitsByID[selected.id] = loadedCommits ?? []
     }
@@ -745,11 +751,6 @@ struct PullRequestDetailView: View {
     @StateObject private var diffPresentationCache = PullRequestDiffPresentationCache()
     @StateObject private var mutationCoordinator = PullRequestMutationCoordinator()
 
-    private var isLoadingSelectedDetail: Bool {
-        guard let selected = center.selected else { return false }
-        return center.isLoadingDetail(for: selected.id) && center.filesByID[selected.id] == nil
-    }
-
     var body: some View {
         detailPane
             .task(id: center.selectedID) {
@@ -805,9 +806,7 @@ struct PullRequestDetailView: View {
     }
 
     @ViewBuilder private var detailPane: some View {
-        if center.isInitialLoad || isLoadingSelectedDetail {
-            detailLoadingPane
-        } else if let pr = center.selected { VStack(alignment: .leading, spacing: 0) {
+        if let pr = center.selected { VStack(alignment: .leading, spacing: 0) {
         detailHeader(pr)
         if detailTab == 0 {
             ScrollView { summary(pr).padding(.horizontal, 24) }
@@ -816,6 +815,8 @@ struct PullRequestDetailView: View {
         }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    } else if center.isInitialLoad {
+        detailLoadingPane
     } else { VStack(spacing: 12) { DockIcon(.gitPullRequest, size: 28, color: Color.dockMetadataText); Text(center.isRefreshing ? "Loading pull requests…" : "Select a pull request").font(.system(size: 15, weight: .medium)) }.foregroundStyle(Color.dockMetadataText).frame(maxWidth: .infinity, maxHeight: .infinity) }
     }
 

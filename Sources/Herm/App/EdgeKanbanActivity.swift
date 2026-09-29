@@ -18,6 +18,8 @@ struct EdgeKanbanActivity {
         var changed = false
         for (identity, task) in current {
             guard previous[identity] != task else { continue }
+            // Queued cards are not running work, so the preview never shows them.
+            guard Self.phase(task.status) != nil else { changes.removeValue(forKey: identity); continue }
             let old = previous[identity]
             let detail: String
             if let old, old.status != task.status {
@@ -45,15 +47,8 @@ struct EdgeKanbanActivity {
     func rows(isCurrent: Bool) -> [EdgeNotchTask] {
         var result: [EdgeNotchTask] = []
         for (identity, task) in previous ?? [:] {
-            let status = SessionKanbanActivityPresentation.Status(rawValue: task.status)
             let change = changes[identity]
-            guard change != nil || status == .running || status == .blocked || status == .review else { continue }
-            let phase: EdgeNotchTask.Phase = switch status {
-            case .blocked: .attention
-            case .running: .working
-            case .done: .finished
-            default: .pending
-            }
+            guard let phase = Self.phase(task.status), change != nil || phase != .finished else { continue }
             let context = [change?.detail, task.boardSlug, task.assignee].compactMap { $0 }.filter { !$0.isEmpty }
             result.append(EdgeNotchTask(id: Self.rowID(identity), title: task.title, phase: phase,
                 statusLabel: Self.label(task.status), detail: context.joined(separator: " · "),
@@ -71,6 +66,17 @@ struct EdgeKanbanActivity {
             if $0.phase != $1.phase { return $0.phase < $1.phase }
             if $0.updatedAt != $1.updatedAt { return ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
             return $0.id < $1.id
+        }
+    }
+
+    /// Running, review, blocked and done cards; nil hides queued or unknown ones.
+    private static func phase(_ status: String) -> EdgeNotchTask.Phase? {
+        switch SessionKanbanActivityPresentation.Status(rawValue: status) {
+        case .blocked: .attention
+        case .running: .working
+        case .review: .pending
+        case .done: .finished
+        case .ready, .unknown: nil
         }
     }
 

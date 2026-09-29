@@ -209,6 +209,7 @@ and `DockComponentStyles.swift`.
 | Section header | `DockSectionHeader(title:count:isExpanded:style:actions:)` | Any group label that has a count pill, a disclosure, or trailing actions |
 | Navigation row | `DockNavRow(title:icon:isSelected:showsUpdateBadge:style:action:)` | One destination in a navigation list or page-local nav (tabs down a pane, settings categories) |
 | Icon button | `DockIconButton(icon:label:isProminent:isBusy:size:style:action:)` | Icon-only actions in header bars (28pt) and section headers (24pt) |
+| Copy button | `DockCopyButton(_:label:accessibilityLabel:presentation:iconSize:color:confirmationColor:)` | Copy actions that confirm in place with a temporary check; use icon, text, or icon-and-text presentation to preserve the surrounding control treatment |
 | Status dot | `DockStatusDot(tone:size:pulses:)` | State beside a title; `pulses` only on live rows |
 | Status pill | `DockStatusPill(tone:text:symbol:)` | A standalone state, such as an inspector status or an offline marker |
 | Signage card | `.dockSignageCard(tone:emphasized:highlighted:)` | One unit of work in a list: a session, task, or bot |
@@ -420,17 +421,64 @@ Older sections are migrated to the template when they are next changed.
 
 ### Side activity notch
 
+**Hermes companion.** When the selected Hermes profile has an enabled pet, its
+sprite sits outside and below the rail with a 4pt gap, in its own sized window.
+The status marker stays inside the same 22 × 72pt contour; the 44pt hit target
+still opens Herm. The pet has a separate minimum-44pt hit target: hover greets, click
+plays a short petting reaction, and neither opens the notch or sends a message.
+It remains below the expanded preview, never duplicated in its header. The
+window reserves an extra 48pt for the companion; the contour and preview content
+keep their original sizes. The pet follows work and approval poses, with a brief
+error reaction; the notch remains the authoritative status display. Hover/click
+reactions briefly override the live pose, then return to it. Successful work triggers a brief celebration
+through the common notch announcement path. Quota announcements use review,
+attention uses waiting, working uses run, and other updates use wave; failures
+use failed. `HermesPetReaction` owns this mapping, with exhaustive cases and tests.
+Unsupported poses fall back
+to idle. Reactions use Hermes' spritesheet, not locally invented assets. This opt-in sprite is an
+exception to the chrome illustration and motion rules; Reduce Motion uses a
+static frame, and offline/stale sprites are dimmed and static. No passive
+lifecycle label is added to the rail.
+
+General → Appearance shows the searchable pet list directly, without a disclosure
+button. Its fixed-height list keeps loading, unavailable and loaded states stable.
+Installed pets load first; the remote catalog enriches that list. A bad community
+label is skipped without discarding the catalog; remote failures retain local pets.
+It also offers an enabled switch and
+Hermes size slider. Changes are staged and confirmed with Apply to Hermes;
+Hermes owns adoption, downloads, selection, and persistence for the selected
+profile. The settings explain that changes also affect Desktop/TUI and that
+the floating pet uses native frame dimensions multiplied by the saved scale,
+clamped proportionally to fit its display. Its panel, home placement and roaming
+bounds use that same size; the Settings thumbnail stays compact. Failed reads retain the previous
+sprite with stale presentation and show recovery guidance in this settings
+section. Generation, export, rename, and deletion are outside this UI.
+
+Roaming is an opt-in Herm-only preference. A separate transparent, non-activating
+A pet-sized window (minimum 44pt hit target) starts at the notch and strolls across the current display's
+bottom edge with directional walking sprites, pauses, and returns home after
+several strolls. Like Desktop, live activity pauses roaming to show its reaction.
+Hover pauses movement; dragging repositions
+within that display. The notch and pet context menus offer Call pet home. Moving
+the notch or changing screens resets home; opening the workspace hides the pet
+along with the notch. Reduce Motion, offline state, and stale assets keep it home.
+Only the small pet window intercepts input; no screen-sized input overlay is used.
+
 **Purpose.** The notch is the primary launcher; the menu-bar item is
 temporarily hidden. At a glance it answers three questions: what is running,
 what needs me, and what finished that I have not opened?
 
 **Rail.** Idle is a quiet, theme-colored 22 × 72pt silhouette with a 44pt-wide
 hit target and no passive lifecycle label. It keeps this contour in every
-activity state. A subdued grip marks idle. An indeterminate accent travels
-vertically while work runs. A small check marks updates, and an exclamation
-mark signals attention. Work and attention can coexist. Hover reveals the full
-text, and the button's accessibility label always names the status. Reduce
-Motion holds the work marker still.
+activity state. Settings → Appearance offers three persisted status displays:
+Dots (default), Vertical line, and Ring, with working-animation previews.
+Dots breathe during work; the line sweeps vertically and the ring rotates.
+Settled states hold still. Attention and updates retain a separate dot above
+ongoing work, so neither hides it. Idle is subdued, offline is hollow, updates
+use the success tone, and attention pulses in the warning tone. Hover reveals
+the full text, and the button's accessibility label always names the status.
+Reduce Motion holds every work marker still. Changing style never changes the
+rail geometry or its interactions.
 
 The generated workstation-and-side-dock icon is shared by the notch and the app
 bundle. Sparkles are not used as app identity. The compact, preview, and
@@ -462,11 +510,14 @@ announcement temporarily shows its source without changing that choice.
 Activity lists every session that is working, waiting on the user, or finished
 with a result the user has not opened. The list has no cap; the body scrolls.
 
-- It has two sections, each with a `DockSectionLabel` and a live count:
-  - **In progress:** needs-you first, then working.
+- It has three sections, each with a `DockSectionLabel` and a live count:
+  - **Needs your attention:** unresolved approvals and clarification questions.
+  - **In progress:** working sessions.
   - **Finished, not opened:** newest first.
 
-  An empty section is omitted.
+  An empty section is omitted. Pending requests include other sessions, use a
+  bounded request summary, and remain visible until answered or expired. Select
+  the row to review the full request and respond in the workspace.
 - Rows are quiet: no border or surface at rest, a `dockSurface4` fill on hover
   and a fainter one for the current session. A one-line 12pt semibold title
   sits beside the status dot and trailing metadata. The next line is the 11pt
@@ -769,21 +820,40 @@ navigation or authoritative removal can clear it.
 
 ### Settings workspace
 
-Settings keeps six stable categories in this order: General, Runtime,
-Integrations, Session, Project, and Diagnostics. General is selected when the
-surface is mounted; selection is local presentation state and is not
-persisted. At 760pt and wider, a 184pt rail of `DockNavRow`s (title only; the
-subtitle is a tooltip) scrolls independently from the detail page; narrow
-layouts use a full-width category menu below the Settings header.
+Settings groups destinations by purpose:
+
+- **App:** General, Appearance, Notifications.
+- **Agent:** Models & tools, Chat, Memory & Context, Voice, Advanced.
+- **Tools & access:** Files & terminal, Browser, Privacy & safety, Integrations.
+- **Activity & maintenance:** Active session, Project checks, Diagnostics, Updates.
+
+General is selected when the surface is mounted; selection is local presentation
+state and is not persisted. At 760pt and wider, a 184pt rail of `DockNavRow`s
+scrolls independently from the detail page. Group labels separate destinations;
+narrow layouts use the same groups in a category menu below the Settings header.
+Each detail page starts with its category title and a short description, and
+opens at the top when the category changes.
 
 - **Grouped cards.** Each detail page is a short stack of `SettingsSection`
   groups: a 13pt semibold title and an optional inline 11pt subtitle above one
   quiet card (`surface` at 0.34, `borderLight` hairline, radius 10, 14pt
   padding). Never nest a card inside a card; subgroups inside a card use a
   divider and an 11pt semibold `settingsSubheading`.
-- **Most used first.** General starts with Preferences (switch rows), then
-  Appearance, then Agent update. Preference rows keep the 52pt minimum with a
-  small switch trailing.
+- **Predictable locations.** General contains Hermes gateway, Startup, and Keyboard shortcuts.
+  Appearance exposes Theme, Sidebar, Notch, and Hermes companion directly.
+  Notifications contains completion and repository alerts. Updates contains
+  both app and agent updates, plus Hermes update behavior. Files & terminal
+  keeps the working directory, execution backend, shell, and file access together.
+  Checkpoint limits live beside the checkpoint switch in Privacy & safety.
+  Preference rows keep the 52pt minimum with a small switch trailing.
+- **Gateway service.** General shows the default-profile messaging gateway's
+  running, stopped, or unavailable status with a dot and text. Refresh every
+  15 seconds while visible and on demand. Keep progress and failures in fixed
+  slots. Confirm Restart gateway because messaging and scheduled work may be
+  interrupted; run the local, allow-listed Hermes CLI command outside the chat
+  transport, then read status again. Restart requires a verified launchd service
+  because unmanaged CLI restarts may run in the foreground. Unknown CLI output
+  and failed reads show unavailable, never an inferred running state.
 - **Skins gallery.** Compact tiles: swatches, Herm skin name, and one line
   for the mode plus "Active in Hermes" when it applies. The selected tile gets
   an accent stroke and checkmark; the description is a tooltip. Selecting a
@@ -794,7 +864,7 @@ layouts use a full-width category menu below the Settings header.
   Row labels and buttons use sentence case, not monospaced capitals. At most
   one filled `.dockPrimary` button per card, used for the committing action
   (for example Update Hermes).
-- **Badges** are reserved for actionable state: the Update pill on General,
+- **Badges** are reserved for actionable state: the update indicator on Updates,
   the setup-needed count on Integrations, and the open-attention count on
   Session. Loading, unavailable, and empty states stay inside their category.
   Disruptive session actions keep their existing confirmations.
@@ -1174,6 +1244,8 @@ events, and main-agent tool activity.
 - `HermesGateway` owns the authenticated loopback connection and raw RPC.
 - `HermesControlRPC` owns named gateway method wrappers.
 - `HermesCLIAdapter` owns allow-listed Hermes CLI command construction.
+- `HermesGatewayLifecycleModel` owns the default-profile messaging gateway's
+  local status checks and confirmed CLI restart, independently of the chat transport.
 - `DockModel` owns the active conversation, event stream, subagents, tool
   calls, agent activity, and background tasks.
 - `ControlCenterModel` owns read-only projections, refresh generations, stale

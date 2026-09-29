@@ -1135,26 +1135,11 @@ private struct CompactionStepRow: View {
 /// Copies one fenced block and briefly confirms it in place.
 private struct MarkdownCodeCopyButton: View {
   let code: String
-  @State private var didCopy = false
-  @State private var resetTask: Task<Void, Never>?
 
   var body: some View {
-    Button {
-      NSPasteboard.general.clearContents()
-      NSPasteboard.general.setString(code, forType: .string)
-      didCopy = true
-      resetTask?.cancel()
-      resetTask = Task { @MainActor in
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-        guard !Task.isCancelled else { return }
-        didCopy = false
-      }
-    } label: {
-      Text(didCopy ? "Copied" : "Copy").font(DockTypography.control).foregroundStyle(Color.dockSecondaryText)
-        .padding(.horizontal, 6).frame(height: 28).contentShape(Rectangle())
-    }
+    DockCopyButton(code, accessibilityLabel: "Copy code", presentation: .text)
+      .font(DockTypography.control)
+      .padding(.horizontal, 6).frame(height: 28).contentShape(Rectangle())
     .buttonStyle(.plain)
-    .help("Copy code")
-    .accessibilityLabel("Copy code")
   }
 }

@@ -13,13 +13,16 @@ final class EdgeDockController: NSObject {
     private let openKanban: (KanbanTaskSummary) -> Void
     private let openDock: () -> Void
     private let state = EdgeNotchState()
+    private var petWindow: HermesPetWindow?
     private var subscriptions = Set<AnyCancellable>()
     private var collapseTask: DispatchWorkItem?
     private var expandTask: DispatchWorkItem?
     private var hovering = false
     private var dragging = false
+    private var petDragging = false
     private var suppressClickUntil = Date.distantPast
     private var workspacePresented = false
+    private var quickProfileID: String?
     private var completedTaskIDs: Set<String>?
     private var latestToolID: String?
     private var latestToolComplete = false
@@ -29,6 +32,8 @@ final class EdgeDockController: NSObject {
     private var lastKanbanRead: Date?
     private var kanbanStatusCurrent = false
     private var latestSessions: [HermesSession] = []
+    private var latestAttention: [String: DockModel.SessionAttention] = [:]
+    private var deliveryQuestions: [EdgeDeliveryQuestion] = []
     private var latestActivityLabels: [String: String] = [:]
     private var lastQuotas: [ProviderQuotaSnapshot]?
     /// Quota readers whose usage has moved; these are the services being
@@ -47,6 +52,17 @@ final class EdgeDockController: NSObject {
         self.defaults = defaults
         self.openDock = openDock
         super.init()
+        petWindow = HermesPetWindow(pet: controlCenter.pet, defaults: defaults)
+        state.externalPet = true
+        state.petAttached = petWindow?.attached ?? true
+        petWindow?.onAttachChange = { [weak self] in self?.state.petAttached = $0 }
+        petWindow?.onDragProgress = { [weak self] dragging, pull in
+            guard let self else { return }
+            if dragging && !self.petDragging { self.petDragging = true; self.expandTask?.cancel(); self.setExpanded(false) }
+            if !dragging { self.petDragging = false }
+            self.state.petDragging = dragging; self.state.petPull = pull
+        }
+        quickProfileID = model.profileScopeID
         state.side = EdgeDockSide(rawValue: defaults.string(forKey: "hermes.notch.side") ?? "") ?? .right
         fraction = defaults.object(forKey: "hermes.notch.position") as? Double ?? 0.5
         displayID = defaults.object(forKey: "hermes.notch.display") as? NSNumber
@@ -65,10 +81,11 @@ final class EdgeDockController: NSObject {
             quickMessageModel: model,
             onQuickMessageFocus: { [weak self] active in self?.setQuickMessageFocus(active) },
             onQuickReply: { [weak self] task in self?.beginQuickReply(task) },
+            onAnswer: { [weak self] task, choice in self?.answer(task, choice: choice) },
             openDock: { [weak self] in self?.openWorkspace() },
             onOpenTask: { [weak self] task in self?.openTask(task) },
             onDrag: { [weak self] ended in self?.moveNotch(ended: ended) },
-            onSideChange: { [weak self] side in
+            onCallPetHome: { [weak self] in self?.petWindow?.recall() }, onSideChange: { [weak self] side in
                 guard let self else { return }
                 self.state.side = side
                 self.persistPlacement()
@@ -78,15 +95,43 @@ final class EdgeDockController: NSObject {
         host.sizingOptions = []
         panel.contentView = host
         panel.onCancel = { [weak self] in self?.setExpanded(false) }
+        controlCenter.pet.$info.combineLatest(controlCenter.pet.$sheet)
+            .map { $0.enabled && $1 != nil }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self, weak host] visible in
+                guard let self else { return }
+                self.state.hasPet = visible
+                self.position(animated: false)
+            }.store(in: &subscriptions)
+        controlCenter.pet.$info.dropFirst().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.position(animated: false) }.store(in: &subscriptions)
         Publishers.CombineLatest3(model.$status, model.$hasUnreadResponse, model.$backgroundTasks)
             .receive(on: RunLoop.main)
             .sink { [weak self] status, unread, tasks in
                 self?.refresh(status: status, unread: unread, tasks: tasks)
             }.store(in: &subscriptions)
+        model.$sessionAttention
+            .receive(on: RunLoop.main)
+            .sink { [weak self] requests in
+                guard let self else { return }
+                let hasNewRequest = requests.contains { self.latestAttention[$0.key] != $0.value }
+                self.latestAttention = requests
+                self.updateDetail()
+                if hasNewRequest { self.announce() }
+            }.store(in: &subscriptions)
         model.$isLoadingSessions
             .receive(on: RunLoop.main)
             .sink { [weak self] in self?.state.refreshingSessions = $0 }
             .store(in: &subscriptions)
+        model.$profileScopeID.combineLatest(state.$quickSending)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] profile, sending in
+                guard let self, !sending, profile != self.quickProfileID else { return }
+                self.quickProfileID = profile
+                self.state.resetQuickComposition()
+                if !self.workspacePresented { self.setQuickMessageFocus(false) }
+            }.store(in: &subscriptions)
         model.$sessions
             .receive(on: RunLoop.main)
             .sink { [weak self] sessions in self?.refreshNoteworthySessions(sessions) }
@@ -111,7 +156,7 @@ final class EdgeDockController: NSObject {
         // The notch remains alive when the workspace is unmounted. Use the
         // same aggregate projection, without board filters or supporting reads.
         Timer.publish(every: 5, on: .main, in: .common).autoconnect()
-            .sink { [weak self] _ in self?.pollKanban() }
+            .sink { [weak self] _ in self?.pollKanban(); self?.pollDeliveryQuestions() }
             .store(in: &subscriptions)
         controlCenter.$providerQuotas
             .receive(on: RunLoop.main)
@@ -134,7 +179,21 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.position(animated: false) }
             .store(in: &subscriptions)
+        // Launch (login item, display not ready yet) can leave the panel unplaced
+        // or unordered; re-assert it whenever the screen/app context settles.
+        Publishers.Merge3(
+            NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification),
+            NotificationCenter.default.publisher(for: NSWorkspace.activeSpaceDidChangeNotification, object: NSWorkspace.shared),
+            Just(Notification(name: .init("herm.notch.launch"))).delay(for: 1, scheduler: RunLoop.main))
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.ensureNotchVisible() }
+            .store(in: &subscriptions)
         controlCenter.bind(to: model)
+        ensureNotchVisible()
+    }
+
+    private func ensureNotchVisible() {
+        guard !workspacePresented else { return }
         position(animated: false)
         panel.orderFrontRegardless()
     }
@@ -158,6 +217,7 @@ final class EdgeDockController: NSObject {
         panel.acceptsWorkspaceFocus = false
         panel.resignKey()
         panel.orderOut(nil)
+        petWindow?.hide()
         workspacePresented = true
     }
 
@@ -230,33 +290,63 @@ final class EdgeDockController: NSObject {
     private func rebuildTasks() {
         let activity = state.activity
         var current: EdgeNotchTask?
-        let phase: EdgeNotchTask.Phase? = activity.attention ? .attention
+        let request = model.currentSessionIDs.compactMap { latestAttention[$0] }.first
+        let phase: EdgeNotchTask.Phase? = (request != nil || activity.attention) ? .attention
             : activity.working ? .working : activity.hasUpdate ? .finished : nil
         if let phase {
             let label: String = switch phase {
-            case .attention: activity.status.title
+            case .attention: request?.status.title ?? activity.status.title
             case .working: activity.status == .working ? "Working" : activity.title
             case .pending, .finished: activity.title
             }
             current = EdgeNotchTask(
                 id: model.navigationSessionID ?? "current", title: state.sessionTitle, phase: phase,
-                statusLabel: label, detail: state.detail, updatedAt: nil, isCurrent: true,
-                isStatusCurrent: activity.status != .offline, session: nil)
+                statusLabel: label, detail: request?.summary ?? state.detail, updatedAt: nil, isCurrent: true,
+                isStatusCurrent: activity.status != .offline, session: nil, choices: request?.choices ?? [])
         }
-        let tasks = EdgeNotchTask.build(current: current, sessions: latestSessions,
+        let tasks = EdgeNotchTask.merged(EdgeNotchTask.build(current: current, sessions: latestSessions,
                                         activity: latestActivityLabels,
                                         currentSessionIDs: model.currentSessionIDs,
-                                        isOnline: activity.status != .offline)
+                                        isOnline: activity.status != .offline, attention: latestAttention)
             + kanbanActivity.rows(isCurrent: kanbanStatusCurrent && activity.status != .offline)
+            + deliveryQuestions.map(\.row))
         if tasks != state.tasks { state.tasks = tasks }
+        controlCenter.pet.updateNotchActivity(
+            working: state.railActivity.working || tasks.contains { $0.isStatusCurrent && $0.phase == .working },
+            attention: state.railActivity.attention || tasks.contains { $0.isStatusCurrent && $0.phase == .attention })
+    }
+
+    /// Headless coordinator turns cannot ask; the delivery plugin queues their questions as files.
+    private func pollDeliveryQuestions() {
+        let questions = EdgeDeliveryQuestion.load()
+        guard questions != deliveryQuestions else { return }
+        let isNew = questions.contains { !deliveryQuestions.contains($0) }
+        deliveryQuestions = questions
+        rebuildTasks()
+        if isNew { announce() }
+    }
+
+    private func answer(_ task: EdgeNotchTask, choice: String) {
+        if let question = task.deliveryQuestion {
+            guard let session = task.session else { return }
+            model.sendQuickMessage(question.answerText(choice), to: session) { [weak self] error in
+                guard let self else { return }
+                // ponytail: a busy Bot Chat keeps the question; tapping again retries.
+                if let error { return DebugLog.write("notch: question answer failed: \(error)") }
+                try? FileManager.default.removeItem(at: question.file)
+                self.pollDeliveryQuestions()
+            }
+            return
+        }
+        guard let sessionID = task.isCurrent
+                ? model.currentSessionIDs.first(where: { latestAttention[$0] != nil })
+                : task.session?.id else { return }
+        model.answerAttention(sessionID: sessionID, choice: choice)
     }
 
     private func refreshSelectedTasks() {
-        if state.displaysTaskSource == .kanban {
-            pollKanban()
-        } else {
-            model.loadSessions()
-        }
+        pollKanban()
+        model.loadSessions()
     }
 
     private func pollKanban() {
@@ -297,7 +387,7 @@ final class EdgeDockController: NSObject {
             lastKanbanRead = refresh.lastSuccess
         }
         rebuildTasks()
-        if changed { announce(source: .kanban) }
+        if changed { announce() }
     }
 
     private func refresh(status: HermesStatus, unread: Bool, tasks: [HermesBackgroundTask]) {
@@ -399,8 +489,10 @@ final class EdgeDockController: NSObject {
         rebuildTasks()
     }
 
-    private func announce(quota: Bool = false, source: EdgeTaskSource = .activity) {
-        guard !workspacePresented, !dragging, !state.composing else { return }
+    private func announce(quota: Bool = false) {
+        guard !workspacePresented, !dragging, !petDragging, !state.composing else { return }
+        // Every notch announcement, including future sources, reaches the pet here.
+        controlCenter.pet.react(.announcement(activity: state.railActivity, quota: quota))
         if !hovering {
             // Updates landing while one is showing join it rather than replace it.
             if !state.showingAnnouncement {
@@ -412,7 +504,6 @@ final class EdgeDockController: NSObject {
                 state.announcesQuota = true
             } else {
                 state.announcesTasks = true
-                state.announcedTaskSource = source
             }
         }
         state.expanded = true
@@ -421,7 +512,7 @@ final class EdgeDockController: NSObject {
     }
 
     private func hoverChanged(_ value: Bool) {
-        guard !workspacePresented, !dragging else { return }
+        guard !workspacePresented, !dragging, !petDragging else { return }
         hovering = value
         collapseTask?.cancel()
         expandTask?.cancel()
@@ -432,7 +523,7 @@ final class EdgeDockController: NSObject {
             // 80ms was too short for a user to start moving the notch before it
             // expanded out from under the cursor.
             let task = DispatchWorkItem { [weak self] in
-                guard let self, self.hovering, !self.dragging else { return }
+                guard let self, self.hovering, !self.dragging, !self.petDragging else { return }
                 self.setExpanded(true)
             }
             expandTask = task
@@ -462,7 +553,7 @@ final class EdgeDockController: NSObject {
     /// Keyboard counterpart to hovering the notch: stays open while the
     /// pointer is over it, otherwise folds back after a few seconds.
     func toggleQuickPreview() {
-        guard !workspacePresented, !dragging else { return }
+        guard !workspacePresented, !dragging, !petDragging else { return }
         if state.expanded { return setExpanded(false) }
         state.showingAnnouncement = false
         setExpanded(true)
@@ -511,8 +602,11 @@ final class EdgeDockController: NSObject {
 
     private func position(animated: Bool) {
         guard let placement else { return }
+        (panel.contentView as? EdgeDockHostingView<EdgeNotchView>)?.bottomHoverExclusion = state.petReserve
         let target = placement.frame(width: state.expanded ? EdgeNotchState.expandedSize.width : state.railWidth,
-                                     height: state.expanded ? max(EdgeNotchState.expandedSize.height, state.railHeight) : state.railHeight)
+                                     height: state.panelHeight)
+        petWindow?.update(home: NSPoint(x: state.side == .right ? target.maxX - 44 : target.minX, y: target.minY),
+                          screen: placement.visibleFrame, visible: !workspacePresented, side: state.side)
         guard !panel.frame.equalTo(target) else { return }
         if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
@@ -540,6 +634,7 @@ struct EdgeNotchActivity: Equatable {
     var backgroundCompleted = false
     var responseCompleted = false
     var kanbanRunningCount = 0
+    var sessionNeedsAttention = false
     var kanbanNeedsAttention = false
     var kanbanHasUpdate = false
     var hasUpdate: Bool { unread || backgroundCompleted || responseCompleted || kanbanHasUpdate }
@@ -551,9 +646,10 @@ struct EdgeNotchActivity: Equatable {
     }
 
     var working: Bool { status == .working || runningCount > 0 || kanbanRunningCount > 0 }
-    var attention: Bool { status == .needsApproval || status == .needsClarification || kanbanNeedsAttention }
+    var attention: Bool { status == .needsApproval || status == .needsClarification || kanbanNeedsAttention || sessionNeedsAttention }
     var title: String {
         if status == .needsApproval || status == .needsClarification { return status.title }
+        if sessionNeedsAttention { return "Needs your attention" }
         if kanbanNeedsAttention { return "Kanban card blocked" }
         if unread { return "New response" }
         if backgroundCompleted { return "Background task completed" }
@@ -565,7 +661,7 @@ struct EdgeNotchActivity: Equatable {
         return "Open Herm"
     }
     var symbol: Ph {
-        if kanbanNeedsAttention { return .warningCircle }
+        if kanbanNeedsAttention || sessionNeedsAttention { return .warningCircle }
         if attention { return status.icon }
         if unread { return .chat }
         if backgroundCompleted || responseCompleted || kanbanHasUpdate { return .check }
@@ -632,6 +728,15 @@ final class EdgeNotchState: ObservableObject {
         quickResult = nil
     }
 
+    /// A new-message draft belongs to its profile too. Wait for any captured send
+    /// to finish before the controller calls this on a profile change.
+    func resetQuickComposition() {
+        guard !quickSending else { return }
+        quickDrafts.removeAll()
+        quickTarget = nil; quickReplyTask = nil; quickCreatedSession = nil
+        quickDraft = ""; quickResult = nil; composing = false
+    }
+
     var previewTasks: [EdgeNotchTask] {
         guard composing, let quickReplyTask, !tasks.contains(where: { $0.id == quickReplyTask.id }) else { return tasks }
         return tasks + [quickReplyTask]
@@ -643,23 +748,15 @@ final class EdgeNotchState: ObservableObject {
     @Published var bots: [BotSummary] = []
     @Published var avatarImages: [String: Data] = [:]
     @Published var expanded = false
+    @Published var hasPet = false
+    var externalPet = false
     @Published var side: EdgeDockSide = .right
     @Published var activity = EdgeNotchActivity()
     @Published var name = "Hermes"
     @Published var sessionTitle = "Herm"
     @Published var updateTitle = "No activity yet"
     @Published var showsQuota = false
-    @Published var taskSource: EdgeTaskSource = .activity
-    @Published var announcedTaskSource: EdgeTaskSource = .activity
     @Published var refreshingSessions = false
-    var displaysTaskSource: EdgeTaskSource {
-        showingAnnouncement && announcesTasks ? announcedTaskSource : taskSource
-    }
-
-    func selectTaskSource(_ source: EdgeTaskSource) {
-        showingAnnouncement = false
-        taskSource = source
-    }
     @Published var showingAnnouncement = false
     /// Which tab a temporary announcement shows; the user's choice returns after.
     @Published var announcesQuota = false
@@ -680,6 +777,7 @@ final class EdgeNotchState: ObservableObject {
     static let previewSize = CGSize(width: 352, height: 312)
     var railActivity: EdgeNotchActivity {
         var result = activity
+        result.sessionNeedsAttention = tasks.contains { $0.kanbanTask == nil && $0.phase == .attention && $0.isStatusCurrent }
         let cards = tasks.filter { $0.kanbanTask != nil && $0.isStatusCurrent }
         result.kanbanRunningCount = cards.filter { $0.phase == .working }.count
         result.kanbanNeedsAttention = cards.contains { $0.phase == .attention }
@@ -688,8 +786,21 @@ final class EdgeNotchState: ObservableObject {
     }
     var showsSeparateWork: Bool { railActivity.working && (railActivity.hasUpdate || railActivity.attention) }
     var isQuiet: Bool { railActivity.quiet && !expanded }
+    @Published var petAttached = true
+    @Published var petDragging = false
+    @Published var petPull = 0.0
+    /// The collapsed bar widens to receive a dragged pet and stays a little wider while it is docked.
+    var barWidth: CGFloat {
+        if petDragging { return 22 + (petAttached ? 8 : 20) * petPull }
+        return hasPet && petAttached ? 30 : 22
+    }
+    /// Accent glow grows as a free pet is dragged toward the notch.
+    var barGlow: Double { petDragging && !petAttached ? petPull : 0 }
     var railWidth: CGFloat { expanded ? 72 : 44 }
+    var petReserve: CGFloat { hasPet ? Self.petFootprint : 0 }
+    static let petFootprint: CGFloat = 48
     var railHeight: CGFloat { expanded ? 136 : 72 }
+    var panelHeight: CGFloat { (expanded ? Self.expandedSize.height : railHeight) + petReserve }
 }
 
 struct EdgeNotchView: View {
@@ -701,15 +812,18 @@ struct EdgeNotchView: View {
     var quickMessageModel: DockModel? = nil
     var onQuickMessageFocus: (Bool) -> Void = { _ in }
     var onQuickReply: (EdgeNotchTask) -> Void = { _ in }
+    var onAnswer: (EdgeNotchTask, String) -> Void = { _, _ in }
     @ObservedObject private var theme = DockThemeStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let openDock: () -> Void
     var onOpenTask: (EdgeNotchTask) -> Void = { _ in }
     var onDrag: (Bool) -> Void = { _ in }
+    var onCallPetHome: () -> Void = {}
     var onSideChange: (EdgeDockSide) -> Void = { _ in }
 
     var body: some View {
         GeometryReader { geometry in
+            VStack(spacing: 4) {
             HStack(spacing: 0) {
                 if state.expanded {
                     // The outer contour already supplies visual breathing room.
@@ -722,7 +836,7 @@ struct EdgeNotchView: View {
                     rail
                 }
             }
-            .frame(width: geometry.size.width, height: geometry.size.height,
+            .frame(width: geometry.size.width, height: geometry.size.height - state.petReserve,
                    alignment: state.side == .right ? .trailing : .leading)
             .background {
                 if state.expanded {
@@ -734,6 +848,13 @@ struct EdgeNotchView: View {
             .simultaneousGesture(DragGesture(minimumDistance: 6)
                 .onChanged { _ in onDrag(false) }
                 .onEnded { _ in onDrag(true) })
+                if state.hasPet && !state.externalPet {
+                    HermesNotchPetButton(pet: controlCenter.pet, mirrored: state.side == .left)
+                        .frame(maxWidth: .infinity, alignment: state.side == .right ? .trailing : .leading)
+                } else if state.hasPet {
+                    Color.clear.frame(height: max(44, state.petReserve - 4)).allowsHitTesting(false)
+                }
+            }
         }
         .clipped()
         .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: state.expanded)
@@ -745,21 +866,13 @@ struct EdgeNotchView: View {
 
     private var rail: some View {
         Button(action: openDock) {
-            HStack(spacing: 0) {
-                if state.side == .right { Spacer(minLength: 0) }
-                EdgeNotchStatusIndicator(activity: state.railActivity)
-                    .frame(width: 22, height: 72)
-                    .background {
-                        DockWindowBackground().clipShape(EdgeNotchShape(side: state.side))
-                            .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 1) }
-                    }
-                if state.side == .left { Spacer(minLength: 0) }
-            }
+            EdgePetRail(activity: state.railActivity, side: state.side, width: state.barWidth, glow: state.barGlow, docked: state.petAttached && state.hasPet)
             .frame(width: state.railWidth, height: state.railHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
+            if state.hasPet { Button("Attach pet to notch", action: onCallPetHome).disabled(state.petAttached) }
             Button("Move to left edge") { onSideChange(.left) }
             Button("Move to right edge") { onSideChange(.right) }
             Divider()
@@ -772,7 +885,7 @@ struct EdgeNotchView: View {
 
     private var preview: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: 4) {
                 HStack(spacing: 2) {
                     tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
                         onQuickMessageFocus(false); state.showingAnnouncement = false; state.showsQuota = false
@@ -791,7 +904,7 @@ struct EdgeNotchView: View {
                 }
             }
             .frame(height: 40)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 6)
             Divider().overlay(Color.dockBorderLight)
             if state.composing, state.quickTarget == nil, let quickMessageModel {
                 EdgeQuickMessageView(model: quickMessageModel, state: state,
@@ -800,7 +913,6 @@ struct EdgeNotchView: View {
                 EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota, change: state.announcedQuotaChange)
             } else {
                 EdgeTaskPreview(tasks: state.previewTasks, isOffline: state.activity.status == .offline,
-                                source: state.displaysTaskSource,
                                 quotaChange: state.displaysStatus ? state.announcedQuotaChange : nil,
                                 kanbanUnavailable: state.kanbanUnavailable,
                                 bots: state.bots, avatarImages: state.avatarImages,
@@ -812,38 +924,32 @@ struct EdgeNotchView: View {
                                 reply: quickMessageModel == nil ? nil : onQuickReply,
                                 quickState: state, quickModel: quickMessageModel,
                                 closeReply: { onQuickMessageFocus(false) },
+                                answer: onAnswer,
                                 openDock: openDock, openTask: onOpenTask)
-                    .id(state.displaysTaskSource)
             }
         }
     }
 
     private var taskToolbar: some View {
-        let refreshing = state.displaysTaskSource == .kanban
-            ? controlCenter.refreshState(for: "kanban.global")?.isRefreshing == true
-            : state.refreshingSessions
-        let unavailable = state.activity.status == .offline
-            || (state.displaysTaskSource == .kanban && state.kanbanUnavailable)
-        return HStack(spacing: 4) {
-            EdgePreviewModeToggle(options: EdgeTaskSource.allCases, selection: state.displaysTaskSource,
-                                  title: { $0.title }, symbol: nil) { state.selectTaskSource($0) }
-            Button(action: onTasksRefresh) {
-                Group {
-                    if refreshing {
-                        ProgressView().controlSize(.small).scaleEffect(0.7)
-                    } else {
-                        DockIcon(unavailable ? .warningCircle : .arrowClockwise, size: 13,
-                                 color: unavailable ? .dockWarning : .dockSecondaryText)
-                    }
+        let refreshing = state.refreshingSessions
+            || controlCenter.refreshState(for: "kanban.global")?.isRefreshing == true
+        let unavailable = state.activity.status == .offline || state.kanbanUnavailable
+        return Button(action: onTasksRefresh) {
+            Group {
+                if refreshing {
+                    ProgressView().controlSize(.small).scaleEffect(0.7)
+                } else {
+                    DockIcon(unavailable ? .warningCircle : .arrowClockwise, size: 13,
+                             color: unavailable ? .dockWarning : .dockSecondaryText)
                 }
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .disabled(refreshing || state.activity.status == .offline)
-            .help(unavailable ? "Status unavailable. Refresh \(state.displaysTaskSource.title.lowercased())" : "Refresh \(state.displaysTaskSource.title.lowercased())")
-            .accessibilityLabel(unavailable ? "Status unavailable. Refresh \(state.displaysTaskSource.title.lowercased())" : "Refresh \(state.displaysTaskSource.title.lowercased())")
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .disabled(refreshing || state.activity.status == .offline)
+        .help(unavailable ? "Status unavailable. Refresh tasks" : "Refresh tasks")
+        .accessibilityLabel(unavailable ? "Status unavailable. Refresh tasks" : "Refresh tasks")
     }
 
     private func tabButton(_ title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
@@ -851,7 +957,7 @@ struct EdgeNotchView: View {
             Text(title)
                 .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
                 .frame(height: 24)
                 .background(Capsule().fill(isSelected ? Color.dockAccentMuted : .clear))
                 .overlay(Capsule().strokeBorder(isSelected ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1))
@@ -865,48 +971,37 @@ struct EdgeNotchView: View {
 /// Dots told apart by motion and fill as well as color: breathing = working
 /// or attention, held = done, hollow = offline. Work keeps its own dot
 /// beneath attention or done so a blocked card never hides a running task.
-private struct EdgeNotchStatusIndicator: View {
+private struct EdgePetRail: View {
+    @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .dots
     let activity: EdgeNotchActivity
+    let side: EdgeDockSide
+    var width: CGFloat = 22
+    var glow = 0.0
+    var docked = false
+    @State private var flash = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var animates: Bool { !reduceMotion && (activity.working || activity.attention) }
-
     var body: some View {
-        TimelineView(.animation(paused: !animates)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            VStack(spacing: 6) {
-                if let signal { signal(t) }
-                if activity.working { workingDot(t) }
+        VStack(spacing: 4) {
+            HStack(spacing: 0) {
+                if side == .right { Spacer(minLength: 0) }
+                EdgeNotchStatusIndicator(activity: activity, style: displayStyle)
+                    .frame(width: width, height: 72)
+                    .background {
+                        DockWindowBackground().clipShape(EdgeNotchShape(side: side))
+                            .overlay { EdgeNotchShape(side: side).stroke(Color.dockBorderStrong, lineWidth: 1) }
+                            .overlay { EdgeNotchShape(side: side).stroke(Color.accentColor, lineWidth: 2).opacity(flash ? 1 : glow * 0.8) }
+                    }
+                    .animation(reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.68), value: width)
+                if side == .left { Spacer(minLength: 0) }
             }
         }
-        .accessibilityHidden(true)
-    }
-
-    /// 0...1 sine wave; resting at full when motion is off.
-    private func wave(_ t: Double, period: Double) -> Double {
-        animates ? (1 - cos(t / period * 2 * .pi)) / 2 : 1
-    }
-
-    private var signal: ((Double) -> AnyView)? {
-        if activity.attention {
-            return { t in
-                let w = wave(t, period: 2.0)
-                return AnyView(Circle().fill(Color.dockWarning.opacity(0.45 + 0.55 * w)).frame(width: 7, height: 7))
-            }
+        // A brief accent flash marks the moment the pet docks.
+        .onChange(of: docked) { _, isDocked in
+            guard isDocked, !reduceMotion else { return }
+            flash = true
+            withAnimation(.easeOut(duration: 0.7)) { flash = false }
         }
-        if activity.hasUpdate {
-            return { _ in AnyView(Circle().fill(Color.dockSuccess).frame(width: 7, height: 7)) }
-        }
-        if activity.working { return nil }
-        if activity.status == .offline {
-            return { _ in AnyView(Circle().strokeBorder(Color.dockSecondaryText, lineWidth: 1.5).frame(width: 7, height: 7)) }
-        }
-        return { _ in AnyView(Circle().fill(Color.dockSecondaryText.opacity(0.35)).frame(width: 5, height: 5)) }
-    }
-
-    private func workingDot(_ t: Double) -> some View {
-        Circle().fill(Color.dockSecondaryText.opacity(0.4 + 0.6 * wave(t, period: 1.4)))
-            .frame(width: 6, height: 6)
     }
 }
 
@@ -940,14 +1035,28 @@ struct EdgeNotchShape: Shape {
 
 final class EdgeDockHostingView<Content: View>: NSHostingView<Content> {
     var onHoverChanged: ((Bool) -> Void)?
+    var bottomHoverExclusion: CGFloat = 0 { didSet { updateTrackingAreas() } }
+    private var lastNotchHover: Bool?
     private var hoverArea: NSTrackingArea?
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self)
         hoverArea = area
         addTrackingArea(area)
     }
-    override func mouseEntered(with event: NSEvent) { onHoverChanged?(true) }
-    override func mouseExited(with event: NSEvent) { onHoverChanged?(false) }
+    func notchHoverContains(_ point: NSPoint) -> Bool {
+        bounds.contains(point) && (isFlipped ? bounds.maxY - point.y : point.y - bounds.minY) >= bottomHoverExclusion
+    }
+    private func updateNotchHover(_ event: NSEvent) {
+        let inside = notchHoverContains(convert(event.locationInWindow, from: nil))
+        guard lastNotchHover != inside else { return }
+        lastNotchHover = inside; onHoverChanged?(inside)
+    }
+    override func mouseEntered(with event: NSEvent) { updateNotchHover(event) }
+    override func mouseMoved(with event: NSEvent) { updateNotchHover(event) }
+    override func mouseExited(with event: NSEvent) {
+        // Leaving via the pet must still schedule collapse after leaving the panel.
+        lastNotchHover = nil; onHoverChanged?(false)
+    }
 }

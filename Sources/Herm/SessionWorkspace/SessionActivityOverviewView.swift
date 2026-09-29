@@ -29,6 +29,36 @@ enum SessionActivityOverviewPresentation {
         }
     }
 
+    /// Active work is grouped by Kanban status so each card shows once.
+    enum Lane: Int, CaseIterable, Identifiable {
+        case blocked, inProgress, review, queued
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .blocked: "Blocked"
+            case .inProgress: "In progress"
+            case .review: "Review"
+            case .queued: "Up next"
+            }
+        }
+    }
+
+    /// Triage is where the block-loop breaker parks a card, so it needs attention like a block.
+    static func lane(forKanbanStatus raw: String) -> Lane {
+        if raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "triage" { return .blocked }
+        switch SessionKanbanActivityPresentation.Status(rawValue: raw) {
+        case .blocked: return .blocked
+        case .review: return .review
+        case .ready: return .queued
+        default: return .inProgress
+        }
+    }
+
+    static func kanbanStatusLabel(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "triage"
+            ? "TRIAGE" : SessionKanbanActivityPresentation.Status(rawValue: raw).label
+    }
+
     struct WorkRow: Identifiable, Equatable {
         let id: String
         let source: Source
@@ -38,6 +68,8 @@ enum SessionActivityOverviewPresentation {
         let updatedAt: Date?
         let detail: String?
         let result: String?
+        var lane: Lane = .inProgress
+        var kanbanTask: KanbanTaskSummary? = nil
     }
 
     struct TimelineRow: Identifiable, Equatable {
@@ -52,6 +84,7 @@ enum SessionActivityOverviewPresentation {
         let durationSeconds: TimeInterval?
         let startedAt: Date?
         let completedAt: Date?
+        var kanbanTask: KanbanTaskSummary? = nil
     }
 
     struct Snapshot: Equatable {
@@ -89,11 +122,13 @@ enum SessionActivityOverviewPresentation {
                     id: "kanban:\(task.id)",
                     source: .kanban,
                     title: task.title,
-                    status: SessionKanbanActivityPresentation.Status(rawValue: task.status).label,
+                    status: kanbanStatusLabel(task.status),
                     actor: task.assignee ?? "Unassigned",
                     updatedAt: task.latestEventAt ?? task.startedAt,
                     detail: task.detail,
-                    result: task.latestEventNote
+                    result: task.latestEventNote,
+                    lane: lane(forKanbanStatus: task.status),
+                    kanbanTask: task
                 )
             }
         let botWork = directBotRecords
@@ -151,8 +186,10 @@ enum SessionActivityOverviewPresentation {
                 completedAt: record.state == .completed ? record.updatedAt : nil
             )
         })
+        // Active cards live in their status section; only finished ones join Recent.
         timeline.append(contentsOf: kanbanTasks.compactMap { task in
-            guard let timestamp = task.latestEventAt ?? task.completedAt ?? task.startedAt else { return nil }
+            guard SessionKanbanActivityPresentation.Status(rawValue: task.status).isCompleted,
+                  let timestamp = task.latestEventAt ?? task.completedAt ?? task.startedAt else { return nil }
             return TimelineRow(
                 id: "kanban:\(task.id):\(timestamp.timeIntervalSince1970)", source: .kanban,
                 title: task.title,
@@ -160,7 +197,8 @@ enum SessionActivityOverviewPresentation {
                 actor: task.assignee ?? "Unassigned", timestamp: timestamp,
                 detail: task.detail ?? task.latestEventNote, diffPreview: nil,
                 durationSeconds: task.startedAt.flatMap { task.completedAt?.timeIntervalSince($0) },
-                startedAt: task.startedAt, completedAt: task.completedAt
+                startedAt: task.startedAt, completedAt: task.completedAt,
+                kanbanTask: task
             )
         })
         timeline.sort {
@@ -171,6 +209,7 @@ enum SessionActivityOverviewPresentation {
         }
 
         let blockedCount = work.filter {
+            if $0.lane == .blocked { return true }
             let status = $0.status.lowercased()
             return status.contains("blocked") || status.contains("waiting")
         }.count
@@ -222,6 +261,8 @@ struct SessionActivityOverviewView: View {
     @State private var expandedWorkIDs: Set<String> = []
     @State private var timelineLimit = 20
     @State private var selectedAgentID: String?
+    @State private var expandedCardIDs: Set<String> = []
+    @State private var cardDetails: [String: KanbanTaskDetail] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var botRecords: [BotActivityRecord] {
@@ -248,9 +289,24 @@ struct SessionActivityOverviewView: View {
         return records.filter { sessionSet.isEmpty || sessionSet.contains($0.originSessionID) }
     }
 
+    /// The live snapshot only holds in-flight tool calls. Finished ones live on
+    /// each message (the chat's "steps"), and are all that survives a rehydrate.
+    private var agentSnapshot: AgentPresentationSnapshot {
+        let live = model.agentPresentationSnapshot
+        var seen = Set<String>()
+        let calls = (model.messages.flatMap(\.activity) + model.activeToolCalls).filter { seen.insert($0.id).inserted }
+        return AgentPresentationSnapshot(
+            displayedSubagents: live.displayedSubagents,
+            pipeline: AgentActivityPresentation.pipeline(activities: model.agentActivities, toolCalls: calls, subagents: live.displayedSubagents),
+            activityCountsByAgentID: live.activityCountsByAgentID,
+            activeAgentIDs: live.activeAgentIDs,
+            revision: live.revision
+        )
+    }
+
     private var snapshot: SessionActivityOverviewPresentation.Snapshot {
         SessionActivityOverviewPresentation.makeSnapshot(
-            agentSnapshot: model.agentPresentationSnapshot,
+            agentSnapshot: agentSnapshot,
             botRecords: botRecords,
             kanbanTasks: sessionID == nil || control.sessionKanbanSessionID != sessionID ? [] : control.sessionKanbanTasks,
             isTurnActive: model.status == .working
@@ -282,7 +338,32 @@ struct SessionActivityOverviewView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .task(id: sessionID) { await refreshActivity() }
+        .task(id: sessionID) {
+            expandedCardIDs = []
+            cardDetails = [:]
+            guard let sessionID else { return }
+            control.refreshSessionKanban(for: sessionID)
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(5)) }
+                catch { return }
+                control.refreshSessionKanban(for: sessionID)
+            }
+        }
+        .task { await botMode.refreshNow(force: true) }
+        .task(id: refreshState?.lastSuccess) {
+            guard control.sessionKanbanSessionID == sessionID else { return }
+            for task in control.sessionKanbanTasks where expandedCardIDs.contains(task.id) {
+                guard !Task.isCancelled else { return }
+                if let detail = await control.sessionKanbanTaskDetail(task),
+                   !Task.isCancelled, control.sessionKanbanSessionID == sessionID {
+                    cardDetails[task.id] = detail
+                }
+            }
+        }
+        .onChange(of: model.observedKanbanTaskRevision) { _, _ in
+            // A `kanban show` in this session links a card; pick it up now.
+            if let sessionID { control.refreshSessionKanban(for: sessionID) }
+        }
     }
 
     private var pageHeader: some View {
@@ -425,13 +506,23 @@ struct SessionActivityOverviewView: View {
     }
 
     private var currentWorkSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("In progress", detail: "") { EmptyView() }
+        VStack(alignment: .leading, spacing: 12) {
             if snapshot.work.isEmpty {
+                sectionHeader("In progress", detail: "") { EmptyView() }
                 compactEmpty(refreshState?.error == nil ? "No session-attributed work is active." : "Session work is unavailable; retry to refresh.")
             } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(snapshot.work) { workRow($0) }
+                ForEach(SessionActivityOverviewPresentation.Lane.allCases) { lane in
+                    let rows = snapshot.work.filter { $0.lane == lane }
+                    if !rows.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            sectionHeader(lane.title, detail: "\(rows.count)") { EmptyView() }
+                            LazyVStack(spacing: 0) {
+                                ForEach(rows) { row in
+                                    if let task = row.kanbanTask { kanbanCardRow(task) } else { workRow(row) }
+                                }
+                            }
+                        }
+                    }
                 }
                 if let error = refreshState?.error {
                     Text(refreshState?.isStale == true ? "STALE · \(error)" : error)
@@ -449,20 +540,20 @@ struct SessionActivityOverviewView: View {
             Button {
                 if expanded { expandedWorkIDs.remove(row.id) } else { expandedWorkIDs.insert(row.id) }
             } label: {
-                HStack(spacing: 8) {
-                    statusDot(row.status)
+                HStack(spacing: 10) {
+                    activityIdentity(source: row.source, actor: row.actor, status: row.status, size: 30)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(row.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                        Text(row.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                         Text(row.actor.map { "\(row.status) · \($0)" } ?? row.status)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(statusColor(row.status)).lineLimit(1)
                     }
                     Spacer(minLength: 6)
-                    if let updatedAt = row.updatedAt { Text(HumanDateFormatting.timeOnly(updatedAt)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText) }
+                    if let updatedAt = row.updatedAt { Text(HumanDateFormatting.relative(updatedAt)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText) }
                     DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
                 }
                 .padding(.horizontal, 8)
-                .frame(minHeight: 48)
+                .frame(minHeight: 54)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
@@ -473,11 +564,99 @@ struct SessionActivityOverviewView: View {
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockSecondaryText)
-                .padding(.leading, 25)
+                .padding(.leading, 48)
                 .padding(.bottom, 9)
             }
             Color.dockBorderLight.frame(height: 0.5)
         }
+    }
+
+    private func kanbanCardRow(_ task: KanbanTaskSummary) -> some View {
+        let expanded = expandedCardIDs.contains(task.id)
+        let status = SessionActivityOverviewPresentation.kanbanStatusLabel(task.status)
+        let bot = assignedBot(for: task.assignee)
+        let actor = bot?.name ?? task.assignee
+        let updatedAt = task.latestEventAt ?? task.completedAt ?? task.startedAt
+        let summary = nonEmpty(task.detail) ?? nonEmpty(task.latestEventNote)
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                if expanded {
+                    expandedCardIDs.remove(task.id)
+                } else {
+                    expandedCardIDs.insert(task.id)
+                    Task { if let detail = await control.sessionKanbanTaskDetail(task) { cardDetails[task.id] = detail } }
+                }
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    kanbanAssigneeAvatar(assignee: task.assignee, bot: bot, status: status, size: 32)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(task.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        HStack(spacing: 5) {
+                            Text(status)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(statusColor(status))
+                            if let actor { metadataSeparator; Text(actor) }
+                            if let priority = priorityLabel(task.priority) { metadataSeparator; Text(priority).fontDesign(.monospaced) }
+                            if let board = nonEmpty(task.boardSlug) { metadataSeparator; Text(board) }
+                            if let updatedAt { metadataSeparator; Text(HumanDateFormatting.relative(updatedAt)).fontDesign(.monospaced) }
+                        }
+                        .lineLimit(1)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                        if let summary {
+                            Text(summary)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 4)
+                    DockIcon(expanded ? .caretUp : .caretDown).font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.dockMetadataText)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
+                .frame(minHeight: 56)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel([status, task.title, actor, priorityLabel(task.priority), task.boardSlug].compactMap { $0 }.joined(separator: ", "))
+            if expanded {
+                kanbanCardEvents(task)
+                    .padding(.leading, 50)
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 9)
+            }
+            Color.dockBorderLight.frame(height: 0.5)
+        }
+    }
+
+    private func kanbanCardEvents(_ task: KanbanTaskSummary) -> some View {
+        let events = (cardDetails[task.id]?.events ?? [])
+            .sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+            .prefix(8)
+        return VStack(alignment: .leading, spacing: 6) {
+            kanbanCardContext(task)
+            if let detail = nonEmpty(task.detail) { Text(detail).textSelection(.enabled) }
+            if events.isEmpty {
+                Text(cardDetails[task.id] == nil ? "Loading card activity…" : "No card events recorded.")
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            ForEach(Array(events)) { event in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(([event.kind.replacingOccurrences(of: "_", with: " ").capitalized, event.createdAt.map(HumanDateFormatting.timeOnly)].compactMap { $0 }).joined(separator: " · "))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                    if let note = event.note, !note.isEmpty { Text(note).lineLimit(3).textSelection(.enabled) }
+                }
+            }
+            Text(task.id).font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText).textSelection(.enabled)
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(Color.dockSecondaryText)
     }
 
     private var recentActivitySection: some View {
@@ -487,7 +666,9 @@ struct SessionActivityOverviewView: View {
                 compactEmpty("No activity events have been received yet.")
             } else {
                 LazyVStack(spacing: 0) {
-                    ForEach(Array(snapshot.timeline.prefix(timelineLimit))) { timelineRow($0) }
+                    ForEach(Array(snapshot.timeline.prefix(timelineLimit))) { row in
+                        if let task = row.kanbanTask { kanbanCardRow(task) } else { timelineRow(row) }
+                    }
                 }
                 if snapshot.timeline.count > 20 {
                     Button {
@@ -521,10 +702,10 @@ struct SessionActivityOverviewView: View {
             Button {
                 if expanded { expandedTimelineIDs.remove(row.id) } else { expandedTimelineIDs.insert(row.id) }
             } label: {
-                HStack(alignment: .top, spacing: 8) {
-                    statusDot(row.status).padding(.top, 5)
+                HStack(alignment: .top, spacing: 10) {
+                    activityIdentity(source: row.source, actor: row.actor, status: row.status, size: 28)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(row.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                        Text(row.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
                         Text(([row.status, row.actor, row.timestamp.map(HumanDateFormatting.timeOnly)].compactMap { $0 }).joined(separator: " · "))
                             .lineLimit(1)
                             .font(.system(size: 11))
@@ -547,7 +728,7 @@ struct SessionActivityOverviewView: View {
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockSecondaryText)
-                .padding(.leading, 24)
+                .padding(.leading, 46)
                 .padding(.bottom, 9)
             }
             Color.dockBorderLight.frame(height: 0.5)
@@ -587,6 +768,87 @@ struct SessionActivityOverviewView: View {
 
     private func statusDot(_ status: String) -> some View { Circle().fill(statusColor(status)).frame(width: 7, height: 7) }
 
+    @ViewBuilder
+    private func activityIdentity(
+        source: SessionActivityOverviewPresentation.Source,
+        actor: String?,
+        status: String,
+        size: CGFloat
+    ) -> some View {
+        if source == .kanban || source == .bot, let actor = nonEmpty(actor), actor != "Unassigned" {
+            let bot = assignedBot(for: actor)
+            kanbanAssigneeAvatar(assignee: actor, bot: bot, status: status, size: size)
+        } else {
+            statusDot(status)
+                .frame(width: size, height: size)
+        }
+    }
+
+    @ViewBuilder
+    private func kanbanAssigneeAvatar(assignee: String?, bot: BotSummary?, status: String, size: CGFloat) -> some View {
+        if let bot {
+            BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: size)
+                .overlay(alignment: .bottomTrailing) { avatarStatusBadge(status) }
+                .accessibilityLabel("Assigned to \(bot.name)")
+        } else if let assignee = nonEmpty(assignee), assignee != "Unassigned" {
+            KanbanAssigneeInitialAvatar(assignee: assignee, size: size)
+                .overlay(alignment: .bottomTrailing) { avatarStatusBadge(status) }
+                .accessibilityLabel("Assigned to \(assignee)")
+        } else {
+            statusDot(status)
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func avatarStatusBadge(_ status: String) -> some View {
+        Circle()
+            .fill(statusColor(status))
+            .frame(width: 9, height: 9)
+            .overlay(Circle().stroke(Color.dockCanvas, lineWidth: 2))
+    }
+
+    private var metadataSeparator: some View {
+        Text("·").foregroundStyle(Color.dockMetadataText.opacity(0.7))
+    }
+
+    @ViewBuilder
+    private func kanbanCardContext(_ task: KanbanTaskSummary) -> some View {
+        let runtime = [nonEmpty(task.providerOverride), nonEmpty(task.modelOverride)].compactMap { $0 }.joined(separator: " / ")
+        if let board = nonEmpty(task.boardSlug) {
+            Text("Board · \(board)").textSelection(.enabled)
+        }
+        if !runtime.isEmpty {
+            Text("Runtime override · \(runtime)").textSelection(.enabled)
+        }
+        if !task.skills.isEmpty {
+            Text("Skills · \(task.skills.joined(separator: ", "))").lineLimit(2).textSelection(.enabled)
+        }
+        if let workflow = nonEmpty(task.workflowTemplateID) {
+            Text("Workflow · \(workflow)").textSelection(.enabled)
+        }
+    }
+
+    private func assignedBot(for assignee: String?) -> BotSummary? {
+        guard let assignee = nonEmpty(assignee) else { return nil }
+        if let exact = botMode.botsByID[assignee] { return exact }
+        return botMode.bots.first {
+            $0.id.caseInsensitiveCompare(assignee) == .orderedSame ||
+                $0.name.caseInsensitiveCompare(assignee) == .orderedSame
+        }
+    }
+
+    private func priorityLabel(_ priority: String?) -> String? {
+        guard let priority = nonEmpty(priority) else { return nil }
+        return priority.lowercased().hasPrefix("p") ? priority.uppercased() : "P\(priority)"
+    }
+
+    private func nonEmpty(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func statusColor(_ status: String) -> Color {
         let value = status.lowercased()
         if value.contains("complete") || value.contains("done") { return .dockSuccess }
@@ -625,7 +887,7 @@ struct SessionActivityOverviewView: View {
     }
 
     private func refreshActivity() async {
-        await botMode.refreshNow(force: true)
         if let sessionID { control.refreshSessionKanban(for: sessionID) }
+        await botMode.refreshNow(force: true)
     }
 }
