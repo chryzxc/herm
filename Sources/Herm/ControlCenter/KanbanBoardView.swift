@@ -489,6 +489,7 @@ private struct KanbanTaskCard: View {
             Button("Details", icon: .fileText) { onSelect(task) }
                 .disabled(isLoadingDetail)
         }
+        AttachToChatMenu { ChatContext(kanbanTask: task) }
         let destinations = actions.destinations(for: task.status)
         if !destinations.isEmpty {
             Menu("Move to") {
@@ -498,14 +499,13 @@ private struct KanbanTaskCard: View {
             }
             .disabled(isMutationPending)
         }
-        if lane == .done, actions.archive {
-            actionButton("Archive", icon: .archive, action: .archive)
-        } else if lane == .blocked, actions.unblock {
+        if lane == .blocked, actions.unblock {
             actionButton("Unblock", icon: .arrowUUpLeft, action: .unblock)
         } else {
             if actions.complete { actionButton("Done", icon: .check, action: .complete) }
             if actions.block { actionButton("Block", icon: .pause, action: .block) }
         }
+        if actions.archive { actionButton("Archive", icon: .archive, action: .archive) }
         if actions.assign, !assignableBots.isEmpty {
             Divider()
             Menu("Assign to", icon: .userCircle) {

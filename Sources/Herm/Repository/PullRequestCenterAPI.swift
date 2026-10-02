@@ -134,6 +134,18 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         }
     }
 
+    func events(_ record: PullRequestRecord) async -> [PullRequestEvent]? {
+        guard let payload = try? await request(path: record.repository.apiRepositoryPath + "/issues/\(record.number)/events", query: ["per_page": "100"]) as? [[String: Any]] else { return nil }
+        return payload.compactMap { row in
+            guard let id = row["id"], let kind = row["event"] as? String else { return nil }
+            let detail = (row["label"] as? [String: Any])?["name"] as? String
+                ?? (row["assignee"] as? [String: Any])?["login"] as? String
+                ?? (row["requested_reviewer"] as? [String: Any])?["login"] as? String
+                ?? (row["rename"] as? [String: Any])?["to"] as? String
+            return PullRequestEvent(id: String(describing: id), kind: kind, actor: (row["actor"] as? [String: Any])?["login"] as? String ?? "Someone", detail: detail, createdAt: date(row["created_at"]))
+        }
+    }
+
     func postComment(_ body: String, on record: PullRequestRecord) async -> PullRequestComment? {
         guard let payload = try? await request(path: record.repository.apiRepositoryPath + "/issues/\(record.number)/comments", method: "POST", body: ["body": body]) as? [String: Any] else { return nil }
         let user = payload["user"] as? [String: Any]

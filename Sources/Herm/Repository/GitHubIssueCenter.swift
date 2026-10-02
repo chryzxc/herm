@@ -490,6 +490,10 @@ struct IssueDetailView: View {
                         accessibilityLabel: "Open issue on GitHub"
                     )
                 }
+                AttachToChatMenu { ChatContext(issue: displayedIssue) }
+                    .menuStyle(.button)
+                    .controlSize(.small)
+                    .fixedSize()
                 Button { onOpenChat(displayedIssue) } label: {
                     HStack(spacing: 5) {
                         DockIcon(.notePencil, size: 12, color: Color.dockOnAccentText)

@@ -313,6 +313,17 @@ struct HermesServerRequestTests {
         #expect(payload["question"] as? String == "Which env?")
     }
 
+    @Test func batchClarifyKeepsFirstQuestionMultiSelectForSingleQuestionSurfaces() throws {
+        let event = try #require(HermesGateway.event(forServerRequest: [
+            "id": "srq-b", "method": "clarify",
+            "params": ["session_id": "s1", "questions": [
+                ["qid": "q1", "question": "Which envs?", "choices": ["Staging", "Prod"], "multi_select": true]
+            ]]
+        ]))
+        let payload = try #require(event.params["payload"] as? [String: Any])
+        #expect(payload["multi_select"] as? Bool == true)
+    }
+
     @Test func approvalServerRequestKeepsItsPayloadAndUnknownMethodsAreRejected() throws {
         let event = try #require(HermesGateway.event(forServerRequest: [
             "id": "srq-1", "method": "approval",

@@ -236,4 +236,31 @@ struct ProviderQuotaTests {
         // A failed read still yields a card, so the account can be removed.
         #expect(snapshot?.windows.isEmpty == true)
     }
+
+    @Test func parsesTheCredentialHermesSelectsFromAuthList() {
+        let output = """
+        openai-codex (2 credentials):
+          #1  codex-2              oauth   id=5796db priority=0 device_code ←
+          #2  device_code          oauth   id=f4499e priority=1 device_code
+
+        openrouter (1 credentials):
+          #1  key                  api_key id=5796db priority=0 env:OPENROUTER_API_KEY
+        """
+        #expect(ControlCenterModel.hermesActiveCredentialKeys(fromAuthList: output) == ["openai-codex/5796db"])
+    }
+
+    @Test func restoresPinnedHermesPrimaryOnlyUnderFillFirst() {
+        let pool = [
+            HermesPooledCredential(provider: "openai-codex", id: "ef9ee9", label: "codex-2", position: 1),
+            HermesPooledCredential(provider: "openai-codex", id: "158a36", label: "device_code", position: 2)
+        ]
+        let slipped = ControlCenterModel.hermesPrimaryRestorePlan(pins: ["openai-codex": "158a36"], credentials: pool) { _ in "fill_first" }
+        #expect(slipped.restore.map(\.id) == ["158a36"])
+        let rotating = ControlCenterModel.hermesPrimaryRestorePlan(pins: ["openai-codex": "158a36"], credentials: pool) { _ in "round_robin" }
+        #expect(rotating.restore.isEmpty)
+        let inPlace = ControlCenterModel.hermesPrimaryRestorePlan(pins: ["openai-codex": "ef9ee9"], credentials: pool) { _ in nil }
+        #expect(inPlace.restore.isEmpty && inPlace.forget.isEmpty)
+        let removed = ControlCenterModel.hermesPrimaryRestorePlan(pins: ["openai-codex": "gone"], credentials: pool) { _ in "fill_first" }
+        #expect(removed.forget == ["openai-codex"])
+    }
 }

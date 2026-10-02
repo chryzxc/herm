@@ -206,7 +206,7 @@ struct EdgeTaskPreview: View {
     @ViewBuilder
     private func section(_ title: String, _ items: [EdgeNotchTask], bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
         if !items.isEmpty {
-            LazyVStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
                 DockSectionLabel(title: title, count: items.count)
                 ForEach(items) { card($0, bots: bots, now: now) }
             }

@@ -233,7 +233,12 @@ final class HermesPetModel: ObservableObject {
               let width = properties[kCGImagePropertyPixelWidth] as? Int,
               let height = properties[kCGImagePropertyPixelHeight] as? Int,
               (1...2048).contains(width), (1...2048).contains(height),
-              let image = NSImage(data: data), self.generation == generation else { return nil }
+              // Decode once at row size so scrolling never decodes a full sprite sheet on the main thread.
+              let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceShouldCacheImmediately: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 72] as CFDictionary),
+              self.generation == generation else { return nil }
+        let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         if thumbnailCache.count >= 120 { thumbnailCache.removeAll() }
         thumbnailCache[entry.slug] = image
         return image

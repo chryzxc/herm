@@ -139,6 +139,8 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequestsInSidebar = true
     @AppStorage(SidebarVisibilityKey.issues) private var showsIssuesInSidebar = true
     @AppStorage(SidebarVisibilityKey.office) private var showsOfficeInSidebar = true
+    @AppStorage(ChatQuotaSettingsKey.chip) private var showsQuotaChip = true
+    @AppStorage(ChatQuotaSettingsKey.dropBanner) private var showsQuotaDropBanner = true
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     @AppStorage(DoubleTapShortcut.notchKey) private var notchShortcut = DoubleTapShortcut.option
     @ObservedObject var agentUpdateService: HermesUpdateService
@@ -2861,10 +2863,10 @@ struct WorkspaceActivitySidebar: View {
             selectedTaskID: selectedKanbanTask?.id,
             actions: KanbanCardActionAvailability(
                 details: true,
-                complete: control.capabilityAvailable("kanban.complete"),
-                block: control.capabilityAvailable("kanban.block"),
-                unblock: control.capabilityAvailable("kanban.unblock"),
-                archive: control.capabilityAvailable("kanban.archive"),
+                complete: control.canMutateKanbanTask(.complete),
+                block: control.canMutateKanbanTask(.block),
+                unblock: control.canMutateKanbanTask(.unblock),
+                archive: control.canMutateKanbanTask(.archive),
                 move: control.canMoveKanbanTasks,
                 assign: control.capabilityAvailable("kanban.reassign")
             ),
@@ -3611,8 +3613,8 @@ struct WorkspaceActivitySidebar: View {
     private func kanbanDetailActions(_ task: KanbanTaskSummary, lane: KanbanLane) -> some View {
         let statusActions: [KanbanTaskAction] = switch lane {
         case .done: [.archive]
-        case .blocked: [.unblock]
-        default: [.complete, .block]
+        case .blocked: [.unblock, .archive]
+        default: [.complete, .block, .archive]
         }
         let available = statusActions.filter { control.capabilityAvailable("kanban.\($0.rawValue)") }
         let mutations = KanbanMutationKind.allCases.filter { control.capabilityAvailable($0.capabilityID) }
@@ -5514,6 +5516,7 @@ struct WorkspaceActivitySidebar: View {
                     appearanceSection
                 }
                 sidebarPreferencesSection
+                chatQuotaPreferencesSection
                 SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
                     NotchDisplaySettings()
                 }
@@ -5892,6 +5895,7 @@ struct WorkspaceActivitySidebar: View {
             }
         }
         .task {
+            control.configEditor.onSaved = { model.refreshRuntimeConfiguration() }
             model.refreshRuntimeConfiguration()
             model.refreshRuntimeModelOptions()
         }
@@ -6101,7 +6105,7 @@ struct WorkspaceActivitySidebar: View {
                             }
                         }
                     }
-                    Text("Manage with: hermes config edit")
+                    Text("Edit in Safety → Command Allowlist.")
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockMetadataText)
                         .textSelection(.enabled)
@@ -6194,6 +6198,21 @@ struct WorkspaceActivitySidebar: View {
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(title: "Show Office in sidebar", detail: "List the Office in the workspace side panel.") {
                     settingsSwitch(isOn: $showsOfficeInSidebar)
+                }
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    private var chatQuotaPreferencesSection: some View {
+        SettingsSection(title: "Quota in chat", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsPreferenceRow(title: "Show quota beside the composer", detail: "Show the provider closest to its limit next to the context ring.") {
+                    settingsSwitch(isOn: $showsQuotaChip)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Quota drop banner", detail: "Show a banner over the chat each time a provider drops another 10%.") {
+                    settingsSwitch(isOn: $showsQuotaDropBanner)
                 }
             }
             .padding(.vertical, -8)
@@ -6386,7 +6405,7 @@ struct WorkspaceActivitySidebar: View {
             .labelsHidden()
             .toggleStyle(.switch)
             .tint(Color.dockAccent)
-            Button { control.refresh() } label: {
+            Button { control.refresh(); Task { await control.configEditor.load() } } label: {
                 DockIcon(.arrowsClockwise)
                     .font(.system(size: 11, weight: .semibold))
             }

@@ -90,7 +90,9 @@ final class HermesCLIAdapter {
     }
 
     private func kanbanList(forBoardSlugs boardSlugs: [String], filter: KanbanListFilter) async throws -> HermesCLIResult {
-        let boardPaths = try boardSlugs.map(Self.kanbanBoardPath)
+        let boardPaths = try boardSlugs.map(Self.kanbanBoardPath).map {
+            filter.includeArchived ? $0 + "&include_archived=true" : $0
+        }
 
         let fetchedBoards = try await withThrowingTaskGroup(of: KanbanBoardRows.self, returning: [KanbanBoardRows].self) { group in
             for (index, pair) in zip(boardSlugs.indices, zip(boardSlugs, boardPaths)) {
@@ -283,6 +285,12 @@ final class HermesCLIAdapter {
 
     /// Removes one entry from Hermes' credential pool. Hermes performs any
     /// source-specific cleanup (such as its singleton device-code login).
+    /// Read-only: Hermes peeks each pool and marks the credential it would pick with `←`.
+    func authList() async throws -> HermesCLIResult { try await run(["hermes", "auth", "list"]) }
+    /// Moves a pooled credential to `priority` (0 = first pick under `fill_first`).
+    func authPriority(provider: String, credentialID: String, priority: Int) async throws -> HermesCLIResult {
+        try await run(["hermes", "auth", "priority", provider, credentialID, String(priority)])
+    }
     func authRemove(provider: String, credentialID: String) async throws -> HermesCLIResult {
         try await run(["hermes", "auth", "remove", provider, credentialID])
     }

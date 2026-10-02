@@ -163,7 +163,7 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] quotas in self?.quotaChanged(quotas) }
             .store(in: &subscriptions)
         // The workspace only polls quota while its Quota page is open; keep
-        // reading it with the Dock closed so drops surface here. Quota is spent
+        // reading it (Dock open or closed) so drops surface. Quota is spent
         // by other apps too, so this runs whether or not Hermes is working.
         Timer.publish(every: 30, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.pollQuota() }
@@ -310,7 +310,10 @@ final class EdgeDockController: NSObject {
                                         isOnline: activity.status != .offline, attention: latestAttention)
             + kanbanActivity.rows(isCurrent: kanbanStatusCurrent && activity.status != .offline)
             + deliveryQuestions.map(\.row))
-        if tasks != state.tasks { state.tasks = tasks }
+        if tasks != state.tasks {
+            state.tasks = tasks
+            position(animated: true)
+        }
         controlCenter.pet.updateNotchActivity(
             working: state.railActivity.working || tasks.contains { $0.isStatusCurrent && $0.phase == .working },
             attention: state.railActivity.attention || tasks.contains { $0.isStatusCurrent && $0.phase == .attention })
@@ -442,8 +445,8 @@ final class EdgeDockController: NSObject {
     /// after work finishes, the spent providers are read at once so their
     /// final usage joins the completion preview.
     private func pollQuota(afterWork: Bool = false) {
-        guard !workspacePresented,
-              controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
+        // Keeps reading while the workspace is open: the chat header shows it too.
+        guard controlCenter.refreshState(for: "provider.quota")?.isRefreshing != true else { return }
         controlCenter.bind(to: model)
         quotaTick &+= 1
         let fullRead = hotQuotaReaders.isEmpty || (!afterWork && quotaTick.isMultiple(of: 2))
@@ -634,9 +637,15 @@ struct EdgeNotchActivity: Equatable {
     var backgroundCompleted = false
     var responseCompleted = false
     var kanbanRunningCount = 0
+    /// Every task row currently working (sessions, background, Kanban); the exact number the Count style shows.
+    var workingCount = 0
     var sessionNeedsAttention = false
     var kanbanNeedsAttention = false
     var kanbanHasUpdate = false
+    /// Marks the status indicator stacks: the primary plus finished/blocked extras.
+    var markCount: Int {
+        working ? 1 + (hasUpdate ? 1 : 0) + (attention ? 1 : 0) : hasUpdate && attention ? 2 : 1
+    }
     var hasUpdate: Bool { unread || backgroundCompleted || responseCompleted || kanbanHasUpdate }
     var quiet: Bool { !working && !attention && !hasUpdate && status == .idle }
 
@@ -781,7 +790,8 @@ final class EdgeNotchState: ObservableObject {
         let cards = tasks.filter { $0.kanbanTask != nil && $0.isStatusCurrent }
         result.kanbanRunningCount = cards.filter { $0.phase == .working }.count
         result.kanbanNeedsAttention = cards.contains { $0.phase == .attention }
-        result.kanbanHasUpdate = cards.contains { $0.phase != .working }
+        result.workingCount = tasks.filter { $0.isStatusCurrent && $0.phase == .working }.count
+        result.kanbanHasUpdate = cards.contains { $0.phase == .finished }
         return result
     }
     var showsSeparateWork: Bool { railActivity.working && (railActivity.hasUpdate || railActivity.attention) }
@@ -791,15 +801,19 @@ final class EdgeNotchState: ObservableObject {
     @Published var petPull = 0.0
     /// The collapsed bar widens to receive a dragged pet and stays a little wider while it is docked.
     var barWidth: CGFloat {
-        if petDragging { return 22 + (petAttached ? 8 : 20) * petPull }
-        return hasPet && petAttached ? 30 : 22
+        if petDragging { return 33 + (petAttached ? 12 : 30) * petPull }
+        return hasPet && petAttached ? 45 : 33
     }
     /// Accent glow grows as a free pet is dragged toward the notch.
     var barGlow: Double { petDragging && !petAttached ? petPull : 0 }
-    var railWidth: CGFloat { expanded ? 72 : 44 }
+    var railWidth: CGFloat { expanded ? 72 : 66 }
     var petReserve: CGFloat { hasPet ? Self.petFootprint : 0 }
     static let petFootprint: CGFloat = 48
-    var railHeight: CGFloat { expanded ? 136 : 72 }
+    /// The collapsed rail grows with the number of stacked marks (24pt each, 6pt apart, room for the shoulders).
+    var railHeight: CGFloat {
+        let marks = CGFloat(railActivity.markCount)
+        return expanded ? 136 : max(72, marks * 30 + 34)
+    }
     var panelHeight: CGFloat { (expanded ? Self.expandedSize.height : railHeight) + petReserve }
 }
 
@@ -866,7 +880,7 @@ struct EdgeNotchView: View {
 
     private var rail: some View {
         Button(action: openDock) {
-            EdgePetRail(activity: state.railActivity, side: state.side, width: state.barWidth, glow: state.barGlow, docked: state.petAttached && state.hasPet)
+            EdgePetRail(activity: state.railActivity, side: state.side, width: state.barWidth, height: state.railHeight, glow: state.barGlow, docked: state.petAttached && state.hasPet)
             .frame(width: state.railWidth, height: state.railHeight)
             .contentShape(Rectangle())
         }
@@ -975,7 +989,8 @@ private struct EdgePetRail: View {
     @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .dots
     let activity: EdgeNotchActivity
     let side: EdgeDockSide
-    var width: CGFloat = 22
+    var width: CGFloat = 33
+    var height: CGFloat = 72
     var glow = 0.0
     var docked = false
     @State private var flash = false
@@ -986,7 +1001,7 @@ private struct EdgePetRail: View {
             HStack(spacing: 0) {
                 if side == .right { Spacer(minLength: 0) }
                 EdgeNotchStatusIndicator(activity: activity, style: displayStyle)
-                    .frame(width: width, height: 72)
+                    .frame(width: width, height: height)
                     .background {
                         DockWindowBackground().clipShape(EdgeNotchShape(side: side))
                             .overlay { EdgeNotchShape(side: side).stroke(Color.dockBorderStrong, lineWidth: 1) }

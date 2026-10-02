@@ -112,6 +112,25 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.metrics == rhs.metrics
     }
 
+    private func imageThumbnail(at index: Int, @ViewBuilder layout: (Image) -> some View) -> some View {
+        let image = message.images[index]
+        let thumbnailKey = ConversationThumbnailCache.key(
+            messageID: message.id,
+            index: index,
+            imageCount: message.images.count,
+            contentRevision: message.contentRevision
+        )
+        return Button {
+            onImagePreview(image)
+        } label: {
+            layout(Image(nsImage: ConversationThumbnailCache.image(image, key: thumbnailKey)).resizable())
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+        .help("Open image preview")
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
@@ -120,29 +139,26 @@ struct ConversationMessageRow: View, Equatable {
                 VStack(alignment: .trailing, spacing: 4) {
                     // Attachments sit above the text surface instead of inside
                     // the bubble, keeping media visually distinct from copy.
-                    if !message.images.isEmpty {
-                        VStack(alignment: .trailing, spacing: 6) {
-                            ForEach(Array(message.images.enumerated()), id: \.offset) { index, image in
-                                let thumbnailKey = ConversationThumbnailCache.key(
-                                    messageID: message.id,
-                                    index: index,
-                                    imageCount: message.images.count,
-                                    contentRevision: message.contentRevision
-                                )
-                                Button {
-                                    onImagePreview(image)
-                                } label: {
-                                    Image(nsImage: ConversationThumbnailCache.image(image, key: thumbnailKey))
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(maxWidth: 220, maxHeight: 220)
-                                        .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
-                                }
-                                .buttonStyle(.plain)
-                                .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
-                                .help("Open image preview")
+                    // A single image keeps its aspect ratio; several become a
+                    // grid of square tiles instead of a tall stack.
+                    if message.images.count == 1 {
+                        // Size the frame to the fitted image so wide shots don't
+                        // sit centered in a 220pt square with a gap below.
+                        let size = message.images[0].size
+                        let scale = min(220 / max(size.width, 1), 220 / max(size.height, 1), 1)
+                        imageThumbnail(at: 0) { $0.scaledToFit().frame(width: size.width * scale, height: size.height * scale) }
+                    } else if message.images.count > 1 {
+                        let tile: CGFloat = 104
+                        LazyVGrid(
+                            columns: Array(repeating: GridItem(.fixed(tile), spacing: 6), count: min(message.images.count, 3)),
+                            alignment: .trailing,
+                            spacing: 6
+                        ) {
+                            ForEach(message.images.indices, id: \.self) { index in
+                                imageThumbnail(at: index) { $0.scaledToFill().frame(width: tile, height: tile) }
                             }
                         }
+                        .fixedSize()
                     }
                     if !userText.isEmpty {
                         messageMarkdownView(userText)

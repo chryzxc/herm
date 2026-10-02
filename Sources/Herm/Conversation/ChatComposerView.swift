@@ -14,6 +14,9 @@ struct ChatComposerView: View {
     var onStop: () -> Void
     var isFullscreen = false
     var metrics: ConversationWorkspaceMetrics = .resolve(isFullscreen: false)
+    /// Nil hides the quota chip (previews and snapshots).
+    var controlCenter: ControlCenterModel? = nil
+    var openQuota: () -> Void = {}
 
     @State private var composerHeight: CGFloat = 44
     @State private var isComposerPulsing = false
@@ -119,7 +122,7 @@ struct ChatComposerView: View {
     private var composerContent: some View {
         // Evaluate submission capabilities based on draft text, images, and steering state
         let draftIsEmpty = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasComposerContent = !draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil
+        let hasComposerContent = !draftIsEmpty || !model.pendingImages.isEmpty || model.pendingPDFURL != nil || !model.attachedContexts.isEmpty
         let isResponding = model.status == .working || model.isSending
         // Mid-turn input redirects the turn, or queues when it can't (attachments, approvals).
         let isSteeringTurn = model.isSending && model.sessionID != nil
@@ -138,7 +141,7 @@ struct ChatComposerView: View {
         // One visual gutter shared by the native editor and placeholder. Do
         // not counteract TextEditor's internal padding with nested offsets:
         // those offsets made the caret look detached from the input edge.
-        let textContentInset: CGFloat = 12
+        let textContentInset: CGFloat = 16
         let textTopPadding: CGFloat = 4
 
         return VStack(spacing: 6) {
@@ -154,7 +157,7 @@ struct ChatComposerView: View {
             }
 
             if !queuedPrompts.isEmpty {
-                QueuedPromptList(prompts: queuedPrompts, onRemove: model.removeQueuedPrompt)
+                QueuedPromptList(model: model, prompts: queuedPrompts)
             }
 
             VStack(spacing: 6) {
@@ -241,6 +244,34 @@ struct ChatComposerView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 4)
                             .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
+                        }
+                    }
+                }
+            }
+            if !model.attachedContexts.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.attachedContexts) { context in
+                            HStack(spacing: 7) {
+                                DockIcon(.chatCircleText)
+                                    .foregroundStyle(Color.dockAccent)
+                                Text(context.title)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: 240, alignment: .leading)
+                                Button { model.removeAttachedContext(context) } label: {
+                                    DockIcon(.x)
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Remove context")
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
+                            .help(context.body)
                         }
                     }
                 }
@@ -334,6 +365,10 @@ struct ChatComposerView: View {
 
                 // Right Toolbar Group: Thinking depth selector menu & circular submit button
                 HStack(alignment: .center, spacing: 8) {
+                    if let controlCenter {
+                        ChatQuotaChip(control: controlCenter, openQuota: openQuota,
+                                      selectedProvider: selectedModelOptionID?.components(separatedBy: "|").first)
+                    }
                     SessionContextRing(model: model)
 
                     // Thinking depth variant selector menu
@@ -372,7 +407,7 @@ struct ChatComposerView: View {
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
-                    .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
+                    .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
                     .help("Select thinking depth")
 
                     if showsInterruptControl {
@@ -593,6 +628,7 @@ struct ChatComposerView: View {
         // submission paths until Hermes exposes a profile-scoped attachment API.
         if model.status != .working,
            !model.isSending,
+           model.attachedContexts.isEmpty,
            ComposerMentionPresentation.canDirectRouteBot(
                hasImages: !model.pendingImages.isEmpty,
                hasPDF: model.pendingPDFURL != nil
@@ -776,8 +812,8 @@ enum SessionTokenFormatting {
 /// remains available for a custom response.
 /// Prompts parked until the active turn settles; not yet submitted, so removable.
 private struct QueuedPromptList: View {
+    @ObservedObject var model: DockModel
     let prompts: [QueuedPrompt]
-    let onRemove: (UUID) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -787,44 +823,71 @@ private struct QueuedPromptList: View {
                 .foregroundStyle(Color.dockMetadataText)
 
             ForEach(prompts) { prompt in
+                let isEditing = model.editingQueuedPromptID == prompt.id
                 HStack(spacing: 8) {
-                    Text(label(for: prompt))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                    Spacer(minLength: 0)
-                    Button {
-                        onRemove(prompt.id)
-                    } label: {
-                        DockIcon(.x)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .frame(width: 20, height: 20)
-                            .contentShape(Rectangle())
+                    ForEach(prompt.images) { image in
+                        Image(nsImage: image.image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 28, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            .help(image.fileName)
                     }
-                    .buttonStyle(.borderless)
-                    .help("Remove queued message")
-                    .accessibilityLabel("Remove queued message")
+                    if isEditing {
+                        TextField("Queued message", text: Binding(
+                            get: { prompt.text },
+                            set: { model.updateQueuedPrompt(prompt.id, text: $0) }
+                        ), axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1...4)
+                            .onSubmit { model.editingQueuedPromptID = nil }
+                    } else {
+                        Text(label(for: prompt))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                    }
+                    Spacer(minLength: 0)
+                    rowButton(isEditing ? .check : .pencilSimple, label: isEditing ? "Done editing" : "Edit queued message") {
+                        model.editingQueuedPromptID = isEditing ? nil : prompt.id
+                    }
+                    rowButton(.x, label: "Remove queued message") {
+                        model.removeQueuedPrompt(prompt.id)
+                    }
                 }
-                .padding(.leading, 10)
+                .padding(.leading, prompt.images.isEmpty ? 10 : 5)
                 .padding(.trailing, 4)
                 .padding(.vertical, 5)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .fill(Color.dockAccent.opacity(0.06))
+                        .fill(Color.dockAccent.opacity(isEditing ? 0.1 : 0.06))
                         .overlay {
                             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .stroke(Color.dockAccent.opacity(0.24), lineWidth: DockLayout.hairline)
+                                .stroke(Color.dockAccent.opacity(isEditing ? 0.5 : 0.24), lineWidth: DockLayout.hairline)
                         }
                 )
             }
         }
     }
 
+    private func rowButton(_ icon: Ph, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            DockIcon(icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Color.dockSecondaryText)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
     private func label(for prompt: QueuedPrompt) -> String {
         var parts: [String] = []
-        if !prompt.images.isEmpty { parts.append(prompt.images.count == 1 ? "[image]" : "[\(prompt.images.count) images]") }
         if let pdf = prompt.pdfURL { parts.append("[PDF: \(pdf.lastPathComponent)]") }
         if !prompt.text.isEmpty { parts.append(prompt.text) }
         return parts.joined(separator: " ")

@@ -29,16 +29,16 @@ enum SessionActivityOverviewPresentation {
         }
     }
 
-    /// Active work is grouped by Kanban status so each card shows once.
+    /// Active work (Kanban cards, bot jobs, the session's own turn) is grouped
+    /// by state so each item shows once; order is display order.
     enum Lane: Int, CaseIterable, Identifiable {
-        case blocked, inProgress, review, queued
+        case running, upNext, blocked
         var id: Self { self }
         var title: String {
             switch self {
+            case .running: "Running"
+            case .upNext: "Up next"
             case .blocked: "Blocked"
-            case .inProgress: "In progress"
-            case .review: "Review"
-            case .queued: "Up next"
             }
         }
     }
@@ -48,9 +48,16 @@ enum SessionActivityOverviewPresentation {
         if raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "triage" { return .blocked }
         switch SessionKanbanActivityPresentation.Status(rawValue: raw) {
         case .blocked: return .blocked
-        case .review: return .review
-        case .ready: return .queued
-        default: return .inProgress
+        case .ready: return .upNext
+        default: return .running
+        }
+    }
+
+    static func lane(forBotState state: BotActivityState) -> Lane {
+        switch state {
+        case .queued: .upNext
+        case .waiting, .failed: .blocked
+        default: .running
         }
     }
 
@@ -68,7 +75,7 @@ enum SessionActivityOverviewPresentation {
         let updatedAt: Date?
         let detail: String?
         let result: String?
-        var lane: Lane = .inProgress
+        var lane: Lane = .running
         var kanbanTask: KanbanTaskSummary? = nil
     }
 
@@ -142,7 +149,8 @@ enum SessionActivityOverviewPresentation {
                     actor: record.botName,
                     updatedAt: record.updatedAt,
                     detail: nil,
-                    result: record.result
+                    result: record.result,
+                    lane: lane(forBotState: record.state)
                 )
             }
         // The session's own turn is in progress too; its running steps lead,
@@ -259,7 +267,9 @@ struct SessionActivityOverviewView: View {
     @State private var expandedAgentID: String?
     @State private var expandedTimelineIDs: Set<String> = []
     @State private var expandedWorkIDs: Set<String> = []
-    @State private var timelineLimit = 20
+    private static let pageSize = 10
+    @State private var timelineLimit = pageSize
+    @State private var laneLimits: [SessionActivityOverviewPresentation.Lane: Int] = [:]
     @State private var selectedAgentID: String?
     @State private var expandedCardIDs: Set<String> = []
     @State private var cardDetails: [String: KanbanTaskDetail] = [:]
@@ -313,18 +323,13 @@ struct SessionActivityOverviewView: View {
         )
     }
 
-    private var visibleAgents: [SessionActivityOverviewPresentation.AgentRow] {
-        agentScope == .all ? snapshot.agents : snapshot.agents.filter(\.isLive)
-    }
-
-    private var visibleMapAgents: [HermesSubagent] {
-        let ids = Set(visibleAgents.map(\.id))
-        return model.agentPresentationSnapshot.displayedSubagents.filter { ids.contains($0.id) }
-    }
 
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "kanban.session") }
 
     var body: some View {
+        // Built once per pass: it scans every message, and the sections below
+        // previously re-derived it ~20 times per render (scroll hitches).
+        let snapshot = self.snapshot
         VStack(alignment: .leading, spacing: 12) {
             pageHeader
             if !snapshot.hasContent, refreshState?.isRefreshing == true, refreshState?.lastSuccess == nil {
@@ -332,15 +337,18 @@ struct SessionActivityOverviewView: View {
             } else if !snapshot.hasContent {
                 unifiedEmptyState
             } else {
-                if !snapshot.work.isEmpty || refreshState?.error != nil { currentWorkSection }
-                if !snapshot.agents.isEmpty { agentsSection }
-                if !snapshot.timeline.isEmpty { recentActivitySection }
+                // Running, Up next, Blocked, then Recent history last.
+                if !snapshot.work.isEmpty || refreshState?.error != nil { currentWorkSection(snapshot) }
+                if !snapshot.agents.isEmpty { agentsSection(snapshot) }
+                if !snapshot.timeline.isEmpty { recentActivitySection(snapshot) }
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .task(id: sessionID) {
             expandedCardIDs = []
             cardDetails = [:]
+            laneLimits = [:]
+            timelineLimit = Self.pageSize
             guard let sessionID else { return }
             control.refreshSessionKanban(for: sessionID)
             while !Task.isCancelled {
@@ -393,8 +401,10 @@ struct SessionActivityOverviewView: View {
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private var agentsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func agentsSection(_ snapshot: SessionActivityOverviewPresentation.Snapshot) -> some View {
+        let visibleAgents = agentScope == .all ? snapshot.agents : snapshot.agents.filter(\.isLive)
+        let visibleIDs = Set(visibleAgents.map(\.id))
+        return VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Agents", detail: "") {
                 Menu {
                     Picker("Scope", selection: $agentScope) {
@@ -423,20 +433,20 @@ struct SessionActivityOverviewView: View {
                     model: model,
                     selectedAgentID: $selectedAgentID,
                     allowsContinuousAnimation: !reduceMotion,
-                    agents: visibleMapAgents
+                    agents: model.agentPresentationSnapshot.displayedSubagents.filter { visibleIDs.contains($0.id) }
                 )
                 .frame(minHeight: 320, maxHeight: 460)
             } else if visibleAgents.isEmpty {
                 compactEmpty("No agents in this scope.")
             } else {
                 LazyVStack(spacing: 0) {
-                    ForEach(visibleAgents) { row in agentRow(row) }
+                    ForEach(visibleAgents) { row in agentRow(row, timeline: snapshot.timeline) }
                 }
             }
         }
     }
 
-    private func agentRow(_ row: SessionActivityOverviewPresentation.AgentRow) -> some View {
+    private func agentRow(_ row: SessionActivityOverviewPresentation.AgentRow, timeline: [SessionActivityOverviewPresentation.TimelineRow]) -> some View {
         let selected = expandedAgentID == row.id
         return VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -482,7 +492,7 @@ struct SessionActivityOverviewView: View {
             }
             .buttonStyle(.borderless)
             if selected {
-                agentHistory(for: row)
+                agentHistory(for: row, timeline: timeline)
                     .padding(.leading, 52)
                     .padding(.bottom, 10)
             }
@@ -491,8 +501,8 @@ struct SessionActivityOverviewView: View {
         .background(selected ? Color.dockAccent.opacity(0.08) : Color.clear)
     }
 
-    private func agentHistory(for row: SessionActivityOverviewPresentation.AgentRow) -> some View {
-        let items = snapshot.timeline.filter { $0.actor == row.displayName || $0.actor?.contains(row.displayName) == true }.prefix(5)
+    private func agentHistory(for row: SessionActivityOverviewPresentation.AgentRow, timeline: [SessionActivityOverviewPresentation.TimelineRow]) -> some View {
+        let items = timeline.filter { $0.actor == row.displayName || $0.actor?.contains(row.displayName) == true }.prefix(5)
         return VStack(alignment: .leading, spacing: 5) {
             if items.isEmpty {
                 Text("No recorded activity for this agent yet.")
@@ -505,22 +515,24 @@ struct SessionActivityOverviewView: View {
         .padding(.top, 2)
     }
 
-    private var currentWorkSection: some View {
+    private func currentWorkSection(_ snapshot: SessionActivityOverviewPresentation.Snapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if snapshot.work.isEmpty {
-                sectionHeader("In progress", detail: "") { EmptyView() }
+                sectionHeader("Running", detail: "") { EmptyView() }
                 compactEmpty(refreshState?.error == nil ? "No session-attributed work is active." : "Session work is unavailable; retry to refresh.")
             } else {
                 ForEach(SessionActivityOverviewPresentation.Lane.allCases) { lane in
                     let rows = snapshot.work.filter { $0.lane == lane }
                     if !rows.isEmpty {
+                        let limit = laneLimits[lane] ?? Self.pageSize
                         VStack(alignment: .leading, spacing: 8) {
                             sectionHeader(lane.title, detail: "\(rows.count)") { EmptyView() }
                             LazyVStack(spacing: 0) {
-                                ForEach(rows) { row in
+                                ForEach(rows.prefix(limit)) { row in
                                     if let task = row.kanbanTask { kanbanCardRow(task) } else { workRow(row) }
                                 }
                             }
+                            showMoreButton(total: rows.count, limit: limit) { laneLimits[lane] = $0 }
                         }
                     }
                 }
@@ -659,7 +671,7 @@ struct SessionActivityOverviewView: View {
         .foregroundStyle(Color.dockSecondaryText)
     }
 
-    private var recentActivitySection: some View {
+    private func recentActivitySection(_ snapshot: SessionActivityOverviewPresentation.Snapshot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Recent", detail: "") { EmptyView() }
             if snapshot.timeline.isEmpty {
@@ -670,33 +682,34 @@ struct SessionActivityOverviewView: View {
                         if let task = row.kanbanTask { kanbanCardRow(task) } else { timelineRow(row) }
                     }
                 }
-                if snapshot.timeline.count > 20 {
-                    Button {
-                        withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
-                            timelineLimit = timelineLimit >= snapshot.timeline.count ? 20 : min(timelineLimit + 20, snapshot.timeline.count)
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(timelineLimit >= snapshot.timeline.count ? "Show recent" : "Show \(min(20, snapshot.timeline.count - timelineLimit)) more")
-                            DockIcon(timelineLimit >= snapshot.timeline.count ? .caretUp : .caretDown)
-                        }
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.dockAccent)
-                        .frame(minHeight: 44, alignment: .leading)
-                    }
-                    .buttonStyle(.borderless)
-                }
+                showMoreButton(total: snapshot.timeline.count, limit: timelineLimit) { timelineLimit = $0 }
             }
         }
     }
 
-    private func timelineRow(_ row: SessionActivityOverviewPresentation.TimelineRow) -> some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            timelineRowContent(row, now: context.date)
+    /// Pages a section 10 rows at a time; at the end it collapses back.
+    @ViewBuilder
+    private func showMoreButton(total: Int, limit: Int, setLimit: @escaping (Int) -> Void) -> some View {
+        if total > Self.pageSize {
+            let exhausted = limit >= total
+            Button {
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
+                    setLimit(exhausted ? Self.pageSize : min(limit + Self.pageSize, total))
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(exhausted ? "Show less" : "Show \(min(Self.pageSize, total - limit)) more")
+                    DockIcon(exhausted ? .caretUp : .caretDown)
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.dockAccent)
+                .frame(minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
         }
     }
 
-    private func timelineRowContent(_ row: SessionActivityOverviewPresentation.TimelineRow, now: Date) -> some View {
+    private func timelineRow(_ row: SessionActivityOverviewPresentation.TimelineRow) -> some View {
         let expanded = expandedTimelineIDs.contains(row.id)
         return VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -724,7 +737,11 @@ struct SessionActivityOverviewView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     if let detail = row.detail { Text(detail).textSelection(.enabled) }
                     if let diff = row.diffPreview { Text(diff).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
-                    if let duration = duration(for: row, now: now) { Text("Duration · \(formatDuration(duration))").font(.system(size: 10, design: .monospaced)) }
+                    // Only the expanded duration ticks; a per-row 1s timeline
+                    // re-rendered every visible row at unaligned times.
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        if let duration = duration(for: row, now: context.date) { Text("Duration · \(formatDuration(duration))").font(.system(size: 10, design: .monospaced)) }
+                    }
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockSecondaryText)

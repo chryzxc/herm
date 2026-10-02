@@ -137,6 +137,7 @@ final class HermesGateway: NSObject {
             if payload["question"] == nil, let first = (payload["questions"] as? [[String: Any]])?.first {
                 payload["question"] = first["question"]
                 payload["choices"] = first["choices"]
+                payload["multi_select"] = first["multi_select"]
             }
             payload["request_id"] = id
         case _ where ValuePrompt.methods.contains(method):
@@ -354,6 +355,10 @@ final class HermesGateway: NSObject {
             type = ValuePrompt.methods.contains(method) ? "prompt.expire" : "\(method).expire"
             params["payload"] = ["request_id": payload["id"] ?? "", "reason": payload["reason"] ?? ""]
         }
+        // Background-process output (e.g. a dev server's webpack progress)
+        // arrives per chunk and Herm renders none of it; routing each chunk
+        // through the models re-rendered SwiftUI every frame and froze the app.
+        if type == "agent.terminal.output" { return }
         // Delta frames arrive at stream rate; logging each one would put
         // console and file I/O on the main actor for every chunk of text.
         if !HermesHighFrequencyEvent.includes(type) {

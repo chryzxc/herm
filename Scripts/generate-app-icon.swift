@@ -1,4 +1,4 @@
-// Draws Herm's app icon (a winged notch on an indigo tile) as a 1024px PNG.
+// Draws Herm's app icon (a gradient "h" under a notch on a black tile) as a 1024px PNG.
 // Usage: swift Scripts/generate-app-icon.swift <output.png>
 import AppKit
 
@@ -13,28 +13,14 @@ func gradient(_ colors: [CGColor]) -> CGGradient {
     CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray, locations: nil)!
 }
 
-/// Fills `path` with a vertical gradient (y grows downward in this canvas).
-func fill(_ ctx: CGContext, _ path: CGPath, _ colors: [CGColor]) {
+/// Fills `path` with a vertical gradient spanning `box` (y grows downward in this canvas).
+func fill(_ ctx: CGContext, _ path: CGPath, _ colors: [CGColor], over box: CGRect? = nil) {
+    let box = box ?? path.boundingBoxOfPath
     ctx.saveGState()
     ctx.addPath(path)
     ctx.clip()
-    let box = path.boundingBoxOfPath
     ctx.drawLinearGradient(gradient(colors), start: CGPoint(x: box.midX, y: box.minY), end: CGPoint(x: box.midX, y: box.maxY), options: [])
     ctx.restoreGState()
-}
-
-/// A wing feather: rounded base at `base`, a curved leading edge sweeping to a pointed `tip`.
-func feather(base: CGPoint, tip: CGPoint, width: CGFloat) -> CGPath {
-    let dx = tip.x - base.x, dy = tip.y - base.y
-    let length = hypot(dx, dy), angle = atan2(dy, dx), r = width / 2
-    let path = CGMutablePath()
-    path.move(to: CGPoint(x: 0, y: r))
-    path.addArc(center: .zero, radius: r, startAngle: .pi / 2, endAngle: 3 * .pi / 2, clockwise: false)
-    path.addQuadCurve(to: CGPoint(x: length, y: 0), control: CGPoint(x: length * 0.55, y: -r * 0.95))
-    path.addQuadCurve(to: CGPoint(x: 0, y: r), control: CGPoint(x: length * 0.5, y: r * 1.5))
-    path.closeSubpath()
-    var transform = CGAffineTransform(translationX: base.x, y: base.y).rotated(by: angle).scaledBy(x: 1, y: -1)
-    return path.copy(using: &transform)!
 }
 
 let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size), bitsPerSample: 8,
@@ -50,70 +36,60 @@ let tile = CGPath(roundedRect: tileRect, cornerWidth: 185, cornerHeight: 185, tr
 ctx.saveGState()
 ctx.setShadow(offset: CGSize(width: 0, height: 12), blur: 28, color: color(0x000000, 0.35))
 ctx.addPath(tile)
-ctx.setFillColor(color(0x15123A))
+ctx.setFillColor(color(0x141416))
 ctx.fillPath()
 ctx.restoreGState()
-fill(ctx, tile, [color(0x2E2A7A), color(0x16134A), color(0x0B0A22)])
+fill(ctx, tile, [color(0x202024), color(0x0A0A0B)])
 
-// Soft glow behind the mark and a thin top highlight on the tile edge.
+// Soft glow behind the letter and a thin highlight on the tile edge.
 ctx.saveGState()
 ctx.addPath(tile)
 ctx.clip()
-ctx.drawRadialGradient(gradient([color(0x6C63FF, 0.35), color(0x6C63FF, 0)]),
-                       startCenter: CGPoint(x: 512, y: 480), startRadius: 0,
-                       endCenter: CGPoint(x: 512, y: 480), endRadius: 420, options: [])
+ctx.drawRadialGradient(gradient([color(0x2FC1E8, 0.18), color(0x2FC1E8, 0)]),
+                       startCenter: CGPoint(x: 512, y: 540), startRadius: 0,
+                       endCenter: CGPoint(x: 512, y: 540), endRadius: 400, options: [])
 ctx.restoreGState()
 ctx.addPath(CGPath(roundedRect: tileRect.insetBy(dx: 1.5, dy: 1.5), cornerWidth: 184, cornerHeight: 184, transform: nil))
 ctx.setStrokeColor(color(0xFFFFFF, 0.12))
 ctx.setLineWidth(3)
 ctx.strokePath()
 
-// The mark: the MacBook notch worn like Hermes' winged helmet — gold wings spread from
-// both sides of a black notch with a glowing status light inside.
-let notchRect = CGRect(x: 322, y: 430, width: 380, height: 170)
-let notch = CGMutablePath()
-notch.move(to: CGPoint(x: notchRect.minX, y: notchRect.minY))
-notch.addLine(to: CGPoint(x: notchRect.maxX, y: notchRect.minY))
-notch.addArc(tangent1End: CGPoint(x: notchRect.maxX, y: notchRect.maxY), tangent2End: CGPoint(x: notchRect.minX, y: notchRect.maxY), radius: 78)
-notch.addArc(tangent1End: CGPoint(x: notchRect.minX, y: notchRect.maxY), tangent2End: CGPoint(x: notchRect.minX, y: notchRect.minY), radius: 78)
-notch.closeSubpath()
-
-// Left wing (feather bases tucked under the notch), mirrored for the right.
-let leftWing = CGMutablePath()
-leftWing.addPath(feather(base: CGPoint(x: 380, y: 470), tip: CGPoint(x: 150, y: 300), width: 96))
-leftWing.addPath(feather(base: CGPoint(x: 380, y: 520), tip: CGPoint(x: 168, y: 424), width: 86))
-leftWing.addPath(feather(base: CGPoint(x: 385, y: 565), tip: CGPoint(x: 212, y: 532), width: 74))
-let wing = CGMutablePath()
-wing.addPath(leftWing)
-wing.addPath(leftWing, transform: CGAffineTransform(translationX: size, y: 0).scaledBy(x: -1, y: 1))
-
-// Centre the mark on the tile, and draw the display edge the notch hangs from.
-ctx.translateBy(x: 0, y: 70)
+// The mark: a lowercase "h" — a stem plus an arch, filled with one shared gradient.
+let stroke: CGFloat = 132
+let stem = CGMutablePath()
+stem.move(to: CGPoint(x: 400, y: 300))
+stem.addLine(to: CGPoint(x: 400, y: 724))
+let arch = CGMutablePath()
+arch.move(to: CGPoint(x: 400, y: 600))
+arch.addCurve(to: CGPoint(x: 624, y: 560), control1: CGPoint(x: 400, y: 430), control2: CGPoint(x: 624, y: 400))
+arch.addLine(to: CGPoint(x: 624, y: 724))
+let letterBox = CGRect(x: 334, y: 234, width: 356, height: 556)
+let letterColors = [color(0x7CF2C9), color(0x2FC1E8), color(0x6C63FF)]
 ctx.saveGState()
-ctx.clip(to: CGRect(x: 100, y: notchRect.minY - 2, width: 824, height: 4))
-ctx.drawLinearGradient(gradient([color(0xFFFFFF, 0), color(0xFFFFFF, 0.3), color(0xFFFFFF, 0)]),
-                       start: CGPoint(x: 100, y: 0), end: CGPoint(x: 924, y: 0), options: [])
-ctx.restoreGState()
-
-ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: 10), blur: 24, color: color(0x000000, 0.45))
+ctx.setShadow(offset: CGSize(width: 0, height: 10), blur: 30, color: color(0x000000, 0.5))
 ctx.beginTransparencyLayer(auxiliaryInfo: nil)
-fill(ctx, wing, [color(0xFFD978), color(0xF5A83B), color(0xE07A2E)])
-fill(ctx, notch, [color(0x0A0A14), color(0x000000)])
+for part in [stem, arch] {
+    fill(ctx, part.copy(strokingWithWidth: stroke, lineCap: .round, lineJoin: .round, miterLimit: 10), letterColors, over: letterBox)
+}
 ctx.endTransparencyLayer()
 ctx.restoreGState()
 
-// Thin rim so the notch reads against the dark tile.
+// The MacBook notch bitten out of the top edge, with a green status light.
+let notchRect = CGRect(x: 402, y: 100, width: 220, height: 64)
+let notch = CGMutablePath()
+notch.move(to: CGPoint(x: notchRect.minX, y: notchRect.minY))
+notch.addLine(to: CGPoint(x: notchRect.maxX, y: notchRect.minY))
+notch.addArc(tangent1End: CGPoint(x: notchRect.maxX, y: notchRect.maxY), tangent2End: CGPoint(x: notchRect.minX, y: notchRect.maxY), radius: 30)
+notch.addArc(tangent1End: CGPoint(x: notchRect.minX, y: notchRect.maxY), tangent2End: CGPoint(x: notchRect.minX, y: notchRect.minY), radius: 30)
+notch.closeSubpath()
 ctx.addPath(notch)
-ctx.setStrokeColor(color(0xFFFFFF, 0.18))
-ctx.setLineWidth(4)
-ctx.strokePath()
+ctx.setFillColor(color(0x000000))
+ctx.fillPath()
 
-// Status light: a glowing pill inside the notch.
 ctx.saveGState()
-ctx.setShadow(offset: .zero, blur: 30, color: color(0x8C84FF, 0.9))
-fill(ctx, CGPath(roundedRect: CGRect(x: 452, y: 498, width: 120, height: 34), cornerWidth: 17, cornerHeight: 17, transform: nil),
-     [color(0xFFFFFF), color(0xC9C5FF)])
+ctx.setShadow(offset: .zero, blur: 18, color: color(0x7CF2C9))
+ctx.setFillColor(color(0x7CF2C9))
+ctx.fillEllipse(in: CGRect(x: 584, y: 122, width: 18, height: 18))
 ctx.restoreGState()
 
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: output))
