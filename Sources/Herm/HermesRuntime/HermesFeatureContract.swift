@@ -119,6 +119,7 @@ enum HermesFeatureIDs {
         case modelOptions = "model.options"
         case shellExec = "shell.exec"
         case imageAttachBytes = "image.attach_bytes"
+        case imageDetach = "image.detach"
         case pdfAttach = "pdf.attach"
         case profilesList = "profiles.list"
         case profilesDescribe = "profiles.describe"
@@ -142,7 +143,7 @@ enum HermesFeatureIDs {
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
         "approval.respond", "request.answer", "clarify.lock", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "config.get",
-        "config.set", "model.options", "shell.exec", "image.attach_bytes", "pdf.attach",
+        "config.set", "model.options", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach",
         "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore",
         "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder"
     ]

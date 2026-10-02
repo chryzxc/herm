@@ -59,7 +59,9 @@ struct MissionControlSidebarSnapshot: Equatable {
         var projectIDBySessionID: [String: String]
         var projectSessionsByProjectID: [String: [SessionSummary]]
         var projectProfileID: String?
-        var isRefreshing: Bool
+        /// Only the rendered "loading with nothing yet" bit; the raw refresh
+        /// flag flipped on every background refresh and rebuilt the rail.
+        var isLoadingProjects: Bool
         var isRefreshingProjectNavigation: Bool
         var attention: [AttentionItem]
         var latestActivities: [LatestActivityItem]
@@ -121,7 +123,7 @@ struct MissionControlSidebarSnapshot: Equatable {
             projectIDBySessionID: control.projectIDBySessionID,
             projectSessionsByProjectID: control.projectSessionsByProjectID,
             projectProfileID: control.projectProfileID,
-            isRefreshing: control.isRefreshing,
+            isLoadingProjects: control.isRefreshing && control.projects.isEmpty,
             isRefreshingProjectNavigation: control.isRefreshingProjectNavigation,
             attention: control.attention,
             latestActivities: control.latestActivities,

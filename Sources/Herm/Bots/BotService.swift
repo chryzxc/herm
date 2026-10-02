@@ -482,7 +482,9 @@ final class BotModeModel: ObservableObject {
         isRefreshing = true
         let refreshed = await service.list()
         if refreshed.availability == .ready { capabilityAvailable = true }
-        inventory = refreshed
+        // Unchanged rosters must not republish: every observer (the rail,
+        // activity rows) re-renders on it.
+        if inventory != refreshed { inventory = refreshed }
         resolveSelectedProfile()
         isRefreshing = false
         await loadAvatars()

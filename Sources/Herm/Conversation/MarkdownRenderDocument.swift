@@ -934,6 +934,9 @@ enum NativeMarkdownAttributedTextBuilder {
     static let safeLinkSchemes: Set<String> = ["http", "https", "mailto"]
 
     static func inlineMarkdown(_ value: String) -> AttributedString {
+        // The autolinker swallows the closing `**` of a bold bare URL; angle brackets end the URL there.
+        let value = value.replacingOccurrences(
+            of: #"\*\*(https?://[^\s*<>]+)\*\*"#, with: "**<$1>**", options: .regularExpression)
         var parsed = (try? AttributedString(
             markdown: value,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)

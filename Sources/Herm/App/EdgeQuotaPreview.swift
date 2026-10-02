@@ -395,11 +395,16 @@ struct EdgeQuotaChangeCard: View {
     let change: EdgeQuotaChange
     /// Inside the combined status view: no header subtitle or outer padding.
     var compact = false
+    /// Chat banner: provider and meters in one row instead of a stack.
+    var inline = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var settled = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 10 : 16) {
+        let layout = inline
+            ? AnyLayout(HStackLayout(alignment: .center, spacing: 20))
+            : AnyLayout(VStackLayout(alignment: .leading, spacing: compact ? 10 : 16))
+        layout {
             HStack(spacing: 8) {
                 ProviderMarkBadge(mark: ProviderMark(providerID: change.current.provider, displayName: change.current.displayName))
                 VStack(alignment: .leading, spacing: 2) {
@@ -411,6 +416,7 @@ struct EdgeQuotaChangeCard: View {
                     }
                 }
             }
+            .fixedSize()
             ForEach(EdgeQuotaPreview.compactWindows(change.current.windows), id: \.window.id) { item in
                 meter(item.label, item.window)
             }
@@ -476,4 +482,122 @@ private struct CountingPercent: View, @preconcurrency Animatable {
     }
 
     var body: some View { Text("\(Int(value.rounded()))%") }
+}
+
+enum ChatQuotaSettingsKey {
+    static let chip = "hermes.chat.shows-quota-chip"
+    static let dropBanner = "hermes.chat.shows-quota-drop-banner"
+}
+
+/// The provider closest to its limit, beside the composer's context ring.
+/// Each bot may spend a different provider, so this tracks the lowest of all;
+/// clicking lists every provider.
+struct ChatQuotaChip: View {
+    @ObservedObject var control: ControlCenterModel
+    let openQuota: () -> Void
+    /// Hermes provider of the selected model (e.g. `openai-codex`); its quota is shown when known.
+    var selectedProvider: String? = nil
+    @AppStorage(ChatQuotaSettingsKey.chip) private var enabled = true
+    @State private var showingDetail = false
+
+    /// The provider whose headline window (5h, else its first) has the least left.
+    private var lowest: (snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double)? {
+        let quotaID = Self.quotaProviderID(for: selectedProvider)
+        let matching = control.providerQuotas.filter { quotaID != nil && ($0.provider == quotaID || $0.provider.hasPrefix(quotaID! + "-")) }
+        return (matching.isEmpty ? control.providerQuotas : matching).compactMap { snapshot in
+            guard let window = EdgeQuotaPreview.compactWindows(snapshot.windows).first?.window,
+                  let remaining = EdgeQuotaPreview.remainingPercent(window.remainingPercent) else { return nil }
+            return (snapshot, window, remaining)
+        }.min { $0.remaining < $1.remaining }
+    }
+
+    /// Hermes provider name -> quota provider id; nil keeps the lowest-of-all fallback.
+    static func quotaProviderID(for hermesProvider: String?) -> String? {
+        guard let p = hermesProvider?.lowercased() else { return nil }
+        switch p {
+        case let p where p.contains("codex") || p == "openai": return "codex"
+        case let p where p.contains("anthropic") || p.contains("claude"): return "claude"
+        case let p where p.contains("zai") || p.contains("glm"): return "glm"
+        case let p where p.contains("opencode"): return "opencode"
+        case let p where p.contains("gemini") || p.contains("antigravity"): return "antigravity"
+        default: return nil
+        }
+    }
+
+    var body: some View {
+        if enabled, let lowest {
+            Button { showingDetail.toggle() } label: {
+                HStack(spacing: 4) {
+                    ProviderMarkBadge(mark: ProviderMark(providerID: lowest.snapshot.provider,
+                                                         displayName: lowest.snapshot.displayName), size: 14)
+                    Text("\(Int(lowest.remaining.rounded()))%")
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(QuotaWorkspaceView.color(for: lowest.window.threshold))
+                }
+                .fixedSize()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("\(lowest.snapshot.displayName) has \(Int(lowest.remaining.rounded()))% left")
+            .accessibilityLabel("Quota: \(lowest.snapshot.displayName) \(Int(lowest.remaining.rounded())) percent remaining")
+            .popover(isPresented: $showingDetail, arrowEdge: .top) {
+                EdgeQuotaPreview(control: control) {
+                    showingDetail = false
+                    openQuota()
+                }
+                .frame(width: 320, height: 300)
+            }
+        }
+    }
+}
+
+/// The notch's drop announcement, shown over the chat while the workspace
+/// hides the notch: same 10% bands, same card, gone after a few seconds.
+struct ChatQuotaBanner: View {
+    @ObservedObject var control: ControlCenterModel
+    /// The chat's reading width and side inset, so the banner lines up with messages.
+    let metrics: ConversationWorkspaceMetrics
+    @AppStorage(ChatQuotaSettingsKey.dropBanner) private var enabled = true
+    @State private var lastQuotas: [ProviderQuotaSnapshot]?
+    @State private var change: EdgeQuotaChange?
+    @State private var dismissTask: Task<Void, Never>?
+
+    var body: some View {
+        Group {
+            if let change {
+                EdgeQuotaChangeCard(change: change, compact: true, inline: true)
+                    .id(change.current.updatedAt)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: metrics.readingWidth)
+                    // Theme surfaces are translucent; the material keeps chat text from showing through.
+                    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface2))
+                    .background(.thickMaterial, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+                    .padding(.horizontal, metrics.contentInset)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .onTapGesture { self.change = nil }
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: change)
+        .onReceive(control.$providerQuotas) { quotas in
+            // An empty list is a reset (rebind or failed read), not a reading.
+            guard !quotas.isEmpty else { return }
+            defer { lastQuotas = quotas }
+            guard enabled, let previousQuotas = lastQuotas,
+                  let provider = EdgeQuotaBands.droppedProvider(from: EdgeQuotaBands.bands(previousQuotas),
+                                                                to: EdgeQuotaBands.bands(quotas)),
+                  let previous = previousQuotas.first(where: { $0.provider == provider }),
+                  let current = quotas.first(where: { $0.provider == provider }) else { return }
+            change = EdgeQuotaChange(previous: previous, current: current)
+            dismissTask?.cancel()
+            dismissTask = Task {
+                try? await Task.sleep(for: .seconds(6))
+                guard !Task.isCancelled else { return }
+                change = nil
+            }
+        }
+    }
 }

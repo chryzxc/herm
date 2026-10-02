@@ -76,6 +76,7 @@ struct QuotaWorkspaceView: View {
             ProviderConnectSheet(descriptor: descriptor, control: control)
         }
         .task(id: autoRefreshMinutes) { await runAutoRefresh() }
+        .task { await control.configEditor.load() }  // rotation strategy for the credential menu
         .confirmationDialog(
             removalTitle,
             isPresented: Binding(get: { removalCandidate != nil }, set: { if !$0 { removalCandidate = nil } }),
@@ -339,11 +340,17 @@ struct QuotaWorkspaceView: View {
 
             Spacer(minLength: 8)
 
+            if let credential = snapshot.hermesCredential, control.isHermesActiveCredential(credential) {
+                QuotaHealthPill(text: "Active", color: .dockAccent)
+                    .help("Hermes picks this account for the next request (hermes auth list marks it ←).")
+            }
+
             if let label = QuotaWorkspacePresentation.healthLabel(snapshot) {
                 QuotaHealthPill(text: label, color: Self.color(for: health))
             }
 
-            if control.isActionPending(ControlCenterModel.hermesCredentialRemovalActionID(snapshot.provider)) {
+            if control.isActionPending(ControlCenterModel.hermesCredentialRemovalActionID(snapshot.provider))
+                || control.isActionPending(ControlCenterModel.hermesCredentialPrimaryActionID(snapshot.provider)) {
                 ProgressView()
                     .controlSize(.small)
                     .frame(width: DockControlMetrics.compactHeight, height: DockControlMetrics.compactHeight)
@@ -433,8 +440,15 @@ struct QuotaWorkspaceView: View {
                 NSWorkspace.shared.open(website)
             }
         }
-        if snapshot.hermesCredential != nil {
+        if let credential = snapshot.hermesCredential {
             Divider()
+            if !(control.isHermesActiveCredential(credential) && control.isHermesPinnedPrimary(credential)) {
+                // round_robin rewrites the order after every pick, so "first" only means next in line.
+                let rotates = control.configEditor.value("credential_pool_strategies.\(credential.provider)") as? String == "round_robin"
+                Button(rotates ? "Make next in line" : "Make primary", icon: .arrowUp) {
+                    control.makeHermesPooledCredentialPrimary(for: snapshot.provider)
+                }
+            }
             Button("Remove from Hermes…", icon: .trash, role: .destructive) {
                 removalCandidate = snapshot
             }

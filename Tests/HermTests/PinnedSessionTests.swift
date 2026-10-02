@@ -34,15 +34,23 @@ final class PinnedSessionTests: XCTestCase {
     func testFetchReadsHermesPinnedFlagFromTheDesktopSessionsEndpoint() async throws {
         let client = PinRPCClient()
         client.rows = [
-            ["id": "recent", "title": "Recent", "pinned": false],
+            ["id": "recent", "title": "Recent", "pinned": false, "started_at": 100, "last_active": 900],
             ["id": "pinned", "title": "Pinned", "pinned": true]
         ]
 
-        let pinned = try await DockModel.fetchPinnedSessions(client: client, profileID: "bot a")
+        let index = try await DockModel.fetchSessionIndex(client: client, profileID: "bot a")
 
-        XCTAssertEqual(pinned.map(\.id), ["pinned"])
-        XCTAssertEqual(pinned.first?.profileID, "bot a")
-        XCTAssertEqual(client.fetchedPaths, ["/api/sessions?limit=1&order=recent&profile=bot%20a"])
+        XCTAssertEqual(index.pinned.map(\.id), ["pinned"])
+        XCTAssertEqual(index.pinned.first?.profileID, "bot a")
+        XCTAssertEqual(client.fetchedPaths, ["/api/sessions?limit=100&order=recent&profile=bot%20a"])
+        XCTAssertEqual(index.lastActive["recent"], Date(timeIntervalSince1970: 900))
+    }
+
+    func testSessionListRowTakesLastActiveInsteadOfStartTime() {
+        let stale = HermesSession(id: "a", title: "A", preview: "", startedAt: Date(timeIntervalSince1970: 100), messageCount: 1, source: "")
+        let fresh = DockModel.withRecency(stale, from: ["a": Date(timeIntervalSince1970: 900)])
+        XCTAssertEqual(fresh.lastUpdatedAt, Date(timeIntervalSince1970: 900))
+        XCTAssertEqual(DockModel.withRecency(fresh, from: ["a": Date(timeIntervalSince1970: 500)]).lastUpdatedAt, Date(timeIntervalSince1970: 900))
     }
 
     func testWritePatchesHermesPinnedFlagWithOwningProfile() async throws {

@@ -258,6 +258,7 @@ struct AgentProjectionTests {
     @Test func exactKanbanIDsAreExtractedFromToolEvidenceOnly() {
         #expect(DockModel.kanbanTaskIDs(in: "hermes kanban show t_33604ca9 --json") == ["t_33604ca9"])
         #expect(DockModel.kanbanTaskIDs(in: "unrelated prose has no durable card") == [])
+        #expect(DockModel.kanbanTaskIDs(in: "worktree t_3d7e8b34-plan-climaterx-staff") == ["t_3d7e8b34"])
     }
 
     @Test func activeSessionRetainsKanbanReferenceAfterTerminalToolActivity() {
@@ -280,6 +281,15 @@ struct AgentProjectionTests {
 
         #expect(model.observedKanbanTaskIDs == ["t_33604ca9"])
         #expect(model.observedKanbanTaskRevision == 1)
+    }
+
+    @Test func kanbanListingDoesNotClaimEveryListedCard() {
+        let model = DockModel(initialSessionID: "session-a", botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("kanban-\(UUID().uuidString).json"))
+        model.receiveGatewayEvent("tool.complete", params: [
+            "session_id": "session-a",
+            "payload": ["name": "terminal", "input": "hermes kanban list", "result": "t_aaaa1111 blocked\nt_bbbb2222 ready"]
+        ])
+        #expect(model.observedKanbanTaskIDs.isEmpty)
     }
 
     @Test func repeatedKanbanReferenceRequestsFreshStatus() {

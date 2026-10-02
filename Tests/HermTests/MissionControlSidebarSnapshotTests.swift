@@ -73,7 +73,7 @@ struct MissionControlSidebarSnapshotTests {
             projectIDBySessionID: projectIDBySessionID,
             projectSessionsByProjectID: projectSessionsByProjectID,
             projectProfileID: projectProfileID,
-            isRefreshing: false,
+            isLoadingProjects: false,
             isRefreshingProjectNavigation: false,
             attention: attention,
             latestActivities: latestActivities

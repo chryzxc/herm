@@ -164,7 +164,8 @@ struct HermesPetSettingsView: View {
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         if let gallery = pet.gallery {
-                            ForEach(Array(gallery.matches(query).prefix(60))) { entry in
+                            let matches = gallery.matches(query)
+                            ForEach(Array(matches.prefix(60))) { entry in
                                 Button {
                                     slug = entry.slug; enabled = true; dirty = true
                                 } label: {
@@ -173,7 +174,7 @@ struct HermesPetSettingsView: View {
                                     .accessibilityLabel("Select \(entry.displayName)")
                                     .accessibilityAddTraits(slug == entry.slug ? .isSelected : [])
                             }
-                            if gallery.matches(query).isEmpty { Text("No companions found").font(.system(size: 12)) }
+                            if matches.isEmpty { Text("No companions found").font(.system(size: 12)) }
                         } else {
                             Text(pet.isLoading ? "Loading companions…" : "Gallery unavailable. Refresh to retry.").font(.system(size: 12))
                         }

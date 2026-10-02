@@ -510,6 +510,13 @@ struct SessionConversationIsolationTests {
         #expect(attached.images[0].size.height > 0)
     }
 
+    @Test func hermesNativeImageHandlesBecomeAttachmentsNotText() {
+        let raw = "compare these\n\n[Image attached at: /tmp/a.png]\n[Image attached at: /tmp/b.png]"
+        let parsed = DockModel.persistedImageContent(from: raw)
+        #expect(parsed.text == "compare these")
+        #expect(parsed.imageFileURLs == [URL(fileURLWithPath: "/tmp/a.png"), URL(fileURLWithPath: "/tmp/b.png")])
+    }
+
     @Test func pendingImageRehydrationDropsPayloadForSessionMismatch() async {
         let model = DockModel(rpcClient: SessionIsolationRPCClient())
         let pending = [RestoredTranscript.PendingImages(
@@ -620,6 +627,32 @@ struct SessionConversationIsolationTests {
         #expect(reply.activity[0].result == "plan")
         #expect(reply.activity.allSatisfy { $0.isComplete })
         #expect(model.streamingTurnActivity.isEmpty)
+    }
+
+    @Test func midTurnKanbanNoticeSplitsLiveTurnInTimeOrder() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.resumeResponses = [Fixtures.sessionAResponse]
+        let model = DockModel(rpcClient: rpc)
+        model.resumeSession(HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test"))
+        try await waitUntil { !model.isRestoringSession && model.sessionID == Fixtures.sessionA }
+        func send(_ type: String, _ payload: [String: Any] = [:]) {
+            model.receiveGatewayEvent(type, params: ["session_id": Fixtures.sessionA, "payload": payload])
+        }
+
+        send("message.start")
+        send("tool.start", ["id": "t1", "name": "terminal", "context": "done before"])
+        send("tool.complete", ["id": "t1", "name": "terminal"])
+        send("tool.start", ["id": "t2", "name": "terminal", "context": "still running"])
+        send("status.update", ["kind": "process", "text": "✔ [default] @sentry Kanban t_c891be93 done — Fix it"])
+        send("tool.complete", ["id": "t2", "name": "terminal"])
+        send("tool.start", ["id": "t3", "name": "search", "context": "after"])
+        send("message.complete", ["text": "Done."])
+
+        let tail = Array(model.messages.suffix(3))
+        #expect(tail[0].activity.map(\.id) == ["t1"])
+        #expect(tail[1].kanbanNotice != nil)
+        #expect(tail[2].activity.map(\.id) == ["t2", "t3"])
+        #expect(tail[2].text == "Done.")
     }
 
     @Test func returningToARunningSessionRestoresItsLiveTurn() async throws {

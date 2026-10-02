@@ -32,6 +32,9 @@ enum HermesConfigCatalog {
             Page(title: "Main model", fields: [
                 .init("model_context_length", "Main model context window (override)", "Overrides the detected context window of the MAIN chat model only (tokens). Leave at 0 to use the selected model's detected value. Does not affect auxiliary/MoA models."),
             ]),
+            Page(title: "Account pooling", fields: [
+                .init("credential_pool_strategies.openai-codex", "Codex Account Rotation", "How Hermes picks between pooled Codex accounts. round_robin cycles accounts evenly after each selection; fill_first (default) uses the first healthy account until it runs out. Applies from the next request."),
+            ]),
         ],
         .chat: [
             Page(title: "Behavior", fields: [
@@ -192,6 +195,7 @@ enum HermesConfigCatalog {
         "agent.image_input_mode": ["auto", "native", "text"],
         "approvals.mode": ["manual", "smart", "off"],
         "code_execution.mode": ["project", "strict"],
+        "credential_pool_strategies.openai-codex": ["fill_first", "round_robin", "least_used", "random"],
         "context.engine": ["compressor", "default", "custom"],
         "delegation.reasoning_effort": ["", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
         "terminal.backend": ["local", "docker", "singularity", "modal", "daytona", "ssh"],
@@ -236,26 +240,32 @@ final class HermesConfigEditor: ObservableObject {
     @Published private(set) var errors: [String: String] = [:]
 
     private let rpc: () -> HermesControlRPC?
+    /// Called after Hermes accepts a write, so views that project the same
+    /// file (e.g. Runtime's max turns / terminal timeout) can re-read it.
+    var onSaved: (() -> Void)?
 
     init(rpc: @escaping () -> HermesControlRPC?) {
         self.rpc = rpc
     }
 
     func load() async {
-        guard state != .loading else { return }
+        // Reloads on every call so edits made elsewhere (CLI, Desktop) show up,
+        // but never over a pending write and without flashing the spinner.
+        guard state != .loading, savingKeys.isEmpty else { return }
         guard let rpc = rpc() else {
             state = .failed("Hermes is not connected.")
             return
         }
-        state = .loading
+        if state != .ready { state = .loading }
         do {
             let schemaJSON = try await rpc.fetchHTTP("/api/config/schema")
             let configJSON = try await rpc.fetchHTTP("/api/config")
+            guard savingKeys.isEmpty else { return }
             schema = schemaJSON["fields"] as? [String: [String: Any]] ?? [:]
             config = configJSON
             state = .ready
         } catch {
-            state = .failed(error.localizedDescription)
+            if state != .ready { state = .failed(error.localizedDescription) }
         }
     }
 
@@ -313,6 +323,7 @@ final class HermesConfigEditor: ObservableObject {
         Task {
             do {
                 _ = try await rpc.sendHTTP("PUT", path: "/api/config", body: ["config": Self.setting([:], key, newValue)])
+                onSaved?()
             } catch {
                 config = Self.setting(config, key, Self.nested(previous, key) ?? NSNull())
                 errors[key] = error.localizedDescription
@@ -381,7 +392,7 @@ struct HermesConfigCategoryView: View {
                     }
                 }
             }
-            .task { if editor.state == .idle { await editor.load() } }
+            .task { await editor.load() }
         }
     }
 }

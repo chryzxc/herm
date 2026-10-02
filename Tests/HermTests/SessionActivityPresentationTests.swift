@@ -65,7 +65,7 @@ struct SessionActivityPresentationTests {
         )
 
         let lanes = Dictionary(uniqueKeysWithValues: snapshot.work.map { ($0.id, $0.lane) })
-        #expect(lanes == ["kanban:b": .blocked, "kanban:t": .blocked, "kanban:r": .inProgress, "kanban:s": .queued])
+        #expect(lanes == ["kanban:b": .blocked, "kanban:t": .blocked, "kanban:r": .running, "kanban:s": .upNext])
         #expect(snapshot.work.first { $0.id == "kanban:t" }?.status == "TRIAGE")
         #expect(snapshot.blockedWorkCount == 2)
         #expect(snapshot.timeline.map(\.id) == ["kanban:d:10.0"])

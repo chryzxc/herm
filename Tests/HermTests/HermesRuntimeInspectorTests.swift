@@ -80,4 +80,14 @@ struct HermesRuntimeInspectorTests {
         ))
         #expect(request.parameters["confirm_expensive_model"] as? Bool == true)
     }
+
+    @Test func sessionModelSwitchKeepsThinkingDepth() {
+        let request = DockModel.sessionRuntimeModelSwitchRequest(
+            option: HermesModelOption(provider: "anthropic", model: "claude-sonnet-4-6"),
+            sessionID: "session-42",
+            reasoning: .high
+        )
+
+        #expect(request.value == "claude-sonnet-4-6 --provider anthropic --session --reasoning high")
+    }
 }

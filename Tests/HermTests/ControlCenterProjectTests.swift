@@ -1612,7 +1612,7 @@ private final class DelayedSessionKanbanClient: HermesRPCClientProtocol {
         if path == "/api/plugins/kanban/boards" {
             return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
         }
-        if path == "/api/plugins/kanban/board?board=default" {
+        if path == "/api/plugins/kanban/board?board=default&include_archived=true" {
             kanbanListCalls += 1
             try await Task.sleep(for: .seconds(10))
             return ["columns": []]
@@ -1647,7 +1647,7 @@ private final class SessionKanbanCacheClient: HermesRPCClientProtocol {
         if path == "/api/plugins/kanban/boards" {
             return ["boards": [["slug": "default", "name": "Default", "is_current": true, "archived": false]]]
         }
-        if path == "/api/plugins/kanban/board?board=default" {
+        if path == "/api/plugins/kanban/board?board=default&include_archived=true" {
             return ["columns": [["tasks": [
                 ["id": "task-a", "title": "First session", "status": "running", "session_id": "session-a"],
                 ["id": "task-b", "title": "Second session", "status": "running", "session_id": "session-b"]

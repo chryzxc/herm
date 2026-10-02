@@ -67,6 +67,37 @@ struct PullRequestCommit: Identifiable, Equatable, Sendable {
     let webURL: URL?
 }
 
+/// A GitHub issue-timeline event (draft/ready toggles, labels, reviews, merges…).
+struct PullRequestEvent: Identifiable, Equatable, Sendable {
+    let id: String
+    let kind: String
+    let actor: String
+    let detail: String?
+    let createdAt: Date?
+
+    /// GitHub-style sentence plus icon; `nil` for events too noisy to show.
+    var presentation: (text: String, icon: Ph)? {
+        switch kind {
+        case "ready_for_review": return ("\(actor) marked this pull request as ready for review", .checkCircle)
+        case "convert_to_draft": return ("\(actor) marked this pull request as draft", .pencil)
+        case "closed": return ("\(actor) closed this pull request", .xCircle)
+        case "reopened": return ("\(actor) reopened this pull request", .arrowsClockwise)
+        case "merged": return ("\(actor) merged this pull request", .gitMerge)
+        case "labeled": return ("\(actor) added the \(detail ?? "") label", .tag)
+        case "unlabeled": return ("\(actor) removed the \(detail ?? "") label", .tag)
+        case "assigned": return ("\(actor) assigned \(detail ?? "someone")", .user)
+        case "unassigned": return ("\(actor) unassigned \(detail ?? "someone")", .user)
+        case "review_requested": return ("\(actor) requested a review from \(detail ?? "someone")", .eye)
+        case "review_request_removed": return ("\(actor) removed the review request for \(detail ?? "someone")", .eye)
+        case "renamed": return ("\(actor) changed the title to \(detail ?? "")", .pencil)
+        case "head_ref_force_pushed": return ("\(actor) force-pushed the branch", .gitBranch)
+        case "locked": return ("\(actor) locked this conversation", .lock)
+        case "unlocked": return ("\(actor) unlocked this conversation", .lock)
+        default: return nil
+        }
+    }
+}
+
 enum PullRequestStatus: String, CaseIterable, Identifiable, Sendable {
     case draft = "Draft"
     case readyForReview = "Ready for review"
@@ -316,6 +347,7 @@ final class PullRequestCenterModel: ObservableObject {
     @Published private(set) var filesByID: [String: [PullRequestFile]] = [:]
     @Published private(set) var commentsByID: [String: [PullRequestComment]] = [:]
     @Published private(set) var commitsByID: [String: [PullRequestCommit]] = [:]
+    @Published private(set) var eventsByID: [String: [PullRequestEvent]] = [:]
     @Published private(set) var isRefreshing = false
     @Published private(set) var loadingDetailIDs = Set<String>()
     @Published private(set) var isPostingComment = false
@@ -392,7 +424,7 @@ final class PullRequestCenterModel: ObservableObject {
                 let enriched = await api.enrichIndex(rows)
                 guard token == generation else { return }
                 records = enriched.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
-                filesByID = [:]; commentsByID = [:]; commitsByID = [:]
+                filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:]
                 failedRepositories = []
                 errorMessage = nil
                 isRefreshing = false
@@ -432,7 +464,7 @@ final class PullRequestCenterModel: ObservableObject {
         for result in results {
             switch result { case .success(let rows): fresh += rows; case .failure(let failure): failures.append(failure.repository) }
         }
-        if !fresh.isEmpty { records = fresh.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }; filesByID = [:]; commentsByID = [:]; commitsByID = [:] }
+        if !fresh.isEmpty { records = fresh.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }; filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:] }
         failedRepositories = failures
         if fresh.isEmpty && !failures.isEmpty { errorMessage = "GitHub could not load pull requests. Check your GitHub sign-in or try again." }
         isRefreshing = false
@@ -449,7 +481,7 @@ final class PullRequestCenterModel: ObservableObject {
         guard let remote else {
             records = []
             selectedID = nil
-            filesByID = [:]; commentsByID = [:]; commitsByID = [:]
+            filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:]
             errorMessage = "This session's repository has no GitHub remote."
             isRefreshing = false
             return
@@ -463,7 +495,7 @@ final class PullRequestCenterModel: ObservableObject {
         switch result {
         case .success(let rows):
             records = rows.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
-            filesByID = [:]; commentsByID = [:]; commitsByID = [:]
+            filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:]
             failedRepositories = []
             errorMessage = nil
         case .failure:
@@ -487,7 +519,8 @@ final class PullRequestCenterModel: ObservableObject {
         async let files = api.files(selected)
         async let comments = api.comments(selected)
         async let commits = api.commits(selected)
-        let (updated, loadedFiles, loadedComments, loadedCommits) = await (detail, files, comments, commits)
+        async let events = api.events(selected)
+        let (updated, loadedFiles, loadedComments, loadedCommits, loadedEvents) = await (detail, files, comments, commits, events)
         guard !Task.isCancelled else { return }
         if let updated, let index = records.firstIndex(where: { $0.id == selected.id }) { records[index] = updated }
         // `nil` means this selection has never attempted a detail load. Store
@@ -498,6 +531,7 @@ final class PullRequestCenterModel: ObservableObject {
         filesByID[selected.id] = loadedFiles ?? []
         commentsByID[selected.id] = loadedComments ?? []
         commitsByID[selected.id] = loadedCommits ?? []
+        eventsByID[selected.id] = loadedEvents ?? []
     }
 
     func refreshSelectedDetail() async {
@@ -505,6 +539,7 @@ final class PullRequestCenterModel: ObservableObject {
         filesByID[selected.id] = nil
         commentsByID[selected.id] = nil
         commitsByID[selected.id] = nil
+        eventsByID[selected.id] = nil
         await loadSelectedDetail()
     }
 
@@ -540,6 +575,7 @@ final class PullRequestCenterModel: ObservableObject {
             filesByID[record.id] = nil
             commentsByID[record.id] = nil
             commitsByID[record.id] = nil
+            eventsByID[record.id] = nil
             repairSelection()
         } else if let index = records.firstIndex(where: { $0.id == record.id }) {
             records[index] = updated
@@ -883,6 +919,9 @@ struct PullRequestDetailView: View {
                         )
                         Divider().frame(height: 16)
                     }
+                    AttachToChatMenu { ChatContext(pullRequest: pr) }
+                        .menuStyle(.button)
+                        .fixedSize()
                     Button("Open chat") { onOpenChat(pr) }
                         .buttonStyle(.plain)
                         .font(.system(size: 12, weight: .semibold))
@@ -977,7 +1016,7 @@ struct PullRequestDetailView: View {
             .padding(.top, 20)
         if checksExpanded { checksSection(pr).padding(.top, 12) }
 
-        let activityCount = (center.commitsByID[pr.id] ?? []).count + (center.commentsByID[pr.id] ?? []).count + 1
+        let activityCount = (center.commitsByID[pr.id] ?? []).count + (center.commentsByID[pr.id] ?? []).count + (center.eventsByID[pr.id] ?? []).filter { $0.presentation != nil }.count + 1
         summarySectionHeader("Activity", count: activityCount, isExpanded: $activityExpanded)
             .padding(.top, 20)
         if activityExpanded {
@@ -1059,12 +1098,18 @@ struct PullRequestDetailView: View {
     private func activitySection(_ pr: PullRequestRecord) -> some View {
         let commits = center.commitsByID[pr.id] ?? []
         let comments = center.commentsByID[pr.id] ?? []
+        let events = center.eventsByID[pr.id] ?? []
         return VStack(spacing: 7) {
             ForEach(commits) { commit in
                 activityRow(icon: .gitBranch, iconColor: Color.dockMetadataText, title: commit.message, trailing: String(commit.id.prefix(7)), avatarURL: commit.authorAvatarURL, age: commit.committedAt.map(pullRequestAge))
             }
             ForEach(comments) { comment in
                 activityRow(icon: .chats, iconColor: Color.dockAccent, title: "\(comment.author) commented", detail: comment.body, avatarURL: comment.authorAvatarURL, age: comment.createdAt.map(pullRequestAge))
+            }
+            ForEach(events) { event in
+                if let shown = event.presentation {
+                    activityRow(icon: shown.icon, iconColor: Color.dockMetadataText, title: shown.text, age: event.createdAt.map(pullRequestAge))
+                }
             }
             activityRow(icon: .gitPullRequest, iconColor: Color.dockSuccess, title: "\(pr.author) opened this pull request", age: pr.updatedAt.map(pullRequestAge))
         }

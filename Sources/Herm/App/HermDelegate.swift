@@ -101,6 +101,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private let controlCenter: ControlCenterModel
     private var dockPanel: DockPanelController?
     private var edgeDock: EdgeDockController?
+    private var dockWindow: DockWindowController?
     private var commandDoubleTapDetector = CommandDoubleTapDetector()
     private var optionDoubleTapDetector = CommandDoubleTapDetector()
     private var commandEventMonitors: [Any] = []
@@ -131,6 +132,11 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             placement: { [weak edge] in edge?.placement },
             onWillShow: { [weak edge] in edge?.prepareForWorkspace() },
             onHide: { [weak edge] in edge?.restoreNotch() })
+        let window = DockWindowController(model: model, controlCenter: controlCenter)
+        dockWindow = window
+        dockPanel?.openWindow = { [weak window] in window?.open() }
+        window.onReturnToFloating = { [weak self] in self?.dockPanel?.showFromNotification() }
+        if UserDefaults.standard.bool(forKey: DockWindowController.wasOpenKey) { window.open() }
         NSApp.applicationIconImage = DockAppBrand.icon
         if ScrollPerformanceFixture.isRequested {
             let fixture = ScrollPerformanceFixture.standard
@@ -233,6 +239,12 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         }
     }
 
+    /// Clicking the Dock icon (shown while the window is open) brings it back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        dockWindow?.open()
+        return true
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // This is deliberately explicit: a menu-bar app can terminate without
         // releasing its delegate/model graph, so deinit is not a process-life
@@ -289,6 +301,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private let placement: () -> EdgeDockPlacement?
     private let onWillShow: () -> Void
     private let onHide: () -> Void
+    var openWindow: (() -> Void)?
 
     var statusItemDiagnostic: NSStatusBarButton? { statusItem.button }
     var statusItemIsVisible: Bool { statusItem.isVisible }
@@ -380,6 +393,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 self?.hide()
             }, onFullscreenToggle: { [weak self] in
                 self?.toggleFullscreen()
+            }, onOpenWindow: { [weak self] in
+                self?.hide()
+                self?.openWindow?()
             })
         )
         hostingView.onHoverChanged = { [weak self] inside in

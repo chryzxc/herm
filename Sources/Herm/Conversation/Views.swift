@@ -259,6 +259,10 @@ struct DockPopover: View {
     var onWorkspaceWidthChange: (CGFloat) -> CGFloat = { $0 }
     var onClose: () -> Void = {}
     var onFullscreenToggle: () -> Void = {}
+    /// Floating panel: open the docked window. Docked window: return to floating.
+    var onOpenWindow: (() -> Void)?
+    /// The native window supplies its own frame, so drop the rounded surface.
+    var usesWindowChrome = false
     @State private var isConversationAtBottom = true
     @State private var clarificationSelection: [String] = []
     @State private var valuePromptText = ""
@@ -291,6 +295,7 @@ struct DockPopover: View {
     @StateObject private var developerWorkflow = DeveloperWorkflowModel()
     @StateObject private var pullRequestCenter = PullRequestCenterModel()
     @StateObject private var pullRequestChatLinks = PullRequestChatLinkStore()
+    @State private var chatContextRouter = ChatContextRouter()
     @StateObject private var repositoryPreferences = CommandCenterPreferencesStore()
     @ObservedObject private var dockThemeStore = DockThemeStore.shared
     @StateObject private var botMode = BotModeModel()
@@ -444,6 +449,7 @@ struct DockPopover: View {
 
     var body: some View {
         observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(rootPopoverContent))))
+            .environment(\.chatContextRouter, chatContextRouter)
     }
 
     private func observerLayerOne<V: View>(_ view: V) -> some View {
@@ -456,6 +462,12 @@ struct DockPopover: View {
         }
         .onAppear {
             configureWorkspaceOnAppear()
+            chatContextRouter.model = model
+            chatContextRouter.onOpened = { sessionID in
+                missionControlNavigation.openPullRequestChat(sessionID: sessionID)
+                fullscreenSurface = .conversation
+                inspectorScope = .session
+            }
         }
         .onChange(of: isWorkspaceVisible) { _, visible in
             handleWorkspaceVisibilityChange(visible)
@@ -553,16 +565,16 @@ struct DockPopover: View {
             .background { DockWindowBackground() }
             .clipShape(DockPanelSurfaceShape(
                 isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
-                cornerRadius: isFullscreen ? 0 : 22,
+                cornerRadius: usesWindowChrome ? 0 : 22,
                 edgeSide: panelPresentation.edgeSide
             ))
             .overlay {
                 DockPanelSurfaceShape(
                     isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
-                    cornerRadius: isFullscreen ? 0 : 22,
+                    cornerRadius: usesWindowChrome ? 0 : 22,
                     edgeSide: panelPresentation.edgeSide
                 )
-                    .stroke(Color.dockBorderStrong, lineWidth: panelPresentation.isEdgeAttached ? 1 : 0.5)
+                    .stroke(Color.dockBorderStrong, lineWidth: usesWindowChrome ? 0 : panelPresentation.isEdgeAttached ? 1 : 0.5)
             }
             .dockThemedRoot()
             .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : nil)
@@ -766,6 +778,7 @@ struct DockPopover: View {
             switch sessionWorkspaceMode {
             case .chat:
                 conversation
+                    .overlay(alignment: .top) { ChatQuotaBanner(control: controlCenter, metrics: conversationMetrics) }
                 ChatComposerView(
                     model: model,
                     composer: model.composer,
@@ -773,7 +786,9 @@ struct DockPopover: View {
                     botMode: botMode,
                     onStop: stopCurrentRequest,
                     isFullscreen: isFullscreen,
-                    metrics: conversationMetrics
+                    metrics: conversationMetrics,
+                    controlCenter: controlCenter,
+                    openQuota: { panelPresentation.quotaRequest += 1 }
                 )
             case .voice:
                 if isVoiceImmersive {
@@ -1043,7 +1058,9 @@ struct DockPopover: View {
             showsFullscreenToggle: true,
             isFullscreen: isFullscreen,
             onFullscreenToggle: toggleFullscreen,
-            onSelectProfile: { botMode.selectProfile($0) }
+            onSelectProfile: { botMode.selectProfile($0) },
+            onOpenWindow: onOpenWindow,
+            isDockedWindow: usesWindowChrome
         )
     }
 
@@ -1760,7 +1777,7 @@ struct DockPopover: View {
             }
             .menuStyle(.borderlessButton)
             .buttonStyle(.borderless)
-            .disabled(model.sessionID == nil ? model.isUpdatingDefaultReasoning : model.isUpdatingSessionReasoning)
+            .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
             .help("Change thinking depth for \(configurationScopeLabel)")
             .accessibilityLabel("Thinking depth for \(configurationScopeLabel): \(sessionReasoningDisplayName)")
         }
@@ -2364,7 +2381,6 @@ struct DockPopover: View {
                         scrollBookkeeping.isPaging = false
                         scrollBookkeeping.lastRenderedMessageBubbleCount = renderedMessageBubbleCount
                         streamingTailScroll.cancel()
-                        scrollBookkeeping.isTransientTailAdjustmentScheduled = false
                         scrollBookkeeping.isPastEndRepairScheduled = false
                         scrollBookkeeping.isHistoryCompactionScheduled = false
                         scrollConversationToBottom(proxy)
@@ -2449,20 +2465,20 @@ struct DockPopover: View {
                             unseenMessageCount += newBubbleCount
                         }
                     }
-                    .onChange(of: model.approvalText) { _, _ in
-                        guard isConversationAtBottom else { return }
-                        scheduleTransientTailAdjustment(proxy)
+                    // Hermes parks the turn on these prompts with a deadline
+                    // (approvals: 60s). A card mounted below the viewport
+                    // times out unseen, so a new prompt always scrolls in.
+                    .onChange(of: model.approvalText) { _, text in
+                        if text != nil { revealBlockingPrompt() }
                     }
-                    .onChange(of: model.valuePrompt?.requestID) { _, _ in
+                    .onChange(of: model.valuePrompt?.requestID) { _, requestID in
                         valuePromptText = ""
                         valuePromptIdentifier = ""
-                        guard isConversationAtBottom else { return }
-                        scheduleTransientTailAdjustment(proxy)
+                        if requestID != nil { revealBlockingPrompt() }
                     }
-                    .onChange(of: model.clarificationQuestion) { _, _ in
+                    .onChange(of: model.clarificationQuestion) { _, question in
                         clarificationSelection = []
-                        guard isConversationAtBottom else { return }
-                        scheduleTransientTailAdjustment(proxy)
+                        if question != nil { revealBlockingPrompt() }
                     }
                     .onDisappear { streamingTailScroll.cancel() }
                     .onReceive(model.streamingText.$chunks) { _ in
@@ -2770,18 +2786,9 @@ struct DockPopover: View {
         }
     }
 
-    private func scheduleTransientTailAdjustment(_ proxy: ScrollViewProxy) {
-        guard !scrollBookkeeping.isTransientTailAdjustmentScheduled else { return }
-        scrollBookkeeping.isTransientTailAdjustmentScheduled = true
-        Task { @MainActor in
-            // Approval, clarification, and activity rows resize the transcript.
-            // Wait through the layout turns and issue one footer request only
-            // for a viewport that was pinned.
-            await Task.yield()
-            await Task.yield()
-            scrollBookkeeping.isTransientTailAdjustmentScheduled = false
-            proxy.scrollTo("conversation-bottom", anchor: .bottom)
-        }
+    private func revealBlockingPrompt() {
+        isConversationAtBottom = true
+        conversationScrollRequest &+= 1
     }
 
     private func schedulePastEndRepair(_ proxy: ScrollViewProxy) {
@@ -3267,6 +3274,8 @@ private struct MissionControlQueue: View {
     let isFullscreen: Bool
     let onFullscreenToggle: () -> Void
     let onSelectProfile: (String) -> Void
+    let onOpenWindow: (() -> Void)?
+    let isDockedWindow: Bool
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
     @State private var creatingProjectPath: String?
@@ -3300,7 +3309,9 @@ private struct MissionControlQueue: View {
         showsFullscreenToggle: Bool,
         isFullscreen: Bool,
         onFullscreenToggle: @escaping () -> Void,
-        onSelectProfile: @escaping (String) -> Void
+        onSelectProfile: @escaping (String) -> Void,
+        onOpenWindow: (() -> Void)? = nil,
+        isDockedWindow: Bool = false
     ) {
         self.model = model
         self.botMode = botMode
@@ -3329,6 +3340,8 @@ private struct MissionControlQueue: View {
         self.isFullscreen = isFullscreen
         self.onFullscreenToggle = onFullscreenToggle
         self.onSelectProfile = onSelectProfile
+        self.onOpenWindow = onOpenWindow
+        self.isDockedWindow = isDockedWindow
     }
 
     private var readyTasks: [WorkspaceTask] {
@@ -3404,16 +3417,17 @@ private struct MissionControlQueue: View {
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 4) {
+            // One row: identity takes the free width, window chrome stays quiet,
+            // and the primary action is the only prominent control.
+            HStack(spacing: 2) {
                 profileHeader(style: style)
-                DockIconButton(
-                    icon: .chartBar,
-                    label: "Usage",
-                    isProminent: navigationState.selection.isGlobalSelected(.usage),
-                    style: style
-                ) {
-                    navigationState.selectGlobal(.usage)
-                    onOpenGlobal(.usage)
+                if let onOpenWindow {
+                    DockIconButton(
+                        icon: isDockedWindow ? .pictureInPicture : .appWindow,
+                        label: isDockedWindow ? "Back to floating panel" : "Open as window",
+                        style: style,
+                        action: onOpenWindow
+                    )
                 }
                 if showsFullscreenToggle {
                     DockIconButton(
@@ -3430,6 +3444,7 @@ private struct MissionControlQueue: View {
                     style: style,
                     action: onNewConversation
                 )
+                .padding(.leading, 2)
             }
             .padding(.horizontal, 6)
             .frame(height: 56)
@@ -3442,6 +3457,7 @@ private struct MissionControlQueue: View {
             }
 
             VStack(spacing: 2) {
+                globalRailDestination(.usage, style: style)
                 globalRailDestination(.quota, style: style)
                 globalRailDestination(.core, style: style)
             }
@@ -3669,7 +3685,7 @@ private struct MissionControlQueue: View {
                     activeSessionID: sidebarSnapshot.inputs.activeSessionID,
                     attentionDots: sidebarSnapshot.attentionDots,
                     sessionStatuses: statuses,
-                    isLoadingProjects: sidebarSnapshot.inputs.isRefreshing && projects.isEmpty,
+                    isLoadingProjects: sidebarSnapshot.inputs.isLoadingProjects,
                     isRefreshing: sidebarSnapshot.inputs.isRefreshingProjectNavigation,
                     isCreatingChat: sidebarSnapshot.inputs.isCreatingSession,
                     style: style,
@@ -4479,6 +4495,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
     @State private var renameError: String?
+    @State private var titleFieldDidFocus = false
     @FocusState private var titleFieldFocused: Bool
     @FocusState private var rowFocused: Bool
 
@@ -4569,11 +4586,15 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             if editing {
                 titleDraft = session.displayTitle
                 renameError = nil
-                DispatchQueue.main.async { titleFieldFocused = true }
+                titleFieldDidFocus = false
+                // The context menu is still dismissing and reclaims focus; wait for it.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { titleFieldFocused = true }
             }
         }
         .onChange(of: titleFieldFocused) { _, focused in
-            if !focused, isEditingTitle, pendingAction == nil { cancelRename() }
+            if focused { titleFieldDidFocus = true }
+            // Only treat blur as cancel once the field actually had focus.
+            else if titleFieldDidFocus, isEditingTitle, pendingAction == nil { cancelRename() }
         }
     }
 
@@ -4667,17 +4688,22 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     }
 
     /// Leading status slot. Fixed width keeps titles aligned whether or not a
-    /// row has status; a static glyph (no spinner) keeps scrolling cheap.
+    /// row has status. Only working rows spin, so scrolling stays cheap.
     private var statusIndicator: some View {
         Group {
             switch sessionStatus {
+            case .working:
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.6)
+                    .tint(statusColor)
             case .needsAttention:
                 DockIcon(.warningCircle, size: 10, color: statusColor)
             case .failed:
                 DockIcon(.xCircle, size: 10, color: statusColor)
             case .unreadComplete:
                 Circle().frame(width: 6, height: 6)
-            case .working, .none:
+            case .none:
                 Color.clear
             }
         }
@@ -5145,7 +5171,6 @@ fileprivate final class ConversationTranscriptBookkeeping {
     var pendingAnchor: ConversationScrollAnchor?
     /// A history page is mounting; edge checks wait for the next settle.
     var isPaging = false
-    var isTransientTailAdjustmentScheduled = false
     var isPastEndRepairScheduled = false
     var isHistoryCompactionScheduled = false
     var consumedTranscriptPrependGeneration = 0

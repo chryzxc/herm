@@ -124,6 +124,8 @@ final class ControlCenterModel: ObservableObject {
     /// Failures of quota-card actions (such as removing a Hermes-pooled
     /// account), keyed by provider id and shown on that card.
     @Published private(set) var providerQuotaActionErrors: [String: String] = [:]
+    /// `provider/id` of each pooled credential Hermes currently selects.
+    @Published private(set) var hermesActiveCredentialKeys: Set<String> = []
     @Published private(set) var projectionRefreshStates: [String: ProjectionRefreshState] = [:]
     @Published private(set) var projectionStates: [String: HermesProjectionState<Int>] = [:]
 
@@ -934,6 +936,7 @@ final class ControlCenterModel: ObservableObject {
                 applyProviderQuotaPresentation()
             }
             if !seen.isEmpty {
+                refreshHermesActiveCredentials()
                 recordProjectionSuccess("provider.quota")
             } else {
                 recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")
@@ -1033,6 +1036,124 @@ final class ControlCenterModel: ObservableObject {
 
     static func hermesCredentialRemovalActionID(_ providerID: String) -> String {
         "quota.hermesCredential.remove.\(providerID)"
+    }
+
+    /// Re-reads which pooled credential Hermes would pick next (the `←` row of
+    /// `hermes auth list`), keyed `provider/id`. Under `round_robin` that is the
+    /// account next in line, since Hermes rotates the order after each pick.
+    func refreshHermesActiveCredentials() {
+        guard let cli, reportedProviderQuotas.contains(where: { $0.hermesCredential != nil }) else { return }
+        Task {
+            await restoreHermesPrimaryCredentials(cli)
+            guard let result = try? await cli.authList(), result.succeeded else { return }
+            let active = Self.hermesActiveCredentialKeys(fromAuthList: result.stdout)
+            if active != hermesActiveCredentialKeys { hermesActiveCredentialKeys = active }
+        }
+    }
+
+    private static let hermesPrimaryCredentialsKey = "quota.hermesPrimaryCredentials"
+
+    /// Primary picked through Make primary, `provider -> pool entry id`.
+    private var hermesPrimaryCredentials: [String: String] {
+        get { presentationDefaults.dictionary(forKey: Self.hermesPrimaryCredentialsKey) as? [String: String] ?? [:] }
+        set { presentationDefaults.set(newValue, forKey: Self.hermesPrimaryCredentialsKey) }
+    }
+
+    /// Hermes saves a pool with each process's in-memory priorities, so a
+    /// gateway or session that loaded the pool before Make primary writes the
+    /// old order back on its next flush (token refresh, rotation). Re-apply the
+    /// user's pick whenever it has slipped, but only under `fill_first`, where
+    /// order is meant to be stable; a pick whose account is gone is forgotten.
+    private func restoreHermesPrimaryCredentials(_ cli: HermesCLIAdapter) async {
+        let pins = hermesPrimaryCredentials
+        guard !pins.isEmpty else { return }
+        if configEditor.state == .idle { await configEditor.load() }
+        guard configEditor.state == .ready else { return }
+        let credentials = reportedProviderQuotas.compactMap(\.hermesCredential)
+        let plan = Self.hermesPrimaryRestorePlan(pins: pins, credentials: credentials) {
+            self.configEditor.value("credential_pool_strategies.\($0)") as? String
+        }
+        if plan.forget.isEmpty == false {
+            hermesPrimaryCredentials = pins.filter { !plan.forget.contains($0.key) }
+        }
+        for credential in plan.restore {
+            _ = try? await cli.authPriority(provider: credential.provider, credentialID: credential.id, priority: 0)
+        }
+    }
+
+    nonisolated static func hermesPrimaryRestorePlan(
+        pins: [String: String],
+        credentials: [HermesPooledCredential],
+        strategy: (String) -> String?
+    ) -> (restore: [HermesPooledCredential], forget: Set<String>) {
+        var restore: [HermesPooledCredential] = []
+        var forget = Set<String>()
+        for (provider, id) in pins {
+            let pool = credentials.filter { $0.provider == provider }
+            // No cards for the provider yet (read failed): keep the pin, decide next refresh.
+            guard !pool.isEmpty else { continue }
+            guard let pinned = pool.first(where: { $0.id == id }) else { forget.insert(provider); continue }
+            let current = strategy(provider) ?? "fill_first"
+            if current == "fill_first", pinned.position != 1 { restore.append(pinned) }
+        }
+        return (restore, forget)
+    }
+
+    func isHermesPinnedPrimary(_ credential: HermesPooledCredential) -> Bool {
+        hermesPrimaryCredentials[credential.provider] == credential.id
+    }
+
+    func isHermesActiveCredential(_ credential: HermesPooledCredential) -> Bool {
+        hermesActiveCredentialKeys.contains("\(credential.provider)/\(credential.id)")
+    }
+
+    /// Parses `hermes auth list`: `<provider> (N credentials):` headers, then
+    /// entry rows carrying `id=<id>` and a trailing `←` on the selected one.
+    nonisolated static func hermesActiveCredentialKeys(fromAuthList output: String) -> Set<String> {
+        var provider = ""
+        var keys = Set<String>()
+        for line in output.split(whereSeparator: \.isNewline) {
+            if !line.hasPrefix(" "), let header = line.split(separator: " ").first, line.hasSuffix("credentials):") {
+                provider = String(header)
+            } else if line.contains("←"),
+                      let id = line.split(separator: " ").first(where: { $0.hasPrefix("id=") })?.dropFirst(3), !id.isEmpty {
+                keys.insert("\(provider)/\(id)")
+            }
+        }
+        return keys
+    }
+
+    static func hermesCredentialPrimaryActionID(_ providerID: String) -> String {
+        "quota.hermesCredential.primary.\(providerID)"
+    }
+
+    /// Moves a pooled account to the front of Hermes' pool order through
+    /// `hermes auth priority <provider> <id> 0`. Under `round_robin` Hermes
+    /// rotates the order after each pick, so it only stays first until then.
+    func makeHermesPooledCredentialPrimary(for providerID: String) {
+        guard let credential = reportedProviderQuotas.first(where: { $0.provider == providerID })?.hermesCredential else { return }
+        guard let cli else {
+            providerQuotaActionErrors[providerID] = "Hermes is not connected, so the account order could not be changed."
+            return
+        }
+        let actionID = Self.hermesCredentialPrimaryActionID(providerID)
+        guard beginAction(actionID) else { return }
+        providerQuotaActionErrors[providerID] = nil
+        Task {
+            defer { finishAction(actionID) }
+            do {
+                let result = try await cli.authPriority(provider: credential.provider, credentialID: credential.id, priority: 0)
+                guard result.succeeded else {
+                    let message = Self.safeUserDiagnostic(result.stderr)
+                    providerQuotaActionErrors[providerID] = message.isEmpty ? "Hermes could not reorder this account." : message
+                    return
+                }
+                hermesPrimaryCredentials[credential.provider] = credential.id
+                refreshProviderQuota()
+            } catch {
+                providerQuotaActionErrors[providerID] = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            }
+        }
     }
 
     /// Removes a Hermes-pooled account from Hermes itself through
@@ -2051,7 +2172,8 @@ final class ControlCenterModel: ObservableObject {
             do {
                 let result = try await cli.kanbanList(
                     boardSlug: requestedBoardSlug,
-                    filter: KanbanListFilter(sort: "updated")
+                    // Finished session cards get archived; keep them in Recent.
+                    filter: KanbanListFilter(includeArchived: true, sort: "updated")
                 )
                 let parsed = result.succeeded
                     ? await Self.parseKanbanTasksOffMain(result.stdout, boardSlug: requestedBoardSlug)
@@ -2089,7 +2211,9 @@ final class ControlCenterModel: ObservableObject {
                 // <task-id>`, that exact command is stronger attribution
                 // evidence than the missing database field. Enrich only
                 // those exact IDs; never match by assignee or title.
-                let knownIDs = Set(sessionTasks.map(\.id))
+                // Cards already in the list were judged above; only look up the
+                // missing ones, or rehydrating a busy session takes minutes.
+                let knownIDs = Set(parsed.map(\.id))
                 for taskID in observedIDs where !knownIDs.contains(taskID) {
                     guard let shown = try? await cli.kanbanShow(boardSlug: requestedBoardSlug, taskID: taskID),
                           shown.succeeded,
@@ -2985,7 +3109,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func updateKanbanTask(_ task: KanbanTaskSummary, action: KanbanTaskAction) {
-        guard let cli, capabilityAvailable("kanban.\(action.rawValue)") else { return }
+        guard let cli, canMutateKanbanTask(action) else { return }
         let actionID = kanbanActionID(action, task: task)
         guard beginAction(actionID) else { return }
         Task {
@@ -3057,6 +3181,12 @@ final class ControlCenterModel: ObservableObject {
 
     /// Lane drops PATCH the same plugin route the board is read from, so the
     /// board being loaded is the capability.
+    /// The capability probe runs through the gateway's shell, which can miss a
+    /// `hermes` the CLI adapter does reach. A loaded board proves the adapter works.
+    func canMutateKanbanTask(_ action: KanbanTaskAction) -> Bool {
+        capabilityAvailable("kanban.\(action.rawValue)") || canMoveKanbanTasks
+    }
+
     var canMoveKanbanTasks: Bool {
         guard cli != nil, let state = refreshState(for: "kanban.board") else { return false }
         return state.lastSuccess != nil && !state.isStale

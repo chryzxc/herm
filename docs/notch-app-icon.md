@@ -1,7 +1,7 @@
 # App icon
 
-Herm's icon is the MacBook notch worn like Hermes' winged helmet: gold wings
-spread from a black notch with a glowing status light, on an indigo tile. It is drawn in code so it can be tweaked and rebuilt:
+Herm's icon is a teal-to-indigo lowercase "h" on a black tile, with the MacBook
+notch and a green status light cut into the top edge. It is drawn in code so it can be tweaked and rebuilt:
 
 ```sh
 swift Scripts/generate-app-icon.swift Sources/Herm/Resources/DockAppIcon.png

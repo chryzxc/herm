@@ -125,8 +125,8 @@ struct HermesCLIAdapterTests {
 
         #expect(client.httpPaths == [
             "/api/plugins/kanban/boards",
-            "/api/plugins/kanban/board?board=default",
-            "/api/plugins/kanban/board?board=archived-board"
+            "/api/plugins/kanban/board?board=default&include_archived=true",
+            "/api/plugins/kanban/board?board=archived-board&include_archived=true"
         ])
         #expect(result.stdout.contains("archived-task"))
     }

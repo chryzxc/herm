@@ -610,7 +610,7 @@ struct ProfileScopedID: Hashable, Equatable, Sendable {
 struct QueuedPrompt: Identifiable {
     let id = UUID()
     let sessionID: String
-    let text: String
+    var text: String
     let images: [ImageAttachment]
     let pdfURL: URL?
 }
