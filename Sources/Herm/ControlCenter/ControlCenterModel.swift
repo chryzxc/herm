@@ -2148,7 +2148,10 @@ final class ControlCenterModel: ObservableObject {
 
     /// Refreshes the Kanban projection for the currently focused session without
     /// mutating the global board projection used by the Kanban tab.
-    func refreshSessionKanban(for sessionID: String? = nil) {
+    /// `quiet` is the chat's background poll: it publishes only when the
+    /// session's cards changed, since every publish re-renders the whole
+    /// chat view and stutters a transcript being scrolled.
+    func refreshSessionKanban(for sessionID: String? = nil, quiet: Bool = false) {
         let candidateSessionID = sessionID ?? dockModel?.sessionID
         let requestedSessionID = candidateSessionID == dockModel?.sessionID
             ? dockModel?.kanbanSessionID
@@ -2177,9 +2180,9 @@ final class ControlCenterModel: ObservableObject {
         if isNewProjection {
             sessionKanbanTasks = sessionKanbanTasksByRequest[requested] ?? []
         }
-        sessionKanbanSessionID = requestedSessionID
+        if sessionKanbanSessionID != requestedSessionID { sessionKanbanSessionID = requestedSessionID }
         sessionKanbanBoardSlug = requestedBoardSlug
-        beginProjectionRefresh("kanban.session")
+        if !quiet { beginProjectionRefresh("kanban.session") }
 
         guard Self.shouldAttemptSessionKanbanQuery(
             sessionID: requestedSessionID,
@@ -2187,7 +2190,7 @@ final class ControlCenterModel: ObservableObject {
         ),
         let requestedSessionID,
         let cli else {
-            recordProjectionFailure("kanban.session", error: "Kanban is unavailable for the current session.")
+            if !quiet { recordProjectionFailure("kanban.session", error: "Kanban is unavailable for the current session.") }
             return
         }
 
@@ -2226,6 +2229,7 @@ final class ControlCenterModel: ObservableObject {
                     requestedBoardSlug: requestedBoardSlug
                 ) else { return }
                 guard result.succeeded else {
+                    if quiet { return }
                     self.recordProjectionFailure(
                         "kanban.session",
                         error: Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes Kanban is unavailable." : Self.safeUserDiagnostic(result.stderr)
@@ -2235,6 +2239,7 @@ final class ControlCenterModel: ObservableObject {
                 // A card may carry any of the session's aliases (runtime,
                 // storage or attribution ID), so match them all.
                 guard let parsed else {
+                    if quiet { return }
                     self.recordProjectionFailure("kanban.session", error: "Hermes returned malformed Kanban data.")
                     return
                 }
@@ -2277,14 +2282,14 @@ final class ControlCenterModel: ObservableObject {
                         requestedBoardSlug: requestedBoardSlug
                       ) else { return }
                 self.sessionKanbanTasksByRequest[requested] = sessionTasks
-                self.sessionKanbanTasks = sessionTasks
-                self.recordProjectionSuccess("kanban.session")
+                if self.sessionKanbanTasks != sessionTasks { self.sessionKanbanTasks = sessionTasks }
+                if !quiet { self.recordProjectionSuccess("kanban.session") }
                 if requestedSessionID == self.dockModel?.kanbanSessionID {
                     await self.syncKanbanEventsIntoChat(sessionTasks, cli: cli)
                 }
             } catch {
                 guard generation == self.sessionKanbanRefreshGeneration,
-                      self.sessionKanbanSessionID == requestedSessionID else { return }
+                      self.sessionKanbanSessionID == requestedSessionID, !quiet else { return }
                 self.recordProjectionFailure("kanban.session", error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }

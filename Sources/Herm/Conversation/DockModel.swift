@@ -4358,7 +4358,13 @@ final class DockModel: ObservableObject {
         // A repeated status line (retries) doesn't stack identical cards.
         guard !messages.suffix(2).contains(where: { $0.systemEvent == event && $0.text == text }) else { return }
         if let key { systemEventMessageIDs[key] = message.id }
-        appendBelowLiveTurn(message)
+        // Above the live reply rather than splitting it: a split remounts the
+        // streaming row and jolts the transcript mid-turn.
+        if let id = streamingMessageID, let index = messages.firstIndex(where: { $0.id == id }) {
+            messages.insert(message, at: index)
+        } else {
+            messages.append(message)
+        }
     }
 
     private func appendBelowLiveTurn(_ message: ChatMessage) {

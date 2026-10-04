@@ -468,7 +468,7 @@ struct DockPopover: View {
                 try? await Task.sleep(for: .seconds(15))
                 guard !Task.isCancelled, let sessionID = model.kanbanSessionID,
                       controlCenter.capabilityAvailable("kanban") else { continue }
-                controlCenter.refreshSessionKanban(for: sessionID)
+                controlCenter.refreshSessionKanban(for: sessionID, quiet: true)
             }
         }
         .onAppear {
