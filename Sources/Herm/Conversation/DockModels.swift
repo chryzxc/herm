@@ -510,9 +510,14 @@ struct FeedLine: Equatable {
     var detail: String?
 
     init(_ text: String) {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // Any plugin's text works: the first line with words is the headline
+        // (leading glyphs and heading marks dropped), the rest is detail.
+        let strip = { (line: String) in String(line.drop { !$0.isLetter && !$0.isNumber && $0 != "*" && $0 != "`" }) }
+        var lines = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        while lines.count > 1, strip(lines[0]).isEmpty { lines.removeFirst() }
         let segments = (lines.first ?? "").components(separatedBy: " · ")
-        headline = String(segments[0].drop { !$0.isLetter && !$0.isNumber && $0 != "*" && $0 != "`" })
+        headline = strip(segments[0])
         for segment in segments.dropFirst() {
             var leftover: [Substring] = []
             for word in segment.split(separator: " ") {
@@ -596,9 +601,20 @@ struct SystemEvent: Equatable {
         case "🔍", "👀": .review
         case "🔁", "🔄", "→": .queued
         case "↩", "⏸", "⛔", "🛑", "✖", "✘", "❌", "⚠": .attention
-        default: .inactive
+        default: keywordTone(text)
         }
         return SystemEvent(label: source, tone: tone, isFeed: true)
+    }
+
+    /// Fallback for plugins that post plain words instead of status glyphs.
+    private static func keywordTone(_ text: String) -> DockStatusTone {
+        let head = (text.split(separator: "\n").first.map(String.init) ?? text).lowercased()
+        let has = { (words: [String]) in words.contains { head.contains($0) } }
+        if has(["fail", "error", "blocked", "rejected", "changes requested", "crash", "timed out"]) { return .attention }
+        if has(["review"]) { return .review }
+        if has(["done", "complete", "approved", "passed", "success", "merged", "finished"]) { return .complete }
+        if has(["start", "running", "in progress", "working"]) { return .working }
+        return .inactive
     }
 
     static func humanized(_ raw: String) -> String {

@@ -113,3 +113,13 @@ struct BotMessageAttributionTests {
     #expect(line.detail == "Addressed it.\n→ Next: **Fix 2** · @forge")
     #expect(FeedLine("plain note").headline == "plain note")
 }
+
+@Test func feedFallbacksCoverOtherPlugins() {
+    #expect(SystemEvent.feed(source: "deployer", text: "Deploy failed on staging").tone == .attention)
+    #expect(SystemEvent.feed(source: "deployer", text: "Build passed").tone == .complete)
+    #expect(SystemEvent.feed(source: "deployer", text: "Nightly sync").tone == .inactive)
+    let line = FeedLine("\n🚀\n## Release 1.2 shipped\nnotes here")
+    #expect(line.headline == "Release 1.2 shipped")
+    #expect(line.detail == "notes here")
+    #expect(line.bots.isEmpty && line.id == nil)
+}

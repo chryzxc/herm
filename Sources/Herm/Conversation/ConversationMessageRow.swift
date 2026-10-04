@@ -512,17 +512,21 @@ struct FeedEventRow: View {
         }
     }
 
+    /// Detail lines, or a headline too long for one line, can expand.
+    private var canExpand: Bool { line.detail != nil || line.headline.count > 90 }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DockSpacing.micro) {
             Button {
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
             } label: {
-                HStack(spacing: DockSpacing.tight) {
+                HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
                     DockIcon(icon, size: 13, weight: .fill, color: event.tone.color)
-                    SystemEventCard.inlineMarkdown(line.headline)
+                    SystemEventCard.inlineMarkdown(line.headline.isEmpty ? event.label : line.headline)
                         .font(DockTypography.body)
                         .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
+                        .lineLimit(isExpanded ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: isExpanded)
                         .layoutPriority(1)
                     ForEach(Array(line.bots.enumerated()), id: \.offset) { _, id in
                         botChip(id)
@@ -531,9 +535,10 @@ struct FeedEventRow: View {
                         Text(tag).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                     }
                     Spacer(minLength: DockSpacing.control)
+                    Text(event.label).help("Posted by the \(event.label) plugin")
                     if let id = line.id { Text(id) }
                     Text(timeLabel)
-                    if line.detail != nil {
+                    if canExpand {
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
                     }
                 }
@@ -548,9 +553,9 @@ struct FeedEventRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(line.detail == nil)
+            .disabled(!canExpand)
             .onHover { isHovering = $0 }
-            .help(line.detail == nil ? "" : (isExpanded ? "Hide details" : "Show details"))
+            .help(canExpand ? (isExpanded ? "Hide details" : "Show details") : "")
 
             if isExpanded, let detail = line.detail {
                 SystemEventCard.inlineMarkdown(detail)
