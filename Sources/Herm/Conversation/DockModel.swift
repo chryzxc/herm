@@ -2205,7 +2205,8 @@ final class DockModel: ObservableObject {
         guard let originSessionID = sessionStorageID ?? sessionID, !originSessionID.isEmpty else { return }
         var existing = Set(botActivityBySessionID[originSessionID, default: []].compactMap { $0.result })
         for (index, message) in messages.enumerated() {
-            guard let botID = message.botProfileID,
+            // Kanban notices are board events, not replies to a bot request.
+            guard let botID = message.botProfileID, message.kanbanNotice == nil,
                   !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !existing.contains(message.text) else { continue }
             let request = index > 0 && messages[index - 1].role == .user
@@ -2241,10 +2242,13 @@ final class DockModel: ObservableObject {
         for sessionID in sessionIDs.compactMap({ $0 }).filter({ !$0.isEmpty }) {
             guard let records = botActivityBySessionID[sessionID] else { continue }
             for record in records {
+                // Records projected from transcript rows (no request, e.g. kanban
+                // notices) already live in the transcript; replaying them adds a
+                // fake "@bot Bot response" user bubble and an uncarded copy.
                 guard seenActivityIDs.insert(record.id).inserted,
-                      record.state == .completed,
+                      record.state == .completed, record.summary != "Bot response",
                       let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !result.isEmpty else { continue }
+                      !result.isEmpty, Self.kanbanNotices(from: result) == nil else { continue }
                 let userText = "@\(record.botName) \(record.summary)"
                 let alreadyPresent = messages.contains { $0.text == result && $0.botProfileID == record.botID }
                 guard !alreadyPresent else { continue }

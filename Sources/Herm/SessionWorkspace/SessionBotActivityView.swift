@@ -19,7 +19,7 @@ struct SessionBotActivityView: View {
         let originSessionID = model.kanbanSessionID ?? sessionID
         for (index, message) in model.messages.enumerated() {
             guard let botID = message.botProfileID,
-                  message.role == .hermes,
+                  message.role == .hermes, message.kanbanNotice == nil,
                   !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !knownResults.contains(message.text),
                   let originSessionID else { continue }
