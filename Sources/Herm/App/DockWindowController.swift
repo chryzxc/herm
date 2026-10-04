@@ -16,7 +16,9 @@ final class DockWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     var onReturnToFloating: (() -> Void)?
 
-    var isOpen: Bool { window?.isVisible == true }
+    /// Window mode: true from `open()` until the user closes the window. Hiding
+    /// via the shortcut or minimizing keeps it, so the floating panel stays away.
+    private(set) var isOpen = false
 
     init(model: DockModel, controlCenter: ControlCenterModel) {
         self.model = model
@@ -27,14 +29,29 @@ final class DockWindowController: NSObject, NSWindowDelegate {
     func open() {
         let window = window ?? makeWindow()
         self.window = window
+        isOpen = true
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate()
+        // A global shortcut fires while another app is frontmost; cooperative
+        // activation can be refused there, so take focus explicitly.
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         model.markPopoverVisible()
         UserDefaults.standard.set(true, forKey: Self.wasOpenKey)
     }
 
+    /// Shortcut: hide when frontmost, otherwise bring it on top of other apps.
+    func toggle() {
+        if let window, window.isKeyWindow, NSApp.isActive {
+            window.orderOut(nil)
+            model.markPopoverHidden()
+        } else {
+            open()
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
+        isOpen = false
         NSApp.setActivationPolicy(.accessory)
         model.markPopoverHidden()
         UserDefaults.standard.set(false, forKey: Self.wasOpenKey)

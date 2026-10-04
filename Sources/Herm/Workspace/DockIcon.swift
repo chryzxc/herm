@@ -84,7 +84,7 @@ extension Ph {
     func appKitMenuImage(
         size: CGFloat = 16,
         weight: DockIcon.Weight = .regular,
-        color: NSColor = .labelColor
+        color: NSColor = NSColor(Color.dockPrimaryText)
     ) -> NSImage {
         let path = cgPath(weight)
         let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { rect in
@@ -102,7 +102,7 @@ extension Ph {
     func image(
         size: CGFloat = 16,
         weight: DockIcon.Weight = .regular,
-        color: NSColor = .labelColor
+        color: NSColor = NSColor(Color.dockPrimaryText)
     ) -> Image {
         Image(nsImage: appKitMenuImage(size: size, weight: weight, color: color))
             .renderingMode(.original)

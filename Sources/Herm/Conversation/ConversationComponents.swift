@@ -517,13 +517,18 @@ enum CompletedMarkdownRendererPolicy {
 struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
   let markdown: String
   let themeRevision: Int
+  /// Hug the widest laid-out line instead of filling the proposed width, so a
+  /// short message in a bubble doesn't stretch to the bubble's max width.
+  var hugsContent = false
 
   init(
     markdown: String,
-    themeRevision: Int = DockThemeRuntime.revision
+    themeRevision: Int = DockThemeRuntime.revision,
+    hugsContent: Bool = false
   ) {
     self.markdown = markdown
     self.themeRevision = themeRevision
+    self.hugsContent = hugsContent
   }
 
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
@@ -555,7 +560,9 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
     } else {
       width = NativeMarkdownDocumentSizing.fallbackWidth
     }
-    return CGSize(width: width, height: nsView.measuredHeight(forWidth: width))
+    let height = nsView.measuredHeight(forWidth: width)
+    guard hugsContent else { return CGSize(width: width, height: height) }
+    return CGSize(width: min(width, nsView.usedWidth(forWidth: width)), height: height)
   }
 
   @MainActor

@@ -30,7 +30,7 @@ struct HermesFeatureContractTests {
             "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list", "plugins.list", "config.show",
             "projects.tree", "projects.project_sessions", "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach", "session.create", "prompt.submit", "voice.toggle",
             "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "prompt.btw",
-            "voice.record", "config.get", "config.set", "model.options",
+            "voice.record", "voice.tts", "config.get", "config.set", "model.options",
             "profiles.list", "profiles.describe", "profiles.create", "profiles.configure",
             "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore"
         ]

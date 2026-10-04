@@ -304,7 +304,7 @@ struct OfficePreviewAgentPresentation: Identifiable, Equatable, Sendable {
     var hasNoPendingTasks: Bool { mainSession == nil && tasks.allSatisfy { $0.lane == .done } }
     var canWander: Bool { mainSession.map { $0.lane == .done } ?? tasks.allSatisfy { [.todo, .scheduled, .done].contains($0.lane) } }
     var availabilityLabel: String {
-        if let mainSession { return "Nexus orchestrator · \(mainSession.state.replacingOccurrences(of: "_", with: " "))" }
+        if let mainSession { return "Orchestrator · \(mainSession.state.replacingOccurrences(of: "_", with: " "))" }
         if hasNoPendingTasks { return "No pending Kanban tasks" }
         if tasks.contains(where: { $0.lane == .running }) { return "Working" }
         if tasks.contains(where: { $0.lane == .blocked || $0.lane == .unknown }) { return "Needs attention" }
@@ -397,9 +397,11 @@ final class OfficePreviewSimulation: ObservableObject {
 
     func update(bots: [BotSummary], tasks: [KanbanTaskSummary], sessions: [OfficeMainSession] = [], now: Date = Date()) {
         var seen = Set<String>()
+        // The default bot's current name; users can rename it in Hermes.
+        let orchestrator = bots.first(where: \.isDefault)?.name ?? "Hermes"
         let main = sessions.filter { seen.insert($0.id).inserted && ($0.isCurrent || [.running, .blocked].contains($0.lane)) }
             .sorted { $0.id < $1.id }.map {
-                OfficePreviewAgentPresentation(id: "main-session:\($0.id)", name: "Nexus · \($0.title)", tasks: [], mainSession: $0)
+                OfficePreviewAgentPresentation(id: "main-session:\($0.id)", name: "\(orchestrator) · \($0.title)", tasks: [], mainSession: $0)
             }
         var next = main + OfficePreviewResolver.agents(bots: bots, tasks: tasks, includeDefault: main.isEmpty)
         var keys = Set<String>()

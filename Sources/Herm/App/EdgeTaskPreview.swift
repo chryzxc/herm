@@ -199,7 +199,7 @@ struct EdgeTaskPreview: View {
             footer
         }
         .foregroundStyle(Color.dockPrimaryText)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

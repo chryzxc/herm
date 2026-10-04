@@ -49,7 +49,7 @@ struct ConversationMessageRow: View, Equatable {
     let onBranch: () -> Void
     let onReadAloud: () -> Void
     let onRefresh: () -> Void
-    let loadKanbanSummary: ((KanbanNotice) async -> String?)?
+    let loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)?
     init(
         message: ChatMessage,
         isStreamingMessage: Bool,
@@ -68,7 +68,7 @@ struct ConversationMessageRow: View, Equatable {
         onBranch: @escaping () -> Void = {},
         onReadAloud: @escaping () -> Void = {},
         onRefresh: @escaping () -> Void = {},
-        loadKanbanSummary: ((KanbanNotice) async -> String?)? = nil
+        loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)? = nil
     ) {
         self.message = message
         self.isStreamingMessage = isStreamingMessage
@@ -87,7 +87,7 @@ struct ConversationMessageRow: View, Equatable {
         self.onBranch = onBranch
         self.onReadAloud = onReadAloud
         self.onRefresh = onRefresh
-        self.loadKanbanSummary = loadKanbanSummary
+        self.loadKanbanDetail = loadKanbanDetail
     }
 
     nonisolated static func == (lhs: ConversationMessageRow, rhs: ConversationMessageRow) -> Bool {
@@ -161,7 +161,7 @@ struct ConversationMessageRow: View, Equatable {
                         .fixedSize()
                     }
                     if !userText.isEmpty {
-                        messageMarkdownView(userText)
+                        messageMarkdownView(userText, hugsContent: true)
                             .fixedSize(horizontal: false, vertical: true)
                             .foregroundStyle(Color.dockPrimaryText)
                             .padding(.horizontal, 14)
@@ -235,7 +235,7 @@ struct ConversationMessageRow: View, Equatable {
                     }
 
                     if let notice = message.kanbanNotice {
-                        KanbanNoticeCard(notice: notice, loadFullSummary: loadKanbanSummary.map { load in { await load(notice) } })
+                        KanbanNoticeCard(notice: notice, loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
                             .padding(.horizontal, 4)
                             .padding(.vertical, 4)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -324,12 +324,13 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     @ViewBuilder
-    private func messageMarkdownView(_ markdown: String) -> some View {
+    private func messageMarkdownView(_ markdown: String, hugsContent: Bool = false) -> some View {
         // Trailing blank lines would render as empty paragraphs and open a gap
         // above the action row.
         NativeMarkdownMessageView(
             markdown: markdown.trimmingCharacters(in: .whitespacesAndNewlines),
-            themeRevision: themeRevision
+            themeRevision: themeRevision,
+            hugsContent: hugsContent
         )
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -432,14 +433,15 @@ struct ConversationMessageRow: View, Equatable {
 
 /// Kanban wake notice as a signage card (DESIGN.md anatomy): status dot,
 /// card title and id, then the status label in the tone hue with one detail
-/// line. Clicking reveals the full handoff, fetched from the card because
-/// Hermes clips the notice to its first line.
+/// line. Clicking reveals the card's run chain (which bot handed off to
+/// which) and the full handoff, fetched from the card because Hermes only
+/// notifies terminal events and clips the notice to its first line.
 struct KanbanNoticeCard: View {
     let notice: KanbanNotice
-    var loadFullSummary: (() async -> String?)?
+    var loadDetail: (() async -> KanbanTaskDetail?)?
     @State private var isExpanded = false
     @State private var isHovering = false
-    @State private var fullSummary: String?
+    @State private var card: KanbanTaskDetail?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -471,14 +473,28 @@ struct KanbanNoticeCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(isExpanded ? "Hide handoff" : "Show full handoff")
+            .help(isExpanded ? "Hide handoff" : "Show handoffs and full summary")
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: DockSpacing.micro) {
+                    if let runs = card?.runs, runs.count > 1 {
+                        ForEach(runs) { run in
+                            HStack(spacing: DockSpacing.tight) {
+                                Text(run.profile ?? "worker").fontWeight(.medium).foregroundStyle(Color.dockPrimaryText)
+                                Text(Self.outcomeLabel(run)).foregroundStyle(run.error == nil ? Color.dockSecondaryText : Color.dockWarning)
+                                Spacer(minLength: DockSpacing.control)
+                                if let at = run.endedAt ?? run.startedAt {
+                                    Text(at.formatted(date: .omitted, time: .shortened)).foregroundStyle(Color.dockMetadataText)
+                                }
+                            }
+                            .font(DockTypography.machineMetadata)
+                            .help(run.error ?? run.summary ?? "")
+                        }
+                    }
                     Text(notice.label)
                         .font(DockTypography.body.weight(.medium))
                         .foregroundStyle(notice.tone.color)
-                    if let text = fullSummary ?? notice.detail {
+                    if let text = card.flatMap(notice.fullSummary(in:)) ?? notice.detail {
                         Text(text)
                             .font(DockTypography.body)
                             .foregroundStyle(Color.dockSecondaryText)
@@ -488,8 +504,8 @@ struct KanbanNoticeCard: View {
                 }
                 .padding(.leading, 7 + DockSpacing.tight)
                 .task {
-                    guard fullSummary == nil, let loadFullSummary else { return }
-                    fullSummary = await loadFullSummary()
+                    guard card == nil, let loadDetail else { return }
+                    card = await loadDetail()
                 }
             }
         }
@@ -502,5 +518,11 @@ struct KanbanNoticeCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Kanban \(notice.taskID): \(notice.label)\(notice.title.map { ", \($0)" } ?? "")")
+    }
+
+    /// `review_requested` → "Review requested"; falls back to the run status.
+    static func outcomeLabel(_ run: KanbanRunSummary) -> String {
+        let raw = (run.outcome ?? run.status).replacingOccurrences(of: "_", with: " ")
+        return raw.prefix(1).uppercased() + raw.dropFirst()
     }
 }

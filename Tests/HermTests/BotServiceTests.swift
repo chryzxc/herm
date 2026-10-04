@@ -4,6 +4,36 @@ import Testing
 
 @MainActor
 struct BotServiceTests {
+    @Test func parsesRuntimeConfigFallbackChain() {
+        let runtime = BotService.parseRuntimeConfig([
+            "model": ["default": "gpt-6.1-sol", "provider": "openai-codex", "context_length": 200000],
+            "fallback_providers": [["provider": "anthropic", "model": "claude-opus-5-5"], ["provider": "", "model": "x"]],
+            "fallback_model": ["provider": "anthropic", "model": "claude-opus-5-5"],
+            "agent": ["reasoning_effort": "high"],
+            "compression": ["threshold_tokens": 150000],
+        ])
+        #expect(runtime.fallbacks == [.init(provider: "anthropic", model: "claude-opus-5-5")])
+        #expect(runtime.contextLength == 200000)
+        #expect(runtime.reasoningEffort == "high")
+        #expect(runtime.compressionThreshold == 150000)
+        #expect(BotService.parseRuntimeConfig([:]) == BotRuntimeConfig())
+    }
+
+    @Test func fallbackEditWritesProfileScopedChainAndBlanksLegacyKey() async throws {
+        let client = BotFixtureClient(result: [:])
+        try await BotService(client: client).setFallbacks(profileID: "aegis", [
+            .init(provider: "anthropic", model: "claude-opus-5-5", baseURL: "process://x"),
+            .init(provider: "openrouter", model: "gpt-6"),
+        ])
+        #expect(client.methods == ["PUT /api/config"])
+        #expect(client.lastHTTPBody?["profile"] as? String == "aegis")
+        let config = try #require(client.lastHTTPBody?["config"] as? [String: Any])
+        let chain = try #require(config["fallback_providers"] as? [[String: Any]])
+        #expect(chain.map { $0["model"] as? String } == ["claude-opus-5-5", "gpt-6"])
+        #expect(chain[0]["base_url"] as? String == "process://x")
+        #expect((config["fallback_model"] as? [String: String])?["provider"] == "")
+    }
+
     @Test func parsesAndSortsSafeBotRoster() async {
         let client = BotFixtureClient(result: ["profiles": [
             ["id": "research", "name": "Research", "title": "Researcher", "is_active": true, "chat": ["session_id": "chat-research"]],
@@ -472,6 +502,12 @@ private final class BotFixtureClient: HermesRPCClientProtocol {
         return stubNextResult ?? result
     }
     func fetchHTTP(_ path: String) async throws -> [String: Any] { [:] }
+    private(set) var lastHTTPBody: [String: Any]?
+    func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
+        methods.append("\(method) \(path)")
+        lastHTTPBody = body
+        return ["ok": true]
+    }
     func close() {}
 }
 

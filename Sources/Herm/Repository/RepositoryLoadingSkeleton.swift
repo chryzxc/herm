@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum RepositoryShimmerMotion {
-    static let duration: TimeInterval = 1.6
+    static let duration: TimeInterval = 2.0
 
     static func progress(at time: TimeInterval) -> CGFloat {
         CGFloat(time.truncatingRemainder(dividingBy: duration) / duration)
@@ -39,7 +39,7 @@ struct RepositoryShimmerBlock: View {
                         GeometryReader { geometry in
                             let renderedWidth = geometry.size.width
                             LinearGradient(
-                                colors: [.clear, Color.dockPrimaryText.opacity(0.11), .clear],
+                                colors: [.clear, Color.dockPrimaryText.opacity(0.05), .clear],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )

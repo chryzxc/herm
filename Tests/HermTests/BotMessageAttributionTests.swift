@@ -54,5 +54,15 @@ struct BotMessageAttributionTests {
         #expect(restored[3].kanbanNotice == nil)
         #expect(KanbanNotice(text: "⏸ Kanban t_0a1b2c3d blocked: missing env")?.label == "Blocked")
         #expect(KanbanNotice(text: "🔄 Kanban t_0a1b2c3d → ready")?.label == "Moved to ready")
+
+        var card = KanbanTaskDetail(id: "t_c891be93", title: "Fix 1", body: nil, status: "done", priority: nil, assignee: "sentry", runs: [
+            KanbanRunSummary(id: "1", status: "review", outcome: "review_requested", profile: "forge", summary: "Implemented fix.\nDetails", elapsed: nil),
+            KanbanRunSummary(id: "2", status: "done", outcome: "completed", profile: "sentry", summary: "APPROVED — round 2.\nFull verdict", elapsed: nil),
+        ])
+        card.latestSummary = "latest"
+        #expect(done?.fullSummary(in: card) == "APPROVED — round 2.\nFull verdict")
+        #expect(KanbanNoticeCard.outcomeLabel(card.runs[0]) == "Review requested")
+        card.runs.removeLast()
+        #expect(done?.fullSummary(in: card) == "latest")
     }
 }

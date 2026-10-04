@@ -168,9 +168,9 @@ final class EdgeDockController: NSObject {
         Timer.publish(every: 30, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.pollQuota() }
             .store(in: &subscriptions)
-        model.$currentSessionTitle.combineLatest(model.$runtimeConfiguration)
+        model.$currentSessionTitle.combineLatest(model.$runtimeConfiguration, model.$defaultBotName)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in
+            .sink { [weak self] _, _, _ in
                 guard let self else { return }
                 self.state.name = self.model.agentDisplayName
                 self.updateDetail()
@@ -477,7 +477,8 @@ final class EdgeDockController: NSObject {
         if state.activity.attention {
             state.detail = "Open this session to review and respond"
         } else if state.activity.working, let tool = model.activeToolCalls.last {
-            state.detail = "\(tool.isComplete ? "Completed" : "Running") \(tool.name)"
+            let step = ToolStep.describe(tool)
+            state.detail = [step.title, step.detail].compactMap { $0 }.joined(separator: " · ")
         } else if state.activity.backgroundCompleted {
             state.detail = "Open this session to review its result"
         } else if state.activity.working {
@@ -783,7 +784,6 @@ final class EdgeNotchState: ObservableObject {
     @Published var kanbanUnavailable = false
     /// Fixed so refreshes and task arrivals never resize the preview.
     static let expandedSize = CGSize(width: 368, height: 360)
-    static let previewSize = CGSize(width: 352, height: 312)
     var railActivity: EdgeNotchActivity {
         var result = activity
         result.sessionNeedsAttention = tasks.contains { $0.kanbanTask == nil && $0.phase == .attention && $0.isStatusCurrent }
@@ -801,18 +801,18 @@ final class EdgeNotchState: ObservableObject {
     @Published var petPull = 0.0
     /// The collapsed bar widens to receive a dragged pet and stays a little wider while it is docked.
     var barWidth: CGFloat {
-        if petDragging { return 33 + (petAttached ? 12 : 30) * petPull }
-        return hasPet && petAttached ? 45 : 33
+        if petDragging { return 28 + (petAttached ? 10 : 25) * petPull }
+        return hasPet && petAttached ? 38 : 28
     }
     /// Accent glow grows as a free pet is dragged toward the notch.
     var barGlow: Double { petDragging && !petAttached ? petPull : 0 }
-    var railWidth: CGFloat { expanded ? 72 : 66 }
+    var railWidth: CGFloat { expanded ? 72 : 56 }
     var petReserve: CGFloat { hasPet ? Self.petFootprint : 0 }
     static let petFootprint: CGFloat = 48
     /// The collapsed rail grows with the number of stacked marks (24pt each, 6pt apart, room for the shoulders).
     var railHeight: CGFloat {
         let marks = CGFloat(railActivity.markCount)
-        return expanded ? 136 : max(72, marks * 30 + 34)
+        return expanded ? 136 : max(60, marks * 25 + 30)
     }
     var panelHeight: CGFloat { (expanded ? Self.expandedSize.height : railHeight) + petReserve }
 }
@@ -843,8 +843,8 @@ struct EdgeNotchView: View {
                     // The outer contour already supplies visual breathing room.
                     // Keep the preview close to it so its content does not float
                     // in the middle of the expanded notch.
-                    preview.frame(width: EdgeNotchState.previewSize.width, height: EdgeNotchState.previewSize.height)
-                        .padding(.horizontal, 8)
+                    preview.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.horizontal, 4).padding(.vertical, 12)
                         .transition(.opacity)
                 } else {
                     rail
@@ -989,8 +989,8 @@ private struct EdgePetRail: View {
     @AppStorage(NotchDisplayStyle.defaultsKey) private var displayStyle: NotchDisplayStyle = .dots
     let activity: EdgeNotchActivity
     let side: EdgeDockSide
-    var width: CGFloat = 33
-    var height: CGFloat = 72
+    var width: CGFloat = 28
+    var height: CGFloat = 60
     var glow = 0.0
     var docked = false
     @State private var flash = false
@@ -1020,13 +1020,13 @@ private struct EdgePetRail: View {
     }
 }
 
-/// Concave shoulders meet the physical screen edge; the inner face is rounded.
+/// Small concave shoulders meet the physical screen edge; the inner face is rounded.
 struct EdgeNotchShape: Shape {
     var side: EdgeDockSide = .right
 
     func path(in rect: CGRect) -> Path {
-        let shoulder: CGFloat = min(24, rect.width / 3)
-        let radius: CGFloat = min(30, rect.width / 2)
+        let shoulder: CGFloat = min(8, rect.width / 4)
+        let radius: CGFloat = min(12, rect.width / 2)
         var path = Path()
         path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
         path.addQuadCurve(to: CGPoint(x: rect.maxX - shoulder, y: rect.minY + shoulder),

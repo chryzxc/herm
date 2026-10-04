@@ -114,6 +114,7 @@ enum HermesFeatureIDs {
         case projectsAddFolder = "projects.add_folder"
         case voiceToggle = "voice.toggle"
         case voiceRecord = "voice.record"
+        case voiceTTS = "voice.tts"
         case configGet = "config.get"
         case configSet = "config.set"
         case modelOptions = "model.options"
@@ -142,7 +143,7 @@ enum HermesFeatureIDs {
         "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "bot_relay.deliver", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
         "approval.respond", "request.answer", "clarify.lock", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
-        "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "config.get",
+        "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "voice.tts", "config.get",
         "config.set", "model.options", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach",
         "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore",
         "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder"

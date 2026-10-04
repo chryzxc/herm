@@ -29,8 +29,9 @@ struct VoicePillQueue: Equatable {
     private var nextSlot = 0
 
     /// Re-pushing an existing `key` updates that card in place and extends it.
+    /// `slots` limits where a new card may sit, e.g. to keep a side free.
     mutating func push(key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
-                       tone: Tone = .accent, target: String? = nil, now: Date = .now) {
+                       tone: Tone = .accent, target: String? = nil, slots: [Int] = Array(0..<slotCount), now: Date = .now) {
         let expiresAt = now.addingTimeInterval(target == nil ? Self.lifetime : Self.targetLifetime)
         if let index = pills.firstIndex(where: { $0.id == key }) {
             pills[index].icon = icon
@@ -44,7 +45,8 @@ struct VoicePillQueue: Equatable {
         }
         if pills.count >= Self.capacity { pills.removeFirst() }
         let used = Set(pills.map(\.slot))
-        let slot = (0..<Self.slotCount).map { (nextSlot + $0) % Self.slotCount }.first { !used.contains($0) } ?? nextSlot
+        let slot = (0..<Self.slotCount).map { (nextSlot + $0) % Self.slotCount }
+            .first { slots.contains($0) && !used.contains($0) } ?? slots.first ?? nextSlot
         nextSlot = (slot + 1) % Self.slotCount
         pills.append(Pill(id: key, icon: icon, title: title, detail: detail, isRunning: isRunning,
                           tone: tone, target: target, slot: slot, expiresAt: expiresAt))
@@ -88,6 +90,9 @@ struct VoicePillQueue: Equatable {
 struct VoiceActivityPillsLayer: View {
     @ObservedObject var model: DockModel
     var cardWidth: CGFloat = 280
+    var cronJobs: [CronSummary] = []
+    /// The HUD deck sits on the left, so cards keep to the right corners.
+    var leavesLeftFree = false
     @State private var queue = VoicePillQueue()
 
     var body: some View {
@@ -107,22 +112,15 @@ struct VoiceActivityPillsLayer: View {
             for call in new where !call.name.hasPrefix("__") {
                 let previous = old.first { $0.id == call.id }
                 guard previous == nil || (previous?.isComplete == false && call.isComplete) else { continue }
-                let title = call.name.replacingOccurrences(of: "_", with: " ").capitalized
-                let target = call.isComplete
-                    ? VoicePillQueue.target(in: [call.input, call.context, call.result ?? ""].joined(separator: "\n"))
-                    : nil
-                if let stats = call.isComplete ? call.diffStats : nil {
-                    let file = target.map(VoicePillQueue.label(for:))
-                    push(key: "tool-\(call.id)", icon: .pencilSimple, title: file.map { "Edited \($0)" } ?? title,
-                         detail: "+\(stats.added) −\(stats.removed) lines", tone: .success, target: target)
-                } else if let target {
-                    push(key: "tool-\(call.id)", icon: target.hasPrefix("http") ? .link : .file, title: title,
-                         detail: VoicePillQueue.label(for: target), tone: .success, target: target)
-                } else {
-                    let detail = [call.context, call.input].first { !$0.isEmpty }.map { String($0.prefix(90)) }
-                    push(key: "tool-\(call.id)", icon: call.isComplete ? .checkCircle : .wrench, title: title,
-                         detail: detail, isRunning: !call.isComplete)
-                }
+                pushStep(call)
+            }
+        }
+        .onChange(of: cronJobs) { old, new in
+            for job in new {
+                guard let ran = job.lastRunAt, let before = old.first(where: { $0.id == job.id }), before.lastRunAt != ran else { continue }
+                let failed = job.lastError != nil || ["failed", "error"].contains(job.lastStatus?.lowercased() ?? "")
+                push(key: "cron-\(job.id)-\(ran)", icon: .calendarCheck, title: failed ? "\(job.name) failed" : "\(job.name) ran",
+                     detail: job.lastError ?? job.schedule, tone: failed ? .danger : .success)
             }
         }
         .onChange(of: model.activeSubagents) { old, new in
@@ -176,6 +174,51 @@ struct VoiceActivityPillsLayer: View {
             }
             parts.append(String(format: "done %.1fs", completedAt.timeIntervalSince(submitted)))
             push(key: "speed", icon: .timer, title: "Turn speed", detail: parts.joined(separator: " · "))
+            let edited = Set(model.activeToolCalls.filter { ["write_file", "patch"].contains($0.name.lowercased()) }.compactMap { $0.args?["path"] })
+            if edited.count > 1 {
+                push(key: "files-\(completedAt.timeIntervalSince1970)", icon: .files, title: "\(edited.count) files changed",
+                     detail: edited.map { ($0 as NSString).lastPathComponent }.sorted().joined(separator: ", "), tone: .success)
+            }
+            // The answer's link or file, one click away.
+            if let reply = model.messages.last(where: { $0.role == .hermes && !$0.isError }),
+               let target = VoicePillQueue.target(in: reply.text) {
+                push(key: "result-\(reply.id)", icon: target.hasPrefix("http") ? .link : .file, title: "Result",
+                     detail: VoicePillQueue.label(for: target), tone: .success, target: target)
+            }
+        }
+    }
+
+    private func pushStep(_ call: ActiveToolCall) {
+        let key = "tool-\(call.id)"
+        let name = call.name.lowercased()
+        if name == "terminal", call.isComplete, let tests = TestSummary(ToolText.field("output", in: call.result) ?? call.result ?? "") {
+            return push(key: key, icon: tests.failed > 0 ? .warningCircle : .checkCircle,
+                        title: tests.failed > 0 ? "\(tests.failed) test\(tests.failed == 1 ? "" : "s") failed" : "All \(tests.passed) tests passed",
+                        detail: tests.failed > 0 ? "\(tests.passed) passed" : nil, tone: tests.failed > 0 ? .danger : .success)
+        }
+        guard !ToolStep.hasCard(call.name) else { return }
+        let step = ToolStep.describe(call)
+        if name == "web_extract", call.isComplete {
+            let target = call.args?["urls"].flatMap(VoicePillQueue.target(in:))
+            let excerpt = (ToolText.field("content", in: call.result) ?? ToolText.field("text", in: call.result))
+                .map { String($0.split(whereSeparator: \.isNewline).joined(separator: " ").prefix(120)) }
+            return push(key: key, icon: .fileText, title: step.title, detail: excerpt ?? target.map(VoicePillQueue.label(for:)),
+                        tone: .success, target: target)
+        }
+        let target = call.isComplete
+            ? VoicePillQueue.target(in: [call.input, call.context, call.result ?? "", call.args?["path"] ?? ""].joined(separator: "\n"))
+            : nil
+        if let stats = call.isComplete ? call.diffStats : nil {
+            let file = target.map(VoicePillQueue.label(for:))
+            push(key: key, icon: .pencilSimple, title: file.map { "Edited \($0)" } ?? step.title,
+                 detail: "+\(stats.added) −\(stats.removed) lines", tone: .success, target: target)
+        } else if let target {
+            push(key: key, icon: step.icon, title: step.title,
+                 detail: step.detail ?? VoicePillQueue.label(for: target), tone: .success, target: target)
+        } else {
+            let detail = step.detail ?? [call.context, call.input].first { !$0.isEmpty }.map { String($0.prefix(90)) }
+            push(key: key, icon: step.icon, title: step.title, detail: detail, isRunning: !call.isComplete,
+                 tone: call.isComplete ? .success : .accent)
         }
     }
 
@@ -188,7 +231,8 @@ struct VoiceActivityPillsLayer: View {
 
     private func push(key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
                       tone: VoicePillQueue.Tone = .accent, target: String? = nil) {
-        queue.push(key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target)
+        queue.push(key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target,
+                   slots: leavesLeftFree ? [1, 2] : Array(0..<VoicePillQueue.slotCount))
         let lifetime = target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(lifetime + 0.05))

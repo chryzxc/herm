@@ -121,4 +121,17 @@ struct DockThemeStoreTests {
         #expect(DockAppearanceCatalog.installedOptions(installedSkins: skins).map(\.themeID) == [.poseidon])
         #expect(DockAppearanceCatalog.unknownSkins(skins).map(\.id) == ["custom"])
     }
+
+    /// Eye-strain guard: no theme's dark-appearance primary text may approach pure white.
+    @Test func darkPrimaryTextStaysSoft() {
+        for id in DockThemeID.allCases where id.appearance != .light {
+            var rgb: NSColor?
+            NSAppearance(named: .darkAqua)!.performAsCurrentDrawingAppearance {
+                rgb = NSColor(DockThemePalette(theme: id).primaryText).usingColorSpace(.sRGB)
+            }
+            let c = rgb!
+            let luma = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
+            #expect(luma <= 0.86, "\(id) primary text too bright")
+        }
+    }
 }

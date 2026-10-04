@@ -9,7 +9,7 @@ struct OfficeMainSessionTests {
             .init(id: "old", title: "Old", state: "idle", isCurrent: false, activities: [])
         ])
         #expect(simulation.agents.count == 2)
-        #expect(simulation.agents.map(\.name) == ["Nexus · Code", "Nexus · Review"])
+        #expect(simulation.agents.map(\.name) == ["Hermes · Code", "Hermes · Review"])
         #expect(simulation.agents[0].phase == .implementing)
         #expect(simulation.agents[1].phase == .waiting)
         #expect(simulation.agents.allSatisfy { $0.location == .desk && !$0.hasNoPendingTasks && $0.tasks.isEmpty })
@@ -24,14 +24,14 @@ struct OfficeMainSessionTests {
     }
 
     @MainActor @Test func defaultNexusProfileIsNotDuplicatedAsAWorker() {
-        let nexus = BotSummary(id: "nexus", name: "Nexus", title: "Orchestrator", description: nil, model: nil,
+        let nexus = BotSummary(id: "nexus", name: "Atlas", title: "Orchestrator", description: nil, model: nil,
             isActive: true, chat: nil, avatarURL: nil, preview: nil, lastActive: nil, isHidden: false,
             hasAvatar: false, isDefault: true)
         let simulation = OfficePreviewSimulation(bots: [nexus], sessions: [
             .init(id: "chat", title: "Feature", state: "working", isCurrent: true, activities: [])
         ])
         #expect(simulation.agents.count == 1)
-        #expect(simulation.agents[0].name == "Nexus · Feature")
+        #expect(simulation.agents[0].name == "Atlas · Feature")
         #expect(simulation.agents[0].mainSession?.id == "chat")
     }
 

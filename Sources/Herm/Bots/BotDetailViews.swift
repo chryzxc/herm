@@ -14,7 +14,12 @@ struct BotProfileEditorSheet: View {
     @State private var modelChoices: [(provider: String, models: [String])] = []
     @State private var selectedProvider: String = ""
     @State private var selectedModel: String = ""
-    @State private var keepsInheritedModel = true
+    @State private var isChangingModel = false
+    @State private var runtime: BotRuntimeConfig?
+    /// Edited fallback chain; `nil` until the user touches it.
+    @State private var fallbackDraft: [BotRuntimeConfig.ModelRef]?
+    @State private var fallbackProvider = ""
+    @State private var fallbackModel = ""
     @State private var isSaving = false
     @State private var editError: String?
     @State private var pendingConfirmMessage: String?
@@ -32,6 +37,7 @@ struct BotProfileEditorSheet: View {
             badge: AnyView(BotAvatarView(bot: bot, imageData: avatarPreview ?? model.avatarImages[bot.id], size: 32)),
             title: "Edit \(bot.name)",
             subtitle: "Changes apply to Hermes profile \(bot.id)",
+            width: 520,
             contentPadding: 0
         ) {
             if detail == nil {
@@ -44,7 +50,7 @@ struct BotProfileEditorSheet: View {
                 Task { await save(confirm: false) }
             }
         }
-        .frame(minHeight: 420)
+        .frame(minHeight: 480)
         .task { await load() }
         .alert("Confirm Model", isPresented: Binding(get: { pendingConfirmMessage != nil }, set: { if !$0 { pendingConfirmMessage = nil } })) {
             Button("Cancel", role: .cancel) { pendingConfirmMessage = nil }
@@ -56,26 +62,41 @@ struct BotProfileEditorSheet: View {
 
     private var editorForm: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                avatarRow
-                titledField("Title") {
-                    TextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
-                        .textFieldStyle(.dockGlass)
+            VStack(alignment: .leading, spacing: 20) {
+                modalSection("IDENTITY") {
+                    avatarRow
+                    labeledField("Title") {
+                        TextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
+                            .textFieldStyle(.dockGlass)
+                    }
+                    labeledField("Description") {
+                        TextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }), axis: .vertical)
+                            .lineLimit(2...5)
+                            .textFieldStyle(.dockGlass)
+                    }
                 }
-                titledField("Description") {
-                    TextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }))
-                        .textFieldStyle(.dockGlass)
-                }
-                modelRow
-                soulRow
-                DisclosureGroup("Skills  ·  \(detail?.skills.count ?? 0)", isExpanded: $showsSkills) {
-                    toggleSection(items: skillBinding)
-                }
-                DisclosureGroup("Toolsets  ·  \(detail?.toolsets.count ?? 0)", isExpanded: $showsToolsets) {
-                    toolsetSection
-                }
-                DisclosureGroup("MCP Servers  ·  \(detail?.mcpServers.count ?? 0)", isExpanded: $showsMCPServers) {
-                    toggleSection(items: mcpBinding)
+                modalSection("MODELS") { modelCard }
+                modalSection("PERSONA") { soulRow }
+                modalSection("CAPABILITIES") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        DisclosureGroup(isExpanded: $showsSkills) {
+                            toggleSection(items: skillBinding)
+                        } label: {
+                            capabilityLabel("Skills", enabled: detail?.skills.filter(\.enabled).count ?? 0, total: detail?.skills.count ?? 0)
+                        }
+                        DisclosureGroup(isExpanded: $showsToolsets) {
+                            toolsetSection
+                        } label: {
+                            capabilityLabel("Toolsets", enabled: detail?.toolsets.filter(\.enabled).count ?? 0, total: detail?.toolsets.count ?? 0)
+                        }
+                        DisclosureGroup(isExpanded: $showsMCPServers) {
+                            toggleSection(items: mcpBinding)
+                        } label: {
+                            capabilityLabel("MCP Servers", enabled: detail?.mcpServers.filter(\.enabled).count ?? 0, total: detail?.mcpServers.count ?? 0)
+                        }
+                    }
+                    .padding(12)
+                    .background(cardBackground)
                 }
                 if let editError {
                     ModalNote(text: editError, icon: .warning, tone: .dockWarning)
@@ -83,12 +104,25 @@ struct BotProfileEditorSheet: View {
             }
             .padding(20)
         }
-        .frame(maxHeight: 500)
+        .frame(maxHeight: 560)
+    }
+
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+            .fill(Color.dockControlSurface)
+            .stroke(Color.dockBorder, lineWidth: 0.5)
+    }
+
+    private func capabilityLabel(_ title: String, enabled: Int, total: Int) -> some View {
+        HStack {
+            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+            Spacer()
+            Text("\(enabled) of \(total) on").font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+        }
     }
 
     private var avatarRow: some View {
         HStack(spacing: 8) {
-            Text("Avatar").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText).frame(width: 90, alignment: .leading)
             Button("Upload…") { uploadAvatar() }
                 .buttonStyle(.dockSecondary)
                 .controlSize(.small)
@@ -116,15 +150,22 @@ struct BotProfileEditorSheet: View {
         }
     }
 
-    private var modelRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text("Model").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText).frame(width: 90, alignment: .leading)
-                Toggle("Inherit from launch profile", isOn: $keepsInheritedModel)
+    /// Primary pin (editable) plus the profile's read-only runtime facts.
+    private var modelCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                factRow("Primary") {
+                    if let pinned = detail?.model, !pinned.isEmpty {
+                        modelText(pinned, provider: detail?.provider)
+                    } else {
+                        Text("Inherited from launch profile").foregroundStyle(Color.dockSecondaryText)
+                    }
+                }
+                Button(isChangingModel ? "Keep" : "Change") { withAnimation { isChangingModel.toggle() } }
+                    .buttonStyle(.dockSecondary)
                     .controlSize(.small)
-                    .disabled(detail?.provider == nil)
             }
-            if !keepsInheritedModel {
+            if isChangingModel {
                 HStack(spacing: 8) {
                     Picker("Provider", selection: $selectedProvider) {
                         Text("Provider…").tag("")
@@ -137,31 +178,131 @@ struct BotProfileEditorSheet: View {
                         ForEach(availableModels, id: \.self) { Text($0).tag($0) }
                     }
                 }
-                .frame(maxWidth: .infinity)
+                .labelsHidden()
+                .padding(.bottom, 8)
+            }
+            Divider()
+            fallbackSection
+            Divider()
+            HStack(spacing: 0) {
+                factRow("Reasoning") { Text(runtime?.reasoningEffort?.capitalized ?? "Default") }
+                factRow("Context") { Text(runtime?.contextLength.map(Self.tokens) ?? "Auto") }
+                factRow("Compress at") { Text(runtime?.compressionThreshold.map(Self.tokens) ?? "Default") }
+            }
+        }
+        .padding(.horizontal, 12)
+        .background(cardBackground)
+    }
+
+    private var fallbacks: [BotRuntimeConfig.ModelRef] { fallbackDraft ?? runtime?.fallbacks ?? [] }
+
+    private var fallbackSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                factRow("Fallback") {
+                    if fallbacks.isEmpty {
+                        Text(runtime == nil ? "—" : "None").foregroundStyle(Color.dockMetadataText)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array(fallbacks.enumerated()), id: \.offset) { index, ref in
+                                HStack(spacing: 6) {
+                                    Text("\(index + 1).").font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                    modelText(ref.model, provider: ref.provider)
+                                    Spacer()
+                                    if fallbackDraft != nil {
+                                        Button("Remove", role: .destructive) { fallbackDraft?.remove(at: index) }
+                                            .buttonStyle(.dockSecondary)
+                                            .controlSize(.mini)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if fallbackDraft == nil {
+                    Button("Edit") { withAnimation { fallbackDraft = runtime?.fallbacks ?? [] } }
+                        .buttonStyle(.dockSecondary)
+                        .controlSize(.small)
+                        .disabled(runtime == nil)
+                }
+            }
+            if fallbackDraft != nil {
+                HStack(spacing: 8) {
+                    Picker("Provider", selection: $fallbackProvider) {
+                        Text("Provider…").tag("")
+                        ForEach(modelChoices, id: \.provider) { Text($0.provider).tag($0.provider) }
+                    }
+                    Picker("Model", selection: $fallbackModel) {
+                        Text("Model…").tag("")
+                        ForEach(modelChoices.first { $0.provider == fallbackProvider }?.models ?? [], id: \.self) { Text($0).tag($0) }
+                    }
+                    Button("Add") {
+                        let ref = BotRuntimeConfig.ModelRef(provider: fallbackProvider, model: fallbackModel)
+                        if !fallbacks.contains(where: { $0.provider == ref.provider && $0.model == ref.model }) { fallbackDraft?.append(ref) }
+                        fallbackModel = ""
+                    }
+                    .buttonStyle(.dockSecondary)
+                    .controlSize(.small)
+                    .disabled(fallbackProvider.isEmpty || fallbackModel.isEmpty)
+                }
+                .labelsHidden()
+                .padding(.bottom, 8)
             }
         }
     }
 
+    private func factRow<Value: View>(_ label: String, @ViewBuilder value: () -> Value) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label).font(.system(size: 10, weight: .medium)).foregroundStyle(Color.dockMetadataText)
+            value().font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 9)
+    }
+
+    private func modelText(_ model: String, provider: String?) -> some View {
+        HStack(spacing: 6) {
+            Text(model).font(.system(size: 12, weight: .semibold, design: .monospaced))
+            if let provider, !provider.isEmpty {
+                Text(provider).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText).lineLimit(1).truncationMode(.middle)
+            }
+        }
+    }
+
+    static func tokens(_ count: Int) -> String {
+        count >= 1000 ? "\(count / 1000)K tokens" : "\(count) tokens"
+    }
+
     private var soulRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("SOUL.md").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("SOUL.md").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
+                    Text(soulSummary).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText)
+                }
                 Spacer()
                 Button(showsSoul ? "Hide" : "Edit") { withAnimation { showsSoul.toggle() } }
                     .buttonStyle(.dockSecondary)
                     .controlSize(.small)
             }
             if showsSoul {
-                ScrollView {
-                    TextEditor(text: Binding(get: { detail?.soul ?? "" }, set: { detail?.soul = $0 }))
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(height: 140)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.dockCanvas)
-                        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2))
-                }
+                TextEditor(text: Binding(get: { detail?.soul ?? "" }, set: { detail?.soul = $0 }))
+                    .font(.system(size: 11, design: .monospaced))
+                    .frame(height: 180)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.dockCanvas)
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2))
             }
         }
+        .padding(12)
+        .background(cardBackground)
+    }
+
+    private var soulSummary: String {
+        let soul = detail?.soul ?? ""
+        if soul.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Empty — Hermes default persona" }
+        let lines = soul.split(separator: "\n", omittingEmptySubsequences: false).count
+        return "\(lines) lines · \(soul.count) characters"
     }
 
     private var skillBinding: Binding<[BotToggleItem]> {
@@ -176,13 +317,6 @@ struct BotProfileEditorSheet: View {
 
     private var availableModels: [String] {
         modelChoices.first { $0.provider == selectedProvider }?.models ?? []
-    }
-
-    private func titledField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText).frame(width: 90, alignment: .leading)
-            content()
-        }
     }
 
     private func toggleSection(items: Binding<[BotToggleItem]>) -> some View {
@@ -204,7 +338,6 @@ struct BotProfileEditorSheet: View {
 
     private var toolsetSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Toolsets").font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
             if toolsetBinding.wrappedValue.isEmpty {
                 Text("None reported by Hermes").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
             } else {
@@ -232,12 +365,11 @@ struct BotProfileEditorSheet: View {
     }
 
     private func load() async {
+        async let runtimeConfig = model.runtimeConfig(for: bot)
         detail = await model.profileDetail(for: bot)
-        if let provider = detail?.provider, !provider.isEmpty {
-            keepsInheritedModel = true
-            selectedProvider = provider
-            selectedModel = detail?.model ?? ""
-        }
+        selectedProvider = detail?.provider ?? ""
+        selectedModel = detail?.model ?? ""
+        runtime = await runtimeConfig
         modelChoices = await model.modelOptions()
         await model.checkImageGeneration()
     }
@@ -268,7 +400,7 @@ struct BotProfileEditorSheet: View {
 
     private func save(confirm: Bool) async {
         guard var current = detail else { return }
-        if keepsInheritedModel {
+        if !isChangingModel {
             current.provider = nil
             current.model = nil
         } else {
@@ -288,6 +420,14 @@ struct BotProfileEditorSheet: View {
         case .failed(let message):
             editError = message
             return
+        }
+
+        if let draft = fallbackDraft, draft != runtime?.fallbacks {
+            if let message = await model.setFallbacks(draft, for: bot) {
+                editError = message
+                return
+            }
+            runtime?.fallbacks = draft
         }
 
         do {
