@@ -189,7 +189,9 @@ final class ControlCenterModel: ObservableObject {
     private weak var dockModel: DockModel?
     private var kanbanChatSyncAnchor: UUID?
     private var kanbanChatSyncedEventAt: [String: Date?] = [:]
-    private var kanbanChatFeedSessionIDs: Set<String> = []
+    /// Feed session ID → its Hermes source, and every session already judged.
+    private var kanbanChatFeeds: [String: String] = [:]
+    private var kanbanChatCheckedSessionIDs: Set<String> = []
     private var rpc: HermesControlRPC?
     /// Desktop-parity editor for Hermes `config.yaml`, over the same backend.
     lazy var configEditor = HermesConfigEditor { [weak self] in self?.rpc }
@@ -2994,43 +2996,52 @@ final class ControlCenterModel: ObservableObject {
         if kanbanChatSyncAnchor != floor.id {
             kanbanChatSyncAnchor = floor.id
             kanbanChatSyncedEventAt = [:]
-            kanbanChatFeedSessionIDs = []
+            kanbanChatFeeds = [:]
+            kanbanChatCheckedSessionIDs = []
         }
         for task in tasks where (task.latestEventAt ?? .distantFuture) >= floor.timestamp
             && kanbanChatSyncedEventAt[task.id] != task.latestEventAt {
             guard let detail = try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug, cli: cli).detail,
                   kanbanChatSyncAnchor == floor.id else { continue }
             kanbanChatSyncedEventAt[task.id] = task.latestEventAt
-            if let path = detail.workspacePath {
-                kanbanChatFeedSessionIDs.insert(Self.pipelineFeedSessionID(workspacePath: path))
-            }
             dockModel.insertKanbanBoardNotices(KanbanNotice.boardEventNotices(for: detail))
+            await discoverFeedSessions(mentioning: task.id, anchor: floor.id)
         }
-        await syncPipelineFeedsIntoChat(anchor: floor.id)
+        await syncFeedSessionsIntoChat(anchor: floor.id)
     }
 
-    /// The cpipe plugin narrates each worktree's pipeline (started, handed
-    /// to review, approved…) into its own `cpipe_flow_<worktree>` session.
-    /// ponytail: plugin naming convention; read its flow map if it changes.
-    static func pipelineFeedSessionID(workspacePath: String) -> String {
-        "cpipe_flow_" + URL(fileURLWithPath: workspacePath).lastPathComponent
+    /// Plugins (workflow runners, supervisors…) may narrate a card's progress
+    /// into a session of their own. Such a feed is a session with no user
+    /// turns that names this chat's card; any session with a prompt is a
+    /// conversation or worker run, not a feed.
+    private func discoverFeedSessions(mentioning taskID: String, anchor: UUID) async {
+        guard let rpc, let dockModel,
+              let hits = try? await rpc.searchSessions(query: taskID) else { return }
+        let own = Set(dockModel.botActivitySessionIDs.compactMap { $0 })
+        for hit in hits {
+            guard let id = hit["session_id"] as? String, !own.contains(id),
+                  kanbanChatCheckedSessionIDs.insert(id).inserted,
+                  let rows = try? await rpc.sessionMessages(sessionID: id, latest: true)["data"] as? [[String: Any]],
+                  Self.isFeedSession(rows), kanbanChatSyncAnchor == anchor else { continue }
+            kanbanChatFeeds[id] = (hit["source"] as? String).flatMap(Self.nonEmpty) ?? "feed"
+        }
     }
 
-    /// Merges the pipeline feeds of this chat's cards into the chat that
-    /// started them, so the run reads in place instead of in a side session.
-    private func syncPipelineFeedsIntoChat(anchor: UUID) async {
+    static func isFeedSession(_ rows: [[String: Any]]) -> Bool {
+        !rows.isEmpty && !rows.contains { ($0["role"] as? String) == "user" }
+    }
+
+    /// Merges each feed into this chat by timestamp, so a run reads where it
+    /// was started instead of only in a side session.
+    private func syncFeedSessionsIntoChat(anchor: UUID) async {
         guard let rpc else { return }
-        for feedID in kanbanChatFeedSessionIDs.sorted() {
-            guard let result = try? await rpc.sessionMessages(sessionID: feedID, latest: true),
-                  let rows = result["data"] as? [[String: Any]] else {
-                kanbanChatFeedSessionIDs.remove(feedID)
-                continue
-            }
+        for (feedID, source) in kanbanChatFeeds.sorted(by: { $0.key < $1.key }) {
+            guard let rows = try? await rpc.sessionMessages(sessionID: feedID, latest: true)["data"] as? [[String: Any]] else { continue }
             guard kanbanChatSyncAnchor == anchor, let dockModel else { return }
             let feed = DockModel.parseMessages(
                 TranscriptHistoryPaging.displayRows(fromStoredRows: rows),
-                defaultBotProfileID: "cpipe",
-                defaultBotDisplayName: "Pipeline"
+                defaultBotProfileID: source,
+                defaultBotDisplayName: source
             ).messages
             dockModel.insertTimelineMessages(feed)
         }

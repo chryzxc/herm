@@ -116,6 +116,11 @@ final class HermesControlRPC {
         canonical["data"] = messages
         return canonical
     }
+    /// Sessions whose ID or message text matches `query` (Hermes FTS).
+    func searchSessions(query: String, limit: Int = 20) async throws -> [[String: Any]] {
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return [] }
+        return try await client.fetchHTTP("/api/sessions/search?q=\(encoded)&limit=\(limit)")["results"] as? [[String: Any]] ?? []
+    }
     func activate(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionActivate.rawValue, params: ["session_id": sessionID]) }
     func resume(sessionID: String, profileID: String? = nil) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: Self.profileParams(["session_id": sessionID, "source": "herm-control"], profileID: profileID)) }
     func delete(sessionID: String, profileID: String? = nil) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: Self.profileParams(["session_id": sessionID], profileID: profileID)) }
