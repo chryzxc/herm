@@ -194,7 +194,7 @@ struct ConversationMessageRow: View, Equatable {
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    let attributedBotID = message.systemEvent == nil ? message.botProfileID ?? activeBotProfileID : nil
+                    let attributedBotID = message.systemEvent == nil && message.kanbanNotice == nil ? message.botProfileID ?? activeBotProfileID : nil
                     if let botProfileID = attributedBotID {
                         let bot = botsByID[botProfileID]
                         HStack(spacing: 7) {
@@ -244,11 +244,9 @@ struct ConversationMessageRow: View, Equatable {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         messageMetadata
                     } else if let notice = message.kanbanNotice {
-                        KanbanNoticeCard(notice: notice, loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        messageMetadata
+                        KanbanNoticeCard(notice: notice, botID: message.botProfileID ?? activeBotProfileID,
+                                         timeLabel: message.timeLabel, botsByID: botsByID, avatarImages: avatarImages,
+                                         loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
                     } else if !message.text.isEmpty || isStreamingMessage {
                         Group {
                             if isStreamingMessage, let streamingText {
@@ -295,7 +293,7 @@ struct ConversationMessageRow: View, Equatable {
             }
         }
         .padding(.horizontal, metrics.contentInset)
-        .padding(.vertical, message.systemEvent?.isFeed == true ? 1 : 8)
+        .padding(.vertical, message.systemEvent?.isFeed == true || message.kanbanNotice != nil ? 1 : 8)
     }
 
     /// The tail corner points toward the sender edge so consecutive prompts
@@ -501,17 +499,6 @@ struct FeedEventRow: View {
     @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var icon: Ph {
-        switch event.tone {
-        case .complete: .checkCircle
-        case .working: .play
-        case .review: .magnifyingGlass
-        case .queued: .arrowsClockwise
-        case .attention: .warningCircle
-        default: .pulse
-        }
-    }
-
     /// Detail lines, or a headline too long for one line, can expand.
     private var canExpand: Bool { line.detail != nil || line.headline.count > 90 }
 
@@ -521,7 +508,7 @@ struct FeedEventRow: View {
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
-                    DockIcon(icon, size: 13, weight: .fill, color: event.tone.color)
+                    DockIcon(event.tone.activityIcon, size: 13, weight: .fill, color: event.tone.color)
                     SystemEventCard.inlineMarkdown(line.headline.isEmpty ? event.label : line.headline)
                         .font(DockTypography.body)
                         .foregroundStyle(Color.dockPrimaryText)
@@ -529,7 +516,7 @@ struct FeedEventRow: View {
                         .fixedSize(horizontal: false, vertical: isExpanded)
                         .layoutPriority(1)
                     ForEach(Array(line.bots.enumerated()), id: \.offset) { _, id in
-                        botChip(id)
+                        BotChip(id: id, botsByID: botsByID, avatarImages: avatarImages)
                     }
                     ForEach(Array(line.tags.enumerated()), id: \.offset) { _, tag in
                         Text(tag).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
@@ -576,7 +563,29 @@ struct FeedEventRow: View {
         .accessibilityLabel("\(event.label): \(line.headline)")
     }
 
-    @ViewBuilder private func botChip(_ id: String) -> some View {
+}
+
+extension DockStatusTone {
+    /// Leading icon for one-line activity rows (feeds, kanban notices).
+    var activityIcon: Ph {
+        switch self {
+        case .complete: .checkCircle
+        case .working: .play
+        case .review: .magnifyingGlass
+        case .queued: .arrowsClockwise
+        case .attention: .warningCircle
+        default: .pulse
+        }
+    }
+}
+
+/// A bot named inline: avatar and name, or `@id` for an unknown bot.
+struct BotChip: View {
+    let id: String
+    let botsByID: [String: BotSummary]
+    let avatarImages: [String: Data]
+
+    var body: some View {
         HStack(spacing: 4) {
             if let bot = botsByID[id] {
                 BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 16)
@@ -595,6 +604,10 @@ struct FeedEventRow: View {
 
 struct KanbanNoticeCard: View {
     let notice: KanbanNotice
+    var botID: String?
+    var timeLabel: String = ""
+    var botsByID: [String: BotSummary] = [:]
+    var avatarImages: [String: Data] = [:]
     var loadDetail: (() async -> KanbanTaskDetail?)?
     @State private var isExpanded = false
     @State private var isHovering = false
@@ -606,27 +619,39 @@ struct KanbanNoticeCard: View {
             Button {
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
             } label: {
-                VStack(alignment: .leading, spacing: DockSpacing.micro) {
-                    HStack(spacing: DockSpacing.tight) {
-                        DockStatusDot(tone: notice.tone)
-                        Text(notice.title ?? "Kanban \(notice.taskID)")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .lineLimit(1)
-                        Spacer(minLength: DockSpacing.control)
-                        Text(notice.taskID)
-                            .font(DockTypography.machineMetadata)
-                            .foregroundStyle(Color.dockMetadataText)
+                HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
+                    DockIcon(notice.tone.activityIcon, size: 13, weight: .fill, color: notice.tone.color)
+                    Text(notice.label)
+                        .font(DockTypography.body.weight(.medium))
+                        .foregroundStyle(notice.tone.color)
+                        .fixedSize()
+                    Text(notice.title ?? "Kanban \(notice.taskID)")
+                        .font(DockTypography.body.weight(.semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    if let botID {
+                        BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages)
                     }
-                    if !isExpanded {
-                        (Text(notice.label).foregroundStyle(notice.tone.color).fontWeight(.medium)
-                            + Text(notice.detail.map { " · \($0)" } ?? "").foregroundStyle(Color.dockSecondaryText))
+                    if !isExpanded, let detail = notice.detail {
+                        Text(detail.split(separator: "\n").first.map(String.init) ?? detail)
                             .font(DockTypography.body)
+                            .foregroundStyle(Color.dockSecondaryText)
                             .lineLimit(1)
-                            .padding(.leading, 7 + DockSpacing.tight)
                     }
+                    Spacer(minLength: DockSpacing.control)
+                    Text(notice.taskID)
+                    Text(timeLabel)
+                    DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .font(DockTypography.machineMetadata)
+                .foregroundStyle(Color.dockMetadataText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.dockPrimaryText.opacity(isHovering || isExpanded ? 0.05 : 0))
+                )
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -648,9 +673,6 @@ struct KanbanNoticeCard: View {
                             .help(run.error ?? run.summary ?? "")
                         }
                     }
-                    Text(notice.label)
-                        .font(DockTypography.body.weight(.medium))
-                        .foregroundStyle(notice.tone.color)
                     if let text = card.flatMap(notice.fullSummary(in:)) ?? notice.detail {
                         Text(text)
                             .font(DockTypography.body)
@@ -659,17 +681,19 @@ struct KanbanNoticeCard: View {
                             .textSelection(.enabled)
                     }
                 }
-                .padding(.leading, 7 + DockSpacing.tight)
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(notice.tone.color.opacity(0.5)).frame(width: 2)
+                }
+                .padding(.leading, 14)
+                .padding(.bottom, 4)
                 .task {
                     guard card == nil, let loadDetail else { return }
                     card = await loadDetail()
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, DockSpacing.control)
-        .frame(maxWidth: 520, alignment: .leading)
-        .dockSignageCard(tone: notice.tone, highlighted: isHovering)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onHover { hovering in
             withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) { isHovering = hovering }
         }
