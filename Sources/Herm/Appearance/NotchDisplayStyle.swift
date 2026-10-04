@@ -65,7 +65,7 @@ struct EdgeNotchStatusIndicator: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Mark { case working, done, blocked, offline, idle }
-    private static let slot: CGFloat = 24
+    private static let slot: CGFloat = 20
 
     private var animates: Bool { !reduceMotion && (activity.working || activity.attention) }
 
@@ -84,7 +84,7 @@ struct EdgeNotchStatusIndicator: View {
     var body: some View {
         TimelineView(.animation(paused: !animates)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            VStack(spacing: 6) {
+            VStack(spacing: 5) {
                 mark(primary, t)
                 ForEach(Array(badges.enumerated()), id: \.offset) { mark($0.element, t) }
             }
@@ -131,11 +131,11 @@ struct EdgeNotchStatusIndicator: View {
         switch m {
         case .working:
             let p = phase(t, period: 1.6)
-            Circle().fill(c.opacity(0.35 * (1 - p))).scaleEffect(1 + 1.2 * p).frame(width: 10, height: 10)
-                .overlay { Circle().fill(c).frame(width: 10, height: 10) }
-        case .offline: Circle().strokeBorder(c, lineWidth: 1.5).frame(width: 10, height: 10)
-        case .idle: Circle().fill(c.opacity(level)).frame(width: 6, height: 6)
-        default: Circle().fill(c.opacity(level)).frame(width: 10, height: 10)
+            Circle().fill(c.opacity(0.35 * (1 - p))).scaleEffect(1 + 1.2 * p).frame(width: 8, height: 8)
+                .overlay { Circle().fill(c).frame(width: 8, height: 8) }
+        case .offline: Circle().strokeBorder(c, lineWidth: 1.5).frame(width: 8, height: 8)
+        case .idle: Circle().fill(c.opacity(level)).frame(width: 5, height: 5)
+        default: Circle().fill(c.opacity(level)).frame(width: 8, height: 8)
         }
     }
 
@@ -145,7 +145,7 @@ struct EdgeNotchStatusIndicator: View {
         case .working:
             Capsule().fill(c.opacity(0.2)).frame(width: 4, height: Self.slot)
                 .overlay(alignment: .top) {
-                    Capsule().fill(c).frame(width: 4, height: 9).offset(y: 15 * wave(t, period: 1.6))
+                    Capsule().fill(c).frame(width: 4, height: 8).offset(y: 12 * wave(t, period: 1.6))
                 }
         case .offline: Capsule().strokeBorder(c, lineWidth: 1).frame(width: 4, height: Self.slot)
         default: Capsule().fill(c.opacity(level)).frame(width: 4, height: Self.slot)
@@ -156,17 +156,17 @@ struct EdgeNotchStatusIndicator: View {
     private func ring(_ m: Mark, _ c: Color, _ level: Double, _ t: Double) -> some View {
         switch m {
         case .working:
-            Circle().stroke(c.opacity(0.2), lineWidth: 2.5)
+            Circle().stroke(c.opacity(0.2), lineWidth: 2)
                 .overlay {
-                    Circle().trim(from: 0, to: 0.7).stroke(c, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    Circle().trim(from: 0, to: 0.7).stroke(c, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .rotationEffect(.degrees(animates ? phase(t, period: 1.6) * 360 : -90))
                 }
-                .frame(width: 20, height: 20)
+                .frame(width: 16, height: 16)
         case .done, .blocked:
-            Circle().stroke(c.opacity(level), lineWidth: 2.5).frame(width: 20, height: 20)
+            Circle().stroke(c.opacity(level), lineWidth: 2).frame(width: 16, height: 16)
                 .overlay { Circle().fill(c.opacity(level)).frame(width: 8, height: 8) }
         default:
-            Circle().stroke(c.opacity(level), lineWidth: 2.5).frame(width: 20, height: 20)
+            Circle().stroke(c.opacity(level), lineWidth: 2).frame(width: 16, height: 16)
         }
     }
 
@@ -183,15 +183,15 @@ struct EdgeNotchStatusIndicator: View {
             Circle().strokeBorder(c.opacity(0.35 * level), lineWidth: 1)
             if m == .working, number > 0 {
                 Text(number > 9 ? "9+" : "\(number)")
-                    .font(.system(size: 11, weight: .bold).monospacedDigit()).foregroundStyle(c)
+                    .font(.system(size: 9, weight: .bold).monospacedDigit()).foregroundStyle(c)
             } else if m == .working {
                 Circle().trim(from: 0, to: 0.3)
                     .stroke(c, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .padding(3)
+                    .padding(2)
                     .rotationEffect(.degrees(animates ? phase(t, period: 1.2) * 360 : -90))
-                Circle().fill(c).frame(width: 5, height: 5)
+                Circle().fill(c).frame(width: 4, height: 4)
             } else if let symbol {
-                Image(systemName: symbol).font(.system(size: 11, weight: .bold)).foregroundStyle(c.opacity(level))
+                Image(systemName: symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(c.opacity(level))
             }
         }
     }

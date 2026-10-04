@@ -22,19 +22,23 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
 
     func searchPullRequests(viewerLogin: String, localPaths: [String: String]) async -> Result<[PullRequestRecord], PullRequestCenterFailure> {
         do {
-            let queries = ["is:pr is:open author:\(viewerLogin)", "is:pr is:open review-requested:\(viewerLogin)"]
+            async let authored = search("is:pr is:open author:\(viewerLogin)", localPaths: localPaths)
+            async let reviewing = search("is:pr is:open review-requested:\(viewerLogin)", localPaths: localPaths)
             var unique: [String: PullRequestRecord] = [:]
-            for query in queries {
-                var page = 1
-                while !Task.isCancelled {
-                    guard let payload = try await request(path: "/search/issues", query: ["q": query, "per_page": "100", "page": "\(page)"]) as? [String: Any], let items = payload["items"] as? [[String: Any]] else { throw GitHubCodeHostError.malformedResponse }
-                    for item in items { if let record = parseSearchItem(item, localPaths: localPaths) { unique[record.id] = record } }
-                    guard items.count == 100 else { break }
-                    page += 1
-                }
-            }
+            for record in try await authored + reviewing { unique[record.id] = record }
             return .success(Array(unique.values))
         } catch { return .failure(PullRequestCenterFailure(repository: "GitHub account search")) }
+    }
+
+    private func search(_ query: String, localPaths: [String: String]) async throws -> [PullRequestRecord] {
+        var page = 1; var rows: [PullRequestRecord] = []
+        while !Task.isCancelled {
+            guard let payload = try await request(path: "/search/issues", query: ["q": query, "per_page": "100", "page": "\(page)"]) as? [String: Any], let items = payload["items"] as? [[String: Any]] else { throw GitHubCodeHostError.malformedResponse }
+            rows += items.compactMap { parseSearchItem($0, localPaths: localPaths) }
+            guard items.count == 100 else { break }
+            page += 1
+        }
+        return rows
     }
 
     func enrichIndex(_ records: [PullRequestRecord], batchSize: Int = 6) async -> [PullRequestRecord] {

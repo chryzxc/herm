@@ -397,16 +397,18 @@ final class PullRequestCenterModel: ObservableObject {
     func refresh(projects: [ProjectSummary]) async {
         let paths = Array(Set(projects.filter(\.isRenderableProject).map(\.name))).filter { !$0.isEmpty }
         let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil; failedRepositories = []
+        let api = PullRequestCenterAPI()
+        // Resolve the viewer while local git remotes are being read.
+        async let viewerLookup = api.viewer()
         let remotes = await withTaskGroup(of: (String, GitHubRepositoryReference?).self, returning: [(String, GitHubRepositoryReference)].self) { group in
             for path in paths { group.addTask { (path, await RepositoryService.githubRemote(path: path)) } }
             var unique: [String: (String, GitHubRepositoryReference)] = [:]
             for await (path, remote) in group where remote != nil { if let remote, unique[remote.id] == nil { unique[remote.id] = (path, remote) } }
             return Array(unique.values)
         }
+        let viewer = await viewerLookup
         guard token == generation else { return }
-        let api = PullRequestCenterAPI()
         let localPaths = Dictionary(uniqueKeysWithValues: remotes.map { ($0.1.id, $0.0) })
-        let viewer = await api.viewer()
         viewerLogin = viewer
 
         // The PR center is account-scoped, rather than scoped to whichever
@@ -418,17 +420,18 @@ final class PullRequestCenterModel: ObservableObject {
             guard token == generation else { return }
             switch global {
             case .success(let rows):
-                // GitHub search items omit head/base refs. Resolve those
-                // details in bounded batches so the list does not show
-                // "unknown" until a row is clicked.
-                let enriched = await api.enrichIndex(rows)
-                guard token == generation else { return }
-                records = enriched.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+                // Show search rows right away, then fill in the head/base
+                // refs that GitHub search items omit in the background.
+                records = rows.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
                 filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:]
                 failedRepositories = []
                 errorMessage = nil
-                isRefreshing = false
                 repairSelection()
+                let enriched = await api.enrichIndex(rows)
+                guard token == generation else { return }
+                let byID = Dictionary(enriched.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                records = records.map { byID[$0.id] ?? $0 }
+                isRefreshing = false
                 return
             case .failure:
                 // Keep the attached-repository path as a useful fallback if
@@ -641,7 +644,7 @@ struct PullRequestRowView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(2)
             }
-            Text("\(pullRequest.repository.id) · \(pullRequest.headBranch)")
+            Text(pullRequest.headBranch == "unknown" ? pullRequest.repository.id : "\(pullRequest.repository.id) · \(pullRequest.headBranch)")
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockMetadataText)
                 .lineLimit(1)
@@ -842,7 +845,11 @@ struct PullRequestDetailView: View {
     }
 
     @ViewBuilder private var detailPane: some View {
-        if let pr = center.selected { VStack(alignment: .leading, spacing: 0) {
+        // Search rows carry placeholder refs/stats until the detail fetch
+        // lands; a failed fetch stores files so this cannot spin forever.
+        if let pr = center.selected, pr.changedFiles == nil, center.filesByID[pr.id] == nil {
+            detailLoadingPane
+        } else if let pr = center.selected { VStack(alignment: .leading, spacing: 0) {
         detailHeader(pr)
         if detailTab == 0 {
             ScrollView { summary(pr).padding(.horizontal, 24) }
@@ -919,16 +926,7 @@ struct PullRequestDetailView: View {
                         )
                         Divider().frame(height: 16)
                     }
-                    AttachToChatMenu { ChatContext(pullRequest: pr) }
-                        .menuStyle(.button)
-                        .fixedSize()
-                    Button("Open chat") { onOpenChat(pr) }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .padding(.horizontal, 10)
-                        .frame(height: 28)
-                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(Color.dockSurface4))
+                    AttachToChatMenu(pill: true) { ChatContext(pullRequest: pr) }
                 }
             }
             .padding(.horizontal, 16)

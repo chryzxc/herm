@@ -180,3 +180,19 @@ enum BotProfileEditOutcome: Equatable, Sendable {
     case applied
     case needsConfirmation(String)
 }
+
+/// Read-only runtime facts from the profile's own `config.get full`:
+/// what the editor shows beside the editable model pin.
+struct BotRuntimeConfig: Equatable, Sendable {
+    struct ModelRef: Equatable, Sendable {
+        let provider: String
+        let model: String
+        /// Kept so re-saving an existing entry doesn't drop its endpoint.
+        var baseURL: String? = nil
+    }
+    var contextLength: Int?
+    var reasoningEffort: String?
+    /// Hermes' order: `fallback_providers` first, legacy `fallback_model` after.
+    var fallbacks: [ModelRef] = []
+    var compressionThreshold: Int?
+}

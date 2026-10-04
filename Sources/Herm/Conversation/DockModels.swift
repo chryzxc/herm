@@ -86,11 +86,26 @@ struct ActiveToolCall: Identifiable, Equatable, Codable {
     var agentID: String? = nil
     var parentAgentID: String? = nil
     var childSessionID: String? = nil
+    /// The call's arguments as text, for describing what it does.
+    var args: [String: String]? = nil
 
     /// Marks a thinking segment in a response's activity log.
     static let thinkingName = "__thinking"
     /// Marks a context compaction in a response's activity log.
     static let compactionName = "__compaction"
+}
+
+/// Hermes' working plan for a session, from `todo.updated`.
+struct TodoPlan: Equatable {
+    struct Item: Equatable {
+        let content: String
+        let status: String
+    }
+    let sessionID: String
+    let items: [Item]
+
+    var done: Int { items.filter { $0.status == "completed" || $0.status == "cancelled" }.count }
+    var current: Item? { items.first { $0.status == "in_progress" } ?? items.first { $0.status == "pending" } }
 }
 
 struct ReasoningState: Equatable {
@@ -530,6 +545,18 @@ struct KanbanNotice: Equatable {
         let detail = ([reason] + lines.map(Optional.some)).compactMap { $0 }
             .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         self.detail = detail.isEmpty ? nil : detail
+    }
+
+    var taskSummary: KanbanTaskSummary {
+        KanbanTaskSummary(id: taskID, title: title ?? taskID, status: "", detail: nil, priority: nil, assignee: nil)
+    }
+
+    /// Full handoff behind the notice: the run summary Hermes clipped to its
+    /// first line, else the card's latest summary.
+    func fullSummary(in card: KanbanTaskDetail) -> String? {
+        let clipped = detail.map { String($0.prefix(80)) } ?? ""
+        let matched = clipped.isEmpty ? nil : card.runs.compactMap(\.summary).last { $0.hasPrefix(clipped) }
+        return matched ?? card.latestSummary
     }
 }
 

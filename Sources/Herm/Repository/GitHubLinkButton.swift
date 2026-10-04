@@ -7,21 +7,16 @@ struct GitHubLinkButton: View {
 
     var body: some View {
         Link(destination: destination) {
-            HStack(spacing: 5) {
-                DockIcon(.arrowSquareOut, size: 12, color: Color.dockSecondaryText)
-                Text("GitHub")
-            }
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.dockSecondaryText)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
-                    .fill(Color.dockControlSurface)
-            )
+            DockIcon(.arrowSquareOut, size: 13, color: Color.dockSecondaryText)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
+                        .fill(Color.dockControlSurface)
+                )
         }
         .buttonStyle(.plain)
-        .help("Open on GitHub")
+        .fixedSize()
+        .help(accessibilityLabel)
         .accessibilityLabel(accessibilityLabel)
     }
 }

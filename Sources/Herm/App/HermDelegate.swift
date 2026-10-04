@@ -135,6 +135,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         let window = DockWindowController(model: model, controlCenter: controlCenter)
         dockWindow = window
         dockPanel?.openWindow = { [weak window] in window?.open() }
+        dockPanel?.isWindowOpen = { [weak window] in window?.isOpen == true }
         window.onReturnToFloating = { [weak self] in self?.dockPanel?.showFromNotification() }
         if UserDefaults.standard.bool(forKey: DockWindowController.wasOpenKey) { window.open() }
         NSApp.applicationIconImage = DockAppBrand.icon
@@ -228,7 +229,11 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         let workspace = DoubleTapShortcut.workspace
         if workspace.keyCodes.contains(event.keyCode) {
             if commandDoubleTapDetector.handle(isCommandDown: event.modifierFlags.contains(workspace.flag), at: event.timestamp) {
-                dockPanel?.toggleFromShortcut()
+                if dockWindow?.isOpen == true {
+                    dockWindow?.toggle()
+                } else {
+                    dockPanel?.toggleFromShortcut()
+                }
             }
             return
         }
@@ -241,7 +246,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
 
     /// Clicking the Dock icon (shown while the window is open) brings it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        dockWindow?.open()
+        dockPanel?.switchToWindow()
         return true
     }
 
@@ -302,6 +307,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private let onWillShow: () -> Void
     private let onHide: () -> Void
     var openWindow: (() -> Void)?
+    var isWindowOpen: () -> Bool = { false }
 
     var statusItemDiagnostic: NSStatusBarButton? { statusItem.button }
     var statusItemIsVisible: Bool { statusItem.isVisible }
@@ -394,8 +400,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             }, onFullscreenToggle: { [weak self] in
                 self?.toggleFullscreen()
             }, onOpenWindow: { [weak self] in
-                self?.hide()
-                self?.openWindow?()
+                self?.switchToWindow()
             })
         )
         hostingView.onHoverChanged = { [weak self] inside in
@@ -436,7 +441,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             }
             .store(in: &cancellables)
 
-        model.$runtimeConfiguration
+        model.$runtimeConfiguration.map { _ in () }
+            .merge(with: model.$defaultBotName.map { _ in () })
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateStatusItemIdentity()
@@ -560,7 +566,18 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panelPresentation.quotaRequest &+= 1
     }
 
+    /// Only one workspace surface is shown at a time: the floating panel or the window.
+    func switchToWindow() {
+        hide()
+        openWindow?()
+    }
+
     private func show(fromShortcut: Bool = false) {
+        // While the native window is open, every entry point focuses it instead.
+        if isWindowOpen() {
+            switchToWindow()
+            return
+        }
         pointerExitTask?.cancel()
         if !isWorkspaceVisible {
             // Read fresh: Settings and the fullscreen toggle both write this key.

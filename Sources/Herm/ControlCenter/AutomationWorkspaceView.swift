@@ -1,25 +1,18 @@
 import SwiftUI
 
 enum AutomationWorkspaceTab: String, CaseIterable, Identifiable {
-    case overview
-    case runs
+    case history
+    case details
 
     var id: Self { self }
     var title: String { rawValue.capitalized }
 }
 
-enum AutomationWorkspaceHistoryScope: String, CaseIterable, Identifiable {
-    case selected
-    case all
-
-    var id: Self { self }
-    var title: String { self == .selected ? "Selected" : "All runs" }
-}
-
 enum AutomationWorkspaceLayout {
     static let inspectorBreakpoint: CGFloat = 1_000
-    static let inspectorWidth: CGFloat = 380
+    static let listWidth: CGFloat = 290
 
+    /// Whether the run-detail panel sits beside the history instead of a sheet.
     static func usesPersistentInspector(width: CGFloat) -> Bool {
         width >= inspectorBreakpoint
     }
@@ -29,6 +22,7 @@ struct AutomationWorkspaceRowPresentation: Equatable {
     enum Result: Equatable {
         case paused
         case noRun
+        case running
         case succeeded
         case failed
 
@@ -36,6 +30,7 @@ struct AutomationWorkspaceRowPresentation: Equatable {
             switch self {
             case .paused: "Paused"
             case .noRun: "No run yet"
+            case .running: "Running"
             case .succeeded: "Succeeded"
             case .failed: "Failed"
             }
@@ -49,12 +44,18 @@ struct AutomationWorkspaceRowPresentation: Equatable {
         guard job.enabled else { return Self(result: .paused, detail: job.lastRunAt) }
         // Run history may be unavailable; the job's own last_status is still authoritative.
         if let latestRun {
-            return Self(result: failed(latestRun.status, error: latestRun.error) ? .failed : .succeeded, detail: latestRun.claimedAt)
+            return Self(result: result(for: latestRun), detail: latestRun.claimedAt)
         }
         if let status = job.lastStatus, job.lastRunAt != nil {
             return Self(result: failed(status, error: job.lastError) ? .failed : .succeeded, detail: job.lastRunAt)
         }
         return Self(result: .noRun, detail: nil)
+    }
+
+    static func result(for run: CronRunSummary) -> Result {
+        if failed(run.status, error: run.error) { return .failed }
+        let status = run.status.lowercased()
+        return status.contains("run") || status.contains("claim") || status.contains("pending") ? .running : .succeeded
     }
 
     @MainActor static func isOverdue(_ job: CronSummary, now: Date = .now) -> Bool {
@@ -68,31 +69,16 @@ struct AutomationWorkspaceRowPresentation: Equatable {
     }
 }
 
-enum AutomationWorkspaceRunHistoryPresentation {
-    static func emptyMessage(
-        scope: AutomationWorkspaceHistoryScope,
-        historyAvailable: Bool,
-        hasAnyRuns: Bool,
-        hasScopedRuns: Bool,
-        isStale: Bool
-    ) -> String? {
-        guard !hasScopedRuns else { return nil }
-        if isStale && !hasAnyRuns { return "Run history is unavailable while Hermes reconnects." }
-        if !historyAvailable && !hasAnyRuns { return "Run history is unavailable through this Hermes CLI." }
-        return scope == .selected ? "No runs recorded for this schedule." : "No automation runs recorded."
-    }
-}
-
 struct AutomationWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
 
     @State private var selectedJobID: String?
-    @State private var inspectorTab: AutomationWorkspaceTab = .overview
-    @State private var historyScope: AutomationWorkspaceHistoryScope = .selected
+    @State private var selectedRunID: String?
+    @State private var isRunPanelOpen = true
+    @State private var tab: AutomationWorkspaceTab = .history
+    @State private var searchText = ""
     @State private var isShowingCreationSheet = false
-    @State private var isShowingCompactInspector = false
     @State private var editingJob: CronSummary?
-    @State private var reportRequest: CronReportRequest?
     @State private var removeRequest: CronSummary?
     @State private var runRequest: CronSummary?
     @State private var isShowingRemoveConfirmation = false
@@ -103,30 +89,31 @@ struct AutomationWorkspaceView: View {
         control.cronJobs.first { $0.id == selectedJobID }
     }
 
-    private var activeCount: Int {
-        control.cronJobs.filter(\.enabled).count
+    private var filteredJobs: [CronSummary] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return control.cronJobs }
+        return control.cronJobs.filter {
+            $0.name.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query)
+        }
     }
 
+    /// Per-job history when loaded; otherwise whatever the capped global feed holds.
+    private func runs(for job: CronSummary) -> [CronRunSummary] {
+        control.cronRunsByJob[job.id] ?? control.cronRuns.filter { $0.jobID == job.id }
+    }
+
+    private func presentation(for job: CronSummary) -> AutomationWorkspaceRowPresentation {
+        AutomationWorkspaceRowPresentation.make(job: job, latestRun: runs(for: job).first)
+    }
+
+    private var activeCount: Int { control.cronJobs.filter(\.enabled).count }
+
     private var attentionCount: Int {
-        control.cronJobs.reduce(into: 0) { result, job in
-            let latest = control.cronRuns.first { $0.jobID == job.id }
-            if AutomationWorkspaceRowPresentation.make(job: job, latestRun: latest).result == .failed {
-                result += 1
-            }
-        }
+        control.cronJobs.filter { presentation(for: $0).result == .failed }.count
     }
 
     private var overdueCount: Int {
         control.cronJobs.filter { AutomationWorkspaceRowPresentation.isOverdue($0) }.count
-    }
-
-    private var headerSubtitle: String {
-        let count = control.cronJobs.count
-        if control.refreshState(for: "cron.jobs")?.isRefreshing == true, count == 0 {
-            return "Loading schedules…"
-        }
-        let attention = attentionCount > 0 ? " · \(attentionCount) needs attention" : ""
-        return "\(count) schedule\(count == 1 ? "" : "s") · \(activeCount) active\(attention)"
     }
 
     private var isRefreshing: Bool {
@@ -134,42 +121,25 @@ struct AutomationWorkspaceView: View {
     }
 
     var body: some View {
-        GeometryReader { proxy in
-            VStack(spacing: 0) {
-                workspaceHeader
-                Divider().overlay(Color.dockBorderLight)
-                if overdueCount > 0 { overdueBanner }
-
-                if control.cronJobs.isEmpty, control.refreshState(for: "cron.jobs")?.isRefreshing == true {
-                    DockLoadingState(title: "Loading schedules…", detail: "Reading recurring jobs from Hermes.")
-                } else if control.cronJobs.isEmpty {
-                    emptyWorkspace
-                } else if AutomationWorkspaceLayout.usesPersistentInspector(width: proxy.size.width) {
-                    HStack(spacing: 0) {
-                        automationTable(opensInspector: false)
-                        Divider().overlay(Color.dockBorderLight)
-                        if let selectedJob {
-                            automationInspector(job: selectedJob)
-                                .frame(width: AutomationWorkspaceLayout.inspectorWidth)
-                                .transition(.opacity)
-                        } else {
-                            inspectorPlaceholder
-                                .frame(width: AutomationWorkspaceLayout.inspectorWidth)
-                        }
+        // Same shell as the Kanban inspector: a full-height, resizable,
+        // closable sibling panel rather than a column inside the page.
+        HSplitView {
+            page
+                .frame(minWidth: 600)
+            if isRunPanelOpen, let job = selectedJob {
+                Group {
+                    if let run = selectedRun(for: job) {
+                        AutomationRunDetailPanel(run: run, job: job, control: control, onClose: { isRunPanelOpen = false })
+                    } else {
+                        emptyRunPanel
                     }
-                } else {
-                    automationTable(opensInspector: true)
                 }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.dockCanvas)
-            .sheet(isPresented: $isShowingCompactInspector) {
-                if let selectedJob {
-                    automationInspector(job: selectedJob, onClose: { isShowingCompactInspector = false })
-                        .frame(minWidth: 460, minHeight: 600)
-                }
+                .frame(minWidth: 340, idealWidth: 400, maxWidth: 520, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color.dockCanvas)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $isShowingCreationSheet) {
             AutomationCreationSheet(control: control) { name in
                 pendingCreatedName = name
@@ -182,9 +152,6 @@ struct AutomationWorkspaceView: View {
                 isPending: control.isActionPending(control.cronActionID("edit", job: job)),
                 submit: { draft in control.editCron(job, draft: draft) }
             )
-        }
-        .sheet(item: $reportRequest) { request in
-            CronReportDetailSheet(request: request, control: control)
         }
         .confirmationDialog("Remove automation?", isPresented: $isShowingRemoveConfirmation) {
             if let removeRequest {
@@ -205,6 +172,14 @@ struct AutomationWorkspaceView: View {
             Text("This starts an additional run immediately and does not change the schedule.")
         }
         .onAppear { reconcileSelection() }
+        .onChange(of: selectedJobID) { _, id in
+            selectedRunID = nil
+            if let id { control.refreshCronRuns(jobID: id) }
+        }
+        .onChange(of: control.cronRuns) { _, _ in
+            // A global history refresh (periodic, or after Run now) means new runs may exist.
+            if let selectedJobID { control.refreshCronRuns(jobID: selectedJobID) }
+        }
         .onChange(of: control.cronJobs) { _, _ in
             reconcileSelection()
             if let pendingCreatedName,
@@ -215,24 +190,83 @@ struct AutomationWorkspaceView: View {
         }
     }
 
+    private var emptyRunPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("RUN DETAIL")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(1.05)
+                    .foregroundStyle(Color.dockMetadataText)
+                Spacer()
+                Button { isRunPanelOpen = false } label: {
+                    DockIcon(.x).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(Color.dockSecondaryText)
+                .help("Close run panel")
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 64)
+            .background(Color.dockSurface2)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            placeholder("No run selected", detail: "Runs for this automation appear in History. Pick one to read its output.")
+        }
+    }
+
+    private var page: some View {
+        VStack(spacing: 0) {
+            workspaceHeader
+            Divider().overlay(Color.dockBorderLight)
+            if overdueCount > 0 { overdueBanner }
+
+            if control.cronJobs.isEmpty, control.refreshState(for: "cron.jobs")?.isRefreshing == true {
+                DockLoadingState(title: "Loading schedules…", detail: "Reading recurring jobs from Hermes.")
+            } else if control.cronJobs.isEmpty {
+                emptyWorkspace
+            } else {
+                HStack(spacing: 0) {
+                    jobList
+                        .frame(width: AutomationWorkspaceLayout.listWidth)
+                    Divider().overlay(Color.dockBorderLight)
+                    Group {
+                        if let selectedJob { jobPanel(selectedJob) }
+                        else { placeholder("Select an automation", detail: "Choose a schedule to see its run history.") }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.dockCanvas)
+    }
+
+    // MARK: Header
+
     private var workspaceHeader: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Automation")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
-                Text(headerSubtitle)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(attentionCount > 0 ? Color.dockWarning : Color.dockMetadataText)
-                    .lineLimit(1)
+                Text("Recurring work Hermes runs on your behalf")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
             }
             Spacer(minLength: 12)
+            HStack(spacing: 6) {
+                summaryChip("\(control.cronJobs.count)", label: "schedules", tint: Color.dockSecondaryText)
+                summaryChip("\(activeCount)", label: "active", tint: Color.dockSuccess)
+                if attentionCount > 0 {
+                    summaryChip("\(attentionCount)", label: "failing", tint: Color.dockDestructive)
+                }
+            }
             Button(action: refreshWorkspace) {
                 Group {
                     if isRefreshing { ProgressView().controlSize(.small) }
                     else { DockIcon(.arrowsClockwise) }
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: 32, height: 32)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(Color.dockSecondaryText)
@@ -244,13 +278,25 @@ struct AutomationWorkspaceView: View {
                 Label("New automation", icon: .plus)
                     .font(.system(size: 12, weight: .semibold))
                     .padding(.horizontal, 12)
-                    .frame(height: 34)
+                    .frame(height: 32)
             }
             .buttonStyle(.dockPrimary)
-            .disabled(!control.capabilityAvailable("rpc-scheduling"))
+            .disabled(!control.cronControlAvailable)
+            .help(control.cronControlAvailable ? "Create a new schedule" : "Automation control is unavailable through this Hermes gateway.")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+    }
+
+    private func summaryChip(_ value: String, label: String, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            Text(value).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(tint)
+            Text(label).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 24)
+        .background(Capsule().fill(Color.dockSurface.opacity(0.5)))
+        .overlay(Capsule().strokeBorder(Color.dockBorderLight, lineWidth: 0.5))
     }
 
     private var overdueBanner: some View {
@@ -262,244 +308,116 @@ struct AutomationWorkspaceView: View {
             Spacer(minLength: 0)
         }
         .foregroundStyle(Color.dockWarning)
-        .padding(.horizontal, 22)
+        .padding(.horizontal, 18)
         .padding(.vertical, 8)
         .background(Color.dockWarning.opacity(0.08))
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private func automationTable(opensInspector: Bool) -> some View {
-        GeometryReader { proxy in
-            let compact = proxy.size.width < 760
-            VStack(spacing: 0) {
-                tableHeader(compact: compact)
-                Divider().overlay(Color.dockBorderLight)
-                ScrollView(.vertical) {
-                    LazyVStack(spacing: 0) {
-                        ForEach(control.cronJobs) { job in
-                            automationRow(job, compact: compact, opensInspector: opensInspector)
-                        }
-                    }
+    // MARK: Job list
+
+    private var jobList: some View {
+        VStack(spacing: 0) {
+            TextField("Filter automations", text: $searchText)
+                .textFieldStyle(.dockGlass)
+                .padding(10)
+            Divider().overlay(Color.dockBorderLight)
+            ScrollView(.vertical) {
+                LazyVStack(spacing: 0) {
+                    ForEach(filteredJobs) { job in jobRow(job) }
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func tableHeader(compact: Bool) -> some View {
-        HStack(spacing: 0) {
-            Text("").frame(width: 24)
-            Text("AUTOMATION").frame(maxWidth: .infinity, alignment: .leading)
-            if !compact {
-                Text("NEXT RUN").frame(width: Self.timeColumnWidth, alignment: .leading)
-                Text("LAST RUN").frame(width: Self.timeColumnWidth, alignment: .leading)
-            }
-            Text("").frame(width: Self.actionsWidth)
-        }
-        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-        .foregroundStyle(Color.dockMetadataText)
-        .padding(.horizontal, 18)
-        .padding(.vertical, 8)
-    }
-
-    private static let timeColumnWidth: CGFloat = 150
-    private static let actionsWidth: CGFloat = 72
-
-    private func automationRow(_ job: CronSummary, compact: Bool, opensInspector: Bool) -> some View {
-        let latest = control.cronRuns.first { $0.jobID == job.id }
-        let presentation = AutomationWorkspaceRowPresentation.make(job: job, latestRun: latest)
+    private func jobRow(_ job: CronSummary) -> some View {
+        let result = presentation(for: job)
         let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
         let selected = job.id == selectedJobID
-        let pendingRun = control.isActionPending(control.cronActionID("run", job: job))
-
-        return HStack(spacing: 0) {
-            statusDot(presentation.result)
-                .frame(width: 24, alignment: .leading)
+        return HStack(alignment: .top, spacing: 10) {
+            statusDot(result.result)
+                .padding(.top, 5)
             VStack(alignment: .leading, spacing: 3) {
                 Text(job.name)
-                    .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                    .font(.system(size: 12.5, weight: selected ? .semibold : .medium))
                     .foregroundStyle(job.enabled ? Color.dockPrimaryText : Color.dockSecondaryText)
                     .lineLimit(1)
-                Text(rowMetadata(job, compact: compact))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.trailing, 12)
-            if !compact {
-                timeCell(
-                    primary: nextRunPrimary(job, overdue: overdue),
-                    secondary: job.enabled ? job.nextRun.map(HumanDateFormatting.dateAndTime) : nil,
-                    tint: overdue ? Color.dockWarning : Color.dockSecondaryText
-                )
-                timeCell(
-                    primary: presentation.result.title,
-                    secondary: presentation.detail.map { HumanDateFormatting.relative($0) },
-                    tint: presentation.result == .failed ? Color.dockDestructive : Color.dockSecondaryText
-                )
-            }
-            HStack(spacing: 0) {
-                if control.capabilityAvailable("cron.runNow") {
-                    Button {
-                        runRequest = job
-                        isShowingRunConfirmation = true
-                    } label: {
-                        Group {
-                            if pendingRun { ProgressView().controlSize(.small) }
-                            else { DockIcon(.play, weight: .fill).font(.system(size: 11)) }
-                        }
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                HStack(spacing: 4) {
+                    Text(CronScheduleFormatting.humanReadable(job.schedule))
+                    if job.enabled, let next = job.nextRun {
+                        Text("·")
+                        Text(overdue ? "overdue" : "next \(HumanDateFormatting.relative(next))")
+                            .foregroundStyle(overdue ? Color.dockWarning : Color.dockMetadataText)
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.dockAccent)
-                    .disabled(pendingRun)
-                    .help("Run now")
                 }
-                if hasMenuActions(for: job) {
-                    Menu { menuActions(for: job) } label: {
-                        Ph.dotsThree.image(size: 14, color: .secondaryLabelColor)
-                            .frame(width: 32, height: 32)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .buttonStyle(.plain)
-                    .fixedSize()
-                    .help("More actions")
-                    .accessibilityLabel("More actions for \(job.name)")
-                }
+                .font(.system(size: 10.5))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
             }
-            .frame(width: Self.actionsWidth, alignment: .trailing)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        .frame(minHeight: 54)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(selected ? Color.dockAccent.opacity(0.10) : Color.clear)
         .overlay(alignment: .leading) {
             if selected { Color.dockAccent.frame(width: 2) }
         }
         .contentShape(Rectangle())
-        .onTapGesture { select(job, opensInspector: opensInspector) }
+        .onTapGesture { selectedJobID = job.id }
         .contextMenu { menuActions(for: job) }
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    /// Schedule · delivery on one quiet line; compact widths fold the next run in too.
-    private func rowMetadata(_ job: CronSummary, compact: Bool) -> String {
-        var parts = [CronScheduleFormatting.humanReadable(job.schedule)]
-        if let delivery = job.delivery, !delivery.isEmpty, delivery != "local" { parts.append(delivery) }
-        if compact, job.enabled, let next = job.nextRun { parts.append("next \(HumanDateFormatting.relative(next))") }
-        return parts.joined(separator: " · ")
-    }
+    // MARK: Selected job
 
-    private func nextRunPrimary(_ job: CronSummary, overdue: Bool) -> String {
-        guard job.enabled else { return "Paused" }
-        guard let next = job.nextRun else { return "Not reported" }
-        return overdue ? "Overdue \(HumanDateFormatting.relative(next))" : HumanDateFormatting.relative(next).capitalizedFirst
-    }
-
-    private func timeCell(primary: String, secondary: String?, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(primary)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(tint)
-            if let secondary {
-                Text(secondary)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-        }
-        .lineLimit(1)
-        .frame(width: Self.timeColumnWidth, alignment: .leading)
-    }
-
-    private func statusDot(_ result: AutomationWorkspaceRowPresentation.Result) -> some View {
-        Circle()
-            .strokeBorder(statusColor(result), lineWidth: 1.5)
-            .background(Circle().fill(result == .succeeded || result == .failed ? statusColor(result) : .clear))
-            .frame(width: 8, height: 8)
-    }
-
-    @ViewBuilder
-    private func menuActions(for job: CronSummary) -> some View {
-        if control.capabilityAvailable("cron.runNow") {
-            Button("Run now", icon: .play) {
-                runRequest = job
-                isShowingRunConfirmation = true
-            }
-        }
-        if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
-            Button("Edit", icon: .pencilSimple) { editingJob = job }
-        }
-        if control.capabilityAvailable("rpc-scheduling") {
-            Divider()
-            Button("Remove", icon: .trash, role: .destructive) {
-                removeRequest = job
-                isShowingRemoveConfirmation = true
-            }
-        }
-    }
-
-    private func hasMenuActions(for job: CronSummary) -> Bool {
-        control.capabilityAvailable("cron.runNow")
-            || (control.capabilityAvailable("cron.edit") && !job.editableFields.isEmpty)
-            || control.capabilityAvailable("rpc-scheduling")
-    }
-
-    private func automationInspector(job: CronSummary, onClose: (() -> Void)? = nil) -> some View {
+    private func jobPanel(_ job: CronSummary) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            inspectorHeader(job, onClose: onClose)
-            DockTabBar(options: AutomationWorkspaceTab.allCases, selection: $inspectorTab, title: \.title)
+            jobHeader(job)
+            statStrip(job)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 14)
+            DockTabBar(options: AutomationWorkspaceTab.allCases, selection: $tab, title: \.title)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 18)
-            .padding(.bottom, 12)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
             Divider().overlay(Color.dockBorderLight)
             ScrollView {
-                if inspectorTab == .overview {
-                    overview(job)
+                if tab == .history {
+                    history(job)
                 } else {
-                    runsInspector(job)
+                    details(job)
                 }
             }
         }
-        .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.dockSurface.opacity(0.18))
     }
 
-    private func inspectorHeader(_ job: CronSummary, onClose: (() -> Void)?) -> some View {
+    private func jobHeader(_ job: CronSummary) -> some View {
         let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
                 statePill(
                     job.enabled ? (overdue ? "Overdue" : "Active") : "Paused",
                     tint: !job.enabled ? Color.dockMetadataText : (overdue ? Color.dockWarning : Color.dockSuccess)
                 )
-                Text(CronScheduleFormatting.humanReadable(job.schedule))
+                Text(rowMetadata(job))
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
-                Spacer(minLength: 6)
-                if let onClose {
-                    Button(action: onClose) {
-                        DockIcon(.x)
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 26, height: 26)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .keyboardShortcut(.cancelAction)
-                    .help("Close")
-                }
+                    .truncationMode(.middle)
             }
-            Text(job.name)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Color.dockPrimaryText)
-                .lineLimit(3)
-                .textSelection(.enabled)
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(job.name)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                Spacer(minLength: 8)
+                if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
+                    Button("Edit") { editingJob = job }
+                        .buttonStyle(.dockSecondary)
+                        .controlSize(.small)
+                }
                 if control.capabilityAvailable("cron.runNow") {
                     Button {
                         runRequest = job
@@ -508,18 +426,22 @@ struct AutomationWorkspaceView: View {
                         Label("Run now", icon: .play)
                             .font(.system(size: 11, weight: .semibold))
                             .padding(.horizontal, 10)
-                            .frame(height: 28)
+                            .frame(height: 26)
                     }
                     .buttonStyle(.dockPrimary)
                     .disabled(control.isActionPending(control.cronActionID("run", job: job)))
                 }
-                if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
-                    Button("Edit") { editingJob = job }
-                        .buttonStyle(.borderless)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.dockAccent)
+                Button {
+                    isRunPanelOpen.toggle()
+                } label: {
+                    DockIcon(isRunPanelOpen ? .sidebarSimple : .square)
+                        .font(.system(size: 13))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(.borderless)
+                .foregroundStyle(isRunPanelOpen ? Color.dockAccent : Color.dockSecondaryText)
+                .help(isRunPanelOpen ? "Hide run panel" : "Show run panel")
                 if hasMenuActions(for: job) {
                     Menu { menuActions(for: job) } label: {
                         Ph.dotsThree.image(size: 14, color: .secondaryLabelColor)
@@ -535,53 +457,129 @@ struct AutomationWorkspaceView: View {
                 }
             }
         }
-        .padding(18)
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
     }
 
-    private func statePill(_ title: String, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Circle().fill(tint).frame(width: 6, height: 6)
-            Text(title).font(.system(size: 10, weight: .semibold))
-        }
-        .foregroundStyle(tint)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(tint.opacity(0.12)))
-    }
-
-    private func overview(_ job: CronSummary) -> some View {
-        let latest = control.cronRuns.first { $0.jobID == job.id }
-        let result = AutomationWorkspaceRowPresentation.make(job: job, latestRun: latest)
+    private func statStrip(_ job: CronSummary) -> some View {
         let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
-        let runError = latest?.error ?? job.lastError
+        let result = presentation(for: job)
+        let jobRuns = runs(for: job)
+        let failures = jobRuns.filter { AutomationWorkspaceRowPresentation.result(for: $0) == .failed }.count
+        return HStack(spacing: 10) {
+            statTile(
+                "Next run",
+                value: nextRunPrimary(job, overdue: overdue),
+                detail: job.enabled ? job.nextRun.map(HumanDateFormatting.dateAndTime) : job.details.pausedReason,
+                tint: overdue ? Color.dockWarning : Color.dockPrimaryText
+            )
+            statTile(
+                "Last run",
+                value: result.result.title,
+                detail: result.detail.map { HumanDateFormatting.relative($0) },
+                tint: statusColor(result.result)
+            )
+            statTile(
+                "Success",
+                value: jobRuns.isEmpty ? "—" : "\(Int((Double(jobRuns.count - failures) / Double(jobRuns.count) * 100).rounded()))%",
+                detail: jobRuns.isEmpty ? "No runs loaded" : "last \(jobRuns.count) run\(jobRuns.count == 1 ? "" : "s")",
+                tint: failures > 0 ? Color.dockWarning : Color.dockPrimaryText
+            )
+        }
+    }
+
+    private func history(_ job: CronSummary) -> some View {
+        let jobRuns = runs(for: job)
+        let state = control.refreshState(for: control.cronRunsProjectionKey(jobID: job.id))
+        let selected = isRunPanelOpen ? selectedRun(for: job)?.id : nil
+        return LazyVStack(alignment: .leading, spacing: 0) {
+            if jobRuns.isEmpty {
+                if state?.isRefreshing == true {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading run history…")
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .padding(20)
+                } else if let error = state?.error {
+                    callout("Run history unavailable", message: error, tint: Color.dockWarning)
+                        .padding(20)
+                } else {
+                    placeholder("No runs yet", detail: "Runs appear here after the schedule fires or you run it manually.")
+                }
+            } else {
+                if let error = state?.error {
+                    Text("Showing cached history · \(error)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockWarning)
+                        .lineLimit(2)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                }
+                ForEach(jobRuns) { run in
+                    runRow(run, selected: run.id == selected) {
+                        selectedRunID = run.id
+                        isRunPanelOpen = true
+                    }
+                }
+            }
+        }
+    }
+
+    private func runRow(_ run: CronRunSummary, selected: Bool, action: @escaping () -> Void) -> some View {
+        let result = AutomationWorkspaceRowPresentation.result(for: run)
+        return Button(action: action) {
+            HStack(spacing: 12) {
+                statusDot(result)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Unknown time")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text([run.claimedAt.map { HumanDateFormatting.relative($0) }, run.source].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Color.dockMetadataText)
+                    if let error = run.error {
+                        Text(error)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(Color.dockDestructive)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(run.status.capitalized)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(statusColor(result))
+                DockIcon(.caretRight)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selected ? Color.dockAccent.opacity(0.10) : Color.clear)
+            .overlay(alignment: .leading) {
+                if selected { Color.dockAccent.frame(width: 2) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private func details(_ job: CronSummary) -> some View {
         let details = job.details
         return VStack(alignment: .leading, spacing: 18) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                statTile(
-                    "Next run",
-                    value: job.enabled ? (nextRunPrimary(job, overdue: overdue)) : "Paused",
-                    detail: job.enabled ? job.nextRun.map(HumanDateFormatting.dateAndTime) : details.pausedReason,
-                    tint: overdue ? Color.dockWarning : Color.dockPrimaryText
-                )
-                statTile(
-                    latest == nil && job.lastStatus != nil ? "Last reported run" : "Last run",
-                    value: result.result.title,
-                    detail: result.detail.map(HumanDateFormatting.dateAndTime),
-                    tint: result.result == .failed ? Color.dockDestructive : (result.result == .succeeded ? Color.dockSuccess : Color.dockPrimaryText)
-                )
-                statTile("Cadence", value: CronScheduleFormatting.humanReadable(job.schedule), detail: job.schedule, tint: Color.dockPrimaryText)
-                statTile("Repeats", value: details.repeats.map { $0.capitalizedFirst } ?? "Not reported", detail: nil, tint: Color.dockPrimaryText)
-            }
-
-            if let runError, !runError.isEmpty {
-                callout("Last run failed", message: runError, tint: Color.dockDestructive)
+            if let error = job.lastError, !error.isEmpty {
+                callout("Last run failed", message: error, tint: Color.dockDestructive)
             }
             if let deliveryError = details.deliveryError {
                 callout("Delivery failed", message: deliveryError, tint: Color.dockWarning)
             }
 
             if (job.prompt?.isEmpty == false) || details.script != nil {
-                inspectorSection("Request") {
+                section("Request") {
                     if let script = details.script {
                         detailRow("Script", script, monospaced: true)
                     }
@@ -598,7 +596,13 @@ struct AutomationWorkspaceView: View {
                 }
             }
 
-            inspectorSection("Configuration") {
+            section("Schedule") {
+                detailRow("Cadence", CronScheduleFormatting.humanReadable(job.schedule))
+                detailRow("Expression", job.schedule, monospaced: true)
+                detailRow("Repeats", details.repeats.map { $0.capitalizedFirst } ?? "Not reported")
+            }
+
+            section("Configuration") {
                 detailRow("Model", modelDescription(details))
                 if !details.skills.isEmpty { detailRow("Skills", details.skills.joined(separator: ", ")) }
                 if !details.toolsets.isEmpty { detailRow("Toolsets", details.toolsets.joined(separator: ", ")) }
@@ -606,23 +610,31 @@ struct AutomationWorkspaceView: View {
                 detailRow("Delivery", job.delivery?.isEmpty == false ? job.delivery! : "Not reported")
             }
 
-            inspectorSection("Identifiers") {
+            section("Identifiers") {
                 detailRow("Job", job.id, monospaced: true)
                 if let sessionID = job.sessionID { detailRow("Session", sessionID, monospaced: true) }
             }
-
-            if let latest, let request = control.cronReportRequest(for: latest) {
-                Button {
-                    reportRequest = request
-                } label: {
-                    Label("Open latest report", icon: .fileText)
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockAccent)
-            }
         }
-        .padding(18)
+        .padding(20)
+    }
+
+    // MARK: Shared pieces
+
+    private func selectedRun(for job: CronSummary) -> CronRunSummary? {
+        let jobRuns = runs(for: job)
+        return jobRuns.first { $0.id == selectedRunID } ?? jobRuns.first
+    }
+
+    private func rowMetadata(_ job: CronSummary) -> String {
+        var parts = [CronScheduleFormatting.humanReadable(job.schedule)]
+        if let delivery = job.delivery, !delivery.isEmpty, delivery != "local" { parts.append(delivery) }
+        return parts.joined(separator: " · ")
+    }
+
+    private func nextRunPrimary(_ job: CronSummary, overdue: Bool) -> String {
+        guard job.enabled else { return "Paused" }
+        guard let next = job.nextRun else { return "Not reported" }
+        return overdue ? "Overdue" : HumanDateFormatting.relative(next).capitalizedFirst
     }
 
     private func modelDescription(_ details: CronJobDetails) -> String {
@@ -631,6 +643,24 @@ struct AutomationWorkspaceView: View {
         case let (nil, model?): model
         default: "Default model"
         }
+    }
+
+    private func statusDot(_ result: AutomationWorkspaceRowPresentation.Result) -> some View {
+        Circle()
+            .strokeBorder(statusColor(result), lineWidth: 1.5)
+            .background(Circle().fill(result == .paused || result == .noRun ? .clear : statusColor(result)))
+            .frame(width: 8, height: 8)
+    }
+
+    private func statePill(_ title: String, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(tint).frame(width: 6, height: 6)
+            Text(title).font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(tint.opacity(0.12)))
     }
 
     private func statTile(_ title: String, value: String, detail: String?, tint: Color) -> some View {
@@ -656,95 +686,14 @@ struct AutomationWorkspaceView: View {
     }
 
     private func callout(_ title: String, message: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(tint)
-            Text(message)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color.dockSecondaryText)
-                .textSelection(.enabled)
-                .lineLimit(6)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(tint.opacity(0.08)))
-        .overlay(alignment: .leading) { tint.frame(width: 2) }
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius))
+        AutomationCallout(title: title, message: message, tint: tint)
     }
 
     private func detailRow(_ label: String, _ value: String, monospaced: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.dockMetadataText)
-                .frame(width: 72, alignment: .leading)
-            Text(value)
-                .font(monospaced ? .system(size: 11, design: .monospaced) : .system(size: 12))
-                .foregroundStyle(Color.dockSecondaryText)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        AutomationDetailRow(label: label, value: value, monospaced: monospaced)
     }
 
-    private func runsInspector(_ job: CronSummary) -> some View {
-        let runs = historyScope == .selected
-            ? control.cronRuns.filter { $0.jobID == job.id }
-            : control.cronRuns
-        let historyIsStale = control.refreshState(for: "cron.history")?.isStale == true
-        let emptyMessage = AutomationWorkspaceRunHistoryPresentation.emptyMessage(
-            scope: historyScope,
-            historyAvailable: control.cronHistoryAvailable,
-            hasAnyRuns: !control.cronRuns.isEmpty,
-            hasScopedRuns: !runs.isEmpty,
-            isStale: historyIsStale
-        )
-        return VStack(alignment: .leading, spacing: 12) {
-            DockTabBar(options: AutomationWorkspaceHistoryScope.allCases, selection: $historyScope, title: \.title)
-            if historyIsStale, !control.cronRuns.isEmpty {
-                Text("History is stale while Hermes reconnects.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-            }
-            if let emptyMessage {
-                inspectorEmpty(emptyMessage)
-            } else {
-                ForEach(runs) { run in
-                    runRow(run)
-                }
-            }
-        }
-        .padding(18)
-    }
-
-    private func runRow(_ run: CronRunSummary) -> some View {
-        let job = run.jobID.flatMap { id in control.cronJobs.first { $0.id == id } }
-        let content = HStack(alignment: .top, spacing: 8) {
-            Circle().fill(run.error == nil ? Color.dockSuccess : Color.dockDestructive).frame(width: 7, height: 7).padding(.top, 4)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(run.status.capitalized).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
-                if let claimedAt = run.claimedAt { Text(HumanDateFormatting.dateAndTime(claimedAt)).foregroundStyle(Color.dockMetadataText) }
-                if let job { Text(job.name).foregroundStyle(Color.dockSecondaryText).lineLimit(1) }
-                if let source = run.source, !source.isEmpty { Text(source).foregroundStyle(Color.dockMetadataText).lineLimit(1) }
-                if let error = run.error { Text(error).foregroundStyle(Color.dockWarning).lineLimit(2) }
-            }
-            Spacer(minLength: 0)
-            if control.cronReportRequest(for: run) != nil {
-                DockIcon(.caretRight).font(.system(size: 10, weight: .bold)).foregroundStyle(Color.dockAccent).padding(.top, 4)
-            }
-        }
-        .font(.system(size: 11))
-        .padding(.vertical, 10)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-        if let request = control.cronReportRequest(for: run) {
-            return AnyView(Button { reportRequest = request } label: { content }.buttonStyle(.plain))
-        }
-        return AnyView(content)
-    }
-
-    private func inspectorSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -756,24 +705,44 @@ struct AutomationWorkspaceView: View {
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    private func inspectorEmpty(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 12))
-            .foregroundStyle(Color.dockMetadataText)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.vertical, 22)
-    }
-
-    private var inspectorPlaceholder: some View {
+    private func placeholder(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Select an automation")
+            Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
-            Text("Choose a schedule to inspect its configuration and runs.")
+            Text(detail)
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func menuActions(for job: CronSummary) -> some View {
+        if control.capabilityAvailable("cron.runNow") {
+            Button("Run now", icon: .play) {
+                runRequest = job
+                isShowingRunConfirmation = true
+            }
+        }
+        if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
+            Button("Edit", icon: .pencilSimple) { editingJob = job }
+        }
+        if control.cronControlAvailable {
+            Divider()
+            Button("Remove", icon: .trash, role: .destructive) {
+                removeRequest = job
+                isShowingRemoveConfirmation = true
+            }
+        }
+    }
+
+    private func hasMenuActions(for job: CronSummary) -> Bool {
+        control.capabilityAvailable("cron.runNow")
+            || (control.capabilityAvailable("cron.edit") && !job.editableFields.isEmpty)
+            || control.cronControlAvailable
     }
 
     private var emptyWorkspace: some View {
@@ -787,19 +756,10 @@ struct AutomationWorkspaceView: View {
             Button("New automation") { isShowingCreationSheet = true }
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.dockAccent)
+                .disabled(!control.cronControlAvailable)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(28)
-    }
-
-    private func select(_ job: CronSummary, opensInspector: Bool) {
-        selectedJobID = job.id
-        if inspectorTab == .runs { historyScope = .selected }
-        // The table remains the primary surface on wide screens. On compact
-        // windows selection opens the same inspector as a native sheet.
-        if opensInspector {
-            isShowingCompactInspector = true
-        }
     }
 
     private func reconcileSelection() {
@@ -810,14 +770,178 @@ struct AutomationWorkspaceView: View {
     private func refreshWorkspace() {
         control.refresh()
         control.refreshCronRuns()
+        if let selectedJobID { control.refreshCronRuns(jobID: selectedJobID) }
     }
 
     private func statusColor(_ result: AutomationWorkspaceRowPresentation.Result) -> Color {
         switch result {
         case .paused, .noRun: Color.dockMetadataText
+        case .running: Color.dockAccent
         case .succeeded: Color.dockSuccess
         case .failed: Color.dockDestructive
         }
+    }
+}
+
+/// Third panel: one run's metadata plus the report Hermes recorded for it.
+private struct AutomationRunDetailPanel: View {
+    let run: CronRunSummary
+    let job: CronSummary
+    @ObservedObject var control: ControlCenterModel
+    var onClose: (() -> Void)?
+
+    @State private var report: CronReportDetail?
+    @State private var loadError: String?
+    @State private var isLoading = false
+
+    private var request: CronReportRequest? { control.cronReportRequest(for: run) }
+
+    var body: some View {
+        let result = AutomationWorkspaceRowPresentation.result(for: run)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text("RUN DETAIL")
+                            .font(.system(size: 11, weight: .bold))
+                            .tracking(1.05)
+                            .foregroundStyle(Color.dockMetadataText)
+                        Text(run.status.capitalized)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(result == .failed ? Color.dockDestructive : (result == .running ? Color.dockAccent : Color.dockSuccess))
+                    }
+                    Text(run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Unknown time")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if let report {
+                    DockCopyButton(report.markdown, label: "Copy", accessibilityLabel: "Copy run output", iconSize: 13)
+                        .buttonStyle(.borderless)
+                }
+                if let onClose {
+                    Button(action: onClose) {
+                        DockIcon(.x).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Close run panel")
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 64)
+            .background(Color.dockSurface2)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        AutomationDetailRow(label: "Automation", value: job.name)
+                        if let claimedAt = run.claimedAt {
+                            AutomationDetailRow(label: "Started", value: HumanDateFormatting.relative(claimedAt).capitalizedFirst)
+                        }
+                        if let source = run.source { AutomationDetailRow(label: "Source", value: source) }
+                        AutomationDetailRow(label: "Run ID", value: run.id, monospaced: true)
+                        if let sessionID = run.sessionID { AutomationDetailRow(label: "Session", value: sessionID, monospaced: true) }
+                    }
+                    if let error = run.error {
+                        AutomationCallout(title: "Error", message: error, tint: Color.dockDestructive)
+                    }
+                    Text("OUTPUT")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                    output
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .task(id: run.id) { await load() }
+    }
+
+    @ViewBuilder
+    private var output: some View {
+        if isLoading {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Loading output…")
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Color.dockMetadataText)
+        } else if let report {
+            MarkdownMessageView(markdown: report.markdown)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text(loadError ?? "Hermes did not record a session for this run.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockMetadataText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @MainActor
+    private func load() async {
+        report = nil
+        loadError = nil
+        guard let request else { return }
+        isLoading = true
+        do {
+            report = try await control.cronReport(for: request)
+        } catch {
+            // Script-only jobs never open an agent session, so the lookup 404s.
+            loadError = (error as NSError).code == 404 || error.localizedDescription.contains("404")
+                ? "This run did not record an agent session, so there is no transcript output. Script-only jobs report through their delivery target."
+                : error.localizedDescription
+        }
+        isLoading = false
+    }
+}
+
+private struct AutomationDetailRow: View {
+    let label: String
+    let value: String
+    var monospaced = false
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+                .frame(width: 78, alignment: .leading)
+            Text(value)
+                .font(monospaced ? .system(size: 11, design: .monospaced) : .system(size: 12))
+                .foregroundStyle(Color.dockSecondaryText)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct AutomationCallout: View {
+    let title: String
+    let message: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(message)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(Color.dockSecondaryText)
+                .textSelection(.enabled)
+                .lineLimit(8)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(tint.opacity(0.08)))
+        .overlay(alignment: .leading) { tint.frame(width: 2) }
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius))
     }
 }
 
@@ -862,7 +986,7 @@ private struct AutomationCreationSheet: View {
             modalActions(
                 primaryTitle: "Create Automation",
                 pendingTitle: "Creating…",
-                isDisabled: !valid || isSubmitting || !control.capabilityAvailable("rpc-scheduling"),
+                isDisabled: !valid || isSubmitting || !control.cronControlAvailable,
                 isPending: isSubmitting,
                 onCancel: { dismiss() }
             ) { submit() }

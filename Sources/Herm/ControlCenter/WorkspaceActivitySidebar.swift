@@ -1960,7 +1960,7 @@ struct WorkspaceActivitySidebar: View {
         } footer: {
             modalActions(
                 primaryTitle: "Review and Create",
-                isDisabled: !canCreateAutomation || !control.capabilityAvailable("rpc-scheduling"),
+                isDisabled: !canCreateAutomation || !control.cronControlAvailable,
                 isPending: false,
                 onCancel: { isShowingAutomationComposer = false }
             ) {
@@ -2071,7 +2071,7 @@ struct WorkspaceActivitySidebar: View {
         if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
             Button("Edit", icon: .pencilSimple) { cronEditJob = job }
         }
-        if control.capabilityAvailable("rpc-scheduling") {
+        if control.cronControlAvailable {
             Divider()
             Button("Remove", icon: .trash, role: .destructive) {
                 cronRemovalRequest = job
@@ -2102,7 +2102,7 @@ struct WorkspaceActivitySidebar: View {
                 }
                 .disabled(control.isActionPending(control.cronActionID("edit", job: job)))
             }
-            if control.capabilityAvailable("rpc-scheduling") {
+            if control.cronControlAvailable {
                 Button {
                     cronRemovalRequest = job
                     isShowingCronRemovalConfirmation = true
@@ -5522,6 +5522,11 @@ struct WorkspaceActivitySidebar: View {
                 }
                 SettingsSection(title: "Hermes companion", subtitle: "", tint: .dockAccent) {
                     HermesPetSettingsView(pet: control.pet)
+                }
+            }
+            if selectedSettingsCategory == .voice {
+                SettingsSection(title: "Turn detection", subtitle: "When to reply", tint: .dockAccent) {
+                    TurnModelSettingsView(store: .shared)
                 }
             }
             if selectedSettingsCategory == .updates {

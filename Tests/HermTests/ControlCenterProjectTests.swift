@@ -14,6 +14,9 @@ struct ControlCenterProjectTests {
         #expect(AutomationWorkspaceRowPresentation.make(job: paused, latestRun: nil).result == .paused)
         #expect(AutomationWorkspaceRowPresentation.make(job: enabled, latestRun: success).result == .succeeded)
         #expect(AutomationWorkspaceRowPresentation.make(job: enabled, latestRun: failure).result == .failed)
+        let running = CronRunSummary(id: "live", status: "running", jobID: "job", source: nil, claimedAt: nil, error: nil)
+        #expect(AutomationWorkspaceRowPresentation.result(for: running) == .running)
+        #expect(AutomationWorkspaceRowPresentation.result(for: success) == .succeeded)
     }
 
     @Test func automationFallsBackToJobLastStatusAndFlagsOverdue() {
@@ -83,26 +86,6 @@ struct ControlCenterProjectTests {
             selectedJobID: "job-a"
         )
         #expect(all.map(\.id) == ["run-a", "run-b", "run-unlinked"])
-    }
-
-    @Test func unavailableAutomationHistoryDoesNotClaimThereWereNoRuns() {
-        let message = AutomationWorkspaceRunHistoryPresentation.emptyMessage(
-            scope: .selected,
-            historyAvailable: true,
-            hasAnyRuns: false,
-            hasScopedRuns: false,
-            isStale: true
-        )
-        #expect(message == "Run history is unavailable while Hermes reconnects.")
-
-        let knownEmpty = AutomationWorkspaceRunHistoryPresentation.emptyMessage(
-            scope: .selected,
-            historyAvailable: true,
-            hasAnyRuns: false,
-            hasScopedRuns: false,
-            isStale: false
-        )
-        #expect(knownEmpty == "No runs recorded for this schedule.")
     }
 
     @Test func projectSessionActionPresentationKeepsPinDirectAndProtectsActiveDeletion() {

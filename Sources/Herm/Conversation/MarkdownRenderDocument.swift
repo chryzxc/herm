@@ -1153,6 +1153,17 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         return NSSize(width: ceil(used.width), height: ceil(used.height))
     }
 
+    /// Tight width of the text when wrapped at `width`. `usedRect` can report
+    /// the full container width, so measure the attributed string directly.
+    func usedWidth(forWidth width: CGFloat) -> CGFloat {
+        guard let storage = textStorage, storage.length > 0 else { return 0 }
+        let rect = storage.boundingRect(
+            with: NSSize(width: width, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading]
+        )
+        return min(width, ceil(rect.width) + 1)
+    }
+
     override var intrinsicContentSize: NSSize {
         guard bounds.width > 1 else { return NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric) }
         return NSSize(width: NSView.noIntrinsicMetric, height: measuredHeight(forWidth: bounds.width))

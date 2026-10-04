@@ -96,21 +96,48 @@ extension EnvironmentValues {
 /// "Attach to chat" submenu: a new chat or one of the recent sessions.
 /// Hidden when no router is installed (previews, detached windows).
 struct AttachToChatMenu: View {
+    /// Header pill matching `GitHubLinkButton`; off for context menus.
+    var pill = false
     let context: () -> ChatContext
     @Environment(\.chatContextRouter) private var router
 
     var body: some View {
         if let router {
-            Menu("Attach to chat", icon: .chatCircleText) {
-                Button("New chat") { router.attach(context(), to: nil) }
-                let sessions = router.recentSessions
-                if !sessions.isEmpty {
-                    Divider()
-                    ForEach(sessions) { session in
-                        Button(session.title.isEmpty ? "Untitled chat" : session.title) {
-                            router.attach(context(), to: session)
-                        }
+            if pill {
+                Menu { items(router) } label: {
+                    HStack(spacing: 5) {
+                        DockIcon(.chatCircleText, size: 12, color: Color.dockSecondaryText)
+                        Text("Attach to chat")
+                        DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
                     }
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
+                            .fill(Color.dockControlSurface)
+                    )
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            } else {
+                Menu("Attach to chat", icon: .chatCircleText) { items(router) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func items(_ router: ChatContextRouter) -> some View {
+        Button("New chat") { router.attach(context(), to: nil) }
+        let sessions = router.recentSessions
+        if !sessions.isEmpty {
+            Divider()
+            ForEach(sessions) { session in
+                Button(session.title.isEmpty ? "Untitled chat" : session.title) {
+                    router.attach(context(), to: session)
                 }
             }
         }

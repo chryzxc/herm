@@ -296,7 +296,9 @@ final class HermesCLIAdapter {
     }
 
     func cronRun(jobID: String) async throws -> HermesCLIResult { try await run(["hermes", "cron", "run", jobID]) }
-    func cronRuns(limit: Int = 20) async throws -> HermesCLIResult { try await run(["hermes", "cron", "runs", "--limit", String(limit)]) }
+    func cronRuns(limit: Int = 20, jobID: String? = nil) async throws -> HermesCLIResult {
+        try await run(["hermes", "cron", "runs", "--limit", String(limit)] + (jobID.map { [$0] } ?? []))
+    }
     func cronEdit(jobID: String, changes: [CronEditField: String]) async throws -> HermesCLIResult {
         var words = ["hermes", "cron", "edit"]
         for field in CronEditField.allCases {

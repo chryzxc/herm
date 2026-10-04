@@ -146,6 +146,56 @@ final class BotService {
         return try Self.parseProfileDetail(result)
     }
 
+    /// The profile's effective config (fallback chain, reasoning, context) via
+    /// profile-scoped `config.get full`; `nil` when Hermes can't answer.
+    func runtimeConfig(profileID: String) async -> BotRuntimeConfig? {
+        guard let result = try? await client.request(HermesFeatureIDs.ID.configGet.rawValue, params: ["key": "full", "profile": profileID]),
+              let config = result["config"] as? [String: Any] else { return nil }
+        return Self.parseRuntimeConfig(config)
+    }
+
+    /// Writes the chain as `fallback_providers` through the profile-scoped
+    /// `PUT /api/config` deep-merge. The merge can't delete the legacy
+    /// `fallback_model`, so it's blanked; Hermes skips entries without a
+    /// provider/model, which leaves `fallback_providers` the whole chain.
+    func setFallbacks(profileID: String, _ fallbacks: [BotRuntimeConfig.ModelRef]) async throws {
+        let entries: [[String: Any]] = fallbacks.map { ref in
+            var entry: [String: Any] = ["provider": ref.provider, "model": ref.model]
+            if let baseURL = ref.baseURL { entry["base_url"] = baseURL }
+            return entry
+        }
+        _ = try await client.sendHTTP("PUT", path: "/api/config", body: [
+            "profile": profileID,
+            "config": [
+                "fallback_providers": entries,
+                "fallback_model": ["provider": "", "model": "", "base_url": ""],
+            ],
+        ])
+    }
+
+    static func parseRuntimeConfig(_ config: [String: Any]) -> BotRuntimeConfig {
+        func refs(_ value: Any?) -> [BotRuntimeConfig.ModelRef] {
+            let rows = (value as? [[String: Any]]) ?? (value as? [String: Any]).map { [$0] } ?? []
+            return rows.compactMap { row in
+                guard let provider = row["provider"] as? String, let model = row["model"] as? String,
+                      !provider.isEmpty, !model.isEmpty else { return nil }
+                let baseURL = (row["base_url"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+                return .init(provider: provider, model: model, baseURL: baseURL)
+            }
+        }
+        var fallbacks: [BotRuntimeConfig.ModelRef] = []
+        for ref in refs(config["fallback_providers"]) + refs(config["fallback_model"]) where !fallbacks.contains(ref) {
+            fallbacks.append(ref)
+        }
+        let effort = ((config["agent"] as? [String: Any])?["reasoning_effort"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return BotRuntimeConfig(
+            contextLength: (config["model"] as? [String: Any])?["context_length"] as? Int,
+            reasoningEffort: effort,
+            fallbacks: fallbacks,
+            compressionThreshold: (config["compression"] as? [String: Any])?["threshold_tokens"] as? Int
+        )
+    }
+
     /// Applies an edited snapshot. Guarded (expensive) model pins answer
     /// `confirm_required` and write nothing until the caller re-sends with
     /// `confirmExpensiveModel`.
@@ -652,6 +702,21 @@ final class BotModeModel: ObservableObject {
         var detail = try? await service.profileDetail(profileID: bot.id)
         detail?.title = bot.title ?? ""
         return detail
+    }
+
+    func runtimeConfig(for bot: BotSummary) async -> BotRuntimeConfig? {
+        await service?.runtimeConfig(profileID: bot.id)
+    }
+
+    /// `nil` on success, otherwise the user-facing reason.
+    func setFallbacks(_ fallbacks: [BotRuntimeConfig.ModelRef], for bot: BotSummary) async -> String? {
+        guard let service else { return "Bot Mode is unavailable." }
+        do {
+            try await service.setFallbacks(profileID: bot.id, fallbacks)
+            return nil
+        } catch {
+            return Self.mutationDiagnostic(for: error, noun: "save the fallback models")
+        }
     }
 
     func modelOptions() async -> [(provider: String, models: [String])] {

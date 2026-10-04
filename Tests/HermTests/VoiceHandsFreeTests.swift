@@ -20,9 +20,9 @@ struct VoiceHandsFreeTests {
         // A fan sits at 0.35 — far above Hermes' fixed threshold equivalent.
         #expect(!feed(&detector, level: 0.35, seconds: 3, from: &t))
         #expect(!feed(&detector, level: 0.75, seconds: 1.5, from: &t))
-        #expect(!feed(&detector, level: 0.35, seconds: 0.5, from: &t), "short pause keeps the turn open")
+        #expect(!feed(&detector, level: 0.35, seconds: 1, from: &t), "a pause mid-sentence keeps the turn open")
         #expect(!feed(&detector, level: 0.75, seconds: 1, from: &t))
-        #expect(feed(&detector, level: 0.35, seconds: 1.2, from: &t))
+        #expect(feed(&detector, level: 0.35, seconds: 1.5, from: &t))
     }
 
     @Test func clicksAndBeepsDoNotCountAsSpeech() {

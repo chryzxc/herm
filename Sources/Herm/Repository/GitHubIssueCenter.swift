@@ -490,18 +490,7 @@ struct IssueDetailView: View {
                         accessibilityLabel: "Open issue on GitHub"
                     )
                 }
-                AttachToChatMenu { ChatContext(issue: displayedIssue) }
-                    .menuStyle(.button)
-                    .controlSize(.small)
-                    .fixedSize()
-                Button { onOpenChat(displayedIssue) } label: {
-                    HStack(spacing: 5) {
-                        DockIcon(.notePencil, size: 12, color: Color.dockOnAccentText)
-                        Text("Open in chat")
-                    }
-                }
-                .buttonStyle(.dockPrimary)
-                .controlSize(.small)
+                AttachToChatMenu(pill: true) { ChatContext(issue: displayedIssue) }
             }
             .padding(.horizontal, 24)
             .frame(height: 52)

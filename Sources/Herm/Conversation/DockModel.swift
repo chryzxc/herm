@@ -156,6 +156,9 @@ final class DockModel: ObservableObject {
     /// What each session is doing right now (its latest tool), read from the
     /// global gateway stream so sessions that are not open can show it too.
     @Published private(set) var sessionActivityLabels: [String: String] = [:]
+    @Published private(set) var todoPlan: TodoPlan?
+    /// Bumped each time the wake phrase wakes voice mode.
+    @Published private(set) var wakeCount = 0
     @Published private(set) var sessionProjectionState: HermesProjectionState<[HermesSession]> = .empty
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
@@ -247,7 +250,14 @@ final class DockModel: ObservableObject {
     @Published private(set) var requestedAttentionID: String?
     @Published private(set) var scrollToLatestMessageRequest = 0
 
+    /// The default bot's name from Hermes' roster, so a rename reaches the
+    /// menu bar and the voice wake phrase without editing SOUL.md.
+    @Published var defaultBotName: String?
+
     var agentDisplayName: String {
+        if let name = defaultBotName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return name
+        }
         if let name = runtimeConfiguration?.agentName,
            !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return name
@@ -466,6 +476,21 @@ final class DockModel: ObservableObject {
     /// The user interrupted a generating turn; its `message.complete` has no
     /// speech left to drain, so listening resumes immediately.
     private var skipNextVoicePlaybackDrain = false
+    /// An approval or clarify question is being asked aloud; Hermes' voice
+    /// mode is parked so its barge-in listener cannot interrupt the turn.
+    private var isVoicePromptActive = false
+    /// Parking voice mode cut the turn's streamed speech, so Herm asks Hermes
+    /// to speak the reply that resumes after the prompt.
+    private var speakReplyAfterVoicePrompt = false
+    /// On-device recognition failed this conversation; Hermes' whisper takes over.
+    private var localVoiceTranscriptionFailed = false
+    private var nativeCaptureIsLocal = false
+    /// The opening listen waits for the user; only follow-ups go to sleep.
+    private var voiceFollowUpArmed = false
+    /// What Hermes last said aloud, to recognize the mic hearing it back.
+    private var lastVoiceSpeech = ""
+    /// Voice mode toggles must reach Hermes in order (off, tts, on).
+    private var voiceRequestChain: Task<Void, Never>?
     private var hasShutDown = false
     private let completionNotificationsKey = "hermes.control.notifications.completion.v1"
     private let lastSessionIDKey = "hermes.session.last-active.v1"
@@ -837,8 +862,12 @@ final class DockModel: ObservableObject {
             queueDraft()
             return
         }
-
         draft = ""
+        redirectTurn(with: text, sessionID: sessionID)
+    }
+
+    /// Sends `text` into the running turn; if Hermes refuses, it becomes the next turn.
+    private func redirectTurn(with text: String, sessionID: String) {
         steeringError = nil
         let steeringGeneration = sessionResumeGeneration
         // Redirect cancels the model request, so its completion can race the
@@ -2929,8 +2958,9 @@ final class DockModel: ObservableObject {
         switch type {
         case "tool.call", "tool.start", "tool.use", "tool_use":
             let name = (payload["name"] as? String) ?? (payload["tool"] as? String) ?? (payload["tool_name"] as? String) ?? "tool"
+            let step = ToolStep.describe(name: name, args: Self.textArgs(Self.parseArgsDict(payload["args"])) ?? [:])
             let preview = (payload["tool_preview"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            sessionActivityLabels[sessionID] = preview.isEmpty ? "Running \(name)" : "\(name): \(preview)"
+            sessionActivityLabels[sessionID] = [step.title, step.detail ?? (preview.isEmpty ? nil : preview)].compactMap { $0 }.joined(separator: ": ")
         case "message.start":
             sessionActivityLabels[sessionID] = nil
         default:
@@ -3146,10 +3176,15 @@ final class DockModel: ObservableObject {
                 if (enabled["tts"] as? Bool) != true {
                     _ = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
                 }
+                // Before the first capture picks its path: without an answer
+                // yet, turn one fell to Hermes' recorder and never ended.
+                await MicLevelMeter.askForSpeechPermission()
                 guard voiceConversationGeneration == generation else { return }
                 voiceRepliesEnabled = true
                 isVoiceMicMuted = false
                 skipNextVoicePlaybackDrain = false
+                localVoiceTranscriptionFailed = false
+                voiceFollowUpArmed = false
                 voiceTelemetry.beginListening()
                 voiceState = .listening
                 armNativeVoiceCapture()
@@ -3233,6 +3268,8 @@ final class DockModel: ObservableObject {
         voiceConversationGeneration &+= 1
         let wasNative = voiceState.isNativeConversationActive
         skipNextVoicePlaybackDrain = false
+        isVoicePromptActive = false
+        speakReplyAfterVoicePrompt = false
         isVoiceMicMuted = false
         nativeVoiceCapture.reset()
         voiceState = .inactive
@@ -3246,9 +3283,53 @@ final class DockModel: ObservableObject {
     }
 
     /// Ends the current utterance now instead of waiting for Hermes' VAD
-    /// silence window (`voice.silence_duration`, 3s by default).
-    func finishVoiceUtterance() {
-        guard voiceState == .listening, let sessionID else { return }
+    /// silence window (`voice.silence_duration`, 3s by default). `transcript`
+    /// is Herm's on-device text; nil means that recognizer failed.
+    /// `overPlayback`: audio was playing meanwhile, so it may be our own reply.
+    func finishVoiceUtterance(transcript: String?, overPlayback: Bool = false) {
+        if voiceState == .paused {
+            // Asleep: only "hey <name>" wakes it, optionally with the request.
+            guard !isVoiceMicMuted, let transcript,
+                  let request = VoicePrompts.afterWakePhrase(transcript, name: agentDisplayName) else { return }
+            wakeCount += 1
+            resumeVoiceListening()
+            if !request.isEmpty { finishVoiceUtterance(transcript: request) }
+            return
+        }
+        // Speaking while Hermes works steers the running turn, like typing does.
+        guard voiceState == .listening || voiceState == .thinking, let sessionID else { return }
+        if voiceState == .thinking {
+            guard let spoken = transcript?.trimmingCharacters(in: .whitespacesAndNewlines), !spoken.isEmpty,
+                  !isVoicePromptActive, !(overPlayback && VoicePrompts.isEcho(spoken, of: lastVoiceSpeech)) else { return }
+            if isSending, status == .working {
+                redirectTurn(with: spoken, sessionID: sessionID)
+            } else {
+                queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: spoken, images: [], pdfURL: nil))
+            }
+            return
+        }
+        if nativeCaptureIsLocal {
+            guard let transcript else { return fallBackToHermesTranscription() }
+            let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !spoken.isEmpty else { return }
+            // The speakers were on and the words are Hermes' own: an echo, not the user.
+            if overPlayback, VoicePrompts.isEcho(spoken, of: lastVoiceSpeech) {
+                DebugLog.write("voice: dropped an utterance that echoed the reply")
+                return
+            }
+            nativeVoiceCapture.receivedTranscript(hasText: true)
+            voiceTelemetry.receivedTranscript()
+            if isVoicePromptActive {
+                if let retry = answerVoicePrompt(spoken) {
+                    presentVoicePrompt(retry)
+                } else {
+                    voiceState = .thinking
+                }
+            } else {
+                submitNativeVoiceTranscript(spoken)
+            }
+            return
+        }
         voiceState = .transcribing
         Task {
             _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
@@ -3268,6 +3349,24 @@ final class DockModel: ObservableObject {
         default:
             break
         }
+    }
+
+    /// Ends a quiet follow-up window so side conversations aren't sent to the
+    /// agent. Herm keeps listening on-device for the wake phrase only.
+    func sleepVoiceConversation() {
+        guard voiceState == .listening, nativeCaptureIsLocal, voiceFollowUpArmed,
+              !isVoicePromptActive, !isSending else { return }
+        nativeVoiceCapture.reset()
+        voiceState = .paused
+        NSSound(named: "Pop")?.play()
+    }
+
+    /// Speech heard while a reply plays cuts it off, like tapping the orb.
+    func bargeInVoiceReply(heard: String) {
+        guard voiceState == .speaking, !isVoicePromptActive else { return }
+        let reply = (messages.last { $0.role == .hermes }?.text ?? "") + " " + streamingText.text
+        guard VoicePrompts.isBargeIn(heard, over: reply) else { return }
+        interruptVoiceTurn()
     }
 
     /// Re-opens the microphone after a no-speech pause (or a cut-off reply).
@@ -3306,6 +3405,107 @@ final class DockModel: ObservableObject {
             let result = try? await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
             guard voiceConversationGeneration == generation else { return }
             if let tts = result?["tts"] as? Bool { voiceRepliesEnabled = tts }
+        }
+    }
+
+    /// Whether voice mode asks approvals and questions aloud and takes spoken answers.
+    var answersVoicePromptsAloud: Bool {
+        !localVoiceTranscriptionFailed && MicLevelMeter.canTranscribe
+    }
+
+    /// What voice mode reads aloud for a pending approval or clarify question.
+    var voicePromptSpeech: String? {
+        if let approvalText {
+            return VoicePrompts.approvalSpeech(
+                title: approvalTitle ?? "Review requested action",
+                detail: approvalText,
+                choices: approvalDetails?.choices ?? ApprovalChoice.all
+            )
+        }
+        guard status == .needsClarification, let clarificationQuestion else { return nil }
+        return VoicePrompts.clarificationSpeech(
+            question: clarificationQuestion,
+            choices: clarificationChoices,
+            multiSelect: clarificationMultiSelect,
+            progress: clarificationProgress
+        )
+    }
+
+    /// Reads a pending prompt aloud and then listens for the answer; nil ends
+    /// prompt mode once the approval or question is resolved.
+    func presentVoicePrompt(_ speech: String?) {
+        guard voiceState.isNativeConversationActive else { return }
+        guard let speech else {
+            guard isVoicePromptActive else { return }
+            isVoicePromptActive = false
+            enqueueVoiceRequest(HermesFeatureIDs.ID.voiceToggle.rawValue, ["action": "on"])
+            if voiceRepliesEnabled {
+                enqueueVoiceRequest(HermesFeatureIDs.ID.voiceToggle.rawValue, ["action": "tts"])
+            }
+            if isSending || status == .working {
+                // The turn resumes; hold the microphone until its reply ends.
+                speakReplyAfterVoicePrompt = voiceRepliesEnabled
+                nativeVoiceCapture.receivedTranscript(hasText: true)
+                voiceState = .thinking
+            } else {
+                resumeVoiceListening(force: true)
+            }
+            return
+        }
+        guard answersVoicePromptsAloud else { return }
+        if !isVoicePromptActive {
+            isVoicePromptActive = true
+            // Hermes keeps its barge-in listener live while a turn is blocked on
+            // a prompt, so a spoken answer would interrupt the turn instead of
+            // answering it. Voice mode off parks that listener.
+            enqueueVoiceRequest(HermesFeatureIDs.ID.voiceToggle.rawValue, ["action": "off"])
+        }
+        guard voiceRepliesEnabled else { return resumeVoiceListening(force: true) }
+        voiceState = .speaking
+        enqueueVoiceRequest(HermesFeatureIDs.ID.voiceTTS.rawValue, ["text": speech])
+        awaitNativeVoicePlaybackDrain(generation: nativeVoiceCapture.completedResponse(), responseText: speech)
+    }
+
+    /// Routes a spoken answer to the pending approval or question. Returns a
+    /// re-prompt when the answer was not understood.
+    func answerVoicePrompt(_ spoken: String) -> String? {
+        if approvalText != nil {
+            guard let choice = VoicePrompts.approvalChoice(
+                for: spoken,
+                choices: approvalDetails?.choices ?? ApprovalChoice.all
+            ) else { return VoicePrompts.approvalRetry }
+            respondToApproval(choice)
+            return nil
+        }
+        guard status == .needsClarification, clarificationQuestion != nil else { return nil }
+        let reply = VoicePrompts.clarificationAnswer(
+            for: spoken,
+            choices: clarificationChoices,
+            multiSelect: clarificationMultiSelect
+        )
+        respondToClarification(reply.answer, displayText: reply.display)
+        return nil
+    }
+
+    private func fallBackToHermesTranscription() {
+        DebugLog.write("voice: on-device recognition failed; using Hermes transcription")
+        localVoiceTranscriptionFailed = true
+        nativeVoiceCapture.reset()
+        if isVoicePromptActive {
+            // Hermes' recorder needs voice mode back on; the prompt card takes over.
+            presentVoicePrompt(nil)
+            voiceState = .paused
+        } else {
+            armNativeVoiceCapture()
+        }
+    }
+
+    private func enqueueVoiceRequest(_ method: String, _ params: [String: Any]) {
+        let previous = voiceRequestChain
+        nonisolated(unsafe) let params = params
+        voiceRequestChain = Task {
+            await previous?.value
+            _ = try? await gateway.request(method, params: params)
         }
     }
 
@@ -3797,12 +3997,17 @@ final class DockModel: ObservableObject {
             }
             if voiceState.isNativeConversationActive, skipNextVoicePlaybackDrain || !voiceRepliesEnabled {
                 skipNextVoicePlaybackDrain = false
+                speakReplyAfterVoicePrompt = false
                 voiceTelemetry.completedResponse()
                 resumeVoiceListening(force: true)
             } else if voiceState.isNativeConversationActive {
                 voiceTelemetry.completedResponse()
                 voiceState = .speaking
                 let response = messages.last(where: { $0.role == .hermes })?.text ?? ""
+                if speakReplyAfterVoicePrompt {
+                    speakReplyAfterVoicePrompt = false
+                    enqueueVoiceRequest(HermesFeatureIDs.ID.voiceTTS.rawValue, ["text": response])
+                }
                 let drainGeneration = nativeVoiceCapture.completedResponse()
                 awaitNativeVoicePlaybackDrain(
                     generation: drainGeneration,
@@ -3983,7 +4188,8 @@ final class DockModel: ObservableObject {
                 isComplete: false,
                 agentID: eventAgentID,
                 parentAgentID: payload["parent_id"] as? String,
-                childSessionID: childSessionID
+                childSessionID: childSessionID,
+                args: Self.textArgs(argsDict)
             ))
             if Self.isDelegationTool(name) {
                 synthesizeSubagent(toolCallID: id, args: argsDict)
@@ -4011,6 +4217,7 @@ final class DockModel: ObservableObject {
                 activeToolCalls[index].isComplete = true
                 activeToolCalls[index].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 activeToolCalls[index].diffPreview = diffPreview
+                if activeToolCalls[index].args == nil { activeToolCalls[index].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: id, result: result, payload: payload) }
             } else if !activeToolCalls.isEmpty, let last = activeToolCalls.lastIndex(where: { !$0.isComplete }) {
                 let wasDelegation = Self.isDelegationTool(activeToolCalls[last].name)
@@ -4021,8 +4228,12 @@ final class DockModel: ObservableObject {
                 activeToolCalls[last].isComplete = true
                 activeToolCalls[last].completedAt = dateValue(params["timestamp"]) ?? dateValue(payload["timestamp"]) ?? Date()
                 activeToolCalls[last].diffPreview = diffPreview
+                if activeToolCalls[last].args == nil { activeToolCalls[last].args = Self.textArgs(Self.parseArgsDict(payload["args"])) }
                 if wasDelegation { completeSynthesizedSubagent(toolCallID: activeToolCalls[last].id, result: result, payload: payload) }
             }
+            if let todos = payload["todos"] as? [[String: Any]], let sessionID { applyTodos(todos, sessionID: sessionID) }
+        case "todo.updated":
+            if let todos = payload["todos"] as? [[String: Any]], let sessionID { applyTodos(todos, sessionID: sessionID) }
 
         default:
             DebugLog.write("model: unknown event type: \(type) params: \(params.keys.sorted().joined(separator: ", "))")
@@ -4540,11 +4751,19 @@ final class DockModel: ObservableObject {
             voiceState = .paused
             return
         }
+        // A blocked turn is still "sending"; prompt mode listens for its answer.
         guard voiceState.isNativeConversationActive,
-              !isSending,
+              !isSending || isVoicePromptActive,
               let sessionID,
               nativeVoiceCapture.beginCapture() else { return }
         let captureGeneration = nativeVoiceCapture.generation
+        nativeCaptureIsLocal = isVoicePromptActive || answersVoicePromptsAloud
+        if nativeCaptureIsLocal {
+            // Herm's mic meter transcribes this turn live and ends it.
+            nativeVoiceCapture.captureStarted()
+            voiceState = .listening
+            return
+        }
 
         Task {
             do {
@@ -4557,7 +4776,10 @@ final class DockModel: ObservableObject {
                         try? await Task.sleep(for: .milliseconds(300))
                         armNativeVoiceCapture(generation: captureGeneration)
                     } else {
-                        voiceState = .localFallback("Hermes microphone stayed busy. Tap the orb to retry voice.")
+                        // Pausing keeps Hermes' voice; the local fallback would
+                        // switch replies to the system voice mid-conversation.
+                        DebugLog.write("voice: Hermes microphone stayed busy; pausing")
+                        voiceState = .paused
                     }
                     return
                 }
@@ -4571,7 +4793,8 @@ final class DockModel: ObservableObject {
                     try? await Task.sleep(for: .milliseconds(300))
                     armNativeVoiceCapture(generation: captureGeneration)
                 } else {
-                    voiceState = .localFallback("Hermes could not start the next voice capture: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                    DebugLog.write("voice: capture failed to start; pausing: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                    voiceState = .paused
                 }
             }
         }
@@ -4589,6 +4812,7 @@ final class DockModel: ObservableObject {
     }
 
     private func awaitNativeVoicePlaybackDrain(generation: Int, responseText: String) {
+        lastVoiceSpeech = responseText
         let delay = NativeVoicePlaybackDrain.estimatedDuration(for: responseText)
         let formattedDelay = String(format: "%.1f", delay)
         DebugLog.write("voice: holding microphone up to \(formattedDelay)s while TTS drains")
@@ -4616,6 +4840,7 @@ final class DockModel: ObservableObject {
         messages.append(ChatMessage(role: .user, text: text))
         status = .working
         isSending = true
+        voiceFollowUpArmed = true
         voiceState = .thinking
         voiceTelemetry.submittedRequest()
         Task {
@@ -5901,6 +6126,23 @@ final class DockModel: ObservableObject {
                     results[id] = content
                 }
             }
+        }
+    }
+
+    private func applyTodos(_ todos: [[String: Any]], sessionID: String) {
+        let items = todos.compactMap { todo in
+            (todo["content"] as? String).map { TodoPlan.Item(content: $0, status: todo["status"] as? String ?? "pending") }
+        }
+        todoPlan = items.isEmpty ? nil : TodoPlan(sessionID: sessionID, items: items)
+    }
+
+    /// Tool arguments as short strings: text as-is, anything else as JSON.
+    static func textArgs(_ args: [String: Any]?) -> [String: String]? {
+        guard let args, !args.isEmpty else { return nil }
+        return args.mapValues { value in
+            let text = (value as? String) ?? (try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "\(value)"
+            return String(text.prefix(600))
         }
     }
 

@@ -1,13 +1,10 @@
 import AppKit
 
 enum EdgeDockLayout {
-    // The contour needs more breathing room above and below its shoulders than
-    // beside the workspace. Keeping these separate avoids wasting horizontal
-    // capacity in the expanded three-pane layout. The vertical inset must clear
-    // the 24pt shoulder plus enough of the 30pt corner curve that the 4pt side
-    // inset stays inside the contour (≈36pt); see EdgeNotchShape.
+    // The vertical inset clears the 8pt shoulder plus the 12pt inner corner
+    // radius so the 4pt side inset stays inside the contour; see EdgeNotchShape.
     static let workspaceHorizontalInset: CGFloat = 4
-    static let workspaceVerticalInset: CGFloat = 38
+    static let workspaceVerticalInset: CGFloat = 20
 }
 
 enum EdgeDockSide: String, Codable {

@@ -28,6 +28,9 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var cronJobs: [CronSummary] = []
     @Published private(set) var cronRuns: [CronRunSummary] = []
     @Published private(set) var cronHistoryAvailable = false
+    /// Per-job history. The global `cronRuns` feed is capped, so high-frequency
+    /// jobs crowd daily/weekly jobs out of it entirely.
+    @Published private(set) var cronRunsByJob: [String: [CronRunSummary]] = [:]
     @Published private(set) var mcpServers: [MCPServerSummary] = []
     @Published private(set) var mcpTestResults: [String: String] = [:]
     @Published private(set) var mcpInventoryAvailable = false
@@ -271,6 +274,13 @@ final class ControlCenterModel: ObservableObject {
         capabilities.first(where: { $0.id == id })?.isAvailable == true
     }
 
+    /// The capability probe can time out while `cron.manage list` itself works;
+    /// a successful job listing over the same RPC proves cron control.
+    var cronControlAvailable: Bool {
+        guard rpc != nil else { return false }
+        return capabilityAvailable("rpc-scheduling") || refreshState(for: "cron.jobs")?.lastSuccess != nil
+    }
+
     /// The workspace store owns repository selection. The control center keeps
     /// only this rendered snapshot for its Today projection.
     func setDevelopmentContextProjection(_ snapshot: RepositorySnapshot?) {
@@ -508,6 +518,7 @@ final class ControlCenterModel: ObservableObject {
             reminders = []
             cronJobs = []
             cronRuns = []
+            cronRunsByJob = [:]
             cronHistoryAvailable = false
             mcpServers = []
             mcpTestResults = [:]
@@ -1314,6 +1325,33 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    func cronRunsProjectionKey(jobID: String) -> String { "cron.history.\(jobID)" }
+
+    func refreshCronRuns(jobID: String) {
+        guard let cli else { return }
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        let bindingGeneration = clientBindingGeneration
+        let key = cronRunsProjectionKey(jobID: jobID)
+        guard projectionRefreshStates[key]?.isRefreshing != true else { return }
+        beginProjectionRefresh(key)
+        Task {
+            do {
+                let result = try await cli.cronRuns(limit: 50, jobID: jobID)
+                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                guard result.succeeded else {
+                    let message = Self.safeUserDiagnostic(result.stderr)
+                    recordProjectionFailure(key, error: message.isEmpty ? "Hermes automation history is temporarily unavailable." : message)
+                    return
+                }
+                cronRunsByJob[jobID] = Self.parseCronRuns(result.stdout)
+                recordProjectionSuccess(key)
+            } catch {
+                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                recordProjectionFailure(key, error: Self.safeUserDiagnostic(error.localizedDescription))
+            }
+        }
+    }
+
     /// Report files are Hermes-private implementation detail. Keep report
     /// display unavailable until Hermes exposes a structured report operation.
     func refreshCronReports() {
@@ -1512,7 +1550,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func createCron(name: String, schedule: String, prompt: String) async -> Bool {
-        guard rpc != nil, capabilityAvailable("rpc-scheduling") else {
+        guard cronControlAvailable else {
             lastError = "Automation control is unavailable through this Hermes gateway."
             return false
         }
@@ -1542,7 +1580,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func removeCron(_ job: CronSummary) {
-        guard rpc != nil, capabilityAvailable("rpc-scheduling") else {
+        guard cronControlAvailable else {
             lastError = "Automation control is unavailable through this Hermes gateway."
             return
         }
@@ -2935,19 +2973,8 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    /// Card detail for the session Activity panel; leaves the board's selected
-    /// `kanbanDetail` untouched.
-    /// Full handoff behind a chat kanban notice: the run summary Hermes
-    /// clipped to its first line, else the card's latest summary.
-    func kanbanNoticeSummary(_ notice: KanbanNotice) async -> String? {
-        let stub = KanbanTaskSummary(id: notice.taskID, title: notice.title ?? notice.taskID, status: "",
-                                     detail: nil, priority: nil, assignee: nil)
-        guard let detail = await sessionKanbanTaskDetail(stub) else { return nil }
-        let clipped = notice.detail.map { String($0.prefix(80)) } ?? ""
-        let matched = clipped.isEmpty ? nil : detail.runs.compactMap(\.summary).last { $0.hasPrefix(clipped) }
-        return matched ?? detail.latestSummary
-    }
-
+    /// Card detail for the session Activity panel and chat kanban notices;
+    /// leaves the board's selected `kanbanDetail` untouched.
     func sessionKanbanTaskDetail(_ task: KanbanTaskSummary) async -> KanbanTaskDetail? {
         guard let cli else { return nil }
         return try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug ?? selectedKanbanBoardSlug, cli: cli).detail

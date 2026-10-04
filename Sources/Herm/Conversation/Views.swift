@@ -306,6 +306,7 @@ struct DockPopover: View {
     @State private var isVoiceImmersive = false
     @State private var voiceSubtitles = VoiceSubtitleTrack()
     @State private var isVoiceTranscriptVisible = false
+    @State private var voiceHUD = VoiceHUDState()
     @State private var sessionPendingDeletion: HermesSession?
     // These selections are owned by the active session/repository scope. The
     // request IDs invalidate completions from an older scope or selection.
@@ -497,6 +498,9 @@ struct DockPopover: View {
         .onChange(of: model.voiceState) { _, state in
             handleVoiceStateChange(state)
         }
+        .onChange(of: model.voicePromptSpeech) { _, speech in
+            handleVoicePromptChange(speech)
+        }
     }
 
     private func observerLayerThree<V: View>(_ view: V) -> some View {
@@ -530,15 +534,21 @@ struct DockPopover: View {
         .onChange(of: model.messages.count) { oldCount, newCount in
             handleMessageCountChange(oldCount: oldCount, newCount: newCount)
         }
+        .onChange(of: botMode.bots.first(where: \.isDefault)?.name, initial: true) { _, name in
+            model.defaultBotName = name
+        }
     }
 
     private var rootPopoverContent: some View {
-        layoutContent
-            .overlay {
-                if isVoiceImmersive && sessionWorkspaceMode == .voice {
-                    immersiveVoiceStage.transition(.opacity.combined(with: .scale(scale: 1.02)))
-                }
+        Group {
+            // Replaces the shell instead of overlaying it: the AppKit split
+            // panes draw above SwiftUI overlays, so side panels showed through.
+            if isVoiceImmersive && sessionWorkspaceMode == .voice {
+                immersiveVoiceStage.transition(.opacity.combined(with: .scale(scale: 1.02)))
+            } else {
+                layoutContent
             }
+        }
             .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
             .frame(width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth), height: isFullscreen ? nil : panelPresentation.compactHeight)
             .padding(.horizontal, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceHorizontalInset : 0)
@@ -837,8 +847,18 @@ struct DockPopover: View {
         // Hermes' gateway owns the microphone in native mode; a passive meter
         // lets the orb follow the user's voice anyway.
         if state.isNativeConversationActive { micLevelMeter.start() } else { micLevelMeter.stop() }
-        micLevelMeter.onUtteranceEnd = { [model] in model.finishVoiceUtterance() }
-        micLevelMeter.isEndpointing = state == .listening
+        micLevelMeter.onUtteranceEnd = { [model, micLevelMeter] transcript in
+            model.finishVoiceUtterance(transcript: transcript, overPlayback: micLevelMeter.heardPlayback)
+        }
+        micLevelMeter.onIdle = { [model] in model.sleepVoiceConversation() }
+        micLevelMeter.onBargeSpeech = { [model] heard in model.bargeInVoiceReply(heard: heard) }
+        // Asleep, the meter only listens for the wake phrase, and only on-device.
+        let listensForWake = state == .paused && !model.isVoiceMicMuted && wakesByVoice
+        micLevelMeter.listen(
+            // While Hermes thinks, speech steers the running turn instead of being lost.
+            endpointing: state == .listening || listensForWake || (state == .thinking && !model.isVoiceMicMuted),
+            watchingForBarge: state == .speaking && !model.isVoiceMicMuted && wakesByVoice
+        )
         if state == .interrupted {
             // The native gateway has accepted a spoken interruption. Stop
             // any fallback playback immediately before it resumes capture.
@@ -847,6 +867,18 @@ struct DockPopover: View {
         if case .localFallback = state {
             resumeVoiceConversationIfReady()
         }
+    }
+
+    /// Approvals and questions are spoken in voice mode and answered aloud.
+    private func handleVoicePromptChange(_ speech: String?) {
+        guard sessionWorkspaceMode == .voice else { return }
+        if model.voiceState.isNativeConversationActive { return model.presentVoicePrompt(speech) }
+        if let speech { speakLocalVoicePrompt(speech) }
+    }
+
+    private func speakLocalVoicePrompt(_ speech: String) {
+        speechInput.stopForAssistantSpeech()
+        voiceOutput.speak(messageID: UUID(), text: speech)
     }
 
     private func handleVoicePlaybackChange(_ isSpeaking: Bool) {
@@ -871,6 +903,11 @@ struct DockPopover: View {
     }
 
     private func handleCompletedTranscript(_ transcript: String?) {
+        if sessionWorkspaceMode == .voice, model.voicePromptSpeech != nil, let transcript, !transcript.isEmpty {
+            speechInput.consumeCompletedTranscript()
+            if let retry = model.answerVoicePrompt(transcript) { speakLocalVoicePrompt(retry) }
+            return
+        }
         guard let transcript, !transcript.isEmpty, !model.isSending else { return }
         guard !voiceOutput.isSpeaking else {
             speechInput.consumeCompletedTranscript()
@@ -1928,10 +1965,19 @@ struct DockPopover: View {
         let captions = voiceCaptions
         let orbScale: CGFloat = immersive ? 1.45 : 1
         return VStack(spacing: 0) {
+            VoiceStatusStrip(model: model, repositoryPath: activeSessionRepositoryPath)
+                .padding(.top, 12)
+                .padding(.horizontal, 16)
+                .opacity(isVoiceTranscriptVisible ? 0 : 1)
             Spacer(minLength: 12)
             Button(action: handleVoiceOrbTap) {
                 VoiceOrbView(mode: voiceOrbMode, audioLevel: max(speechInput.audioLevel, micLevelMeter.level))
                     .frame(width: 320, height: 320)
+                    .overlay {
+                        if voiceOrbMode == .listening, !speechInput.isRecording {
+                            VoiceListeningRing(progress: micLevelMeter.turnProgress).padding(36)
+                        }
+                    }
                     .scaleEffect(orbScale)
                     .frame(width: 320 * orbScale, height: 320 * orbScale)
                     .contentShape(Circle())
@@ -1943,11 +1989,17 @@ struct DockPopover: View {
             voiceStatusLabel
                 .frame(height: 40)
 
+            if !model.activeSubagents.isEmpty {
+                VoiceSubagentOrbs(agents: model.activeSubagents)
+                    .padding(.bottom, 8)
+            }
+
             if hasPendingVoicePrompt {
                 // Approvals and questions block the turn, so they take the
                 // captions' place until answered.
                 voicePromptCard
                     .frame(maxWidth: immersive ? 520 : 420)
+                    .shadow(color: (model.approvalText != nil ? Color.dockWarning : Color.dockAccent).opacity(0.35), radius: 28)
                     .padding(.horizontal, 16)
                     .transition(.scale(scale: 0.92).combined(with: .opacity))
             } else {
@@ -1988,9 +2040,20 @@ struct DockPopover: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            VoiceActivityPillsLayer(model: model, cardWidth: immersive ? 280 : 200)
+            // A pending approval or question dims everything else.
+            VoiceActivityPillsLayer(model: model, cardWidth: immersive ? 280 : 200, cronJobs: controlCenter.cronJobs,
+                                    leavesLeftFree: !voiceHUD.cards.isEmpty)
                 .padding(immersive ? 24 : 12)
+                .opacity(hasPendingVoicePrompt ? 0.2 : 1)
         }
+        .overlay(alignment: .leading) {
+            VoiceHUDDeck(state: voiceHUD, width: immersive ? 300 : 210)
+                .padding(.leading, immersive ? 24 : 12)
+                .opacity(hasPendingVoicePrompt ? 0.2 : 1)
+                .allowsHitTesting(!hasPendingVoicePrompt)
+        }
+        .overlay { VoiceWakeFlash(count: model.wakeCount) }
+        .onChange(of: model.activeToolCalls) { _, calls in voiceHUD = VoiceHUDState(calls: calls) }
         .overlay(alignment: .top) {
             if isVoiceTranscriptVisible {
                 VoiceRecentTranscript(messages: model.messages)
@@ -2005,7 +2068,10 @@ struct DockPopover: View {
         .animation(.dockEase(duration: 0.25), value: captions.user)
         .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
         .animation(.spring(response: 0.42, dampingFraction: 0.82), value: hasPendingVoicePrompt)
-        .onAppear { beginVoiceConversation() }
+        .onAppear {
+            voiceHUD = VoiceHUDState(calls: model.activeToolCalls)
+            beginVoiceConversation()
+        }
     }
 
     private var voiceOrbMode: VoiceOrbMode {
@@ -2041,7 +2107,7 @@ struct DockPopover: View {
                 .frame(maxWidth: 300)
         } else if model.voiceState.isNativeConversationActive {
             VStack(spacing: 4) {
-                Text(model.isVoiceMicMuted ? "MIC MUTED — TAP TO RESUME" : model.voiceState.label(agentName: model.agentDisplayName))
+                Text(voiceStatusText)
                     .font(.system(size: 12, weight: .semibold))
                     .tracking(0.75)
                     .foregroundStyle(model.voiceState == .listening ? Color.dockSuccess : (model.voiceState == .paused ? Color.dockMetadataText : Color.dockAccent))
@@ -2058,10 +2124,16 @@ struct DockPopover: View {
         }
     }
 
+    /// Approvals keep their card so the command stays readable; questions
+    /// are asked aloud instead when spoken answers work.
     private var hasPendingVoicePrompt: Bool {
         model.approvalText != nil
-            || (model.status == .needsClarification && model.clarificationQuestion != nil)
+            || (showsVoiceClarificationCard && model.status == .needsClarification && model.clarificationQuestion != nil)
             || model.valuePrompt != nil
+    }
+
+    private var showsVoiceClarificationCard: Bool {
+        model.voiceState.isNativeConversationActive ? !model.answersVoicePromptsAloud : speechInput.isUnavailable
     }
 
     /// The same prompt rows the chat shows, floated on the voice stage.
@@ -2073,7 +2145,7 @@ struct DockPopover: View {
                 detail: approval,
                 detailIsCommand: model.approvalTitle == "Run command"
             ))
-        } else if model.status == .needsClarification, model.clarificationQuestion != nil {
+        } else if showsVoiceClarificationCard, model.status == .needsClarification, model.clarificationQuestion != nil {
             clarificationRow
         } else if let prompt = model.valuePrompt {
             valuePromptRow(prompt)
@@ -2083,11 +2155,16 @@ struct DockPopover: View {
     /// What you said and what the agent is saying, so the conversation reads
     /// like live captions rather than a hidden transcript.
     private var voiceCaptions: (user: String?, reply: (id: UUID, text: String)?) {
-        if speechInput.isRecording {
-            let partial = speechInput.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if speechInput.isRecording || (model.voiceState.isNativeConversationActive && voiceOrbMode == .listening) {
+            let live = speechInput.isRecording ? speechInput.transcript : micLevelMeter.transcript
+            let partial = live.trimmingCharacters(in: .whitespacesAndNewlines)
             return (partial.isEmpty ? nil : partial, nil)
         }
-        guard voiceOrbMode != .listening, voiceOrbMode != .idle,
+        // Talking over a running turn steers it; show what is being heard.
+        let steering = micLevelMeter.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        if model.voiceState == .thinking, !steering.isEmpty { return ("→ " + steering, nil) }
+        // While Hermes transcribes, the last user line is the previous turn.
+        guard voiceOrbMode != .listening, voiceOrbMode != .idle, voiceOrbMode != .transcribing,
               let userIndex = model.messages.lastIndex(where: { $0.role == .user }) else { return (nil, nil) }
         let reply = model.messages[(userIndex + 1)...].last { $0.role == .hermes }
         let text = reply?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -2146,10 +2223,22 @@ struct DockPopover: View {
         }
     }
 
+    private var wakesByVoice: Bool {
+        model.answersVoicePromptsAloud && MicLevelMeter.canDetectWakePhrase
+    }
+
+    private var voiceStatusText: String {
+        if model.isVoiceMicMuted { return "MIC MUTED — TAP TO RESUME" }
+        if model.voiceState == .paused, wakesByVoice {
+            return "SAY “HEY \(model.agentDisplayName.uppercased())” OR TAP"
+        }
+        return model.voiceState.label(agentName: model.agentDisplayName)
+    }
+
     private func handleVoiceOrbTap() {
         switch model.voiceState {
         case .listening:
-            model.finishVoiceUtterance()
+            model.finishVoiceUtterance(transcript: micLevelMeter.utteranceTranscript)
             return
         case .thinking, .speaking:
             model.interruptVoiceTurn()
@@ -2182,10 +2271,12 @@ struct DockPopover: View {
     }
 
     private func resumeVoiceConversationIfReady() {
+        // A pending approval or question waits for a spoken answer.
+        let awaitsAnswer = model.voicePromptSpeech != nil
         guard sessionWorkspaceMode == .voice,
               !model.voiceState.isNativeConversationActive,
-              model.status == .idle,
-              !model.isSending,
+              model.status == .idle || awaitsAnswer,
+              !model.isSending || awaitsAnswer,
               !speechInput.isRecording,
               !speechInput.isStarting,
               !voiceOutput.isSpeaking else { return }
@@ -2846,7 +2937,7 @@ struct DockPopover: View {
                         await model.refreshCurrentSession()
                     }
                 },
-                loadKanbanSummary: { notice in await controlCenter.kanbanNoticeSummary(notice) }
+                loadKanbanDetail: { notice in await controlCenter.sessionKanbanTaskDetail(notice.taskSummary) }
             )
             .equatable()
         }
@@ -3457,7 +3548,6 @@ private struct MissionControlQueue: View {
             }
 
             VStack(spacing: 2) {
-                globalRailDestination(.usage, style: style)
                 globalRailDestination(.quota, style: style)
                 globalRailDestination(.core, style: style)
             }
@@ -3663,6 +3753,7 @@ private struct MissionControlQueue: View {
                 }
                 if showsPullRequests { pullRequestsDestinationRow(style: style) }
                 if showsIssues { issuesDestinationRow(style: style) }
+                globalRailDestination(.usage, style: style)
                 globalRailDestination(.automations, style: style)
                 if showsOffice { globalRailDestination(.officePreview, style: style) }
                 queueRailDestination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style) {
