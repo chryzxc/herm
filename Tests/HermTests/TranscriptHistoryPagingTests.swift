@@ -117,8 +117,26 @@ struct TranscriptHistoryPagingTests {
             ["role": "assistant", "content": "  "],
         ])
         let visible = rows.filter { $0["role"] as? String != "tool" }
-        #expect(visible.map { $0["text"] as? String } == ["Earlier turns were compacted.", "/work fix the leak", "parts"])
-        #expect(visible[1]["timestamp"] as? Double == 12.0)
+        #expect(visible.map { $0["text"] as? String } == ["[System: switched model]", "Earlier turns were compacted.", "/work fix the leak", "parts"])
+        #expect(visible[2]["timestamp"] as? Double == 12.0)
+    }
+
+    @Test func hermesWrittenRowsRestoreAsSystemCards() {
+        let rows = TranscriptHistoryPaging.displayRows(fromStoredRows: [
+            ["role": "system", "content": "Session forked"],
+            ["role": "user", "content": "[System: The active model for this chat is x]"],
+            ["role": "user", "content": "[ASYNC DELEGATION BATCH COMPLETE — 2 tasks]\nresults"],
+            ["role": "user", "content": "[REMOTE DIGEST: nightly]"],
+            ["role": "user", "content": "done", "display_kind": "process_complete"],
+            ["role": "user", "content": "go faster", "display_kind": "steer"],
+            ["role": "user", "content": "[Triggering message id: `1` — use as `message_id` for reply/react/pin via the discord tools.]\nhi"],
+        ])
+        let messages = DockModel.parseMessages(rows).messages
+        #expect(messages.map { $0.systemEvent?.label } == [
+            "System", "Model switch", "Delegation complete", "Remote digest", "Process complete", nil, nil,
+        ])
+        #expect(messages[5].role == .user)
+        #expect(messages[6].text == "hi")
     }
 
     @Test func storedToolRowsBecomeTheReplyActivity() {

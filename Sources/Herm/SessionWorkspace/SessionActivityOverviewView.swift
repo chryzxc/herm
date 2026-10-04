@@ -283,7 +283,7 @@ struct SessionActivityOverviewView: View {
         if let originSessionID = model.kanbanSessionID ?? sessionID {
             for (index, message) in model.messages.enumerated() {
                 guard let botID = message.botProfileID,
-                      message.role == .hermes, message.kanbanNotice == nil,
+                      message.role == .hermes,
                       !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                       !knownResults.contains(message.text) else { continue }
                 let request = index > 0 && model.messages[index - 1].role == .user ? model.messages[index - 1].text : "Bot response"

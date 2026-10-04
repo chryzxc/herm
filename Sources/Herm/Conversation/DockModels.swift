@@ -434,8 +434,11 @@ struct ChatMessage: Identifiable, Equatable {
     let activity: [ActiveToolCall]
     /// Set only for Hermes kanban wake notices, which render as a status card.
     let kanbanNotice: KanbanNotice?
+    /// Set for rows Hermes wrote itself (system rows, gateway notes, live
+    /// status lines), which render as a compact system card.
+    let systemEvent: SystemEvent?
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil) {
         self.id = id
         self.role = role
         self.text = text
@@ -457,6 +460,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.durationLabel = responseDuration.map { ResponseDurationFormatting.string(seconds: $0) }
         self.activity = activity
         self.kanbanNotice = kanbanNotice
+        self.systemEvent = systemEvent
     }
 
     var image: NSImage? { images.first }
@@ -487,11 +491,71 @@ struct ChatMessage: Identifiable, Equatable {
             botDisplayName: botDisplayName,
             contentRevision: contentRevision,
             activity: activity,
-            kanbanNotice: kanbanNotice
+            kanbanNotice: kanbanNotice,
+            systemEvent: systemEvent
         )
     }
 
     enum Role { case user, hermes }
+}
+
+/// A transcript row or live status Hermes produced itself rather than the
+/// user or the model's reply: kept visible, labelled, and set apart.
+struct SystemEvent: Equatable {
+    var label: String
+    var tone: DockStatusTone = .inactive
+
+    private static let prefixLabels: [(prefix: String, label: String)] = [
+        ("[ASYNC DELEGATION BATCH COMPLETE", "Delegation complete"),
+        ("[CONTEXT COMPACTION", "Context compaction"),
+        ("[System: The active model", "Model switch"),
+        ("[System note: Your previous turn was interrupted", "Auto-continue"),
+        ("[System", "System note"),
+        ("[IMPORTANT: Background process", "Background process"),
+        ("[IMPORTANT: You are running as a schedul", "Scheduled job"),
+        ("[Cronjob", "Cron job"),
+        ("[OUT-OF-BAND USER MESSAGE", "Out-of-band message"),
+        ("[Your active task list was preserved", "Task list"),
+        ("[STILL IN PROGRESS", "Still in progress"),
+        ("[INTERNAL NOTIFICATION", "Notification"),
+    ]
+
+    /// Classifies a stored transcript row; nil keeps it an ordinary bubble.
+    /// Steers and slash-skill turns are typed but are the user's own words.
+    static func classify(role: String, text: String, displayKind: String?) -> SystemEvent? {
+        if role == "system" { return SystemEvent(label: "System") }
+        if let kind = displayKind, !kind.isEmpty, kind != "steer", kind != "skill_invocation" {
+            return SystemEvent(label: humanized(kind), tone: kind == "failed_turn" ? .attention : .inactive)
+        }
+        guard role == "user" else { return nil }
+        let head = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !head.hasPrefix("[IMPORTANT: The user has invoked the ") else { return nil }
+        if let match = prefixLabels.first(where: { head.hasPrefix($0.prefix) }) {
+            return SystemEvent(label: match.label)
+        }
+        // Other gateway notes open with an ALL-CAPS bracket header.
+        guard head.hasPrefix("["),
+              let end = head.dropFirst().firstIndex(where: { ":]—".contains($0) }) else { return nil }
+        let header = head[head.index(after: head.startIndex)..<end].trimmingCharacters(in: .whitespaces)
+        guard header.count >= 4, header == header.uppercased(), header.contains(where: \.isLetter) else { return nil }
+        return SystemEvent(label: humanized(header.lowercased()))
+    }
+
+    /// Live `status.update` kinds Herm has no dedicated UI for.
+    static func liveStatus(kind: String) -> SystemEvent {
+        switch kind {
+        case "warn": SystemEvent(label: "Warning", tone: .attention)
+        case "goal": SystemEvent(label: "Goal", tone: .review)
+        case "loop": SystemEvent(label: "Loop", tone: .working)
+        case "process": SystemEvent(label: "Background process", tone: .complete)
+        default: SystemEvent(label: humanized(kind))
+        }
+    }
+
+    static func humanized(_ raw: String) -> String {
+        let words = raw.replacingOccurrences(of: "_", with: " ")
+        return words.prefix(1).uppercased() + words.dropFirst()
+    }
 }
 
 /// One kanban wake notice (`✔ Kanban t_c891be93 done — Title` plus summary

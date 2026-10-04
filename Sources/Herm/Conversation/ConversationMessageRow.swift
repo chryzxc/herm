@@ -194,7 +194,7 @@ struct ConversationMessageRow: View, Equatable {
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    let attributedBotID = message.botProfileID ?? activeBotProfileID
+                    let attributedBotID = message.systemEvent == nil ? message.botProfileID ?? activeBotProfileID : nil
                     if let botProfileID = attributedBotID {
                         let bot = botsByID[botProfileID]
                         HStack(spacing: 7) {
@@ -234,7 +234,13 @@ struct ConversationMessageRow: View, Equatable {
                         .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
                     }
 
-                    if let notice = message.kanbanNotice {
+                    if let event = message.systemEvent {
+                        SystemEventCard(event: event, text: message.text)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        messageMetadata
+                    } else if let notice = message.kanbanNotice {
                         KanbanNoticeCard(notice: notice, loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
                             .padding(.horizontal, 4)
                             .padding(.vertical, 4)
@@ -267,7 +273,7 @@ struct ConversationMessageRow: View, Equatable {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    if message.kanbanNotice != nil {
+                    if message.kanbanNotice != nil || message.systemEvent != nil {
                         EmptyView()
                     } else if !message.isError, message.hasBodyText {
                         messageActions
@@ -436,6 +442,43 @@ struct ConversationMessageRow: View, Equatable {
 /// line. Clicking reveals the card's run chain (which bot handed off to
 /// which) and the full handoff, fetched from the card because Hermes only
 /// notifies terminal events and clips the notice to its first line.
+/// A row Hermes produced itself: label and first line, full text on expand.
+struct SystemEventCard: View {
+    let event: SystemEvent
+    let text: String
+    @State private var isExpanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let firstLine = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
+        let canExpand = firstLine != text || text.count > 120
+        Button {
+            withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
+                DockStatusDot(tone: event.tone)
+                (Text(event.label).foregroundStyle(event.tone.color).fontWeight(.medium)
+                    + Text(" · " + (isExpanded ? text : firstLine)).foregroundStyle(Color.dockSecondaryText))
+                    .font(DockTypography.body)
+                    .lineLimit(isExpanded ? nil : 1)
+                    .fixedSize(horizontal: false, vertical: isExpanded)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canExpand)
+        .help(canExpand ? (isExpanded ? "Collapse" : "Show full text") : "")
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: 520, alignment: .leading)
+        .dockSignageCard(tone: event.tone, highlighted: false)
+        .accessibilityLabel("\(event.label): \(text)")
+    }
+}
+
 struct KanbanNoticeCard: View {
     let notice: KanbanNotice
     var loadDetail: (() async -> KanbanTaskDetail?)?

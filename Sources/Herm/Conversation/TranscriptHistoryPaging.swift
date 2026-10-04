@@ -138,8 +138,8 @@ enum TranscriptHistoryPaging {
 
     /// Projects stored REST rows into the `{role, text, row_id, timestamp}` shape the
     /// gateway's resume transcript uses, applying the same display rules
-    /// Hermes applies there: hidden scaffolding and `[System:` notices never
-    /// render, compaction summaries show their display projection, and a
+    /// Hermes applies there: hidden scaffolding never renders, system rows
+    /// keep their `display_kind` for the system card, compaction summaries show their display projection, and a
     /// slash-skill turn shows the invocation instead of the expanded skill.
     static func displayRows(fromStoredRows rows: [[String: Any]]) -> [[String: Any]] {
         rows.compactMap { row in
@@ -152,7 +152,7 @@ enum TranscriptHistoryPaging {
                 for key in ["tool_call_id", "timestamp"] { tool[key] = row[key] }
                 return tool
             }
-            guard role == "user" || role == "assistant" else { return nil }
+            guard role == "user" || role == "assistant" || role == "system" else { return nil }
             var activity: [String: Any] = [:]
             if role == "assistant" {
                 var toolCalls = row["tool_calls"]
@@ -162,7 +162,6 @@ enum TranscriptHistoryPaging {
             }
             var text = storedText(row["display_content"] as? String ?? row["content"])
             if role == "user" {
-                guard !text.trimmingCharacters(in: .whitespaces).hasPrefix("[System:") else { return nil }
                 text = text.replacingOccurrences(
                     of: #"(^|\n)\[Triggering message id: `[^`\n]*` — use as `message_id` for reply/react/pin via the discord tools\.\]\n*"#,
                     with: "$1",
@@ -174,6 +173,7 @@ enum TranscriptHistoryPaging {
             var display: [String: Any] = activity.merging(["role": role, "text": text]) { _, new in new }
             if let id = rowID(row) { display["row_id"] = id }
             if let timestamp = row["timestamp"] { display["timestamp"] = timestamp }
+            if let kind = row["display_kind"] as? String { display["display_kind"] = kind }
             return display
         }
     }

@@ -2205,8 +2205,7 @@ final class DockModel: ObservableObject {
         guard let originSessionID = sessionStorageID ?? sessionID, !originSessionID.isEmpty else { return }
         var existing = Set(botActivityBySessionID[originSessionID, default: []].compactMap { $0.result })
         for (index, message) in messages.enumerated() {
-            // Kanban notices are board events, not replies to a bot request.
-            guard let botID = message.botProfileID, message.kanbanNotice == nil,
+            guard let botID = message.botProfileID,
                   !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !existing.contains(message.text) else { continue }
             let request = index > 0 && messages[index - 1].role == .user
@@ -2242,17 +2241,26 @@ final class DockModel: ObservableObject {
         for sessionID in sessionIDs.compactMap({ $0 }).filter({ !$0.isEmpty }) {
             guard let records = botActivityBySessionID[sessionID] else { continue }
             for record in records {
-                // Records projected from transcript rows (no request, e.g. kanban
-                // notices) already live in the transcript; replaying them adds a
-                // fake "@bot Bot response" user bubble and an uncarded copy.
                 guard seenActivityIDs.insert(record.id).inserted,
-                      record.state == .completed, record.summary != "Bot response",
+                      record.state == .completed,
                       let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !result.isEmpty, Self.kanbanNotices(from: result) == nil else { continue }
-                let userText = "@\(record.botName) \(record.summary)"
+                      !result.isEmpty else { continue }
                 let alreadyPresent = messages.contains { $0.text == result && $0.botProfileID == record.botID }
                 guard !alreadyPresent else { continue }
-                messages.append(ChatMessage(role: .user, text: userText, timestamp: record.createdAt))
+                // Kanban notices replay as notice cards, not as a bot request.
+                if let notices = Self.kanbanNotices(from: result) {
+                    for notice in notices {
+                        messages.append(ChatMessage(role: .hermes, text: notice.body, timestamp: record.updatedAt,
+                                                    botProfileID: record.botID, botDisplayName: record.botName,
+                                                    kanbanNotice: KanbanNotice(text: notice.body)))
+                    }
+                    continue
+                }
+                // "Bot response" marks a bot message nobody asked for (a
+                // delivery); show the message without inventing a user bubble.
+                if record.summary != "Bot response" {
+                    messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt))
+                }
                 messages.append(ChatMessage(role: .hermes, text: result, timestamp: record.updatedAt, botProfileID: record.botID, botDisplayName: record.botName))
             }
         }
@@ -3828,12 +3836,35 @@ final class DockModel: ObservableObject {
                 compactingSessionID = nil
                 refreshSessionTokenUsage()
             case "process":
-                for notice in Self.kanbanNotices(from: payload["text"] as? String ?? "") ?? [] {
-                    appendBelowLiveTurn(ChatMessage(role: .hermes, text: notice.body,
-                                                    botProfileID: notice.profileID, botDisplayName: notice.displayName,
-                                                    kanbanNotice: KanbanNotice(text: notice.body)))
+                let text = payload["text"] as? String ?? ""
+                if let notices = Self.kanbanNotices(from: text) {
+                    for notice in notices {
+                        appendBelowLiveTurn(ChatMessage(role: .hermes, text: notice.body,
+                                                        botProfileID: notice.profileID, botDisplayName: notice.displayName,
+                                                        kanbanNotice: KanbanNotice(text: notice.body)))
+                    }
+                } else {
+                    appendSystemEvent(.liveStatus(kind: "process"), text: text)
                 }
-            default: break
+            // Heartbeat pings fire every interval and carry no content.
+            case "heartbeat", nil: break
+            case let kind?:
+                appendSystemEvent(.liveStatus(kind: kind), text: payload["text"] as? String ?? "")
+            }
+        case "notice":
+            appendSystemEvent(SystemEvent(label: "Notice"), text: payload["message"] as? String ?? "")
+        case "notification.show":
+            let level = payload["level"] as? String
+            let event = SystemEvent(label: SystemEvent.humanized((payload["kind"] as? String) ?? level ?? "notification"),
+                                    tone: level == "warning" || level == "error" ? .attention : .inactive)
+            appendSystemEvent(event, text: payload["text"] as? String ?? "", key: payload["key"] as? String)
+        case "message.interim":
+            // Already-streamed commentary is in the live row; the rest would
+            // otherwise only appear after a reload.
+            if (payload["already_streamed"] as? Bool) != true,
+               let text = payload["text"] as? String,
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                appendBelowLiveTurn(ChatMessage(role: .hermes, text: text))
             }
         case "background.complete", "btw.complete":
             let taskID = (payload["task_id"] as? String) ?? ""
@@ -4311,6 +4342,23 @@ final class DockModel: ObservableObject {
                 appendBelowLiveTurn(message)
             }
         }
+    }
+
+    /// Keyed Hermes notifications replace their earlier card in place.
+    private var systemEventMessageIDs: [String: UUID] = [:]
+
+    private func appendSystemEvent(_ event: SystemEvent, text: String, key: String? = nil) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let message = ChatMessage(role: .hermes, text: text, systemEvent: event)
+        if let key, let id = systemEventMessageIDs[key], let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index] = ChatMessage(id: id, role: .hermes, text: text, timestamp: messages[index].timestamp, systemEvent: event)
+            return
+        }
+        // A repeated status line (retries) doesn't stack identical cards.
+        guard !messages.suffix(2).contains(where: { $0.systemEvent == event && $0.text == text }) else { return }
+        if let key { systemEventMessageIDs[key] = message.id }
+        appendBelowLiveTurn(message)
     }
 
     private func appendBelowLiveTurn(_ message: ChatMessage) {
@@ -6251,7 +6299,7 @@ final class DockModel: ObservableObject {
             let text = persisted.text
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !persisted.imageFileURLs.isEmpty else { continue }
             let timestamp = rowTimestamp ?? Date()
-            guard role == "user" || role == "assistant" || role == "hermes" else { continue }
+            guard role == "user" || role == "assistant" || role == "hermes" || role == "system" else { continue }
             if role == "user", let notices = kanbanNotices(from: text) {
                 pendingActivity = []
                 turnStartedAt = rowTimestamp
@@ -6262,6 +6310,12 @@ final class DockModel: ObservableObject {
                     messages.append(message)
                     if index == 0, let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") { rowIDs[rowID] = message.id }
                 }
+                continue
+            }
+            if let event = SystemEvent.classify(role: role, text: text, displayKind: row["display_kind"] as? String) {
+                let message = ChatMessage(role: .hermes, text: text, timestamp: timestamp, systemEvent: event)
+                messages.append(message)
+                if let rowID = TranscriptHistoryPaging.rowID(row, key: "row_id") { rowIDs[rowID] = message.id }
                 continue
             }
             let attribution = role == "user" ? nil : botAttribution(from: text)
