@@ -509,15 +509,15 @@ struct FeedEventRow: View {
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
                     DockIcon(event.tone.activityIcon, size: 13, weight: .fill, color: event.tone.color)
+                    ForEach(Array(line.bots.enumerated()), id: \.offset) { _, id in
+                        BotChip(id: id, botsByID: botsByID, avatarImages: avatarImages)
+                    }
                     SystemEventCard.inlineMarkdown(line.headline.isEmpty ? event.label : line.headline)
                         .font(DockTypography.body)
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(isExpanded ? nil : 1)
                         .fixedSize(horizontal: false, vertical: isExpanded)
                         .layoutPriority(1)
-                    ForEach(Array(line.bots.enumerated()), id: \.offset) { _, id in
-                        BotChip(id: id, botsByID: botsByID, avatarImages: avatarImages)
-                    }
                     ForEach(Array(line.tags.enumerated()), id: \.offset) { _, tag in
                         Text(tag).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
                     }
@@ -621,6 +621,9 @@ struct KanbanNoticeCard: View {
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
                     DockIcon(notice.tone.activityIcon, size: 13, weight: .fill, color: notice.tone.color)
+                    if let botID {
+                        BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages)
+                    }
                     Text(notice.label)
                         .font(DockTypography.body.weight(.medium))
                         .foregroundStyle(notice.tone.color)
@@ -630,9 +633,6 @@ struct KanbanNoticeCard: View {
                         .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
                         .layoutPriority(1)
-                    if let botID {
-                        BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages)
-                    }
                     if !isExpanded, let detail = notice.detail {
                         Text(detail.split(separator: "\n").first.map(String.init) ?? detail)
                             .font(DockTypography.body)
