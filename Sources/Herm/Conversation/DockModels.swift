@@ -552,6 +552,19 @@ struct SystemEvent: Equatable {
         }
     }
 
+    /// A plugin feed row (e.g. a pipeline status line), toned by its glyph.
+    static func feed(source: String, text: String) -> SystemEvent {
+        let tone: DockStatusTone = switch text.trimmingCharacters(in: .whitespaces).first {
+        case "✅", "✔": .complete
+        case "▶": .working
+        case "🔍", "👀": .review
+        case "🔁", "🔄", "→": .queued
+        case "↩", "⏸", "⛔", "🛑", "✖", "✘", "❌", "⚠": .attention
+        default: .inactive
+        }
+        return SystemEvent(label: source, tone: tone)
+    }
+
     static func humanized(_ raw: String) -> String {
         let words = raw.replacingOccurrences(of: "_", with: " ")
         return words.prefix(1).uppercased() + words.dropFirst()

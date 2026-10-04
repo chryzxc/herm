@@ -3042,7 +3042,10 @@ final class ControlCenterModel: ObservableObject {
                 TranscriptHistoryPaging.displayRows(fromStoredRows: rows),
                 defaultBotProfileID: source,
                 defaultBotDisplayName: source
-            ).messages
+            ).messages.map {
+                ChatMessage(role: .hermes, text: $0.text, timestamp: $0.timestamp,
+                            systemEvent: .feed(source: source, text: $0.text))
+            }
             dockModel.insertTimelineMessages(feed)
         }
     }

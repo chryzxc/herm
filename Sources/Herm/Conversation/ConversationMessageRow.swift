@@ -458,7 +458,8 @@ struct SystemEventCard: View {
             HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
                 DockStatusDot(tone: event.tone)
                 (Text(event.label).foregroundStyle(event.tone.color).fontWeight(.medium)
-                    + Text(" · " + (isExpanded ? text : firstLine)).foregroundStyle(Color.dockSecondaryText))
+                    + Text(" · ") + Self.inlineMarkdown(isExpanded ? text : firstLine))
+                    .foregroundStyle(Color.dockSecondaryText)
                     .font(DockTypography.body)
                     .lineLimit(isExpanded ? nil : 1)
                     .fixedSize(horizontal: false, vertical: isExpanded)
@@ -476,6 +477,12 @@ struct SystemEventCard: View {
         .frame(maxWidth: 520, alignment: .leading)
         .dockSignageCard(tone: event.tone, highlighted: false)
         .accessibilityLabel("\(event.label): \(text)")
+    }
+
+    /// Bold and code spans render; block markdown stays literal text.
+    private static func inlineMarkdown(_ text: String) -> Text {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        return Text((try? AttributedString(markdown: text, options: options)) ?? AttributedString(text))
     }
 }
 

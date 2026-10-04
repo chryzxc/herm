@@ -96,3 +96,10 @@ struct BotMessageAttributionTests {
     #expect(!ControlCenterModel.isFeedSession([["role": "user"], ["role": "assistant"]]))
     #expect(!ControlCenterModel.isFeedSession([]))
 }
+
+@Test func feedRowsAreTonedByLeadingGlyph() {
+    #expect(SystemEvent.feed(source: "cpipe", text: "✅ 🔍 **Review** approved").tone == .complete)
+    #expect(SystemEvent.feed(source: "cpipe", text: "▶ 🔁 **Fix 2** started").tone == .working)
+    #expect(SystemEvent.feed(source: "cpipe", text: "↩ **Review** requested changes").tone == .attention)
+    #expect(SystemEvent.feed(source: "cpipe", text: "plain").label == "cpipe")
+}
