@@ -503,6 +503,8 @@ struct KanbanNotice: Equatable {
     let tone: DockStatusTone
     let title: String?
     let detail: String?
+    /// Set on notices rebuilt from the card's history, for de-duplication.
+    var eventKey: String?
 
     init?(text: String) {
         var lines = text.components(separatedBy: .newlines)
@@ -525,6 +527,10 @@ struct KanbanNotice: Equatable {
         let lower = event.lowercased()
         (label, tone) = switch true {
         case lower.contains("changes"): ("Changes requested", .attention)
+        case lower.hasPrefix("created"): ("Created", .queued)
+        case lower.hasPrefix("picked up"): ("Picked up", .working)
+        case lower.hasPrefix("assigned"): (event.prefix(1).uppercased() + event.dropFirst().replacing("@", with: ""), .queued)
+        case lower.hasPrefix("unblocked"): ("Unblocked", .queued)
         case lower.contains("triage"): ("Triage", .attention)
         case lower.contains("blocked"): ("Blocked", .attention)
         case lower.contains("gave up"): ("Gave up", .attention)
@@ -545,6 +551,31 @@ struct KanbanNotice: Equatable {
         let detail = ([reason] + lines.map(Optional.some)).compactMap { $0 }
             .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         self.detail = detail.isEmpty ? nil : detail
+    }
+
+    /// Card events Hermes never posts to chat (it notifies terminal ones
+    /// only), written as wake-notice text so they parse into the same cards.
+    /// Heartbeats and other worker bookkeeping stay out.
+    static func boardEventNotices(for card: KanbanTaskDetail) -> [(key: String, profileID: String?, text: String, date: Date)] {
+        let runs = Dictionary(card.runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return card.events.compactMap { event in
+            guard let date = event.createdAt else { return nil }
+            let who = event.runID.flatMap { runs[$0]?.profile } ?? event.assignee
+            let head: String
+            switch event.kind {
+            case "created": head = "🆕 Kanban \(card.id) created" + (event.assignee.map { " for @\($0)" } ?? "")
+            case "claimed": head = "▶ Kanban \(card.id) picked up" + (who.map { " by @\($0)" } ?? "")
+            case "review_requested": head = "👀 Kanban \(card.id) review requested"
+            case "changes_requested": head = "↩ Kanban \(card.id) changes requested"
+            case "assigned": head = "👤 Kanban \(card.id) assigned" + (event.assignee.map { " to @\($0)" } ?? "")
+            case "promoted": head = "🔄 Kanban \(card.id) → ready"
+            case "unblocked": head = "🔄 Kanban \(card.id) unblocked"
+            default: return nil
+            }
+            let note = event.note.flatMap { $0.components(separatedBy: .newlines).first }.map { "\n\($0)" } ?? ""
+            let key = "\(card.id)|\(event.kind)|\(Int(date.timeIntervalSince1970))|\(event.runID ?? "")"
+            return (key, who ?? card.assignee, "\(head) — \(card.title)\(note)", date)
+        }
     }
 
     var taskSummary: KanbanTaskSummary {
