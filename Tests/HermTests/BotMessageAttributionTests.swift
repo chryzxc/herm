@@ -88,4 +88,5 @@ struct BotMessageAttributionTests {
     #expect(parsed.map(\.label) == ["Created", "Ready for review", "Picked up", "Assigned to aegis"])
     #expect(parsed.allSatisfy { $0.title == "Fix 1" })
     #expect(parsed[1].detail == "Implemented fix.")
+    #expect(parsed[2].detail == "forge → sentry")
 }

@@ -636,7 +636,13 @@ struct KanbanNotice: Equatable {
             case "unblocked": head = "🔄 Kanban \(card.id) unblocked"
             default: return nil
             }
-            let note = event.note.flatMap { $0.components(separatedBy: .newlines).first }.map { "\n\($0)" } ?? ""
+            var note = event.note.flatMap { $0.components(separatedBy: .newlines).first }.map { "\n\($0)" } ?? ""
+            // A pickup by a new bot is the handoff: name both ends.
+            if event.kind == "claimed", note.isEmpty, let who,
+               let index = card.runs.firstIndex(where: { $0.id == event.runID }), index > 0,
+               let from = card.runs[index - 1].profile, from != who {
+                note = "\n\(from) → \(who)"
+            }
             let key = "\(card.id)|\(event.kind)|\(Int(date.timeIntervalSince1970))|\(event.runID ?? "")"
             return (key, who ?? card.assignee, "\(head) — \(card.title)\(note)", date)
         }
