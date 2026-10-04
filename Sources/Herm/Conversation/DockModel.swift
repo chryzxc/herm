@@ -4289,6 +4289,26 @@ final class DockModel: ObservableObject {
     /// Appends a mid-turn row in time order: the live turn is split around it,
     /// so what already ran stays above and later activity lands below. Calls
     /// still running move to the new live row so their completion updates them.
+    /// Places board-derived kanban notices by time, once each. Events older
+    /// than the loaded history stay out so they do not pile up at the top.
+    func insertKanbanBoardNotices(_ notices: [(key: String, profileID: String?, text: String, date: Date)]) {
+        guard let floor = messages.first?.timestamp else { return }
+        var known = Set(messages.compactMap(\.kanbanNotice?.eventKey))
+        for item in notices.sorted(by: { $0.date < $1.date }) where item.date >= floor && !known.contains(item.key) {
+            guard var notice = KanbanNotice(text: item.text) else { continue }
+            notice.eventKey = item.key
+            known.insert(item.key)
+            let message = ChatMessage(role: .hermes, text: item.text, timestamp: item.date,
+                                      botProfileID: item.profileID ?? "kanban",
+                                      botDisplayName: item.profileID == nil ? "Kanban" : nil, kanbanNotice: notice)
+            if let index = messages.firstIndex(where: { $0.timestamp > item.date }) {
+                messages.insert(message, at: index)
+            } else {
+                appendBelowLiveTurn(message)
+            }
+        }
+    }
+
     private func appendBelowLiveTurn(_ message: ChatMessage) {
         guard let id = streamingMessageID, streamingMessageSessionID == sessionID,
               let index = messages.firstIndex(where: { $0.id == id }) else {

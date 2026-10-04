@@ -662,6 +662,8 @@ struct KanbanEventSummary: Identifiable, Equatable {
     let note: String?
     let runID: String?
     let createdAt: Date?
+    /// `payload.assignee` on created/assigned events.
+    var assignee: String? = nil
 }
 
 struct KanbanTaskDetail: Identifiable, Equatable {

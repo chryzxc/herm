@@ -461,6 +461,16 @@ struct DockPopover: View {
         .onChange(of: controlCenter.capabilities) { _, capabilities in
             handleCapabilitiesChange(capabilities)
         }
+        .task(id: model.kanbanSessionID) {
+            // Keeps chat kanban handoff notices current while the Activity
+            // panel (which polls on its own) is closed.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled, let sessionID = model.kanbanSessionID,
+                      controlCenter.capabilityAvailable("kanban") else { continue }
+                controlCenter.refreshSessionKanban(for: sessionID)
+            }
+        }
         .onAppear {
             configureWorkspaceOnAppear()
             chatContextRouter.model = model

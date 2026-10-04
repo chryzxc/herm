@@ -187,6 +187,8 @@ final class ControlCenterModel: ObservableObject {
     }
 
     private weak var dockModel: DockModel?
+    private var kanbanChatSyncAnchor: UUID?
+    private var kanbanChatSyncedEventAt: [String: Date?] = [:]
     private var rpc: HermesControlRPC?
     /// Desktop-parity editor for Hermes `config.yaml`, over the same backend.
     lazy var configEditor = HermesConfigEditor { [weak self] in self?.rpc }
@@ -2277,6 +2279,9 @@ final class ControlCenterModel: ObservableObject {
                 self.sessionKanbanTasksByRequest[requested] = sessionTasks
                 self.sessionKanbanTasks = sessionTasks
                 self.recordProjectionSuccess("kanban.session")
+                if requestedSessionID == self.dockModel?.kanbanSessionID {
+                    await self.syncKanbanEventsIntoChat(sessionTasks, cli: cli)
+                }
             } catch {
                 guard generation == self.sessionKanbanRefreshGeneration,
                       self.sessionKanbanSessionID == requestedSessionID else { return }
@@ -2970,6 +2975,26 @@ final class ControlCenterModel: ObservableObject {
                       kanbanDetailTaskIdentity == identity else { return }
                 kanbanDetailError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
             }
+        }
+    }
+
+    /// Hermes posts only terminal kanban events to chat, so handoffs (picked
+    /// up, review requested, changes requested…) are read from each session
+    /// card's history and inserted as the same notice cards. A card is
+    /// re-read only when its latest event moved; reloading the transcript
+    /// (new first message) starts over.
+    private func syncKanbanEventsIntoChat(_ tasks: [KanbanTaskSummary], cli: HermesCLIAdapter) async {
+        guard let dockModel, let floor = dockModel.messages.first else { return }
+        if kanbanChatSyncAnchor != floor.id {
+            kanbanChatSyncAnchor = floor.id
+            kanbanChatSyncedEventAt = [:]
+        }
+        for task in tasks where (task.latestEventAt ?? .distantFuture) >= floor.timestamp
+            && kanbanChatSyncedEventAt[task.id] != task.latestEventAt {
+            guard let detail = try? await fetchKanbanTaskDetail(task, boardSlug: task.boardSlug, cli: cli).detail,
+                  kanbanChatSyncAnchor == floor.id else { continue }
+            kanbanChatSyncedEventAt[task.id] = task.latestEventAt
+            dockModel.insertKanbanBoardNotices(KanbanNotice.boardEventNotices(for: detail))
         }
     }
 
@@ -4630,7 +4655,8 @@ final class ControlCenterModel: ObservableObject {
                 kind: kind,
                 note: kanbanEventNote(row["note"] ?? row["payload"]),
                 runID: Self.stringValue(row["run_id"]),
-                createdAt: activityDate(row["created_at"])
+                createdAt: activityDate(row["created_at"]),
+                assignee: (row["payload"] as? [String: Any]).flatMap { Self.nonEmpty($0["assignee"] as? String) }
             )
         }
         detail.runs = ((history["runs"] as? [[String: Any]]) ?? []).enumerated().compactMap { index, row in

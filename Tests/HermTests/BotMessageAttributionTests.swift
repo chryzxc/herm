@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Herm
 
@@ -65,4 +66,26 @@ struct BotMessageAttributionTests {
         card.runs.removeLast()
         #expect(done?.fullSummary(in: card) == "latest")
     }
+}
+
+@Test func kanbanBoardEventsBecomeHandoffNotices() {
+    var card = KanbanTaskDetail(id: "t_c8bcacb5", title: "Fix 1", body: nil, status: "done", priority: nil, assignee: "sentry", runs: [
+        KanbanRunSummary(id: "1765", status: "review", outcome: "review_requested", profile: "forge", summary: nil, elapsed: nil),
+        KanbanRunSummary(id: "1766", status: "done", outcome: "completed", profile: "sentry", summary: nil, elapsed: nil),
+    ])
+    let at = Date(timeIntervalSince1970: 1_791_110_264)
+    card.events = [
+        KanbanEventSummary(id: "0", kind: "created", note: nil, runID: nil, createdAt: at, assignee: "forge"),
+        KanbanEventSummary(id: "1", kind: "heartbeat", note: nil, runID: "1765", createdAt: at),
+        KanbanEventSummary(id: "2", kind: "review_requested", note: "Implemented fix.\nmore", runID: "1765", createdAt: at),
+        KanbanEventSummary(id: "3", kind: "claimed", note: nil, runID: "1766", createdAt: at),
+        KanbanEventSummary(id: "4", kind: "assigned", note: nil, runID: nil, createdAt: at, assignee: "aegis"),
+        KanbanEventSummary(id: "5", kind: "completed", note: "done", runID: "1766", createdAt: at),
+    ]
+    let notices = KanbanNotice.boardEventNotices(for: card)
+    #expect(notices.map(\.profileID) == ["forge", "forge", "sentry", "aegis"])
+    let parsed = notices.compactMap { KanbanNotice(text: $0.text) }
+    #expect(parsed.map(\.label) == ["Created", "Ready for review", "Picked up", "Assigned to aegis"])
+    #expect(parsed.allSatisfy { $0.title == "Fix 1" })
+    #expect(parsed[1].detail == "Implemented fix.")
 }
