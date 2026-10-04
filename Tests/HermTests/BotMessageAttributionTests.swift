@@ -103,3 +103,13 @@ struct BotMessageAttributionTests {
     #expect(SystemEvent.feed(source: "cpipe", text: "↩ **Review** requested changes").tone == .attention)
     #expect(SystemEvent.feed(source: "cpipe", text: "plain").label == "cpipe")
 }
+
+@Test func feedLineSplitsHeadlineBotsAndID() {
+    let line = FeedLine("🔁 **Fix 2** handed to review · @forge → review `t_45f26ad7` · 3m 49s\n> Addressed it.\n→ Next: **Fix 2** · @forge")
+    #expect(line.headline == "**Fix 2** handed to review")
+    #expect(line.bots == ["forge"])
+    #expect(line.id == "t_45f26ad7")
+    #expect(line.tags == ["→ review", "3m 49s"])
+    #expect(line.detail == "Addressed it.\n→ Next: **Fix 2** · @forge")
+    #expect(FeedLine("plain note").headline == "plain note")
+}

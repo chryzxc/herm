@@ -234,7 +234,10 @@ struct ConversationMessageRow: View, Equatable {
                         .accessibilityLabel("Message from \(bot?.name ?? message.botDisplayName ?? botProfileID)")
                     }
 
-                    if let event = message.systemEvent {
+                    if let event = message.systemEvent, event.isFeed {
+                        FeedEventRow(event: event, line: FeedLine(message.text), timeLabel: message.timeLabel,
+                                     botsByID: botsByID, avatarImages: avatarImages)
+                    } else if let event = message.systemEvent {
                         SystemEventCard(event: event, text: message.text)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 4)
@@ -292,7 +295,7 @@ struct ConversationMessageRow: View, Equatable {
             }
         }
         .padding(.horizontal, metrics.contentInset)
-        .padding(.vertical, 8)
+        .padding(.vertical, message.systemEvent?.isFeed == true ? 1 : 8)
     }
 
     /// The tail corner points toward the sender edge so consecutive prompts
@@ -480,9 +483,108 @@ struct SystemEventCard: View {
     }
 
     /// Bold and code spans render; block markdown stays literal text.
-    private static func inlineMarkdown(_ text: String) -> Text {
+    static func inlineMarkdown(_ text: String) -> Text {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         return Text((try? AttributedString(markdown: text, options: options)) ?? AttributedString(text))
+    }
+}
+
+/// One plugin feed entry: tone icon, headline, the bots it names as avatar
+/// chips, tags, then the card id and time. Click shows the quoted detail.
+struct FeedEventRow: View {
+    let event: SystemEvent
+    let line: FeedLine
+    let timeLabel: String
+    let botsByID: [String: BotSummary]
+    let avatarImages: [String: Data]
+    @State private var isExpanded = false
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var icon: Ph {
+        switch event.tone {
+        case .complete: .checkCircle
+        case .working: .play
+        case .review: .magnifyingGlass
+        case .queued: .arrowsClockwise
+        case .attention: .warningCircle
+        default: .pulse
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DockSpacing.micro) {
+            Button {
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: DockSpacing.tight) {
+                    DockIcon(icon, size: 13, weight: .fill, color: event.tone.color)
+                    SystemEventCard.inlineMarkdown(line.headline)
+                        .font(DockTypography.body)
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    ForEach(Array(line.bots.enumerated()), id: \.offset) { _, id in
+                        botChip(id)
+                    }
+                    ForEach(Array(line.tags.enumerated()), id: \.offset) { _, tag in
+                        Text(tag).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                    }
+                    Spacer(minLength: DockSpacing.control)
+                    if let id = line.id { Text(id) }
+                    Text(timeLabel)
+                    if line.detail != nil {
+                        DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
+                    }
+                }
+                .font(DockTypography.machineMetadata)
+                .foregroundStyle(Color.dockMetadataText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.dockPrimaryText.opacity(isHovering || isExpanded ? 0.05 : 0))
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(line.detail == nil)
+            .onHover { isHovering = $0 }
+            .help(line.detail == nil ? "" : (isExpanded ? "Hide details" : "Show details"))
+
+            if isExpanded, let detail = line.detail {
+                SystemEventCard.inlineMarkdown(detail)
+                    .font(DockTypography.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(event.tone.color.opacity(0.5)).frame(width: 2)
+                    }
+                    .padding(.leading, 14)
+                    .padding(.bottom, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(event.label): \(line.headline)")
+    }
+
+    @ViewBuilder private func botChip(_ id: String) -> some View {
+        HStack(spacing: 4) {
+            if let bot = botsByID[id] {
+                BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 16)
+                Text(bot.name)
+            } else {
+                Text("@" + id)
+            }
+        }
+        .font(DockTypography.machineMetadata.weight(.medium))
+        .foregroundStyle(Color.dockSecondaryText)
+        .lineLimit(1)
+        .padding(.leading, 2).padding(.trailing, 6).padding(.vertical, 1)
+        .background(Capsule().fill(Color.dockPrimaryText.opacity(0.06)))
     }
 }
 

@@ -499,11 +499,47 @@ struct ChatMessage: Identifiable, Equatable {
     enum Role { case user, hermes }
 }
 
+/// A feed status line split for display: `▶ **Fix 2** started · @forge \`t_1\``
+/// becomes headline "**Fix 2** started", bots ["forge"], id "t_1". Segments
+/// after the first ` · ` lose their mentions and ids and become tags.
+struct FeedLine: Equatable {
+    var headline: String
+    var bots: [String] = []
+    var tags: [String] = []
+    var id: String?
+    var detail: String?
+
+    init(_ text: String) {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let segments = (lines.first ?? "").components(separatedBy: " · ")
+        headline = String(segments[0].drop { !$0.isLetter && !$0.isNumber && $0 != "*" && $0 != "`" })
+        for segment in segments.dropFirst() {
+            var leftover: [Substring] = []
+            for word in segment.split(separator: " ") {
+                if word.hasPrefix("@"), word.count > 1 {
+                    bots.append(String(word.dropFirst().trimmingCharacters(in: .punctuationCharacters)))
+                } else if word.count > 2, word.hasPrefix("`"), word.hasSuffix("`") {
+                    id = String(word.dropFirst().dropLast())
+                } else {
+                    leftover.append(word)
+                }
+            }
+            if !leftover.isEmpty { tags.append(leftover.joined(separator: " ")) }
+        }
+        let body = lines.dropFirst()
+            .map { $0.hasPrefix("> ") ? String($0.dropFirst(2)) : $0 }
+            .joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        detail = body.isEmpty ? nil : body
+    }
+}
+
 /// A transcript row or live status Hermes produced itself rather than the
 /// user or the model's reply: kept visible, labelled, and set apart.
 struct SystemEvent: Equatable {
     var label: String
     var tone: DockStatusTone = .inactive
+    /// A plugin feed row: rendered as a one-line activity entry.
+    var isFeed = false
 
     private static let prefixLabels: [(prefix: String, label: String)] = [
         ("[ASYNC DELEGATION BATCH COMPLETE", "Delegation complete"),
@@ -562,7 +598,7 @@ struct SystemEvent: Equatable {
         case "↩", "⏸", "⛔", "🛑", "✖", "✘", "❌", "⚠": .attention
         default: .inactive
         }
-        return SystemEvent(label: source, tone: tone)
+        return SystemEvent(label: source, tone: tone, isFeed: true)
     }
 
     static func humanized(_ raw: String) -> String {
