@@ -90,3 +90,7 @@ struct BotMessageAttributionTests {
     #expect(parsed[1].detail == "Implemented fix.")
     #expect(parsed[2].detail == "forge → sentry")
 }
+
+@MainActor @Test func pipelineFeedIsTheWorktreesFlowSession() {
+    #expect(ControlCenterModel.pipelineFeedSessionID(workspacePath: "/Users/x/climateRX/.worktrees/t_c17191d5") == "cpipe_flow_t_c17191d5")
+}

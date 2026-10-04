@@ -4330,16 +4330,24 @@ final class DockModel: ObservableObject {
     /// Places board-derived kanban notices by time, once each. Events older
     /// than the loaded history stay out so they do not pile up at the top.
     func insertKanbanBoardNotices(_ notices: [(key: String, profileID: String?, text: String, date: Date)]) {
-        guard let floor = messages.first?.timestamp else { return }
         var known = Set(messages.compactMap(\.kanbanNotice?.eventKey))
-        for item in notices.sorted(by: { $0.date < $1.date }) where item.date >= floor && !known.contains(item.key) {
-            guard var notice = KanbanNotice(text: item.text) else { continue }
+        insertTimelineMessages(notices.compactMap { item in
+            guard known.insert(item.key).inserted, var notice = KanbanNotice(text: item.text) else { return nil }
             notice.eventKey = item.key
-            known.insert(item.key)
-            let message = ChatMessage(role: .hermes, text: item.text, timestamp: item.date,
-                                      botProfileID: item.profileID ?? "kanban",
-                                      botDisplayName: item.profileID == nil ? "Kanban" : nil, kanbanNotice: notice)
-            if let index = messages.firstIndex(where: { $0.timestamp > item.date }) {
+            return ChatMessage(role: .hermes, text: item.text, timestamp: item.date,
+                               botProfileID: item.profileID ?? "kanban",
+                               botDisplayName: item.profileID == nil ? "Kanban" : nil, kanbanNotice: notice)
+        })
+    }
+
+    /// Places messages from outside the live stream (board events, pipeline
+    /// feeds) at their timestamps, once each. Ones older than the loaded
+    /// history are left for the sync that follows paging.
+    func insertTimelineMessages(_ items: [ChatMessage]) {
+        guard let floor = messages.first?.timestamp else { return }
+        for message in items.sorted(by: { $0.timestamp < $1.timestamp }) where message.timestamp >= floor {
+            guard !messages.contains(where: { $0.timestamp == message.timestamp && $0.text == message.text }) else { continue }
+            if let index = messages.firstIndex(where: { $0.timestamp > message.timestamp }) {
                 messages.insert(message, at: index)
             } else {
                 appendBelowLiveTurn(message)
