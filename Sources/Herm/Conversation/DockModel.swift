@@ -391,6 +391,9 @@ final class DockModel: ObservableObject {
         for value in values where value.localizedCaseInsensitiveContains("kanban") {
             ids.formUnion(Self.kanbanCommandReferences(in: value))
         }
+        // Hermes notifies a chat only about cards it subscribed to, so a
+        // notice in the transcript is an exact association too.
+        ids.formUnion(messages.compactMap(\.kanbanNotice?.taskID))
         return ids.sorted()
     }
 
