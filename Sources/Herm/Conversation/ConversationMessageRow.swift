@@ -508,7 +508,7 @@ struct FeedEventRow: View {
                 guard canExpand else { return }
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
             } label: {
-                HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
+                HStack(alignment: .center, spacing: DockSpacing.tight) {
                     DockIcon(event.tone.activityIcon, size: 13, weight: .fill, color: event.tone.color)
                     ForEach(Array(line.bots.enumerated()), id: \.offset) { _, id in
                         BotChip(id: id, botsByID: botsByID, avatarImages: avatarImages)
@@ -620,7 +620,7 @@ struct KanbanNoticeCard: View {
             Button {
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
             } label: {
-                HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
+                HStack(alignment: .center, spacing: DockSpacing.tight) {
                     DockIcon(notice.tone.activityIcon, size: 13, weight: .fill, color: notice.tone.color)
                     if let botID {
                         BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages)
