@@ -505,6 +505,7 @@ struct FeedEventRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DockSpacing.micro) {
             Button {
+                guard canExpand else { return }
                 withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
@@ -540,7 +541,6 @@ struct FeedEventRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!canExpand)
             .onHover { isHovering = $0 }
             .help(canExpand ? (isExpanded ? "Hide details" : "Show details") : "")
 
@@ -599,6 +599,7 @@ struct BotChip: View {
         .lineLimit(1)
         .padding(.leading, 2).padding(.trailing, 6).padding(.vertical, 1)
         .background(Capsule().fill(Color.dockPrimaryText.opacity(0.06)))
+        .fixedSize()
     }
 }
 
