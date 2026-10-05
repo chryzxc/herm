@@ -520,12 +520,12 @@ struct FeedEventRow: View {
                         .fixedSize(horizontal: false, vertical: isExpanded)
                         .layoutPriority(1)
                     ForEach(Array(line.tags.enumerated()), id: \.offset) { _, tag in
-                        Text(tag).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                        Text(tag).foregroundStyle(Color.dockSecondaryText).lineLimit(1).fixedSize()
                     }
                     Spacer(minLength: DockSpacing.control)
-                    Text(event.label).help("Posted by the \(event.label) plugin")
-                    if let id = line.id { Text(id) }
-                    Text(timeLabel)
+                    Text(event.label).fixedSize().help("Posted by the \(event.label) plugin")
+                    if let id = line.id { Text(id).fixedSize() }
+                    Text(timeLabel).fixedSize()
                     if canExpand {
                         DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
                     }
@@ -642,11 +642,12 @@ struct KanbanNoticeCard: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: DockSpacing.control)
-                    Text(notice.taskID)
-                    Text(timeLabel)
+                    Text(notice.taskID).fixedSize()
+                    Text(timeLabel).fixedSize()
                     DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
                 }
                 .font(DockTypography.machineMetadata)
+                .lineLimit(1)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
