@@ -559,6 +559,7 @@ struct FeedEventRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(event.label): \(line.headline)")
     }
@@ -656,7 +657,7 @@ struct KanbanNoticeCard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(isExpanded ? "Hide handoff" : "Show handoffs and full summary")
+            .help(isExpanded ? "Hide details" : "Show details")
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: DockSpacing.micro) {
@@ -695,6 +696,7 @@ struct KanbanNoticeCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
         .onHover { hovering in
             withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) { isHovering = hovering }
         }

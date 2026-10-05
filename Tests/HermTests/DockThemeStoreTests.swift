@@ -65,7 +65,7 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.daylight.appearance == .light)
         #expect(DockThemeID.poseidon.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.nativeMacOS, .cartoon, .terminal, .flat, .brutalist, .origami])
+        #expect(DockThemeID.hermOnly == [.nativeMacOS, .cartoon, .terminal, .flat, .brutalist, .origami, .dusk])
         #expect(DockThemeID.terminal.appearance == .dark && DockThemeID.terminal.style.fontDesign == .monospaced)
         #expect(DockThemeID.flat.appearance == .system && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
         #expect(DockThemeID.cartoon.appearance == .light)
