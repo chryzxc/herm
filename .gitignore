@@ -11,10 +11,9 @@ dist/
 .omo/
 .opencode/
 .hermes/*
-!.hermes/plans/
-!.hermes/plans/**
 
 .superpowers/
+docs/superpowers/plans/
 
 # Generated knowledge graph
 graphify-out/
