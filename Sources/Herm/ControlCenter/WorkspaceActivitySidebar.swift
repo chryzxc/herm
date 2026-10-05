@@ -199,6 +199,8 @@ struct WorkspaceActivitySidebar: View {
                 officePreviewContent
             } else if selectedMode == .automations {
                 AutomationWorkspaceView(control: control)
+            } else if selectedMode == .calendar {
+                calendarContent
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
@@ -220,6 +222,8 @@ struct WorkspaceActivitySidebar: View {
                             case .core: coreContent
                             case .quota: quotaContent
                             case .usage: UsageWorkspaceView(control: control)
+                            // Rendered outside this ScrollView so the calendar can stay pinned.
+                            case .calendar: EmptyView()
                             }
                         }
                         .padding(.horizontal, 16)
@@ -410,6 +414,26 @@ struct WorkspaceActivitySidebar: View {
         .id(selectedSettingsCategory)
     }
 
+    /// Owns its own scrolling: the calendar stays put while the day detail scrolls.
+    private var calendarContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageHeader
+            CalendarWorkspaceView(
+                control: control,
+                repoPaths: calendarRepoPaths,
+                botsByID: Dictionary(botMode.bots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                avatarImages: botMode.avatarImages,
+                onOpenTask: { task in
+                    select(.kanban)
+                    control.revealKanbanTask(task)
+                }
+            )
+            .task { await botMode.refreshNow() }
+            .padding(.horizontal, 16)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
     private var officeKanbanIsCurrent: Bool {
         control.globalKanbanIsCurrent
     }
@@ -586,6 +610,8 @@ struct WorkspaceActivitySidebar: View {
                 control.refreshProviderQuota()
             } else if selectedMode == .usage {
                 control.refreshTokenUsage(days: UsageWorkspaceView.storedDays)
+            } else if selectedMode == .calendar {
+                control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)
             } else if selectedMode == .kanban {
                 applyKanbanFilters()
             } else if selectedMode == .officePreview {
@@ -618,6 +644,8 @@ struct WorkspaceActivitySidebar: View {
                 control.refreshProviderQuota()
             case .usage:
                 control.refreshTokenUsage(days: UsageWorkspaceView.storedDays)
+            case .calendar:
+                control.refreshWorkCalendar(month: Date(), repoPaths: calendarRepoPaths)
             case .kanban:
                 // Re-apply this surface's visible controls. This prevents a
                 // session-only query started from Activity from leaking into
@@ -1093,8 +1121,13 @@ struct WorkspaceActivitySidebar: View {
         [.today, .inbox, .kanban, .quota, .automations]
     }
 
+    /// Every repository Herm has attached to a session, for the Calendar's git log.
+    private var calendarRepoPaths: [String] {
+        Array(Set(store.tasks.compactMap(\.projectPath) + [store.projectPath].compactMap { $0 }))
+    }
+
     private var compactOverflowNavigation: [ControlTab] {
-        [.usage, .projects, .search, .officePreview, .core]
+        [.usage, .calendar, .projects, .search, .officePreview, .core]
     }
 
     private var isToolsModeSelected: Bool {

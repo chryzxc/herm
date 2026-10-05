@@ -1391,7 +1391,9 @@ final class DockModel: ObservableObject {
                 // session.list rows carry only `started_at`; take recency from
                 // the `/api/sessions` rows so a cold start does not show (and
                 // sort by) when an old chat began.
+                let feedIDs = index?.feedIDs ?? []
                 let loaded = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }
+                    .filter { !feedIDs.contains($0.id) || $0.id == self.navigationSessionID }
                     .map { Self.withRecency($0, from: index?.lastActive ?? [:]) }
                 // The session index can lag behind the live gateway stream.
                 // Keep a newer event timestamp until Hermes publishes an equal
@@ -1484,7 +1486,16 @@ final class DockModel: ObservableObject {
     /// `/api/sessions` back-fills every pinned row past `limit`, so the recent
     /// page plus the pins is the full pinned set. Its rows also carry
     /// `last_active`, which session.list omits.
-    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (pinned: [HermesSession], lastActive: [String: Date]) {
+    /// Rows that hold messages yet never called a model: plugin feeds and
+    /// delivery logs, not conversations. They show inside the chat they
+    /// report on, so the session list leaves them out.
+    static func isModellessFeed(_ row: [String: Any]) -> Bool {
+        let messages = (row["message_count"] as? NSNumber)?.intValue ?? 0
+        guard messages > 0, let calls = (row["api_call_count"] as? NSNumber)?.intValue, calls == 0 else { return false }
+        return ((row["model"] as? String) ?? "").isEmpty
+    }
+
+    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>) {
         var path = "/api/sessions?limit=100&order=recent"
         if let profileID, !profileID.isEmpty,
            let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
@@ -1497,7 +1508,8 @@ final class DockModel: ObservableObject {
         let lastActive = Dictionary(rows.compactMap { row in
             parseSession(row, profileID: profileID).flatMap { session in session.updatedAt.map { (session.id, $0) } }
         }, uniquingKeysWith: max)
-        return (pinned, lastActive)
+        let feedIDs = Set(rows.filter(isModellessFeed).compactMap { $0["id"] as? String })
+        return (pinned, lastActive, feedIDs)
     }
 
     static func withRecency(_ session: HermesSession, from lastActive: [String: Date]) -> HermesSession {
@@ -3832,6 +3844,12 @@ final class DockModel: ObservableObject {
         case "status.update":
             switch payload["kind"] as? String {
             case "compacting", "compressing":
+                // Hermes re-tags any lifecycle line mentioning "compact"/"compress" as
+                // `compacting`, including the stored compression-feasibility warning it
+                // replays on a session's first turn. Only real progress lines count.
+                let text = payload["text"] as? String ?? ""
+                let isProgress = ["Compacting context", "Preflight compression", "— compacting ~"].contains { text.contains($0) }
+                guard payload["kind"] as? String == "compressing" || isProgress else { break }
                 recordTurnCompaction(isComplete: false)
                 compactingSessionID = sessionID
             case "compacted", "ready":

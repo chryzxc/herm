@@ -123,3 +123,10 @@ struct BotMessageAttributionTests {
     #expect(line.detail == "notes here")
     #expect(line.bots.isEmpty && line.id == nil)
 }
+
+@MainActor @Test func modellessSessionsAreFeedsNotConversations() {
+    #expect(DockModel.isModellessFeed(["message_count": 12, "api_call_count": 0, "model": ""]))
+    #expect(!DockModel.isModellessFeed(["message_count": 12, "api_call_count": 3, "model": "x"]))
+    #expect(!DockModel.isModellessFeed(["message_count": 0, "api_call_count": 0]))
+    #expect(!DockModel.isModellessFeed(["message_count": 5]))
+}

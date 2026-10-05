@@ -761,6 +761,24 @@ enum RepositoryService {
         !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
 
+    /// Non-merge commits authored in `[since, until)`, newest first. Missing
+    /// or non-git paths yield an empty list.
+    static func commits(path: String, since: Date, until: Date) async -> [WorkCommit] {
+        let iso = ISO8601DateFormatter()
+        let result = await runGit(path: path, arguments: [
+            "log", "--no-merges", "--max-count=500",
+            "--since=\(iso.string(from: since))", "--until=\(iso.string(from: until))",
+            "--pretty=format:%h%x1f%s%x1f%aI"
+        ])
+        guard result.exitCode == 0 else { return [] }
+        let repo = URL(fileURLWithPath: path).lastPathComponent
+        return result.output.split(separator: "\n").compactMap { line in
+            let fields = line.split(separator: "\u{1f}", omittingEmptySubsequences: false)
+            guard fields.count == 3, let date = iso.date(from: String(fields[2])) else { return nil }
+            return WorkCommit(repo: repo, hash: String(fields[0]), subject: String(fields[1]), date: date)
+        }
+    }
+
     private static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (output: String, exitCode: Int32) {
         await Task.detached(priority: .utility) {
             let process = Process()

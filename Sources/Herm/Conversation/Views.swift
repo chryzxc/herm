@@ -3757,19 +3757,29 @@ private struct MissionControlQueue: View {
         // children. Nested lazy stacks inside eager VStacks are not lazy, so
         // every conversation and project row was built on each layout pass.
         return LazyVStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                if showsKanban {
-                    globalRailDestination(.kanban, style: style)
+            // Grouped by purpose: work items, time, library, then setup.
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if showsKanban {
+                        globalRailDestination(.kanban, style: style)
+                    }
+                    if showsPullRequests { pullRequestsDestinationRow(style: style) }
+                    if showsIssues { issuesDestinationRow(style: style) }
                 }
-                if showsPullRequests { pullRequestsDestinationRow(style: style) }
-                if showsIssues { issuesDestinationRow(style: style) }
-                globalRailDestination(.usage, style: style)
-                globalRailDestination(.automations, style: style)
-                if showsOffice { globalRailDestination(.officePreview, style: style) }
-                queueRailDestination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style) {
-                    onOpenArtifacts()
+                VStack(alignment: .leading, spacing: 2) {
+                    globalRailDestination(.calendar, style: style)
+                    globalRailDestination(.automations, style: style)
                 }
-                botsDestinationRow(style: style)
+                VStack(alignment: .leading, spacing: 2) {
+                    queueRailDestination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style) {
+                        onOpenArtifacts()
+                    }
+                    if showsOffice { globalRailDestination(.officePreview, style: style) }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    botsDestinationRow(style: style)
+                    globalRailDestination(.usage, style: style)
+                }
             }
 
             let pinned = pinnedSessionPresentation

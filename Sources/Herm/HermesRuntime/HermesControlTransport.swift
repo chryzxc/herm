@@ -82,8 +82,8 @@ final class HermesControlRPC {
     func sessions(limit: Int = 50, profileID: String? = nil) async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.sessionList.rawValue, params: Self.profileParams(["limit": limit], profileID: profileID))
     }
-    func sessionPages(limit: Int = 100, offset: Int = 0) async throws -> [String: Any] {
-        let result = try await client.fetchHTTP("/api/sessions?limit=\(limit)&offset=\(offset)")
+    func sessionPages(limit: Int = 100, offset: Int = 0, order: String? = nil) async throws -> [String: Any] {
+        let result = try await client.fetchHTTP("/api/sessions?limit=\(limit)&offset=\(offset)" + (order.map { "&order=\($0)" } ?? ""))
         // Hermes Agent's REST endpoint uses `sessions`/`total`; the Dock's
         // activity projection predates that endpoint and uses `data`/`has_more`.
         // Adapt at the transport boundary so both forms remain supported.

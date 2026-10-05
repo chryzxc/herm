@@ -1521,6 +1521,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     case core = "Core"
     case quota = "Quota"
     case usage = "Usage"
+    case calendar = "Calendar"
 
     /// The fixed navigation strip is deliberately limited to the destinations
     /// used to orient, triage, and act on work. Everything else remains one
@@ -1528,7 +1529,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban]
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
-    static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota, .usage]
+    static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota, .usage, .calendar]
     static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
     static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .officePreview, .core]
@@ -1575,6 +1576,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .core: .gear
         case .quota: .gauge
         case .usage: .chartBar
+        case .calendar: .calendarBlank
         }
     }
 
@@ -1605,6 +1607,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
         case .core: "Runtime health, permissions, and session tools"
         case .quota: "Provider capacity and reset windows"
         case .usage: "Tokens, cost, and tools Hermes has used"
+        case .calendar: "What shipped and what was worked on, day by day"
         }
     }
 }
@@ -1665,7 +1668,7 @@ struct ControlTabBadgeState: Equatable {
         case .activity: activityCount
         case .changes: changeCount
         case .verification: verificationCount
-        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage: 0
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar: 0
         }
     }
 
@@ -1676,7 +1679,7 @@ struct ControlTabBadgeState: Equatable {
         case .inbox: urgentAttentionCount > 0
         case .changes: changeCount > 0
         case .verification: verificationCount > 0
-        case .activity, .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage: false
+        case .activity, .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar: false
         }
     }
 }

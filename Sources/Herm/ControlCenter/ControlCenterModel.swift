@@ -72,6 +72,12 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var tokenUsage: TokenUsageReport?
     private var tokenUsageGeneration = UUID()
     private var tokenUsageModelRows: [String: Any] = [:]
+    @Published private(set) var workCalendar: WorkCalendarIndex?
+    /// Fetched sessions/commits/usage per month start; Kanban and cron runs are
+    /// folded in from the live projections at build time.
+    private var workCalendarSources: [Date: (sessions: [SessionSummary], commits: [WorkCommit], usage: [TokenUsageReport.Day])] = [:]
+    private var workCalendarMonth: Date?
+    private var workCalendarGeneration = UUID()
     @Published private(set) var providerQuotas: [ProviderQuotaSnapshot] = []
     /// Snapshots exactly as the providers reported them. `providerQuotas` is
     /// derived from these plus the user's nicknames and display order, so a
@@ -2495,6 +2501,99 @@ final class ControlCenterModel: ObservableObject {
                 recordProjectionFailure("token.usage", error: error.localizedDescription)
             }
         }
+    }
+
+    /// Loads one month of work for the Calendar tab. A month already fetched
+    /// is rebuilt from cache unless `force` is set.
+    func refreshWorkCalendar(month: Date, repoPaths: [String], force: Bool = false) {
+        let calendar = Calendar.current
+        let monthStart = calendar.dateInterval(of: .month, for: month)?.start ?? calendar.startOfDay(for: month)
+        let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart
+        workCalendarMonth = monthStart
+        if globalKanbanTasks.isEmpty { refreshGlobalKanban(trigger: .background) }
+        if cronRuns.isEmpty { refreshCronRuns() }
+        if !force, workCalendarSources[monthStart] != nil {
+            rebuildWorkCalendar()
+            return
+        }
+        let generation = UUID()
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        workCalendarGeneration = generation
+        guard let rpc else {
+            recordProjectionUnavailable("work.calendar")
+            return
+        }
+        beginProjectionRefresh("work.calendar")
+        // Hermes' projects are the working directories its sessions ran in, the same list the PR center reads.
+        let paths = Set(repoPaths + projects.filter(\.isRenderableProject).map(\.name)).filter { !$0.isEmpty }
+        Task { @MainActor in
+            do {
+                async let commits = withTaskGroup(of: [WorkCommit].self, returning: [WorkCommit].self) { group in
+                    for path in paths {
+                        group.addTask { await RepositoryService.commits(path: path, since: monthStart, until: monthEnd) }
+                    }
+                    // Worktrees of one repo report the same commits; keep each hash once.
+                    var seen = Set<String>()
+                    return await group.reduce(into: []) { $0 += $1 }.filter { seen.insert($0.hash + $0.subject).inserted }
+                }
+                let sessions = try await Self.workCalendarSessions(rpc: rpc, since: monthStart)
+                // Usage is best-effort: older Hermes builds lack the web server.
+                let usageDays = (calendar.dateComponents([.day], from: monthStart, to: Date()).day ?? -1) + 1
+                var usage: [TokenUsageReport.Day] = []
+                if (1...365).contains(usageDays), let result = try? await rpc.usageAnalytics(days: usageDays) {
+                    usage = Self.parseTokenUsage(result).daily
+                }
+                let fetched = (sessions: sessions, commits: await commits, usage: usage)
+                guard generation == workCalendarGeneration,
+                      isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                workCalendarSources[monthStart] = fetched
+                rebuildWorkCalendar()
+                recordProjectionSuccess("work.calendar", count: workCalendar?.activeDays ?? 0)
+            } catch {
+                guard generation == workCalendarGeneration else { return }
+                recordProjectionFailure("work.calendar", error: error.localizedDescription)
+            }
+        }
+    }
+
+    /// Re-folds the live Kanban and cron projections into the cached month.
+    func rebuildWorkCalendar() {
+        guard let month = workCalendarMonth, let sources = workCalendarSources[month] else { return }
+        let index = WorkCalendarIndex.build(
+            month: month,
+            sessions: sources.sessions,
+            tasks: globalKanbanTasks,
+            commits: sources.commits,
+            runs: cronRuns,
+            usage: sources.usage
+        )
+        if index != workCalendar { workCalendar = index }
+    }
+
+    /// Pages `/api/sessions` newest-first and stops at the first page that
+    /// reaches past `since`, so a month view never reads the whole history.
+    private static func workCalendarSessions(rpc: HermesControlRPC, since: Date) async throws -> [SessionSummary] {
+        var sessions: [SessionSummary] = []
+        var offset = 0
+        for _ in 0..<50 {
+            let page = try await rpc.sessionPages(limit: 100, offset: offset, order: "recent")
+            guard let rows = page["data"] as? [[String: Any]] else { throw HermesGateway.GatewayError.malformedResponse }
+            var reachedPast = false
+            for row in rows {
+                guard let id = row["id"] as? String else { continue }
+                let date = activityDate(row["last_activity_at"]) ?? activityDate(row["updated_at"])
+                    ?? activityDate(row["last_active"]) ?? activityDate(row["started_at"])
+                guard let date else { continue }
+                if date < since { reachedPast = true; continue }
+                let title = (row["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled chat"
+                sessions.append(SessionSummary(id: id, title: title, state: row["state"] as? String ?? "idle",
+                                               preview: row["preview"] as? String, updatedAt: date))
+            }
+            offset += rows.count
+            if rows.isEmpty || reachedPast || parseHasMore(page) != true { break }
+        }
+        return sessions
     }
 
     func refreshSessionCockpit(for requestedSessionID: String? = nil) {
