@@ -533,7 +533,8 @@ struct FeedEventRow: View {
                 .font(DockTypography.machineMetadata)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .frame(height: isExpanded ? nil : 28)
+                .clipped()
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.dockPrimaryText.opacity(isHovering || isExpanded ? 0.05 : 0))
@@ -650,7 +651,8 @@ struct KanbanNoticeCard: View {
                 .lineLimit(1)
                 .foregroundStyle(Color.dockMetadataText)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .frame(height: 28)
+                .clipped()
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(Color.dockPrimaryText.opacity(isHovering || isExpanded ? 0.05 : 0))
