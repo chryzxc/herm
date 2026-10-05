@@ -13,7 +13,7 @@ dist/
 .hermes/*
 
 .superpowers/
-docs/superpowers/plans/
+docs/superpowers/
 
 # Generated knowledge graph
 graphify-out/
