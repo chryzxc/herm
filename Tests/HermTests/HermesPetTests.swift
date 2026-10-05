@@ -241,11 +241,11 @@ struct HermesPetTests {
 
     @MainActor @Test func petFitsBelowTheCollapsedNotch() {
         let state = EdgeNotchState()
-        #expect(state.railHeight == 72)
+        #expect(state.railHeight == 60)
         state.hasPet = true
-        #expect(state.railHeight == 72)
-        #expect(state.panelHeight == 120)
-        #expect(state.railWidth == 44)
+        #expect(state.railHeight == 60)
+        #expect(state.panelHeight == 108)
+        #expect(state.railWidth == 56)
         state.expanded = true
         #expect(state.railHeight == 136)
         #expect(state.panelHeight == 408)

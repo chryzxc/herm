@@ -186,8 +186,8 @@ struct EdgeNotchTests {
     @MainActor @Test func quietNotchDoesNotExposePassiveLabelsOrLargeRail() {
         let state = EdgeNotchState()
         #expect(state.isQuiet)
-        #expect(state.railWidth == 44)
-        #expect(state.railHeight == 72)
+        #expect(state.railWidth == 56)
+        #expect(state.railHeight == 60)
         state.expanded = true
         #expect(!state.isQuiet)
         #expect(state.railWidth == 72)
