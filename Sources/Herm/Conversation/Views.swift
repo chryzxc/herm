@@ -2876,6 +2876,11 @@ struct DockPopover: View {
             } else {
                 proxy.scrollTo("conversation-bottom", anchor: .bottom)
             }
+            // Lazily measured rows (feed/kanban lines, tall cards) settle one
+            // layout pass later; re-target so the tail is not left mid-way.
+            await Task.yield()
+            guard isConversationAtBottom else { return }
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
     }
 

@@ -50,7 +50,12 @@ struct SessionKanbanActivityView: View {
             guard let sessionID else { return }
             control.refreshSessionKanban(for: sessionID)
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(15))
+                // Feed rows and handoffs reach the chat through this poll, so
+                // stay quick while work is live and relax when idle.
+                let live = model.status == .working || control.sessionKanbanTasks.contains {
+                    !["done", "archived", "completed"].contains($0.status.lowercased())
+                }
+                try? await Task.sleep(for: .seconds(live ? 3 : 15))
                 guard !Task.isCancelled else { continue }
                 control.refreshSessionKanban(for: sessionID)
             }
