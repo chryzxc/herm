@@ -76,16 +76,16 @@ struct HermesProjectionStateTests {
     }
 
     @Test func userVisibleDiagnosticsAreSanitizedAtControlCenterBoundary() {
-        let raw = "failed at /Users/christian/.hermes/config.yaml token=super-secret"
+        let raw = "failed at /Users/example/.hermes/config.yaml token=super-secret"
         let safe = ControlCenterModel.safeUserDiagnostic(raw)
-        #expect(!safe.contains("/Users/christian"))
+        #expect(!safe.contains("/Users/example"))
         #expect(!safe.contains("super-secret"))
     }
 
     @Test func userVisibleDiagnosticsAreSanitizedAtDockBoundary() {
-        let raw = "failed at /Users/christian/.hermes/config.yaml token=super-secret"
+        let raw = "failed at /Users/example/.hermes/config.yaml token=super-secret"
         let safe = DockModel.safeUserDiagnostic(raw)
-        #expect(!safe.contains("/Users/christian"))
+        #expect(!safe.contains("/Users/example"))
         #expect(!safe.contains("super-secret"))
     }
 

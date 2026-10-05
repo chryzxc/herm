@@ -12,7 +12,7 @@ final class RepositoryWatchService {
     var onEvent: ((String) -> Void)?
     // Watched-repository file storms are delivered and filtered here, off the
     // main thread; consumers hop to the main actor for refresh decisions.
-    private let watchQueue = DispatchQueue(label: "com.christian.Herm.repository-watch", qos: .utility)
+    private let watchQueue = DispatchQueue(label: "app.herm.Herm.repository-watch", qos: .utility)
     private var registrations: [String: Registration] = [:]
 
     func synchronize(_ repositories: Set<WatchedRepository>) {

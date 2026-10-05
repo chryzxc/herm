@@ -23,7 +23,7 @@
 
 ### Explicitly out of scope
 
-- Any change under `/Users/christian/.hermes/hermes-agent`.
+- Any change under `~/.hermes/hermes-agent`.
 - New Hermes CLI flags, commands, database columns, APIs, plugins, dispatcher behavior, or event streams.
 - Creating a physical board per session.
 - Treating Dock-created manual Kanban cards as session-owned unless Hermes itself returns a matching `session_id`.
@@ -62,13 +62,13 @@
 **Files:**
 - Read: `Package.swift`
 - Read: `Sources/HermesAgentDock/AGENTS.md` if added before implementation, otherwise repository root instructions
-- Read: current `git status` for `/Users/christian/Projects/hermes-agent-dock`
+- Read: current `git status` for `<repo>`
 
 **Steps:**
 
 1. Record the current Dock branch, revision, dirty files, and untracked plans. The observed worktree contains many unrelated modified/new files; do not reset, stash, clean, reformat, or fold them into this work without explicit authorization.
 2. Create a new dedicated feature/work branch from the designated current base only after protecting unrelated work. Never implement on `main`.
-3. Confirm the implementation write set is limited to the Dock repository and, in the skill task, Christian’s local skill directory. Do not open or edit `/Users/christian/.hermes/hermes-agent`.
+3. Confirm the implementation write set is limited to the Dock repository and, in the skill task, the user's local skill directory. Do not open or edit `~/.hermes/hermes-agent`.
 4. Run the existing baseline test command only if it can execute without changing generated/untracked state; classify existing failures separately from introduced failures.
 
 ---
@@ -280,11 +280,11 @@ Use an injectable clock/task seam or testable refresh coordinator to prove no fe
 
 **Objective:** Align worker orchestration policy with the Dock visual so the UI reflects genuine durable work, not cosmetic task generation.
 
-**Files (outside the Dock repository but local to Christian’s active Hermes profile):**
-- Modify: `/Users/christian/.hermes/skills/my-dev-team-orchestrator/SKILL.md`
-- Modify: `/Users/christian/.hermes/skills/my-dev-team-orchestrator/references/team-config.yaml`
-- Modify: `/Users/christian/.hermes/skills/my-dev-team-orchestrator/references/handoffs.md`
-- Modify only if placement wording needs correction: `/Users/christian/.hermes/skills/my-dev-team-orchestrator/references/model-routing.md`
+**Files (outside the Dock repository but local to the user's active Hermes profile):**
+- Modify: `~/.hermes/skills/my-dev-team-orchestrator/SKILL.md`
+- Modify: `~/.hermes/skills/my-dev-team-orchestrator/references/team-config.yaml`
+- Modify: `~/.hermes/skills/my-dev-team-orchestrator/references/handoffs.md`
+- Modify only if placement wording needs correction: `~/.hermes/skills/my-dev-team-orchestrator/references/model-routing.md`
 
 **Step 1: Add a backend-selection matrix.**
 

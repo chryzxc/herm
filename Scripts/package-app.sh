@@ -46,7 +46,7 @@ if [ -n "$VERSION" ]; then
 fi
 
 # Ad-hoc sign so the bundle launches on a clean macOS install.
-codesign --force --deep --sign - --identifier com.christian.Herm "$APP_DIR"
+codesign --force --deep --sign - --identifier app.herm.Herm "$APP_DIR"
 echo "==> Verifying code signature…"
 codesign --verify --strict --verbose=2 "$APP_DIR"
 codesign -dv --verbose=2 "$APP_DIR" >/dev/null 2>&1

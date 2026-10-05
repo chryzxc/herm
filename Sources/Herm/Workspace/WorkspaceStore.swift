@@ -285,7 +285,7 @@ final class WorkspaceStore: ObservableObject {
     // queue; a synchronous atomic write here put a disk hitch on every task
     // action. The serial queue preserves mutation ordering so an older
     // snapshot can never overwrite a newer one.
-    private nonisolated static let saveQueue = DispatchQueue(label: "com.christian.Herm.workspace-store-save", qos: .utility)
+    private nonisolated static let saveQueue = DispatchQueue(label: "app.herm.Herm.workspace-store-save", qos: .utility)
 
     private func save() {
         let state = WorkspaceState(tasks: tasks, agentRuns: agentRuns, projectPath: projectPath, controlReferences: controlReferences)

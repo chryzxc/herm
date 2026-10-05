@@ -788,9 +788,9 @@ struct DockNotificationTests {
 
 
     @Test func kanbanStderrIsSanitizedBeforeBecomingLastError() {
-        let diagnostic = ControlCenterModel.safeUserDiagnostic("token=secret-value at /Users/christian/private")
+        let diagnostic = ControlCenterModel.safeUserDiagnostic("token=secret-value at /Users/example/private")
 
         #expect(!diagnostic.contains("secret-value"))
-        #expect(!diagnostic.contains("/Users/christian/private"))
+        #expect(!diagnostic.contains("/Users/example/private"))
     }
 }

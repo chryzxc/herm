@@ -32,9 +32,9 @@ struct ProfileServiceTests {
             "secret=top-secret",
             "api_key=sk-live-123",
             "Authorization: Bearer abc.def.ghi",
-            "file:///Users/christian/Projects/private",
+            "file:///Users/example/Projects/private",
             "ssh://user@example.com/var/lib/hermes",
-            "gateway failed at /Users/christian/.config/hermes/config.yaml",
+            "gateway failed at /Users/example/.config/hermes/config.yaml",
             "gateway failed for https://user:token@example.com/api"
         ]
 
@@ -76,7 +76,7 @@ struct ProfileServiceTests {
     }
 
     @Test func inventoryRejectsProjectOrWorktreeFieldsWithoutLeakingThem() {
-        let json = #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","cwd":"/Users/christian/Projects/secret","worktree":"/tmp/worktree"}],"connections":[]}"#
+        let json = #"{"profiles":[{"name":"default","model":"gpt","gateway":"running","cwd":"/Users/example/Projects/secret","worktree":"/tmp/worktree"}],"connections":[]}"#
         let result = HermesProfileService.parse(json, format: .json)
         let encoded = String(describing: result)
 

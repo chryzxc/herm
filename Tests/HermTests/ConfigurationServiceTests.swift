@@ -54,7 +54,7 @@ struct ConfigurationServiceTests {
     }
 
     @Test func secretBearingAndUnsafeFieldsNeverEnterModelsOrDiagnostics() {
-        let json = #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"https://user:token@example.com/key","state":"ready"}],"models":[{"id":"prompt: tell me a secret","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"/Users/christian/private","present":true}]}"#
+        let json = #"{"schema":"hermes.configuration.health.v1","providers":[{"id":"https://user:token@example.com/key","state":"ready"}],"models":[{"id":"prompt: tell me a secret","state":"ready"}],"routing":{"state":"ready","fallbackCount":0},"credentials":[{"provider":"/Users/example/private","present":true}]}"#
         let result = ConfigurationService.parse(json, format: .json)
         let description = String(describing: result)
 

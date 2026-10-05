@@ -228,7 +228,7 @@ struct ControlCenterProjectTests {
     }
     @Test func conversationBadgeNormalizesRepositoryNameAndHonorsAssociation() {
         let badge = ConversationRepositoryBadgePresentation.make(
-            projectName: "/Users/christian/Projects/herm",
+            projectName: "/Users/example/Projects/herm",
             isProjectLinked: true
         )
 
@@ -236,7 +236,7 @@ struct ControlCenterProjectTests {
         #expect(badge?.accessibilityLabel == "Repository herm")
 
         #expect(ConversationRepositoryBadgePresentation.make(
-            projectName: "/Users/christian/Projects/unlinked",
+            projectName: "/Users/example/Projects/unlinked",
             isProjectLinked: false
         ) == nil)
     }
@@ -863,7 +863,7 @@ struct ControlCenterProjectTests {
           "created_by":"nexus","created_at":1789000000,"started_at":1789000100,"completed_at":null,
           "result":null,"last_failure_error":"  "},
          "latest_summary":"Found two issues","parents":["t_0"],"children":["t_2","t_3"],
-         "comments":[{"author":"christian","body":"Focus on tokens","created_at":1789000200},{"author":"x","body":"  ","created_at":1}],
+         "comments":[{"author":"alice","body":"Focus on tokens","created_at":1789000200},{"author":"x","body":"  ","created_at":1}],
          "events":[{"kind":"claimed","payload":null,"created_at":1789000100,"run_id":7},
                    {"kind":"blocked","payload":"{\\"reason\\": \\"needs creds\\"}","created_at":1789000300,"run_id":7}],
          "runs":[{"id":7,"profile":"sentinel","step_key":"scan","status":"running","outcome":null,"summary":null,
@@ -1041,7 +1041,7 @@ struct ControlCenterProjectTests {
                 "status": "passed",
                 "evidence": [
                     "adapter": String(repeating: "adapter-", count: 40),
-                    "repository_identity": "/Users/christian/private/repo",
+                    "repository_identity": "/Users/example/private/repo",
                     "commit_fingerprint": String(repeating: "a", count: 161),
                     "target_fingerprint": "target-1",
                     "diff_fingerprint": "diff-1",

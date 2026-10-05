@@ -28,7 +28,7 @@
 
 ### Explicit non-goals
 
-- Do not modify `/Users/christian/.hermes/hermes-agent` or introduce Hermes CLI/core/database/API changes.
+- Do not modify `~/.hermes/hermes-agent` or introduce Hermes CLI/core/database/API changes.
 - Do not execute agent work, schedule jobs, mutate Kanban, change model routing, edit credentials, or make external calls from new dashboard views.
 - Do not use Dock state as an authority when Hermes did not supply the underlying evidence.
 - Do not add a generic duplicate chat screen, duplicate global Kanban board, or a second cron scheduler.
@@ -37,7 +37,7 @@
 
 ## Current repository facts to preserve
 
-- Workspace path: `/Users/christian/Projects/hermes-agent-dock`.
+- Workspace path: `<repo>`.
 - The current worktree is heavily dirty on `main`; do not reset, stash, clean, stage, or modify unrelated work.
 - Existing data/UI seams:
   - `Sources/HermesAgentDock/ControlCenterModel.swift` owns remote projection refresh, capabilities, attention, Kanban, cron, and verification state.

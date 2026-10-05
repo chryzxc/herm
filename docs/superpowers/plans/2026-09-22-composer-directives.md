@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Work only in `/Users/christian/Projects/hermes-agent-dock`; the upstream Hermes Agent checkout is read-only.
+- Work only in `<repo>`; the upstream Hermes Agent checkout is read-only.
 - Preserve all existing tracked and untracked work; do not reset, stash, clean, or overwrite the dirty baseline.
 - Hermes owns sessions, profiles, commands, skills, and execution; Dock owns only presentation and transient composer state.
 - User-visible command/reference text must remain in `ChatMessage.text` and render exactly once.
@@ -140,7 +140,7 @@
 - [ ] Document `@` references, Bot mentions, `/` commands, inline slash references, backend compatibility, and visible transcript behavior in README.
 - [ ] Update the repo map contracts, data flow, test map, and sharp edges with the new composer RPC path.
 - [ ] Run all focused suites from Tasks 1–5.
-- [ ] Run `swift test` from `/Users/christian/Projects/hermes-agent-dock`.
+- [ ] Run `swift test` from `<repo>`.
 - [ ] Record the known pre-existing `OfficePreviewSimulationTests.routesConnectEveryActivityThroughWalkableSpace` failure separately if it remains unchanged.
 - [ ] Manually verify the acceptance matrix: `@`, `@file:`, folder traversal, `/`, slash arguments, skill command, inline slash reference, Bot mention, visible user bubble, one-message durability, and unavailable capability behavior.
 - [ ] Run `git diff --check` and reconcile the final changed-file list against the allowed scope.

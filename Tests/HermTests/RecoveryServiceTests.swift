@@ -47,10 +47,10 @@ struct RecoveryServiceTests {
 
     @Test func unsafeDetailAndPathsAreNotRetained() {
         let snapshot = RecoveryService.snapshot(from: [
-            "backup": ["supported": true, "ready": true, "detail": "/Users/christian/.hermes/token=secret"]
+            "backup": ["supported": true, "ready": true, "detail": "/Users/example/.hermes/token=secret"]
         ])
 
         #expect(snapshot.item(.backup)?.detail == "Ready to review; no action is enabled.")
-        #expect(!snapshot.items.contains { $0.detail.contains("christian") || $0.detail.contains("secret") })
+        #expect(!snapshot.items.contains { $0.detail.contains("example") || $0.detail.contains("secret") })
     }
 }

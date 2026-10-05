@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.christian.Herm</string>
+    <string>app.herm.Herm</string>
     <key>CFBundleName</key>
     <string>Herm</string>
     <key>CFBundleDisplayName</key>

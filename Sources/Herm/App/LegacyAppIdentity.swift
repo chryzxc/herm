@@ -1,9 +1,9 @@
 import Foundation
 
 /// Carries settings and state over from builds released as "HermesAgentDock"
-/// (bundle ID `com.christian.HermesAgentDock`) so the rename to Herm keeps them.
+/// (bundle ID `app.herm.HermesAgentDock`) so the rename to Herm keeps them.
 enum LegacyAppIdentity {
-    static let bundleID = "com.christian.HermesAgentDock"
+    static let bundleID = "app.herm.HermesAgentDock"
 
     static func migrate(
         defaults: UserDefaults = .standard,

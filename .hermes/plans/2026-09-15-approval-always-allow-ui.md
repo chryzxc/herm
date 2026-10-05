@@ -1,6 +1,6 @@
 # Plan: Approval "Always Allow" — Dock UI + Smart Approvals
 
-Handoff plan for Forge (Luna). Written 2026-09-15 by Archon-pattern. One repository: `/Users/christian/Projects/hermes-agent-dock`. Engine (`~/.hermes/hermes-agent`) is READ-ONLY — never edit it; the feature is pure Dock UI plus one Hermes config command.
+Handoff plan for Forge (Luna). Written 2026-09-15 by Archon-pattern. One repository: `<repo>`. Engine (`~/.hermes/hermes-agent`) is READ-ONLY — never edit it; the feature is pure Dock UI plus one Hermes config command.
 
 ## Objective
 

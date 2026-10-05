@@ -323,7 +323,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         // Temporarily keep the status item hidden: the movable notch is the launcher.
         // Retain its identity so restoring the menu-bar option later is reversible.
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.autosaveName = "com.christian.Herm.statusItem"
+        statusItem.autosaveName = "app.herm.Herm.statusItem"
         statusItem.isVisible = false
         super.init()
 

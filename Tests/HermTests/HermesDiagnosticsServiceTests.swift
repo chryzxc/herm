@@ -10,7 +10,7 @@ struct HermesDiagnosticsServiceTests {
         let detail = diagnostics.first?.detail ?? ""
 
         #expect(!detail.contains("super-secret-token"))
-        #expect(!detail.contains("/Users/christian/private"))
+        #expect(!detail.contains("/Users/example/private"))
         #expect(detail.isEmpty)
     }
 
@@ -89,7 +89,7 @@ private final class ThrowingDiagnosticsRPCClient: HermesRPCClientProtocol {
     enum Failure: LocalizedError {
         case rejected
         var errorDescription: String? {
-            "super-secret-token at /Users/christian/private/.env"
+            "super-secret-token at /Users/example/private/.env"
         }
     }
 
