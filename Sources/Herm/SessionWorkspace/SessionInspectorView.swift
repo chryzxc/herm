@@ -68,7 +68,7 @@ struct SessionInspector: View {
                 }
             }
 
-            if selectedSection == .terminal {
+            if selectedSection == .terminal || selectedSection == .files {
                 inspectorContent
                     .padding(.horizontal, 12)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -83,6 +83,19 @@ struct SessionInspector: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
+        .onChange(of: hasSessionGitRepository) { _, hasRepository in
+            if !hasRepository, selectedSection == .changes { selectedSection = .activity }
+        }
+    }
+
+    /// Changes only makes sense when the session's folder is a Git working tree.
+    private var hasSessionGitRepository: Bool {
+        guard let sessionRepositoryPath, !sessionRepositoryPath.isEmpty else { return false }
+        return workflow.repository.isGitRepository && workflow.repository.path == sessionRepositoryPath
+    }
+
+    private var visibleSections: [Section] {
+        hasSessionGitRepository ? [.activity, .terminal, .files, .changes] : [.activity, .terminal, .files]
     }
 
     private var sessionModePicker: some View {
@@ -90,7 +103,7 @@ struct SessionInspector: View {
         // There is no overflow menu competing with the same navigation model.
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
-                ForEach([Section.activity, .terminal, .files, .changes]) { section in
+                ForEach(visibleSections) { section in
                     sectionButton(section)
                 }
             }
@@ -177,13 +190,10 @@ struct SessionInspector: View {
             )
             .frame(maxWidth: .infinity, alignment: .topLeading)
         case .files:
-            VStack(alignment: .leading, spacing: 14) {
-                SessionFilesView(
-                    projectPath: sessionRepositoryPath,
-                    onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
-                )
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            SessionFilesView(
+                projectPath: sessionRepositoryPath,
+                onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
+            )
         case .changes:
             RepositoryChangesBrowser(
                 model: model,

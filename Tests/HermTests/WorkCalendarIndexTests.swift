@@ -60,4 +60,18 @@ struct WorkCalendarIndexTests {
         #expect(text.contains("**Worked on**\n- Calendar tab"))
         #expect(!text.contains("Automations"))
     }
+
+    @Test func worktreesResolveToTheirMainCheckout() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repo = root.appendingPathComponent("climateRX")
+        let worktree = repo.appendingPathComponent(".worktrees/t_1")
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git/worktrees/t_1"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktree.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try "gitdir: \(repo.path)/.git/worktrees/t_1\n".write(to: worktree.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+
+        let resolved = repo.standardizedFileURL.path
+        #expect(RepositoryService.repositoryRoot(worktree.appendingPathComponent("src").path) == resolved)
+        #expect(RepositoryService.repositoryRoot(repo.appendingPathComponent(".worktrees/t_gone").path) == resolved)
+    }
 }

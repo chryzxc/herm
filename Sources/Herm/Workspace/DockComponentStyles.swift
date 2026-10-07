@@ -630,3 +630,62 @@ struct DockTabBar<Option: Hashable>: View {
         }
     }
 }
+
+/// `.help` tooltips never appear in Herm's non-activating panels, so hover
+/// draws its own label beside the control after a short delay.
+struct DockHoverTip: ViewModifier {
+    let text: String
+    let edge: Edge
+    var gap: CGFloat = 6
+    @State private var shown = false
+    @State private var pending: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                pending?.cancel()
+                guard hovering else { shown = false; return }
+                pending = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(450))
+                    if !Task.isCancelled { shown = true }
+                }
+            }
+            .onDisappear { pending?.cancel(); shown = false }
+            .overlay(alignment: alignment) {
+                if shown {
+                    Text(text)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .fixedSize()
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.dockSurface4))
+                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 1))
+                        .alignmentGuide(.leading) { $0[.trailing] + gap }
+                        .alignmentGuide(.trailing) { $0[.leading] - gap }
+                        .alignmentGuide(.top) { $0[.bottom] + gap }
+                        .alignmentGuide(.bottom) { $0[.top] - gap }
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .zIndex(shown ? 10 : 0)
+            .animation(.dockEase(duration: 0.12), value: shown)
+    }
+
+    private var alignment: Alignment {
+        switch edge {
+        case .leading: .leading
+        case .trailing: .trailing
+        case .top: .top
+        case .bottom: .bottom
+        }
+    }
+}
+
+extension View {
+    func dockHoverTip(_ text: String, edge: Edge = .bottom, gap: CGFloat = 6) -> some View {
+        modifier(DockHoverTip(text: text, edge: edge, gap: gap))
+    }
+}

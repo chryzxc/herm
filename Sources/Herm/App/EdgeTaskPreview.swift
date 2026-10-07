@@ -288,7 +288,7 @@ struct EdgeTaskPreview: View {
         .buttonStyle(.dockPress)
         .opacity(visible ? 1 : 0)
         .disabled(quickState?.quickSending == true)
-        .modifier(EdgeHoverTip(text: isReplying ? "Close reply" : "Reply in the notch"))
+        .dockHoverTip(isReplying ? "Close reply" : "Reply in the notch", edge: .trailing, gap: 30)
         .accessibilityLabel(isReplying ? "Close reply" : "Reply to \(task.title)")
     }
 
@@ -448,42 +448,6 @@ struct EdgePreviewFooterButton: View {
         .onHover { isHovering = $0 }
         .accessibilityLabel(title)
         .accessibilityHint(shortcutHelp ?? "")
-    }
-}
-
-/// `.help` tooltips never appear in the non-activating notch panel, so hover
-/// draws its own label beside the control.
-private struct EdgeHoverTip: ViewModifier {
-    let text: String
-    @State private var shown = false
-    @State private var pending: Task<Void, Never>?
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                pending?.cancel()
-                guard hovering else { shown = false; return }
-                pending = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(450))
-                    if !Task.isCancelled { shown = true }
-                }
-            }
-            .overlay(alignment: .trailing) {
-                if shown {
-                    Text(text)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .fixedSize()
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.dockSurface4))
-                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 1))
-                        .alignmentGuide(.trailing) { $0[.leading] - 30 }
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-                }
-            }
-            .animation(.dockEase(duration: 0.12), value: shown)
     }
 }
 

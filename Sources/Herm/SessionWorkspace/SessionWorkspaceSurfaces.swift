@@ -10,17 +10,15 @@ struct SessionExplorerSurface: View {
         if scope == nil {
             SessionProjectRequiredState()
         } else {
-            ScrollView {
-                SessionFilesView(
-                    projectPath: scope?.repositoryPath,
-                    onRefresh: onRefresh,
-                    scope: scope,
-                    isCompact: isCompact,
-                    onOpenFile: onOpenFile
-                )
-                .padding(.vertical, isCompact ? 4 : 8)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+            SessionFilesView(
+                projectPath: scope?.repositoryPath,
+                onRefresh: onRefresh,
+                scope: scope,
+                isCompact: isCompact,
+                onOpenFile: onOpenFile
+            )
+            .padding(.horizontal, 6)
+            .padding(.vertical, isCompact ? 4 : 8)
             .background(Color.dockCanvas)
         }
     }

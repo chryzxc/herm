@@ -211,6 +211,7 @@ extension View {
     func dockHUDPanel() -> some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.paneRadius + 2, role: .pane)
         return self
+            .background(Color(nsColor: .windowBackgroundColor))  // dockCanvas is translucent in native themes
             .background(Color.dockCanvas.opacity(0.92))
             .clipShape(shape)
             .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.outline))

@@ -379,7 +379,7 @@ final class DeveloperWorkflowModel: ObservableObject {
             ($0.hasPrefix("https://github.com/") || $0.hasPrefix("http://github.com/")) &&
             ($0.contains("/login/device") || $0.contains("/login/oauth"))
         }), let url = URL(string: rawURL.trimmingCharacters(in: .punctuationCharacters)) else { return }
-        NSWorkspace.shared.open(url)
+        ExternalOpen.open(url)
         if githubAuthenticationCode == nil {
             githubAuthenticationNotice = "GitHub sign-in opened in your browser. Finish the device verification there."
         }

@@ -437,7 +437,7 @@ struct QuotaWorkspaceView: View {
         if let website = QuotaWorkspacePresentation.descriptor(forProvider: snapshot.provider)?.website {
             Divider()
             Button("Open provider website", icon: .arrowSquareOut) {
-                NSWorkspace.shared.open(website)
+                ExternalOpen.open(website)
             }
         }
         if let credential = snapshot.hermesCredential {

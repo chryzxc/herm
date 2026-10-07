@@ -1191,14 +1191,18 @@ final class DockModel: ObservableObject {
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
+    /// Text keeps its normal paste. Browsers add the image's URL or name as a
+    /// one-token string beside the bitmap; that still counts as an image paste.
+    static func pasteboardHoldsImageOnly(_ pasteboard: NSPasteboard) -> Bool {
+        guard pasteboard.types?.contains(where: { $0 == .png || $0 == .tiff }) == true else { return false }
+        guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) else { return true }
+        return text.isEmpty || !text.contains(where: \.isWhitespace)
+    }
+
     @discardableResult
     func pasteImageFromPasteboard() -> Bool {
         let pasteboard = NSPasteboard.general
-        // Text fields should keep their normal paste behavior. Some clipboard
-        // managers publish image representations alongside textual content.
-        guard pasteboard.string(forType: .string) == nil else {
-            return false
-        }
+        guard Self.pasteboardHoldsImageOnly(pasteboard) else { return false }
         let imageType = pasteboard.types?.first { $0 == .png || $0 == .tiff }
         guard let imageType else {
             return false
@@ -1674,10 +1678,15 @@ final class DockModel: ObservableObject {
         guard let sessionID, !sessionID.isEmpty,
               message.role == .hermes,
               message.hasBodyText else { return }
+        // Hermes has no message anchor: it keeps the first `count` visible
+        // rows. Count them locally, with older paged history loaded first.
+        await loadTranscriptHistory(through: nil)
+        let visible = messages.filter { ($0.role == .user || $0.role == .hermes) && $0.hasBodyText }
+        guard let position = visible.firstIndex(where: { $0.id == message.id }) else { return }
         do {
             var params: [String: Any] = [
                 "session_id": sessionID,
-                "message_id": message.id.uuidString
+                "count": position + 1
             ]
             if let profileID = sessionProfileID ?? profileScopeID, !profileID.isEmpty {
                 params["profile"] = profileID
@@ -1686,7 +1695,9 @@ final class DockModel: ObservableObject {
                 HermesFeatureIDs.ID.sessionBranch.rawValue,
                 params: params
             )
-            let branchID = (result["session_id"] as? String)
+            // `session_id` is a live runtime handle; resume needs the stored key.
+            let branchID = Self.stableSessionID(from: result)
+                ?? (result["session_id"] as? String)
                 ?? (result["branch_session_id"] as? String)
                 ?? (result["id"] as? String)
             guard let branchID, !branchID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }

@@ -80,13 +80,14 @@ struct ConversationMessageActionsTests {
         ]
         let model = DockModel(initialSessionID: "source-session", rpcClient: rpc)
         let message = ChatMessage(id: UUID(), role: .hermes, text: "source answer")
+        model.messages = [ChatMessage(role: .user, text: "question"), message, ChatMessage(role: .hermes, text: "later")]
 
         await model.branchConversation(from: message)
         try await waitUntil { model.sessionID == "branch-session" && model.status == .idle }
 
         let branch = rpc.requests.first { $0.method == "session.branch" }
         #expect(branch?.params["session_id"] as? String == "source-session")
-        #expect(branch?.params["message_id"] as? String == message.id.uuidString)
+        #expect(branch?.params["count"] as? Int == 2)
         #expect(model.sessionID == "branch-session")
         #expect(model.messages.last?.text == "branched answer")
     }
@@ -123,6 +124,7 @@ struct ConversationMessageActionsTests {
         let model = DockModel(initialSessionID: "source-session", rpcClient: rpc)
         let state = ConversationMessageActionState()
         let message = ChatMessage(id: UUID(), role: .hermes, text: "source answer")
+        model.messages = [message]
 
         state.run(message.id, action: .branch) { await model.branchConversation(from: message) }
         try await waitUntil { state.pendingAction(for: message.id) != nil }

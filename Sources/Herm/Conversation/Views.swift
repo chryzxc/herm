@@ -25,6 +25,7 @@ enum SidebarVisibilityKey {
     static let pullRequests = "hermes.sidebar.shows-pull-requests"
     static let issues = "hermes.sidebar.shows-issues"
     static let office = "hermes.sidebar.shows-office"
+    static let calendar = "hermes.sidebar.shows-calendar"
 }
 
 enum MissionControlNavigationSelection: Equatable {
@@ -282,7 +283,7 @@ struct DockPopover: View {
     @State private var scrollBookkeeping = ConversationTranscriptBookkeeping()
     @State private var streamingTailScroll = ConversationTailScrollScheduler()
     @State private var conversationPerformance = ConversationPerformanceMonitor()
-    @State private var isWorkspaceManuallyExpanded = true
+    @State private var isWorkspaceManuallyExpanded = false
     @State private var isNarrowLayout = false
     @State private var isNarrowControlVisible = true
     @State private var selectedChatImage: ChatImagePreview?
@@ -327,7 +328,7 @@ struct DockPopover: View {
     @State private var cachedSessionRepositoryPath: String? = nil
     @State private var lastSessionTitleAtIdentityChange: String?
     @State private var isFullscreen = false
-    @State private var isMissionInspectorVisible = true
+    @State private var isMissionInspectorVisible = false
 
     private enum FullscreenSurface {
         case conversation, pullRequests, issues
@@ -510,6 +511,10 @@ struct DockPopover: View {
         }
         .onChange(of: model.voicePromptSpeech) { _, speech in
             handleVoicePromptChange(speech)
+        }
+        .onDisappear {
+            // Leaving the session view while voice is live must still release the mic.
+            if sessionWorkspaceMode == .voice { releaseVoiceCapture() }
         }
     }
 
@@ -901,6 +906,10 @@ struct DockPopover: View {
         isVoiceImmersive = false
         // Leaving voice mode must always release both fallback and native
         // voice capture, including a microphone that is still starting.
+        releaseVoiceCapture()
+    }
+
+    private func releaseVoiceCapture() {
         micLevelMeter.stop()
         speechInput.stop()
         voiceOutput.stop()
@@ -1144,7 +1153,6 @@ struct DockPopover: View {
                 // session is chosen, return the user to the shared chat
                 // workspace where that session is visible.
                 fullscreenSurface = .conversation
-                isMissionInspectorVisible = true
             },
             showsHeader: false,
             showsModePicker: false,
@@ -1526,7 +1534,7 @@ struct DockPopover: View {
                 }
 
                 DockIconButton(
-                    icon: .waveform,
+                    icon: sessionWorkspaceMode == .voice ? .chatCircleText : .waveform,
                     label: sessionWorkspaceMode == .voice ? "Return to chat" : "Voice conversation",
                     isProminent: sessionWorkspaceMode == .voice,
                     style: style
@@ -1538,7 +1546,7 @@ struct DockPopover: View {
 
                 if showsInspector {
                     DockIconButton(
-                        icon: inspectorPanelIsVisible ? .sidebarSimple : .square,
+                        icon: .sidebarSimple,
                         label: inspectorPanelIsVisible ? "Hide inspector" : "Show inspector",
                         isProminent: inspectorPanelIsVisible,
                         style: style,
@@ -1557,17 +1565,9 @@ struct DockPopover: View {
     private func sessionIdentity(style: DockThemePalette) -> some View {
         Button(action: { model.toggleSessions() }) {
             HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(model.currentSessionTitle ?? "Untitled chat")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(style.primaryText)
-                    HStack(spacing: 5) {
-                        Circle().fill(statusColor).frame(width: 6, height: 6)
-                        Text(model.status.title)
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(style.metadataText)
-                }
+                Text(model.currentSessionTitle ?? "Untitled chat")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(style.primaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 DockIcon(.caretUpDown, size: 12, color: style.metadataText)
@@ -1663,16 +1663,6 @@ struct DockPopover: View {
                   selectedChange?.file.id == file.id else { return }
             selectedChangeDiff = diff
             isLoadingChangeDiff = false
-        }
-    }
-
-    private var statusColor: Color {
-        switch model.status {
-        case .idle: .dockSuccess
-        case .working: .dockAccent
-        case .needsApproval: .dockWarning
-        case .needsClarification: .dockWarning
-        case .offline: .dockDestructive
         }
     }
 
@@ -2296,10 +2286,7 @@ struct DockPopover: View {
     }
 
     private func exitVoiceMode() {
-        micLevelMeter.stop()
-        speechInput.stop()
-        voiceOutput.stop()
-        model.stopVoiceConversation()
+        releaseVoiceCapture()
         sessionWorkspaceMode = .chat
     }
 
@@ -3361,6 +3348,7 @@ private struct MissionControlQueue: View {
     @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequests = true
     @AppStorage(SidebarVisibilityKey.issues) private var showsIssues = true
     @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
+    @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendar = true
     @Binding var sessionPendingDeletion: HermesSession?
     let activeSessionID: String?
     let activeGlobalTab: ControlTab?
@@ -3772,7 +3760,7 @@ private struct MissionControlQueue: View {
                     if showsIssues { issuesDestinationRow(style: style) }
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    globalRailDestination(.calendar, style: style)
+                    if showsCalendar { globalRailDestination(.calendar, style: style) }
                     globalRailDestination(.automations, style: style)
                 }
                 VStack(alignment: .leading, spacing: 2) {
@@ -3833,20 +3821,15 @@ private struct MissionControlQueue: View {
                         controlCenter.refreshProjectNavigation()
                     },
                     onAddProject: { isShowingProjectSheet = true },
-                    onNewChatInProject: { projectPath in
-                        creatingProjectPath = projectPath
-                        navigationState.beginProjectChat()
-                        Task {
-                            await model.startNewChat(in: projectPath)
-                            creatingProjectPath = nil
-                            if let createdID = model.sessionID {
-                                navigationState.beginProjectChat(sessionID: createdID)
-                            }
-                            model.loadSessions()
-                            controlCenter.refreshProjectNavigation()
-                            model.requestComposerFocus()
-                        }
-                    }
+                    onArchiveProject: { id in
+                        guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
+                        Task { _ = await controlCenter.archiveProject(project) }
+                    },
+                    onAddSourceFolder: { id, folder in
+                        guard let project = controlCenter.projects.first(where: { $0.id == id }) else { return }
+                        Task { _ = await controlCenter.addProjectFolder(project, folder: folder) }
+                    },
+                    onNewChatInProject: startNewChat(inProject:)
                 )
             }
         }
@@ -3854,7 +3837,13 @@ private struct MissionControlQueue: View {
         .sheet(isPresented: $isShowingProjectSheet) {
             ProjectFolderSheet(
                 projects: controlCenter.projects.filter(\.isRenderableProject),
-                onCreate: { await controlCenter.createProject(name: $0, folder: $1) },
+                // The rail hides sessionless projects, so a new project opens
+                // straight into its first chat instead of vanishing.
+                onCreate: { name, folder in
+                    let created = await controlCenter.createProject(name: name, folder: folder)
+                    if created { startNewChat(inProject: folder) }
+                    return created
+                },
                 onAddFolder: { await controlCenter.addProjectFolder($0, folder: $1) }
             )
         }
@@ -3862,6 +3851,21 @@ private struct MissionControlQueue: View {
 
     /// Hermes renders Bots beside Sessions in the left sidebar and opens the
     /// roster as its own page; the Dock keeps the same sibling placement.
+    private func startNewChat(inProject projectPath: String) {
+        creatingProjectPath = projectPath
+        navigationState.beginProjectChat()
+        Task {
+            await model.startNewChat(in: projectPath)
+            creatingProjectPath = nil
+            if let createdID = model.sessionID {
+                navigationState.beginProjectChat(sessionID: createdID)
+            }
+            model.loadSessions()
+            controlCenter.refreshProjectNavigation()
+            model.requestComposerFocus()
+        }
+    }
+
     private func botsDestinationRow(style: DockThemePalette) -> some View {
         queueRailDestination(
             "Bots",
@@ -4318,19 +4322,20 @@ struct MissionControlConversationSessionRow: View, Equatable {
 /// Project navigation is isolated from DockModel so high-frequency activity
 /// updates do not rebuild the project hierarchy.
 struct ProjectDisclosureState: Equatable {
-    private var collapsedProjectIDs: Set<String> = []
+    /// Projects the user flipped away from their default (expanded, or collapsed when empty).
+    private var toggledProjectIDs: Set<String> = []
     private var expandedSessionProjectIDs: Set<String> = []
 
     mutating func toggle(projectID: String) {
-        if collapsedProjectIDs.contains(projectID) {
-            collapsedProjectIDs.remove(projectID)
+        if toggledProjectIDs.contains(projectID) {
+            toggledProjectIDs.remove(projectID)
         } else {
-            collapsedProjectIDs.insert(projectID)
+            toggledProjectIDs.insert(projectID)
         }
     }
 
-    func isCollapsed(projectID: String) -> Bool {
-        collapsedProjectIDs.contains(projectID)
+    func isCollapsed(projectID: String, isEmpty: Bool = false) -> Bool {
+        isEmpty != toggledProjectIDs.contains(projectID)
     }
 
     mutating func toggleAllSessions(projectID: String) {
@@ -4380,10 +4385,13 @@ private struct MissionControlProjectList: View {
     let onSelectSession: (HermesSession) -> Void
     let onRefresh: () -> Void
     let onAddProject: () -> Void
+    let onArchiveProject: (String) -> Void
+    let onAddSourceFolder: (String, String) -> Void
     let onNewChatInProject: (String) -> Void
     @State private var disclosureState = ProjectDisclosureState()
     @State private var isExpanded = true
     @State private var hoveredNewChatProjectID: String?
+    @State private var hoveredProjectRowID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let sessionLimit = 10
@@ -4418,7 +4426,7 @@ private struct MissionControlProjectList: View {
     @ViewBuilder
     private func projectGroup(_ group: MissionControlConversationGroup) -> some View {
         let sessionCount = max(group.declaredSessionCount, group.sessions.count)
-        let isCollapsed = disclosureState.isCollapsed(projectID: group.id)
+        let isCollapsed = disclosureState.isCollapsed(projectID: group.id, isEmpty: sessionCount == 0 && group.sessions.isEmpty)
         let sessions = disclosureState.visibleSessions(group.sessions, projectID: group.id, limit: sessionLimit)
         let isActiveProject = group.sessions.contains { $0.id == selectedSessionID }
         let isCreatingHere = creatingProjectPath != nil && creatingProjectPath == group.projectPath
@@ -4439,15 +4447,12 @@ private struct MissionControlProjectList: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .layoutPriority(1)
-                    Spacer(minLength: 0)
                     if group.hasGit {
                         DockIcon(.gitBranch, size: 11, color: style.metadataText)
                             .help("Git repository")
                             .accessibilityLabel("Git repository")
                     }
-                    Text(compactCount(sessionCount))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(style.metadataText)
+                    Spacer(minLength: 0)
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 8)
@@ -4457,30 +4462,74 @@ private struct MissionControlProjectList: View {
             .buttonStyle(.borderless)
             .accessibilityLabel(isCollapsed ? "Expand project \(group.title)" : "Collapse project \(group.title)")
 
-            if let projectPath = group.projectPath, !projectPath.isEmpty {
-                Button {
-                    onNewChatInProject(projectPath)
-                } label: {
-                    Group {
-                        if isCreatingHere {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            DockIcon(.notePencil, size: 15, color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
-                        }
-                    }
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
+            // Count at rest; actions replace it while the row is hovered.
+            let showsActions = hoveredProjectRowID == group.id || isCreatingHere
+            ZStack(alignment: .trailing) {
+                if sessionCount > 0 {
+                    Text(compactCount(sessionCount))
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(style.metadataText)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(style.metadataText.opacity(0.14)))
+                        .padding(.trailing, 10)
+                        .opacity(showsActions ? 0 : 1)
                 }
-                .buttonStyle(.borderless)
-                .disabled(isCreatingChat || creatingProjectPath != nil)
-                .help("New chat in \(group.title)")
-                .accessibilityLabel("New chat in \(group.title)")
-                .onHover { isHovered in
-                    hoveredNewChatProjectID = isHovered
-                        ? group.id
-                        : (hoveredNewChatProjectID == group.id ? nil : hoveredNewChatProjectID)
+                if let projectPath = group.projectPath, !projectPath.isEmpty {
+                    HStack(spacing: 0) {
+                        Button {
+                            onNewChatInProject(projectPath)
+                        } label: {
+                            Group {
+                                if isCreatingHere {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    DockIcon(.chatTeardropText, size: 15, color: hoveredNewChatProjectID == group.id ? style.accent : style.secondaryText)
+                                }
+                            }
+                            .frame(width: 32, height: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(isCreatingChat || creatingProjectPath != nil)
+                        .help("New chat in \(group.title)")
+                        .accessibilityLabel("New chat in \(group.title)")
+                        .onHover { isHovered in
+                            hoveredNewChatProjectID = isHovered
+                                ? group.id
+                                : (hoveredNewChatProjectID == group.id ? nil : hoveredNewChatProjectID)
+                        }
+
+                        Button {
+                            let menu = NSMenu()
+                            menu.addClosureItem("Reveal in Finder") {
+                                ExternalOpen.reveal([URL(fileURLWithPath: projectPath)])
+                            }
+                            if let projectID = group.projectID {
+                                menu.addClosureItem("Add Source Folder…") { chooseSourceFolder(projectID: projectID) }
+                                menu.addItem(.separator())
+                                menu.addClosureItem("Archive Project") { onArchiveProject(projectID) }
+                            }
+                            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+                        } label: {
+                            DockIcon(.dotsThree, size: 15, weight: .fill, color: style.secondaryText)
+                                .frame(width: 32, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.borderless)
+                        .help("More options for \(group.title)")
+                        .accessibilityLabel("More options for \(group.title)")
+                    }
+                    .opacity(showsActions ? 1 : 0)
+                    .allowsHitTesting(showsActions)
                 }
             }
+            .frame(width: 64)
+        }
+        .onHover { isHovered in
+            hoveredProjectRowID = isHovered
+                ? group.id
+                : (hoveredProjectRowID == group.id ? nil : hoveredProjectRowID)
         }
         .background(Color.clear)
         if !isCollapsed {
@@ -4543,6 +4592,15 @@ private struct MissionControlProjectList: View {
             onRequestDelete: onRequestDelete
         )
         .equatable()
+    }
+
+    private func chooseSourceFolder(projectID: String) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = "Add"
+        guard panel.runAboveHerm() == .OK, let url = panel.url else { return }
+        onAddSourceFolder(projectID, url.path)
     }
 
     private func compactCount(_ count: Int) -> String { count > 99 ? "99+" : "\(count)" }

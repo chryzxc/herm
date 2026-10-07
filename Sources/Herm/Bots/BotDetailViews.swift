@@ -379,7 +379,7 @@ struct BotProfileEditorSheet: View {
         panel.allowedContentTypes = [.png, .jpeg, .webP]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
+        guard panel.runAboveHerm() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else { return }
         applyPendingAvatar(data)
     }
 

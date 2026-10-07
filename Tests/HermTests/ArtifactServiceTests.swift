@@ -36,9 +36,10 @@ struct ArtifactServiceTests {
 
         let records = ArtifactService.extract(session: session, messages: messages).sorted { $0.label < $1.label }
 
-        #expect(records.map(\.kind) == [.image, .link, .file])
-        #expect(records.map(\.label) == ["chart.png", "report", "report.docx"])
-        #expect(records.map(\.sessionTitle) == ["Quarterly report", "Quarterly report", "Quarterly report"])
+        // The bare web link in prose is a reference, not a deliverable.
+        #expect(records.map(\.kind) == [.image, .file])
+        #expect(records.map(\.label) == ["chart.png", "report.docx"])
+        #expect(records.map(\.sessionTitle) == ["Quarterly report", "Quarterly report"])
     }
 
     @Test func matchesDesktopRulesForDeliverablesOnly() {

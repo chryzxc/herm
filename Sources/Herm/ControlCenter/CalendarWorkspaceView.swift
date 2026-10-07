@@ -11,7 +11,6 @@ struct CalendarWorkspaceView: View {
     var onOpenTask: (KanbanTaskSummary) -> Void = { _ in }
     @State private var month = Date()
     @State private var selected = Calendar.current.startOfDay(for: Date())
-    @State private var copied = false
     /// Week strip by default so the day below gets the room; the month is one click away.
     @AppStorage("dock.calendar.showsMonth") private var showsMonth = false
     @FocusState private var gridFocused: Bool
@@ -19,9 +18,16 @@ struct CalendarWorkspaceView: View {
     private let calendar = Calendar.current
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "work.calendar") }
     /// The published index can briefly belong to the previous month while a new one loads.
-    private var index: WorkCalendarIndex? {
+    private var loadedIndex: WorkCalendarIndex? {
         guard let index = control.workCalendar, calendar.isDate(index.month, equalTo: month, toGranularity: .month) else { return nil }
         return index
+    }
+    /// Once anything has loaded, stepping into another month keeps the grid on
+    /// screen with empty cells instead of swapping the page for a spinner.
+    private var index: WorkCalendarIndex? {
+        loadedIndex ?? control.workCalendar.map { _ in
+            WorkCalendarIndex.build(month: month, sessions: [], tasks: [], commits: [], runs: [], usage: [])
+        }
     }
 
     var body: some View {
@@ -35,17 +41,43 @@ struct CalendarWorkspaceView: View {
             }
             if let index {
                 // Pinned: the month never scrolls away, so another day is always one click off.
-                grid(index)
+                CalendarGridCard(
+                    index: index,
+                    month: month,
+                    selected: selected,
+                    today: calendar.startOfDay(for: Date()),
+                    showsMonth: showsMonth,
+                    onSelect: select,
+                    onMove: { _ = moveSelection($0) },
+                    onToggleMonth: { withAnimation(.snappy(duration: 0.2)) { showsMonth.toggle() } }
+                )
+                .equatable()
+                .focusable()
+                .focused($gridFocused)
+                .focusEffectDisabled()
+                .onKeyPress(.leftArrow) { moveSelection(-1) }
+                .onKeyPress(.rightArrow) { moveSelection(1) }
+                .onKeyPress(.upArrow) { moveSelection(-7) }
+                .onKeyPress(.downArrow) { moveSelection(7) }
                 // The only scrolling region; each day starts at the top.
-                ScrollView {
-                    VStack(spacing: 12) {
-                        detail(index.day(selected) ?? WorkDay())
-                        monthCrew(index)
-                    }
+                if loadedIndex == nil {
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else { ScrollView {
+                    CalendarDayPane(
+                        date: selected,
+                        day: index.day(selected) ?? WorkDay(),
+                        crew: index.crew,
+                        repos: index.repos,
+                        botsByID: botsByID,
+                        avatarImages: avatarImages,
+                        onOpenTask: onOpenTask,
+                        onOpenSession: { [control] in control.openLatestActivitySession($0) }
+                    )
+                    .equatable()
                     .padding(.bottom, 16)
                 }
                 .id(selected)
-                .frame(maxHeight: .infinity)
+                .frame(maxHeight: .infinity) }
             } else if refreshState?.error == nil {
                 // Also covers the beat before the first fetch is even marked refreshing.
                 DockLoadingState(
@@ -60,10 +92,8 @@ struct CalendarWorkspaceView: View {
         // Kanban and cron load on their own schedule; fold them in as they land.
         .onChange(of: control.globalKanbanTasks) { _, _ in control.rebuildWorkCalendar() }
         .onChange(of: control.cronRuns) { _, _ in control.rebuildWorkCalendar() }
-        // Hermes' project list can land after the first load; re-read git once it does.
-        .onChange(of: control.projects.map(\.name)) { _, _ in
-            control.refreshWorkCalendar(month: month, repoPaths: repoPaths, force: true)
-        }
+        // Projects can land after the first load; the rebuild re-reads git for any new repo.
+        .onChange(of: control.projects) { _, _ in control.rebuildWorkCalendar() }
     }
 
     // MARK: Toolbar
@@ -138,16 +168,12 @@ struct CalendarWorkspaceView: View {
     // MARK: Summary
 
     private func summary(_ index: WorkCalendarIndex, full: Bool) -> some View {
-        let tasks = index.days.values.reduce(0) { $0 + $1.doneTasks.count }
-        let commits = index.days.values.reduce(0) { $0 + $1.commits.count }
-        let sessions = index.days.values.reduce(0) { $0 + $1.sessions.count }
-        let runs = index.days.values.reduce(0) { $0 + $1.cronRuns.count }
-        return HStack(spacing: 12) {
-            inlineStat(tasks, "tasks")
-            inlineStat(sessions, "sessions")
+        HStack(spacing: 12) {
+            inlineStat(index.taskCount, "tasks")
+            inlineStat(index.sessionCount, "sessions")
             if full {
-                inlineStat(commits, "commits")
-                inlineStat(runs, "runs")
+                inlineStat(index.commitCount, "commits")
+                inlineStat(index.runCount, "runs")
                 inlineStat(index.currentStreak, "day streak")
                 if index.monthCost > 0 {
                     inlineStat(UsageWorkspaceView.cost(index.monthCost), "spent")
@@ -173,7 +199,42 @@ struct CalendarWorkspaceView: View {
             .lineLimit(1)
     }
 
-    // MARK: Grid
+    // MARK: Navigation
+
+    private func select(_ date: Date) {
+        selected = date
+        gridFocused = true
+    }
+
+    private func moveSelection(_ days: Int) -> KeyPress.Result {
+        guard let target = calendar.date(byAdding: .day, value: days, to: selected) else { return .ignored }
+        if calendar.isDate(target, equalTo: month, toGranularity: .month) {
+            selected = target
+        } else {
+            load(target, select: target)
+        }
+        return .handled
+    }
+}
+
+/// The week strip or month grid. Equatable so model churn that leaves the
+/// month alone never re-lays out the cells.
+private struct CalendarGridCard: View, Equatable {
+    let index: WorkCalendarIndex
+    let month: Date
+    let selected: Date
+    let today: Date
+    let showsMonth: Bool
+    let onSelect: (Date) -> Void
+    let onMove: (Int) -> Void
+    let onToggleMonth: () -> Void
+
+    private var calendar: Calendar { .current }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.month == rhs.month && lhs.selected == rhs.selected && lhs.today == rhs.today
+            && lhs.showsMonth == rhs.showsMonth && lhs.index == rhs.index
+    }
 
     /// Calendar rows: leading/trailing blanks are nil, so every row has 7 slots.
     private var weeks: [[Date?]] {
@@ -186,10 +247,9 @@ struct CalendarWorkspaceView: View {
         return stride(from: 0, to: slots.count, by: 7).map { Array(slots[$0..<$0 + 7]) }
     }
 
-    private func grid(_ index: WorkCalendarIndex) -> some View {
+    var body: some View {
         let symbols = calendar.veryShortStandaloneWeekdaySymbols
         let ordered = Array(symbols[(calendar.firstWeekday - 1)...] + symbols[..<(calendar.firstWeekday - 1)])
-        let today = calendar.startOfDay(for: Date())
         let all = weeks
         let rows = showsMonth ? all : all.filter { $0.contains(selected) }
         let total: ([Date?]) -> Int = { $0.compactMap { $0.flatMap(index.day)?.shippedCount }.reduce(0, +) }
@@ -217,7 +277,7 @@ struct CalendarWorkspaceView: View {
                                 isFuture: date > today
                             )
                             .equatable()
-                            .onTapGesture { select(date) }
+                            .onTapGesture { onSelect(date) }
                         } else {
                             Color.clear.frame(maxWidth: .infinity, minHeight: 46)
                         }
@@ -231,13 +291,6 @@ struct CalendarWorkspaceView: View {
         // Keep the strip at its natural height; the day detail below gets the rest.
         .fixedSize(horizontal: false, vertical: true)
         .dockCard(padding: 0)
-        .focusable()
-        .focused($gridFocused)
-        .focusEffectDisabled()
-        .onKeyPress(.leftArrow) { moveSelection(-1) }
-        .onKeyPress(.rightArrow) { moveSelection(1) }
-        .onKeyPress(.upArrow) { moveSelection(-7) }
-        .onKeyPress(.downArrow) { moveSelection(7) }
     }
 
     private func weekTotal(_ total: Int, max: Int) -> some View {
@@ -256,21 +309,6 @@ struct CalendarWorkspaceView: View {
         .help("\(total) shipped this week")
     }
 
-    private func select(_ date: Date) {
-        selected = date
-        gridFocused = true
-    }
-
-    private func moveSelection(_ days: Int) -> KeyPress.Result {
-        guard let target = calendar.date(byAdding: .day, value: days, to: selected) else { return .ignored }
-        if calendar.isDate(target, equalTo: month, toGranularity: .month) {
-            selected = target
-        } else {
-            load(target, select: target)
-        }
-        return .handled
-    }
-
     private var legend: some View {
         HStack(spacing: 12) {
             legendSwatch(Color.dockSuccess, "Shipped")
@@ -278,11 +316,26 @@ struct CalendarWorkspaceView: View {
             legendSwatch(Color.dockSecondaryText, "Automation")
             legendSwatch(Color.dockWarning, "Failed run")
             Spacer()
-            Button { withAnimation(.snappy(duration: 0.2)) { showsMonth.toggle() } } label: {
+            if !showsMonth {
+                HStack(spacing: 2) {
+                    stepButton(.caretLeft, "Previous week") { onMove(-7) }
+                    Text(weekRange)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .frame(minWidth: 96)
+                    stepButton(.caretRight, "Next week") { onMove(7) }
+                }
+                .padding(2)
+                .background(Capsule().fill(Color.dockPrimaryText.opacity(0.04)))
+                .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+            }
+            Button(action: onToggleMonth) {
                 Label(showsMonth ? "Collapse to week" : "Expand to month", icon: showsMonth ? .caretUp : .caretDown)
                     .foregroundStyle(Color.dockAccent)
+                    .padding(.horizontal, 6)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockPress)
             .help(showsMonth ? "Show only the selected week" : "Show the whole month")
             Spacer()
             Text("← → ↑ ↓ to move")
@@ -291,23 +344,68 @@ struct CalendarWorkspaceView: View {
         .foregroundStyle(Color.dockMetadataText)
     }
 
+    private func stepButton(_ icon: Ph, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            DockIcon(icon)
+                .foregroundStyle(Color.dockAccent)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockPress)
+        .help(label)
+        .accessibilityLabel(label)
+    }
+
+    /// "Sep 28 – Oct 4" for the week holding the selected day.
+    private var weekRange: String {
+        guard let week = calendar.dateInterval(of: .weekOfYear, for: selected),
+              let last = calendar.date(byAdding: .day, value: 6, to: week.start) else { return "" }
+        return (week.start..<last).formatted(.interval.month(.abbreviated).day())
+    }
+
     private func legendSwatch(_ color: Color, _ label: String) -> some View {
         HStack(spacing: 4) { RoundedRectangle(cornerRadius: 1.5).fill(color).frame(width: 10, height: 4); Text(label) }
     }
+}
 
-    // MARK: Month crew
+/// The selected day plus the month's leaderboards. Equatable so it only
+/// rebuilds when the day, the month's tallies, or the bots change.
+private struct CalendarDayPane: View, Equatable {
+    let date: Date
+    let day: WorkDay
+    let crew: [WorkCount]
+    let repos: [WorkCount]
+    let botsByID: [String: BotSummary]
+    let avatarImages: [String: Data]
+    let onOpenTask: (KanbanTaskSummary) -> Void
+    let onOpenSession: (SessionSummary) -> Void
+    @State private var copied = false
+
+    private var calendar: Calendar { .current }
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.date == rhs.date && lhs.day == rhs.day && lhs.crew == rhs.crew && lhs.repos == rhs.repos
+            && lhs.botsByID == rhs.botsByID && lhs.avatarImages == rhs.avatarImages
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            detail(day)
+            monthCrew
+        }
+    }
 
     @ViewBuilder
-    private func monthCrew(_ index: WorkCalendarIndex) -> some View {
-        if !index.crew.isEmpty || !index.repos.isEmpty {
+    private var monthCrew: some View {
+        if !crew.isEmpty || !repos.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                if !index.crew.isEmpty {
-                    leaderboard("Crew this month", rows: Array(index.crew.prefix(8)), unit: "tasks") { id in
+                if !crew.isEmpty {
+                    leaderboard("Crew this month", rows: Array(crew.prefix(8)), unit: "tasks") { id in
                         BotChip(id: id, botsByID: botsByID, avatarImages: avatarImages)
                     }
                 }
-                if !index.repos.isEmpty {
-                    leaderboard("Repositories", rows: Array(index.repos.prefix(6)), unit: "commits") { id in
+                if !repos.isEmpty {
+                    leaderboard("Repositories", rows: Array(repos.prefix(6)), unit: "commits") { id in
                         HStack(spacing: 4) {
                             DockIcon(.gitBranch).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                             Text(id).font(DockTypography.machineMetadata.weight(.medium)).foregroundStyle(Color.dockSecondaryText)
@@ -355,7 +453,7 @@ struct CalendarWorkspaceView: View {
             if day.isEmpty {
                 VStack(spacing: 6) {
                     DockIcon(.calendarBlank).font(.system(size: 22)).foregroundStyle(Color.dockMetadataText)
-                    Text(selected > calendar.startOfDay(for: Date()) ? "Nothing yet. This day is still ahead." : "A quiet day. Nothing was recorded.")
+                    Text(date > calendar.startOfDay(for: Date()) ? "Nothing yet. This day is still ahead." : "A quiet day. Nothing was recorded.")
                         .font(DockTypography.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                 }
@@ -422,7 +520,7 @@ struct CalendarWorkspaceView: View {
                 if !day.sessions.isEmpty {
                     section("Sessions", count: day.sessions.count) {
                         ForEach(day.sessions.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }) { session in
-                            Button { control.openLatestActivitySession(session) } label: {
+                            Button { onOpenSession(session) } label: {
                                 row(icon: .chats, tint: .dockAccent, title: session.title,
                                     meta: session.updatedAt?.formatted(.dateTime.hour().minute()), trailingIcon: .arrowUpRight)
                             }
@@ -461,13 +559,13 @@ struct CalendarWorkspaceView: View {
     private func dayHeader(_ day: WorkDay) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(spacing: 0) {
-                Text(selected.formatted(.dateTime.month(.abbreviated)).uppercased())
+                Text(date.formatted(.dateTime.month(.abbreviated)).uppercased())
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.dockOnAccentText)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 2)
                     .background(Color.dockAccent)
-                Text("\(calendar.component(.day, from: selected))")
+                Text("\(calendar.component(.day, from: date))")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
                     .frame(maxHeight: .infinity)
@@ -478,7 +576,7 @@ struct CalendarWorkspaceView: View {
             .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.dockBorderLight, lineWidth: 1))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(selected.formatted(.dateTime.weekday(.wide)))
+                Text(date.formatted(.dateTime.weekday(.wide)))
                     .font(DockTypography.rowTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text(daySubtitle(day))
@@ -489,7 +587,7 @@ struct CalendarWorkspaceView: View {
             Spacer()
             Button {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(WorkCalendarIndex.standupMarkdown(for: selected, day: day), forType: .string)
+                NSPasteboard.general.setString(WorkCalendarIndex.standupMarkdown(for: date, day: day), forType: .string)
                 copied = true
                 Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
             } label: {
@@ -588,7 +686,6 @@ struct CalendarWorkspaceView: View {
             Text(label).font(DockTypography.metadata).foregroundStyle(Color.dockMetadataText)
         }
     }
-
 }
 
 /// Hover highlight for clickable detail rows.
@@ -630,12 +727,11 @@ private struct CalendarDayCell: View, Equatable {
                     Circle().fill(Color.dockWarning).frame(width: 5, height: 5).padding(.leading, 3)
                 }
                 Spacer(minLength: 2)
+                // Icon-tagged so the count never reads as a second date.
                 if shipped > 0 {
-                    Text("\(shipped)")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Color.dockPrimaryText)
+                    count(shipped, icon: .checkCircle, tint: .dockSuccess)
                 } else if let sessions = day?.sessions.count, sessions > 0 {
-                    Text("\(sessions)s").font(.system(size: 10)).foregroundStyle(Color.dockMetadataText)
+                    count(sessions, icon: .chatCircle, tint: .dockMetadataText)
                 }
             }
             Spacer(minLength: 0)
@@ -650,6 +746,16 @@ private struct CalendarDayCell: View, Equatable {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Day \(dayNumber), \(shipped) shipped, \(day?.sessions.count ?? 0) sessions")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func count(_ value: Int, icon: Ph, tint: Color) -> some View {
+        HStack(spacing: 2) {
+            DockIcon(icon, size: 10, weight: .fill, color: tint)
+            Text("\(value)").font(.system(size: 10, weight: .semibold).monospacedDigit()).foregroundStyle(tint)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(tint.opacity(0.14)))
     }
 
     /// Proportions of shipped / sessions / automation for the day.

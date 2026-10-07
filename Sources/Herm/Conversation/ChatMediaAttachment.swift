@@ -7,8 +7,16 @@ enum ChatMediaSegment: Equatable {
     case markdown(String)
     case media(String)
 
-    static func split(_ text: String) -> [ChatMediaSegment] {
-        guard text.contains("MEDIA:") else { return [.markdown(text)] }
+    /// `delivered` are files tools produced (e.g. image_generate), which rarely
+    /// repeat a MEDIA: tag in the reply; they follow the text.
+    static func split(_ text: String, delivered: [String] = []) -> [ChatMediaSegment] {
+        let segments = split(text)
+        let inText = Set(segments.compactMap { if case .media(let path) = $0 { path } else { nil } })
+        return segments + delivered.filter { !inText.contains($0) }.map { .media($0) }
+    }
+
+    private static func split(_ text: String) -> [ChatMediaSegment] {
+        guard text.contains("MEDIA:") || text.contains("![") else { return [.markdown(text)] }
         var segments: [ChatMediaSegment] = []
         var buffer: [Substring] = []
         func flush() {
@@ -18,7 +26,10 @@ enum ChatMediaSegment: Equatable {
         }
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.drop(while: { "`\"'".contains($0) }).hasPrefix("MEDIA:"),
+            if let image = trimmed.range(of: #"^!\[[^\]]*\]\(([^)\s]+)\)$"#, options: .regularExpression) {
+                flush()
+                segments.append(.media(String(trimmed[image]).replacingOccurrences(of: #"^!\[[^\]]*\]\("#, with: "", options: .regularExpression).dropLast().description))
+            } else if trimmed.drop(while: { "`\"'".contains($0) }).hasPrefix("MEDIA:"),
                let path = ArtifactService.mediaValues(trimmed).first, !path.isEmpty {
                 flush()
                 segments.append(.media(path))
@@ -47,15 +58,15 @@ enum ArtifactOpener {
            isDirectory.boolValue
             ? NSWorkspace.shared.isFilePackage(atPath: url.path)
             : FileManager.default.isExecutableFile(atPath: url.path) {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
+            ExternalOpen.reveal([url])
             return
         }
-        NSWorkspace.shared.open(url)
+        ExternalOpen.open(url)
     }
 
     static func reveal(_ value: String) {
         guard let url = url(value), url.isFileURL else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        ExternalOpen.reveal([url])
     }
 
     /// Copies a local file into ~/Downloads under a free name and returns it.
@@ -85,7 +96,35 @@ struct ChatMediaAttachmentCard: View {
     private var isLocal: Bool { url?.isFileURL == true }
     private var exists: Bool { !isLocal || url.map { FileManager.default.fileExists(atPath: $0.path) } == true }
 
+    private var isImage: Bool { ArtifactService.kind(for: path) == .image }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if isImage, exists, let url {
+                imagePreview(url)
+            }
+            card
+        }
+    }
+
+    @ViewBuilder
+    private func imagePreview(_ url: URL) -> some View {
+        let shape = RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+        Group {
+            if url.isFileURL || url.scheme == "data" {
+                if let image = url.isFileURL ? NSImage(contentsOf: url) : (try? Data(contentsOf: url)).flatMap(NSImage.init(data:)) {
+                    Image(nsImage: image).resizable().scaledToFit()
+                }
+            } else {
+                AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { ProgressView().controlSize(.small) }
+            }
+        }
+        .frame(maxWidth: 420, maxHeight: 420, alignment: .leading)
+        .clipShape(shape)
+        .onTapGesture { ArtifactOpener.open(path) }
+    }
+
+    private var card: some View {
         HStack(spacing: 12) {
             DockIcon(icon, size: 14, color: Color.dockSecondaryText)
                 .frame(width: 30, height: 30)
@@ -109,7 +148,7 @@ struct ChatMediaAttachmentCard: View {
                     do {
                         let saved = try ArtifactOpener.download(path)
                         status = "Saved to Downloads"
-                        NSWorkspace.shared.activateFileViewerSelecting([saved])
+                        ExternalOpen.reveal([saved])
                     } catch {
                         status = "Download failed: \(error.localizedDescription)"
                     }

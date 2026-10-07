@@ -378,7 +378,7 @@ struct ArtifactsInspectorView: View {
     @ViewBuilder
     private func artifactRowIcon(_ record: ArtifactRecord) -> some View {
         if record.kind == .image {
-            imagePreview(for: record)
+            imagePreview(for: record, compact: true)
                 .scaledToFill()
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
         } else {
@@ -741,7 +741,7 @@ struct ArtifactsInspectorView: View {
     }
 
     @ViewBuilder
-    private func imagePreview(for record: ArtifactRecord) -> some View {
+    private func imagePreview(for record: ArtifactRecord, compact: Bool = false) -> some View {
         // AsyncImage loads file URLs too, off the main thread; a synchronous
         // NSImage(contentsOf:) here decoded every image on each scroll render.
         if let url = artifactURL(record.value) {
@@ -749,19 +749,21 @@ struct ArtifactsInspectorView: View {
                 if let image = phase.image {
                     image.resizable().scaledToFill()
                 } else {
-                    previewUnavailable
+                    previewUnavailable(compact: compact)
                 }
             }
         } else {
-            previewUnavailable
+            previewUnavailable(compact: compact)
         }
     }
 
-    private var previewUnavailable: some View {
+    private func previewUnavailable(compact: Bool) -> some View {
         VStack(spacing: 5) {
             DockIcon(.image)
-            Text("Preview unavailable")
-                .font(.system(size: 10))
+            if !compact {
+                Text("Preview unavailable")
+                    .font(.system(size: 10))
+            }
         }
         .foregroundStyle(Color.dockSecondaryText)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

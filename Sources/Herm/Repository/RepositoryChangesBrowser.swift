@@ -14,9 +14,9 @@ struct RepositoryChangesBrowser: View {
 
     var isInspector = false
 
-    @State private var selectedDiff: RepositoryDiff?
-
-    @State private var isLoading = false
+    @State private var diffs: [String: RepositoryDiff] = [:]
+    @State private var expandedFileIDs: Set<String> = []
+    @State private var loadingFileIDs: Set<String> = []
     @State private var error: String?
     @State private var isStagedExpanded = true
     @State private var isChangesExpanded = true
@@ -72,6 +72,13 @@ struct RepositoryChangesBrowser: View {
                     )
                 }
             }
+        }
+        .onChange(of: changes) { _, newChanges in
+            // Cached diffs go stale with the working tree; refetch the open ones.
+            let liveIDs = Set(newChanges.files.map(\.id))
+            diffs = [:]
+            expandedFileIDs.formIntersection(liveIDs)
+            for file in newChanges.files where expandedFileIDs.contains(file.id) { loadDiff(for: file) }
         }
     }
 
@@ -166,6 +173,9 @@ struct RepositoryChangesBrowser: View {
     private func sourceControlHeader(_ changes: RepositoryChangeSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
+                DockIcon(.gitBranch)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockAccent)
                 Text(changes.branch)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
@@ -369,35 +379,97 @@ struct RepositoryChangesBrowser: View {
             .padding(.vertical, 8)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         } else {
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let selectedDiff, selectedDiff.path == file.path, selectedDiff.isStaged == file.isStaged {
-                        Text(selectedDiff.text.isEmpty ? "No textual diff is available for this file." : selectedDiff.text)
-                            .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
-                        if selectedDiff.isTruncated { Text("Diff truncated for safe display.").foregroundStyle(Color.dockWarning) }
-                    } else {
-                        Button(isLoading ? "Loading diff…" : "Load diff") { loadDiff(for: file) }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent).disabled(isLoading)
+            let isExpanded = expandedFileIDs.contains(file.id)
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    toggle(file)
+                } label: {
+                    HStack(spacing: 6) {
+                        DockIcon(isExpanded ? .caretDown : .caretRight)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.dockMetadataText)
+                            .frame(width: 12)
+                        fileRowLabel(file, showsSelection: false)
                     }
-
                 }
-                .font(.system(size: 12, design: .monospaced))
-                .padding(.leading, 26)
-                .padding(.top, 4)
-                .padding(.bottom, 10)
-            } label: {
-                fileRowLabel(file, showsSelection: false)
+                .buttonStyle(.plain)
+                .help(isExpanded ? "Hide diff" : "Show diff")
+
+                if isExpanded { diffCard(for: file) }
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 4)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+        }
+    }
+
+    @ViewBuilder
+    private func diffCard(for file: RepositoryFileChange) -> some View {
+        Group {
+            if let diff = diffs[file.id] {
+                let lines = Self.displayLines(diff.text)
+                if lines.isEmpty {
+                    diffNotice(file.status == .untracked || file.status == .added ? "Binary or empty file." : "No textual diff is available for this file.")
+                } else {
+                    let diffLines = LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(lines) { line in PullRequestDiffLineView(line: line) }
+                    }
+                    // Short diffs hug their content; long ones scroll inside the card.
+                    ViewThatFits(in: .vertical) {
+                        diffLines
+                        ScrollView { diffLines }
+                    }
+                    .frame(maxHeight: Self.maxDiffHeight)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                }
+                if diff.isTruncated { diffNotice("Diff truncated for safe display.", color: .dockWarning) }
+            } else if loadingFileIDs.contains(file.id) {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading diff…").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                }
+                .padding(10)
+            } else {
+                diffNotice("This file has no readable diff.")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.dockSurface2)
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    private func diffNotice(_ text: String, color: Color = .dockMetadataText) -> some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+    }
+
+    private static let maxDiffHeight: CGFloat = 360
+
+    /// Hunks only: the `diff --git` / `index` / `---` / `+++` preamble repeats
+    /// what the row already shows.
+    static func displayLines(_ text: String) -> [PullRequestDiffLine] {
+        let rows = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let firstHunk = rows.firstIndex(where: { $0.hasPrefix("@@") }) else { return [] }
+        return rows[firstHunk...].enumerated().compactMap { offset, row in
+            row.hasPrefix("\\ No newline") ? nil : PullRequestDiffLine(index: offset, text: String(row))
         }
     }
 
     private func fileRowLabel(_ file: RepositoryFileChange, showsSelection: Bool) -> some View {
         HStack(spacing: 8) {
-            DockIcon(fileIcon(for: file))
-                .font(.system(size: 14, weight: .medium))
+            Text(statusLetter(for: file))
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundStyle(statusColor(for: file))
-                .frame(width: 17)
+                .frame(width: 18, height: 18)
+                .background(statusColor(for: file).opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                .help(fileStatusDescription(for: file))
+                .accessibilityLabel(fileStatusDescription(for: file))
             VStack(alignment: .leading, spacing: 2) {
                 Text(fileName(for: file))
                     .lineLimit(1)
@@ -407,14 +479,21 @@ struct RepositoryChangesBrowser: View {
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
+                        .truncationMode(.head)
                 }
             }
             Spacer(minLength: 6)
-            Circle()
-                .fill(statusColor(for: file))
-                .frame(width: 7, height: 7)
-                .help(fileStatusDescription(for: file))
-                .accessibilityLabel(fileStatusDescription(for: file))
+            if let diff = diffs[file.id] {
+                let lines = Self.displayLines(diff.text)
+                let additions = lines.filter { $0.kind == .addition }.count
+                let deletions = lines.filter { $0.kind == .deletion }.count
+                HStack(spacing: 5) {
+                    if additions > 0 { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
+                    if deletions > 0 { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
+                }
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .fixedSize()
+            }
         }
         .font(.system(size: 12, weight: .medium))
         .padding(.horizontal, showsSelection ? 8 : 0)
@@ -436,12 +515,15 @@ struct RepositoryChangesBrowser: View {
         file.path.split(separator: "/").dropLast().joined(separator: "/")
     }
 
-    private func fileIcon(for file: RepositoryFileChange) -> Ph {
-        switch file.path.split(separator: ".").last?.lowercased() {
-        case "swift", "ts", "tsx", "js", "jsx", "py", "go", "rs": .fileText
-        case "json", "yaml", "yml", "toml": .fileText
-        case "md", "txt": .fileText
-        default: .file
+    private func statusLetter(for file: RepositoryFileChange) -> String {
+        switch file.status {
+        case .added: "A"
+        case .deleted: "D"
+        case .renamed: "R"
+        case .untracked: "U"
+        case .conflicted: "!"
+        case .modified: "M"
+        case .unknown: "?"
         }
     }
 
@@ -466,20 +548,20 @@ struct RepositoryChangesBrowser: View {
         return .dockWarning
     }
 
+    private func toggle(_ file: RepositoryFileChange) {
+        if expandedFileIDs.remove(file.id) == nil {
+            expandedFileIDs.insert(file.id)
+            if diffs[file.id] == nil { loadDiff(for: file) }
+        }
+    }
+
     private func loadDiff(for file: RepositoryFileChange) {
-        Task { isLoading = true; selectedDiff = await RepositoryService.diff(path: workflow.repository.path, file: file); isLoading = false }
-    }
-
-
-    private func label(_ value: String) -> some View {
-        Text(value).font(.system(size: 12, weight: .semibold, design: .monospaced)).tracking(0.75).foregroundStyle(Color.dockSecondaryText)
-    }
-
-    private func metric(_ label: String, _ value: Int, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("\(value)").font(.system(size: 18, weight: .semibold)).foregroundStyle(color)
-            Text(label.lowercased().capitalized).font(.system(size: 11, weight: .medium)).foregroundStyle(Color.dockMetadataText)
-        }.frame(maxWidth: .infinity, alignment: .leading).dockCard(padding: 10)
+        guard loadingFileIDs.insert(file.id).inserted else { return }
+        Task {
+            let diff = await RepositoryService.diff(path: workflow.repository.path, file: file)
+            loadingFileIDs.remove(file.id)
+            diffs[file.id] = diff
+        }
     }
 
     private func emptyState(icon: Ph, title: String, detail: String) -> some View {

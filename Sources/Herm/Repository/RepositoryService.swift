@@ -373,69 +373,83 @@ enum RepositoryService {
     }
 
     static func projectFiles(path: String, includeGenerated: Bool = false) async -> [ProjectFileEntry] {
-        // realpath (unlike resolvingSymlinksInPath, which strips /private) so
-        // the prefix matches the resolved URLs contentsOfDirectory returns.
-        let standardized = URL(fileURLWithPath: path).standardizedFileURL
-        let root = realpath(standardized.path, nil).map { resolved in
-            defer { free(resolved) }
-            return URL(fileURLWithPath: String(cString: resolved))
-        } ?? standardized
+        let root = explorerRoot(path)
         return await Task.detached(priority: .utility) {
             // Keep the project tree faithful to the filesystem. Hidden
             // project files such as .github, .husky, and dotfiles are useful
             // source files. Generated/dependency trees are omitted by default
             // and can be explicitly requested by the Explorer presentation;
             // dependency folders remain shallow to avoid enormous scans.
-            let skippedTrees = Set([".git"])
-            let generatedTrees = Set([".cache", ".build", "DerivedData", "node_modules", "build", "dist", "coverage"])
+            // Folders cut off by the entry budget load on expand via
+            // `projectDirectory`.
             let shallowTrees = Set(["node_modules", "build", "dist", "coverage"])
             var entries: [ProjectFileEntry] = []
 
-            func visit(_ directory: URL, depth: Int, isRoot: Bool = false) {
-                guard let children = try? FileManager.default.contentsOfDirectory(
-                    at: directory,
-                    includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-                    options: []
-                ) else { return }
-
-                let sortedChildren = children.sorted {
-                    $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending
-                }
+            func visit(_ directory: URL, isRoot: Bool = false) {
                 var directories: [URL] = []
-
                 // Add every direct child before descending. This guarantees
                 // that a large folder cannot consume the entry budget and
                 // hide sibling files at the project root.
-                for url in sortedChildren {
-                    let name = url.lastPathComponent
-                    if skippedTrees.contains(name) { continue }
-                    if !includeGenerated && generatedTrees.contains(name) { continue }
-                    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                    if attributes?[.type] as? FileAttributeType == .typeSymbolicLink { continue }
-                    let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
-                    guard values?.isDirectory == true || values?.isRegularFile == true else { continue }
+                for (entry, url) in explorerChildren(of: directory, root: root, includeGenerated: includeGenerated) {
                     if !isRoot && entries.count >= maxProjectExplorerEntries { continue }
-                    let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
-                    let components = relative.split(separator: "/").map(String.init)
-                    guard !components.isEmpty else { continue }
-                    let isDirectory = values?.isDirectory == true
-                    entries.append(ProjectFileEntry(path: relative, depth: components.count - 1, isDirectory: isDirectory))
-                    if isDirectory && !shallowTrees.contains(name) {
+                    entries.append(entry)
+                    if entry.isDirectory && !shallowTrees.contains(url.lastPathComponent) {
                         directories.append(url)
                     }
                 }
-
-                for directory in directories {
-                    visit(directory, depth: depth + 1)
-                }
+                for directory in directories { visit(directory) }
             }
 
-            visit(root, depth: 0, isRoot: true)
+            visit(root, isRoot: true)
             return entries.sorted { lhs, rhs in
                 if lhs.path == rhs.path { return lhs.isDirectory && !rhs.isDirectory }
                 return lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
             }
         }.value
+    }
+
+    /// Direct children of one project folder, loaded when the Explorer expands it.
+    static func projectDirectory(path: String, directory: String, includeGenerated: Bool = false) async -> [ProjectFileEntry] {
+        guard isSafeRelativePath(directory) else { return [] }
+        let root = explorerRoot(path)
+        return await Task.detached(priority: .utility) {
+            explorerChildren(of: root.appendingPathComponent(directory), root: root, includeGenerated: includeGenerated).map(\.0)
+        }.value
+    }
+
+    private static func explorerRoot(_ path: String) -> URL {
+        // realpath (unlike resolvingSymlinksInPath, which strips /private) so
+        // the prefix matches the resolved URLs contentsOfDirectory returns.
+        let standardized = URL(fileURLWithPath: path).standardizedFileURL
+        return realpath(standardized.path, nil).map { resolved in
+            defer { free(resolved) }
+            return URL(fileURLWithPath: String(cString: resolved))
+        } ?? standardized
+    }
+
+    private static func explorerChildren(of directory: URL, root: URL, includeGenerated: Bool) -> [(ProjectFileEntry, URL)] {
+        let skippedTrees = Set([".git"])
+        let generatedTrees = Set([".cache", ".build", "DerivedData", "node_modules", "build", "dist", "coverage"])
+        guard let children = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
+            options: []
+        ) else { return [] }
+        return children
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            .compactMap { url in
+                let name = url.lastPathComponent
+                if skippedTrees.contains(name) { return nil }
+                if !includeGenerated && generatedTrees.contains(name) { return nil }
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                if attributes?[.type] as? FileAttributeType == .typeSymbolicLink { return nil }
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                guard values?.isDirectory == true || values?.isRegularFile == true else { return nil }
+                let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
+                let components = relative.split(separator: "/")
+                guard !components.isEmpty else { return nil }
+                return (ProjectFileEntry(path: relative, depth: components.count - 1, isDirectory: values?.isDirectory == true), url)
+            }
     }
 
     static func diff(path: String, file: RepositoryFileChange) async -> RepositoryDiff? {
@@ -761,22 +775,57 @@ enum RepositoryService {
         !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
 
-    /// Non-merge commits authored in `[since, until)`, newest first. Missing
-    /// or non-git paths yield an empty list.
-    static func commits(path: String, since: Date, until: Date) async -> [WorkCommit] {
+    /// Non-merge commits authored in `[since, until)` across the repos holding
+    /// `paths`. Non-git paths are skipped.
+    static func commits(paths: some Sequence<String>, since: Date, until: Date) async -> [WorkCommit] {
+        // Worktrees of one repo collapse to its main checkout, so git runs once per repo, not per task.
+        let roots = Set(paths.compactMap(repositoryRoot))
+        return await withTaskGroup(of: [WorkCommit].self, returning: [WorkCommit].self) { group in
+            for root in roots {
+                group.addTask { await commits(root: root, since: since, until: until) }
+            }
+            return await group.reduce(into: []) { $0 += $1 }
+        }
+    }
+
+    /// `--branches` covers every local branch, so task worktree branches count before they merge.
+    private static func commits(root: String, since: Date, until: Date) async -> [WorkCommit] {
+        let repo = URL(fileURLWithPath: root).lastPathComponent
         let iso = ISO8601DateFormatter()
-        let result = await runGit(path: path, arguments: [
-            "log", "--no-merges", "--max-count=500",
+        let result = await runGit(path: root, arguments: [
+            "log", "--branches", "--no-merges", "--max-count=500",
             "--since=\(iso.string(from: since))", "--until=\(iso.string(from: until))",
             "--pretty=format:%h%x1f%s%x1f%aI"
         ])
         guard result.exitCode == 0 else { return [] }
-        let repo = URL(fileURLWithPath: path).lastPathComponent
         return result.output.split(separator: "\n").compactMap { line in
             let fields = line.split(separator: "\u{1f}", omittingEmptySubsequences: false)
             guard fields.count == 3, let date = iso.date(from: String(fields[2])) else { return nil }
             return WorkCommit(repo: repo, hash: String(fields[0]), subject: String(fields[1]), date: date)
         }
+    }
+
+    /// The main checkout holding `path`, read from `.git` on disk instead of spawning git.
+    /// A removed worktree falls back to its nearest surviving ancestor.
+    static func repositoryRoot(_ path: String) -> String? {
+        let fm = FileManager.default
+        var url = URL(fileURLWithPath: path).standardizedFileURL
+        while url.pathComponents.count > 1 {
+            let dotGit = url.appendingPathComponent(".git")
+            var isDirectory: ObjCBool = false
+            if fm.fileExists(atPath: dotGit.path, isDirectory: &isDirectory) {
+                if isDirectory.boolValue { return url.path }
+                // A linked worktree's `.git` file reads "gitdir: <repo>/.git/worktrees/<name>".
+                let pointer = (try? String(contentsOf: dotGit, encoding: .utf8)) ?? ""
+                if let range = pointer.range(of: "/.git/worktrees/") {
+                    return String(pointer[..<range.lowerBound]).replacingOccurrences(of: "gitdir: ", with: "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return url.path
+            }
+            url.deleteLastPathComponent()
+        }
+        return nil
     }
 
     private static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (output: String, exitCode: Int32) {

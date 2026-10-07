@@ -71,7 +71,7 @@ struct ProjectFolderSheet: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveHerm() == .OK, let url = panel.url else { return }
         folder = url.standardizedFileURL
         if name.isEmpty { name = url.lastPathComponent }
     }
@@ -90,5 +90,34 @@ struct ProjectFolderSheet: View {
             isWorking = false
             if ok { dismiss() } else { failed = true }
         }
+    }
+}
+
+extension NSOpenPanel {
+    /// Herm's windows are status-bar-level panels, so a default open panel
+    /// opens underneath them. Match that level and order it in front.
+    func runAboveHerm() -> NSApplication.ModalResponse {
+        level = .statusBar
+        hidesOnDeactivate = false
+        NSApp.activate(ignoringOtherApps: true)
+        orderFrontRegardless()
+        return runModal()
+    }
+}
+
+private final class ClosureMenuItem: NSMenuItem {
+    private let handler: () -> Void
+    init(_ title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @objc private func run() { handler() }
+}
+
+extension NSMenu {
+    func addClosureItem(_ title: String, handler: @escaping () -> Void) {
+        addItem(ClosureMenuItem(title, handler: handler))
     }
 }

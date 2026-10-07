@@ -60,6 +60,7 @@ struct WorkCalendarIndex: Equatable {
     var busiestDay: Date?
     var crew: [WorkCount] = []
     var repos: [WorkCount] = []
+    var taskCount = 0, commitCount = 0, sessionCount = 0, runCount = 0
 
     func day(_ date: Date) -> WorkDay? { days[date] }
 
@@ -142,7 +143,11 @@ struct WorkCalendarIndex: Equatable {
             monthTokens: days.values.reduce(0) { $0 + ($1.usage.map { $0.inputTokens + $0.outputTokens } ?? 0) },
             busiestDay: days.max { ($0.value.activityCount, $1.key) < ($1.value.activityCount, $0.key) }?.key,
             crew: ranked(monthCrew),
-            repos: ranked(monthRepos)
+            repos: ranked(monthRepos),
+            taskCount: days.values.reduce(0) { $0 + $1.doneTasks.count },
+            commitCount: days.values.reduce(0) { $0 + $1.commits.count },
+            sessionCount: days.values.reduce(0) { $0 + $1.sessions.count },
+            runCount: days.values.reduce(0) { $0 + $1.cronRuns.count }
         )
     }
 
@@ -172,11 +177,15 @@ struct WorkCalendarIndex: Equatable {
         return lines.joined(separator: "\n")
     }
 
+    // Formatters are costly to build and every cron run is parsed several times per render.
+    private nonisolated(unsafe) static let plainISO = ISO8601DateFormatter()
+    private nonisolated(unsafe) static let fractionalISO: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
     static func parseDate(_ string: String) -> Date? {
-        let plain = ISO8601DateFormatter()
-        if let date = plain.date(from: string) { return date }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fractional.date(from: string)
+        plainISO.date(from: string) ?? fractionalISO.date(from: string)
     }
 }

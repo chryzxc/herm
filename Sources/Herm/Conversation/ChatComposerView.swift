@@ -96,7 +96,9 @@ struct ChatComposerView: View {
                             }
                         }
 
-                        guard dockModel.isComposerEditing,
+                        // isComposerEditing only flips on the first keystroke, so an
+                        // untouched composer must be recognised by its first responder.
+                        guard event.window?.firstResponder is ComposerInputTextView,
                               event.modifierFlags.contains(.command),
                               event.charactersIgnoringModifiers?.lowercased() == "v" else {
                             return event
@@ -646,9 +648,7 @@ struct ChatComposerView: View {
     }
 
     private var pasteImageAvailable: Bool {
-        let pasteboard = NSPasteboard.general
-        guard pasteboard.string(forType: .string) == nil else { return false }
-        return pasteboard.types?.contains(where: { $0 == .png || $0 == .tiff }) == true
+        DockModel.pasteboardHoldsImageOnly(.general)
     }
 
     private func handleAttachmentAction(_ action: AttachmentPopoverAction) {

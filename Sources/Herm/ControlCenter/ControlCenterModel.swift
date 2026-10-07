@@ -77,6 +77,9 @@ final class ControlCenterModel: ObservableObject {
     /// folded in from the live projections at build time.
     private var workCalendarSources: [Date: (sessions: [SessionSummary], commits: [WorkCommit], usage: [TokenUsageReport.Day])] = [:]
     private var workCalendarMonth: Date?
+    /// Paths each cached month's git read covered, so newly seen worktrees trigger one re-read.
+    private var workCalendarPaths: [Date: Set<String>] = [:]
+    private var workCalendarRepoPaths: [String] = []
     private var workCalendarGeneration = UUID()
     @Published private(set) var providerQuotas: [ProviderQuotaSnapshot] = []
     /// Snapshots exactly as the providers reported them. `providerQuotas` is
@@ -2510,6 +2513,7 @@ final class ControlCenterModel: ObservableObject {
         let monthStart = calendar.dateInterval(of: .month, for: month)?.start ?? calendar.startOfDay(for: month)
         let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart
         workCalendarMonth = monthStart
+        workCalendarRepoPaths = repoPaths
         if globalKanbanTasks.isEmpty { refreshGlobalKanban(trigger: .background) }
         if cronRuns.isEmpty { refreshCronRuns() }
         if !force, workCalendarSources[monthStart] != nil {
@@ -2525,18 +2529,11 @@ final class ControlCenterModel: ObservableObject {
             return
         }
         beginProjectionRefresh("work.calendar")
-        // Hermes' projects are the working directories its sessions ran in, the same list the PR center reads.
-        let paths = Set(repoPaths + projects.filter(\.isRenderableProject).map(\.name)).filter { !$0.isEmpty }
+        let paths = workCalendarRepoPaths(monthStart: monthStart, monthEnd: monthEnd)
+        workCalendarPaths[monthStart] = paths
         Task { @MainActor in
             do {
-                async let commits = withTaskGroup(of: [WorkCommit].self, returning: [WorkCommit].self) { group in
-                    for path in paths {
-                        group.addTask { await RepositoryService.commits(path: path, since: monthStart, until: monthEnd) }
-                    }
-                    // Worktrees of one repo report the same commits; keep each hash once.
-                    var seen = Set<String>()
-                    return await group.reduce(into: []) { $0 += $1 }.filter { seen.insert($0.hash + $0.subject).inserted }
-                }
+                async let commits = RepositoryService.commits(paths: paths, since: monthStart, until: monthEnd)
                 let sessions = try await Self.workCalendarSessions(rpc: rpc, since: monthStart)
                 // Usage is best-effort: older Hermes builds lack the web server.
                 let usageDays = (calendar.dateComponents([.day], from: monthStart, to: Date()).day ?? -1) + 1
@@ -2557,9 +2554,24 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    /// Hermes' projects are the working directories its sessions ran in, the same list the PR center reads.
+    /// Kanban tasks add the worktrees they actually ran in, which often belong to repos no session is wired to.
+    private func workCalendarRepoPaths(monthStart: Date, monthEnd: Date) -> Set<String> {
+        let taskPaths = globalKanbanTasks.compactMap { task -> String? in
+            guard let at = task.completedAt ?? task.startedAt, at >= monthStart, at < monthEnd else { return nil }
+            return task.workspacePath
+        }
+        return Set(workCalendarRepoPaths + projects.filter(\.isRenderableProject).map(\.name) + taskPaths).filter { !$0.isEmpty }
+    }
+
     /// Re-folds the live Kanban and cron projections into the cached month.
+    /// Projects or task worktrees that landed after the git read trigger one re-read.
     func rebuildWorkCalendar() {
         guard let month = workCalendarMonth, let sources = workCalendarSources[month] else { return }
+        let monthEnd = Calendar.current.date(byAdding: .month, value: 1, to: month) ?? month
+        if !workCalendarRepoPaths(monthStart: month, monthEnd: monthEnd).isSubset(of: workCalendarPaths[month] ?? []) {
+            refreshWorkCalendar(month: month, repoPaths: workCalendarRepoPaths, force: true)
+        }
         let index = WorkCalendarIndex.build(
             month: month,
             sessions: sources.sessions,
@@ -4695,7 +4707,8 @@ final class ControlCenterModel: ObservableObject {
             modelOverride: base.modelOverride,
             providerOverride: base.providerOverride,
             skills: base.skills,
-            workflowTemplateID: base.workflowTemplateID
+            workflowTemplateID: base.workflowTemplateID,
+            workspacePath: base.workspacePath
         )
     }
 
@@ -4724,7 +4737,8 @@ final class ControlCenterModel: ObservableObject {
             modelOverride: (row["model_override"] as? String) ?? (row["modelOverride"] as? String) ?? (row["model"] as? String),
             providerOverride: (row["provider_override"] as? String) ?? (row["providerOverride"] as? String) ?? (row["provider"] as? String),
             skills: kanbanStringList(row["skills"]),
-            workflowTemplateID: (row["workflow_template_id"] as? String) ?? (row["workflowTemplateID"] as? String)
+            workflowTemplateID: (row["workflow_template_id"] as? String) ?? (row["workflowTemplateID"] as? String),
+            workspacePath: row["workspace_path"] as? String
         )
     }
 

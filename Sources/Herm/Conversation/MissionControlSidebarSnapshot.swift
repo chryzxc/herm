@@ -177,6 +177,9 @@ struct MissionControlSidebarSnapshot: Equatable {
                 assigned.insert(summary.id)
             }
             let sessions = sessionsByID.values.sorted { sessionDate($0) > sessionDate($1) }
+            // Projects without conversations are noise in the rail. A project
+            // whose rows are still loading stays so its count is not lost.
+            guard !sessions.isEmpty || project.sessionCount > 0 else { continue }
             groups.append(
                 MissionControlConversationGroup(
                     id: "project:\(project.id)",

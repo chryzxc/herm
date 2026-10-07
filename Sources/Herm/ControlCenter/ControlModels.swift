@@ -596,8 +596,10 @@ struct KanbanTaskSummary: Identifiable, Equatable {
     let providerOverride: String?
     let skills: [String]
     let workflowTemplateID: String?
+    /// The directory the task ran in, usually a git worktree of the project.
+    let workspacePath: String?
 
-    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil, modelOverride: String? = nil, providerOverride: String? = nil, skills: [String] = [], workflowTemplateID: String? = nil) {
+    init(id: String, boardSlug: String? = nil, title: String, status: String, detail: String?, priority: String?, assignee: String?, sessionID: String? = nil, startedAt: Date? = nil, completedAt: Date? = nil, currentStepKey: String? = nil, latestEventKind: String? = nil, latestEventNote: String? = nil, latestEventAt: Date? = nil, modelOverride: String? = nil, providerOverride: String? = nil, skills: [String] = [], workflowTemplateID: String? = nil, workspacePath: String? = nil) {
         self.id = id
         self.boardSlug = boardSlug
         self.title = title
@@ -616,6 +618,7 @@ struct KanbanTaskSummary: Identifiable, Equatable {
         self.providerOverride = providerOverride
         self.skills = skills
         self.workflowTemplateID = workflowTemplateID
+        self.workspacePath = workspacePath
     }
 }
 

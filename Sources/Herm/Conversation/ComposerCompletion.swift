@@ -178,6 +178,7 @@ struct ComposerCompletionPopover: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
         .background(Color.dockSurface2)
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .overlay {

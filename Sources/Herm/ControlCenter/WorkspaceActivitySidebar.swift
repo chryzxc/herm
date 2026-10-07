@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
@@ -125,6 +126,8 @@ struct WorkspaceActivitySidebar: View {
     @State private var isShowingAgentUpdateConfirmation = false
     @State private var isAgentUpdateOutputExpanded = false
     @State private var isShowingDockRestartConfirmation = false
+    /// Read on appear: `status` is a blocking XPC call, and a `@State` default re-runs on every init.
+    @State private var opensAtLogin = false
     @State private var isShowingEmergencyStopConfirmation = false
     @State private var selectedSettingsCategory: SettingsCategory = .general
     @State private var isShowingEmergencyResumeConfirmation = false
@@ -139,6 +142,7 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequestsInSidebar = true
     @AppStorage(SidebarVisibilityKey.issues) private var showsIssuesInSidebar = true
     @AppStorage(SidebarVisibilityKey.office) private var showsOfficeInSidebar = true
+    @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendarInSidebar = true
     @AppStorage(ChatQuotaSettingsKey.chip) private var showsQuotaChip = true
     @AppStorage(ChatQuotaSettingsKey.dropBanner) private var showsQuotaDropBanner = true
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
@@ -2610,7 +2614,7 @@ struct WorkspaceActivitySidebar: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard panel.runAboveHerm() == .OK, let url = panel.url else { return }
         pendingProjectFolder = url.standardizedFileURL
         isShowingProjectCreationConfirmation = true
     }
@@ -5276,11 +5280,6 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Color.dockPrimaryText)
                 Spacer()
-                Button("Restart Herm") { isShowingDockRestartConfirmation = true }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .disabled(agentUpdateService.isBusy)
                 if agentUpdateService.phase == .checking {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
@@ -5323,12 +5322,6 @@ struct WorkspaceActivitySidebar: View {
         } message: {
             Text(verbatim: "Herm will run the allow-listed command `\(HermesUpdateService.updateCommandDisplay)`. It pulls the latest code from NousResearch/hermes-agent, reinstalls dependencies, and may migrate new configuration options. Running Hermes sessions keep the current version until Hermes restarts.")
         }
-        .confirmationDialog("Restart Herm?", isPresented: $isShowingDockRestartConfirmation) {
-            Button("Restart Herm", role: .destructive) { onRestartDock() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This closes the current Hermes backend and relaunches Herm. Unsaved draft text and the current session view will be cleared; the next chat will load the currently selected Codex account and global model.")
-        }
     }
 
     private var agentUpdateIdleContent: some View {
@@ -5368,7 +5361,7 @@ struct WorkspaceActivitySidebar: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let page = latest.pageURL, let url = URL(string: page) {
-                        Button("Release notes") { NSWorkspace.shared.open(url) }
+                        Button("Release notes") { ExternalOpen.open(url) }
                             .buttonStyle(.borderless)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.dockAccent)
@@ -6166,8 +6159,35 @@ struct WorkspaceActivitySidebar: View {
 
     private var generalPreferencesSection: some View {
         VStack(alignment: .leading, spacing: 17) {
-            SettingsSection(title: "Hermes gateway", subtitle: "Messaging service", tint: .dockAccent) {
-                HermesGatewaySettingsView(service: control.gatewayService)
+            SettingsSection(title: "Restart", subtitle: "Herm and Hermes gateway", tint: .dockAccent) {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Circle().fill(Color.dockSuccess).frame(width: 7, height: 7).accessibilityHidden(true)
+                            Text("Herm")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.dockPrimaryText)
+                            Spacer(minLength: 0)
+                            Button { isShowingDockRestartConfirmation = true } label: {
+                                Text("Restart Herm").frame(width: 140)
+                            }
+                            .buttonStyle(.dockPress)
+                            .font(.system(size: 12, weight: .medium))
+                            .disabled(agentUpdateService.isBusy)
+                        }
+                        Text("Relaunches the app and reloads the selected Codex account.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockSecondaryText)
+                    }
+                    Divider().overlay(Color.dockBorderLight)
+                    HermesGatewaySettingsView(service: control.gatewayService)
+                }
+            }
+            .confirmationDialog("Restart Herm?", isPresented: $isShowingDockRestartConfirmation) {
+                Button("Restart Herm", role: .destructive) { onRestartDock() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This closes the current Hermes backend and relaunches Herm. Unsaved draft text and the current session view will be cleared; the next chat will load the currently selected Codex account and global model.")
             }
             SettingsSection(title: "Startup", subtitle: "", tint: .dockAccent) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -6177,8 +6197,19 @@ struct WorkspaceActivitySidebar: View {
                             set: { commandCenterPreferences.setLaunchesExpandedByDefault($0) }
                         ))
                     }
+                    Divider().overlay(Color.dockBorderLight)
+                    SettingsPreferenceRow(title: "Open at login", detail: "Start Herm automatically when you sign in to this Mac.") {
+                        settingsSwitch(isOn: Binding(
+                            get: { opensAtLogin },
+                            set: { on in
+                                do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } } catch {}
+                                opensAtLogin = SMAppService.mainApp.status == .enabled
+                            }
+                        ))
+                    }
                 }
                 .padding(.vertical, -8)
+                .onAppear { opensAtLogin = SMAppService.mainApp.status == .enabled }
             }
             SettingsSection(title: "Keyboard shortcuts", subtitle: "", tint: .dockAccent) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -6236,6 +6267,10 @@ struct WorkspaceActivitySidebar: View {
                 Divider().overlay(Color.dockBorderLight)
                 SettingsPreferenceRow(title: "Show Office in sidebar", detail: "List the Office in the workspace side panel.") {
                     settingsSwitch(isOn: $showsOfficeInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Calendar in sidebar", detail: "List the work Calendar in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsCalendarInSidebar)
                 }
             }
             .padding(.vertical, -8)

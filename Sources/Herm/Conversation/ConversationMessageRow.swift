@@ -247,7 +247,7 @@ struct ConversationMessageRow: View, Equatable {
                         KanbanNoticeCard(notice: notice, botID: message.botProfileID ?? activeBotProfileID,
                                          timeLabel: message.timeLabel, botsByID: botsByID, avatarImages: avatarImages,
                                          loadDetail: loadKanbanDetail.map { load in { await load(notice) } })
-                    } else if !message.text.isEmpty || isStreamingMessage {
+                    } else if !message.text.isEmpty || isStreamingMessage || !ArtifactService.deliveredFiles(in: message.activity).isEmpty {
                         Group {
                             if isStreamingMessage, let streamingText {
                                 // The row is an equatable boundary that does
@@ -313,7 +313,7 @@ struct ConversationMessageRow: View, Equatable {
 
     @ViewBuilder
     private var assistantBody: some View {
-        let segments = ChatMediaSegment.split(message.text)
+        let segments = ChatMediaSegment.split(message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
         if segments == [.markdown(message.text)] {
             messageMarkdownView(message.text)
         } else {

@@ -10,8 +10,6 @@ struct ArtifactService {
     }
     private static let mediaPattern = regex(#"[`"']?MEDIA:\s*(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)"#)
     private static let markdownImagePattern = regex(#"!\[[^\]]*\]\(([^)\s]+)\)"#)
-    private static let markdownLinkPattern = regex(#"(?<!!)\[[^\]]+\]\(([^)\s]+)\)"#)
-    private static let urlPattern = regex(#"(https?://[^\s<>"')]+)"#)
     private static let pathPattern = regex(#"(?:^|[\s("'`])((?:/|~[\\/]|\.\.?[\\/])[^\s"'`<>]+)"#)
     private static let screenshotPattern = regex(#"Screenshot path:\s*([^\r\n<>]+)"#)
     private static let imageExtension = regex(#"\.(?:png|jpe?g|gif|webp|svg|bmp)(?:\?.*)?$"#)
@@ -64,6 +62,31 @@ struct ArtifactService {
         return found.values.sorted { $0.timestamp > $1.timestamp }
     }
 
+    /// Files a response's own producer tool calls (image_generate, text_to_speech,
+    /// document/PDF writers…) delivered, for inline display under the reply.
+    static func deliveredFiles(in calls: [ActiveToolCall]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for call in calls where call.isComplete {
+            let name = call.name.lowercased()
+            let producer = test(producerTool, name) || name.hasPrefix("bfl_flux3_")
+            guard producer, let text = call.result else { continue }
+            func push(_ raw: String, explicit: Bool) {
+                let value = normalize(raw)
+                guard !value.isEmpty, looksLikeArtifact(value, explicit: explicit), seen.insert(value).inserted else { return }
+                out.append(value)
+            }
+            mediaValues(text).forEach { push($0, explicit: true) }
+            for payload in [text, untrustedPayload(text)].compactMap({ $0 }).compactMap(parseJSON) {
+                collectStrings(payload, keyPath: "tool_result") { value, keyPath in
+                    guard explicitKey(keyPath, producer: true) else { return }
+                    push(value, explicit: true)
+                }
+            }
+        }
+        return out
+    }
+
     static func filter(_ records: [ArtifactRecord], query: String = "", kind: ArtifactKind? = nil) -> [ArtifactRecord] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return records.filter { record in
@@ -93,9 +116,9 @@ struct ArtifactService {
     private static func collectText(_ text: String, _ push: (String, Bool) -> Void) {
         mediaValues(text).forEach { push($0, true) }
         matches(markdownImagePattern, in: text).forEach { push($0, false) }
-        for pattern in [markdownLinkPattern, urlPattern, pathPattern] {
-            matches(pattern, in: text).forEach { push($0, false) }
-        }
+        // Web links in prose (PRs, localhost previews, citations) are references, not
+        // deliverables; only images and document paths count from assistant text.
+        matches(pathPattern, in: text).forEach { push($0, false) }
     }
 
     static func mediaValues(_ text: String) -> [String] {

@@ -11,7 +11,7 @@ struct HermesGatewaySettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Circle().fill(statusColor).frame(width: 7, height: 7).accessibilityHidden(true)
                 Text(service.label)
@@ -35,7 +35,7 @@ struct HermesGatewaySettingsView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(service.error == nil ? Color.dockSecondaryText : Color.dockWarning)
                 .lineLimit(3)
-                .frame(height: 48, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .help(service.detail)
         }
         .task {
