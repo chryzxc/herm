@@ -1020,6 +1020,9 @@ struct SessionContextSummary: Equatable {
     let contextPercent: Double?
     let estimatedTotal: Int
     let model: String?
+    var compressionThresholdTokens: Int? = nil
+    var compressionEnabled: Bool? = nil
+    var contextEstimated: Bool = false
 }
 
 enum SessionTextActionStatus: String, Equatable {

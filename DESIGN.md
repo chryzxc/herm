@@ -83,6 +83,7 @@ separator, or window colors, or ad hoc literals.
 | `dockSecondaryText`, `dockSectionText` | Supporting text and section labels |
 | `dockMetadataText` | Timestamps, counts, and IDs |
 | `dockBorderLight`, `dockBorder`, `dockBorderStrong` | Dividers, panel hairlines, and contours |
+| `dockDiscord` | Appearance-aware Discord identity tint for the source pill and logo |
 | `dockAccent`, `dockAccentMuted` | Interactive emphasis, the selected tab, and selected fills |
 | `dockSuccess`, `dockWarning`, `dockDestructive` | Health and outcome of non-task state, such as quota, verification, and mutation results |
 | `dockOnAccentText` | Text on a filled accent control |
@@ -169,6 +170,19 @@ without changing layout or hit targets. Origami uses clipped opposing corners
 on controls and panels, plus one quiet crease in the top trailing corner of
 larger surfaces. Status pills and other semantic capsules remain capsules so
 their meaning stays consistent across themes.
+
+Themes also set `DockThemeStyle.material`, `selection`, `chrome`, and
+`animates`. Glass uses blurred material panels with pill controls and a light
+top edge. E-Ink inverts selected tabs and disables all animation. Swiss drops
+card fills and strokes (`chrome: .open`), marks selection with a 2pt accent
+underline, and uses a single-rule composer (`DockSkinPresentation.Composer.line`).
+
+Clay molds controls with paired light and dark shadows (`emboss`) and round
+corners. Pixel (`geometry: .pixel`) steps its corners, uses 3pt outlines and
+hard shadows, and disables animation. Notebook (`.sketch`) draws slightly
+uneven pencil outlines on ruled paper (`backdrop: .ruled`) with highlighter
+selection. HUD (`.chamfered`) cuts opposing corners, adds corner brackets to
+cards, draws a faint grid, and marks selection with a leading accent bar.
 
 ### Elevation
 
@@ -313,6 +327,18 @@ other themes keep opaque authored canvases. Hermes palettes map stable skin IDs 
 appearance; the other Hermes palettes use dark appearance. Theme selection is
 Herm-owned presentation state and never invokes Hermes skin commands or changes
 Hermes configuration.
+
+Skins own semantic component styling roles in `DockSkinPresentation`. Views
+consume these roles rather than theme IDs. Skins must preserve the sidebar,
+navigation destinations, control order, message alignment, and workspace layout.
+**Retro** is a Herm-only skin with square gray panels and Win95-style bevels
+(`bevel`): cards and buttons are raised with light top-left and dark
+bottom-right edges, pressed buttons and text fields are sunken, selection is
+inverted, and nothing animates.
+
+New skins extend the centralized styling contract and reuse shared components
+rather than forking feature views. Native text updates both fonts and colors
+when the theme revision changes.
 
 Theme palettes resolve canvas, layered surfaces, text, selection, controls,
 dividers, accents, success, warning, destructive, and message fills. Every

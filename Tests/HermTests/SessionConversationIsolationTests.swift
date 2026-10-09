@@ -60,6 +60,76 @@ private struct Fixtures {
 
 @MainActor
 struct SessionConversationIsolationTests {
+    @Test func queuedMessagesSurviveSessionSwitchAndNewRuntimeHandle() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.resumeResponses = [
+            ["session_id": "runtime-a-1", "session_key": Fixtures.sessionA, "messages": []],
+            ["session_id": "runtime-b", "session_key": Fixtures.sessionB, "messages": []],
+            ["session_id": "runtime-a-2", "session_key": Fixtures.sessionA, "messages": [], "running": true]
+        ]
+        let model = DockModel(rpcClient: rpc)
+        let sessionA = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        model.resumeSession(sessionA)
+        try await waitUntil { model.sessionID == "runtime-a-1" && model.status == .idle }
+        model.draft = "Follow up in A"
+        model.queueDraft()
+        let queuedID = try #require(model.queuedPrompts.first?.id)
+        #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Follow up in A"])
+
+        model.resumeSession(sessionB)
+        try await waitUntil { model.sessionID == "runtime-b" && model.status == .idle }
+        #expect(model.currentSessionQueuedPrompts.isEmpty)
+        model.draft = "Follow up in B"
+        model.queueDraft()
+        #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Follow up in B"])
+        #expect(model.queuedPrompts.count == 2)
+
+        model.resumeSession(sessionA)
+        try await waitUntil { model.sessionID == "runtime-a-2" && model.isSending }
+        #expect(model.currentSessionQueuedPrompts.map(\.id) == [queuedID])
+        model.receiveGatewayEvent("message.complete", params: [
+            "session_id": "runtime-a-2", "payload": ["text": "Done"]
+        ])
+        try await waitUntil { rpc.requests.contains { $0.method == "prompt.submit" } }
+        let submission = try #require(rpc.requests.first { $0.method == "prompt.submit" })
+        #expect(submission.params["session_id"] as? String == "runtime-a-2")
+        #expect(submission.params["text"] as? String == "Follow up in A")
+        #expect(model.queuedPrompts.map(\.text) == ["Follow up in B"])
+    }
+
+    @Test func queuedAttachmentsAndEditsSurviveNewChatAndReopening() async throws {
+        let rpc = SessionIsolationRPCClient()
+        rpc.resumeResponses = [
+            ["session_id": "runtime-a-1", "session_key": Fixtures.sessionA, "messages": []],
+            ["session_id": "runtime-a-2", "session_key": Fixtures.sessionA, "messages": []]
+        ]
+        let model = DockModel(rpcClient: rpc)
+        let session = HermesSession(id: Fixtures.sessionA, title: "A", preview: "", startedAt: nil, messageCount: 0, source: "test")
+        model.resumeSession(session)
+        try await waitUntil { model.sessionID == "runtime-a-1" && model.status == .idle }
+        let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queued-\(UUID().uuidString).png")
+        try Data([1, 2, 3]).write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+        model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
+        model.draft = "Use the image"
+        model.queueDraft()
+        let id = try #require(model.currentSessionQueuedPrompts.first?.id)
+        model.editingQueuedPromptID = id
+        model.updateQueuedPrompt(id, text: "Use the edited image")
+        model.newChat()
+        #expect(model.currentSessionQueuedPrompts.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: imageURL.path))
+        model.resumeSession(session)
+        try await waitUntil { model.sessionID == "runtime-a-2" && model.status == .idle }
+        #expect(model.currentSessionQueuedPrompts.first?.id == id)
+        #expect(model.currentSessionQueuedPrompts.first?.text == "Use the edited image")
+        #expect(model.currentSessionQueuedPrompts.first?.images.first?.fileURL == imageURL)
+        #expect(model.editingQueuedPromptID == id)
+        model.removeQueuedPrompt(id)
+        #expect(model.currentSessionQueuedPrompts.isEmpty)
+    }
+
     @Test func clearingSelectedProfileDisablesUnscopedSessionLoading() async throws {
         let defaults = UserDefaults(suiteName: "profile-scope-(UUID().uuidString)")!
         let rpc = SessionIsolationRPCClient()

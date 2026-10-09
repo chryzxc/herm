@@ -358,7 +358,7 @@ extension StreamingChunkPolicy {
            item.hasPrefix("- ") || item.hasPrefix("* ") || item.hasPrefix("+ ") {
             return .list(marker: String(item.first!), indentation: 0)
         }
-        if first.hasPrefix("|") { return .table }
+        if first.hasPrefix("|") || NativeMarkdownAttributedTextBuilder.isPureTable(first) { return .table }
         return .paragraph
     }
 }

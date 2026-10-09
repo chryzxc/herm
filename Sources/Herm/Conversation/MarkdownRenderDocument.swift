@@ -225,6 +225,7 @@ enum MarkdownRenderDocumentBuilder {
 
     private static func classify(_ text: String) -> (kind: MarkdownRenderSectionKind, continuation: MarkdownContinuationContext) {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if NativeMarkdownAttributedTextBuilder.isPureTable(text) { return (.table, .table) }
         if let level = headingLevel(line) {
             return (.heading(level: level), .markdown)
         }
@@ -383,7 +384,7 @@ enum MarkdownRenderDocumentBuilder {
                 continue
             }
 
-            if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+            if NativeMarkdownAttributedTextBuilder.isTableStart(lines, at: index) {
                 flushBlocks()
                 let start = offset
                 var table = rawLine
@@ -391,7 +392,8 @@ enum MarkdownRenderDocumentBuilder {
                 while cursor < lines.count {
                     let next = lines[cursor]
                     let nextTrimmed = next.trimmingCharacters(in: .whitespaces)
-                    guard nextTrimmed.hasPrefix("|") && nextTrimmed.hasSuffix("|") else { break }
+                    guard NativeMarkdownAttributedTextBuilder.tableCells(nextTrimmed).count > 1
+                        || (nextTrimmed.hasPrefix("|") && nextTrimmed.hasSuffix("|")) else { break }
                     table += next + (cursor < lines.count - 1 ? "\n" : "")
                     cursor += 1
                 }
@@ -767,6 +769,30 @@ enum NativeMarkdownAttributedTextBuilder {
     static let quoteIndent: CGFloat = 12
 
     static func document(_ markdown: String, palette: NativeMarkdownPalette) -> Output {
+        let key = MarkdownRenderKey(messageID: UUID(), contentRevision: 0, themeRevision: 0)
+        let sections = MarkdownRenderDocumentBuilder.build(source: markdown, key: key).sections
+        guard sections.contains(where: { $0.kind == .table }) else {
+            return ordinaryDocument(markdown, palette: palette)
+        }
+        let result = NSMutableAttributedString()
+        var quoteRanges: [NSRange] = []
+        for section in sections {
+            let output = section.kind == .table
+                ? table(section.source, palette: palette)
+                : ordinaryDocument(section.source, palette: palette)
+            guard output.string.length > 0 else { continue }
+            if result.length > 0 {
+                let attributes = result.attributes(at: result.length - 1, effectiveRange: nil)
+                result.append(NSAttributedString(string: "\n", attributes: attributes))
+            }
+            let offset = result.length
+            result.append(output.string)
+            quoteRanges += output.quoteRanges.map { NSRange(location: offset + $0.location, length: $0.length) }
+        }
+        return Output(string: result, quoteRanges: quoteRanges)
+    }
+
+    private static func ordinaryDocument(_ markdown: String, palette: NativeMarkdownPalette) -> Output {
         let blocks = MarkdownMessageView.renderBlocks(for: markdown)
         let result = NSMutableAttributedString()
         var quoteRanges: [NSRange] = []
@@ -776,26 +802,26 @@ enum NativeMarkdownAttributedTextBuilder {
             switch block {
             case .heading(let level, let text):
                 let style = paragraphStyle(spacingBefore: index == 0 ? 0 : spacingBefore + 2)
-                result.append(inline(text, font: .systemFont(ofSize: headingSize(level), weight: .semibold), color: palette.primary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: headingSize(level), weight: .semibold), color: palette.primary, palette: palette, style: style))
             case .paragraph(let text):
                 let style = paragraphStyle(spacingBefore: spacingBefore, lineSpacing: 3)
-                result.append(inline(text, font: .systemFont(ofSize: bodySize), color: palette.primary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: bodySize), color: palette.primary, palette: palette, style: style))
             case .listItem(let text, let marker):
                 let style = paragraphStyle(spacingBefore: spacingBefore, lineSpacing: 3)
                 style.headIndent = listIndent
                 style.tabStops = [NSTextTab(textAlignment: .left, location: listIndent)]
                 style.defaultTabInterval = listIndent
                 result.append(NSAttributedString(string: "\(marker)\t", attributes: [
-                    .font: NSFont.systemFont(ofSize: bodySize, weight: .medium),
+                    .font: DockSkinPresentation.nativeFont(size: bodySize, weight: .medium),
                     .foregroundColor: palette.accent,
                     .paragraphStyle: style
                 ]))
-                result.append(inline(text, font: .systemFont(ofSize: bodySize), color: palette.primary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: bodySize), color: palette.primary, palette: palette, style: style))
             case .quote(let text):
                 let style = paragraphStyle(spacingBefore: spacingBefore, lineSpacing: 3)
                 style.headIndent = quoteIndent
                 style.firstLineHeadIndent = quoteIndent
-                result.append(inline(text, font: .systemFont(ofSize: bodySize), color: palette.secondary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: bodySize), color: palette.secondary, palette: palette, style: style))
                 quoteRanges.append(NSRange(location: start, length: result.length - start))
             case .code(let code, let language):
                 result.append(codeBlock(code, language: language, spacingBefore: spacingBefore, palette: palette))
@@ -804,12 +830,12 @@ enum NativeMarkdownAttributedTextBuilder {
                 for (column, value) in columns.enumerated() {
                     if column > 0 {
                         result.append(NSAttributedString(string: "  │  ", attributes: [
-                            .font: NSFont.systemFont(ofSize: tableSize),
+                            .font: DockSkinPresentation.nativeFont(size: tableSize),
                             .foregroundColor: palette.metadata,
                             .paragraphStyle: style
                         ]))
                     }
-                    result.append(inline(value, font: .systemFont(ofSize: tableSize), color: palette.primary, palette: palette, style: style))
+                    result.append(inline(value, font: DockSkinPresentation.nativeFont(size: tableSize), color: palette.primary, palette: palette, style: style))
                 }
             }
             if index < blocks.count - 1 {
@@ -829,20 +855,28 @@ enum NativeMarkdownAttributedTextBuilder {
         ])
     }
 
-    static func isPureTable(_ markdown: String) -> Bool {
-        var sawRow = false
-        for line in markdown.split(separator: "\n") {
+    nonisolated static func isTableStart(_ lines: [String], at index: Int) -> Bool {
+        let row = lines[index].trimmingCharacters(in: .whitespaces)
+        let cells = tableCells(row)
+        if row.hasPrefix("|"), row.hasSuffix("|") { return true }
+        guard cells.count > 1 else { return false }
+        guard index + 1 < lines.count else { return false }
+        let separator = tableCells(lines[index + 1])
+        return separator.count == cells.count && isSeparatorRow(separator)
+    }
+
+    nonisolated static func isPureTable(_ markdown: String) -> Bool {
+        let lines = markdown.split(separator: "\n").map(String.init).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !lines.isEmpty, isTableStart(lines, at: 0) else { return false }
+        return lines.allSatisfy { line in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { continue }
-            guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return false }
-            sawRow = true
+            return tableCells(trimmed).count > 1 || (trimmed.hasPrefix("|") && trimmed.hasSuffix("|"))
         }
-        return sawRow
     }
 
     /// Splits a table row on unescaped pipes, keeping empty cells so columns
     /// stay aligned (`| a || c |` is three cells, not two).
-    static func tableCells(_ line: String) -> [String] {
+    nonisolated static func tableCells(_ line: String) -> [String] {
         var body = Substring(line.trimmingCharacters(in: .whitespaces))
         if body.hasPrefix("|") { body = body.dropFirst() }
         if body.hasSuffix("|"), !body.hasSuffix("\\|") { body = body.dropLast() }
@@ -870,7 +904,7 @@ enum NativeMarkdownAttributedTextBuilder {
         return cells
     }
 
-    static func isSeparatorRow(_ cells: [String]) -> Bool {
+    nonisolated static func isSeparatorRow(_ cells: [String]) -> Bool {
         !cells.isEmpty && cells.allSatisfy { cell in
             cell.contains("-") && cell.allSatisfy { $0 == "-" || $0 == ":" }
         }
@@ -913,8 +947,8 @@ enum NativeMarkdownAttributedTextBuilder {
                 style.textBlocks = [block]
                 let value = column < row.count ? row[column] : ""
                 let font: NSFont = isHeader
-                    ? .systemFont(ofSize: tableSize, weight: .semibold)
-                    : .systemFont(ofSize: tableSize)
+                    ? DockSkinPresentation.nativeFont(size: tableSize, weight: .semibold)
+                    : DockSkinPresentation.nativeFont(size: tableSize)
                 // An empty cell still needs one character to own its block.
                 let parsed = value.isEmpty ? AttributedString(" ") : inlineMarkdown(value)
                 let cell = NSMutableAttributedString(attributedString: inline(parsed, font: font, color: palette.primary, palette: palette, style: style))
@@ -1222,7 +1256,7 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
     private static let verticalPadding: CGFloat = 8
     private static let headerRowHeight: CGFloat = 28
     private static let labelFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    private static let copyFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+    private static var copyFont: NSFont { DockSkinPresentation.nativeFont(size: 12, weight: .medium) }
 
     private let languageLabel = NSTextField(labelWithString: "")
     private let copyButton = NSButton(title: "Copy", target: nil, action: nil)
@@ -1362,6 +1396,8 @@ final class NativeMarkdownCodeView: NSView, NativeMarkdownMeasurableSection {
 
     func update(code: String, language: String?) {
         let themeRevision = DockThemeRuntime.revision
+        copyButton.font = Self.copyFont
+        layer?.cornerRadius = DockLayout.controlRadius
         guard renderedCode != code || renderedLanguage != language || renderedThemeRevision != themeRevision else { return }
         renderedCode = code
         renderedLanguage = language

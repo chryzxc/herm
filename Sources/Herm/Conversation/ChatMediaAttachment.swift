@@ -90,6 +90,8 @@ enum ArtifactOpener {
 struct ChatMediaAttachmentCard: View {
     let path: String
     @State private var status: String?
+    @State private var changes: RepositoryAttachmentChanges?
+    @State private var preview: RepositoryAttachmentChanges?
 
     private var url: URL? { ArtifactOpener.url(path) }
     private var name: String { url?.lastPathComponent ?? path }
@@ -104,6 +106,16 @@ struct ChatMediaAttachmentCard: View {
                 imagePreview(url)
             }
             card
+        }
+        .task(id: path) {
+            changes = nil
+            guard !isImage, let url else { return }
+            let resolved = await RepositoryService.attachmentChanges(url: url)
+            guard !Task.isCancelled else { return }
+            changes = resolved
+        }
+        .sheet(item: $preview) { changes in
+            ChatAttachmentDiffPreview(changes: changes)
         }
     }
 
@@ -155,8 +167,13 @@ struct ChatMediaAttachmentCard: View {
                 }
                 .disabled(!exists)
             }
-            cardButton(isLocal ? "Open preview" : "Open", icon: nil) { ArtifactOpener.open(path) }
-                .disabled(!exists)
+            cardButton(changes == nil ? (isLocal ? "Open preview" : "Open") : "Preview diff", icon: nil) {
+                if let changes { preview = changes }
+                else if let url, FilePreviewKind(url: url) != nil {
+                    FilePreviewCenter.shared.url = url
+                } else { ArtifactOpener.open(path) }
+            }
+                .disabled(!exists && changes == nil)
         }
         .padding(10)
         .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
@@ -195,5 +212,46 @@ struct ChatMediaAttachmentCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct ChatAttachmentDiffPreview: View {
+    let changes: RepositoryAttachmentChanges
+    @Environment(\.dismiss) private var dismiss
+    @State private var diffs: [String: RepositoryDiff] = [:]
+    @State private var isLoading = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Diff preview").font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                Spacer()
+                DockIconButton(icon: .x, label: "Close diff preview",
+                               style: DockThemePalette(theme: DockThemeRuntime.current)) { dismiss() }
+            }
+            .padding(16)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(changes.files) { file in
+                        Text(file.isStaged ? "Staged changes" : "Working tree changes")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .padding(.horizontal, 14)
+                        SessionChangeDiffPreview(file: file, diff: diffs[file.id], isLoading: isLoading)
+                    }
+                }
+            }
+        }
+        .frame(minWidth: 560, idealWidth: 760, minHeight: 360, idealHeight: 560)
+        .background(Color.dockCanvas)
+        .task {
+            for file in changes.files {
+                let diff = await RepositoryService.diff(path: changes.repositoryPath, file: file)
+                guard !Task.isCancelled else { return }
+                diffs[file.id] = diff
+            }
+            isLoading = false
+        }
     }
 }

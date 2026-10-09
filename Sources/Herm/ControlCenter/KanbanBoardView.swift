@@ -404,7 +404,7 @@ private struct KanbanTaskCard: View {
                     if isMutationPending {
                         ProgressView().controlSize(.mini)
                     } else {
-                        Ph.dotsThree.image(size: 14, color: .secondaryLabelColor)
+                        Ph.dotsThree.image(size: 14, color: NSColor(Color.dockSecondaryText))
                     }
                 }
                     .frame(width: 28, height: 22)

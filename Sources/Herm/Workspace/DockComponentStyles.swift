@@ -14,10 +14,7 @@ extension Color {
 
     // Shared appearance-aware palette for the Dock popover and its supporting
     // panels. These roles intentionally follow the system Light/Dark mode.
-    static let dockOnAccentText = dockAdaptiveColor(
-        light: NSColor.white,
-        dark: NSColor(red: 0.90, green: 0.91, blue: 0.94, alpha: 1)
-    )
+    static var dockOnAccentText: Color { DockThemePalette(theme: DockThemeRuntime.current).onAccent }
     // Match the cool navy tint of macOS menu-bar popovers instead of allowing
     // the host window's warm/black material to determine the panel palette.
     static var dockCanvas: Color { DockThemePalette(theme: DockThemeRuntime.current).background }
@@ -28,13 +25,22 @@ extension Color {
     static var dockSurface8: Color { DockThemePalette(theme: DockThemeRuntime.current).surface8 }
     static var dockMessageBubble: Color { dockSurface }
     static var dockUserMessageBubble: Color { dockAccent.opacity(0.12) }
+    /// Opaque panel fill for popovers/overlays: system window colour for the translucent native skins, the skin canvas otherwise.
+    static var dockOpaqueCanvas: Color { DockThemeRuntime.current.usesNativeMaterial ? Color(nsColor: .windowBackgroundColor) : dockCanvas }
     static var dockControlSurface: Color { dockSurface4 }
     static var dockBorderStrong: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.95) }
     static var dockBorder: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.72) }
     static var dockBorderLight: Color { DockThemePalette(theme: DockThemeRuntime.current).divider.opacity(0.48) }
     static var dockAccent: Color { DockThemePalette(theme: DockThemeRuntime.current).accent }
     static var dockAccentMuted: Color { dockAccent.opacity(0.14) }
+    // Discord identity tint; separate from interaction and lifecycle colors.
+    static let dockDiscord = dockAdaptiveColor(
+        light: NSColor(red: 0.29, green: 0.32, blue: 0.78, alpha: 1),
+        dark: NSColor(red: 0.65, green: 0.67, blue: 1, alpha: 1)
+    )
     static let dockAccentGlow = Color.clear
+    /// Highlighter yellow for Notebook's selection swipe and tape; unlike `dockWarning` it never carries text.
+    static let dockMarker = Color(red: 1, green: 0.85, blue: 0.2)
     static var dockPrimaryText: Color { DockThemePalette(theme: DockThemeRuntime.current).primaryText }
     // Markdown bodies are long-form reading surfaces; keep them a little softer
     // than primary chrome while preserving each theme's contrast and hue.
@@ -75,6 +81,10 @@ enum DockThemeShapeRole {
         guard DockThemeStyle.current.geometry == .folded else { return 0 }
         return self == .control ? 6 : 10
     }
+    /// Corner cut for chamfered panels.
+    var cut: CGFloat { self == .control ? 5 : 10 }
+    /// One stair step of a pixel corner (each corner has two).
+    var step: CGFloat { self == .control ? 2 : 3 }
 }
 
 /// One shared silhouette for themed controls and surfaces. Rounded themes use
@@ -85,6 +95,12 @@ struct DockThemeShape: Shape {
     var role: DockThemeShapeRole = .control
 
     func path(in rect: CGRect) -> Path {
+        switch DockThemeStyle.current.geometry {
+        case .pixel: return pixelPath(in: rect)
+        case .sketch: return sketchPath(in: rect)
+        case .chamfered: return chamferPath(in: rect)
+        case .rounded, .folded: break
+        }
         let fold = min(role.foldSize, min(rect.width, rect.height) * 0.38)
         guard fold > 0 else {
             return RoundedRectangle(cornerRadius: max(0, cornerRadius), style: .continuous).path(in: rect)
@@ -101,6 +117,99 @@ struct DockThemeShape: Shape {
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + fold * 0.55))
         path.closeSubpath()
         return path
+    }
+}
+
+extension DockThemeShape {
+    private func pixelPath(in r: CGRect) -> Path {
+        let s = min(role.step, min(r.width, r.height) / 5), d = s * 2
+        var p = Path()
+        p.addLines([
+            CGPoint(x: r.minX + d, y: r.minY), CGPoint(x: r.maxX - d, y: r.minY),
+            CGPoint(x: r.maxX - d, y: r.minY + s), CGPoint(x: r.maxX - s, y: r.minY + s),
+            CGPoint(x: r.maxX - s, y: r.minY + d), CGPoint(x: r.maxX, y: r.minY + d),
+            CGPoint(x: r.maxX, y: r.maxY - d), CGPoint(x: r.maxX - s, y: r.maxY - d),
+            CGPoint(x: r.maxX - s, y: r.maxY - s), CGPoint(x: r.maxX - d, y: r.maxY - s),
+            CGPoint(x: r.maxX - d, y: r.maxY), CGPoint(x: r.minX + d, y: r.maxY),
+            CGPoint(x: r.minX + d, y: r.maxY - s), CGPoint(x: r.minX + s, y: r.maxY - s),
+            CGPoint(x: r.minX + s, y: r.maxY - d), CGPoint(x: r.minX, y: r.maxY - d),
+            CGPoint(x: r.minX, y: r.minY + d), CGPoint(x: r.minX + s, y: r.minY + d),
+            CGPoint(x: r.minX + s, y: r.minY + s), CGPoint(x: r.minX + d, y: r.minY + s)
+        ])
+        p.closeSubpath()
+        return p
+    }
+
+    /// Top-leading and bottom-trailing corners are cut; the others stay square.
+    private func chamferPath(in r: CGRect) -> Path {
+        let c = min(role.cut, min(r.width, r.height) * 0.3)
+        var p = Path()
+        p.addLines([
+            CGPoint(x: r.minX + c, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+            CGPoint(x: r.maxX, y: r.maxY - c), CGPoint(x: r.maxX - c, y: r.maxY),
+            CGPoint(x: r.minX, y: r.maxY), CGPoint(x: r.minX, y: r.minY + c)
+        ])
+        p.closeSubpath()
+        return p
+    }
+
+    /// A smoothed closed curve through jittered edge points. The jitter is a
+    /// pure function of the rect size, so a shape never shimmers on redraw.
+    private func sketchPath(in r: CGRect) -> Path {
+        let inset = max(cornerRadius, 6), amp: CGFloat = 1.3
+        func jitter(_ i: Int) -> CGFloat {
+            let v = sin(Double(i) * 12.9898 + Double(Int(r.width)) * 0.37 + Double(Int(r.height)) * 0.71) * 43758.5453
+            return CGFloat(v - v.rounded(.down)) * 2 - 1
+        }
+        let base = [
+            CGPoint(x: r.minX + inset, y: r.minY), CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX - inset, y: r.minY),
+            CGPoint(x: r.maxX, y: r.minY + inset), CGPoint(x: r.maxX, y: r.midY), CGPoint(x: r.maxX, y: r.maxY - inset),
+            CGPoint(x: r.maxX - inset, y: r.maxY), CGPoint(x: r.midX, y: r.maxY), CGPoint(x: r.minX + inset, y: r.maxY),
+            CGPoint(x: r.minX, y: r.maxY - inset), CGPoint(x: r.minX, y: r.midY), CGPoint(x: r.minX, y: r.minY + inset)
+        ]
+        let pts = base.enumerated().map { CGPoint(x: $1.x + jitter($0 * 2) * amp, y: $1.y + jitter($0 * 2 + 1) * amp) }
+        func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
+        var p = Path()
+        p.move(to: mid(pts[pts.count - 1], pts[0]))
+        for i in pts.indices { p.addQuadCurve(to: mid(pts[i], pts[(i + 1) % pts.count]), control: pts[i]) }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// L-shaped brackets in the four corners of a rect (HUD cards).
+private struct DockCornerBrackets: Shape {
+    var length: CGFloat = 10
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        for (corner, dx, dy) in [(CGPoint(x: r.minX, y: r.minY), 1.0, 1.0), (CGPoint(x: r.maxX, y: r.minY), -1.0, 1.0),
+                                 (CGPoint(x: r.minX, y: r.maxY), 1.0, -1.0), (CGPoint(x: r.maxX, y: r.maxY), -1.0, -1.0)] {
+            p.move(to: CGPoint(x: corner.x + dx * length, y: corner.y))
+            p.addLine(to: corner)
+            p.addLine(to: CGPoint(x: corner.x, y: corner.y + dy * length))
+        }
+        return p
+    }
+}
+
+/// Faint ruled lines or grid on the window canvas.
+private struct DockBackdrop: View {
+    var body: some View {
+        let kind = DockThemeStyle.current.backdrop
+        if kind != .none {
+            Canvas { context, size in
+                let step: CGFloat = kind == .ruled ? 28 : 32
+                var path = Path()
+                var y = step
+                while y < size.height { path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y)); y += step }
+                if kind == .grid {
+                    var x = step
+                    while x < size.width { path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: size.height)); x += step }
+                }
+                context.stroke(path, with: .color(Color.dockAccent.opacity(kind == .ruled ? 0.12 : 0.07)), lineWidth: 0.5)
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
 
@@ -138,6 +247,84 @@ extension View {
         foregroundStyle(Color.dockPrimaryText)
             .tint(Color.dockAccent)
             .fontDesign(DockThemeStyle.current.fontDesign)
+            // Native controls (placeholders, carets, menus) follow the colour
+            // scheme, not our tokens; pin it so a light skin under dark macOS
+            // (or vice versa) doesn't get invisible placeholder text.
+            .modifier(DockPinnedColorScheme())
+            .transaction { transaction in
+                // E-Ink: state changes land instantly, like a screen refresh.
+                if !DockThemeStyle.current.animates {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
+    }
+
+    /// Marks an active/hovered tab, row, or control per the theme's selection
+    /// style: tinted fill, inverted ink, or an accent underline. `allowsInvert`
+    /// is false for containers whose children set their own text colors.
+    func dockSelectionBackground<S: Shape>(_ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true) -> some View {
+        let mode = DockThemeStyle.current.selection
+        return background {
+            switch mode {
+            case .underline:
+                Color.clear
+            case .invert where allowsInvert:
+                shape.fill(active ? Color.dockPrimaryText : .clear)
+            case .highlight:
+                // A marker swipe behind the label, set slightly off-level.
+                if active {
+                    Color.dockMarker.opacity(0.5)
+                        .frame(height: 12)
+                        .rotationEffect(.degrees(-0.8))
+                        .padding(.bottom, 4)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                }
+            default:
+                shape.fill(active ? fill : .clear)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if mode == .underline && active { Color.dockAccent.frame(height: 2) }
+        }
+        .overlay(alignment: .leading) {
+            if mode == .bar && active { Color.dockAccent.frame(width: 2) }
+        }
+    }
+
+    /// Clay look: paired light and dark soft shadows behind the shape. Pressing
+    /// flattens them so the control reads as pushed in.
+    func dockEmboss<S: Shape>(_ shape: S, pressed: Bool = false) -> some View {
+        let depth = DockThemeStyle.current.emboss * (pressed ? 0.3 : 1)
+        return background {
+            if depth > 0 {
+                shape.fill(Color.dockCanvas)
+                    .shadow(color: .white.opacity(0.85), radius: depth, x: -depth / 2, y: -depth / 2)
+                    .shadow(color: .black.opacity(0.16), radius: depth, x: depth / 2, y: depth / 2)
+            }
+        }
+    }
+
+    /// Retro look: two-pixel light/dark edges. `pressed` (also used for inset fields) swaps them.
+    func dockBevel(pressed: Bool = false) -> some View { overlay(DockBevel(pressed: pressed)) }
+
+    /// Corner brackets (HUD) or a strip of tape (Notebook) on cards.
+    func dockCardMarks() -> some View {
+        let geometry = DockThemeStyle.current.geometry
+        return overlay {
+            if geometry == .chamfered {
+                DockCornerBrackets().stroke(Color.dockAccent, lineWidth: 1.5).allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .top) {
+            if geometry == .sketch {
+                Color.dockMarker.opacity(0.4)
+                    .frame(width: 34, height: 10)
+                    .rotationEffect(.degrees(-3))
+                    .offset(y: -5)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     /// Cartoon-style hard shadow: an ink copy of `shape` offset behind the
@@ -200,9 +387,9 @@ struct DockWindowBackground: View {
     var body: some View {
         if DockThemeRuntime.current.usesNativeMaterial {
             NativePopoverBackground()
-                .overlay(DockThemePalette(theme: .nativeMacOS).windowBackground)
+                .overlay(DockThemePalette(theme: DockThemeRuntime.current).windowBackground)
         } else {
-            Color.dockCanvas
+            Color.dockCanvas.overlay(DockBackdrop())
         }
     }
 }
@@ -218,7 +405,7 @@ struct DockPressButtonStyle: ButtonStyle {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         configuration.label
             .padding(3)
-            .background(shape.fill(isHovering ? Color.dockAccent.opacity(0.12) : Color.clear))
+            .dockSelectionBackground(shape, active: isHovering, fill: Color.dockAccent.opacity(0.12), allowsInvert: false)
             .overlay(shape.stroke(isHovering ? Color.dockAccent.opacity(0.28) : Color.clear, lineWidth: DockLayout.outline))
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .opacity(configuration.isPressed ? 0.86 : 1)
@@ -243,9 +430,16 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Color.dockOnAccentText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
-            .background(shape.fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1)).stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
+            .background {
+                shape.fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1)).stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline)
+                if DockThemeStyle.current.accentGradient {
+                    shape.fill(LinearGradient(colors: [Color.white.opacity(0.20), .clear], startPoint: .top, endPoint: .bottom))
+                }
+            }
             .dockStickerShadow(shape, pressed: configuration.isPressed)
-            .shadow(color: Color.dockAccent.opacity(configuration.isPressed || !isEnabled ? 0 : 0.14), radius: 6)
+            .dockEmboss(shape, pressed: configuration.isPressed)
+            .dockBevel(pressed: configuration.isPressed)
+            .shadow(color: Color.dockAccent.opacity(configuration.isPressed || !isEnabled ? 0 : 0.14 + (DockThemeStyle.current.glow > 0 ? 0.4 : 0)), radius: 6 + DockThemeStyle.current.glow)
             .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
@@ -268,8 +462,20 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
-            .background(shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+            .background {
+                if DockThemeStyle.current.chrome == .boxed {
+                    shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)).stroke(Color.dockBorder, lineWidth: DockLayout.outline)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                // Open chrome: text-only control that underlines on hover.
+                if DockThemeStyle.current.chrome == .open && (isHovering || configuration.isPressed) {
+                    Color.dockAccent.frame(height: 2)
+                }
+            }
             .dockStickerShadow(shape, pressed: configuration.isPressed)
+            .dockEmboss(shape, pressed: configuration.isPressed)
+            .dockBevel(pressed: configuration.isPressed)
             .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
@@ -327,6 +533,7 @@ struct DockGlassTextFieldStyle: TextFieldStyle {
             // The shared canvas keeps inputs consistent across panes; the
             // plain field style removes the warm native field fill.
             .background(shape.fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
+            .overlay(DockBevel(pressed: true))
     }
 }
 
@@ -357,7 +564,7 @@ struct DockPageHeader<Trailing: View>: View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(DockTypography.pageTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                 Text(subtitle)
                     .font(.system(size: 10))
@@ -421,8 +628,7 @@ struct DockActionLabel: View {
 }
 
 /// The standard inline notice: errors, warnings, and questions Hermes is
-/// waiting on. One shape — tinted icon tile, title, message, optional badge,
-/// then any body or actions — so every alert in a list reads the same.
+/// waiting on. Keep the header compact and give forms and actions the full width.
 struct DockCallout<Content: View>: View {
     enum Tone {
         case info, warning, danger
@@ -446,49 +652,72 @@ struct DockCallout<Content: View>: View {
     var body: some View {
         let tint = tone.color
         let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-        HStack(alignment: .top, spacing: 10) {
-            DockIcon(icon, size: 15, weight: .fill, color: tint)
-                .frame(width: 28, height: 28)
-                .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).fill(tint.opacity(0.14)))
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                        if let badge {
-                            Text(badge)
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(0.6)
-                                .foregroundStyle(tint)
-                                .padding(.horizontal, 7)
-                                .frame(height: 18)
-                                .background(Capsule().fill(tint.opacity(0.12)))
+        VStack(alignment: .leading, spacing: DockSpacing.group) {
+            HStack(alignment: .top, spacing: DockSpacing.control) {
+                DockIcon(icon, size: 15, color: tint)
+                    .frame(width: 28, height: 28)
+                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(tint.opacity(0.10)))
+                VStack(alignment: .leading, spacing: DockSpacing.tight) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: DockSpacing.control) {
+                            titleLabel
+                            Spacer(minLength: 8)
+                            if let badge { statusLabel(badge, tint: tint).fixedSize() }
+                        }
+                        VStack(alignment: .leading, spacing: DockSpacing.tight) {
+                            titleLabel
+                            if let badge { statusLabel(badge, tint: tint) }
                         }
                     }
                     if let message, !message.isEmpty {
                         Text(message)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: 12))
                             .foregroundStyle(Color.dockSecondaryText)
                             .lineSpacing(2)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                content()
+                .padding(.top, 2)
             }
-            .padding(.top, 4)
+            content()
         }
-        .padding(12)
+        .padding(DockSpacing.group)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(shape.fill(Color.dockSurface).overlay(shape.fill(tint.opacity(0.05))))
-        .overlay(alignment: .leading) { tint.frame(width: 3) }
-        .clipShape(shape)
-        .overlay(shape.stroke(tint.opacity(0.3), lineWidth: DockLayout.hairline))
+        .background(shape.fill(Color.dockSurface))
+        .overlay(shape.stroke(tint.opacity(0.35), lineWidth: DockLayout.hairline))
         .dockFoldCrease()
         .accessibilityElement(children: .contain)
+    }
+
+    private var titleLabel: some View {
+        Text(title)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(Color.dockPrimaryText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func statusLabel(_ badge: String, tint: Color) -> some View {
+        HStack(spacing: DockSpacing.micro) {
+            Circle().fill(tint).frame(width: 5, height: 5)
+            Text(badge).font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(tint)
+    }
+}
+
+/// Keep related decisions together, stacking when the pane cannot fit them.
+struct DockCalloutActions<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: DockSpacing.control, content: content)
+                .fixedSize(horizontal: true, vertical: false)
+            VStack(alignment: .leading, spacing: DockSpacing.control, content: content)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .controlSize(.small)
     }
 }
 
@@ -571,7 +800,7 @@ extension View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
-            .background(shape.fill(isHighlighted ? Color.dockAccent.opacity(0.10) : Color.clear))
+            .dockSelectionBackground(shape, active: isHighlighted, fill: Color.dockAccent.opacity(0.10), allowsInvert: false)
             .overlay(alignment: .bottom) {
                 Color.dockBorderLight
                     .opacity(isHighlighted ? 0 : 1)
@@ -582,14 +811,41 @@ extension View {
 
     /// Shared compact surface for secondary inspectors and detail groups.
     /// It uses the same low-contrast treatment as the main Control panel.
+    @ViewBuilder
     func dockCard(padding: CGFloat = 12) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-        return self
-            .padding(padding)
-            .background(shape.fill(Color.dockSurface.opacity(0.26)))
-            .overlay(shape.stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline))
-            .dockStickerShadow(shape)
-            .dockFoldCrease()
+        let style = DockThemeStyle.current
+        if style.chrome == .open {
+            // Typographic skins: spacing and type group content, not boxes.
+            self.padding(padding)
+        } else if style.material == .glass {
+            self
+                .padding(padding)
+                .background(shape.fill(.ultraThinMaterial))
+                .overlay(shape.stroke(
+                    LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom),
+                    lineWidth: 0.75
+                ))
+                .dockCardDepth()
+        } else {
+            self
+                .padding(padding)
+                .background(shape.fill(Color.dockSurface.opacity(0.26)))
+                .overlay(shape.stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline))
+                .dockStickerShadow(shape)
+                .dockFoldCrease()
+                .dockEmboss(shape)
+                .dockBevel()
+                .dockCardMarks()
+                .dockCardDepth()
+        }
+    }
+
+    /// Soft drop shadow and accent halo for themes that opt in; both are 0 by default.
+    func dockCardDepth() -> some View {
+        let style = DockThemeStyle.current
+        return shadow(color: Color.black.opacity(style.cardShadow > 0 ? 0.14 : 0), radius: style.cardShadow, y: style.cardShadow / 3)
+            .shadow(color: Color.dockAccent.opacity(style.glow > 0 ? 0.22 : 0), radius: style.glow)
     }
 }
 
@@ -604,10 +860,10 @@ struct DockTabButton: View {
         Button(action: action) {
             Text(title)
                 .font(.system(size: 11, weight: isSelected ? .medium : .regular))
-                .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .foregroundStyle(isSelected ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText) : Color.dockSecondaryText)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .background(shape.fill(isSelected ? Color.dockSurface4 : Color.clear))
+                .dockSelectionBackground(shape, active: isSelected, fill: Color.dockSurface4)
                 .overlay(shape.stroke(isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
         }
         .buttonStyle(.plain)
@@ -687,5 +943,36 @@ struct DockHoverTip: ViewModifier {
 extension View {
     func dockHoverTip(_ text: String, edge: Edge = .bottom, gap: CGFloat = 6) -> some View {
         modifier(DockHoverTip(text: text, edge: edge, gap: gap))
+    }
+}
+
+/// Pins the SwiftUI colour scheme for fixed light/dark skins; system skins follow macOS.
+private struct DockPinnedColorScheme: ViewModifier {
+    func body(content: Content) -> some View {
+        switch DockThemeRuntime.current.appearance {
+        case .light: content.environment(\.colorScheme, .light)
+        case .dark: content.environment(\.colorScheme, .dark)
+        case .system: content
+        }
+    }
+}
+
+struct DockBevel: View {
+    let pressed: Bool
+
+    var body: some View {
+        if DockThemeStyle.current.bevel {
+            Canvas { context, size in
+                let w = size.width, h = size.height
+                let light = Color.white, dark = Color.black.opacity(0.55)
+                func edge(_ points: [CGPoint], _ color: Color) {
+                    var path = Path(); path.addLines(points)
+                    context.stroke(path, with: .color(color), lineWidth: 2)
+                }
+                edge([CGPoint(x: 1, y: h - 1), CGPoint(x: 1, y: 1), CGPoint(x: w - 1, y: 1)], pressed ? dark : light)
+                edge([CGPoint(x: w - 1, y: 1), CGPoint(x: w - 1, y: h - 1), CGPoint(x: 1, y: h - 1)], pressed ? light : dark)
+            }
+            .allowsHitTesting(false)
+        }
     }
 }

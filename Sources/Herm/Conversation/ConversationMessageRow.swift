@@ -161,16 +161,41 @@ struct ConversationMessageRow: View, Equatable {
                         .fixedSize()
                     }
                     if !userText.isEmpty {
-                        messageMarkdownView(userText, hugsContent: true)
+                        let command = Self.slashCommand(in: userText)
+                        let mention = ComposerMentionPresentation.directBotRequest(in: userText, profileIDs: Array(botsByID.keys))
+                        let mentionedBotID = message.botProfileID ?? mention?.profileID
+                        let mentionPrefix = "@" + (message.botDisplayName ?? mentionedBotID ?? "") + " "
+                        let mentionBody = mentionedBotID != nil && userText.hasPrefix(mentionPrefix)
+                            ? userText.dropFirst(mentionPrefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+                            : userText
+                        VStack(alignment: .leading, spacing: 8) {
+                            if let command {
+                                Text(command.name)
+                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color.dockAccent)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(Color.dockAccent.opacity(0.16)))
+                            }
+                            if command?.rest.isEmpty != true {
+                                if let mentionedBotID {
+                                    InlineBotMentionText(text: mention?.text ?? mentionBody, botID: mentionedBotID,
+                                                         displayName: message.botDisplayName, botsByID: botsByID,
+                                                         avatarImages: avatarImages, themeRevision: themeRevision)
+                                } else {
+                                    messageMarkdownView(command?.rest ?? userText, hugsContent: true)
+                                }
+                            }
+                        }
                             .fixedSize(horizontal: false, vertical: true)
                             .foregroundStyle(Color.dockPrimaryText)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .background(Self.userBubbleShape.fill(Color.dockUserMessageBubble))
+                            .background(Self.userBubbleShape.fill(DockSkinPresentation.current.transcript == .document ? Color.dockSurface : Color.dockUserMessageBubble))
                             .overlay {
                                 Self.userBubbleShape
                                     .stroke(
-                                        message.isSteering ? Color.dockAccent.opacity(0.45) : Color.dockBorderStrong,
+                                        message.isSteering ? Color.dockAccent.opacity(0.45) : DockSkinPresentation.current.transcript == .document ? .clear : Color.dockBorderStrong,
                                         lineWidth: 0.5
                                     )
                                     .allowsHitTesting(false)
@@ -238,11 +263,8 @@ struct ConversationMessageRow: View, Equatable {
                         FeedEventRow(event: event, line: FeedLine(message.text), timeLabel: message.timeLabel,
                                      botsByID: botsByID, avatarImages: avatarImages)
                     } else if let event = message.systemEvent {
-                        SystemEventCard(event: event, text: message.text)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 4)
+                        SystemEventCard(event: event, text: message.text, timeLabel: message.timeLabel)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        messageMetadata
                     } else if let notice = message.kanbanNotice {
                         KanbanNoticeCard(notice: notice, botID: message.botProfileID ?? activeBotProfileID,
                                          timeLabel: message.timeLabel, botsByID: botsByID, avatarImages: avatarImages,
@@ -293,18 +315,23 @@ struct ConversationMessageRow: View, Equatable {
             }
         }
         .padding(.horizontal, metrics.contentInset)
-        .padding(.vertical, message.systemEvent?.isFeed == true || message.kanbanNotice != nil ? 1 : 8)
+        .padding(.vertical, message.systemEvent != nil || message.kanbanNotice != nil ? 1 : 8)
     }
 
     /// The tail corner points toward the sender edge so consecutive prompts
     /// read as one side of the exchange without an avatar.
-    private static let userBubbleShape = UnevenRoundedRectangle(
+    private static var userBubbleShape: AnyShape {
+        if DockSkinPresentation.current.transcript == .document {
+            return AnyShape(DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane))
+        }
+        return AnyShape(UnevenRoundedRectangle(
         topLeadingRadius: 14,
         bottomLeadingRadius: 14,
         bottomTrailingRadius: 4,
         topTrailingRadius: 14,
         style: .continuous
-    )
+        ))
+    }
 
     private var steeringLabel: String {
         let status = (message.steeringStatus ?? "queued").lowercased()
@@ -331,6 +358,15 @@ struct ConversationMessageRow: View, Equatable {
     }
 
     @ViewBuilder
+    /// "/cp-build do x" → ("/cp-build", "do x"). Paths like "/usr/bin" are not commands.
+    static func slashCommand(in text: String) -> (name: String, rest: String)? {
+        guard text.hasPrefix("/") else { return nil }
+        let name = text.prefix { !$0.isWhitespace }
+        guard name.count > 1, !name.dropFirst().contains("/") else { return nil }
+        let rest = text.dropFirst(name.count).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (String(name), rest)
+    }
+
     private func messageMarkdownView(_ markdown: String, hugsContent: Bool = false) -> some View {
         // Trailing blank lines would render as empty paragraphs and open a gap
         // above the action row.
@@ -447,36 +483,66 @@ struct ConversationMessageRow: View, Equatable {
 struct SystemEventCard: View {
     let event: SystemEvent
     let text: String
+    let timeLabel: String
     @State private var isExpanded = false
+    @State private var isHovering = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let firstLine = text.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? text
-        let canExpand = firstLine != text || text.count > 120
-        Button {
-            withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
-        } label: {
-            HStack(alignment: .firstTextBaseline, spacing: DockSpacing.tight) {
-                DockStatusDot(tone: event.tone)
-                (Text(event.label).foregroundStyle(event.tone.color).fontWeight(.medium)
-                    + Text(" · ") + Self.inlineMarkdown(isExpanded ? text : firstLine))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .font(DockTypography.body)
-                    .lineLimit(isExpanded ? nil : 1)
-                    .fixedSize(horizontal: false, vertical: isExpanded)
-                    .textSelection(.enabled)
-                Spacer(minLength: 0)
+        let canExpand = firstLine != text || text.count > 90
+        VStack(alignment: .leading, spacing: DockSpacing.micro) {
+            Button {
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.18)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: DockSpacing.tight) {
+                    DockIcon(event.tone.activityIcon, size: 12, weight: .fill, color: event.tone.color)
+                    Text(event.label)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .fixedSize()
+                    if !isExpanded {
+                        Self.inlineMarkdown(firstLine)
+                            .foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1)
+                            .layoutPriority(-1)
+                    }
+                    Spacer(minLength: DockSpacing.control)
+                    Text(timeLabel).foregroundStyle(Color.dockMetadataText).fixedSize()
+                    if canExpand {
+                        DockIcon(isExpanded ? .caretDown : .caretRight, size: 10, color: .dockMetadataText)
+                    }
+                }
+                .font(DockTypography.machineMetadata)
+                .padding(.horizontal, 8)
+                .frame(height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.dockPrimaryText.opacity(isHovering || isExpanded ? 0.05 : 0))
+                )
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(!canExpand)
+            .onHover { isHovering = $0 }
+            .help(canExpand ? (isExpanded ? "Collapse" : "Show full text") : "")
+
+            if isExpanded {
+                Self.inlineMarkdown(text)
+                    .font(DockTypography.body)
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(event.tone.color.opacity(0.5)).frame(width: 2)
+                    }
+                    .padding(.leading, 14)
+                    .padding(.bottom, 4)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(!canExpand)
-        .help(canExpand ? (isExpanded ? "Collapse" : "Show full text") : "")
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .frame(maxWidth: 520, alignment: .leading)
-        .dockSignageCard(tone: event.tone, highlighted: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("\(event.label): \(text)")
     }
 
@@ -586,6 +652,7 @@ struct BotChip: View {
     let id: String
     let botsByID: [String: BotSummary]
     let avatarImages: [String: Data]
+    var displayName: String? = nil
 
     var body: some View {
         HStack(spacing: 4) {
@@ -593,10 +660,11 @@ struct BotChip: View {
                 BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 16)
                 Text(bot.name)
             } else {
-                Text("@" + id)
+                DockIcon(BotAvatarPresentation.symbol(for: id), size: 14, color: .dockSecondaryText)
+                Text(displayName ?? id)
             }
         }
-        .font(DockTypography.machineMetadata.weight(.medium))
+        .font(.system(size: 12, weight: .medium))
         .foregroundStyle(Color.dockSecondaryText)
         .lineLimit(1)
         .padding(.leading, 2).padding(.trailing, 6).padding(.vertical, 1)

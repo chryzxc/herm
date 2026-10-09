@@ -1,7 +1,49 @@
+import Foundation
 import Testing
 @testable import Herm
 
 struct ChatMediaSegmentTests {
+    @Test func attachmentDiffUsesExactGitFileAndBothChangeScopes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func git(_ arguments: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", root.path] + arguments
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
+            try process.run()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0)
+        }
+        try git(["init"])
+        let file = root.appendingPathComponent("FloatingChatOverlays.spec.js")
+        try "original\n".write(to: file, atomically: true, encoding: .utf8)
+        try git(["add", "."])
+        try git(["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "Initial"])
+        #expect(await RepositoryService.attachmentChanges(url: file) == nil)
+        try "staged\n".write(to: file, atomically: true, encoding: .utf8)
+        try git(["add", "."])
+        try "working\n".write(to: file, atomically: true, encoding: .utf8)
+        let changes = try #require(await RepositoryService.attachmentChanges(url: file))
+        #expect(changes.files.count == 2)
+        for change in changes.files {
+            let diff = try #require(await RepositoryService.diff(path: changes.repositoryPath, file: change))
+            #expect(diff.text.contains(change.isStaged ? "+staged" : "+working"))
+        }
+        let newFile = root.appendingPathComponent("floating-dom-check.cjs")
+        try "new code\n".write(to: newFile, atomically: true, encoding: .utf8)
+        let added = try #require(await RepositoryService.attachmentChanges(url: newFile))
+        #expect(added.files.first?.status == .untracked)
+        let diff = await RepositoryService.diff(path: added.repositoryPath, file: added.files[0])
+        #expect(diff?.text.contains("+new code") == true)
+        #expect(await RepositoryService.attachmentChanges(url: root.appendingPathComponent("other.spec.js")) == nil)
+        #expect(await RepositoryService.attachmentChanges(url: URL(string: "https://example.com/file.js")!) == nil)
+        try FileManager.default.removeItem(at: file)
+        #expect(await RepositoryService.attachmentChanges(url: file)?.files.contains { $0.status == .deleted } == true)
+    }
+
     @Test func standaloneMarkdownImageBecomesMedia() {
         #expect(ChatMediaSegment.split("Here:\n![dog](/tmp/dog.png)\nDone") == [
             .markdown("Here:"), .media("/tmp/dog.png"), .markdown("Done"),

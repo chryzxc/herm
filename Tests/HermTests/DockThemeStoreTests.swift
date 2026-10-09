@@ -10,8 +10,8 @@ struct DockThemeStoreTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let first = DockThemeStore(defaults: defaults)
         #expect(first.selectedThemeID == .nativeMacOS)
-        first.selectedThemeID = .poseidon
-        #expect(DockThemeStore(defaults: defaults).selectedThemeID == .poseidon)
+        first.selectedThemeID = .retro
+        #expect(DockThemeStore(defaults: defaults).selectedThemeID == .retro)
     }
 
     @Test func invalidAndLegacyValuesFallBackSafely() {
@@ -32,12 +32,12 @@ struct DockThemeStoreTests {
             (view.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)?.usingColorSpace(.sRGB)
         }
         let view = NativeMarkdownTextSectionView()
-        DockThemeRuntime.current = .daylight
+        DockThemeRuntime.current = .warmLight
         DockThemeRuntime.revision &+= 1
         view.update(markdown: "Plain **bold** reply", kind: .prose)
         let light = textColor(view)
 
-        DockThemeRuntime.current = .poseidon
+        DockThemeRuntime.current = .slate
         DockThemeRuntime.revision &+= 1
         view.update(markdown: "Plain **bold** reply", kind: .prose)
         let dark = textColor(view)
@@ -52,7 +52,7 @@ struct DockThemeStoreTests {
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let revision = DockThemeRuntime.revision
-        DockThemeStore(defaults: defaults).selectedThemeID = .charizard
+        DockThemeStore(defaults: defaults).selectedThemeID = .ares
         #expect(DockThemeRuntime.revision == revision)
     }
 
@@ -61,18 +61,59 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.warmLight.hermesSkinID == "warm-lightmode")
         #expect(DockThemeID.nativeMacOS.appearance == .system)
         #expect(DockThemeID.nativeMacOS.usesNativeMaterial)
-        #expect(!DockThemeID.poseidon.usesNativeMaterial)
-        #expect(DockThemeID.daylight.appearance == .light)
-        #expect(DockThemeID.poseidon.appearance == .dark)
+        #expect(!DockThemeID.slate.usesNativeMaterial)
+        #expect(DockThemeID.warmLight.appearance == .light)
+        #expect(DockThemeID.slate.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.nativeMacOS, .cartoon, .terminal, .flat, .brutalist, .origami, .dusk])
+        #expect(DockThemeID.hermOnly == [.nativeMacOS, .cartoon, .terminal, .flat, .brutalist, .origami, .dusk, .retro, .glass, .eInk, .swiss, .clay, .pixel, .notebook, .hud])
+        #expect(DockThemeID.hermesClassic.style.fontDesign == .serif && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
+        #expect(DockThemeID.terminal.style.glow > 0 && DockThemeID.terminal.style.selection == .invert)
+        #expect(DockThemeID.dusk.style.accentGradient && DockThemeID.warmLight.style.cardShadow > 0)
+        #expect(DockThemeID.pixel.style.geometry == .pixel && !DockThemeID.pixel.style.animates)
+        #expect(DockThemeID.notebook.style.geometry == .sketch && DockThemeID.notebook.style.backdrop == .ruled)
+        #expect(DockThemeID.hud.style.geometry == .chamfered && DockThemeID.hud.style.selection == .bar)
+        #expect(DockThemeID.clay.style.emboss > 0 && DockThemeID.clay.style.outlineWidth == 0)
+        #expect(["sisyphus", "charizard", "daylight", "poseidon"].allSatisfy { DockThemeID(rawValue: $0) == nil })
+        #expect(DockThemeID.glass.style.material == .glass && DockThemeID.glass.usesNativeMaterial)
+        #expect(DockThemeID.eInk.style.selection == .invert && !DockThemeID.eInk.style.animates)
+        #expect(DockThemeID.swiss.style.chrome == .open && DockThemeID.swiss.presentation.composer == .line)
         #expect(DockThemeID.terminal.appearance == .dark && DockThemeID.terminal.style.fontDesign == .monospaced)
         #expect(DockThemeID.flat.appearance == .system && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
         #expect(DockThemeID.cartoon.appearance == .light)
         #expect(DockThemeID.cartoon.style.stickerShadow > 0 && DockThemeID.cartoon.style.fontDesign == .rounded)
         #expect(DockThemeID.origami.appearance == .light && DockThemeID.origami.style.geometry == .folded)
         #expect(DockThemeID.origami.style.outlineWidth == 1 && DockThemeID.origami.style.pressScale == 0.98)
-        #expect(DockThemeID.poseidon.style == DockThemeStyle())
+        #expect(DockThemeID.slate.style == DockThemeStyle())
+    }
+
+    @Test func retroIsAvailableWithoutHermesSkins() {
+        let option = DockAppearanceCatalog.options(installedSkins: []).first { $0.themeID == .retro }
+        #expect(option != nil && option?.isHermesInstalled == false)
+        #expect(DockThemeID.retro.appearance == .light && DockThemeID.retro.style.bevel)
+        for theme in DockThemeID.allCases where ![.retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud].contains(theme) {
+            #expect(theme.presentation == DockSkinPresentation())
+        }
+    }
+
+    @Test func switchingSkinRestylesUnchangedNativeTextAndRestoresDefaults() {
+        let savedTheme = DockThemeRuntime.current, savedRevision = DockThemeRuntime.revision
+        defer { DockThemeRuntime.current = savedTheme; DockThemeRuntime.revision = savedRevision }
+        let view = NativeMarkdownTextSectionView()
+        func apply(_ theme: DockThemeID) -> NSFont? {
+            DockThemeRuntime.current = theme
+            DockThemeRuntime.revision &+= 1
+            view.update(markdown: "Unchanged **response**", kind: .prose)
+            return view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        }
+        let originalFont = apply(.nativeMacOS)
+        #expect(apply(.terminal)?.isFixedPitch == true)
+        let desktopFont = apply(.eInk)
+        #expect(desktopFont == originalFont)
+        #expect(desktopFont?.isFixedPitch == false)
+        #expect(DockSkinPresentation.current.composerShadow == 0)
+        #expect(DockSkinPresentation.current.composerRadius == 14)
+        #expect(apply(.nativeMacOS) == originalFont)
+        #expect(DockSkinPresentation.current == DockSkinPresentation())
     }
 
     @Test func nativePaletteUsesMacOSSemanticHuesAndTranslucentSurfaces() {
@@ -110,15 +151,15 @@ struct DockThemeStoreTests {
 
     @Test func appearanceCatalogJoinsMappedSkinsAndDeduplicatesUnknowns() {
         let skins = [
-            AppearanceSkin(id: "poseidon", name: "Poseidon", isActive: true),
+            AppearanceSkin(id: "slate", name: "Cool Blue", isActive: true),
             AppearanceSkin(id: "custom", name: "Custom local skin", isActive: false),
             AppearanceSkin(id: "custom", name: "Duplicate custom skin", isActive: false)
         ]
         let options = DockAppearanceCatalog.options(installedSkins: skins)
         #expect(options.count == DockThemeID.allCases.count)
-        #expect(options.first(where: { $0.themeID == .poseidon })?.isHermesActive == true)
+        #expect(options.first(where: { $0.themeID == .slate })?.isHermesActive == true)
         #expect(options.first(where: { $0.themeID == .nativeMacOS })?.isHermesInstalled == false)
-        #expect(DockAppearanceCatalog.installedOptions(installedSkins: skins).map(\.themeID) == [.poseidon])
+        #expect(DockAppearanceCatalog.installedOptions(installedSkins: skins).map(\.themeID) == [.slate])
         #expect(DockAppearanceCatalog.unknownSkins(skins).map(\.id) == ["custom"])
     }
 

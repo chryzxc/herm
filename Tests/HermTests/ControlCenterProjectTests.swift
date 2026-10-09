@@ -486,6 +486,24 @@ struct ControlCenterProjectTests {
         #expect(context.categories.map(\.id) == ["category-0", "category-1"])
         #expect(context.categories.map(\.label) == ["Category 1", "Category 2"])
         #expect(SessionContextPressure.make(percent: context.contextPercent) == .unavailable)
+        #expect(context.compressionThresholdTokens == nil)
+        #expect(context.compressionEnabled == nil)
+    }
+
+    @Test func sessionContextUsesRuntimeCompactionThresholdInsteadOfFullWindow() {
+        let context = ControlCenterModel.parseSessionContext([
+            "context_used": 60_046,
+            "context_max": 128_000,
+            "compression_threshold_tokens": 60_000,
+            "compression_enabled": true,
+            "context_estimated": true
+        ])
+        #expect(context.compressionThresholdTokens == 60_000)
+        #expect(context.contextUsed > (context.compressionThresholdTokens ?? 0))
+        #expect(context.contextUsed < context.contextMax)
+        #expect(context.compressionEnabled == true)
+        #expect(context.contextEstimated)
+        #expect(ControlCenterModel.parseSessionContext(["compression_threshold_tokens": -1]).compressionThresholdTokens == nil)
     }
 
     @Test func checkpointsRequireAnEnabledBoundedPayload() {

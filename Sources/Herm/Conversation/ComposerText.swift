@@ -39,6 +39,24 @@ enum ComposerMentionPresentation {
         !hasImages && !hasPDF
     }
 
+    /// Mirrors Hermes Desktop's identification-only mention middleware.
+    /// Delivery belongs to the session agent's message_agent tool.
+    static func annotatedPrompt(_ text: String, profileIDs: [String]) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"(?:^|\s)@([a-z0-9][a-z0-9_-]*)(?![a-z0-9_@/:-])"#, options: .caseInsensitive) else { return text }
+        let source = text as NSString
+        var resolved: [String] = []
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)) {
+            let handle = source.substring(with: match.range(at: 1))
+            guard let profile = profileIDs.first(where: { $0.caseInsensitiveCompare(handle) == .orderedSame }),
+                  !resolved.contains(profile) else { continue }
+            resolved.append(profile)
+        }
+        guard !resolved.isEmpty else { return text }
+        let identities = resolved.map { "@\($0) = agent profile \"\($0)\" (message_agent target: \"\($0 == "default" ? "hermes" : $0)\")" }.joined(separator: "; ")
+        return text + "\n\n[@mentions resolved from the Bot Mode roster — the user is referring to: " + identities
+            + ". If they want one of these agents contacted, compose your own message and send it with your message_agent tool; never forward the user's text verbatim. If this session has no message_agent tool, agent messaging is unavailable here — say so.]"
+    }
+
     static func activeToken(in text: String) -> String? {
         guard let start = text.lastIndex(where: { $0.isWhitespace }) else {
             return text.hasPrefix("@") ? text : nil

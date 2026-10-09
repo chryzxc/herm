@@ -444,7 +444,7 @@ struct AutomationWorkspaceView: View {
                 .help(isRunPanelOpen ? "Hide run panel" : "Show run panel")
                 if hasMenuActions(for: job) {
                     Menu { menuActions(for: job) } label: {
-                        Ph.dotsThree.image(size: 14, color: .secondaryLabelColor)
+                        Ph.dotsThree.image(size: 14, color: NSColor(Color.dockSecondaryText))
                             .frame(width: 28, height: 28)
                             .contentShape(Rectangle())
                     }

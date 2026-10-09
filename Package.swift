@@ -17,7 +17,7 @@ let package = Package(
             name: "Herm",
             dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
             exclude: ["Info.plist", "Resources/DockAppIcon.icns"],
-            resources: [.copy("Resources/DockAppIcon.png")],
+            resources: [.copy("Resources/DockAppIcon.png"), .copy("Resources/FileIcons")],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

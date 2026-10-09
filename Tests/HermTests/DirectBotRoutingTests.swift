@@ -27,6 +27,27 @@ private final class DirectBotRoutingRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 struct DirectBotRoutingTests {
+    @Test func composerMentionUsesCurrentChatAndLeavesDeliveryToHermesAgent() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = DockModel(initialSessionID: "ordinary-session", rpcClient: rpc)
+        model.draft = "@cypher audit the codebase"
+        model.submitComposerInput(mentionProfiles: ["cypher"])
+        for _ in 0..<50 where !rpc.requests.contains(where: { $0.method == "prompt.submit" }) {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        let submit = try #require(rpc.requests.first(where: { $0.method == "prompt.submit" }))
+        #expect(submit.params["session_id"] as? String == "ordinary-session")
+        #expect((submit.params["text"] as? String)?.contains("message_agent target: \"cypher\"") == true)
+        #expect(!rpc.requests.contains(where: { $0.method == "bot_relay.deliver" }))
+        #expect(model.messages.first?.text == "@cypher audit the codebase")
+        model.shutdown()
+    }
+
+    @Test func relayWaitsForAgentWorkWithoutSlowingControlRequests() {
+        #expect(HermesGateway.requestTimeout(for: "bot_relay.deliver") == 1500)
+        #expect(HermesGateway.requestTimeout(for: "session.list") == 15)
+    }
+
     @Test func explicitBotRequestRelaysIntoTheCurrentConversationWithoutResuming() async throws {
         let rpc = DirectBotRoutingRPCClient()
         let model = DockModel(
@@ -47,6 +68,8 @@ struct DirectBotRoutingTests {
         #expect(!rpc.requests.contains(where: { $0.method == "session.resume" }))
         #expect(model.sessionID == "ordinary-session")
         #expect(model.messages.map(\.text) == ["@Sentry audit the codebase", "The audit is complete."])
+        #expect(model.messages.first?.botProfileID == "sentry")
+        #expect(model.messages.first?.botDisplayName == "Sentry")
         #expect(model.messages.last?.botProfileID == "sentry")
     }
 

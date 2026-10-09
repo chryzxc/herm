@@ -317,6 +317,7 @@ struct MarkdownMessageView: View, Equatable {
     }
     let lines = markdown.components(separatedBy: "\n")
     var skippedJSONLines = 0
+    var inTable = false
     for (index, line) in lines.enumerated() {
       if index < skippedJSONLines { continue }
       let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -341,17 +342,16 @@ struct MarkdownMessageView: View, Equatable {
         language = opening.language
         continue
       }
-      if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
-        if trimmed.contains("---") {
-          continue // skip table separator syntax lines cleanly
+      let cells = NativeMarkdownAttributedTextBuilder.tableCells(trimmed)
+      if (inTable && cells.count > 1) || NativeMarkdownAttributedTextBuilder.isTableStart(lines, at: index) {
+        inTable = true
+        flushParagraph()
+        if !NativeMarkdownAttributedTextBuilder.isSeparatorRow(cells) {
+          result.append(.tableRow(cells))
         }
-        let cols = trimmed.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }
-        if !cols.isEmpty {
-          flushParagraph()
-          result.append(.tableRow(cols))
-          continue
-        }
+        continue
       }
+      inTable = false
       if let level = Self.headingLevel(trimmed) {
         flushParagraph()
         result.append(

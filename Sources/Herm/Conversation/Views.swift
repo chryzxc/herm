@@ -287,6 +287,7 @@ struct DockPopover: View {
     @State private var isNarrowLayout = false
     @State private var isNarrowControlVisible = true
     @State private var selectedChatImage: ChatImagePreview?
+    @ObservedObject private var filePreview = FilePreviewCenter.shared
     @StateObject private var speechInput = SpeechInput()
     @StateObject private var voiceOutput = VoiceOutput()
     @StateObject private var micLevelMeter = MicLevelMeter()
@@ -497,6 +498,7 @@ struct DockPopover: View {
 
     private func observerLayerTwo<V: View>(_ view: V) -> some View {
         view
+        .onChange(of: filePreview.url) { _, _ in showFilePreview() }
         .onChange(of: sessionWorkspaceMode) { previousMode, mode in
             handleSessionModeChange(previousMode: previousMode, mode: mode)
         }
@@ -1174,8 +1176,13 @@ struct DockPopover: View {
                 )
                 .id(fullscreenSurface == .issues ? "fullscreen-issues" : "fullscreen-pull-requests")
             } else if fullscreenSurface == .artifacts {
-                ArtifactsInspectorView(model: model, presentation: .page)
-                    .id("fullscreen-artifacts")
+                ArtifactsInspectorView(model: model, presentation: .page) { session in
+                    missionControlNavigation.openSession(session.id)
+                    fullscreenSurface = .conversation
+                    inspectorScope = .session
+                    model.resumeSession(session)
+                }
+                .id("fullscreen-artifacts")
             } else if fullscreenSurface == .bots {
                 BotRosterPage(
                     model: botMode,
@@ -1267,7 +1274,9 @@ struct DockPopover: View {
 
     private var contextPanel: some View {
         VStack(spacing: 0) {
-            if sessionWorkspaceMode.usesContextPreview {
+            if let url = filePreview.url {
+                FilePreviewPane(url: url, model: model) { filePreview.url = nil }
+            } else if sessionWorkspaceMode.usesContextPreview {
                 sessionSurfacePreview
                     .transition(.opacity)
                     .animation(.dockEase(duration: 0.2), value: sessionWorkspaceMode)
@@ -1622,6 +1631,13 @@ struct DockPopover: View {
         .menuIndicator(.hidden)
         .help("Session views: \(sessionWorkspaceMode.label)")
         .accessibilityLabel("Session views, current view: \(sessionWorkspaceMode.label)")
+    }
+
+    private func showFilePreview() {
+        guard filePreview.url != nil else { return }
+        filePreview.sessionID = model.sessionID
+        if isNarrowLayout, sessionWorkspaceMode == .explorer { sessionWorkspaceMode = .chat }
+        ensureInspectorPanelVisible()
     }
 
     private func selectSessionMode(_ mode: SessionWorkspaceMode) {
@@ -2980,11 +2996,11 @@ struct DockPopover: View {
         let isPending = model.isRespondingToApproval
         let choices = approval.choices
         let alwaysAllowCaption = ApprovalPresentation.alwaysAllowCaption(for: approval)
-        return DockCallout(tone: .warning, icon: .shieldWarning, title: "Approval required", message: approval.title, badge: "WAITING") {
+        return DockCallout(tone: .warning, icon: .shieldWarning, title: "Approval required", message: approval.title, badge: isPending ? "Sending…" : "Needs approval") {
             VStack(alignment: .leading, spacing: 10) {
                 ScrollView(.vertical) {
                     Text(approval.detail)
-                        .font(approval.detailIsCommand ? .system(size: 12, design: .monospaced) : .system(size: 12.5))
+                        .font(approval.detailIsCommand ? .system(size: 12, design: .monospaced) : .system(size: 12))
                         .foregroundStyle(Color.dockPrimaryText)
                         .textSelection(.enabled)
                         .lineSpacing(2)
@@ -2996,7 +3012,7 @@ struct DockPopover: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    DockThemeShape(cornerRadius: DockLayout.controlRadius)
                         .fill(Color.dockSurface2)
                         .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
                 )
@@ -3008,40 +3024,39 @@ struct DockPopover: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                HStack(spacing: 8) {
+                DockCalloutActions {
                     if choices.contains(ApprovalChoice.once) {
                         Button { model.respondToApproval(ApprovalChoice.once) } label: {
                             DockActionLabel(title: "Allow once", pendingTitle: "Allowing…", isPending: isPending, tint: .dockOnAccentText)
+                                .frame(minHeight: DockControlMetrics.hitTarget)
                         }
                         .buttonStyle(DockPrimaryButtonStyle())
                     }
                     if choices.contains(ApprovalChoice.session) {
                         Button { model.respondToApproval(ApprovalChoice.session) } label: {
-                            Text("Allow this session")
+                            Text("Allow this session").frame(minHeight: DockControlMetrics.hitTarget)
                         }
                         .buttonStyle(DockSecondaryButtonStyle())
                         .help("Don't ask again for this command until the session ends.")
                     }
                     if choices.contains(ApprovalChoice.always) {
                         Button { model.respondToApproval(ApprovalChoice.always) } label: {
-                            Text("Always allow")
+                            Text("Always allow").frame(minHeight: DockControlMetrics.hitTarget)
                         }
                         .buttonStyle(DockSecondaryButtonStyle())
                         .help(alwaysAllowCaption)
                     }
-                    Spacer(minLength: 0)
                     Button(role: .destructive) { model.respondToApproval(ApprovalChoice.deny) } label: {
-                        Text("Deny")
+                        Text("Deny").frame(minHeight: DockControlMetrics.hitTarget)
                     }
                     .buttonStyle(DockSecondaryButtonStyle())
                 }
-                .controlSize(.small)
                 .disabled(isPending)
 
                 Text(approval.smartDenied
                      ? "Hermes' safety check blocked this. You can override it once."
                      : choices.contains(ApprovalChoice.always) ? alwaysAllowCaption : "Hermes asks again next time.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(Color.dockMetadataText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -3055,11 +3070,15 @@ struct DockPopover: View {
     private var clarificationRow: some View {
         let choices = model.clarificationChoices
         let isMultiSelect = model.clarificationMultiSelect
-        let isDisabled = model.isRespondingToClarification || model.isRestoringSession
-        return DockCallout(tone: .info, icon: .question, title: "Hermes is waiting for your answer",
-                           message: model.clarificationProgress, badge: "WAITING") {
+        let isPending = model.isRespondingToClarification
+        let isDisabled = isPending || model.isRestoringSession
+        return DockCallout(tone: .info, icon: .question, title: "Clarification needed",
+                           message: model.clarificationProgress, badge: isPending ? "Sending…" : "Needs answer") {
             VStack(alignment: .leading, spacing: 8) {
                 if !choices.isEmpty {
+                    Text(isMultiSelect ? "Choose one or more responses" : "Choose a response")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
                     VStack(spacing: 6) {
                         ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
                             let isSelected = clarificationSelection.contains(choice)
@@ -3079,6 +3098,7 @@ struct DockPopover: View {
                                                  color: isSelected ? .dockAccent : .dockMetadataText)
                                     }
                                     Text(choice)
+                                        .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
                                         .multilineTextAlignment(.leading)
                                         .fixedSize(horizontal: false, vertical: true)
                                     Spacer(minLength: 0)
@@ -3087,9 +3107,15 @@ struct DockPopover: View {
                                     }
                                 }
                                 .padding(.vertical, 5)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: DockControlMetrics.hitTarget, alignment: .leading)
                             }
                             .buttonStyle(DockSecondaryButtonStyle())
+                            .overlay {
+                                DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                                    .fill(isSelected ? Color.dockAccent.opacity(0.08) : Color.clear)
+                                    .stroke(isSelected ? Color.dockAccent : Color.clear, lineWidth: DockLayout.hairline)
+                                    .allowsHitTesting(false)
+                            }
                             .accessibilityLabel(isMultiSelect ? choice : "Send suggested response: \(choice)")
                             .accessibilityAddTraits(isMultiSelect && isSelected ? .isSelected : [])
                         }
@@ -3103,14 +3129,16 @@ struct DockPopover: View {
                         model.respondToClarification(ClarifyQuestion.multiSelectAnswer(selection),
                                                      displayText: selection.joined(separator: ", "))
                     } label: {
-                        Text(clarificationSelection.isEmpty ? "Select one or more" : "Send \(clarificationSelection.count) selected")
+                        DockActionLabel(title: clarificationSelection.isEmpty ? "Send selection" : "Send \(clarificationSelection.count) selected",
+                                        pendingTitle: "Sending…", isPending: isPending, tint: .dockOnAccentText)
+                            .frame(minHeight: DockControlMetrics.hitTarget)
                     }
                     .buttonStyle(DockPrimaryButtonStyle())
                     .controlSize(.small)
                     .disabled(isDisabled || clarificationSelection.isEmpty)
                 }
                 Text(choices.isEmpty ? "Type your answer in the message box below." : "Or type a different answer below.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(Color.dockMetadataText)
             }
         }
@@ -3122,17 +3150,25 @@ struct DockPopover: View {
         let isPending = model.isRespondingToValuePrompt
         let canSubmit = !valuePromptText.isEmpty && (!prompt.asksForLogin || !valuePromptIdentifier.isEmpty)
         let submit = {
-            guard canSubmit else { return }
+            guard canSubmit, !isPending else { return }
             model.respondToValuePrompt(prompt.answer(value: valuePromptText, identifier: valuePromptIdentifier))
         }
         return DockCallout(tone: .warning, icon: prompt.isSecret ? .lockKey : .key, title: prompt.title,
-                           message: prompt.message, badge: "WAITING") {
+                           message: prompt.message, badge: isPending ? "Sending…" : "Input needed") {
             VStack(alignment: .leading, spacing: 8) {
                 if prompt.asksForLogin {
+                    Text("Username or email")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
                     TextField("Username or email", text: $valuePromptIdentifier)
-                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                        .textFieldStyle(.dockGlass)
                         .textContentType(.username)
+                        .disabled(isPending)
                 }
+                Text(prompt.fieldLabel)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockSecondaryText)
                 Group {
                     if prompt.isSecret {
                         SecureField(prompt.fieldLabel, text: $valuePromptText)
@@ -3141,24 +3177,27 @@ struct DockPopover: View {
                             .textContentType(.oneTimeCode)
                     }
                 }
-                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12))
+                .textFieldStyle(.dockGlass)
+                .disabled(isPending)
                 .onSubmit(submit)
 
-                HStack(spacing: 8) {
+                DockCalloutActions {
                     Button(action: submit) {
-                        DockActionLabel(title: "Send", pendingTitle: "Sending…", isPending: isPending, tint: .dockOnAccentText)
+                        DockActionLabel(title: prompt.asksForLogin ? "Send login" : "Send", pendingTitle: "Sending…", isPending: isPending, tint: .dockOnAccentText)
+                            .frame(minHeight: DockControlMetrics.hitTarget)
                     }
                     .buttonStyle(DockPrimaryButtonStyle())
                     .disabled(!canSubmit)
-                    Spacer(minLength: 0)
-                    Button { model.respondToValuePrompt("") } label: { Text("Skip") }
-                        .buttonStyle(DockSecondaryButtonStyle())
+                    Button { model.respondToValuePrompt("") } label: {
+                        Text("Skip").frame(minHeight: DockControlMetrics.hitTarget)
+                    }
+                    .buttonStyle(DockSecondaryButtonStyle())
                 }
-                .controlSize(.small)
                 .disabled(isPending)
 
                 Text(model.valuePromptError ?? "Sent only to your local Hermes. Herm does not store it.")
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(model.valuePromptError == nil ? Color.dockMetadataText : Color.dockDestructive)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -3325,7 +3364,7 @@ struct ConversationRepositoryBadgeAssociationProjection {
     }
 }
 
-private struct MissionControlQueue: View {
+struct MissionControlQueue: View {
     private struct QueueTaskGroup: Identifiable {
         let key: String
         let task: WorkspaceTask
@@ -4716,8 +4755,22 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             statusIndicator
             VStack(alignment: .leading, spacing: 2) {
                 titleLine
-                if !isEditingTitle, repository != nil || preview != nil {
+                if !isEditingTitle, session.sourceBadgeTitle != nil || repository != nil || preview != nil {
                     HStack(spacing: 6) {
+                        if let source = session.sourceBadgeTitle {
+                            HStack(spacing: 4) {
+                                DockIcon(.discordLogo, size: 12)
+                                Text(source)
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                                .foregroundStyle(Color.dockDiscord)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.dockDiscord.opacity(0.16)))
+                                .fixedSize()
+                                .accessibilityLabel("Source: \(source)")
+                                .help("Session from \(source)")
+                        }
                         if let repository { repositoryPill(repository) }
                         if let preview {
                             Text(preview)
@@ -4794,6 +4847,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
                     .foregroundStyle(isSelected ? style.primaryText : style.primaryText.opacity(0.88))
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .modifier(WorkingTitleShimmer(isActive: sessionStatus == .working, color: style.accent))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if showsActions {
                     actionSurface
@@ -4831,12 +4885,11 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
 
     private var rowFill: Color {
         if isSelected { return style.selectedFill }
-        if sessionStatus == .working { return style.accent.opacity(0.12) }
         return isHovered ? style.selectedFill.opacity(0.4) : .clear
     }
 
     private var tooltip: String {
-        [session.displayTitle, repositoryName, session.displayPreview]
+        [session.displayTitle, session.sourceBadgeTitle, repositoryName, session.displayPreview]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
@@ -4844,6 +4897,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
 
     private var accessibilityLabel: String {
         var parts = [session.displayTitle]
+        if let source = session.sourceBadgeTitle { parts.append("Source: \(source)") }
         if sessionStatus != .none { parts.append(sessionStatus.label) }
         if let repositoryName, !repositoryName.isEmpty { parts.append(repositoryName) }
         if let date = session.lastUpdatedAt { parts.append(SidebarSessionTime.short(date)) }
@@ -4868,7 +4922,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             switch sessionStatus {
             case .working:
                 ProgressView()
-                    .controlSize(.mini)
+                    .controlSize(.small)
                     .scaleEffect(0.6)
                     .tint(statusColor)
             case .needsAttention:
@@ -4882,7 +4936,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             }
         }
         .foregroundStyle(statusColor)
-        .frame(width: 10, height: 10)
+        .frame(width: 14, height: 14)
         .help(sessionStatus.help)
         .accessibilityHidden(true)
     }
@@ -4912,7 +4966,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             } else {
                 // Menu labels on macOS only reliably render Text/Image.
                 Menu { contextActions } label: {
-                    Ph.dotsThree.image(size: 13, color: .secondaryLabelColor)
+                    Ph.dotsThree.image(size: 13, color: NSColor(Color.dockSecondaryText))
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -5443,5 +5497,36 @@ private struct SessionPickerRow: View {
         .foregroundStyle(style.metadataText)
         .lineLimit(1)
         .padding(.top, 2)
+    }
+}
+
+
+/// Sweeps an accent highlight across a working session's title. Static under
+/// Reduce Motion; only working rows pay for the timeline.
+private struct WorkingTitleShimmer: ViewModifier {
+    let isActive: Bool
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if isActive && !reduceMotion {
+            content.overlay {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    GeometryReader { geo in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.2) / 2.2
+                        let band = max(geo.size.width * 0.4, 40)
+                        LinearGradient(colors: [.clear, color, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: band)
+                            .offset(x: -band + (geo.size.width + band) * phase)
+                    }
+                }
+                .mask(content)
+                .allowsHitTesting(false)
+            }
+        } else if isActive {
+            content.foregroundStyle(color)
+        } else {
+            content
+        }
     }
 }

@@ -2,6 +2,15 @@ import Testing
 @testable import Herm
 
 struct ComposerMentionTests {
+    @Test func annotatesEmbeddedAndMultipleMentionsWithCanonicalToolTargets() {
+        let prompt = ComposerMentionPresentation.annotatedPrompt("Ask @CYPHER and @forge to audit", profileIDs: ["cypher", "forge"])
+        #expect(prompt.hasPrefix("Ask @CYPHER and @forge to audit\n\n"))
+        #expect(prompt.contains("message_agent target: \"cypher\""))
+        #expect(prompt.contains("message_agent target: \"forge\""))
+        #expect(prompt.contains("If this session has no message_agent tool"))
+        #expect(ComposerMentionPresentation.annotatedPrompt("email@cypher.com @unknown @file:path", profileIDs: ["cypher", "file"]) == "email@cypher.com @unknown @file:path")
+    }
+
     @Test func detectsUnfinishedMentionAtCursor() {
         #expect(ComposerMentionPresentation.activeToken(in: "Ask @cy") == "@cy")
         #expect(ComposerMentionPresentation.activeToken(in: "Ask @") == "@")

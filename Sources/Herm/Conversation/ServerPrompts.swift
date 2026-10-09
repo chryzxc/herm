@@ -12,7 +12,10 @@ struct ClarifyQuestion: Equatable {
         (payload["questions"] as? [[String: Any]] ?? []).compactMap { item in
             guard let id = item["qid"] as? String, !id.isEmpty,
                   let question = item["question"] as? String else { return nil }
-            let choices = (item["choices"] as? [String] ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            let raw = ["choices", "options", "suggested_responses"].lazy
+                .compactMap { (item[$0] as? [Any])?.compactMap { $0 as? String } }
+                .first { !$0.isEmpty } ?? []
+            let choices = raw.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             return ClarifyQuestion(id: id, question: question, choices: choices,
                                    multiSelect: item["multi_select"] as? Bool == true && !choices.isEmpty)
         }
@@ -63,7 +66,7 @@ struct ValuePrompt: Equatable {
                                fieldLabel: "Master password", isSecret: true, asksForLogin: false)
         case "vault.save_login":
             let site = text("site") ?? text("origin") ?? "this site"
-            return ValuePrompt(requestID: requestID, title: "Save login for \(site)",
+            return ValuePrompt(requestID: requestID, title: "Save login",
                                message: "Hermes is about to sign in to \(text("origin") ?? site). Enter the login to save.",
                                fieldLabel: "Password", isSecret: true, asksForLogin: true)
         case "vault.code":

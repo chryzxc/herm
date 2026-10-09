@@ -4506,7 +4506,10 @@ final class ControlCenterModel: ObservableObject {
             contextMax: intValue(result["context_max"]),
             contextPercent: doubleValue(result["context_percent"]),
             estimatedTotal: intValue(result["estimated_total"]),
-            model: result["model"] as? String
+            model: result["model"] as? String,
+            compressionThresholdTokens: optionalIntValue(result["compression_threshold_tokens"]).flatMap { $0 > 0 ? $0 : nil },
+            compressionEnabled: result["compression_enabled"] as? Bool,
+            contextEstimated: result["context_estimated"] as? Bool ?? false
         )
     }
 

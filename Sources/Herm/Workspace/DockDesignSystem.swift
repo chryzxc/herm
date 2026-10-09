@@ -5,12 +5,12 @@ import SwiftUI
 /// these semantic roles rather than introducing near-duplicate font sizes,
 /// row heights, and compact control treatments.
 enum DockTypography {
-    static let pageTitle: Font = .system(size: 16, weight: .semibold)
+    static var pageTitle: Font { .system(size: 16, weight: .semibold, design: DockThemeStyle.current.fontDesign) }
     static let sectionLabel: Font = .system(size: 10, weight: .semibold, design: .monospaced)
-    static let rowTitle: Font = .system(size: 12, weight: .medium)
-    static let body: Font = .system(size: 12)
-    static let control: Font = .system(size: 12, weight: .medium)
-    static let metadata: Font = .system(size: 11)
+    static var rowTitle: Font { .system(size: 12, weight: .medium, design: DockThemeStyle.current.fontDesign) }
+    static var body: Font { .system(size: 12, design: DockThemeStyle.current.fontDesign) }
+    static var control: Font { .system(size: 12, weight: .medium, design: DockThemeStyle.current.fontDesign) }
+    static var metadata: Font { .system(size: 11, design: DockThemeStyle.current.fontDesign) }
     static let machineMetadata: Font = .system(size: 11, design: .monospaced)
     static let compactStatus: Font = .system(size: 10, weight: .semibold, design: .monospaced)
     /// Measured figures on monitoring surfaces, such as remaining quota.
@@ -211,7 +211,7 @@ extension View {
     func dockHUDPanel() -> some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.paneRadius + 2, role: .pane)
         return self
-            .background(Color(nsColor: .windowBackgroundColor))  // dockCanvas is translucent in native themes
+            .background(Color.dockOpaqueCanvas)  // dockCanvas is translucent in native themes
             .background(Color.dockCanvas.opacity(0.92))
             .clipShape(shape)
             .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.outline))
@@ -253,7 +253,7 @@ struct DockNavRow: View {
                 DockIcon(icon, size: 15, color: isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 18)
                 Text(title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular, design: DockThemeStyle.current.fontDesign))
                     .foregroundStyle(isSelected || isHovering ? style.primaryText : style.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)

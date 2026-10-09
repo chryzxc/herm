@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum ArtifactsPresentationMode {
     case page
@@ -41,10 +42,18 @@ struct ArtifactActionPresentation: Equatable {
 struct ArtifactsInspectorView: View {
     @ObservedObject var model: DockModel
     let presentation: ArtifactsPresentationMode
+    /// Hosts that own navigation route here so opening a source session also
+    /// leaves the Artifacts surface; without it the session only resumes.
+    let onOpenSession: ((HermesSession) -> Void)?
 
-    init(model: DockModel, presentation: ArtifactsPresentationMode = .inspector) {
+    init(
+        model: DockModel,
+        presentation: ArtifactsPresentationMode = .inspector,
+        onOpenSession: ((HermesSession) -> Void)? = nil
+    ) {
         self.model = model
         self.presentation = presentation
+        self.onOpenSession = onOpenSession
     }
 
     @State private var records: [ArtifactRecord] = []
@@ -57,6 +66,7 @@ struct ArtifactsInspectorView: View {
     @State private var failedSessionCount = 0
     @State private var selectedArtifactID: String?
     @State private var textPreview: ArtifactTextPreview?
+    @FocusState private var isBrowserFocused: Bool
 
     private let imagesPerPage = 24
     private let filesPerPage = 100
@@ -189,58 +199,52 @@ struct ArtifactsInspectorView: View {
 
     private var pageBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            pageHeader
+            DockPageHeader(
+                title: "Artifacts",
+                subtitle: pageSummaryText,
+                onRefresh: { Task { await refresh() } },
+                isRefreshing: isLoading
+            )
+            pageToolbar
             if failedSessionCount > 0 && !records.isEmpty {
                 partialFailureBanner
             }
-            Divider().overlay(Color.dockBorderLight)
             pageContent
         }
         .background(Color.dockCanvas)
     }
 
-    private var pageHeader: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Artifacts")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text(pageSummaryText)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Button { Task { await refresh() } } label: {
-                    Group {
-                        if isLoading {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            DockIcon(.arrowsClockwise)
-                        }
-                    }
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(Color.dockAccent)
-                .disabled(isLoading)
-                .help(isLoading ? "Refreshing artifacts…" : "Refresh artifacts")
-                .accessibilityLabel(isLoading ? "Refreshing artifacts" : "Refresh artifacts")
-            }
+    private var pageToolbar: some View {
+        HStack(spacing: 10) {
+            searchField
+                .frame(maxWidth: 360)
+            filterBar
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
 
-            HStack(spacing: 10) {
-                TextField("Search by name, path, URL, or session…", text: $query)
-                    .textFieldStyle(.dockGlass)
-                    .frame(maxWidth: 420)
-                    .accessibilityLabel("Search artifacts")
-                filterBar
-                Spacer(minLength: 0)
+    private var searchField: some View {
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
+        return HStack(spacing: 6) {
+            DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
+            TextField("Search artifacts", text: $query)
+                .textFieldStyle(.plain)
+                .font(DockTypography.body)
+                .foregroundStyle(Color.dockPrimaryText)
+                .accessibilityLabel("Search artifacts by name, path, URL, or session")
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    DockIcon(.xCircle, size: 13, color: .dockMetadataText)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(shape.fill(Color.dockSurface2).stroke(Color.dockBorderLight, lineWidth: DockLayout.outline))
     }
 
     private var partialFailureBanner: some View {
@@ -257,7 +261,7 @@ struct ArtifactsInspectorView: View {
                 .foregroundStyle(Color.dockAccent)
                 .disabled(isLoading)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(Color.dockWarning.opacity(0.08))
     }
@@ -282,81 +286,118 @@ struct ArtifactsInspectorView: View {
                 filter = .all
             }
         } else {
-            HSplitView {
+            // A fixed browser column avoids HSplitView's native divider and
+            // scroller chrome, which clashed with the themed surfaces.
+            HStack(spacing: 0) {
                 artifactBrowser
-                    .frame(minWidth: 300, idealWidth: 360, maxWidth: 460)
+                    .frame(width: 320)
+                Color.dockBorderLight.frame(width: DockLayout.hairline)
                 artifactDetail
-                    .frame(minWidth: 360)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         }
     }
 
     private var artifactBrowser: some View {
-        List(selection: $selectedArtifactID) {
-            ForEach(ArtifactDaySection.group(visibleRecords)) { section in
-                Section {
-                    ForEach(section.records) { record in
-                        artifactBrowserRow(record)
-                            .tag(record.id)
-                            .listRowInsets(EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8))
-                            .listRowSeparator(.hidden)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
+                    ForEach(ArtifactDaySection.group(visibleRecords)) { section in
+                        Section {
+                            ForEach(section.records) { record in
+                                artifactBrowserRow(record)
+                                    .id(record.id)
+                            }
+                        } header: {
+                            HStack(spacing: 6) {
+                                Text(section.title.uppercased())
+                                    .tracking(0.8)
+                                Text("\(section.records.count)")
+                                    .foregroundStyle(Color.dockMetadataText)
+                                Spacer(minLength: 0)
+                            }
+                            .font(DockTypography.sectionLabel)
+                            .foregroundStyle(Color.dockSectionText)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 12)
+                            .padding(.bottom, 6)
+                            .background(Color.dockCanvas)
+                            .accessibilityAddTraits(.isHeader)
+                        }
                     }
-                } header: {
-                    HStack(spacing: 6) {
-                        Text(section.title.uppercased())
-                            .tracking(0.8)
-                        Text("\(section.records.count)")
-                            .foregroundStyle(Color.dockMetadataText)
-                    }
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.dockSectionText)
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
+            }
+            .scrollIndicators(.automatic)
+            .focusable()
+            .focused($isBrowserFocused)
+            .focusEffectDisabled()
+            .onKeyPress(.downArrow) { moveSelection(by: 1); return .handled }
+            .onKeyPress(.upArrow) { moveSelection(by: -1); return .handled }
+            .onKeyPress(.return) {
+                if let selectedRecord { open(selectedRecord.value) }
+                return .handled
+            }
+            .onChange(of: selectedArtifactID) { _, id in
+                guard let id else { return }
+                withAnimation(.dockEase(duration: 0.15)) { proxy.scrollTo(id) }
             }
         }
-        .contextMenu(forSelectionType: String.self) { ids in
-            if let record = ids.first.flatMap({ id in visibleRecords.first { $0.id == id } }) {
-                artifactContextActions(record)
-            }
-        } primaryAction: { ids in
-            ids.compactMap { id in visibleRecords.first { $0.id == id } }.forEach { open($0.value) }
-        }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
         .background(Color.dockCanvas)
     }
 
+    private func moveSelection(by offset: Int) {
+        let ids = visibleRecords.map(\.id)
+        guard !ids.isEmpty else { return }
+        let current = selectedArtifactID.flatMap { ids.firstIndex(of: $0) } ?? -offset
+        selectedArtifactID = ids[min(max(current + offset, 0), ids.count - 1)]
+    }
+
     private func artifactBrowserRow(_ record: ArtifactRecord) -> some View {
-        HStack(spacing: 10) {
+        let isSelected = record.id == selectedArtifactID
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
+        return HStack(spacing: 10) {
             artifactRowIcon(record)
-                .frame(width: 34, height: 34)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(record.label)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer(minLength: 4)
-                    Text(record.timestamp, format: .relative(presentation: .named, unitsStyle: .abbreviated))
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                }
-                HStack(spacing: 5) {
-                    originBadge(record.origin)
+                .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.label)
+                    .font(DockTypography.rowTitle)
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                HStack(spacing: 4) {
                     Text(record.sessionTitle)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    Text("·")
+                    Text(record.timestamp, format: .relative(presentation: .named, unitsStyle: .abbreviated))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .layoutPriority(1)
                 }
                 .font(.system(size: 10))
-                .foregroundStyle(Color.dockSecondaryText)
+                .foregroundStyle(Color.dockMetadataText)
             }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 5)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dockSelectionBackground(shape, active: isSelected, fill: Color.dockAccent.opacity(0.14), allowsInvert: false)
+        .overlay(shape.stroke(isSelected ? Color.dockAccent.opacity(0.35) : Color.clear, lineWidth: DockLayout.outline))
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) { open(record.value) }
+        .onTapGesture {
+            selectedArtifactID = record.id
+            isBrowserFocused = true
+        }
+        .contextMenu { artifactContextActions(record) }
+        .help(record.value)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(record.label), \(record.origin.rawValue.lowercased()) in \(record.sessionTitle)")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     private func originBadge(_ origin: ArtifactOrigin) -> some View {
@@ -371,7 +412,7 @@ struct ArtifactsInspectorView: View {
     private func originColor(_ origin: ArtifactOrigin) -> Color {
         switch origin {
         case .generated: .dockSuccess
-        case .shared: .dockAccent
+        case .shared: .dockSecondaryText
         }
     }
 
@@ -381,38 +422,41 @@ struct ArtifactsInspectorView: View {
             imagePreview(for: record, compact: true)
                 .scaledToFill()
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+        } else if record.kind == .file {
+            systemFileIcon(record)
         } else {
-            DockIcon(record.kind == .link ? .link : fileIcon(for: record.label))
-                .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
+            DockIcon(.link)
+                .foregroundStyle(Color.dockSecondaryText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
         }
+    }
+
+    /// Language-specific icon (TypeScript, Python, …) resolved by name, so
+    /// moved or deleted files still get the right icon.
+    private func systemFileIcon(_ record: ArtifactRecord) -> some View {
+        let image = ArtifactFileIcon.image(for: record.label)
+            ?? NSWorkspace.shared.icon(for: UTType(filenameExtension: URL(fileURLWithPath: record.label).pathExtension) ?? .data)
+        return Image(nsImage: image)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .padding(4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
     private var artifactDetail: some View {
         if let record = selectedRecord {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(record.label)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .textSelection(.enabled)
-                        HStack(spacing: 6) {
-                            originBadge(record.origin)
-                            Text(record.location)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(Color.dockMetadataText)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 18) {
+                    detailHeader(record)
                     detailActions(record)
                     detailPreview(record)
-                    detailMetadata(record)
                 }
-                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(24)
             }
@@ -427,37 +471,84 @@ struct ArtifactsInspectorView: View {
         visibleRecords.first { $0.id == selectedArtifactID }
     }
 
+    private func detailHeader(_ record: ArtifactRecord) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            artifactRowIcon(record)
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(record.label)
+                    .font(.system(size: 17, weight: .semibold, design: DockThemeStyle.current.fontDesign))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                HStack(spacing: 6) {
+                    originBadge(record.origin)
+                    Text(record.timestamp.formatted(date: .abbreviated, time: .shortened))
+                    Text("·")
+                    Text(record.location)
+                        .font(DockTypography.machineMetadata)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(record.value)
+                }
+                .font(DockTypography.metadata)
+                .foregroundStyle(Color.dockMetadataText)
+                if let session = sourceSession(for: record) {
+                    Button { openSession(session) } label: {
+                        HStack(spacing: 5) {
+                            DockIcon(.chatCircle, size: 12, color: .dockAccent)
+                            Text(record.sessionTitle)
+                                .lineLimit(1)
+                            DockIcon(.arrowRight, size: 10, color: .dockAccent)
+                        }
+                        .font(DockTypography.metadata.weight(.medium))
+                        .foregroundStyle(Color.dockAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Open the session that produced this artifact")
+                } else {
+                    DockIconLabel(record.sessionTitle, icon: .chatCircle)
+                        .font(DockTypography.metadata)
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private func detailPreview(_ record: ArtifactRecord) -> some View {
         if record.kind == .image {
             imagePreview(for: record)
                 .scaledToFit()
                 .frame(maxWidth: .infinity)
-                .frame(minHeight: 260, maxHeight: 480)
+                .frame(minHeight: 260, maxHeight: 520)
                 .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         } else if let textPreview, textPreview.id == record.id {
             switch textPreview.content {
             case .text(let text, let truncated):
                 VStack(alignment: .leading, spacing: 0) {
-                    ScrollView(.horizontal) {
-                        Text(text)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(Color.dockPrimaryText)
-                            .textSelection(.enabled)
-                            .fixedSize()
-                            .padding(14)
+                    Group {
+                        if isMarkdown(record) {
+                            MarkdownMessageView(markdown: text, cacheKey: "artifact:\(record.id)")
+                        } else {
+                            Text(text)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(Color.dockPrimaryText)
+                        }
                     }
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
                     if truncated {
                         Divider().overlay(Color.dockBorderLight)
                         Text("Preview truncated — open the file to see the rest.")
                             .font(.system(size: 10))
                             .foregroundStyle(Color.dockMetadataText)
-                            .padding(.horizontal, 14)
+                            .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
+                .background(Color.dockSurface, in: RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderLight))
             case .missing:
                 previewPlaceholder(icon: .warning, title: "File no longer exists", detail: "It was moved or deleted after the session produced it.")
@@ -469,6 +560,10 @@ struct ArtifactsInspectorView: View {
         } else {
             previewPlaceholder(icon: fileIcon(for: record.label), title: "Loading preview…", detail: nil)
         }
+    }
+
+    private func isMarkdown(_ record: ArtifactRecord) -> Bool {
+        ["md", "markdown"].contains(URL(fileURLWithPath: record.label).pathExtension.lowercased())
     }
 
     private func previewPlaceholder(icon: Ph, title: String, detail: String?) -> some View {
@@ -494,58 +589,57 @@ struct ArtifactsInspectorView: View {
 
     private func detailActions(_ record: ArtifactRecord) -> some View {
         HStack(spacing: 8) {
-            Button("Open") { open(record.value) }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.dockAccent)
+            Button { open(record.value) } label: {
+                DockIconLabel(record.kind == .link ? "Open link" : "Open", icon: .arrowSquareOut)
+            }
+            .buttonStyle(.dockPrimary)
             DockCopyButton(
                 record.value,
                 label: "Copy \(record.kind == .link ? "link" : "path")",
                 accessibilityLabel: "Copy \(record.kind == .link ? "link" : "path")",
-                presentation: .text
+                presentation: .iconAndText,
+                iconSize: 12,
+                color: .dockPrimaryText
             )
-                .buttonStyle(.bordered)
+            .buttonStyle(.dockSecondary)
             if isLocalFile(record) {
-                Button("Reveal in Finder") { reveal(record.value) }
-                    .buttonStyle(.bordered)
+                Button { reveal(record.value) } label: {
+                    DockIconLabel("Reveal in Finder", icon: .folderOpen)
+                }
+                .buttonStyle(.dockSecondary)
             }
-            if let session = model.sessions.first(where: { $0.id == record.sessionID }) {
-                Button("Open session") { model.resumeSession(session) }
-                    .buttonStyle(.bordered)
+            if let session = sourceSession(for: record) {
+                Button { openSession(session) } label: {
+                    DockIconLabel("Open session", icon: .chatCircle)
+                }
+                .buttonStyle(.dockSecondary)
             }
         }
-        .controlSize(.regular)
+        .controlSize(.small)
     }
 
-    private func detailMetadata(_ record: ArtifactRecord) -> some View {
-        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 8) {
-            metadataRow("Location", value: record.value)
-            metadataRow("Session", value: record.sessionTitle)
-            metadataRow("Updated", value: record.timestamp.formatted(date: .abbreviated, time: .shortened))
-        }
-        .font(.system(size: 11))
+    private func sourceSession(for record: ArtifactRecord) -> HermesSession? {
+        model.sessions.first { $0.id == record.sessionID }
     }
 
-    private func metadataRow(_ label: String, value: String) -> some View {
-        GridRow {
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.dockMetadataText)
-            Text(value)
-                .foregroundStyle(Color.dockSecondaryText)
-                .textSelection(.enabled)
-                .lineLimit(3)
+    private func openSession(_ session: HermesSession) {
+        if let onOpenSession {
+            onOpenSession(session)
+        } else {
+            model.resumeSession(session)
         }
     }
 
     @ViewBuilder
     private func artifactContextActions(_ record: ArtifactRecord) -> some View {
         Button("Open") { open(record.value) }
-        Button("Copy") { copy(record.value) }
+        Button("Copy \(record.kind == .link ? "Link" : "Path")") { copy(record.value) }
         if isLocalFile(record) {
             Button("Reveal in Finder") { reveal(record.value) }
         }
-        if let session = model.sessions.first(where: { $0.id == record.sessionID }) {
-            Button("Open session") { model.resumeSession(session) }
+        if let session = sourceSession(for: record) {
+            Divider()
+            Button("Open Session") { openSession(session) }
         }
     }
 
@@ -771,18 +865,16 @@ struct ArtifactsInspectorView: View {
 
     private func fileRow(_ record: ArtifactRecord) -> some View {
         HStack(spacing: 12) {
-            DockIcon(record.kind == .link ? .link : fileIcon(for: record.label))
-                .foregroundStyle(record.kind == .link ? Color.dockSecondaryText : Color.dockAccent)
+            artifactRowIcon(record)
                 .frame(width: 30, height: 30)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.label)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
-                if let session = model.sessions.first(where: { $0.id == record.sessionID }) {
-                    Button(session.displayTitle) { model.resumeSession(session) }
+                if let session = sourceSession(for: record) {
+                    Button(session.displayTitle) { openSession(session) }
                         .font(.system(size: 10))
                         .buttonStyle(.borderless)
                         .foregroundStyle(Color.dockAccent)

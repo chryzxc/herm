@@ -68,6 +68,13 @@ final class DockModel: ObservableObject {
     /// blocked approval, or a turn that ended first). Not yet submitted, so
     /// removable; sent one per turn once Hermes settles (desktop parity).
     @Published private(set) var queuedPrompts: [QueuedPrompt] = []
+    /// Resume may replace the runtime handle; unsent prompts belong to the
+    /// durable conversation, not to that temporary handle.
+    private var queuedPromptSessionID: String? { sessionStorageID ?? sessionID }
+    var currentSessionQueuedPrompts: [QueuedPrompt] {
+        guard let queuedPromptSessionID else { return [] }
+        return queuedPrompts.filter { $0.sessionID == queuedPromptSessionID }
+    }
     /// A queued prompt open for editing is never auto-sent; when its turn
     /// comes it moves into the composer instead.
     @Published var editingQueuedPromptID: UUID?
@@ -726,6 +733,7 @@ final class DockModel: ObservableObject {
         } else {
             text = "What do you see in these images?"
         }
+        let submittedText = ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles)
         let sessionBeforeSend = sessionID
         let botActivityID = sessionBeforeSend.flatMap { eventSessionID in
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
@@ -806,7 +814,7 @@ final class DockModel: ObservableObject {
 
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": text]))
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": submittedText]))
                 submissionReported = true
                 onSubmission?(nil)
                 guard self.sessionResumeGeneration == sendGeneration,
@@ -860,10 +868,16 @@ final class DockModel: ObservableObject {
     func steerDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let sessionID, !sessionID.isEmpty else { return }
-        guard !text.isEmpty, pendingImages.isEmpty, pendingPDFURL == nil,
-              status == .working, ComposerSlashCommand(text) == nil else {
+        guard !text.isEmpty, status == .working, ComposerSlashCommand(text) == nil else {
             queueDraft()
             return
+        }
+        // Hermes only redirects text-only payloads: steer the words now and
+        // park the attachments (with no text of their own) for the next turn.
+        if !pendingImages.isEmpty || pendingPDFURL != nil, let queueSessionID = queuedPromptSessionID {
+            queuedPrompts.append(QueuedPrompt(sessionID: queueSessionID, text: "", images: pendingImages, pdfURL: pendingPDFURL))
+            pendingImages = []
+            pendingPDFURL = nil
         }
         draft = ""
         redirectTurn(with: text, sessionID: sessionID)
@@ -872,7 +886,9 @@ final class DockModel: ObservableObject {
     /// Sends `text` into the running turn; if Hermes refuses, it becomes the next turn.
     private func redirectTurn(with text: String, sessionID: String) {
         steeringError = nil
+        let submittedText = ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles)
         let steeringGeneration = sessionResumeGeneration
+        let queueSessionID = queuedPromptSessionID ?? sessionID
         // Redirect cancels the model request, so its completion can race the
         // RPC response: record the correction first, below what already
         // streamed, and let the resumed output continue in a fresh row under it.
@@ -892,7 +908,7 @@ final class DockModel: ObservableObject {
         Task {
             let result = try? await sessionRPCClient.request(
                 HermesFeatureIDs.ID.sessionRedirect.rawValue,
-                params: ["session_id": sessionID, "text": text]
+                params: ["session_id": sessionID, "text": submittedText]
             )
             guard self.sessionResumeGeneration == steeringGeneration,
                   self.sessionID == sessionID else { return }
@@ -909,7 +925,7 @@ final class DockModel: ObservableObject {
                     $0.id == correction.id
                         || ($0.id == resumedRowID && $0.id != streamingMessageID && $0.text.isEmpty && $0.activity.isEmpty)
                 }
-                queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: text, images: [], pdfURL: nil))
+                queuedPrompts.append(QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil))
                 drainQueuedPromptIfIdle()
             }
         }
@@ -917,7 +933,7 @@ final class DockModel: ObservableObject {
 
     /// Parks the whole composer payload until the active turn settles.
     func queueDraft() {
-        guard let sessionID else { return }
+        guard let sessionID = queuedPromptSessionID else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil else { return }
         queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL))
@@ -941,7 +957,7 @@ final class DockModel: ObservableObject {
     /// One still being edited lands in the composer, attachments included.
     private func drainQueuedPromptIfIdle() {
         guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
-              let sessionID,
+              sessionID != nil, let sessionID = queuedPromptSessionID,
               let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID }) else { return }
         let next = queuedPrompts.remove(at: index)
         guard next.id == editingQueuedPromptID else { return send(next) }
@@ -953,7 +969,10 @@ final class DockModel: ObservableObject {
         if pendingPDFURL == nil { pendingPDFURL = next.pdfURL }
     }
 
-    func submitComposerInput() {
+    private var composerMentionProfiles: [String] = []
+
+    func submitComposerInput(mentionProfiles: [String]? = nil) {
+        if let mentionProfiles { composerMentionProfiles = mentionProfiles }
         if status == .needsClarification {
             respondToClarification(draft)
         } else if isSending, sessionID != nil {
@@ -2179,7 +2198,7 @@ final class DockModel: ObservableObject {
         let transcriptText = "@\(displayName) \(request)"
         let relayMessage = Self.botRelayMessage(request: request, transcript: messages)
         draft = ""
-        messages.append(ChatMessage(role: .user, text: transcriptText))
+        messages.append(ChatMessage(role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName))
         status = .working
         isSending = true
         Task {
@@ -2231,7 +2250,7 @@ final class DockModel: ObservableObject {
         guard let originSessionID = sessionStorageID ?? sessionID, !originSessionID.isEmpty else { return }
         var existing = Set(botActivityBySessionID[originSessionID, default: []].compactMap { $0.result })
         for (index, message) in messages.enumerated() {
-            guard let botID = message.botProfileID,
+            guard message.role == .hermes, let botID = message.botProfileID,
                   !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   !existing.contains(message.text) else { continue }
             let request = index > 0 && messages[index - 1].role == .user
@@ -2285,7 +2304,7 @@ final class DockModel: ObservableObject {
                 // "Bot response" marks a bot message nobody asked for (a
                 // delivery); show the message without inventing a user bubble.
                 if record.summary != "Bot response" {
-                    messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt))
+                    messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt, botProfileID: record.botID, botDisplayName: record.botName))
                 }
                 messages.append(ChatMessage(role: .hermes, text: result, timestamp: record.updatedAt, botProfileID: record.botID, botDisplayName: record.botName))
             }
@@ -2905,8 +2924,9 @@ final class DockModel: ObservableObject {
         activeClarification = clarification
         let current = clarification?.current
         clarificationQuestion = current?.question ?? clarification?.question
-        clarificationChoices = current?.choices ?? clarification?.choices ?? []
-        clarificationMultiSelect = current?.multiSelect ?? clarification?.multiSelect ?? false
+        // A batch question without its own choices falls back to the request's.
+        clarificationChoices = current.map { $0.choices.isEmpty ? clarification?.choices ?? [] : $0.choices } ?? clarification?.choices ?? []
+        clarificationMultiSelect = clarificationChoices.isEmpty ? false : current?.multiSelect ?? clarification?.multiSelect ?? false
         clarificationRequestID = clarification?.requestID
         if let clarification, let current, clarification.batch.count > 1,
            let index = clarification.batch.firstIndex(of: current) {
@@ -3037,6 +3057,13 @@ final class DockModel: ObservableObject {
             self.sessionTokenUsage = (id, ControlCenterModel.parseSessionUsage(result).totalTokens)
             self.applyContextUsage(result, sessionID: id)
         }
+    }
+
+    func fetchSessionContextDetails() async -> SessionContextSummary? {
+        guard let id = sessionID, !id.isEmpty,
+              let result = try? await interruptRPC.sessionContextBreakdown(sessionID: id),
+              sessionID == id else { return nil }
+        return ControlCenterModel.parseSessionContext(result)
     }
 
     private func applyContextUsage(_ usage: [String: Any], sessionID id: String) {
@@ -3342,7 +3369,7 @@ final class DockModel: ObservableObject {
             if isSending, status == .working {
                 redirectTurn(with: spoken, sessionID: sessionID)
             } else {
-                queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: spoken, images: [], pdfURL: nil))
+                queuedPrompts.append(QueuedPrompt(sessionID: queuedPromptSessionID ?? sessionID, text: spoken, images: [], pdfURL: nil))
             }
             return
         }
@@ -4058,6 +4085,7 @@ final class DockModel: ObservableObject {
             streamingMessageID = nil
             streamingTurnActivity = []
             streamingResponseStartedAt = nil
+            syncStoredSystemRows()
             if completionNotificationsEnabled {
                 let response = messages.last(where: { $0.role == .hermes })?.text ?? "Hermes completed the active request."
                 notify(title: "Hermes completed work", body: response, identifier: "completed:\(sessionID ?? "hermes")")
@@ -4381,6 +4409,25 @@ final class DockModel: ObservableObject {
             } else {
                 appendBelowLiveTurn(message)
             }
+        }
+    }
+
+    /// Hermes injects notes (task list, still-in-progress, compaction) into
+    /// stored history without emitting live events, so a turn's live view
+    /// lacked rows a reload shows. After each turn, pull the newest stored
+    /// rows and place the system rows the live stream missed.
+    private func syncStoredSystemRows() {
+        guard let storageID = sessionStorageID else { return }
+        let generation = sessionResumeGeneration
+        let profileID = sessionProfileID ?? profileScopeID
+        Task { @MainActor in
+            guard let loaded = try? await fetchEarlierTranscriptRows(
+                from: TranscriptHistoryCursor(storageSessionID: storageID, profileID: profileID),
+                limit: TranscriptHistoryPaging.pageRowLimit, minimumDisplayRows: 1, maximumPages: 1
+            ), generation == sessionResumeGeneration, sessionStorageID == storageID else { return }
+            insertTimelineMessages(Self.parseMessages(loaded.rows).messages.filter {
+                $0.systemEvent != nil && $0.systemEvent?.isFeed == false
+            })
         }
     }
 
@@ -6304,6 +6351,16 @@ final class DockModel: ObservableObject {
         }
     }
 
+    /// The cpipe plugin queues slash commands as an expanded prompt, and that
+    /// expansion is what Hermes stores. Restore what the user typed.
+    static func unwrappedSlashCommand(_ text: String) -> String {
+        let intro = "The user explicitly invoked /"
+        let marker = "User message (preserved verbatim):\n"
+        guard text.hasPrefix(intro), let end = text.range(of: marker) else { return text }
+        let name = text.dropFirst(intro.count).prefix { !$0.isWhitespace }
+        return "/\(name) " + text[end.upperBound...]
+    }
+
     static func parseMessages(_ value: Any?, defaultBotProfileID: String? = nil, defaultBotDisplayName: String? = nil) -> RestoredTranscript {
         guard let rows = value as? [[String: Any]] else {
             return RestoredTranscript(messages: [], pendingImages: [])
@@ -6375,7 +6432,7 @@ final class DockModel: ObservableObject {
             }
             let message = ChatMessage(
                 role: role == "user" ? .user : .hermes,
-                text: attribution?.body ?? text,
+                text: attribution?.body ?? (role == "user" ? unwrappedSlashCommand(text) : text),
                 images: [],
                 timestamp: timestamp,
                 responseDuration: activity.isEmpty ? nil : turnStartedAt.flatMap { start in rowTimestamp.map { $0.timeIntervalSince(start) } },
@@ -6413,10 +6470,11 @@ final class DockModel: ObservableObject {
             return ActiveToolCall(
                 id: (part["id"] as? String) ?? UUID().uuidString,
                 name: name,
-                input: "",
+                input: truncatedForPersistence(args.compactMap { "\($0.key): \($0.value)" }.joined(separator: ", ")),
                 context: context,
                 startedAt: timestamp,
-                isComplete: true
+                isComplete: true,
+                args: textArgs(args)
             )
         }
     }

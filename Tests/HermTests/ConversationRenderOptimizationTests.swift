@@ -175,6 +175,77 @@ struct ConversationRenderOptimizationTests {
         #expect(chunks?.map(\.text).joined() == "# Result\n\nready")
     }
 
+    @Test func completedMessageRetainsNativeTableLayoutAmongProse() throws {
+        let markdown = """
+        I checked the current source:
+
+        | Area | Existing coverage |
+        | --- | --- |
+        | **Design** | Planning instructions and safe decomposition. |
+        | Review | Independent review and regression analysis. |
+
+        > Preserve the existing principles.
+
+        The distinction follows.
+        """
+        let view = NativeMarkdownTextSectionView()
+        view.update(markdown: markdown, kind: .prose)
+        let text = try #require(view.textStorage)
+        var cells: [NSTextTableBlock] = []
+        text.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: text.length)) { value, _, _ in
+            if let block = (value as? NSParagraphStyle)?.textBlocks.first as? NSTextTableBlock,
+               !cells.contains(where: { $0 === block }) { cells.append(block) }
+        }
+        #expect(cells.count == 6)
+        #expect(cells.allSatisfy { $0.table === cells.first?.table && $0.table.numberOfColumns == 2 })
+        #expect(!text.string.contains("│"))
+        #expect(!text.string.contains("---"))
+        #expect(text.string.contains("The distinction follows."))
+        let after = (text.string as NSString).range(of: "The distinction follows.")
+        let afterStyle = text.attribute(.paragraphStyle, at: after.location, effectiveRange: nil) as? NSParagraphStyle
+        #expect(afterStyle?.textBlocks.isEmpty == true)
+        #expect(view.measuredHeight(forWidth: 480) > 0)
+        #expect(view.measuredHeight(forWidth: 300) > view.measuredHeight(forWidth: 700))
+        if let directory = ProcessInfo.processInfo.environment["CHAT_SNAPSHOT_DIR"] {
+            let width: CGFloat = 700
+            view.frame = NSRect(x: 0, y: 0, width: width, height: view.measuredHeight(forWidth: width))
+            let window = NSWindow(contentRect: view.frame, styleMask: [], backing: .buffered, defer: false)
+            window.contentView = view
+            view.layoutSubtreeIfNeeded()
+            let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let png = try #require(bitmap.representation(using: .png, properties: [:]))
+            try png.write(to: URL(fileURLWithPath: directory).appendingPathComponent("completed-markdown-table.png"))
+        }
+    }
+
+    @Test func tablesAllowOptionalOuterPipesAcrossRenderers() {
+        let key = MarkdownRenderKey(messageID: UUID(), contentRevision: 1, themeRevision: 1)
+        for table in [
+            "Area | Coverage\n--- | ---\n**Design** | Planning\nReview | Tests",
+            "| Area | Coverage\n| --- | --- |\nDesign | Planning |\n| Review | Tests |"
+        ] {
+            let source = "Intro.\n\n" + table + "\n\nAfter."
+            let document = MarkdownRenderDocumentBuilder.build(source: source, key: key)
+            #expect(document.sections.map(\.source).joined() == source)
+            let tables = document.sections.filter { $0.kind == .table }
+            #expect(tables.count == 1)
+            #expect(NativeMarkdownAttributedTextBuilder.isPureTable(table))
+            let output = NativeMarkdownAttributedTextBuilder.table(table, palette: NativeMarkdownPalette()).string
+            let style = output.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+            #expect((style?.textBlocks.first as? NSTextTableBlock)?.table.numberOfColumns == 2)
+            #expect(!output.string.contains("---"))
+            let rows = MarkdownMessageView.renderBlocks(for: source).filter {
+                if case .tableRow = $0 { return true }; return false
+            }
+            #expect(rows.count == 3)
+            let chunks = [StreamingPresentationChunk(id: 0, text: table, revision: 0, isMutableTail: false, context: .paragraph)]
+            #expect(MarkdownRenderDocumentBuilder.sections(for: chunks).first?.kind == .table)
+        }
+        #expect(!NativeMarkdownAttributedTextBuilder.isPureTable("Use a | b in prose."))
+        #expect(!NativeMarkdownAttributedTextBuilder.isPureTable("a \\| b\n--- | ---"))
+    }
+
     @Test func tableCellsKeepEmptyColumnsAndDetectSeparators() {
         #expect(NativeMarkdownAttributedTextBuilder.tableCells("| a || c |") == ["a", "", "c"])
         #expect(NativeMarkdownAttributedTextBuilder.tableCells("| a \\| b | c |").count == 2)

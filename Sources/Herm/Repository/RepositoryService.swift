@@ -53,6 +53,12 @@ struct RepositoryDiff: Equatable {
     let isStaged: Bool
 }
 
+struct RepositoryAttachmentChanges: Identifiable {
+    let repositoryPath: String
+    let files: [RepositoryFileChange]
+    var id: String { repositoryPath + ":" + (files.first?.path ?? "") }
+}
+
 struct RepositoryBlameCommit: Identifiable, Equatable {
     let hash: String
     let author: String
@@ -459,6 +465,22 @@ enum RepositoryService {
         guard command.successCodes.contains(result.exitCode) else { return nil }
         let bounded = boundDiff(result.output)
         return RepositoryDiff(path: file.path, text: bounded.text, isTruncated: bounded.isTruncated, isStaged: file.isStaged)
+    }
+
+    /// Resolve the attachment against its own worktree, including staged and
+    /// unstaged entries. Do not read diff content until the user opens it.
+    static func attachmentChanges(url: URL) async -> RepositoryAttachmentChanges? {
+        guard url.isFileURL else { return nil }
+        let fileURL = url.resolvingSymlinksInPath().standardizedFileURL
+        let root = await runGit(path: fileURL.deletingLastPathComponent().path,
+                                arguments: ["rev-parse", "--show-toplevel"])
+        guard root.exitCode == 0, !root.output.isEmpty else { return nil }
+        let snapshot = await changeSnapshot(path: root.output)
+        let files = snapshot.files.filter {
+            documentURL(repositoryPath: root.output, filePath: $0.path)?.standardizedFileURL == fileURL
+        }
+        guard !files.isEmpty else { return nil }
+        return RepositoryAttachmentChanges(repositoryPath: root.output, files: files)
     }
 
     static func loadDocument(path repositoryPath: String, filePath: String) async -> RepositoryFileDocument? {

@@ -120,7 +120,7 @@ struct OfficeMusicControl: View {
                 Text(music.state.track ?? "Spotify")
                     .font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Text(music.state.track == nil ? (music.state.message ?? "Loading…") : (music.state.artist ?? ""))
-                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(3)
+                    .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(width: 200, alignment: .leading)

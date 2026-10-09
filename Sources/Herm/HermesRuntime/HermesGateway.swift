@@ -241,6 +241,11 @@ final class HermesGateway: NSObject {
         return json ?? [:]
     }
 
+    /// Relay delivery can wait for an entire agent turn, unlike control RPCs.
+    static func requestTimeout(for method: String) -> TimeInterval {
+        method == HermesFeatureIDs.ID.botRelayDeliver.rawValue ? 1500 : 15
+    }
+
     private func send(method: String, params: [String: Any]) async throws -> Data {
         guard let socket else { throw GatewayError.disconnected }
         nextID += 1
@@ -252,7 +257,7 @@ final class HermesGateway: NSObject {
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
             timeoutTasks[id] = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(15))
+                try? await Task.sleep(for: .seconds(Self.requestTimeout(for: method)))
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
                     guard let self, let waiting = self.pending.removeValue(forKey: id) else { return }

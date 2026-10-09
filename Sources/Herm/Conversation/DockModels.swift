@@ -757,6 +757,12 @@ struct HermesSession: Identifiable, Equatable {
 
     var lastUpdatedAt: Date? { updatedAt ?? startedAt }
 
+    /// Origin comes only from Hermes metadata, never from a title or preview.
+    var sourceBadgeTitle: String? {
+        let value = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return value == "discord" ? "Discord" : nil
+    }
+
     var scopedID: ProfileScopedID { ProfileScopedID(profileID: profileID, resourceID: id) }
 
     init(

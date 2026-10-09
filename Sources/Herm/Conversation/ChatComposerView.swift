@@ -128,7 +128,7 @@ struct ChatComposerView: View {
         let isResponding = model.status == .working || model.isSending
         // Mid-turn input redirects the turn, or queues when it can't (attachments, approvals).
         let isSteeringTurn = model.isSending && model.sessionID != nil
-        let queuedPrompts = model.queuedPrompts.filter { $0.sessionID == model.sessionID }
+        let queuedPrompts = model.currentSessionQueuedPrompts
         // An idle composer with a queue left by a stopped turn sends the next one.
         let canSubmit = hasComposerContent || (!model.isSending && !queuedPrompts.isEmpty)
         let showStop = isResponding && !hasComposerContent && !speechInput.isRecording
@@ -208,7 +208,7 @@ struct ChatComposerView: View {
                 // Placeholder text shares the editor's single visual gutter.
                 if composer.text.isEmpty {
                     Text(placeholderText)
-                        .font(.system(size: 14))
+                        .font(.system(size: 14, design: DockThemeStyle.current.fontDesign))
                         .foregroundStyle(Color.dockSecondaryText)
                         .padding(.leading, textContentInset)
                         .allowsHitTesting(false)
@@ -222,7 +222,7 @@ struct ChatComposerView: View {
             // NSTextView is AppKit-backed and may ignore a SwiftUI clipping
             // proposal while its intrinsic text height changes. Mask the
             // complete input surface as a final paint boundary.
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
 
             // Image Attachment Previews (if any images are pending)
             if !model.pendingImages.isEmpty {
@@ -322,7 +322,7 @@ struct ChatComposerView: View {
                             .frame(width: 28, height: 28)
                             .background(
                                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                    .fill(Color.dockControlSurface)
+                                    .fill(DockSkinPresentation.current.composerControlFill)
                             )
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
@@ -339,27 +339,7 @@ struct ChatComposerView: View {
                         )
                     }
 
-                    ModelPickerView(
-                        options: model.runtimeModelOptions,
-                        selectedID: selectedModelOptionID,
-                        isRefreshing: model.isLoadingRuntimeModelOptions,
-                        refreshError: model.runtimeModelOptionsError,
-                        onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID) },
-                        onSelect: { option in
-                            model.updateSessionModel(option)
-                        }
-                    )
-                    .font(DockTypography.control)
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .padding(.horizontal, 8)
-                    .frame(height: 28)
-                    .background(
-                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                            .fill(Color.dockControlSurface)
-                    )
-                    .frame(minHeight: 44, alignment: .center)
-                    .disabled(model.isUpdatingSessionModel)
-                    .help("Select model")
+                    composerModelPicker
                 }
                 .layoutPriority(-1)
 
@@ -373,44 +353,7 @@ struct ChatComposerView: View {
                     }
                     SessionContextRing(model: model)
 
-                    // Thinking depth variant selector menu
-                    Menu {
-                        Picker("", selection: reasoningVariantSelection) {
-                            ForEach(HermesReasoningVariant.allCases) { variant in
-                                Text(variant.displayName).tag(Optional(variant))
-                            }
-                        }
-                        .pickerStyle(.inline)
-                    } label: {
-                        // A plain button-style menu renders this SwiftUI
-                        // label as drawn; a borderless menu keeps only native
-                        // text and images and drops custom icon views.
-                        HStack(spacing: 6) {
-                            DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
-                            if ComposerToolbarPresentation.showsReasoningLabel(for: metrics) {
-                                Text(sessionReasoningDisplayName)
-                                    .font(DockTypography.control)
-                                    .foregroundStyle(Color.dockSecondaryText)
-                                    .lineLimit(1)
-                            }
-                            DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
-                        }
-                        .padding(.horizontal, 8)
-                        .frame(height: 28)
-                        .background(
-                            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                .fill(Color.dockControlSurface)
-                        )
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
-                    .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
-                    .help("Select thinking depth")
+                    composerReasoningPicker
 
                     if showsInterruptControl {
                         Button(action: { onStop() }) {
@@ -427,7 +370,7 @@ struct ChatComposerView: View {
                         .accessibilityLabel(model.status == .needsClarification ? "Dismiss clarification" : "Stop Hermes response")
                     }
 
-                    // Circular Submit / Action Button with Upward Arrow
+                    // Submit and stop share one action, styled by the composer role.
                     Button(action: {
                         if speechInput.isRecording {
                             speechInput.stop()
@@ -439,8 +382,9 @@ struct ChatComposerView: View {
                         }
                     }) {
                         ZStack {
-                            Circle()
-                                // Soft translucent fill for submit circle
+                            (DockSkinPresentation.current.composer != .floating
+                                ? AnyShape(DockThemeShape(cornerRadius: DockLayout.controlRadius))
+                                : AnyShape(Circle()))
                                 .fill(canSubmit && !model.isRestoringSession ? Color.dockAccent : Color.dockSurface6)
                                 .frame(width: isFullscreen ? 36 : 32, height: isFullscreen ? 36 : 32)
 
@@ -467,13 +411,14 @@ struct ChatComposerView: View {
                         model.isUpdatingSessionModel ||
                         (!speechInput.isRecording && !showStop && (!canSubmit || (!isSteeringTurn && model.isSending)))
                     )
+                    .accessibilityLabel(speechInput.isRecording ? "Send voice prompt" : showStop ? "Stop Hermes response" : isSteeringTurn ? DockSkinPresentation.current.steerLabel : DockSkinPresentation.current.submitLabel)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .help(
                         speechInput.isRecording
                             ? "Send voice prompt"
                             : (showStop
                                 ? "Stop Hermes response"
-                                : (isSteeringTurn ? "Steer active turn (↩; ⇧↩ for newline)" : "Send message (↩; ⇧↩ for newline)"))
+                                : (isSteeringTurn ? "\(DockSkinPresentation.current.steerLabel) (↩; ⇧↩ for newline)" : "\(DockSkinPresentation.current.submitLabel) (↩; ⇧↩ for newline)"))
                     )
                 }
             }
@@ -505,26 +450,100 @@ struct ChatComposerView: View {
             .padding(.trailing, 8)
             .padding(.top, 6)
             .padding(.bottom, 0)
-            .background(
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                    .fill(Color.dockSurface2)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous)
-                            .stroke(
+            .background {
+                let skin = DockSkinPresentation.current
+                let shape = DockThemeShape(cornerRadius: skin.composerRadius, role: .pane)
+                if skin.composer == .line {
+                    // Typographic skins replace the input box with one rule.
+                    Rectangle()
+                        .fill(speechInput.isRecording ? Color.dockDestructive : isComposerFocused ? Color.dockAccent : Color.dockPrimaryText)
+                        .frame(height: isComposerFocused ? 2 : 1)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                } else {
+                    shape
+                        .fill(DockThemeStyle.current.material == .glass ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.dockSurface2))
+                        .overlay {
+                            shape.stroke(
                                 speechInput.isRecording
                                     ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
                                     : (isComposerFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder),
                                 lineWidth: DockLayout.hairline
                             )
-                    }
-                    .shadow(color: Color.black.opacity(0.10), radius: 6, y: 2)
-            )
+                        }
+                        .shadow(color: Color.black.opacity(0.10), radius: skin.composerShadow, y: skin.composerShadow == 0 ? 0 : 2)
+                }
+            }
         }
         .padding(.horizontal, metrics.composerInset)
         .padding(.top, metrics.composerTopInset)
         .padding(.bottom, metrics.composerBottomInset)
         .frame(maxWidth: metrics.composerMaxWidth)
         .frame(maxWidth: .infinity)
+    }
+
+    private var composerModelPicker: some View {
+        ModelPickerView(
+            options: model.runtimeModelOptions,
+            selectedID: selectedModelOptionID,
+            isRefreshing: model.isLoadingRuntimeModelOptions,
+            refreshError: model.runtimeModelOptionsError,
+            onRefresh: { model.refreshRuntimeModelOptions(sessionID: model.sessionID) },
+            onSelect: { option in
+                model.updateSessionModel(option)
+            }
+        )
+        .font(DockTypography.control)
+        .foregroundStyle(Color.dockSecondaryText)
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                .fill(DockSkinPresentation.current.composerControlFill)
+        )
+        .frame(minHeight: 44, alignment: .center)
+        .disabled(model.isUpdatingSessionModel)
+        .help("Select model")
+    }
+
+    private var composerReasoningPicker: some View {
+        // Thinking depth variant selector menu
+        Menu {
+            Picker("", selection: reasoningVariantSelection) {
+                ForEach(HermesReasoningVariant.allCases) { variant in
+                    Text(variant.displayName).tag(Optional(variant))
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            // A plain button-style menu renders this SwiftUI
+            // label as drawn; a borderless menu keeps only native
+            // text and images and drops custom icon views.
+            HStack(spacing: 6) {
+                DockIcon(.brain, size: 13, color: Color.dockSecondaryText)
+                if ComposerToolbarPresentation.showsReasoningLabel(for: metrics) {
+                    Text(sessionReasoningDisplayName)
+                        .font(DockTypography.control)
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
+                }
+                DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .fill(DockSkinPresentation.current.composerControlFill)
+            )
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
+        .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
+        .help("Select thinking depth")
     }
 
     /// Roster Bots offered ahead of Hermes' `@` rows (desktop's Bot Mode
@@ -540,7 +559,7 @@ struct ChatComposerView: View {
                     || bot.name.localizedCaseInsensitiveContains(query)
                     || (bot.title?.localizedCaseInsensitiveContains(query) == true)
             }
-            .map { ComposerCompletionItem(text: "@\($0.id)", display: "@\($0.id)", meta: $0.name, group: "", bot: $0) }
+            .map { ComposerCompletionItem(text: "@\($0.id)", display: "@\($0.id)", meta: $0.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "", group: "", bot: $0) }
     }
 
     private func updateCompletions(for text: String, caret: Int) {
@@ -624,27 +643,9 @@ struct ChatComposerView: View {
     }
 
     private func submitComposerInput() {
-        // A single explicit roster mention is a request to that Bot, not a hint
-        // for the current ordinary-chat agent to create an unprofiled delegate.
-        // Attachments and in-flight turns retain their existing, conservative
-        // submission paths until Hermes exposes a profile-scoped attachment API.
-        if model.status != .working,
-           !model.isSending,
-           model.attachedContexts.isEmpty,
-           ComposerMentionPresentation.canDirectRouteBot(
-               hasImages: !model.pendingImages.isEmpty,
-               hasPDF: model.pendingPDFURL != nil
-           ),
-           let request = ComposerMentionPresentation.directBotRequest(
-                in: composer.text,
-                profileIDs: botMode.visibleBots.map(\.id)
-           ),
-           let bot = botMode.visibleBots.first(where: { $0.id == request.profileID }) {
-            closeCompletions()
-            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text, chatSessionID: bot.chat?.sessionID)
-            return
-        }
-        model.submitComposerInput()
+        // Hermes' composer identifies mentions; the session agent owns delivery
+        // through message_agent, including its Bot Chat and permission rules.
+        model.submitComposerInput(mentionProfiles: botMode.visibleBots.map { $0.id })
     }
 
     private var pasteImageAvailable: Bool {
@@ -699,9 +700,9 @@ struct ChatComposerView: View {
     }
 
     private var placeholderText: String {
-        if model.isRestoringSession { return "Restoring conversation…" }
-        if model.status == .needsClarification { return "Answer Hermes' question…" }
-        return "Do anything"
+        if model.isRestoringSession { return DockSkinPresentation.current.restoringPlaceholder }
+        if model.status == .needsClarification { return DockSkinPresentation.current.answerPlaceholder }
+        return DockSkinPresentation.current.composerPlaceholder
     }
 
     private var sessionModelDisplayName: String {
@@ -753,21 +754,22 @@ struct ChatComposerView: View {
 }
 
 /// Context-window occupancy ring, matching Hermes desktop's context gauge.
-/// Hermes auto-compacts once occupancy crosses `compression.threshold`; the
-/// ring pulses while that summarization runs and drops on the next reading.
+/// Occupancy uses the full context window, not the runtime's compaction budget.
+/// Compaction replaces the last percentage until Hermes reports completion.
 private struct SessionContextRing: View {
     @ObservedObject var model: DockModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showingDetails = false
+    @State private var details: SessionContextSummary?
+    @State private var loadingDetails = false
+    @State private var dismissTask: Task<Void, Never>?
 
     var body: some View {
         Group {
             if let context = model.sessionContextUsage, context.sessionID == model.sessionID {
                 let fraction = min(1, Double(context.used) / Double(context.max))
                 let percent = Int((fraction * 100).rounded())
-                // Mid-turn compaction shows in the transcript; the ring only
-                // covers compactions with no streaming response to host them.
                 let compacting = model.compactingSessionID == model.sessionID
-                    && model.streamingMessageIDForPresentation == nil
                 let tint: Color = compacting ? .dockAccent : fraction >= 0.8 ? .dockWarning : .dockMetadataText
                 HStack(spacing: 4) {
                     ZStack {
@@ -783,14 +785,103 @@ private struct SessionContextRing: View {
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(tint)
                 }
-                .help(compacting
-                    ? "Hermes is summarizing older turns to free context"
-                    : "Context \(percent)% · \(SessionTokenFormatting.formatCompact(context.used)) / \(SessionTokenFormatting.formatCompact(context.max)) tokens")
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(compacting ? "Compacting context" : "Context \(percent) percent full")
+                .onHover { hovering in updateHover(hovering) }
+                .onTapGesture { showingDetails.toggle() }
+                .accessibilityAction(named: "Show context details") { showingDetails = true }
+                .popover(isPresented: $showingDetails, arrowEdge: .bottom) {
+                    contextDetails
+                        .onHover { hovering in updateHover(hovering) }
+                        .task(id: model.compactingSessionID) {
+                            loadingDetails = true
+                            details = await model.fetchSessionContextDetails()
+                            loadingDetails = false
+                        }
+                }
             }
         }
         .task(id: model.sessionID) { model.refreshSessionTokenUsage() }
+        .onChange(of: model.sessionID) { _, _ in
+            showingDetails = false
+            details = nil
+            dismissTask?.cancel()
+        }
+        .onDisappear { dismissTask?.cancel() }
+    }
+
+    private func updateHover(_ hovering: Bool) {
+        dismissTask?.cancel()
+        if hovering {
+            showingDetails = true
+        } else {
+            dismissTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                showingDetails = false
+            }
+        }
+    }
+
+    private var contextDetails: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Context").font(.system(size: 12, weight: .semibold))
+                Spacer()
+                if model.compactingSessionID == model.sessionID {
+                    Text("Compacting").foregroundStyle(Color.dockAccent)
+                }
+            }
+            if let details {
+                if details.contextMax > 0 {
+                    detailRow(details.contextEstimated ? "Estimated usage" : "Usage",
+                              "\(SessionTokenFormatting.formatCompact(details.contextUsed)) / \(SessionTokenFormatting.formatCompact(details.contextMax)) tokens")
+                }
+                if details.compressionEnabled == false {
+                    detailRow("Automatic compaction", "Disabled")
+                } else if let threshold = details.compressionThresholdTokens {
+                    detailRow("Compaction threshold", SessionTokenFormatting.format(threshold))
+                    if details.contextMax > 0 {
+                        let percent = Int((Double(threshold) / Double(details.contextMax) * 100).rounded())
+                        Text("Compaction can start at \(percent)% of the full window.")
+                            .foregroundStyle(Color.dockSecondaryText)
+                    }
+                    if model.compactingSessionID != model.sessionID, details.contextUsed > 0 {
+                        detailRow("Until token threshold", SessionTokenFormatting.format(max(0, threshold - details.contextUsed)))
+                    }
+                } else {
+                    Text("Compaction threshold isn’t reported by this runtime.")
+                        .foregroundStyle(Color.dockSecondaryText)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                if details.categories.isEmpty {
+                    Text("Context breakdown is unavailable.").foregroundStyle(Color.dockMetadataText)
+                } else {
+                    Text("Estimated breakdown").font(.system(size: 12, weight: .semibold))
+                    ForEach(details.categories) { category in
+                        detailRow(category.label, SessionTokenFormatting.format(category.tokens))
+                    }
+                }
+                Text("The ring measures the full window. Idle time or provider limits can also trigger compaction; this is a token threshold, not a countdown.")
+                    .foregroundStyle(Color.dockSecondaryText)
+            } else {
+                Text(loadingDetails ? "Loading context details…" : "Context details are unavailable.")
+                    .foregroundStyle(Color.dockMetadataText)
+            }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(Color.dockPrimaryText)
+        .padding(16)
+        .frame(width: 340, alignment: .leading)
+        .background(Color.dockSurface)
+    }
+
+    private func detailRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label).foregroundStyle(Color.dockSecondaryText)
+            Spacer(minLength: 12)
+            Text(value).monospacedDigit()
+        }
     }
 }
 
@@ -936,7 +1027,7 @@ private struct ComposerInputEditor: NSViewRepresentable {
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
         textView.string = text.displayBullets
-        textView.font = .systemFont(ofSize: 14)
+        textView.font = DockSkinPresentation.nativeFont(size: 14)
         textView.textColor = NSColor(Color.dockPrimaryText)
         textView.insertionPointColor = NSColor(Color.dockAccent)
         textView.drawsBackground = false
@@ -963,6 +1054,9 @@ private struct ComposerInputEditor: NSViewRepresentable {
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
         textView.onCompletionKey = onCompletionKey
+        textView.font = DockSkinPresentation.nativeFont(size: 14)
+        textView.textColor = NSColor(Color.dockPrimaryText)
+        textView.insertionPointColor = NSColor(Color.dockAccent)
         if textView.string.markdownBullets != text {
             context.coordinator.isSynchronizingText = true
             textView.string = text.displayBullets

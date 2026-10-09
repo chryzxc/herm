@@ -246,7 +246,7 @@ struct RepositoryCodeWorkspaceView: View {
         }
         .padding(12)
         .frame(width: 280, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
+        .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockOpaqueCanvas))
         .background(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).fill(Color.dockSurface2))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: DockLayout.hairline))
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)

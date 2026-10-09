@@ -46,7 +46,8 @@ enum SidebarSessionStatusResolver {
                 case .offline: return .unavailable
                 }
             }
-            guard let summary else { return .unavailable }
+            // Only open sessions have a summary; the index row's own flags cover the rest.
+            guard let summary else { return session.isWorking ? .active : .completed }
             return SessionLifecyclePresentation.status(for: summary)
         }()
 
@@ -54,6 +55,7 @@ enum SidebarSessionStatusResolver {
         case .active: return .working
         case .failed: return .failed
         case .completed:
+            if session.hasUnreadUpdate { return .unreadComplete }
             guard isProfileBaselined else { return .none }
             guard let updatedAt = session.lastUpdatedAt ?? summary?.lastUpdatedAt else { return .none }
             return updatedAt > (seenAt ?? .distantPast) ? .unreadComplete : .none

@@ -25,6 +25,28 @@ private final class PinRPCClient: HermesRPCClientProtocol {
 
 @MainActor
 final class PinnedSessionTests: XCTestCase {
+    func testSessionIndexPreservesSourceForConversationBadges() async throws {
+        let client = PinRPCClient()
+        client.rows = [
+            ["id": "discord", "source": " Discord ", "pinned": true],
+            ["id": "slack", "source": "slack", "pinned": true],
+            ["id": "local", "source": "herm", "pinned": true],
+            ["id": "legacy", "pinned": true],
+            ["id": "other", "source": "custom_channel", "pinned": true],
+            ["id": "conversation", "source": "conversation", "pinned": true],
+            ["id": "project", "source": "projects", "pinned": true]
+        ]
+        let index = try await DockModel.fetchSessionIndex(client: client, profileID: nil)
+        let labels = Dictionary(uniqueKeysWithValues: index.pinned.map { ($0.id, $0.sourceBadgeTitle) })
+        XCTAssertEqual(labels["discord"]!, "Discord")
+        XCTAssertNil(labels["slack"]!)
+        XCTAssertNil(labels["local"]!)
+        XCTAssertNil(labels["legacy"]!)
+        XCTAssertNil(labels["other"]!)
+        XCTAssertNil(labels["conversation"]!)
+        XCTAssertNil(labels["project"]!)
+    }
+
     private func session(_ id: String, updatedAt: TimeInterval = 0, working: Bool = false) -> HermesSession {
         HermesSession(id: id, title: id, preview: "", startedAt: nil,
                       updatedAt: Date(timeIntervalSince1970: updatedAt), messageCount: 1, source: "",
