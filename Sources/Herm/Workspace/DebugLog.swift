@@ -21,29 +21,29 @@ enum DebugLog {
     // that hot path.
     private static let timestampFormatter = ISO8601DateFormatter()
 
-    static func write(_ message: String) {
+    static func write(_ message: @autoclosure () -> String) {
         guard enabled else { return }
-        let line = "[\(timestampFormatter.string(from: Date()))] event=\(persistentEventName(for: message))\n"
+        let line = "[\(timestampFormatter.string(from: Date()))] event=\(persistentEventName(for: message()))\n"
         writer.append(line, to: fileURL)
     }
 
     /// Temporary state-transition diagnostics. The full message is available
     /// only to the console output; durable output is metadata-only.
-    static func writeDiagnostic(_ message: String) {
+    static func writeDiagnostic(_ message: @autoclosure () -> String) {
         guard enabled else { return }
         let timestamp = timestampFormatter.string(from: Date())
         writer.append(
             "[\(timestamp)] event=diagnostic\n",
             to: fileURL,
-            consoleLine: "[\(timestamp)] diagnostic=\(message)\n"
+            consoleLine: "[\(timestamp)] diagnostic=\(message())\n"
         )
     }
 
     /// Numeric performance metrics contain no prompt, tool, path, or response
     /// data, so they can be retained verbatim for local profiling.
-    static func writePerformance(_ fields: String) {
+    static func writePerformance(_ fields: @autoclosure () -> String) {
         guard enabled else { return }
-        writer.append("[\(timestampFormatter.string(from: Date()))] event=perf \(fields)\n", to: fileURL)
+        writer.append("[\(timestampFormatter.string(from: Date()))] event=perf \(fields())\n", to: fileURL)
     }
 
     /// Persistent diagnostics deliberately retain only a bounded event category.

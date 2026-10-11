@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftUI
 
 /// Stable identity for a transcript location. The session component prevents a
@@ -458,45 +459,61 @@ struct MessageNavigatorView: View {
             ? markerTrackHeight(in: size.height) / CGFloat(markers.count - 1) + 2
             : 12
 
+        // Nearest marker for a y inside the strip below.
+        func markerIndex(atY y: CGFloat) -> Int? {
+            guard !markers.isEmpty else { return nil }
+            let trackHeight = markerTrackHeight(in: size.height)
+            let fraction = trackHeight > 0 ? (y - 12 - hoverZoneHeight / 2) / trackHeight : 0
+            return min(max(0, Int((fraction * CGFloat(markers.count - 1)).rounded())), markers.count - 1)
+        }
+
         return ZStack(alignment: .topLeading) {
             ForEach(Array(markers.enumerated()), id: \.element.id) { index, item in
                 let distanceFromHover = activeIndex.map { abs(index - $0) }
                 let isHovered = item.target == hoveredTarget
                 let width = markerWidth(for: item, isHovered: isHovered, distanceFromHover: distanceFromHover)
-                Button {
-                    selectedTarget = item.target
-                    Self.dispatchSelection(item, onSelect: onSelect)
-                } label: {
-                    ZStack(alignment: .trailing) {
-                        Capsule()
-                            .fill(Color.clear)
-                            .frame(width: width, height: hoverZoneHeight)
-                            .contentShape(Rectangle())
-                            .onHover { isHovering in
-                                if isHovering {
-                                    clearHoverTask?.cancel()
-                                    hoveredTarget = item.target
-                                } else {
-                                    scheduleHoverClear(for: item.target)
-                                }
-                            }
-                        Capsule()
-                            .fill(markerColor(for: item, activeTarget: activeTarget, distanceFromHover: distanceFromHover))
-                            .frame(width: width, height: 3)
-                            .allowsHitTesting(false)
-                    }
+                // Plain drawings: a Button or .help here installs AppKit views
+                // that swallow the pointer over the resting bars. The strip
+                // below owns hover and clicks for the whole rail.
+                Capsule()
+                    .fill(markerColor(for: item, activeTarget: activeTarget, distanceFromHover: distanceFromHover))
+                    .frame(width: width, height: 3)
                     .frame(width: 28, height: hoverZoneHeight, alignment: .trailing)
-                    .contentShape(Rectangle())
                     .animation(
                         .easeInOut(duration: 0.16).delay(Double(distanceFromHover ?? 5) * 0.022),
                         value: hoveredTarget
                     )
-                }
-                .buttonStyle(.plain)
-                .position(x: size.width - 7, y: markerY(at: index, count: markers.count, in: size.height))
-                .help("\(item.ordinal) · \(item.roleLabel): \(item.preview)")
-                .accessibilityLabel("Jump to message \(item.ordinal), \(item.roleLabel)")
+                    .allowsHitTesting(false)
+                    .accessibilityElement()
+                    .accessibilityLabel("Jump to message \(item.ordinal), \(item.roleLabel)")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction {
+                        selectedTarget = item.target
+                        Self.dispatchSelection(item, onSelect: onSelect)
+                    }
+                    // The marker frame must sit inside the rail's bounds:
+                    // SwiftUI drops hover for anything drawn outside its parent.
+                    .position(x: size.width - 38, y: markerY(at: index, count: markers.count, in: size.height))
             }
+
+            // One strip on top of the markers: the wave follows the pointer's y.
+            RailPointerStrip(
+                onMove: { y in
+                    guard let index = markerIndex(atY: y) else { return }
+                    clearHoverTask?.cancel()
+                    if hoveredTarget != markers[index].target { hoveredTarget = markers[index].target }
+                },
+                onExit: { if let leaving = hoveredTarget { scheduleHoverClear(for: leaving) } },
+                onClick: { y in
+                    guard let index = markerIndex(atY: y) else { return }
+                    selectedTarget = markers[index].target
+                    Self.dispatchSelection(markers[index], onSelect: onSelect)
+                }
+            )
+            // The whole rail block, not just the bars: SwiftUI's hit area for
+            // the bars sat left of their drawing, so cover a wide band too.
+            .frame(width: 120, height: markerTrackHeight(in: size.height) + hoverZoneHeight + 24)
+                .position(x: size.width - 60, y: size.height / 2)
 
             if let previewItem {
                 VStack(alignment: .leading, spacing: 4) {
@@ -515,7 +532,7 @@ struct MessageNavigatorView: View {
                 .background(Color.dockSurface4, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-                .position(x: size.width - 100, y: min(max(previewY, 52), max(52, size.height - 40)))
+                .position(x: size.width - 131, y: min(max(previewY, 52), max(52, size.height - 40)))
                 .transition(.opacity)
                 .allowsHitTesting(false)
             }
@@ -574,4 +591,82 @@ struct MessageNavigatorView: View {
         return Color.dockMetadataText.opacity(0.62)
     }
 
+}
+
+/// AppKit tracking area for the marker rail. SwiftUI hover and tap regions
+/// here drifted left of the drawn bars; an NSView's tracking area follows the
+/// view's real frame. Reports the pointer's y in the strip's top-left space.
+private struct RailPointerStrip: NSViewRepresentable {
+    var onMove: (CGFloat) -> Void
+    var onExit: () -> Void
+    var onClick: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> StripView { StripView() }
+
+    func updateNSView(_ view: StripView, context: Context) {
+        view.onMove = onMove
+        view.onExit = onExit
+        view.onClick = onClick
+    }
+
+    /// Polls the pointer instead of relying on hover events: something over the
+    /// right edge of the chat swallows them before SwiftUI or this view's
+    /// tracking area sees them, so the pointer is hit-tested against the
+    /// strip's on-screen frame directly.
+    final class StripView: NSView {
+        var onMove: (CGFloat) -> Void = { _ in }
+        var onExit: () -> Void = {}
+        var onClick: (CGFloat) -> Void = { _ in }
+
+        override var isFlipped: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        private var timer: Timer?
+        private var clickMonitor: Any?
+        private var isInside = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            timer?.invalidate()
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            timer = nil
+            clickMonitor = nil
+            guard window != nil else { return }
+            timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.poll() }
+            }
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                if let self, let y = self.pointerY(), event.window === self.window { self.onClick(y) }
+                return event
+            }
+        }
+
+        isolated deinit {
+            timer?.invalidate()
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+        }
+
+        /// The pointer's y in this view, or nil when it is outside the strip.
+        private func pointerY() -> CGFloat? {
+            guard let window, window.isVisible else { return nil }
+            let pointer = NSEvent.mouseLocation
+            let inWindow = window.convertPoint(fromScreen: pointer)
+            let local = convert(inWindow, from: nil)
+            // Most timer ticks are outside the rail; avoid a WindowServer query there.
+            guard bounds.contains(local),
+                  NSWindow.windowNumber(at: pointer, belowWindowWithWindowNumber: 0) == window.windowNumber
+            else { return nil }
+            return local.y
+        }
+
+        private func poll() {
+            if let y = pointerY() {
+                isInside = true
+                onMove(y)
+            } else if isInside {
+                isInside = false
+                onExit()
+            }
+        }
+    }
 }

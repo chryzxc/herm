@@ -5,11 +5,19 @@ import simd
 /// furniture footprints and station coordinates.
 struct OfficePreviewLayout {
     var authored: OfficeDesignNavigation? {
-        didSet { rebuildBlockedGrid() }
+        didSet {
+            navigationObstacles = walls + furniture
+            rebuildBlockedGrid()
+        }
     }
     // One bounded geometry cache, replaced whenever the authored room changes.
     // Moving bots remain live obstacles and are never stored in this cache.
     private var blockedGrid = Set<SIMD2<Int>>()
+    private var navigationObstacles: [Footprint] = []
+
+    init() {
+        navigationObstacles = walls + furniture
+    }
 
     private mutating func rebuildBlockedGrid() {
         blockedGrid.removeAll(keepingCapacity: true)
@@ -30,7 +38,7 @@ struct OfficePreviewLayout {
         }
     }
     private(set) var slots: [String: Int] = [:]
-    var capacity: Int { max(8, (slots.values.max() ?? -1) + 1) }
+    private(set) var capacity = 8
     var deskRows: Int { (capacity + 7) / 8 }
     var workBottom: Float { max(2, max(-3 + Float(deskRows - 1) * 6 + 3, -5.5 + Float((capacity + 1) / 2) * 1.5)) }
     var hallBottom: Float { workBottom + 2 }
@@ -45,6 +53,7 @@ struct OfficePreviewLayout {
     /// The authored office reserves its final physical desk for one main
     /// session. Other sessions/bots retain unique shared or overflow slots.
     mutating func reconcile(ids: [String], mainAgentID: String? = nil, reserveMainOffice: Bool = false) {
+        let previousCapacity = capacity
         var next = reserveMainOffice ? 0 : (slots.values.max() ?? -1) + 1
         if reserveMainOffice {
             for id in Array(slots.keys) where slots[id] == 22 && id != mainAgentID {
@@ -61,6 +70,8 @@ struct OfficePreviewLayout {
             slots[id] = next
             next += 1
         }
+        capacity = max(8, (slots.values.max() ?? -1) + 1)
+        if capacity != previousCapacity, authored == nil { navigationObstacles = walls + furniture }
     }
 
     func station(slot: Int, location: OfficePreviewLocation) -> SIMD3<Float> {
@@ -162,7 +173,7 @@ struct OfficePreviewLayout {
               point.z >= back + 0.6, point.z <= front - 0.6 else { return false }
         // L-shaped cutaway: the coffee nook ends before the front lounge.
         if authored == nil && point.x > 12 && point.z > hallBottom + 5 { return false }
-        return !(walls + furniture).contains { $0.contains([point.x, point.z], clearance: 0.36) }
+        return !navigationObstacles.contains { $0.contains([point.x, point.z], clearance: 0.36) }
     }
 
     /// Straight-line clearance against the cached obstacle grid. Every grid
@@ -250,7 +261,7 @@ struct OfficePreviewLayout {
         func grid(_ point: SIMD3<Float>) -> SIMD2<Int> { [Int((point.x * 4).rounded()), Int((point.z * 4).rounded())] }
         let source = grid(position(first)), goal = grid(position(last))
         func heuristic(_ p: SIMD2<Int>) -> Int { abs(p.x - goal.x) + abs(p.y - goal.y) }
-        let obstacles = authored == nil ? walls + furniture : []
+        let obstacles = authored == nil ? navigationObstacles : []
         func allowed(_ p: SIMD2<Int>) -> Bool {
             let x = Float(p.x) / 4, z = Float(p.y) / 4
             guard x >= minX + 0.6, x <= maxX - 0.6, z >= back + 0.6, z <= front - 0.6 else { return false }

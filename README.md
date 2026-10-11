@@ -334,6 +334,11 @@ make check    # everything CI runs
 
 CI runs on every pull request and on every push to `main`.
 
+Local attachment previews decode off the UI thread and reuse bounded thumbnails;
+attachment uploads also prepare file data in the background. See the
+[performance audit](docs/performance-audit.md) for the measured fixes, regression
+coverage, and remaining interactive profiling work.
+
 | Document | Purpose |
 |---|---|
 | [DESIGN.md](DESIGN.md) | The reference for UI behavior and styling |

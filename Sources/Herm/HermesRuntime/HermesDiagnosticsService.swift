@@ -35,20 +35,21 @@ final class HermesDiagnosticsService {
     }
 
     nonisolated static func safeSummary(_ output: String) -> String {
-        let ansiFree = output.replacingOccurrences(of: "\u{001B}\\[[0-9;]*m", with: "", options: .regularExpression)
-        let lines = ansiFree
-            .split(separator: "\n")
-            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
-            .map { Self.scrubEndpointURL(in: $0) }
-            .map { Self.scrubSecrets(in: $0) }
-            .map { Self.scrubHomePath(in: $0) }
-            .filter { line in
-                !line.isEmpty
-                    && !line.contains("Auth file:")
-                    && !line.contains(".env")
+        var lines: [String] = []
+        var remaining = output[...]
+        while !remaining.isEmpty, lines.count < 3 {
+            let end = remaining.firstIndex(of: "\n") ?? remaining.endIndex
+            let raw = String(remaining[..<end])
+            remaining = end == remaining.endIndex ? "" : remaining[remaining.index(after: end)...]
+            let ansiFree = raw.replacingOccurrences(of: "\u{001B}\\[[0-9;]*m", with: "", options: .regularExpression)
+            let line = scrubHomePath(in: scrubSecrets(in: scrubEndpointURL(in:
+                ansiFree.trimmingCharacters(in: .whitespacesAndNewlines)
+            )))
+            if !line.isEmpty, !line.contains("Auth file:"), !line.contains(".env") {
+                lines.append(line)
             }
-        let summary = lines.prefix(3).joined(separator: "  ·  ")
-        return String(summary.prefix(1_000))
+        }
+        return String(lines.joined(separator: "  ·  ").prefix(1_000))
     }
 
     nonisolated private static func scrubEndpointURL(in line: String) -> String {

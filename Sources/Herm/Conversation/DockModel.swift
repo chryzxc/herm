@@ -767,10 +767,9 @@ final class DockModel: ObservableObject {
                 touchSession(sessionID: promptSessionID, at: Date(), preview: text)
 
                 for attachedImage in attachedImages {
-                    let accessing = attachedImage.fileURL.startAccessingSecurityScopedResource()
-                    defer { if accessing { attachedImage.fileURL.stopAccessingSecurityScopedResource() } }
-                    let imageData = try Data(contentsOf: attachedImage.fileURL)
-                    let base64 = imageData.base64EncodedString()
+                    let base64 = try await AttachmentPayload.encoded(at: attachedImage.fileURL)
+                    guard self.sessionResumeGeneration == sendGeneration,
+                          self.sessionID == promptSessionID else { return }
                     let attachResult = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.imageAttachBytes.rawValue,
                         params: scopedSessionParams([
@@ -790,17 +789,14 @@ final class DockModel: ObservableObject {
                 }
 
                 if let attachedPDF {
-                    let accessing = attachedPDF.startAccessingSecurityScopedResource()
-                    defer { if accessing { attachedPDF.stopAccessingSecurityScopedResource() } }
-                    let pdfData = try Data(contentsOf: attachedPDF)
-                    guard pdfData.count <= 25 * 1024 * 1024 else {
-                        throw HermesGateway.GatewayError.imageAttachFailed("PDF attachments are limited to 25 MB.")
-                    }
+                    let base64 = try await AttachmentPayload.encoded(at: attachedPDF, maximumBytes: 25 * 1024 * 1024)
+                    guard self.sessionResumeGeneration == sendGeneration,
+                          self.sessionID == promptSessionID else { return }
                     let result = try await sessionRPCClient.request(
                         HermesFeatureIDs.ID.pdfAttach.rawValue,
                         params: scopedSessionParams([
                             "session_id": promptSessionID,
-                            "content_base64": pdfData.base64EncodedString(),
+                            "content_base64": base64,
                             "filename": attachedPDF.lastPathComponent
                         ])
                     )
@@ -3744,13 +3740,12 @@ final class DockModel: ObservableObject {
     private func clarificationAnswer(_ text: String, images: [ImageAttachment], sessionID: String) async throws -> String {
         var lines = text.isEmpty ? [] : [text]
         for image in images {
-            let accessing = image.fileURL.startAccessingSecurityScopedResource()
-            defer { if accessing { image.fileURL.stopAccessingSecurityScopedResource() } }
+            let base64 = try await AttachmentPayload.encoded(at: image.fileURL)
             let result = try await sessionRPCClient.request(
                 HermesFeatureIDs.ID.imageAttachBytes.rawValue,
                 params: scopedSessionParams([
                     "session_id": sessionID,
-                    "content_base64": try Data(contentsOf: image.fileURL).base64EncodedString(),
+                    "content_base64": base64,
                     "filename": image.fileName
                 ])
             )

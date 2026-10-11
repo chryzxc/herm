@@ -57,7 +57,7 @@ struct SessionKanbanActivityView: View {
                 }
                 try? await Task.sleep(for: .seconds(live ? 3 : 15))
                 guard !Task.isCancelled else { continue }
-                control.refreshSessionKanban(for: sessionID)
+                control.refreshSessionKanban(for: sessionID, quiet: true)
             }
         }
         .onChange(of: model.observedKanbanTaskRevision) { _, _ in

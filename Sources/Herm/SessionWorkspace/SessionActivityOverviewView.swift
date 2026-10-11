@@ -354,7 +354,7 @@ struct SessionActivityOverviewView: View {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(5)) }
                 catch { return }
-                control.refreshSessionKanban(for: sessionID)
+                control.refreshSessionKanban(for: sessionID, quiet: true)
             }
         }
         .task { await botMode.refreshNow(force: true) }

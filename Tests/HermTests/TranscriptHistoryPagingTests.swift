@@ -288,7 +288,7 @@ struct TranscriptHistoryPagingTests {
     }
 }
 
-@Test func runningDurationUsesWholeUnits() {
+@MainActor @Test func runningDurationUsesWholeUnits() {
     #expect(TurnActivityView.roughDuration(1.9) == "1 second")
     #expect(TurnActivityView.roughDuration(45) == "45 seconds")
     #expect(TurnActivityView.roughDuration(119) == "1 minute")

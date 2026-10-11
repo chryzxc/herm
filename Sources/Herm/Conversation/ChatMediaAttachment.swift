@@ -124,9 +124,7 @@ struct ChatMediaAttachmentCard: View {
         let shape = RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
         Group {
             if url.isFileURL || url.scheme == "data" {
-                if let image = url.isFileURL ? NSImage(contentsOf: url) : (try? Data(contentsOf: url)).flatMap(NSImage.init(data:)) {
-                    Image(nsImage: image).resizable().scaledToFit()
-                }
+                AttachmentThumbnailView(url: url).frame(maxWidth: 420).frame(height: 420)
             } else {
                 AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { ProgressView().controlSize(.small) }
             }

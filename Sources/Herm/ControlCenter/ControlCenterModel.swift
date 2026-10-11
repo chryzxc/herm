@@ -215,6 +215,7 @@ final class ControlCenterModel: ObservableObject {
     private var aggregateKanbanRefreshGeneration = UUID()
     private var visibleKanbanRefreshGeneration = UUID()
     private var kanbanRefreshInFlight: Set<KanbanRefreshScope> = []
+    private var providerQuotaReadsInFlight = 0
     private var sessionKanbanRefreshGeneration = UUID()
     private var sessionKanbanTask: Task<Void, Never>?
     private var sessionKanbanRequest: SessionKanbanProjectionRequest?
@@ -906,7 +907,13 @@ final class ControlCenterModel: ObservableObject {
     /// published as soon as its read returns, so one slow service never holds
     /// back the rest. `readerIDs` limits the read to those services and keeps
     /// every other provider's last reading.
-    func refreshProviderQuota(only readerIDs: Set<String>? = nil) {
+    /// `quiet` is the notch's background poll: it skips while another read is
+    /// in flight and publishes only real changes, since each publish re-renders
+    /// every view observing this model (a scroll hitch every 30s otherwise).
+    func refreshProviderQuota(only readerIDs: Set<String>? = nil, quiet: Bool = false) {
+        let quotaState = projectionRefreshStates["provider.quota"]
+        let quiet = quiet && quotaState?.lastSuccess != nil && quotaState?.error == nil && quotaState?.isStale == false
+        if quiet, providerQuotaReadsInFlight > 0 { return }
         let generation = UUID()
         let bindingGeneration = clientBindingGeneration
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
@@ -916,9 +923,12 @@ final class ControlCenterModel: ObservableObject {
             reportedProviderQuotas = []
             return
         }
-        beginProjectionRefresh("provider.quota")
+        if !quiet { beginProjectionRefresh("provider.quota") }
         let readers = Self.quotaReaders.filter { readerIDs?.contains($0.id) ?? true }
+        providerQuotaReadsInFlight += 1
         Task { @MainActor in
+            defer { providerQuotaReadsInFlight -= 1 }
+            var changed = false
             var diagnostics = readerIDs == nil ? [:] : providerQuotaDiagnostics
             var seen = Set<String>()
             var errors: [String] = []
@@ -946,6 +956,7 @@ final class ControlCenterModel: ObservableObject {
                     let replaced = Set(previous.map(\.provider))
                     reportedProviderQuotas = reportedProviderQuotas.filter { !replaced.contains($0.provider) } + snapshots
                     applyProviderQuotaPresentation()
+                    changed = true
                 }
             }
             guard generation == providerQuotaGeneration else { return }
@@ -955,14 +966,15 @@ final class ControlCenterModel: ObservableObject {
                 recordProjectionFailure("provider.quota", error: "Quota read was interrupted.")
                 return
             }
-            if providerQuotaDiagnostics != diagnostics { providerQuotaDiagnostics = diagnostics }
+            if providerQuotaDiagnostics != diagnostics { providerQuotaDiagnostics = diagnostics; changed = true }
             if readerIDs == nil, reportedProviderQuotas.contains(where: { !seen.contains($0.provider) }) {
                 reportedProviderQuotas.removeAll { !seen.contains($0.provider) }
                 applyProviderQuotaPresentation()
+                changed = true
             }
             if !seen.isEmpty {
                 refreshHermesActiveCredentials()
-                recordProjectionSuccess("provider.quota")
+                if !quiet || changed { recordProjectionSuccess("provider.quota") }
             } else {
                 recordProjectionFailure("provider.quota", error: errors.first ?? "Provider quota data is unavailable.")
             }
@@ -1985,7 +1997,13 @@ final class ControlCenterModel: ObservableObject {
         if shouldPublishRefreshState {
             beginProjectionRefresh("kanban.board")
         }
-        if scope.isAggregate {
+        // The notch polls the aggregate every 5s even with the workspace
+        // closed. A healthy, unchanged poll must publish nothing, or every
+        // view observing this model re-renders mid-scroll.
+        let globalState = projectionRefreshStates["kanban.global"]
+        let quietAggregate = scope.isAggregate && trigger == .background && globalKanbanIsCurrent
+            && globalState?.lastSuccess != nil && globalState?.error == nil && globalState?.isStale == false
+        if scope.isAggregate, !quietAggregate {
             globalKanbanIsCurrent = false
             beginProjectionRefresh("kanban.global")
         }
@@ -2061,7 +2079,7 @@ final class ControlCenterModel: ObservableObject {
                         globalKanbanTasks = refreshedTasks
                         taskDataChanged = true
                     }
-                    globalKanbanIsCurrent = true
+                    if !globalKanbanIsCurrent { globalKanbanIsCurrent = true }
                     // Before board inventory has selected a board, the
                     // aggregate is the only valid visible projection.
                     if selectedKanbanBoardSlug == nil, kanbanTasks != refreshedTasks {
@@ -2075,7 +2093,7 @@ final class ControlCenterModel: ObservableObject {
                 if shouldPublishRefreshState || taskDataChanged {
                     recordProjectionSuccess("kanban.board")
                 }
-                if scope.isAggregate { recordProjectionSuccess("kanban.global") }
+                if scope.isAggregate, !quietAggregate || taskDataChanged { recordProjectionSuccess("kanban.global") }
                 if trigger == .user {
                     refreshKanbanSupportingProjections()
                 }
@@ -2294,8 +2312,10 @@ final class ControlCenterModel: ObservableObject {
                         requestedBoardSlug: requestedBoardSlug
                       ) else { return }
                 self.sessionKanbanTasksByRequest[requested] = sessionTasks
-                if self.sessionKanbanTasks != sessionTasks { self.sessionKanbanTasks = sessionTasks }
-                if !quiet { self.recordProjectionSuccess("kanban.session") }
+                let changed = self.sessionKanbanTasks != sessionTasks
+                if changed { self.sessionKanbanTasks = sessionTasks }
+                // Quiet polls still bump lastSuccess on real changes so card details refresh.
+                if !quiet || changed { self.recordProjectionSuccess("kanban.session") }
                 if requestedSessionID == self.dockModel?.kanbanSessionID {
                     await self.syncKanbanEventsIntoChat(sessionTasks, cli: cli)
                 }
@@ -4622,6 +4642,13 @@ final class ControlCenterModel: ObservableObject {
         // bracket, so parse one candidate per start. Trying every later
         // closing bracket was quadratic and stalled the main thread for
         // seconds on large boards.
+        // Fast path: the Kanban adapter emits a bare JSON array, so skip the
+        // byte scan below when the whole output already decodes.
+        if let data = output.data(using: .utf8),
+           let value = try? JSONSerialization.jsonObject(with: data),
+           let rows = kanbanTaskRows(from: value) {
+            return rows.compactMap { parseKanbanTaskSummary($0, boardSlug: boardSlug) }
+        }
         let bytes = Array(output.utf8)
         var validEmptyRows: [[String: Any]]?
         for start in bytes.indices where bytes[start] == UInt8(ascii: "[") || bytes[start] == UInt8(ascii: "{") {

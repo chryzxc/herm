@@ -30,6 +30,7 @@ final class EdgeDockController: NSObject {
     private var lastBotRead: Date?
     private var loadingBots = false
     private var lastKanbanRead: Date?
+    private var lastKanbanPoll: Date?
     private var kanbanStatusCurrent = false
     private var latestSessions: [HermesSession] = []
     private var latestAttention: [String: DockModel.SessionAttention] = [:]
@@ -156,7 +157,7 @@ final class EdgeDockController: NSObject {
         // The notch remains alive when the workspace is unmounted. Use the
         // same aggregate projection, without board filters or supporting reads.
         Timer.publish(every: 5, on: .main, in: .common).autoconnect()
-            .sink { [weak self] _ in self?.pollKanban(); self?.pollDeliveryQuestions() }
+            .sink { [weak self] _ in self?.pollKanban(force: false); self?.pollDeliveryQuestions() }
             .store(in: &subscriptions)
         controlCenter.$providerQuotas
             .receive(on: RunLoop.main)
@@ -352,8 +353,14 @@ final class EdgeDockController: NSObject {
         model.loadSessions()
     }
 
-    private func pollKanban() {
+    /// Idle polls are throttled to once a minute: each aggregate read pulls and
+    /// re-diffs every board, which kept the CPU (and the Hermes backend) busy
+    /// every 5s even with nothing happening. Live work keeps the 5s cadence.
+    private func pollKanban(force: Bool = true) {
         guard model.status != .offline else { return }
+        if !force, !state.activity.working,
+           let last = lastKanbanPoll, Date().timeIntervalSince(last) < 60 { return }
+        lastKanbanPoll = Date()
         controlCenter.refreshGlobalKanban(trigger: .background)
         guard !loadingBots, lastBotRead.map({ Date().timeIntervalSince($0) >= 60 }) ?? true else { return }
         loadingBots = true
@@ -450,7 +457,7 @@ final class EdgeDockController: NSObject {
         controlCenter.bind(to: model)
         quotaTick &+= 1
         let fullRead = hotQuotaReaders.isEmpty || (!afterWork && quotaTick.isMultiple(of: 2))
-        controlCenter.refreshProviderQuota(only: fullRead ? nil : hotQuotaReaders)
+        controlCenter.refreshProviderQuota(only: fullRead ? nil : hotQuotaReaders, quiet: !afterWork)
     }
 
     private func quotaChanged(_ quotas: [ProviderQuotaSnapshot]) {

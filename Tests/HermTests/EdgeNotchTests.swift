@@ -215,7 +215,7 @@ struct EdgeNotchTests {
         }
     }
 
-    @Test func quotaUsageKeepsUnknownValuesUnknownAndClampsBounds() {
+    @MainActor @Test func quotaUsageKeepsUnknownValuesUnknownAndClampsBounds() {
         #expect(EdgeQuotaPreview.remainingPercent(27) == 27)
         #expect(EdgeQuotaPreview.remainingPercent(nil) == nil)
         #expect(EdgeQuotaPreview.remainingPercent(.nan) == nil)

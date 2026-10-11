@@ -4,6 +4,13 @@ import Testing
 
 @MainActor
 struct HermesDiagnosticsServiceTests {
+    @Test func summaryStopsAfterThreeVisibleLinesWithoutChangingRedaction() {
+        let output = "\u{001B}[32mReady\u{001B}[0m\nAuth file: /Users/test/auth.json\n\n"
+            + "Loaded .env\nStatus: token=secret\nProject: ~/work\n"
+            + String(repeating: "Ignored token=secret /Users/test/private\n", count: 10_000)
+        #expect(HermesDiagnosticsService.safeSummary(output) == "Ready  ·  Status: token: ••••  ·  Project: ••••/work")
+    }
+
     @Test func thrownDiagnosticErrorsAreRedactedBeforeBecomingDetails() async {
         let service = HermesDiagnosticsService()
         let diagnostics = await service.read(client: ThrowingDiagnosticsRPCClient())

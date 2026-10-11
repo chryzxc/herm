@@ -111,8 +111,8 @@ struct FilePreviewPane: View {
 
     @ViewBuilder
     private var bodyContent: some View {
-        if kind == .image, let image = NSImage(contentsOf: url) {
-            ScrollView { Image(nsImage: image).resizable().scaledToFit().padding(16) }
+        if kind == .image {
+            ScrollView { AttachmentThumbnailView(url: url, maximumPixelSize: 2_400).padding(16) }
         } else {
             switch content {
             case .text(let text, let truncated):
@@ -287,18 +287,18 @@ struct FilePreviewPane: View {
                 .frame(height: 28)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help("All notes on this file")
             .popover(isPresented: $showsNotes, arrowEdge: .top) { notesList }
             Spacer(minLength: 8)
             if drafts.isEmpty {
-                Button(action: approve) {
-                    Label("Approve", systemImage: "hand.thumbsup")
+                Button(action: addToChat) {
+                    Label("Add to chat", systemImage: "arrowshape.turn.up.left")
                 }
                 .buttonStyle(.dockSecondary)
-                .help("Tell Hermes this looks good and to proceed")
+                .help("Reference this file in the chat composer")
             } else {
-                Button("Send \(drafts.count) to Hermes", action: sendDrafts)
+                Button("Send \(drafts.count) to chat", action: sendDrafts)
                     .buttonStyle(.dockPrimary)
                     .help("Attach these notes to the chat as one revision request")
             }
@@ -323,7 +323,7 @@ struct FilePreviewPane: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     if review.annotations.isEmpty {
-                        Text("Select any text in the document to leave a note on it. Notes collect here until you send them to Hermes.")
+                        Text("Select any text in the document to leave a note on it. Notes collect here until you send them to the chat.")
                             .font(.system(size: 11))
                             .foregroundStyle(Color.dockMetadataText)
                             .fixedSize(horizontal: false, vertical: true)
@@ -468,11 +468,11 @@ struct FilePreviewPane: View {
         center.markSent(path, baseline: text)
     }
 
-    private func approve() {
+    private func addToChat() {
         attach(ChatContext(
-            id: "review-approve:\(path)",
-            title: "Approved · \(url.lastPathComponent)",
-            body: "I reviewed `\(path)` and it looks good. Proceed with it."
+            id: "file:\(path)",
+            title: url.lastPathComponent,
+            body: "Regarding `\(path)`:"
         ))
     }
 
