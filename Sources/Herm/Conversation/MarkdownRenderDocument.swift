@@ -520,6 +520,9 @@ final class NativeMarkdownDocumentContainerView: NSView {
     private var sectionViews: [Int: any NativeMarkdownMeasurableSection] = [:]
     private var entries: [Entry] = []
     private var source = ""
+    private var renderedSections: [MarkdownRenderSection] = []
+    private var renderedThemeRevision = -1
+    private var renderedMentionRevision = -1
     // SwiftUI consults sizing on every layout pass while the row is mounted.
     // The solved frames stay valid until the content or the width changes.
     private(set) var cachedIntrinsicHeight: CGFloat?
@@ -593,6 +596,13 @@ final class NativeMarkdownDocumentContainerView: NSView {
 
     func apply(document: MarkdownRenderDocument) {
         source = document.source
+        let themeRevision = DockThemeRuntime.revision
+        let mentionRevision = BotMentions.revision
+        guard renderedSections != document.sections || renderedThemeRevision != themeRevision
+                || renderedMentionRevision != mentionRevision else { return }
+        renderedSections = document.sections
+        renderedThemeRevision = themeRevision
+        renderedMentionRevision = mentionRevision
         var retained: [Int: any NativeMarkdownMeasurableSection] = [:]
         var next: [Entry] = []
         next.reserveCapacity(document.sections.count)
@@ -642,6 +652,9 @@ final class NativeMarkdownDocumentContainerView: NSView {
         sectionViews.removeAll(keepingCapacity: true)
         entries.removeAll(keepingCapacity: true)
         source = ""
+        renderedSections = []
+        renderedThemeRevision = -1
+        renderedMentionRevision = -1
         cachedIntrinsicHeight = nil
         cachedSolveWidth = -1
         cachedFrames = []
@@ -744,7 +757,7 @@ enum NativeMarkdownAttributedOutputCache {
         themeRevision: Int,
         build: () -> NativeMarkdownAttributedTextBuilder.Output
     ) -> NativeMarkdownAttributedTextBuilder.Output {
-        let key = "\(themeRevision)|\(kind)|\(markdown)" as NSString
+        let key = "\(themeRevision)|\(BotMentions.revision)|\(kind)|\(markdown)" as NSString
         if let entry = cache.object(forKey: key) { return entry.output }
         let output = build()
         cache.setObject(Entry(output), forKey: key, cost: max(1, markdown.utf8.count * 4))
@@ -762,6 +775,8 @@ enum NativeMarkdownAttributedTextBuilder {
         let quoteRanges: [NSRange]
     }
 
+    /// Marks inline file icons so text-offset consumers can strip them.
+    static let fileIconKey = NSAttributedString.Key("herm.fileIcon")
     static let bodySize: CGFloat = 14
     static let codeSize: CGFloat = 12.5
     static let tableSize: CGFloat = 12.5
@@ -1025,9 +1040,19 @@ enum NativeMarkdownAttributedTextBuilder {
                 attributes[.foregroundColor] = palette.accent
                 attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
             }
+            if run.link != nil || intent.contains(.code),
+               let icon = ArtifactFileIcon.inlineImage(forPath: text, size: baseFont.pointSize - 1) {
+                let attachment = NSTextAttachment()
+                attachment.image = icon
+                attachment.bounds = CGRect(x: 0, y: -2, width: icon.size.width, height: icon.size.height)
+                let iconString = NSMutableAttributedString(attachment: attachment)
+                iconString.append(NSAttributedString(string: "\u{2009}"))
+                iconString.addAttributes([.paragraphStyle: style, fileIconKey: true], range: NSRange(location: 0, length: iconString.length))
+                result.append(iconString)
+            }
             result.append(NSAttributedString(string: text, attributes: attributes))
         }
-        return result
+        return BotMentions.pilled(result)
     }
 
     private static func codeBlock(
@@ -1079,6 +1104,7 @@ enum NativeMarkdownAttributedTextBuilder {
 final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableSection {
     private var renderedMarkdown: String?
     private var renderedKind: MarkdownRenderSectionKind?
+    private var renderedMentionRevision: Int?
     private var renderedThemeRevision: Int?
     private var heights = NativeMarkdownHeightCache()
     private var quoteRanges: [NSRange] = []
@@ -1119,7 +1145,9 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         // A theme change keeps the same markdown but changes every color, so
         // the rendered theme revision is part of what makes the text current.
         let themeRevision = DockThemeRuntime.revision
-        guard renderedMarkdown != markdown || renderedKind != kind || renderedThemeRevision != themeRevision else { return }
+        guard renderedMarkdown != markdown || renderedKind != kind || renderedThemeRevision != themeRevision
+                || renderedMentionRevision != BotMentions.revision else { return }
+        renderedMentionRevision = BotMentions.revision
         renderedMarkdown = markdown
         renderedKind = kind
         renderedThemeRevision = themeRevision

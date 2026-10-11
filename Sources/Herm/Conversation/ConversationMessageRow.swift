@@ -370,12 +370,18 @@ struct ConversationMessageRow: View, Equatable {
     private func messageMarkdownView(_ markdown: String, hugsContent: Bool = false) -> some View {
         // Trailing blank lines would render as empty paragraphs and open a gap
         // above the action row.
-        NativeMarkdownMessageView(
-            markdown: markdown.trimmingCharacters(in: .whitespacesAndNewlines),
-            themeRevision: themeRevision,
-            hugsContent: hugsContent
-        )
-            .fixedSize(horizontal: false, vertical: true)
+        let trimmed = markdown.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Short messages use the same rich renderer as streaming (code blocks,
+        // tables, headings); the flat native view is only for long ones.
+        // ponytail: selection can't span blocks in the rich view; fine under the 8KB threshold.
+        return Group {
+            if !hugsContent, !CompletedMarkdownRendererPolicy.usesNativeRenderer(for: trimmed) {
+                MarkdownMessageView(markdown: trimmed).equatable()
+            } else {
+                NativeMarkdownMessageView(markdown: trimmed, themeRevision: themeRevision, hugsContent: hugsContent)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var messageActions: some View {

@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 @testable import Herm
 
@@ -20,5 +21,26 @@ struct ArtifactFileIconTests {
         for sample in samples {
             #expect(ArtifactFileIcon.image(for: sample) != nil, "no bundled icon for \(sample)")
         }
+    }
+}
+
+@MainActor
+struct InlineFileIconTests {
+    @Test func recognizesFilePathsButNotCodeOrProse() {
+        #expect(ArtifactFileIcon.mappedName(forPath: "/Users/me/.hermes/auth-log-pr-body.md") == "markdown")
+        #expect(ArtifactFileIcon.mappedName(forPath: "user-auth-log.deletion.routes.test.js") == "test-js")
+        #expect(ArtifactFileIcon.mappedName(forPath: "notes.txt") == "document")
+        #expect(ArtifactFileIcon.mappedName(forPath: "npm run build") == nil)
+        #expect(ArtifactFileIcon.mappedName(forPath: "config.set") == nil)
+        #expect(ArtifactFileIcon.mappedName(forPath: "") == nil)
+    }
+
+    @Test func nativeMarkdownTagsIconsBeforeFileCodeSpans() {
+        let output = NativeMarkdownAttributedTextBuilder.document("See `app.ts` and `npm test`.", palette: NativeMarkdownPalette())
+        var icons = 0
+        output.string.enumerateAttribute(NativeMarkdownAttributedTextBuilder.fileIconKey, in: NSRange(location: 0, length: output.string.length)) { value, _, _ in
+            if value != nil { icons += 1 }
+        }
+        #expect(icons == 1)
     }
 }

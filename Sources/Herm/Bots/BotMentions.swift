@@ -1,0 +1,99 @@
+import AppKit
+import SwiftUI
+
+/// Renders `@bot` mentions in message text as the bot's avatar pill, in every
+/// transcript renderer. `BotModeModel` keeps the roster current; mentions of
+/// unknown handles and mentions inside code or links stay plain text.
+@MainActor
+enum BotMentions {
+    /// Bumped when the roster or avatars change, so cached renders redraw.
+    private(set) static var revision = 0
+    private static var byHandle: [String: BotSummary] = [:]
+    private static var botsByID: [String: BotSummary] = [:]
+    private static var avatars: [String: Data] = [:]
+    private static var pills: [String: NSImage] = [:]
+    private static let pattern = try! NSRegularExpression(pattern: #"(?<![\w@/.])@([A-Za-z0-9][A-Za-z0-9_-]*)"#)
+
+    static func update(bots: [BotSummary], avatars: [String: Data]) {
+        var index: [String: BotSummary] = [:]
+        for bot in bots { index[bot.name.lowercased()] = bot }
+        for bot in bots { index[bot.id.lowercased()] = bot }
+        guard index != byHandle || avatars != self.avatars else { return }
+        byHandle = index
+        botsByID = Dictionary(bots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        self.avatars = avatars
+        pills.removeAll()
+        revision &+= 1
+    }
+
+    /// Known-bot mentions in `text`, as UTF-16 ranges covering the `@handle`.
+    static func matches(in text: String) -> [(range: NSRange, bot: BotSummary)] {
+        guard !byHandle.isEmpty, text.contains("@") else { return [] }
+        let ns = text as NSString
+        return pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { match in
+            byHandle[ns.substring(with: match.range(at: 1)).lowercased()].map { (match.range, $0) }
+        }
+    }
+
+    static func pill(for bot: BotSummary) -> NSImage? {
+        let dark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let key = "\(bot.id)|\(dark)|\(DockThemeRuntime.revision)"
+        if let cached = pills[key] { return cached }
+        let renderer = ImageRenderer(content: BotChip(id: bot.id, botsByID: botsByID, avatarImages: avatars)
+            .environment(\.colorScheme, dark ? .dark : .light))
+        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
+        let image = renderer.nsImage
+        pills[key] = image
+        return image
+    }
+
+    /// Replaces mentions with pill attachments, skipping code and link runs.
+    static func pilled(_ text: NSAttributedString) -> NSAttributedString {
+        let found = matches(in: text.string)
+        guard !found.isEmpty else { return text }
+        let result = NSMutableAttributedString(attributedString: text)
+        for (range, bot) in found.reversed() {
+            let attributes = text.attributes(at: range.location, effectiveRange: nil)
+            let font = attributes[.font] as? NSFont
+            let intent = (attributes[.inlinePresentationIntent] as? NSNumber).map { InlinePresentationIntent(rawValue: $0.uintValue) }
+            guard attributes[.link] == nil, intent?.contains(.code) != true,
+                  font?.fontDescriptor.symbolicTraits.contains(.monoSpace) != true,
+                  let image = pill(for: bot) else { continue }
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attachment.bounds = CGRect(x: 0, y: -4, width: image.size.width, height: image.size.height)
+            let replacement = NSMutableAttributedString(attachment: attachment)
+            if let style = attributes[.paragraphStyle] {
+                replacement.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: replacement.length))
+            }
+            result.replaceCharacters(in: range, with: replacement)
+        }
+        return result
+    }
+}
+
+extension Text {
+    /// SwiftUI counterpart of `BotMentions.pilled` for one plain run.
+    @MainActor static func withMentionPills(_ value: AttributedSubstring) -> Text {
+        let plain = String(value.characters)
+        let found = BotMentions.matches(in: plain)
+        guard !found.isEmpty else { return Text(AttributedString(value)) }
+        let ns = plain as NSString
+        var text = Text("")
+        var cursor = 0
+        for (range, bot) in found {
+            let offset = { (utf16: Int) in plain.distance(from: plain.startIndex, to: String.Index(utf16Offset: utf16, in: plain)) }
+            let lower = value.characters.index(value.startIndex, offsetBy: offset(cursor))
+            let upper = value.characters.index(value.startIndex, offsetBy: offset(range.location))
+            text = text + Text(AttributedString(value[lower..<upper]))
+            if let image = BotMentions.pill(for: bot) {
+                text = text + Text(Image(nsImage: image)).baselineOffset(-4)
+            } else {
+                text = text + Text(ns.substring(with: range))
+            }
+            cursor = NSMaxRange(range)
+        }
+        let tail = value.characters.index(value.startIndex, offsetBy: plain.distance(from: plain.startIndex, to: String.Index(utf16Offset: cursor, in: plain)))
+        return text + Text(AttributedString(value[tail...]))
+    }
+}

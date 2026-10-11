@@ -162,6 +162,17 @@ struct ConversationRenderOptimizationTests {
         _ = container.intrinsicContentSize.height
         #expect(container.cachedSolveWidth == 480)
 
+        let resizedHeight = container.cachedIntrinsicHeight
+        container.applyStreaming(sections: document.sections, source: document.source)
+        #expect(container.cachedIntrinsicHeight == resizedHeight)
+        #expect(container.cachedSolveWidth == 480)
+
+        let changed = MarkdownRenderDocumentBuilder.build(source: document.source + "\n- another item", key: key)
+        container.apply(document: changed)
+        #expect(container.cachedIntrinsicHeight == nil)
+
+        _ = container.intrinsicContentSize
+        container.reset()
         container.apply(document: document)
         #expect(container.cachedIntrinsicHeight == nil)
     }

@@ -248,7 +248,7 @@ struct MarkdownMessageView: View, Equatable {
     // Keep long-form Markdown softer than chrome while retaining theme colors.
     // Native AttributedString links retain AppKit/SwiftUI pointer and keyboard
     // focus behavior; styling only their ranges keeps safe URL opening intact.
-    Text(value)
+    Text.withFileIcons(value, iconSize: 13)
       .foregroundStyle(Color.dockMarkdownText)
       .tint(Color.dockAccent)
       .fixedSize(horizontal: false, vertical: true)
@@ -619,7 +619,10 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
     }
 
     private static func append(_ value: AttributedString, to result: NSMutableAttributedString, font: NSFont, color: NSColor) {
+      let start = result.length
       append(NSAttributedString(value), to: result, font: font, color: color)
+      let range = NSRange(location: start, length: result.length - start)
+      result.replaceCharacters(in: range, with: BotMentions.pilled(result.attributedSubstring(from: range)))
     }
 
     private static func append(_ value: NSAttributedString, to result: NSMutableAttributedString, font: NSFont, color: NSColor) {
@@ -1037,7 +1040,11 @@ struct TurnActivityView: View {
 
   private func toolLabel(_ call: ActiveToolCall) -> some View {
     HStack(spacing: 8) {
-      stepIcon(Self.icon(for: call.name))
+      if Self.isFileTool(call.name), let image = ArtifactFileIcon.inlineImage(forPath: call.context, size: 14) {
+        Image(nsImage: image).frame(width: 16, height: 16)
+      } else {
+        stepIcon(Self.icon(for: call.name))
+      }
       Text(AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context))
         .font(.system(size: 12))
         .foregroundStyle(Color.dockSecondaryText)
@@ -1045,6 +1052,12 @@ struct TurnActivityView: View {
       if !call.isComplete { ProgressView().controlSize(.mini) }
     }
     .help(call.result ?? call.input)
+  }
+
+  /// Tools whose context is one file path, so the row can show its type icon.
+  static func isFileTool(_ toolName: String) -> Bool {
+    ["read_file", "write_file", "edit_file", "patch", "apply_patch"]
+      .contains(toolName.lowercased().replacingOccurrences(of: "-", with: "_"))
   }
 
   static func icon(for toolName: String) -> Ph {

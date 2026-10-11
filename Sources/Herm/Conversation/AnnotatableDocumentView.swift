@@ -79,7 +79,15 @@ struct AnnotatableDocumentView<Editor: View>: NSViewRepresentable {
                 .foregroundColor: palette.primary,
             ])
         }
-        return NativeMarkdownAttributedTextBuilder.document(text, palette: palette).string
+        // Quotes and highlights are text offsets; inline file icons would add
+        // attachment characters to selections, so the review view omits them.
+        let document = NSMutableAttributedString(attributedString: NativeMarkdownAttributedTextBuilder.document(text, palette: palette).string)
+        var iconRanges: [NSRange] = []
+        document.enumerateAttribute(NativeMarkdownAttributedTextBuilder.fileIconKey, in: NSRange(location: 0, length: document.length)) { value, range, _ in
+            if value != nil { iconRanges.append(range) }
+        }
+        iconRanges.reversed().forEach { document.deleteCharacters(in: $0) }
+        return document
     }
 
     @MainActor

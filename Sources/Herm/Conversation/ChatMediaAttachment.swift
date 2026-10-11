@@ -138,9 +138,7 @@ struct ChatMediaAttachmentCard: View {
 
     private var card: some View {
         HStack(spacing: 12) {
-            DockIcon(icon, size: 14, color: Color.dockSecondaryText)
-                .frame(width: 30, height: 30)
-                .background(Color.dockSurface2, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+            FileTypeIcon(fileName: name)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
                     .font(.system(size: 12, weight: .medium))
@@ -188,15 +186,6 @@ struct ChatMediaAttachmentCard: View {
         .help(path)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Attachment \(name)")
-    }
-
-    private var icon: Ph {
-        switch (name as NSString).pathExtension.lowercased() {
-        case "ppt", "pptx", "key": .presentation
-        case "doc", "docx": .fileDoc
-        case "pdf", "txt", "md", "json", "csv": .fileText
-        default: .file
-        }
     }
 
     private func cardButton(_ title: String, icon: Ph?, action: @escaping () -> Void) -> some View {
