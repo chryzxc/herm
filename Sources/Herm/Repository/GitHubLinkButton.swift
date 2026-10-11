@@ -14,7 +14,7 @@ struct GitHubLinkButton: View {
                         .fill(Color.dockControlSurface)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .fixedSize()
         .help(accessibilityLabel)
         .accessibilityLabel(accessibilityLabel)

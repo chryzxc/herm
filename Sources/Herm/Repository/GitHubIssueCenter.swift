@@ -586,7 +586,7 @@ struct IssueWorkspace: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("Issues unavailable").font(.system(size: 12, weight: .semibold))
                             Text("Check your GitHub sign-in and try again.").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
-                            Button("Try again") { refresh() }.buttonStyle(.borderless).foregroundStyle(Color.dockAccent)
+                            Button("Try again") { refresh() }.buttonStyle(.dockHover).foregroundStyle(Color.dockAccent)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
                     } else if center.visible.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
@@ -596,7 +596,7 @@ struct IssueWorkspace: View {
                                 .font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
                             if center.hasActiveFilters {
                                 Button("Clear filters") { center.resetFilters() }
-                                    .buttonStyle(.borderless)
+                                    .buttonStyle(.dockHover)
                                     .foregroundStyle(Color.dockAccent)
                             }
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
@@ -614,7 +614,7 @@ struct IssueWorkspace: View {
                                     Button { center.selectedIssueID = issue.id } label: {
                                         IssueRowView(issue: issue, isSelected: center.selectedIssueID == issue.id, viewer: center.viewerLogin)
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(.dockHover)
                                 }
                             }
                         }

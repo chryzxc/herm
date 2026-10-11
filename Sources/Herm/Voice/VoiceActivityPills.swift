@@ -257,7 +257,7 @@ private struct VoicePillCard: View {
     var body: some View {
         if let target = pill.target {
             Button { ArtifactOpener.open(target) } label: { card }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help(target)
         } else {
             card

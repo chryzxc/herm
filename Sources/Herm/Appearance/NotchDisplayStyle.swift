@@ -45,7 +45,7 @@ struct NotchDisplaySettings: View {
                         .background(style == option ? Color.dockAccentMuted : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .accessibilityLabel(option.title)
                     .accessibilityAddTraits(style == option ? .isSelected : [])
                 }

@@ -345,7 +345,7 @@ struct ProviderConnectSheet: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockAccent)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
         }
     }
 }

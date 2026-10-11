@@ -338,7 +338,7 @@ struct FilePreviewPane: View {
                             sectionLabel("SENT")
                             Spacer()
                             Button("Clear") { center.clearSent(path) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.dockHover)
                                 .font(.system(size: 10))
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .padding(.trailing, 8)
@@ -358,7 +358,7 @@ struct FilePreviewPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
@@ -409,7 +409,7 @@ struct FilePreviewPane: View {
                 Button { center.remove(annotation.id, from: path) } label: {
                     DockIcon(.trash, size: 11, color: Color.dockMetadataText)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help("Delete note")
                 .accessibilityLabel("Delete note")
             }
@@ -435,7 +435,7 @@ struct FilePreviewPane: View {
                 }
                 .foregroundStyle(Color.dockMetadataText)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .padding(.horizontal, 8)
             .padding(.top, 8)
             if showsChanges {
@@ -603,7 +603,7 @@ private struct AnnotationEditor: View {
                         .frame(width: 26, height: 26)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help("Delete note")
                 .accessibilityLabel("Delete note")
             } else {

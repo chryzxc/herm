@@ -399,7 +399,7 @@ private struct BrowserCard: View {
                 HUDHeader(icon: .globe, title: browser.title ?? "Browser", detail: ToolStep.host(browser.url),
                           isBusy: browser.isBusy, opens: browser.url != nil)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help(browser.url ?? "")
             if let image {
                 Image(nsImage: image)
@@ -470,7 +470,7 @@ private struct SearchCard: View {
                     .background(RoundedRectangle(cornerRadius: 7).fill(Color.dockAccent.opacity(0.06)))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help(hit.url)
                 // Results fan in one after another.
                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -537,7 +537,7 @@ private struct MediaCard: View {
             Button { ArtifactOpener.open(media.source) } label: {
                 HUDHeader(icon: .image, title: "Image ready", detail: media.prompt, opens: true, tint: .dockSuccess)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             Group {
                 if let image {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)

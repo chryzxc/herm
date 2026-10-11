@@ -169,7 +169,7 @@ struct RepositoryCodeWorkspaceView: View {
         }
         // `.borderlessButton` drops custom-shape labels on macOS.
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .menuIndicator(.hidden)
         .fixedSize()
         .dockHoverTip("More file actions", edge: .leading)
@@ -395,7 +395,7 @@ struct ExplorerToolbarButton: View {
         Button(action: action) {
             ExplorerToolbarIcon(icon: icon, isOn: isOn, tint: tint, isBusy: isBusy)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .dockHoverTip(help, edge: tipEdge)
         .accessibilityLabel(help)
         .accessibilityAddTraits(isOn ? .isSelected : [])

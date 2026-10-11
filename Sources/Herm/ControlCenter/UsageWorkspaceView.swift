@@ -170,7 +170,7 @@ struct UsageWorkspaceView: View {
                         }
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .disabled(model.tasks.isEmpty)
 
                     meter(Double(model.totalTokens) / Double(maxTokens))

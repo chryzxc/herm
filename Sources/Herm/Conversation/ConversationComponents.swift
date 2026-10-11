@@ -922,7 +922,7 @@ struct TurnActivityView: View {
           .padding(.vertical, 6)
           .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityLabel(isExpanded ? "Hide activity" : "Show activity")
         if isExpanded { steps }
       }
@@ -977,7 +977,7 @@ struct TurnActivityView: View {
         }
         .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.dockHover)
       .accessibilityLabel(isOpen ? "Hide thinking" : "Show thinking")
       if isOpen {
         Text((call.result ?? "").isEmpty ? "…" : call.result ?? "")
@@ -1014,7 +1014,7 @@ struct TurnActivityView: View {
           .font(.system(size: 11, weight: .medium, design: .monospaced))
           .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityLabel(isOpen ? "Hide changes" : "Show changes")
         if isOpen {
           ScrollView([.horizontal, .vertical]) {
@@ -1147,6 +1147,6 @@ private struct MarkdownCodeCopyButton: View {
     DockCopyButton(code, accessibilityLabel: "Copy code", presentation: .text)
       .font(DockTypography.control)
       .padding(.horizontal, 6).frame(height: 28).contentShape(Rectangle())
-    .buttonStyle(.plain)
+    .buttonStyle(.dockHover)
   }
 }

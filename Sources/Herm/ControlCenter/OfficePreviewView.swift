@@ -255,7 +255,7 @@ private struct OfficeCrewStatusBar: View {
                         .frame(height: 28)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .disabled(count == 0)
                     .help(count > 0 ? "Focus the next \(status.label.lowercased()) bot" : "No \(status.label.lowercased()) bots")
                     .accessibilityLabel("\(status.label): \(count) bots")
@@ -336,7 +336,7 @@ private struct OfficeRosterPanel: View {
             .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius).stroke(isSelected ? Color.dockAccent.opacity(0.5) : .clear, lineWidth: 1))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityLabel("\(agent.name), \(status.label), \(agent.monitorTitle)")
     }
 }
@@ -381,7 +381,7 @@ private struct OfficeToolbar: View {
                 .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isOn ? Color.dockAccentMuted : .clear))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .help(help)
         .accessibilityLabel(help)
     }
@@ -415,7 +415,7 @@ private struct OfficeInspectorHeader<Leading: View>: View {
                     .frame(width: 28, height: 28)
                     .background(Circle().fill(Color.dockControlSurface))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help("Close details")
             .accessibilityLabel("Close details")
         }
@@ -621,7 +621,7 @@ private struct OfficeBoardInspector: View {
                 .frame(height: 34)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
                     if lane.tasks.isEmpty {
@@ -643,7 +643,7 @@ private struct OfficeBoardInspector: View {
                             .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface2))
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.dockHover)
                         if selectedTaskID == task.id { OfficeTaskFields(task: task).padding(.horizontal, 8) }
                     }
                 }

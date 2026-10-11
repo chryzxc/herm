@@ -726,7 +726,7 @@ private struct PullRequestFileTreeRow: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .disabled(node.isDirectory)
         .onHover { isHovered = $0 }
         .help(node.id)
@@ -1042,7 +1042,7 @@ struct PullRequestDetailView: View {
             .padding(.vertical, 10)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         .accessibilityLabel("\(isExpanded.wrappedValue ? "Collapse" : "Expand") \(title)")
     }
@@ -1061,7 +1061,7 @@ struct PullRequestDetailView: View {
                     DockIcon(.arrowsClockwise, size: 15, color: Color.dockSecondaryText)
                         .frame(width: 30, height: 30)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .disabled(center.isLoadingDetail)
                 .help("Refresh checks")
                 .accessibilityLabel("Refresh checks")
@@ -1162,7 +1162,7 @@ struct PullRequestDetailView: View {
                     if center.isPostingComment { ProgressView().controlSize(.small).frame(width: 34, height: 34) }
                     else { DockIcon(.arrowUp, size: 17, color: commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockMetadataText : Color.dockPrimaryText).frame(width: 34, height: 34).background(Circle().fill(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.dockSurface4 : Color.dockAccent)) }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .disabled(commentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || center.isPostingComment)
                 .help("Add comment")
             }
@@ -1271,7 +1271,7 @@ struct PullRequestDetailView: View {
                 .frame(height: 28)
                 .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(selected ? Color.dockSurface4 : Color.clear))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
     }
     private func code(_ pr: PullRequestRecord) -> some View {
         let projection = PullRequestFilesProjection.state(
@@ -1350,7 +1350,7 @@ struct PullRequestDetailView: View {
             }
             // `.borderlessButton` drops custom-shape labels on macOS, leaving only the indicator.
             .menuStyle(.button)
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .menuIndicator(.hidden)
             .fixedSize()
             .help("Review options")
@@ -1364,7 +1364,7 @@ struct PullRequestDetailView: View {
                     tooltip: reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? "Collapse all diffs" : "Expand all diffs"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help(reviewPreferences.expandedFileIDs.isSuperset(of: fileIDs) ? "Collapse all diffs" : "Expand all diffs")
 
             Button {
@@ -1376,7 +1376,7 @@ struct PullRequestDetailView: View {
                     tooltip: "Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help("Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff")
 
             Button {
@@ -1389,7 +1389,7 @@ struct PullRequestDetailView: View {
                     tooltip: reviewPreferences.showsFileTree ? "Hide file tree" : "Show file tree"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help(reviewPreferences.showsFileTree ? "Hide file tree" : "Show file tree")
         }
         .frame(height: 34)
@@ -1482,7 +1482,7 @@ struct PullRequestDetailView: View {
                 .frame(height: 34)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             if expanded { fileContent(file) }
         }
         .background(Color.dockCanvas)
@@ -1496,7 +1496,7 @@ struct PullRequestDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("RICH PREVIEW").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
                 MarkdownMessageView(markdown: previewMarkdown(from: patch)).padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Color.dockSurface2)
-                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.borderless).font(.system(size: 10, weight: .semibold))
+                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold))
             }.padding(8)
         } else if reviewPreferences.richPreview, !sourceDiffFileIDs.contains(file.id), isImage(file.path), let url = file.webURL {
             VStack(alignment: .leading, spacing: 6) {
@@ -1504,7 +1504,7 @@ struct PullRequestDetailView: View {
                     if let image = phase.image { image.resizable().scaledToFit().frame(maxHeight: 420) }
                     else { Text("Image preview unavailable. Open on GitHub to view this file.").foregroundStyle(Color.dockMetadataText) }
                 }
-                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.borderless).font(.system(size: 10, weight: .semibold))
+                Button("Show source diff") { sourceDiffFileIDs.insert(file.id) }.buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold))
             }.padding(8)
         } else if let patch = file.patch {
             diffPatch(patch)
@@ -1685,7 +1685,7 @@ struct PullRequestWorkspace: View {
                     ForEach(0..<6, id: \.self) { index in listLoadingRow(index: index) }
                 } else {
                     ForEach(center.visible) { pr in
-                        Button { center.selectedID = pr.id } label: { PullRequestRowView(pullRequest: pr, isSelected: center.selectedID == pr.id) }.buttonStyle(.plain)
+                        Button { center.selectedID = pr.id } label: { PullRequestRowView(pullRequest: pr, isSelected: center.selectedID == pr.id) }.buttonStyle(.dockHover)
                     }
                 }
             }

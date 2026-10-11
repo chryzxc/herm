@@ -120,7 +120,7 @@ struct AttachToChatMenu: View {
                     )
                 }
                 .menuStyle(.button)
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .menuIndicator(.hidden)
                 .fixedSize()
             } else {

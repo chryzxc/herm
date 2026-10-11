@@ -1493,7 +1493,7 @@ struct DockPopover: View {
                         }
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .accessibilityLabel("Show \(scope.rawValue) inspector")
             }
         }
@@ -1589,7 +1589,7 @@ struct DockPopover: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .onHover { isSessionIdentityHovering = $0 }
         .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: isSessionIdentityHovering)
         .help("\(model.currentSessionTitle ?? "Untitled chat") — \(model.status.title)")
@@ -1806,7 +1806,7 @@ struct DockPopover: View {
                 )
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .disabled(model.isUpdatingSessionModel)
             .help("Change the model for \(configurationScopeLabel)")
             .accessibilityLabel("Model for \(configurationScopeLabel): \(sessionModelDisplayName)")
@@ -1829,7 +1829,7 @@ struct DockPopover: View {
                 )
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
             .help("Change thinking depth for \(configurationScopeLabel)")
             .accessibilityLabel("Thinking depth for \(configurationScopeLabel): \(sessionReasoningDisplayName)")
@@ -1998,7 +1998,7 @@ struct DockPopover: View {
                     .frame(width: 320 * orbScale, height: 320 * orbScale)
                     .contentShape(Circle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .help(voiceOrbHelp)
             .accessibilityLabel(voiceOrbHelp)
 
@@ -2611,7 +2611,7 @@ struct DockPopover: View {
                             .background(Capsule().fill(Color.dockAccent))
                             .shadow(color: Color.dockAccent.opacity(0.3), radius: 10, y: 3)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .padding(.bottom, 12)
                     }
 
@@ -3212,7 +3212,7 @@ struct DockPopover: View {
         return Button(quickPrompt.label) {
             selectQuickPrompt(quickPrompt)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(isAvailable ? Color.dockSecondaryText : Color.dockMetadataText)
         .padding(.horizontal, 9)
@@ -3720,7 +3720,7 @@ struct MissionControlQueue: View {
                 } label: {
                     identity
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .onHover { isProfileHovering = $0 }
                 .popover(isPresented: $isProfileSelectorPresented, arrowEdge: .top) {
                     profileSelectorPopover(selectedBot: bot, style: style)
@@ -3763,7 +3763,7 @@ struct MissionControlQueue: View {
                         .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .accessibilityLabel(
                         option.id == selectedBot?.id
                             ? "\(option.name), selected"
@@ -3970,7 +3970,7 @@ struct MissionControlQueue: View {
                 .frame(minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
         }
     }
 
@@ -3986,7 +3986,7 @@ struct MissionControlQueue: View {
             .frame(minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
     }
 
     private func conversationSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
@@ -4172,7 +4172,7 @@ struct MissionControlQueue: View {
             .background(isTaskSelected(task) ? Color.dockAccent.opacity(0.14) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .help(task.sessionID == nil ? "Open this task in Kanban" : "Open task conversation")
     }
 
@@ -4296,14 +4296,14 @@ struct MissionControlConversationSessionRow: View, Equatable {
                 sessionDetails
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
 
             Button(action: onTogglePin) {
                 DockIcon(.pushPin, size: 13, color: isPinned ? style.accent : style.metadataText)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
             .help(isPinned ? "Unpin conversation" : "Pin conversation")
         }
@@ -4498,7 +4498,7 @@ private struct MissionControlProjectList: View {
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .accessibilityLabel(isCollapsed ? "Expand project \(group.title)" : "Collapse project \(group.title)")
 
             // Count at rest; actions replace it while the row is hovered.
@@ -4529,7 +4529,7 @@ private struct MissionControlProjectList: View {
                             .frame(width: 32, height: 44)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .disabled(isCreatingChat || creatingProjectPath != nil)
                         .help("New chat in \(group.title)")
                         .accessibilityLabel("New chat in \(group.title)")
@@ -4555,7 +4555,7 @@ private struct MissionControlProjectList: View {
                                 .frame(width: 32, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .help("More options for \(group.title)")
                         .accessibilityLabel("More options for \(group.title)")
                     }
@@ -4594,7 +4594,7 @@ private struct MissionControlProjectList: View {
                         .frame(minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .accessibilityLabel(disclosureState.showsAllSessions(projectID: group.id)
                                         ? "Show recent sessions for \(group.title)"
                                         : "Show \(group.sessions.count - sessionLimit) more sessions for \(group.title)")
@@ -4792,7 +4792,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
         )
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
-        .onTapGesture { if !isEditingTitle { onSelect(session) } }
+        .dockHoverable().onTapGesture { if !isEditingTitle { onSelect(session) } }
         .focusable(!isEditingTitle)
         .focusEffectDisabled()
         .focused($rowFocused)
@@ -4957,7 +4957,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .help(isPinned ? "Unpin session" : "Pin session")
             .accessibilityLabel(isPinned ? "Unpin \(session.displayTitle)" : "Pin \(session.displayTitle)")
 
@@ -5441,7 +5441,7 @@ private struct SessionPickerRow: View {
                 .padding(.leading, 10)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .accessibilityAddTraits(isCurrent ? .isSelected : [])
 
             DockIconButton(

@@ -567,7 +567,7 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.dockAccent)
                         .frame(width: 32, height: 32)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .help("Command palette")
                 .keyboardShortcut("k", modifiers: [.command])
                 Button(action: onClose) {
@@ -577,7 +577,7 @@ struct WorkspaceActivitySidebar: View {
                         .frame(width: 36, height: 36)
                         .background(Circle().fill(Color.dockSurface4))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .dockHitTarget()
                 .help("Return to chat")
             }
@@ -959,7 +959,7 @@ struct WorkspaceActivitySidebar: View {
                                         .stroke(clarificationResponse == choice ? Color.dockAccent.opacity(0.65) : Color.dockBorder, lineWidth: 0.5)
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.dockHover)
                         }
                     }
                 }
@@ -1034,7 +1034,7 @@ struct WorkspaceActivitySidebar: View {
                 )
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
         }
         }
@@ -1061,7 +1061,7 @@ struct WorkspaceActivitySidebar: View {
                 isSelected: isSelected
             )
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
     }
 
     private func compactTabLabel(
@@ -1206,7 +1206,7 @@ struct WorkspaceActivitySidebar: View {
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
     }
 
     private func badgeView(count: Int, isUrgent: Bool) -> some View {
@@ -1274,7 +1274,7 @@ struct WorkspaceActivitySidebar: View {
                             isStartingBackgroundTask = false
                         }
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .foregroundStyle(Color.dockAccent)
                     .disabled(isStartingBackgroundTask || backgroundTaskPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
@@ -1292,7 +1292,7 @@ struct WorkspaceActivitySidebar: View {
                                         kanbanBody = output
                                         select(.kanban)
                                     }
-                                    .buttonStyle(.borderless)
+                                    .buttonStyle(.dockHover)
                                     .foregroundStyle(Color.dockAccent)
                                 }
                             }
@@ -1371,7 +1371,7 @@ struct WorkspaceActivitySidebar: View {
                         Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
                     }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 switch workflow.baselineStatus {
@@ -1386,7 +1386,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             } else {
                 Button("RUN LOCAL REVIEW") { Task { await workflow.runReview(preferences: commandCenterPreferences) } }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
             }
@@ -1427,7 +1427,7 @@ struct WorkspaceActivitySidebar: View {
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }
@@ -1469,7 +1469,7 @@ struct WorkspaceActivitySidebar: View {
                     diffAuditSummary(diff)
                 } else {
                     Button(isLoadingRepositoryDiff ? "LOADING DIFF…" : "LOAD DIFF") { loadRepositoryDiff(for: file) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(isLoadingRepositoryDiff)
                 }
@@ -1477,7 +1477,7 @@ struct WorkspaceActivitySidebar: View {
 
                 if workflow.isReviewCovered(file) {
                     Button(workflow.isReviewed(file) ? "REVIEWED" : "MARK REVIEWED") { workflow.toggleReviewed(file) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .foregroundStyle(workflow.isReviewed(file) ? Color.dockSuccess : Color.dockAccent)
                 }
                 Text(writers.isEmpty
@@ -1564,7 +1564,7 @@ struct WorkspaceActivitySidebar: View {
                                 let prompt = "Run this exact verification command in " + path + ": " + recipe.command + ". Do not edit files. Report the result, evidence scope, and exit code."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
                             }
-                            .buttonStyle(.borderless).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                            .buttonStyle(.dockHover).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockAccent)
                         }
                         .dockListRow()
                     }
@@ -1615,7 +1615,7 @@ struct WorkspaceActivitySidebar: View {
                         Text(detail).lineLimit(1).foregroundStyle(Color.dockWarning)
                     }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }
@@ -1634,7 +1634,7 @@ struct WorkspaceActivitySidebar: View {
                             }
                             Button("OPEN VERIFICATION") { select(.verification) }
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                     }
@@ -1837,7 +1837,7 @@ struct WorkspaceActivitySidebar: View {
             if let latestRun, let request = control.cronReportRequest(for: latestRun) {
                 Divider().overlay(Color.dockBorderLight)
                 Button("Open latest report") { cronReportRequest = request }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
             }
@@ -1899,7 +1899,7 @@ struct WorkspaceActivitySidebar: View {
                                 Button { cronReportRequest = request } label: {
                                     cronRunRow(run, canViewReport: true)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.dockHover)
                                 .help("View this run's report")
                             } else {
                                 cronRunRow(run, canViewReport: false)
@@ -1949,7 +1949,7 @@ struct WorkspaceActivitySidebar: View {
                                 } label: {
                                     cronRunRow(run, canViewReport: true)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.dockHover)
                                 .help("View this run's report")
                             } else {
                                 cronRunRow(run, canViewReport: false)
@@ -2048,7 +2048,7 @@ struct WorkspaceActivitySidebar: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
 
             Text(health.state.rawValue.uppercased())
                 .font(.system(size: 9, weight: .bold))
@@ -2072,7 +2072,7 @@ struct WorkspaceActivitySidebar: View {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .disabled(control.isActionPending(control.cronActionID("run", job: job)))
                 .help("Run \(job.name) now")
                 .accessibilityLabel("Run \(job.name) now")
@@ -2151,7 +2151,7 @@ struct WorkspaceActivitySidebar: View {
             }
             Spacer()
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .font(.system(size: 12, weight: .semibold))
         .foregroundStyle(Color.dockAccent)
     }
@@ -2227,7 +2227,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     .foregroundStyle(Color.dockAccent)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 if expandedCronReportIDs.contains(job.id) {
                     MarkdownMessageView(markdown: report)
                         .padding(10)
@@ -2250,7 +2250,7 @@ struct WorkspaceActivitySidebar: View {
                             cronReportRequest = CronReportRequest(job: job, sessionID: sessionID)
                         }
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -2268,7 +2268,7 @@ struct WorkspaceActivitySidebar: View {
                         onClose()
                         model.requestComposerFocus()
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -2402,7 +2402,7 @@ struct WorkspaceActivitySidebar: View {
                     } label: {
                         DockIconLabel("PROJECTS", icon: .caretLeft)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                     Spacer()
@@ -2413,7 +2413,7 @@ struct WorkspaceActivitySidebar: View {
                             DockIconLabel("NEW CHAT", icon: .notePencil)
                                 .font(.system(size: 10, weight: .semibold))
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(model.isRestoringSession || model.isCreatingSession)
                         .help("Start a new chat in this project")
@@ -2469,7 +2469,7 @@ struct WorkspaceActivitySidebar: View {
                             .dockListRow()
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .accessibilityLabel(SessionLifecyclePresentation.accessibilityLabel(for: session, refresh: control.refreshState(for: projectSessionsProjectionKey)))
                     }
                 }
@@ -2524,7 +2524,7 @@ struct WorkspaceActivitySidebar: View {
                         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                 }
                 if control.projects.count > projectsDisplayLimit {
                     Button {
@@ -2534,7 +2534,7 @@ struct WorkspaceActivitySidebar: View {
                             .font(.system(size: 10, weight: .semibold))
                             .tracking(0.4)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .foregroundStyle(Color.dockAccent)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 4)
@@ -2554,7 +2554,7 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(0.4)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .foregroundStyle(Color.dockAccent)
         .help("Start a new chat in a directory")
     }
@@ -2564,7 +2564,7 @@ struct WorkspaceActivitySidebar: View {
             addProjectDirectoryButton
             if control.capabilityAvailable(HermesFeatureIDs.ID.projectsCreate.rawValue) {
                 Button("CREATE PROJECT") { chooseProjectForCreation() }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockAccent)
                     .help("Create a Hermes project from a folder")
@@ -2651,7 +2651,7 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.dockDestructive)
                 }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .padding(.top, 4)
         }
@@ -2730,7 +2730,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     Button("REFRESH") { Task { await refreshRepository() } }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             } else {
@@ -2740,7 +2740,7 @@ struct WorkspaceActivitySidebar: View {
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }
@@ -2791,7 +2791,7 @@ struct WorkspaceActivitySidebar: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 5)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.dockHover)
                             .disabled(diagnostic.taskID == nil)
                         }
                     }
@@ -2820,7 +2820,7 @@ struct WorkspaceActivitySidebar: View {
                         } label: {
                             DockIcon(.arrowsClockwise)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .foregroundStyle(Color.dockAccent)
                     }
                 }
@@ -2949,7 +2949,7 @@ struct WorkspaceActivitySidebar: View {
                 )
             }
             .menuStyle(.button)
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .menuIndicator(.hidden)
             .fixedSize()
             .disabled(control.kanbanBoards.count < 2 || control.isKanbanRefreshPending)
@@ -2972,7 +2972,7 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help("Clear Kanban filters")
             }
 
@@ -3053,7 +3053,7 @@ struct WorkspaceActivitySidebar: View {
             .menuIndicator(.hidden)
             .fixedSize()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .font(.system(size: 11, weight: .semibold))
         .disabled(control.isKanbanRefreshPending)
     }
@@ -3164,7 +3164,7 @@ struct WorkspaceActivitySidebar: View {
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
     }
 
     private var kanbanAssigneePopover: some View {
@@ -3243,7 +3243,7 @@ struct WorkspaceActivitySidebar: View {
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
     }
 
     private func applyKanbanFilters(
@@ -3434,7 +3434,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
                     .menuStyle(.button)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .menuIndicator(.hidden)
                     .fixedSize()
                     .help("Task actions")
@@ -3444,7 +3444,7 @@ struct WorkspaceActivitySidebar: View {
                     } label: {
                         kanbanDetailHeaderIcon(.x)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .help("Close")
                     .accessibilityLabel("Close task details")
                 }
@@ -3463,7 +3463,7 @@ struct WorkspaceActivitySidebar: View {
                         .overlay(alignment: .bottom) {
                             if kanbanInspectorTab == tab { Color.dockAccent.frame(height: 2) }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.dockHover)
                 }
             }
             .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
@@ -3476,7 +3476,7 @@ struct WorkspaceActivitySidebar: View {
                             Text(error).lineLimit(3)
                             Spacer()
                             Button("Retry") { control.loadKanbanTask(task) }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.dockHover)
                         }
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockWarning)
@@ -3710,7 +3710,7 @@ struct WorkspaceActivitySidebar: View {
                             .font(.system(size: 12))
                             .foregroundStyle(Color.dockMetadataText)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .help("Clear search")
                 }
             }
@@ -3748,7 +3748,7 @@ struct WorkspaceActivitySidebar: View {
                         Button { control.openSearchResult(result) } label: {
                             searchResultRow(result)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                     } else {
                         searchResultRow(result)
                     }
@@ -3844,17 +3844,17 @@ struct WorkspaceActivitySidebar: View {
                             tint: action == .deny || action == .stop ? Color.dockWarning : Color.dockAccent
                         )
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(action == .deny || action == .stop ? Color.dockWarning : Color.dockAccent)
                     .disabled(isPending)
                 }
                 Button("DISMISS") { control.dismiss(item.id) }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
                 Button("SNOOZE") { control.snooze(item.id) }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
             }
@@ -3901,7 +3901,7 @@ struct WorkspaceActivitySidebar: View {
                     Button("RESUME") {
                         Task { _ = await control.pauseDelegation(false) }
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -3922,7 +3922,7 @@ struct WorkspaceActivitySidebar: View {
                 attentionItemRow(attention)
                 if openAttention.count > 1 {
                     Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                 }
@@ -3954,7 +3954,7 @@ struct WorkspaceActivitySidebar: View {
                             .foregroundStyle(Color.dockAccent)
                         Spacer(minLength: 0)
                         Button("VIEW ALL") { select(.activity) }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -4022,7 +4022,7 @@ struct WorkspaceActivitySidebar: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .dockListRow()
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                     }
                 }
                 .dockGlassPane()
@@ -4146,11 +4146,11 @@ struct WorkspaceActivitySidebar: View {
                         .dockListRow()
                         .accessibilityLabel(SessionLifecyclePresentation.accessibilityLabel(for: session, isCurrent: session.id == model.sessionID, refresh: control.refreshState(for: "sessions")))
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                 }
                 if activeSessions.count > 4 {
                     Button("VIEW ALL CONVERSATIONS") { select(.session) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .padding(.top, 4)
@@ -4189,7 +4189,7 @@ struct WorkspaceActivitySidebar: View {
                                 Spacer(minLength: 0)
                                 if job.sessionID != nil {
                                     Button("OPEN") { control.openCronSession(job) }
-                                        .buttonStyle(.borderless)
+                                        .buttonStyle(.dockHover)
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundStyle(Color.dockAccent)
                                 }
@@ -4199,7 +4199,7 @@ struct WorkspaceActivitySidebar: View {
                     }
 
                     Button("VIEW ALL AUTOMATIONS") { select(.automations) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .padding(.horizontal, 12)
@@ -4245,7 +4245,7 @@ struct WorkspaceActivitySidebar: View {
                                 .dockListRow()
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                         }
                     }
                 }
@@ -4279,7 +4279,7 @@ struct WorkspaceActivitySidebar: View {
                     .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
             }
         }
     }
@@ -4321,7 +4321,7 @@ struct WorkspaceActivitySidebar: View {
                 attentionItemRow(openAttention.first!, isSelected: false)
                 if openAttention.count > 1 {
                     Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .padding(.top, 2)
@@ -4401,7 +4401,7 @@ struct WorkspaceActivitySidebar: View {
                                 .dockListRow()
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                         }
 
                         ForEach(control.processes) { process in
@@ -4497,7 +4497,7 @@ struct WorkspaceActivitySidebar: View {
                                 Spacer(minLength: 0)
                                 if job.sessionID != nil {
                                     Button("OPEN") { control.openCronSession(job) }
-                                        .buttonStyle(.borderless)
+                                        .buttonStyle(.dockHover)
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(Color.dockAccent)
                                 }
@@ -4507,7 +4507,7 @@ struct WorkspaceActivitySidebar: View {
                     }
 
                     Button("VIEW ALL AUTOMATIONS") { select(.automations) }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .padding(.horizontal, 12)
@@ -4552,7 +4552,7 @@ struct WorkspaceActivitySidebar: View {
                                 .dockListRow()
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                         }
                     }
                 }
@@ -4586,7 +4586,7 @@ struct WorkspaceActivitySidebar: View {
                     .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
             }
 
             if activeRepositoryPath != nil {
@@ -4602,7 +4602,7 @@ struct WorkspaceActivitySidebar: View {
             } label: {
                 DockIconLabel("WORKSPACE", icon: .caretLeft)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Color.dockAccent)
 
@@ -4633,7 +4633,7 @@ struct WorkspaceActivitySidebar: View {
                 .foregroundStyle(Color.dockAccent)
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .help("Session view")
         }
         .padding(.bottom, 2)
@@ -4731,7 +4731,7 @@ struct WorkspaceActivitySidebar: View {
             .padding(.vertical, 11)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .overlay(alignment: .trailing) {
             Color.dockBorderLight.frame(width: 0.5, height: 30)
         }
@@ -4763,7 +4763,7 @@ struct WorkspaceActivitySidebar: View {
                 Button(action: action) {
                     cardContent
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
             } else {
                 cardContent
             }
@@ -4838,7 +4838,7 @@ struct WorkspaceActivitySidebar: View {
                 }
                 if let session = (model.sessions + model.pinnedSessions).first(where: { $0.id == sessionID }) {
                     Button(isPinned ? "UNPIN" : "PIN") { Task { await model.toggleSessionPinned(session) } }
-                        .buttonStyle(.borderless).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                        .buttonStyle(.dockHover).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent)
                         .disabled(model.pinningSessionID != nil)
                 }
             }
@@ -4929,7 +4929,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 }
                 .menuStyle(.borderlessButton)
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 .disabled(isRefreshingRepository || workflow.isRefreshing)
@@ -4955,7 +4955,7 @@ struct WorkspaceActivitySidebar: View {
                 }
                 .disabled(isRefreshingRepository)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Color.dockAccent)
         }
@@ -4991,7 +4991,7 @@ struct WorkspaceActivitySidebar: View {
                         presentation: .text,
                         color: .dockAccent
                     )
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 12, weight: .semibold))
                 }
             }
@@ -5123,7 +5123,7 @@ struct WorkspaceActivitySidebar: View {
             .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1).stroke(selectedAgentID == id ? color.opacity(0.5) : Color.dockBorder, lineWidth: 0.5))
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius + 1))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .help(status)
     }
 
@@ -5181,7 +5181,7 @@ struct WorkspaceActivitySidebar: View {
                         iconSize: 16,
                         color: .dockAccent
                     )
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 12, weight: .semibold))
                 }
             }
@@ -5262,7 +5262,7 @@ struct WorkspaceActivitySidebar: View {
                         .controlSize(.small)
                 } else if appUpdater.canCheck && !isUnavailable {
                     Button("Check for updates") { appUpdater.checkForUpdates() }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockAccent)
                 }
@@ -5289,7 +5289,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                 } else {
                     Button("Check for updates") { agentUpdateService.checkForUpdates() }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockAccent)
                         .disabled(!agentUpdateService.canCheck)
@@ -5362,7 +5362,7 @@ struct WorkspaceActivitySidebar: View {
                         .truncationMode(.middle)
                     if let page = latest.pageURL, let url = URL(string: page) {
                         Button("Release notes") { ExternalOpen.open(url) }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -5503,7 +5503,7 @@ struct WorkspaceActivitySidebar: View {
                 .foregroundStyle(Color.dockSecondaryText)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
 
             if isAgentUpdateOutputExpanded {
                 ScrollView {
@@ -5639,14 +5639,14 @@ struct WorkspaceActivitySidebar: View {
                                 presentation: .text,
                                 color: .dockAccent
                             )
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .font(.system(size: 10, weight: .semibold))
                             Button("Ask Hermes") {
                                 let repoPath = control.developmentContext?.path ?? "the selected repository"
                                 let prompt = "Run this exact verification command in " + repoPath + ": " + recipe.command + ". Do not edit files. Report the result and exit code."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                         }
@@ -5701,7 +5701,7 @@ struct WorkspaceActivitySidebar: View {
                         HStack(spacing: 8) {
                             TextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.dockGlass)
                             Button("Handoff") { isShowingHandoffConfirmation = true }
-                                .buttonStyle(.borderless).foregroundStyle(Color.dockAccent)
+                                .buttonStyle(.dockHover).foregroundStyle(Color.dockAccent)
                                 .disabled(!control.capabilityAvailable("gateway"))
                         }
                     }
@@ -5722,9 +5722,9 @@ struct WorkspaceActivitySidebar: View {
                                 }
                                 Spacer()
                                 Button("Diff") { control.loadCheckpointDiff(checkpoint) }
-                                    .buttonStyle(.borderless).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                                    .buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
                                 Button("Restore") { checkpointForRestore = checkpoint }
-                                    .buttonStyle(.borderless).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
+                                    .buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
                                     .disabled(model.status == .working || control.restoreCheckpointState.isPending)
                             }
                         }
@@ -5753,7 +5753,7 @@ struct WorkspaceActivitySidebar: View {
                             }
                         }
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .foregroundStyle(Color.dockAccent)
                     .disabled(sessionSteerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                               || control.isActionPending(control.sessionSteerActionID(sessionID)))
@@ -5784,7 +5784,7 @@ struct WorkspaceActivitySidebar: View {
                         Button("Rename") {
                             Task { if await control.renameActiveSession(sessionRenameText) { sessionRenameText = "" } }
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(sessionRenameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -5797,7 +5797,7 @@ struct WorkspaceActivitySidebar: View {
                                 if let result = await control.redirectActiveSession(text), result.wasAccepted { sessionRedirectText = "" }
                             }
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(sessionRedirectText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -5805,22 +5805,22 @@ struct WorkspaceActivitySidebar: View {
                         TextField("Optional branch name", text: $sessionBranchName)
                             .textFieldStyle(.dockGlass)
                         Button("Branch") { isShowingBranchConfirmation = true }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .foregroundStyle(Color.dockAccent)
                             .disabled(!control.capabilityAvailable("rpc-sessions"))
                         TextField("Compression focus (optional)", text: $sessionCompressTopic)
                             .textFieldStyle(.dockGlass)
                         Button("Compress") { isShowingCompressConfirmation = true }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .foregroundStyle(Color.dockAccent)
                             .disabled(!control.capabilityAvailable("rpc-sessions"))
                     }
                     HStack(spacing: 8) {
                         Button("Undo last turn") { isShowingUndoConfirmation = true }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .foregroundStyle(Color.dockWarning)
                         Button(control.delegationPaused ? "Resume delegation" : "Pause delegation") { isShowingDelegationConfirmation = true }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .foregroundStyle(Color.dockWarning)
                     }
                 }
@@ -5840,7 +5840,7 @@ struct WorkspaceActivitySidebar: View {
                         Spacer()
                         if let native = model.activeSubagents.first(where: { $0.id == agent.id }), !model.isSyntheticSubagent(native.id) {
                             Button("Interrupt") { pendingAgentID = native.id }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.dockHover)
                                 .foregroundStyle(Color.dockWarning)
                         }
                     }
@@ -5852,7 +5852,7 @@ struct WorkspaceActivitySidebar: View {
                         Text(process.name).foregroundStyle(Color.dockPrimaryText)
                         Spacer()
                         Button("Stop") { pendingProcess = process }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .foregroundStyle(Color.dockWarning)
                     }
                     .font(.system(size: 11))
@@ -5959,7 +5959,7 @@ struct WorkspaceActivitySidebar: View {
                             .foregroundStyle(Color.dockAccent)
                     }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .disabled(model.isLoadingRuntimeConfiguration)
             }
 
@@ -6010,7 +6010,7 @@ struct WorkspaceActivitySidebar: View {
                         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     }
                     .menuStyle(.borderlessButton)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .disabled(model.isLoadingRuntimeConfiguration)
                     .onChange(of: selectedModelID) { _, id in
@@ -6086,7 +6086,7 @@ struct WorkspaceActivitySidebar: View {
                                                     isPending: control.isActionPending(control.mcpTestActionID(server))
                                                 )
                                             }
-                                                .buttonStyle(.borderless)
+                                                .buttonStyle(.dockHover)
                                                 .font(.system(size: 12, weight: .semibold))
                                                 .foregroundStyle(Color.dockAccent)
                                                 .disabled(control.isActionPending(control.mcpTestActionID(server)))
@@ -6113,7 +6113,7 @@ struct WorkspaceActivitySidebar: View {
                             isPending: control.isActionPending(control.reloadMCPActionID)
                         )
                     }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .disabled(control.isActionPending(control.reloadMCPActionID))
@@ -6396,7 +6396,7 @@ struct WorkspaceActivitySidebar: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .help(theme.detail)
         .accessibilityLabel("\(theme.title), \(modeLabel)\(option.isHermesActive ? ", active in Hermes" : "")")
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -6431,7 +6431,7 @@ struct WorkspaceActivitySidebar: View {
                         tint: control.emergencyStopActive == true ? .dockSecondaryText : .dockWarning
                     )
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(control.emergencyStopActive == true ? Color.dockSecondaryText : Color.dockWarning)
                 .disabled(control.isActionPending(control.emergencyStopActionID))
@@ -6482,7 +6482,7 @@ struct WorkspaceActivitySidebar: View {
                 DockIcon(.arrowsClockwise)
                     .font(.system(size: 11, weight: .semibold))
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .foregroundStyle(Color.dockAccent)
             .accessibilityLabel("Refresh Settings")
         }
@@ -6547,7 +6547,7 @@ struct WorkspaceActivitySidebar: View {
                 .foregroundStyle(Color.dockPrimaryText)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             if isExpanded.wrappedValue {
                 content()
                     .padding(.top, 10)
@@ -6725,7 +6725,7 @@ struct WorkspaceActivitySidebar: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.dockAccent)
                         }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .accessibilityLabel(isExpanded ? "Show fewer skills" : "Show all \(values.count) skills")
                     } else {
                         Text("+ \(values.count - 8) MORE")

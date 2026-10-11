@@ -148,7 +148,7 @@ struct SessionBotActivityView: View {
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .accessibilityLabel(expandedRecordIDs.contains(record.id) ? "Collapse \(record.botName) activity" : "Expand \(record.botName) activity")
         }
         .padding(.horizontal, 12)
@@ -171,7 +171,7 @@ struct SessionBotActivityView: View {
                     }
                     if let bot = botMode.visibleBots.first(where: { $0.id == record.botID }) {
                         Button("OPEN IN BOT CHAT") { onOpenBotChat?(bot) }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.dockHover)
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color.dockAccent)
                     }

@@ -283,7 +283,7 @@ struct BotRosterPage: View {
                     showsHiddenBots = false
                     activityFilter = .all
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockAccent)
                 .fixedSize()
             }
@@ -825,7 +825,7 @@ struct MissionControlBotRow: View, Equatable {
         .background(rowBackground)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .onTapGesture(perform: onSelect)
+        .dockHoverable().onTapGesture(perform: onSelect)
         .onKeyPress(.return) { onSelect(); return .handled }
         .onKeyPress(.space) { onSelect(); return .handled }
         .focusable()

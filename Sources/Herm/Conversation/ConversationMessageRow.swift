@@ -126,7 +126,7 @@ struct ConversationMessageRow: View, Equatable {
             layout(Image(nsImage: ConversationThumbnailCache.image(image, key: thumbnailKey)).resizable())
                 .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         .help("Open image preview")
     }
@@ -522,7 +522,7 @@ struct SystemEventCard: View {
                 )
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .disabled(!canExpand)
             .onHover { isHovering = $0 }
             .help(canExpand ? (isExpanded ? "Collapse" : "Show full text") : "")
@@ -607,7 +607,7 @@ struct FeedEventRow: View {
                 )
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .onHover { isHovering = $0 }
             .help(canExpand ? (isExpanded ? "Hide details" : "Show details") : "")
 
@@ -727,7 +727,7 @@ struct KanbanNoticeCard: View {
                 )
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help(isExpanded ? "Hide details" : "Show details")
 
             if isExpanded {

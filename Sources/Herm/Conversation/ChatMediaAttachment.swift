@@ -211,7 +211,7 @@ struct ChatMediaAttachmentCard: View {
             .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
     }
 }
 

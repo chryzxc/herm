@@ -345,7 +345,7 @@ struct EdgeTaskPreview: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .help(task.kanbanTask != nil ? "Open this Kanban card" : task.isCurrent ? "Open the current session" : "Open this session")
         .accessibilityLabel([task.title, task.isCurrent ? "current session" : nil, task.displayStatus, task.detail]
             .compactMap { $0 }.joined(separator: ". ") + (task.kanbanTask != nil ? ". Open Kanban card" : ". Open session"))

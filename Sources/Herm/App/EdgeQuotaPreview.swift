@@ -30,7 +30,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
                             .frame(height: 22)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .help(title(option))
                     .accessibilityLabel(title(option))
                     .accessibilityAddTraits(selection == option ? .isSelected : [])
@@ -52,7 +52,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
                             .fill(selection == option ? Color.dockAccentMuted : .clear))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help(title(option))
                 .accessibilityLabel(title(option))
                 .accessibilityAddTraits(selection == option ? .isSelected : [])
@@ -88,7 +88,7 @@ struct EdgeQuotaToolbar: View {
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .disabled(refreshing)
             .help("Refresh quota")
             .accessibilityLabel("Refresh quota")
@@ -537,7 +537,7 @@ struct ChatQuotaChip: View {
                 .fixedSize()
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .help("\(lowest.snapshot.displayName) has \(Int(lowest.remaining.rounded()))% left")
             .accessibilityLabel("Quota: \(lowest.snapshot.displayName) \(Int(lowest.remaining.rounded())) percent remaining")
             .popover(isPresented: $showingDetail, arrowEdge: .top) {

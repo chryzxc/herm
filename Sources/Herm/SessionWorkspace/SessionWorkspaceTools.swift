@@ -110,7 +110,7 @@ struct SessionTerminalView: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 44, height: 44)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .help("New terminal session")
         }
         .padding(.horizontal, 0)
@@ -133,7 +133,7 @@ struct SessionTerminalView: View {
                 DockIcon(.x)
                     .font(.system(size: 9, weight: .semibold))
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .help("Close terminal")
         }
         .foregroundStyle(terminalTabs.selectedID == session.id ? Color.dockPrimaryText : Color.dockSecondaryText)
@@ -156,11 +156,11 @@ struct SessionTerminalView: View {
                 .help(directory)
             if case .failed(let error) = terminal.state {
                 Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning)
-                Button("Retry") { terminal.start(directory: directory) }.buttonStyle(.borderless)
+                Button("Retry") { terminal.start(directory: directory) }.buttonStyle(.dockHover)
             }
             if terminal.state == .closed || terminal.state == .exited {
                 Button("Restart") { terminal.start(directory: directory) }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
             }
             Spacer(minLength: 8)
 
@@ -216,7 +216,7 @@ struct SessionTerminalView: View {
                     guard let repositoryID, let repositoryFingerprint else { return }
                     terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockAccent)
                 .accessibilityLabel("Rerun \(recipe.title)")
             }

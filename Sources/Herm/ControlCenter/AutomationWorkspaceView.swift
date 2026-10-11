@@ -202,7 +202,7 @@ struct AutomationWorkspaceView: View {
                     DockIcon(.x).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockSecondaryText)
                 .help("Close run panel")
             }
@@ -364,7 +364,7 @@ struct AutomationWorkspaceView: View {
             if selected { Color.dockAccent.frame(width: 2) }
         }
         .contentShape(Rectangle())
-        .onTapGesture { selectedJobID = job.id }
+        .dockHoverable().onTapGesture { selectedJobID = job.id }
         .contextMenu { menuActions(for: job) }
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
@@ -439,7 +439,7 @@ struct AutomationWorkspaceView: View {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .foregroundStyle(isRunPanelOpen ? Color.dockAccent : Color.dockSecondaryText)
                 .help(isRunPanelOpen ? "Hide run panel" : "Show run panel")
                 if hasMenuActions(for: job) {
@@ -450,7 +450,7 @@ struct AutomationWorkspaceView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .fixedSize()
                     .help("More actions")
                     .accessibilityLabel("More actions for \(job.name)")
@@ -564,7 +564,7 @@ struct AutomationWorkspaceView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
@@ -754,7 +754,7 @@ struct AutomationWorkspaceView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockMetadataText)
             Button("New automation") { isShowingCreationSheet = true }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockAccent)
                 .disabled(!control.cronControlAvailable)
         }
@@ -818,14 +818,14 @@ private struct AutomationRunDetailPanel: View {
                 Spacer(minLength: 8)
                 if let report {
                     DockCopyButton(report.markdown, label: "Copy", accessibilityLabel: "Copy run output", iconSize: 13)
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                 }
                 if let onClose {
                     Button(action: onClose) {
                         DockIcon(.x).font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .foregroundStyle(Color.dockSecondaryText)
                     .keyboardShortcut(.cancelAction)
                     .help("Close run panel")

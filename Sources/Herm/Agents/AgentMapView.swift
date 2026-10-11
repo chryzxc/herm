@@ -329,7 +329,7 @@ struct AgentHandoffMapView: View {
             .frame(width: AgentMapTreeLayout.nodeWidth, height: AgentMapTreeLayout.nodeHeight, alignment: .top)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityLabel("\(node.name), \(node.status), \(node.activityCount) events. Click to \(selectedAgentID == node.id ? "close" : "inspect") activity.")
     }
 

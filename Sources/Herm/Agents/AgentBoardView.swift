@@ -185,7 +185,7 @@ struct AgentBoardView: View {
                             .background(agentScope == scope ? Color.dockAccentMuted : Color.clear)
                             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .accessibilityAddTraits(agentScope == scope ? .isSelected : [])
                 }
             }
@@ -210,7 +210,7 @@ struct AgentBoardView: View {
                     } label: {
                         agentListRow(subagent, agent: agent)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .contentShape(Rectangle())
 
                     if let agent, expandedAgentID == subagent.id {
@@ -311,7 +311,7 @@ struct AgentBoardView: View {
                     .background(Color.dockSurface4)
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .frame(minWidth: 44, minHeight: 44)
             .help("Return to chat")
             .frame(width: 62, alignment: .trailing)
@@ -441,7 +441,7 @@ struct AgentBoardView: View {
                             }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .contentShape(Rectangle())
                 }
             }
@@ -485,7 +485,7 @@ struct AgentBoardView: View {
                                 .foregroundStyle(Color.dockMetadataText)
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .contentShape(Rectangle())
                     if expandedPipelineItemID == item.id {
                         pipelineContent(item)

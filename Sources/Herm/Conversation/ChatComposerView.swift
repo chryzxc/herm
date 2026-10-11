@@ -240,7 +240,7 @@ struct ChatComposerView: View {
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockSecondaryText)
                                 }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.dockHover)
                                 .help("Remove image")
                             }
                             .padding(.horizontal, 6)
@@ -267,7 +267,7 @@ struct ChatComposerView: View {
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockSecondaryText)
                                 }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.dockHover)
                                 .help("Remove context")
                             }
                             .padding(.horizontal, 8)
@@ -291,7 +291,7 @@ struct ChatComposerView: View {
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.dockSecondaryText)
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .help("Remove PDF")
                 }
                 .padding(.horizontal, 8)
@@ -327,7 +327,7 @@ struct ChatComposerView: View {
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .help("Attach or insert content")
                     .accessibilityLabel("Attach")
                     .popover(isPresented: $showingAttachmentPopover, arrowEdge: .bottom) {
@@ -363,7 +363,7 @@ struct ChatComposerView: View {
                                 .frame(width: isFullscreen ? 34 : 28, height: isFullscreen ? 34 : 28)
                                 .background(Circle().fill(Color.dockDestructive.opacity(0.14)))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.dockHover)
                         .help(model.status == .needsClarification
                               ? "Dismiss the question and interrupt Hermes"
                               : "Stop Hermes response")
@@ -404,7 +404,7 @@ struct ChatComposerView: View {
                             }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .frame(width: 44, height: 44)
                     .disabled(
                         model.isRestoringSession ||
@@ -538,7 +538,7 @@ struct ChatComposerView: View {
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
@@ -972,7 +972,7 @@ private struct QueuedPromptList: View {
                 .frame(width: 20, height: 20)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .help(label)
         .accessibilityLabel(label)
     }

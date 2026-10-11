@@ -166,7 +166,7 @@ struct AttachmentPopover: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .disabled(unavailable)
         .help(unavailable ? "Folder attachments are not supported by Hermes" : action.title)
         .accessibilityLabel(unavailable ? "\(action.title), unavailable" : action.title)
@@ -187,7 +187,7 @@ struct AttachmentPopover: View {
                     .font(.system(size: 11))
                     .onSubmit(insertURL)
                 Button("Insert", action: insertURL)
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 11, weight: .semibold))
                     .disabled(AttachmentPopoverPresentation.validatedURL(from: urlText) == nil)
             }
@@ -217,7 +217,7 @@ struct AttachmentPopover: View {
             .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .accessibilityLabel("Prompt snippets")
     }
 

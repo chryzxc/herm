@@ -107,7 +107,7 @@ struct RepositoryChangesBrowser: View {
                 .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .help(isExpanded.wrappedValue ? "Collapse \(title.lowercased())" : "Expand \(title.lowercased())")
 
             if isExpanded.wrappedValue {
@@ -262,7 +262,7 @@ struct RepositoryChangesBrowser: View {
                     Button("SIGN IN") {
                         workflow.authenticateGitHub()
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -312,7 +312,7 @@ struct RepositoryChangesBrowser: View {
                     Button("SIGN OUT") {
                         workflow.signOutGitHub()
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockSecondaryText)
                 }
@@ -347,7 +347,7 @@ struct RepositoryChangesBrowser: View {
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 8)
             Button(workflow.isAuthenticatingGitHub ? "Connecting…" : actionTitle, action: action)
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 .disabled(workflow.isAuthenticatingGitHub)
@@ -363,7 +363,7 @@ struct RepositoryChangesBrowser: View {
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .help(help)
     }
 
@@ -375,7 +375,7 @@ struct RepositoryChangesBrowser: View {
             } label: {
                 fileRowLabel(file, showsSelection: selectedFilePath == file.id)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .padding(.vertical, 8)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
         } else {
@@ -392,7 +392,7 @@ struct RepositoryChangesBrowser: View {
                         fileRowLabel(file, showsSelection: false)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help(isExpanded ? "Hide diff" : "Show diff")
 
                 if isExpanded { diffCard(for: file) }

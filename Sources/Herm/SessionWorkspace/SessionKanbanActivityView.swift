@@ -148,7 +148,7 @@ struct SessionKanbanActivityView: View {
                             Spacer()
                         }
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.dockMetadataText)
                     if showsCompleted {
@@ -168,7 +168,7 @@ struct SessionKanbanActivityView: View {
                     Button("RETRY") {
                         if let sessionID { control.refreshSessionKanban(for: sessionID) }
                     }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(.dockHover)
                 }
                 .font(.system(size: 10))
                 .foregroundStyle(Color.dockWarning)
@@ -184,7 +184,7 @@ struct SessionKanbanActivityView: View {
                         DockIcon(.arrowUpRight)
                     }
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }
@@ -208,7 +208,7 @@ struct SessionKanbanActivityView: View {
             } label: {
                 DockIcon(.arrowsClockwise)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .foregroundStyle(Color.dockAccent)
             .accessibilityLabel("Refresh session Kanban")
         }
@@ -279,7 +279,7 @@ struct SessionKanbanActivityView: View {
                     .background(Color.dockSurface4.opacity(0.68))
                     .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .disabled(onOpenTask == nil)
                 .accessibilityLabel("\(row.botName), \(row.status.label): \(row.title)")
             }
@@ -331,7 +331,7 @@ struct SessionKanbanActivityView: View {
             .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .disabled(onOpenTask == nil && onOpenBoard == nil)
         .accessibilityLabel("\(row.status.label): \(row.title)")
     }

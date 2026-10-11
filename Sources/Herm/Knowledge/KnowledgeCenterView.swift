@@ -134,7 +134,7 @@ struct KnowledgeCenterView: View {
 
     private func actionButton(_ title: String, mutation: SkillMutation) -> some View {
         Button(title) { }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .foregroundStyle(Color.dockMetadataText)
             .disabled(HermesSkillService.capability(mutation) == .unavailable)
             .accessibilityHint("Unavailable: Hermes contract is not verified")

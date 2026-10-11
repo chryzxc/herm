@@ -215,7 +215,7 @@ struct ComposerCompletionPopover: View {
             .background(isSelected ? Color.dockAccent.opacity(0.14) : Color.clear)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

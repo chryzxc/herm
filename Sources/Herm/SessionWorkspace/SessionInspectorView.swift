@@ -134,7 +134,7 @@ struct SessionInspector: View {
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .fixedSize(horizontal: true, vertical: false)
         .onHover { isHovering in
             hoveredSection = isHovering ? section : nil
@@ -270,7 +270,7 @@ struct SessionInspector: View {
                             }
                         }
                         .menuStyle(.borderlessButton)
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .disabled(isSwitchingBranch || workflow.branches.isEmpty)
                         .frame(maxWidth: .infinity, alignment: .leading)
 

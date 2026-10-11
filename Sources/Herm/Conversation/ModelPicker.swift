@@ -131,7 +131,7 @@ struct ModelPickerView: View {
             .contentShape(Rectangle())
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .menuIndicator(.hidden)
         .help(selectedOption?.provider ?? "")
         .accessibilityLabel("Select model, currently \(selectedOption?.displayName ?? "none")")

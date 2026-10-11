@@ -371,7 +371,7 @@ struct HermesConfigCategoryView: View {
                     SettingsSection(title: "Hermes config unavailable", subtitle: "", tint: .dockWarning) {
                         Text(message).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
                         Button("Retry") { Task { await editor.load() } }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                     }
@@ -419,7 +419,7 @@ private struct HermesConfigFieldRow: View {
                 SettingsPreferenceRow(title: title, detail: detail) {
                     if listDraft != listText {
                         Button("Save") { editor.set(key, listItems(listDraft)) }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.dockHover)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.dockAccent)
                     } else if editor.savingKeys.contains(key) {

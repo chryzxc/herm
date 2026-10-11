@@ -132,7 +132,7 @@ struct KanbanBoardView: View, Equatable {
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help("Collapse \(lane.rawValue) lane")
                 .accessibilityLabel("Collapse \(lane.rawValue) lane")
             }
@@ -298,7 +298,7 @@ private struct KanbanLaneRail: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .onHover { isHovered = $0 }
         .help("Expand \(lane.rawValue) lane")
         .accessibilityLabel("Expand \(lane.rawValue) lane, \(count) tasks")
@@ -388,7 +388,7 @@ private struct KanbanTaskCard: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .onTapGesture { onSelect(task) }
+        .dockHoverable().onTapGesture { onSelect(task) }
         .modifier(KanbanCardDragSource(
             isEnabled: isDraggable,
             taskID: task.id,
@@ -413,7 +413,7 @@ private struct KanbanTaskCard: View {
             }
             // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
             .menuStyle(.button)
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .menuIndicator(.hidden)
             .fixedSize()
             .padding(.top, 6)

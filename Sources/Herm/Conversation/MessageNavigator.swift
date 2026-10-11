@@ -366,7 +366,7 @@ struct MessageNavigatorView: View {
                         .frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .help("Close search (Esc)")
                 .accessibilityLabel("Close search")
             }
@@ -416,7 +416,7 @@ struct MessageNavigatorView: View {
                                     .contentShape(Rectangle())
                                     .onHover { hoveredResult = $0 ? item.target : (hoveredResult == item.target ? nil : hoveredResult) }
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.dockHover)
                             }
                         }
                         .padding(4)

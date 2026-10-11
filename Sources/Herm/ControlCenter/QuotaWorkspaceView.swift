@@ -650,7 +650,7 @@ struct QuotaWorkspaceView: View {
                         .frame(width: DockControlMetrics.hitTarget, height: DockControlMetrics.hitTarget)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .help("Open \(descriptor.displayName) website")
                 .accessibilityLabel("Open \(descriptor.displayName) website")
             }

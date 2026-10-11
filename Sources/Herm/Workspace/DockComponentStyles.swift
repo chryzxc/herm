@@ -415,6 +415,54 @@ struct DockPressButtonStyle: ButtonStyle {
     }
 }
 
+/// Reusable hover affordance: a faint accent fill while the pointer is over the
+/// view and a stronger one while `isPressed`. Use `.dockHoverable()` on any
+/// clickable non-Button (tap-gesture rows, icons); buttons get it via `.dockHover`.
+struct DockHoverModifier: ViewModifier {
+    var cornerRadius: CGFloat = DockLayout.controlRadius - 1
+    var isPressed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                // Only lit rows draw a shape; long scrolling lists stay free of invisible overlays.
+                if isPressed || (isHovering && isEnabled) {
+                    DockThemeShape(cornerRadius: cornerRadius)
+                        .fill(Color.dockAccent.opacity(isPressed ? 0.16 : 0.09))
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.12), value: isHovering)
+            .onHover { isHovering = $0 }
+    }
+}
+
+/// Drop-in for `.plain`/`.borderless`: same layout; hover lifts the label's own
+/// pixels (and press dims them) so it never paints outside the visible control
+/// when the hit area is larger than the artwork.
+struct DockHoverButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .brightness(configuration.isPressed ? -0.06 : isHovering && isEnabled ? 0.12 : 0)
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.12), value: isHovering)
+            .onHover { isHovering = $0 }
+    }
+}
+
+extension View {
+    func dockHoverable(cornerRadius: CGFloat = DockLayout.controlRadius - 1) -> some View {
+        modifier(DockHoverModifier(cornerRadius: cornerRadius))
+    }
+}
+
 /// The single filled action treatment from DESIGN.md. Use it only for the
 /// primary action in a section; secondary actions stay text-on-glass.
 struct DockPrimaryButtonStyle: ButtonStyle {
@@ -514,7 +562,7 @@ struct DockToggleStyle: ToggleStyle {
             .foregroundStyle(Color.dockSecondaryText)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .accessibilityAddTraits(configuration.isOn ? .isSelected : [])
         .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isOn)
     }
@@ -585,7 +633,7 @@ struct DockPageHeader<Trailing: View>: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .disabled(isRefreshing)
                 .help("Refresh")
             }
@@ -766,6 +814,10 @@ extension ButtonStyle where Self == DockPressButtonStyle {
     static var dockPress: Self { Self() }
 }
 
+extension ButtonStyle where Self == DockHoverButtonStyle {
+    static var dockHover: Self { Self() }
+}
+
 extension ButtonStyle where Self == DockPrimaryButtonStyle {
     static var dockPrimary: Self { Self() }
 }
@@ -782,7 +834,36 @@ extension ToggleStyle where Self == DockToggleStyle {
     static var dockSwitch: Self { Self() }
 }
 
+extension Shape {
+    /// Input/composer background: Liquid Glass on the glass skin, else the solid surface.
+    @MainActor @ViewBuilder
+    func dockInputFill() -> some View {
+        if DockThemeStyle.current.material == .glass {
+            Color.clear.dockLiquidGlass(self)
+        } else {
+            fill(Color.dockSurface2)
+        }
+    }
+}
+
 extension View {
+    /// Liquid Glass surface: native `glassEffect` on macOS 26, otherwise a
+    /// blurred body with a specular rim and a soft top sheen approximating it.
+    @ViewBuilder
+    func dockLiquidGlass<S: Shape>(_ shape: S, interactive: Bool = false) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            self
+                .background(shape.fill(.ultraThinMaterial))
+                .background(shape.fill(LinearGradient(colors: [.white.opacity(0.14), .clear], startPoint: .top, endPoint: .center)))
+                .overlay(shape.stroke(
+                    LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1
+                ))
+        }
+    }
+
     /// Level 1 glass pane: reserved for a focused, interactive unit of work.
     func dockGlassPane() -> some View {
         self
@@ -821,11 +902,7 @@ extension View {
         } else if style.material == .glass {
             self
                 .padding(padding)
-                .background(shape.fill(.ultraThinMaterial))
-                .overlay(shape.stroke(
-                    LinearGradient(colors: [Color.white.opacity(0.45), Color.white.opacity(0.04)], startPoint: .top, endPoint: .bottom),
-                    lineWidth: 0.75
-                ))
+                .dockLiquidGlass(shape)
                 .dockCardDepth()
         } else {
             self
@@ -866,7 +943,7 @@ struct DockTabButton: View {
                 .dockSelectionBackground(shape, active: isSelected, fill: Color.dockSurface4)
                 .overlay(shape.stroke(isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .contentShape(shape)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

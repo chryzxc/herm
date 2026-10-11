@@ -153,7 +153,7 @@ struct SessionFilesView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .disabled(isOpeningFile && !entry.isDirectory)
         .onHover { hoveredPath = $0 ? entry.path : (hoveredPath == entry.path ? nil : hoveredPath) }
         .help(entry.path)
@@ -238,7 +238,7 @@ struct SessionFilesView: View {
             }
             // `.borderlessButton` drops custom-shape labels on macOS.
             .menuStyle(.button)
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .menuIndicator(.hidden)
             .fixedSize()
             .dockHoverTip("Explorer options", edge: .leading)
@@ -266,7 +266,7 @@ struct SessionFilesView: View {
                 Button { filterText = "" } label: {
                     DockIcon(.xCircle, weight: .fill).font(.system(size: 12))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockMetadataText)
                 .accessibilityLabel("Clear file filter")
             }

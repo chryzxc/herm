@@ -122,7 +122,7 @@ struct HermesNotchPetButton: View {
                 HermesPetView(pet: pet, mirrored: mirrored, poseOverride: poseOverride).frame(width: spriteSize.width, height: spriteSize.height)
                     .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.dockHover)
             .onHover { inside in if inside { pet.greet() } }
             .help("Pet \(pet.info.displayName ?? "your companion")")
             .accessibilityLabel("Pet \(pet.info.displayName ?? "your companion")")
@@ -170,7 +170,7 @@ struct HermesPetSettingsView: View {
                                     slug = entry.slug; enabled = true; dirty = true
                                 } label: {
                                     HermesPetGalleryRow(pet: pet, entry: entry, selected: slug == entry.slug)
-                                }.buttonStyle(.plain)
+                                }.buttonStyle(.dockHover)
                                     .accessibilityLabel("Select \(entry.displayName)")
                                     .accessibilityAddTraits(slug == entry.slug ? .isSelected : [])
                             }

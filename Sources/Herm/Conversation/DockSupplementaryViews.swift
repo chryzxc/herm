@@ -595,7 +595,7 @@ struct RepositoryFleetRow: View {
                 Button("SELECT") { select(path) }
                 Button("REFRESH") { Task { await refresh() } }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Color.dockAccent)
         }

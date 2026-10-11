@@ -174,7 +174,7 @@ struct ArtifactsInspectorView: View {
                     DockIcon(isLoading ? .hourglass : .arrowsClockwise)
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .foregroundStyle(Color.dockAccent)
                 .disabled(isLoading)
                 .accessibilityLabel("Refresh artifacts")
@@ -238,7 +238,7 @@ struct ArtifactsInspectorView: View {
                 Button { query = "" } label: {
                     DockIcon(.xCircle, size: 13, color: .dockMetadataText)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.dockHover)
                 .accessibilityLabel("Clear search")
             }
         }
@@ -256,7 +256,7 @@ struct ArtifactsInspectorView: View {
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 8)
             Button("Retry") { Task { await refresh() } }
-                .buttonStyle(.borderless)
+                .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 .disabled(isLoading)
@@ -504,7 +504,7 @@ struct ArtifactsInspectorView: View {
                         .font(DockTypography.metadata.weight(.medium))
                         .foregroundStyle(Color.dockAccent)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.dockHover)
                     .help("Open the session that produced this artifact")
                 } else {
                     DockIconLabel(record.sessionTitle, icon: .chatCircle)
@@ -755,7 +755,7 @@ struct ArtifactsInspectorView: View {
             .background(selected ? Color.dockAccent.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityLabel("\(item.rawValue), \(count(for: item)) artifacts")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -771,7 +771,7 @@ struct ArtifactsInspectorView: View {
             }
         }
         .font(.system(size: 11, weight: .semibold))
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .foregroundStyle(filter == item ? Color.dockPrimaryText : Color.dockSecondaryText)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -876,7 +876,7 @@ struct ArtifactsInspectorView: View {
                 if let session = sourceSession(for: record) {
                     Button(session.displayTitle) { openSession(session) }
                         .font(.system(size: 10))
-                        .buttonStyle(.borderless)
+                        .buttonStyle(.dockHover)
                         .foregroundStyle(Color.dockAccent)
                         .lineLimit(1)
                 } else {
@@ -908,7 +908,7 @@ struct ArtifactsInspectorView: View {
     private func artifactAction(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
             .font(.system(size: 10, weight: .semibold))
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .foregroundStyle(Color.dockAccent)
     }
 
@@ -921,7 +921,7 @@ struct ArtifactsInspectorView: View {
             color: .dockAccent
         )
         .font(.system(size: 10, weight: .semibold))
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
     }
 
     private func pagination(current: Int, total: Int, select: @escaping (Int) -> Void) -> some View {
@@ -938,7 +938,7 @@ struct ArtifactsInspectorView: View {
             }
             .disabled(current >= total)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.dockHover)
         .foregroundStyle(Color.dockAccent)
         .frame(maxWidth: .infinity, alignment: .center)
         .accessibilityElement(children: .contain)

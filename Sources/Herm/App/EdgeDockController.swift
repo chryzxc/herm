@@ -884,7 +884,7 @@ struct EdgeNotchView: View {
             .frame(width: state.railWidth, height: state.railHeight)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .contextMenu {
             if state.hasPet { Button("Attach pet to notch", action: onCallPetHome).disabled(state.petAttached) }
             Button("Move to left edge") { onSideChange(.left) }
@@ -960,7 +960,7 @@ struct EdgeNotchView: View {
             .frame(width: 28, height: 28)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .disabled(refreshing || state.activity.status == .offline)
         .help(unavailable ? "Status unavailable. Refresh tasks" : "Refresh tasks")
         .accessibilityLabel(unavailable ? "Status unavailable. Refresh tasks" : "Refresh tasks")
@@ -977,7 +977,7 @@ struct EdgeNotchView: View {
                 .overlay(Capsule().strokeBorder(isSelected ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1))
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.dockHover)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

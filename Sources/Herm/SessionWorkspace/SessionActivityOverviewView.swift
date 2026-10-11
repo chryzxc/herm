@@ -393,7 +393,7 @@ struct SessionActivityOverviewView: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .disabled(botMode.isRefreshing || refreshState?.isRefreshing == true)
             .help("Refresh session activity")
             .accessibilityLabel("Refresh session activity")
@@ -490,7 +490,7 @@ struct SessionActivityOverviewView: View {
                 .frame(minHeight: 56)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             if selected {
                 agentHistory(for: row, timeline: timeline)
                     .padding(.leading, 52)
@@ -568,7 +568,7 @@ struct SessionActivityOverviewView: View {
                 .frame(minHeight: 54)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             if expanded {
                 VStack(alignment: .leading, spacing: 5) {
                     if let detail = row.detail { Text(detail).textSelection(.enabled) }
@@ -634,7 +634,7 @@ struct SessionActivityOverviewView: View {
                 .frame(minHeight: 56)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             .accessibilityLabel([status, task.title, actor, priorityLabel(task.priority), task.boardSlug].compactMap { $0 }.joined(separator: ", "))
             if expanded {
                 kanbanCardEvents(task)
@@ -705,7 +705,7 @@ struct SessionActivityOverviewView: View {
                 .foregroundStyle(Color.dockAccent)
                 .frame(minHeight: 44, alignment: .leading)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
         }
     }
 
@@ -732,7 +732,7 @@ struct SessionActivityOverviewView: View {
                 .frame(minHeight: 48)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.dockHover)
             if expanded {
                 VStack(alignment: .leading, spacing: 6) {
                     if let detail = row.detail { Text(detail).textSelection(.enabled) }
