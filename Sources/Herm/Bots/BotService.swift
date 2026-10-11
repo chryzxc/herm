@@ -473,9 +473,10 @@ final class BotModeModel: ObservableObject {
     @Published var botCreationError: String?
     @Published private(set) var selectedProfileID: String?
     @Published private(set) var avatarImages: [String: Data] = [:] {
-        didSet { rosterRevision &+= 1 }
+        didSet { rosterRevision &+= 1; BotMentions.update(bots: inventory.bots, avatars: avatarImages) }
     }
     private var service: BotService?
+    let groupChats = GroupChatStore()
     private var capabilityAvailable = false
     private let selectedProfileKey = "hermes.dock.selected-profile.v1"
 
@@ -491,6 +492,7 @@ final class BotModeModel: ObservableObject {
     private func rebuildRosterIndex() {
         botsByID = Dictionary(inventory.bots.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
         rosterRevision &+= 1
+        BotMentions.update(bots: inventory.bots, avatars: avatarImages)
     }
 
     var bots: [BotSummary] { inventory.bots }
@@ -507,7 +509,11 @@ final class BotModeModel: ObservableObject {
 
     var canCreateBots: Bool { capabilityAvailable }
 
-    func bind(to client: HermesRPCClientProtocol, capabilityAvailable: Bool) { service = BotService(client: client); self.capabilityAvailable = capabilityAvailable }
+    func bind(to client: HermesRPCClientProtocol, capabilityAvailable: Bool) {
+        service = BotService(client: client)
+        self.capabilityAvailable = capabilityAvailable
+        groupChats.bind(to: client)
+    }
 
     /// A starved or stale capability snapshot must not tear down a roster
     /// Hermes just served successfully.

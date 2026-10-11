@@ -6456,7 +6456,7 @@ final class DockModel: ObservableObject {
 
     /// Tool calls an assistant history row requested, in either the OpenAI
     /// `tool_calls` shape or Anthropic-style `tool_use` content parts.
-    private static func historyToolCalls(in row: [String: Any], timestamp: Date) -> [ActiveToolCall] {
+    static func historyToolCalls(in row: [String: Any], timestamp: Date) -> [ActiveToolCall] {
         let parts = ((row["tool_calls"] as? [[String: Any]]) ?? [])
             + ((row["content"] as? [[String: Any]]) ?? []).filter {
                 (($0["type"] as? String)?.lowercased() ?? "").contains("tool_use")

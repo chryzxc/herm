@@ -284,6 +284,38 @@ struct DockNavRow: View {
     }
 }
 
+/// Icon-only destination for the narrow primary rail. The label lives in the
+/// tooltip and accessibility name; selection uses the same fill as DockNavRow.
+struct DockRailButton: View {
+    let title: String
+    let icon: Ph
+    let isSelected: Bool
+    var showsUpdateBadge = false
+    let style: DockThemePalette
+    let action: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        let shape = DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius)
+        Button(action: action) {
+            DockIcon(icon, size: 17, color: isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
+                .frame(width: 38, height: 38)
+                .background(shape.fill(isSelected ? style.selectedFill : isHovering ? style.accent.opacity(0.14) : .clear))
+                .overlay(alignment: .topTrailing) {
+                    if showsUpdateBadge {
+                        Circle().fill(style.warning).frame(width: 7, height: 7).padding(7)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help(title)
+        .accessibilityLabel(showsUpdateBadge ? "\(title), update available" : title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
 /// Square icon action for sidebar headers: quiet until hovered; prominent
 /// actions keep an accent tint so the primary action reads at a glance.
 struct DockIconButton: View {

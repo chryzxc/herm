@@ -84,6 +84,19 @@ enum HermesFeatureIDs {
         case slashExec = "slash.exec"
         case commandDispatch = "command.dispatch"
         case botRelayDeliver = "bot_relay.deliver"
+        case groupsCapabilities = "groups.capabilities"
+        case groupsList = "groups.list"
+        case groupsCreate = "groups.create"
+        case groupsState = "groups.state"
+        case groupsSend = "groups.send"
+        case groupsLog = "groups.log"
+        case groupsRename = "groups.rename"
+        case groupsStop = "groups.stop"
+        case groupsDisband = "groups.disband"
+        case groupsApprove = "groups.approve"
+        case groupsRetry = "groups.retry"
+        case groupsPeerInvite = "groups.peer.invite"
+        case groupsPeerRegister = "groups.peer.register"
         case promptBackground = "prompt.background"
         case promptBtw = "prompt.btw"
         case sessionTitle = "session.title"
@@ -140,7 +153,9 @@ enum HermesFeatureIDs {
         "pet.info", "pet.info.meta", "pet.gallery", "pet.thumb", "pet.select", "pet.disable", "pet.scale",
         "session.list", "session.active_list", "session.activate", "session.delete", "session.resume",
         "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.create", "session.close", "session.set_hidden", "session.events.since", "project.facts",
-        "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "bot_relay.deliver", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
+        "verification.status", "prompt.submit", "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "bot_relay.deliver",
+        "groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send", "groups.log",
+        "groups.rename", "groups.stop", "groups.disband", "groups.approve", "groups.retry", "groups.peer.invite", "groups.peer.register", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
         "approval.respond", "request.answer", "clarify.lock", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "voice.tts", "config.get",

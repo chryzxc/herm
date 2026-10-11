@@ -71,7 +71,7 @@ struct ConversationRenderSnapshotTests {
                     sessionPendingDeletion: .constant(nil), activeSessionID: nil, activeGlobalTab: nil,
                     isArtifactsActive: false, isBotsActive: false, isPullRequestsActive: false, isIssuesActive: false,
                     onNewConversation: {}, onSelectSession: { _ in }, onSelectTask: { _ in }, onOpenGlobal: { _ in },
-                    onOpenArtifacts: {}, onOpenBots: {}, onOpenPullRequests: {}, onOpenIssues: {},
+                    onOpenArtifacts: {}, onOpenBots: {}, onOpenGroupChat: { _ in }, onOpenPullRequests: {}, onOpenIssues: {},
                     showsFullscreenToggle: false, isFullscreen: true, onFullscreenToggle: {}, onSelectProfile: { _ in }
                 )
                 .frame(width: 250)

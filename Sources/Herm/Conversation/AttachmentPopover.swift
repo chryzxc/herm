@@ -113,6 +113,8 @@ struct AttachmentPopover: View {
     let onSelect: (AttachmentPopoverAction) -> Void
     let onInsertURL: (String) -> Void
     let onSelectSnippet: (String) -> Void
+    /// Group rooms carry text only, so they offer just the inserting actions.
+    var actions = AttachmentPopoverAction.allCases
 
     @State private var urlText = ""
 
@@ -123,7 +125,7 @@ struct AttachmentPopover: View {
                 .tracking(0.7)
                 .foregroundStyle(Color.dockAccent)
 
-            ForEach(AttachmentPopoverAction.allCases) { action in
+            ForEach(actions) { action in
                 if action == .url {
                     urlRow
                 } else if action == .promptSnippets {

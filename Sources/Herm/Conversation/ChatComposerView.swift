@@ -460,8 +460,7 @@ struct ChatComposerView: View {
                         .frame(height: isComposerFocused ? 2 : 1)
                         .frame(maxHeight: .infinity, alignment: .bottom)
                 } else {
-                    shape
-                        .fill(DockThemeStyle.current.material == .glass ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(Color.dockSurface2))
+                    shape.dockInputFill()
                         .overlay {
                             shape.stroke(
                                 speechInput.isRecording
@@ -643,8 +642,28 @@ struct ChatComposerView: View {
     }
 
     private func submitComposerInput() {
-        // Hermes' composer identifies mentions; the session agent owns delivery
-        // through message_agent, including its Bot Chat and permission rules.
+        // Hermes only gives message_agent to canonical Bot Chat sessions, so a
+        // single leading roster mention is delivered through bot_relay.deliver
+        // into that Bot's Bot Chat. Attachments and in-flight turns keep the
+        // ordinary path until Hermes exposes a profile-scoped attachment API.
+        if model.status != .working,
+           !model.isSending,
+           model.attachedContexts.isEmpty,
+           ComposerMentionPresentation.canDirectRouteBot(
+               hasImages: !model.pendingImages.isEmpty,
+               hasPDF: model.pendingPDFURL != nil
+           ),
+           let request = ComposerMentionPresentation.directBotRequest(
+                in: composer.text,
+                profileIDs: botMode.visibleBots.map(\.id)
+           ),
+           let bot = botMode.visibleBots.first(where: { $0.id == request.profileID }) {
+            closeCompletions()
+            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text, chatSessionID: bot.chat?.sessionID)
+            return
+        }
+        // Other mentions are identified for the session agent, which can
+        // deliver them with message_agent when it runs in a Bot Chat.
         model.submitComposerInput(mentionProfiles: botMode.visibleBots.map { $0.id })
     }
 
@@ -1000,7 +1019,7 @@ enum ComposerCompletionKey {
     }
 }
 
-private struct ComposerInputEditor: NSViewRepresentable {
+struct ComposerInputEditor: NSViewRepresentable {
     @Binding var text: String
     let isFocused: Bool
     let onSubmit: () -> Void

@@ -34,6 +34,7 @@ enum MissionControlNavigationSelection: Equatable {
     case global(ControlTab)
     case artifacts
     case bots
+    case groupChat(String)
     case pullRequests
     case issues
 }
@@ -48,6 +49,7 @@ final class MissionControlNavigationSelectionState: ObservableObject {
     func selectGlobal(_ tab: ControlTab) { selection = .global(tab) }
     func selectArtifacts() { selection = .artifacts }
     func selectBots() { selection = .bots }
+    func selectGroupChat(_ roomID: String) { selection = .groupChat(roomID) }
     func selectPullRequests() { selection = .pullRequests }
     func selectIssues() { selection = .issues }
 
@@ -331,11 +333,12 @@ struct DockPopover: View {
     @State private var isFullscreen = false
     @State private var isMissionInspectorVisible = false
 
-    private enum FullscreenSurface {
+    private enum FullscreenSurface: Equatable {
         case conversation, pullRequests, issues
         case global
         case artifacts
         case bots
+        case groupChat(String)
     }
     @State private var fullscreenSurface: FullscreenSurface = .conversation
     @State private var fullscreenGlobalTab: ControlTab = .kanban
@@ -589,6 +592,7 @@ struct DockPopover: View {
                 fullscreenGlobalTab = .quota
                 fullscreenSurface = .global
             }
+            .padding(.top, usesWindowChrome ? 38 : 0) // titlebar height; the surface itself runs under it
             .background { DockWindowBackground() }
             .clipShape(DockPanelSurfaceShape(
                 isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
@@ -601,8 +605,9 @@ struct DockPopover: View {
                     cornerRadius: usesWindowChrome ? 0 : 22,
                     edgeSide: panelPresentation.edgeSide
                 )
-                    .stroke(Color.dockBorderStrong, lineWidth: usesWindowChrome ? 0 : panelPresentation.isEdgeAttached ? 1 : 0.5)
+                    .stroke(Color.dockBorderStrong, lineWidth: panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline)
             }
+            .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
             .dockThemedRoot()
             .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : nil)
             .sheet(item: $selectedChatImage) { preview in
@@ -674,7 +679,7 @@ struct DockPopover: View {
                 }
 
                 if isWorkspaceVisibleForLayout {
-                    Rectangle().fill(Color.dockBorderLight).frame(width: 0.5)
+                    Rectangle().fill(Color.dockBorder).frame(width: DockLayout.hairline)
                     contextPanel
                         .frame(
                             width: isFullscreen ? .infinity : min(isNarrowLayout ? 500 : 480, panelPresentation.compactWidth),
@@ -693,11 +698,68 @@ struct DockPopover: View {
     /// Applies to both the fullscreen and the windowed/minimized popover
     /// presentations, since both route through this shell.
     private var desktopWorkspaceShell: some View {
-        FullscreenPanelSplitView(
-            leading: missionControlQueue,
-            trailing: desktopTrailingWorkspace,
-            leadingFraction: DesktopWorkspaceFractions.queue,
-            minimumTrailingWidth: desktopTrailingMinimumWidth
+        HStack(spacing: 0) {
+            missionControlRail
+            if showsChatsPanel {
+                FullscreenPanelSplitView(
+                    leading: missionControlQueue,
+                    trailing: desktopTrailingWorkspace,
+                    leadingFraction: DesktopWorkspaceFractions.queue,
+                    minimumLeadingWidth: 300,
+                    minimumTrailingWidth: desktopTrailingMinimumWidth
+                )
+            } else {
+                desktopTrailingWorkspace
+            }
+        }
+    }
+
+    /// The session lists belong to Chats: a conversation or group chat is open.
+    private var showsChatsPanel: Bool {
+        switch fullscreenSurface {
+        case .conversation, .groupChat: true
+        default: false
+        }
+    }
+
+    private var missionControlRail: some View {
+        MissionControlRail(
+            agentUpdateService: agentUpdateService,
+            navigationState: missionControlNavigation,
+            dockThemeStore: dockThemeStore,
+            isChatsActive: showsChatsPanel,
+            isIssuesActive: fullscreenSurface == .issues,
+            onOpenChats: {
+                missionControlNavigation.clearSelection()
+                fullscreenSurface = .conversation
+                inspectorScope = .session
+            },
+            onOpenGlobal: { tab in
+                missionControlNavigation.selectGlobal(tab)
+                fullscreenGlobalTab = tab
+                fullscreenSurface = .global
+            },
+            onOpenArtifacts: {
+                missionControlNavigation.selectArtifacts()
+                fullscreenSurface = .artifacts
+            },
+            onOpenBots: {
+                missionControlNavigation.selectBots()
+                Task { await botMode.refreshNow(force: true) }
+                fullscreenSurface = .bots
+            },
+            onOpenPullRequests: {
+                missionControlNavigation.selectPullRequests()
+                fullscreenSurface = .pullRequests
+            },
+            onOpenIssues: {
+                missionControlNavigation.selectIssues()
+                fullscreenSurface = .issues
+            },
+            isFullscreen: isFullscreen,
+            isDockedWindow: usesWindowChrome,
+            onFullscreenToggle: toggleFullscreen,
+            onOpenWindow: onOpenWindow
         )
     }
 
@@ -738,7 +800,7 @@ struct DockPopover: View {
 
     private var isGlobalSurfaceActive: Bool {
         switch fullscreenSurface {
-        case .global, .artifacts, .bots, .pullRequests, .issues: true
+        case .global, .artifacts, .bots, .groupChat, .pullRequests, .issues: true
         case .conversation: false
         }
     }
@@ -1105,6 +1167,10 @@ struct DockPopover: View {
                 Task { await botMode.refreshNow(force: true) }
                 fullscreenSurface = .bots
             },
+            onOpenGroupChat: { roomID in
+                missionControlNavigation.selection.selectGroupChat(roomID)
+                fullscreenSurface = .groupChat(roomID)
+            },
             onOpenPullRequests: {
                 missionControlNavigation.selectPullRequests()
                 fullscreenSurface = .pullRequests
@@ -1191,6 +1257,12 @@ struct DockPopover: View {
                     onOpenRecentSession: openRecentBotSession
                 )
                     .id("fullscreen-bots")
+            } else if case .groupChat(let roomID) = fullscreenSurface {
+                GroupChatView(store: botMode.groupChats, botMode: botMode, roomID: roomID) {
+                    missionControlNavigation.clearSelection()
+                    fullscreenSurface = .conversation
+                }
+                .id("fullscreen-group-\(roomID)")
             } else {
                 fullscreenGlobalControlSurface
             }
@@ -2644,6 +2716,9 @@ struct DockPopover: View {
                             onSelect: { item in jumpToMessage(item, proxy: proxy) }
                         )
                         .frame(width: 286, height: viewport.size.height)
+                        // Clear of the NSScrollView's overlay scroller, whose
+                        // AppKit tracking zone along the right edge takes
+                        // the mouse before the rail's SwiftUI hover sees it.
                         .padding(.trailing, 24)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     }
@@ -3376,6 +3451,95 @@ struct ConversationRepositoryBadgeAssociationProjection {
     }
 }
 
+/// Primary navigation: icon-only destinations, always visible. Chats opens the
+/// session lists panel; every other destination renders full-width.
+struct MissionControlRail: View {
+    @ObservedObject var agentUpdateService: HermesUpdateService
+    @ObservedObject var navigationState: MissionControlNavigationState
+    @ObservedObject var dockThemeStore: DockThemeStore
+    @AppStorage(SidebarVisibilityKey.kanban) private var showsKanban = true
+    @AppStorage(SidebarVisibilityKey.pullRequests) private var showsPullRequests = true
+    @AppStorage(SidebarVisibilityKey.issues) private var showsIssues = true
+    @AppStorage(SidebarVisibilityKey.office) private var showsOffice = true
+    @AppStorage(SidebarVisibilityKey.calendar) private var showsCalendar = true
+    let isChatsActive: Bool
+    let isIssuesActive: Bool
+    let onOpenChats: () -> Void
+    let onOpenGlobal: (ControlTab) -> Void
+    let onOpenArtifacts: () -> Void
+    let onOpenBots: () -> Void
+    let onOpenPullRequests: () -> Void
+    let onOpenIssues: () -> Void
+    let isFullscreen: Bool
+    let isDockedWindow: Bool
+    let onFullscreenToggle: () -> Void
+    let onOpenWindow: (() -> Void)?
+
+    var body: some View {
+        let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
+        VStack(spacing: 14) {
+            VStack(spacing: 2) {
+                destination("Chats", icon: .chatsCircle, isSelected: isChatsActive, style: style, action: onOpenChats)
+            }
+            VStack(spacing: 2) {
+                if showsKanban { globalDestination(.kanban, style: style) }
+                if showsPullRequests { destination("Pull requests", icon: .gitPullRequest, isSelected: navigationState.selection.selection == .pullRequests, style: style, action: onOpenPullRequests) }
+                if showsIssues { destination("Issues", icon: .record, isSelected: isIssuesActive, style: style, action: onOpenIssues) }
+            }
+            VStack(spacing: 2) {
+                if showsCalendar { globalDestination(.calendar, style: style) }
+                globalDestination(.automations, style: style)
+            }
+            VStack(spacing: 2) {
+                destination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style, action: onOpenArtifacts)
+                if showsOffice { globalDestination(.officePreview, style: style) }
+            }
+            VStack(spacing: 2) {
+                destination("Bots", icon: .robot, isSelected: navigationState.selection.selection == .bots, style: style, action: onOpenBots)
+                globalDestination(.usage, style: style)
+            }
+            Spacer(minLength: 0)
+            VStack(spacing: 2) {
+                globalDestination(.quota, style: style)
+                globalDestination(.core, style: style)
+            }
+            // Global window chrome: applies to the whole workspace, not one chat.
+            VStack(spacing: 2) {
+                if let onOpenWindow {
+                    destination(isDockedWindow ? "Back to floating panel" : "Open as window", icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style, action: onOpenWindow)
+                }
+                destination(isFullscreen ? "Exit fullscreen" : "Enter fullscreen", icon: isFullscreen ? .cornersIn : .cornersOut, isSelected: false, style: style, action: onFullscreenToggle)
+            }
+        }
+        .padding(.horizontal, 7)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .frame(width: 52)
+        .frame(maxHeight: .infinity)
+        .background(style.background)
+        .overlay(alignment: .trailing) { style.divider.frame(width: 0.5) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Hermes navigation")
+    }
+
+    private func destination(_ title: String, icon: Ph, isSelected: Bool, showsUpdateBadge: Bool = false, style: DockThemePalette, action: @escaping () -> Void) -> some View {
+        DockRailButton(title: title, icon: icon, isSelected: isSelected, showsUpdateBadge: showsUpdateBadge, style: style, action: action)
+    }
+
+    private func globalDestination(_ tab: ControlTab, style: DockThemePalette) -> some View {
+        destination(
+            tab.globalRailLabel,
+            icon: tab.icon,
+            isSelected: navigationState.selection.isGlobalSelected(tab),
+            showsUpdateBadge: tab == .core && agentUpdateService.phase == .updateAvailable,
+            style: style
+        ) {
+            navigationState.selectGlobal(tab)
+            onOpenGlobal(tab)
+        }
+    }
+}
+
 struct MissionControlQueue: View {
     private struct QueueTaskGroup: Identifiable {
         let key: String
@@ -3413,6 +3577,7 @@ struct MissionControlQueue: View {
     let onOpenGlobal: (ControlTab) -> Void
     let onOpenArtifacts: () -> Void
     let onOpenBots: () -> Void
+    let onOpenGroupChat: (String) -> Void
     let onOpenPullRequests: () -> Void
     let onOpenIssues: () -> Void
     let showsFullscreenToggle: Bool
@@ -3425,6 +3590,7 @@ struct MissionControlQueue: View {
     @State private var isProfileHovering = false
     @State private var creatingProjectPath: String?
     @State private var isShowingProjectSheet = false
+    @State private var isShowingNewGroupChat = false
     @StateObject private var sidebarSessionSeenStore = SidebarSessionSeenStore()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -3449,6 +3615,7 @@ struct MissionControlQueue: View {
         onOpenGlobal: @escaping (ControlTab) -> Void,
         onOpenArtifacts: @escaping () -> Void,
         onOpenBots: @escaping () -> Void,
+        onOpenGroupChat: @escaping (String) -> Void,
         onOpenPullRequests: @escaping () -> Void,
         onOpenIssues: @escaping () -> Void,
         showsFullscreenToggle: Bool,
@@ -3479,6 +3646,7 @@ struct MissionControlQueue: View {
         self.onOpenGlobal = onOpenGlobal
         self.onOpenArtifacts = onOpenArtifacts
         self.onOpenBots = onOpenBots
+        self.onOpenGroupChat = onOpenGroupChat
         self.onOpenPullRequests = onOpenPullRequests
         self.onOpenIssues = onOpenIssues
         self.showsFullscreenToggle = showsFullscreenToggle
@@ -3561,54 +3729,7 @@ struct MissionControlQueue: View {
 
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
-        VStack(alignment: .leading, spacing: 0) {
-            // One row: identity takes the free width, window chrome stays quiet,
-            // and the primary action is the only prominent control.
-            HStack(spacing: 2) {
-                profileHeader(style: style)
-                if let onOpenWindow {
-                    DockIconButton(
-                        icon: isDockedWindow ? .pictureInPicture : .appWindow,
-                        label: isDockedWindow ? "Back to floating panel" : "Open as window",
-                        style: style,
-                        action: onOpenWindow
-                    )
-                }
-                if showsFullscreenToggle {
-                    DockIconButton(
-                        icon: isFullscreen ? .cornersIn : .cornersOut,
-                        label: isFullscreen ? "Exit fullscreen" : "Enter fullscreen",
-                        style: style,
-                        action: onFullscreenToggle
-                    )
-                }
-                DockIconButton(
-                    icon: .notePencil,
-                    label: "New conversation",
-                    isProminent: true,
-                    style: style,
-                    action: onNewConversation
-                )
-                .padding(.leading, 2)
-            }
-            .padding(.horizontal, 6)
-            .frame(height: 56)
-            .overlay(alignment: .bottom) { style.divider.frame(height: 0.5) }
-
-            ScrollView {
-                globalRailBar(style: style)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 8)
-            }
-
-            VStack(spacing: 2) {
-                globalRailDestination(.quota, style: style)
-                globalRailDestination(.core, style: style)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 6)
-            .overlay(alignment: .top) { style.divider.frame(height: 0.5) }
-        }
+        listPanel(style: style)
         .background(style.background)
         // This queue can move between AppKit split-view hosts as the center
         // destination changes. Loading the index is an initial-popover task,
@@ -3650,6 +3771,35 @@ struct MissionControlQueue: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes control queue")
+    }
+
+    /// Secondary panel: identity, new conversation, and the session lists.
+    private func listPanel(style: DockThemePalette) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header: identity plus the primary action. Window chrome lives in the footer.
+            HStack(spacing: 2) {
+                profileHeader(style: style)
+                DockIconButton(
+                    icon: .notePencil,
+                    label: "New conversation",
+                    isProminent: true,
+                    style: style,
+                    action: onNewConversation
+                )
+                .padding(.leading, 2)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 56)
+            .overlay(alignment: .bottom) { style.divider.frame(height: 0.5) }
+
+            ScrollView {
+                globalRailBar(style: style)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 8)
+            }
+        }
+        .background(style.background)
+        .frame(maxWidth: .infinity)
     }
 
     private func projectDisplayName(_ rawName: String) -> String {
@@ -3801,35 +3951,19 @@ struct MissionControlQueue: View {
         // children. Nested lazy stacks inside eager VStacks are not lazy, so
         // every conversation and project row was built on each layout pass.
         return LazyVStack(alignment: .leading, spacing: 0) {
-            // Grouped by purpose: work items, time, library, then setup.
-            VStack(alignment: .leading, spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    if showsKanban {
-                        globalRailDestination(.kanban, style: style)
-                    }
-                    if showsPullRequests { pullRequestsDestinationRow(style: style) }
-                    if showsIssues { issuesDestinationRow(style: style) }
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    if showsCalendar { globalRailDestination(.calendar, style: style) }
-                    globalRailDestination(.automations, style: style)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    queueRailDestination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style) {
-                        onOpenArtifacts()
-                    }
-                    if showsOffice { globalRailDestination(.officePreview, style: style) }
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    botsDestinationRow(style: style)
-                    globalRailDestination(.usage, style: style)
-                }
-            }
-
             let pinned = pinnedSessionPresentation
             if pinned.status != .empty || !pinned.sessions.isEmpty {
                 pinnedOutline(pinned, statuses: statuses, style: style)
             }
+
+            GroupChatSidebarSection(
+                store: botMode.groupChats,
+                botMode: botMode,
+                selectedRoomID: { if case .groupChat(let id) = navigationState.selection.selection { return id }; return nil }(),
+                style: style,
+                onOpen: onOpenGroupChat,
+                onCreate: { isShowingNewGroupChat = true }
+            )
 
             conversationOutline(allConversations, statuses: statuses, style: style)
 
@@ -3885,6 +4019,9 @@ struct MissionControlQueue: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $isShowingNewGroupChat) {
+            NewGroupChatSheet(store: botMode.groupChats, bots: botMode.bots.filter { !$0.isHidden }, onCreated: onOpenGroupChat)
+        }
         .sheet(isPresented: $isShowingProjectSheet) {
             ProjectFolderSheet(
                 projects: controlCenter.projects.filter(\.isRenderableProject),
@@ -3917,56 +4054,12 @@ struct MissionControlQueue: View {
         }
     }
 
-    private func botsDestinationRow(style: DockThemePalette) -> some View {
-        queueRailDestination(
-            "Bots",
-            icon: .robot,
-            isSelected: navigationState.selection.selection == .bots,
-            style: style
-        ) {
-            onOpenBots()
-        }
-    }
-
-    private func pullRequestsDestinationRow(style: DockThemePalette) -> some View {
-        queueRailDestination("Pull requests", icon: .gitPullRequest, isSelected: navigationState.selection.selection == .pullRequests, style: style, action: onOpenPullRequests)
-    }
-
-    private func issuesDestinationRow(style: DockThemePalette) -> some View {
-        queueRailDestination("Issues", icon: .record, isSelected: isIssuesActive, style: style, action: onOpenIssues)
-            .help("GitHub issues across your repositories")
-    }
-
-    private func globalRailDestination(_ tab: ControlTab, style: DockThemePalette) -> some View {
-        queueRailDestination(
-            tab.globalRailLabel,
-            icon: tab.icon,
-            isSelected: navigationState.selection.isGlobalSelected(tab),
-            showsUpdateBadge: tab == .core && agentUpdateService.phase == .updateAvailable,
-            style: style
-        ) {
-            navigationState.selectGlobal(tab)
-            onOpenGlobal(tab)
-        }
-    }
-
     private func queueEmpty(_ text: String, style: DockThemePalette) -> some View {
         Text(text)
             .font(.system(size: 12))
             .foregroundStyle(style.metadataText)
             .padding(.horizontal, 8)
             .padding(.vertical, 7)
-    }
-
-    private func queueRailDestination(
-        _ title: String,
-        icon: Ph,
-        isSelected: Bool,
-        showsUpdateBadge: Bool = false,
-        style: DockThemePalette,
-        action: @escaping () -> Void
-    ) -> some View {
-        DockNavRow(title: title, icon: icon, isSelected: isSelected, showsUpdateBadge: showsUpdateBadge, style: style, action: action)
     }
 
     @ViewBuilder
@@ -5144,7 +5237,7 @@ private func splitPaneHost() -> NSHostingView<AnyView> {
 /// fullscreen or in its windowed/minimized popover presentation. The center
 /// conversation column is intentionally the largest share.
 private enum DesktopWorkspaceFractions {
-    static let queue: CGFloat = 0.22
+    static let queue: CGFloat = 0.34
     static let conversation: CGFloat = 0.51
     static let inspector: CGFloat = 0.27
     static let minimumConversationWidth: CGFloat = 520
@@ -5220,7 +5313,7 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
         context.coordinator.leadingHost.rootView = AnyView(
             leading.dockThemedRoot()
                 .overlay(alignment: .trailing) {
-                    Color.dockBorderLight.frame(width: DockLayout.hairline)
+                    Color.dockBorder.frame(width: DockLayout.hairline)
                 }
         )
         context.coordinator.trailingHost.rootView = AnyView(trailing.dockThemedRoot())
