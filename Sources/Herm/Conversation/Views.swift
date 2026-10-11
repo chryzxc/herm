@@ -2063,10 +2063,22 @@ struct DockPopover: View {
                 .opacity(hasPendingVoicePrompt ? 0.2 : 1)
         }
         .overlay(alignment: .leading) {
-            VoiceHUDDeck(state: voiceHUD, width: immersive ? 300 : 210)
-                .padding(.leading, immersive ? 24 : 12)
+            GeometryReader { geometry in
+                let inset: CGFloat = immersive ? 24 : 12
+                let width = min(immersive ? 300.0 : 210.0, max(0, (geometry.size.width - inset * 2 - 12) / 2))
+                ViewThatFits(in: .vertical) {
+                    VoiceHUDDeck(state: voiceHUD, width: width)
+                        .fixedSize(horizontal: false, vertical: true)
+                    ScrollView(.vertical) {
+                        VoiceHUDDeck(state: voiceHUD, width: width)
+                    }
+                    .scrollIndicators(.hidden)
+                }
+                .frame(width: width, height: geometry.size.height)
+                .padding(.leading, inset)
                 .opacity(hasPendingVoicePrompt ? 0.2 : 1)
                 .allowsHitTesting(!hasPendingVoicePrompt)
+            }
         }
         .overlay { VoiceWakeFlash(count: model.wakeCount) }
         .onChange(of: model.activeToolCalls) { _, calls in voiceHUD = VoiceHUDState(calls: calls) }

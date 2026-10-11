@@ -32,6 +32,10 @@ struct VoicePillQueue: Equatable {
     /// `slots` limits where a new card may sit, e.g. to keep a side free.
     mutating func push(key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
                        tone: Tone = .accent, target: String? = nil, slots: [Int] = Array(0..<slotCount), now: Date = .now) {
+        let slots = Array(Set(slots.filter { (0..<Self.slotCount).contains($0) })).sorted()
+        expire(now: now)
+        restrict(to: slots)
+        guard !slots.isEmpty else { return }
         let expiresAt = now.addingTimeInterval(target == nil ? Self.lifetime : Self.targetLifetime)
         if let index = pills.firstIndex(where: { $0.id == key }) {
             pills[index].icon = icon
@@ -43,7 +47,7 @@ struct VoicePillQueue: Equatable {
             pills[index].expiresAt = expiresAt
             return
         }
-        if pills.count >= Self.capacity { pills.removeFirst() }
+        if pills.count >= min(Self.capacity, slots.count) { pills.removeFirst() }
         let used = Set(pills.map(\.slot))
         let slot = (0..<Self.slotCount).map { (nextSlot + $0) % Self.slotCount }
             .first { slots.contains($0) && !used.contains($0) } ?? slots.first ?? nextSlot
@@ -56,11 +60,17 @@ struct VoicePillQueue: Equatable {
         pills.removeAll { $0.expiresAt <= now }
     }
 
-    /// Slots sit in the four corners around a centered orb.
-    static func anchor(slot: Int, in size: CGSize) -> CGPoint {
-        let points: [(Double, Double)] = [(0.19, 0.24), (0.81, 0.3), (0.8, 0.72), (0.2, 0.66)]
-        let (x, y) = points[slot % points.count]
-        return CGPoint(x: size.width * x, y: size.height * y)
+    /// Keep the newest cards and move them into distinct allowed slots.
+    mutating func restrict(to slots: [Int]) {
+        let allowed = Array(Set(slots.filter { (0..<Self.slotCount).contains($0) })).sorted()
+        pills = Array(pills.suffix(min(Self.capacity, allowed.count)))
+        var used = Set<Int>()
+        for index in pills.indices {
+            if !allowed.contains(pills[index].slot) || used.contains(pills[index].slot) {
+                pills[index].slot = allowed.first { !used.contains($0) }!
+            }
+            used.insert(pills[index].slot)
+        }
     }
 
     /// The first web link, or else the first existing file path, in tool text.
@@ -97,16 +107,16 @@ struct VoiceActivityPillsLayer: View {
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack {
-                ForEach(queue.pills) { pill in
-                    VoicePillCard(pill: pill, maxWidth: cardWidth)
-                        .allowsHitTesting(pill.target != nil)
-                        .position(VoicePillQueue.anchor(slot: pill.slot, in: geometry.size))
-                        .transition(.scale(scale: 0.85).combined(with: .opacity))
-                }
+            let width = min(cardWidth, max(0, (geometry.size.width - 12) / 2))
+            HStack(spacing: 0) {
+                pillColumn(slots: leavesLeftFree ? [] : [0, 3], width: width, height: geometry.size.height)
+                Spacer(minLength: 12)
+                pillColumn(slots: [1, 2], width: width, height: geometry.size.height)
             }
         }
-        .animation(.spring(response: 0.42, dampingFraction: 0.82), value: queue)
+        // Replacement cards must not animate on top of their outgoing card.
+        .transaction { $0.animation = nil }
+        .onChange(of: leavesLeftFree) { _, _ in queue.restrict(to: allowedSlots) }
         .onChange(of: model.activeToolCalls) { old, new in
             // `__thinking` / `__compaction` are internal activity markers.
             for call in new where !call.name.hasPrefix("__") {
@@ -188,6 +198,25 @@ struct VoiceActivityPillsLayer: View {
         }
     }
 
+    private var allowedSlots: [Int] {
+        leavesLeftFree ? [1, 2] : Array(0..<VoicePillQueue.slotCount)
+    }
+
+    private func pillColumn(slots: [Int], width: CGFloat, height: CGFloat) -> some View {
+        ScrollView(.vertical) {
+            VStack(spacing: 12) {
+                ForEach(queue.pills.filter { slots.contains($0.slot) }.sorted { $0.slot < $1.slot }) { pill in
+                    VoicePillCard(pill: pill, maxWidth: width)
+                        .allowsHitTesting(pill.target != nil)
+                }
+            }
+            .frame(width: width)
+            .frame(minHeight: height)
+        }
+        .scrollIndicators(.hidden)
+        .frame(width: width, height: height)
+    }
+
     private func pushStep(_ call: ActiveToolCall) {
         let key = "tool-\(call.id)"
         let name = call.name.lowercased()
@@ -232,7 +261,7 @@ struct VoiceActivityPillsLayer: View {
     private func push(key: String, icon: Ph, title: String, detail: String?, isRunning: Bool = false,
                       tone: VoicePillQueue.Tone = .accent, target: String? = nil) {
         queue.push(key: key, icon: icon, title: title, detail: detail, isRunning: isRunning, tone: tone, target: target,
-                   slots: leavesLeftFree ? [1, 2] : Array(0..<VoicePillQueue.slotCount))
+                   slots: allowedSlots)
         let lifetime = target == nil ? VoicePillQueue.lifetime : VoicePillQueue.targetLifetime
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(lifetime + 0.05))

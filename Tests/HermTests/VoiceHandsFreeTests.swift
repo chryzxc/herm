@@ -72,6 +72,34 @@ struct VoiceHandsFreeTests {
         #expect(queue.pills.map(\.id) == ["k2"])
     }
 
+    @Test func pillQueueKeepsRestrictedSlotsDistinctDuringBursts() {
+        var queue = VoicePillQueue()
+        let now = Date()
+        for index in 0..<10 {
+            queue.push(key: "k\(index)", icon: .wrench, title: "Tool", detail: nil, slots: [1, 2], now: now)
+            #expect(queue.pills.count <= 2)
+            #expect(Set(queue.pills.map(\.slot)).count == queue.pills.count)
+            #expect(queue.pills.allSatisfy { [1, 2].contains($0.slot) })
+        }
+        #expect(queue.pills.map(\.id) == ["k8", "k9"])
+        let slot = queue.pills.last?.slot
+        queue.push(key: "k9", icon: .checkCircle, title: "Done", detail: nil, slots: [1, 2], now: now)
+        #expect(queue.pills.last?.slot == slot)
+    }
+
+    @Test func pillQueueMovesExistingCardsWhenHUDReservesLeftSide() {
+        var queue = VoicePillQueue()
+        let now = Date()
+        for index in 0..<3 {
+            queue.push(key: "k\(index)", icon: .wrench, title: "Tool", detail: nil, now: now)
+        }
+        queue.restrict(to: [1, 2])
+        #expect(queue.pills.map(\.id) == ["k1", "k2"])
+        #expect(Set(queue.pills.map(\.slot)) == Set([1, 2]))
+        queue.restrict(to: [])
+        #expect(queue.pills.isEmpty)
+    }
+
     @Test func subtitlesStartAtTheBeginningAndOnlyMoveForward() {
         let track = VoiceSubtitleTrack()
         let id = UUID()
