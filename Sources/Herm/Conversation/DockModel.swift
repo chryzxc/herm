@@ -1911,6 +1911,9 @@ final class DockModel: ObservableObject {
                     receiveGatewayEvent(event.type, params: event.params)
                 }
             }
+            // Open requests captured above land in the pending map but are not
+            // presented by the session-filtered handler; project them now.
+            restorePendingApproval(for: [session.id, resolvedSessionID, sessionStorageID])
             mergePersistedBotActivities(for: [session.id, sessionStorageID, kanbanAttributionSessionID])
             projectBotMessagesIntoActivity()
             scrollToLatestMessageRequest &+= 1
