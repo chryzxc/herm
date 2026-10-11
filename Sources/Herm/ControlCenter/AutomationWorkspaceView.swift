@@ -244,16 +244,12 @@ struct AutomationWorkspaceView: View {
     // MARK: Header
 
     private var workspaceHeader: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Automation")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                Text("Recurring work Hermes runs on your behalf")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            Spacer(minLength: 12)
+        DockPageHeader(
+            title: "Automation",
+            subtitle: "Recurring work Hermes runs on your behalf",
+            onRefresh: refreshWorkspace,
+            isRefreshing: isRefreshing
+        ) {
             HStack(spacing: 6) {
                 summaryChip("\(control.cronJobs.count)", label: "schedules", tint: Color.dockSecondaryText)
                 summaryChip("\(activeCount)", label: "active", tint: Color.dockSuccess)
@@ -261,17 +257,6 @@ struct AutomationWorkspaceView: View {
                     summaryChip("\(attentionCount)", label: "failing", tint: Color.dockDestructive)
                 }
             }
-            Button(action: refreshWorkspace) {
-                Group {
-                    if isRefreshing { ProgressView().controlSize(.small) }
-                    else { DockIcon(.arrowsClockwise) }
-                }
-                .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(Color.dockSecondaryText)
-            .disabled(isRefreshing)
-            .help("Refresh automations")
             Button {
                 isShowingCreationSheet = true
             } label: {
@@ -284,8 +269,6 @@ struct AutomationWorkspaceView: View {
             .disabled(!control.cronControlAvailable)
             .help(control.cronControlAvailable ? "Create a new schedule" : "Automation control is unavailable through this Hermes gateway.")
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
     }
 
     private func summaryChip(_ value: String, label: String, tint: Color) -> some View {

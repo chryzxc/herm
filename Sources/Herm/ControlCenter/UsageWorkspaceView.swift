@@ -43,8 +43,7 @@ struct UsageWorkspaceView: View {
             }
         }
         .padding(.top, 4)
-        .frame(maxWidth: 960, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Toolbar
@@ -122,7 +121,7 @@ struct UsageWorkspaceView: View {
             Text(detail)
                 .font(DockTypography.metadata)
                 .foregroundStyle(Color.dockMetadataText)
-                .lineLimit(1)
+                .lineLimit(2)
                 .truncationMode(.tail)
         }
         .padding(14)

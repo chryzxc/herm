@@ -1021,7 +1021,7 @@ struct PullRequestDetailView: View {
             activitySection(pr).padding(.top, 12)
             commentComposer(pr).padding(.top, 18).padding(.bottom, 40)
         }
-    }.frame(maxWidth: 720, alignment: .leading) }
+    }.frame(maxWidth: .infinity, alignment: .leading) }
 
     private func summarySectionHeader(_ title: String, count: Int? = nil, isExpanded: Binding<Bool>) -> some View {
         Button { isExpanded.wrappedValue.toggle() } label: {

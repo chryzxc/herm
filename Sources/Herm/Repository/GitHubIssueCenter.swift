@@ -455,7 +455,6 @@ struct IssueDetailView: View {
                     .padding(.top, 24)
                     .padding(.bottom, 48)
                 }
-                .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
             }
@@ -519,11 +518,10 @@ struct IssueDetailView: View {
                     Color.dockBorderLight.frame(height: 0.5)
 
                     MarkdownMessageView(markdown: displayedIssue.body.isEmpty ? "No description provided." : displayedIssue.body)
-                        .frame(maxWidth: 760, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 24)
                         .padding(.bottom, 48)
                 }
-                .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 28)
             }

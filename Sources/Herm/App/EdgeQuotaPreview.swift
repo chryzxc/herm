@@ -326,7 +326,7 @@ struct EdgeQuotaPreview: View {
             TimelineView(.periodic(from: .now, by: 60)) { timeline in
                 Text(resets > timeline.date ? Self.shortDuration(resets.timeIntervalSince(timeline.date)) : "Now")
             }
-            .help("Resets \(resets.formatted(date: .abbreviated, time: .shortened))")
+            .help("Resets \(resets.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
         } else if let text = window.resetsDisplay {
             Text(text)
         }
@@ -347,7 +347,7 @@ struct EdgeQuotaPreview: View {
             parts.append("daily budget line at \(Int(marker)) percent")
         }
         if let resets = window.resetsAt {
-            parts.append("resets \(resets.formatted(date: .abbreviated, time: .shortened))")
+            parts.append("resets \(resets.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))")
         }
         return parts.joined(separator: ", ")
     }

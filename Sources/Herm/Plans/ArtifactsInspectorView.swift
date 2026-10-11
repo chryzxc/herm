@@ -456,7 +456,6 @@ struct ArtifactsInspectorView: View {
                     detailActions(record)
                     detailPreview(record)
                 }
-                .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .padding(24)
             }

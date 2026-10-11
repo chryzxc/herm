@@ -206,10 +206,9 @@ struct WorkspaceActivitySidebar: View {
             } else if selectedMode == .calendar {
                 calendarContent
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        pageHeader
-
+                VStack(alignment: .leading, spacing: 0) {
+                    pageHeader
+                    ScrollView {
                         Group {
                             switch selectedMode {
                             case .today: nowContent
@@ -285,7 +284,7 @@ struct WorkspaceActivitySidebar: View {
                     if layout == .rail {
                         HStack(spacing: 0) {
                             settingsCategoryRail
-                                .frame(width: 184)
+                                .frame(width: 240)
                             Divider().overlay(Color.dockBorderLight)
                             settingsDetailScroll
                         }
@@ -410,7 +409,6 @@ struct WorkspaceActivitySidebar: View {
                 }
                 coreContent
             }
-            .frame(maxWidth: 920, alignment: .leading)
             .padding(.vertical, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)

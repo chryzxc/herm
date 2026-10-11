@@ -70,8 +70,7 @@ struct QuotaWorkspaceView: View {
             }
         }
         .padding(.top, 4)
-        .frame(maxWidth: 960, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(item: $connectTarget) { descriptor in
             ProviderConnectSheet(descriptor: descriptor, control: control)
         }
@@ -184,39 +183,54 @@ struct QuotaWorkspaceView: View {
         let attention = snapshots.filter(QuotaWorkspacePresentation.needsAttention)
         let reset = QuotaWorkspacePresentation.nextReset(snapshots, now: now)
 
-        return HStack(alignment: .top, spacing: 0) {
-            if let best, let remaining = QuotaWorkspacePresentation.effectiveRemaining(best) {
-                overviewMetric(
-                    title: "Most headroom",
-                    value: "\(Int(remaining.rounded()))%",
-                    valueColor: Self.figureColor(for: ProviderQuotaWindow.threshold(forRemaining: remaining)),
-                    detail: [best.displayName, QuotaWorkspacePresentation.limitingWindow(best)?.label].compactMap { $0 }.joined(separator: " · "),
-                    help: "The provider with the most capacity left in its tightest window."
-                )
-            } else {
-                overviewMetric(title: "Most headroom", value: "—", valueColor: .dockMetadataText, detail: "No provider reported a percentage", help: nil)
-            }
-            overviewDivider
+        let headroom = if let best, let remaining = QuotaWorkspacePresentation.effectiveRemaining(best) {
             overviewMetric(
-                title: "Needs attention",
-                value: "\(attention.count) of \(snapshots.count)",
-                valueColor: attention.isEmpty ? .dockPrimaryText : .dockWarning,
-                detail: attention.isEmpty ? "Every connected provider has headroom" : attention.map(\.displayName).joined(separator: ", "),
-                help: "Providers with a window at or below 20% remaining."
+                title: "Most headroom",
+                value: "\(Int(remaining.rounded()))%",
+                valueColor: Self.figureColor(for: ProviderQuotaWindow.threshold(forRemaining: remaining)),
+                detail: [best.displayName, QuotaWorkspacePresentation.limitingWindow(best)?.label].compactMap { $0 }.joined(separator: " · "),
+                help: "The provider with the most capacity left in its tightest window."
             )
-            overviewDivider
-            if let reset {
-                overviewMetric(
-                    title: reset.restoresAttention ? "Next recovery" : "Next reset",
-                    value: QuotaWorkspacePresentation.compactDuration(from: now, to: reset.date),
-                    valueColor: .dockPrimaryText,
-                    detail: "\(reset.snapshot.displayName) · \(reset.window.label) · \(reset.date.formatted(date: .abbreviated, time: .shortened))",
-                    help: reset.restoresAttention
-                        ? "The soonest reset of a window that is low or exhausted."
-                        : "The soonest reported window reset."
-                )
-            } else {
-                overviewMetric(title: "Next reset", value: "—", valueColor: .dockMetadataText, detail: "No reset times reported", help: nil)
+        } else {
+            overviewMetric(title: "Most headroom", value: "—", valueColor: .dockMetadataText, detail: "No provider reported a percentage", help: nil)
+        }
+        let needsAttention = overviewMetric(
+            title: "Needs attention",
+            value: "\(attention.count) of \(snapshots.count)",
+            valueColor: attention.isEmpty ? .dockPrimaryText : .dockWarning,
+            detail: attention.isEmpty ? "Every connected provider has headroom" : attention.map(\.displayName).joined(separator: ", "),
+            help: "Providers with a window at or below 20% remaining."
+        )
+        let nextReset = if let reset {
+            overviewMetric(
+                title: reset.restoresAttention ? "Next recovery" : "Next reset",
+                value: QuotaWorkspacePresentation.compactDuration(from: now, to: reset.date),
+                valueColor: .dockPrimaryText,
+                detail: "\(reset.snapshot.displayName) · \(reset.window.label) · \(reset.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))",
+                help: reset.restoresAttention
+                    ? "The soonest reset of a window that is low or exhausted."
+                    : "The soonest reported window reset."
+            )
+        } else {
+            overviewMetric(title: "Next reset", value: "—", valueColor: .dockMetadataText, detail: "No reset times reported", help: nil)
+        }
+
+        // Three columns when there is room, stacked rows on narrow windows.
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 0) {
+                headroom
+                overviewDivider
+                needsAttention
+                overviewDivider
+                nextReset
+            }
+            .frame(minWidth: 620)
+            VStack(alignment: .leading, spacing: 0) {
+                headroom
+                Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.horizontal, 12)
+                needsAttention
+                Color.dockBorderLight.frame(height: DockLayout.hairline).padding(.horizontal, 12)
+                nextReset
             }
         }
         .dockCard(padding: 0)
@@ -573,7 +587,7 @@ struct QuotaWorkspaceView: View {
     private func windowInsights(_ window: ProviderQuotaWindow, now: Date) -> some View {
         if let remaining = window.remainingPercent, remaining <= 0 {
             if let reset = window.resetsAt, reset > now {
-                insight("Exhausted until \(reset.formatted(date: .abbreviated, time: .shortened))", color: .dockDestructive)
+                insight("Exhausted until \(reset.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))", color: .dockDestructive)
             } else {
                 insight("Exhausted", color: .dockDestructive)
             }
