@@ -406,9 +406,9 @@ struct SessionActivityOverviewView: View {
         let visibleIDs = Set(visibleAgents.map(\.id))
         return VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Agents", detail: "") {
-                Menu {
-                    Picker("Scope", selection: $agentScope) {
-                        ForEach(AgentScope.allCases) { Text($0.rawValue).tag($0) }
+                DockMenu {
+                    DockMenuChoices(selection: $agentScope) {
+                        ForEach(AgentScope.allCases) { DockMenuOption($0.rawValue, value: $0) }
                     }
                     Divider()
                     ForEach(AgentView.allCases) { view in
@@ -425,7 +425,6 @@ struct SessionActivityOverviewView: View {
                     .frame(minWidth: 58, minHeight: 32)
                     .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
                 .accessibilityLabel("Agent view: \(agentView.rawValue)")
             }
             if agentView == .map {

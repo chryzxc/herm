@@ -232,7 +232,7 @@ enum PullRequestDiffPresentation {
                 rows.append(PullRequestDiffSplitRow(id: rows.count, left: nil, right: line))
                 cursor += 1
             } else {
-                rows.append(PullRequestDiffSplitRow(id: rows.count, left: line, right: line.kind == .context || line.kind == .metadata ? line : nil))
+                rows.append(PullRequestDiffSplitRow(id: rows.count, left: line, right: line))
                 cursor += 1
             }
         }
@@ -697,8 +697,6 @@ private struct PullRequestDiffStat: View {
 
 private struct PullRequestFileTreeRow: View {
     let node: PullRequestFileTreeNode
-    let icon: Ph
-    let iconColor: Color
     let file: PullRequestFile?
     let isSelected: Bool
     let action: () -> Void
@@ -707,8 +705,7 @@ private struct PullRequestFileTreeRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                DockIcon(icon, size: 13, color: node.isDirectory ? Color.dockMetadataText : iconColor)
-                    .frame(width: 14, height: 14)
+                PullRequestFileIcon(path: node.isDirectory ? nil : node.title, size: 14)
                 Text(node.title)
                     .font(.system(size: 12, weight: node.isDirectory ? .regular : .medium))
                     .foregroundStyle(isSelected ? Color.dockPrimaryText : (node.isDirectory ? Color.dockMetadataText : Color.dockSecondaryText))
@@ -730,6 +727,24 @@ private struct PullRequestFileTreeRow: View {
         .disabled(node.isDirectory)
         .onHover { isHovered = $0 }
         .help(node.id)
+    }
+}
+
+/// Same language-aware icons as the artifacts list; nil path draws a folder.
+private struct PullRequestFileIcon: View {
+    let path: String?
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let path, let image = ArtifactFileIcon.image(for: (path as NSString).lastPathComponent) {
+                Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+            } else {
+                DockIcon(path == nil ? .folder : .fileText, size: size - 1, color: Color.dockMetadataText)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 
@@ -1216,7 +1231,7 @@ struct PullRequestDetailView: View {
     }
     private func statusPicker(_ pr: PullRequestRecord) -> some View {
         let current: PullRequestStatus = pr.isDraft ? .draft : .readyForReview
-        return Menu {
+        return DockMenu {
             ForEach(PullRequestStatus.allCases) { status in
                 Button {
                     mutationCoordinator.requestStatus(status, for: pr)
@@ -1239,7 +1254,6 @@ struct PullRequestDetailView: View {
             .frame(height: 30)
             .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.dockSurface2))
         }
-        .menuStyle(.borderlessButton)
         .disabled(center.isUpdatingStatus)
         .help("Change pull request status")
         .accessibilityLabel("Pull request status: \(current.rawValue)")
@@ -1341,7 +1355,7 @@ struct PullRequestDetailView: View {
 
     private func codeToolbar(fileIDs: Set<String>) -> some View {
         HStack(spacing: 4) {
-            Menu {
+            DockMenu {
                 Toggle("Enable word wrap", isOn: $reviewPreferences.wordWrap)
                 Toggle("Enable rich preview", isOn: $reviewPreferences.richPreview)
                 Toggle("Enable word diffs", isOn: $reviewPreferences.wordDiffs)
@@ -1349,9 +1363,7 @@ struct PullRequestDetailView: View {
                 PullRequestReviewToolbarIcon(name: .sliders, accessibilityLabel: "Review options", tooltip: "Review options")
             }
             // `.borderlessButton` drops custom-shape labels on macOS, leaving only the indicator.
-            .menuStyle(.button)
             .buttonStyle(.dockHover)
-            .menuIndicator(.hidden)
             .fixedSize()
             .help("Review options")
 
@@ -1417,11 +1429,8 @@ struct PullRequestDetailView: View {
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(PullRequestFileTreeBuilder.make(files: files)) { node in
-                        let appearance = fileTreeAppearance(for: node)
                         PullRequestFileTreeRow(
                             node: node,
-                            icon: appearance.icon,
-                            iconColor: appearance.color,
                             file: node.fileID.flatMap { filesByID[$0] },
                             // Folders have no fileID; comparing optionals would highlight them all when nothing is selected.
                             isSelected: node.fileID != nil && selectedFileID == node.fileID
@@ -1440,23 +1449,6 @@ struct PullRequestDetailView: View {
         .overlay(alignment: .trailing) { Color.dockBorderLight.frame(width: 0.5) }
     }
 
-    private func fileTreeAppearance(for node: PullRequestFileTreeNode) -> (icon: Ph, color: Color) {
-        guard !node.isDirectory, let path = node.fileID else { return (.folder, Color.dockSecondaryText) }
-        let name = (path as NSString).lastPathComponent.lowercased()
-        let ext = (path as NSString).pathExtension.lowercased()
-        switch ext {
-        case "swift": return (.bracketsCurly, Color.dockWarning)
-        case "js", "jsx", "ts", "tsx", "vue", "svelte": return (.bracketsCurly, Color.dockAccent)
-        case "json", "yaml", "yml", "toml", "xml": return (.bracketsCurly, Color.dockSuccess)
-        case "md", "markdown", "mdx": return (.fileText, Color.dockAccent)
-        case "png", "jpg", "jpeg", "gif", "webp", "svg", "ico": return (.image, Color.dockWarning)
-        case "sh", "zsh", "bash", "fish": return (.terminal, Color.dockSuccess)
-        case "css", "scss", "sass", "html": return (.fileText, Color.dockDestructive)
-        default:
-            return (name.hasPrefix(".env") ? .gear : .fileText, name.hasPrefix(".env") ? Color.dockWarning : Color.dockMetadataText)
-        }
-    }
-
     private func fileSection(_ file: PullRequestFile) -> some View {
         let expanded = reviewPreferences.expandedFileIDs.contains(file.id)
         return VStack(alignment: .leading, spacing: 0) {
@@ -1466,7 +1458,7 @@ struct PullRequestDetailView: View {
             } label: {
                 HStack(spacing: 8) {
                     DockIcon(expanded ? .caretDown : .caretRight, size: 13, color: Color.dockMetadataText)
-                    DockIcon(.fileText, size: 15, color: Color.dockSecondaryText)
+                    PullRequestFileIcon(path: file.path, size: 15)
                     Text(file.path).font(.system(size: 12, weight: .semibold, design: .monospaced)).lineLimit(1)
                     Text(file.status.uppercased())
                         .font(.system(size: 9, weight: .bold, design: .monospaced))
@@ -1548,7 +1540,9 @@ struct PullRequestDetailView: View {
     private func diffRows(_ rows: [PullRequestDiffSplitRow]) -> some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(rows) { row in
-                if reviewPreferences.diffMode == .split {
+                if reviewPreferences.diffMode == .split, row.left?.kind == .hunk {
+                    diffLineView(row.left, counterpart: nil)
+                } else if reviewPreferences.diffMode == .split {
                     HStack(spacing: 0) {
                         splitDiffColumn(row.left, counterpart: row.right?.text)
                         Color.dockBorderLight.frame(width: 0.5)
@@ -1603,6 +1597,7 @@ struct PullRequestWorkspace: View {
     var onOpenIssueChat: (GitHubIssueRecord) -> Void = { _ in }
     let mode: RepositoryReviewWorkspaceMode
     @StateObject private var issueCenter = IssueCenterModel()
+    @State private var showsDetail = false
 
     init(
         center: PullRequestCenterModel,
@@ -1629,10 +1624,10 @@ struct PullRequestWorkspace: View {
             if mode.isIssues {
                 IssueWorkspace(center: issueCenter, projects: projects, onOpenChat: onOpenIssueChat)
             } else {
-                HSplitView {
-                    listPane.frame(minWidth: 300, idealWidth: 390, maxWidth: 460, maxHeight: .infinity)
+                AdaptiveSplit(primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
+                    listPane.frame(idealWidth: 390, maxWidth: 460)
+                } secondary: {
                     PullRequestDetailView(center: center, onOpenChat: onOpenChat)
-                        .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -1657,7 +1652,7 @@ struct PullRequestWorkspace: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 15, color: Color.dockMetadataText)
-                TextField("Search pull requests", text: $center.query)
+                TextField("", text: $center.query, prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText))
                     .textFieldStyle(.plain)
             }
             .padding(.horizontal, 10)
@@ -1685,7 +1680,7 @@ struct PullRequestWorkspace: View {
                     ForEach(0..<6, id: \.self) { index in listLoadingRow(index: index) }
                 } else {
                     ForEach(center.visible) { pr in
-                        Button { center.selectedID = pr.id } label: { PullRequestRowView(pullRequest: pr, isSelected: center.selectedID == pr.id) }.buttonStyle(.dockHover)
+                        Button { center.selectedID = pr.id; showsDetail = true } label: { PullRequestRowView(pullRequest: pr, isSelected: center.selectedID == pr.id) }.buttonStyle(.dockHover)
                     }
                 }
             }

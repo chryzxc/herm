@@ -71,6 +71,9 @@ enum HandoffWorkflowState: Equatable {
 
 @MainActor
 final class DeveloperWorkflowModel: ObservableObject {
+    static let shared = DeveloperWorkflowModel()
+    var turnBaselines: [String: TurnRepositoryBaseline] = [:]
+    private var interruptionCoordinator: HermInterruptionCoordinator?
     @Published private(set) var repository: RepositorySnapshot = .empty
     @Published private(set) var repositoryFingerprint: String?
     @Published private(set) var githubRepository: GitHubRepositoryReference?
@@ -114,6 +117,7 @@ final class DeveloperWorkflowModel: ObservableObject {
     }
 
     func setActiveRepository(path: String?, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async {
+        interruptionCoordinator = control.interruptionCoordinator
         preferencesStore = preferences
         DebugLog.writeDiagnostic("repository.workflow set path=\(path.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") active=\(activePath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "nil") snapshot=\(repository.path.isEmpty ? "empty" : URL(fileURLWithPath: repository.path).lastPathComponent) git=\(repository.isGitRepository)")
         if path == activePath {
@@ -517,7 +521,11 @@ final class DeveloperWorkflowModel: ObservableObject {
             updateBaselineStatus(preferences: preferencesStore, repositoryID: id, fingerprint: fingerprint)
             updateWatchState(preferences: preferencesStore)
         }
-        if notificationsEnabled, HermesAppRuntime.supportsUserNotifications {
+        let interruption = HermNotice(kind: .information, source: .repository, profileID: nil,
+            sourceID: id, eventID: "\(fingerprint):\(notice.createdAt.timeIntervalSince1970)")
+        _ = interruptionCoordinator?.admit(interruption, channel: .record)
+        if notificationsEnabled, HermesAppRuntime.supportsUserNotifications,
+           interruptionCoordinator?.admit(interruption, channel: .system) != false {
             let content = UNMutableNotificationContent()
             content.title = "Repository changed"
             content.body = "\(notice.displayName): \(notice.changedFiles) changed files"

@@ -65,6 +65,7 @@ struct ArtifactsInspectorView: View {
     @State private var errorMessage: String?
     @State private var failedSessionCount = 0
     @State private var selectedArtifactID: String?
+    @State private var showsNarrowDetail = false
     @State private var textPreview: ArtifactTextPreview?
     @FocusState private var isBrowserFocused: Bool
 
@@ -180,7 +181,7 @@ struct ArtifactsInspectorView: View {
                 .accessibilityLabel("Refresh artifacts")
             }
 
-            TextField("Search by name, path, URL, or session…", text: $query)
+            TextField("", text: $query, prompt: Text("Search by name, path, URL, or session…").foregroundColor(Color.dockMetadataText))
                 .textFieldStyle(.dockGlass)
                 .accessibilityLabel("Search artifacts")
 
@@ -215,11 +216,18 @@ struct ArtifactsInspectorView: View {
     }
 
     private var pageToolbar: some View {
-        HStack(spacing: 10) {
-            searchField
-                .frame(maxWidth: 360)
-            filterBar
-            Spacer(minLength: 0)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                searchField
+                    .frame(maxWidth: 360)
+                filterBar
+                Spacer(minLength: 0)
+            }
+            .frame(minWidth: 560)
+            VStack(alignment: .leading, spacing: 8) {
+                searchField
+                ScrollView(.horizontal, showsIndicators: false) { filterBar }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
@@ -229,7 +237,7 @@ struct ArtifactsInspectorView: View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         return HStack(spacing: 6) {
             DockIcon(.magnifyingGlass, size: 13, color: .dockMetadataText)
-            TextField("Search artifacts", text: $query)
+            TextField("", text: $query, prompt: Text("Search artifacts").foregroundColor(Color.dockMetadataText))
                 .textFieldStyle(.plain)
                 .font(DockTypography.body)
                 .foregroundStyle(Color.dockPrimaryText)
@@ -287,13 +295,34 @@ struct ArtifactsInspectorView: View {
             }
         } else {
             // A fixed browser column avoids HSplitView's native divider and
-            // scroller chrome, which clashed with the themed surfaces.
-            HStack(spacing: 0) {
-                artifactBrowser
-                    .frame(width: 320)
-                Color.dockBorderLight.frame(width: DockLayout.hairline)
-                artifactDetail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // scroller chrome, which clashed with the themed surfaces. Below
+            // 700pt only one of browser/detail shows at a time.
+            GeometryReader { geo in
+                if geo.size.width >= 700 {
+                    HStack(spacing: 0) {
+                        artifactBrowser
+                            .frame(width: 320)
+                        Color.dockBorderLight.frame(width: DockLayout.hairline)
+                        artifactDetail
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else if showsNarrowDetail {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Button { showsNarrowDetail = false } label: { DockIconLabel("BACK", icon: .caretLeft) }
+                                .buttonStyle(.dockHover)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.dockAccent)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        Divider().overlay(Color.dockBorderLight)
+                        artifactDetail.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                } else {
+                    artifactBrowser.frame(maxWidth: .infinity)
+                }
             }
             .overlay(alignment: .top) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
         }
@@ -392,6 +421,7 @@ struct ArtifactsInspectorView: View {
         .onTapGesture {
             selectedArtifactID = record.id
             isBrowserFocused = true
+            showsNarrowDetail = true
         }
         .contextMenu { artifactContextActions(record) }
         .help(record.value)
@@ -744,6 +774,7 @@ struct ArtifactsInspectorView: View {
                 }
                 Text(item.rawValue)
                     .font(.system(size: 12, weight: selected ? .semibold : .medium))
+                    .fixedSize()
                 Text("\(count(for: item))")
                     .font(.system(size: 10, weight: .medium).monospacedDigit())
                     .foregroundStyle(selected ? Color.dockAccent : Color.dockMetadataText)

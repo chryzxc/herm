@@ -150,7 +150,7 @@ struct RepositoryCodeWorkspaceView: View {
     }
 
     private var moreMenu: some View {
-        Menu {
+        DockMenu {
             Button("Copy Relative Path") { copy(document.path) }
             Button("Copy Path") { copy(absoluteURL?.path ?? document.path) }
             Divider()
@@ -168,9 +168,7 @@ struct RepositoryCodeWorkspaceView: View {
             ExplorerToolbarIcon(icon: .dotsThree)
         }
         // `.borderlessButton` drops custom-shape labels on macOS.
-        .menuStyle(.button)
         .buttonStyle(.dockHover)
-        .menuIndicator(.hidden)
         .fixedSize()
         .dockHoverTip("More file actions", edge: .leading)
         .accessibilityLabel("More file actions")

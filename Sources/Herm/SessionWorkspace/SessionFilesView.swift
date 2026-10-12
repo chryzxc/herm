@@ -228,7 +228,7 @@ struct SessionFilesView: View {
                 Task { await refresh() }
             }
             .disabled(isRefreshing)
-            Menu {
+            DockMenu {
                 Toggle("Show generated files", isOn: $showsGeneratedFiles)
                 Button("Reveal project in Finder") {
                     projectPath.map { ExternalOpen.reveal([URL(fileURLWithPath: $0)]) }
@@ -237,9 +237,7 @@ struct SessionFilesView: View {
                 ExplorerToolbarIcon(icon: .dotsThree)
             }
             // `.borderlessButton` drops custom-shape labels on macOS.
-            .menuStyle(.button)
             .buttonStyle(.dockHover)
-            .menuIndicator(.hidden)
             .fixedSize()
             .dockHoverTip("Explorer options", edge: .leading)
             .accessibilityLabel("Explorer options")
@@ -254,7 +252,7 @@ struct SessionFilesView: View {
             DockIcon(.magnifyingGlass)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.dockMetadataText)
-            TextField("Search files by name", text: $filterText)
+            DockTextField("Search files by name", text: $filterText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockPrimaryText)

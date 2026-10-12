@@ -559,12 +559,13 @@ struct IssueWorkspace: View {
     let projects: [ProjectSummary]
     let onOpenChat: (GitHubIssueRecord) -> Void
     @State private var collapsedRepositories: Set<String> = []
+    @State private var showsDetail = false
 
     var body: some View {
-        HSplitView {
-            listPane.frame(minWidth: 340, idealWidth: 390, maxWidth: 460, maxHeight: .infinity)
+        AdaptiveSplit(primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
+            listPane.frame(idealWidth: 390, maxWidth: 460)
+        } secondary: {
             IssueDetailView(center: center, onOpenChat: onOpenChat)
-                .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(Color.dockCanvas)
         .task { if center.records.isEmpty { await center.refresh(projects: projects) } }
@@ -609,7 +610,7 @@ struct IssueWorkspace: View {
                             .padding(.top, 6)
                             if !collapsedRepositories.contains(group.repository) {
                                 ForEach(group.issues) { issue in
-                                    Button { center.selectedIssueID = issue.id } label: {
+                                    Button { center.selectedIssueID = issue.id; showsDetail = true } label: {
                                         IssueRowView(issue: issue, isSelected: center.selectedIssueID == issue.id, viewer: center.viewerLogin)
                                     }
                                     .buttonStyle(.dockHover)

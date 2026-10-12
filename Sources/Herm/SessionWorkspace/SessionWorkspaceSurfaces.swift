@@ -128,7 +128,7 @@ struct SessionPullRequestsSurface: View {
             Divider().frame(height: 22)
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 16, color: Color.dockMetadataText)
-                TextField("Search pull requests", text: $center.query)
+                TextField("", text: $center.query, prompt: Text("Search pull requests").foregroundColor(Color.dockMetadataText))
                     .textFieldStyle(.plain)
             }
             .padding(.horizontal, 10)

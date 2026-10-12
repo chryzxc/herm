@@ -238,7 +238,7 @@ struct SessionInspector: View {
             if !items.isEmpty {
                 HStack(spacing: 0) {
                     if let branch = items.first(where: { $0.id == "branch" }), workflow.repository.isGitRepository {
-                        Menu {
+                        DockMenu {
                             ForEach(workflow.branches, id: \.self) { branchName in
                                 Button {
                                     isSwitchingBranch = true
@@ -269,7 +269,6 @@ struct SessionInspector: View {
                                     .foregroundStyle(Color.dockSecondaryText)
                             }
                         }
-                        .menuStyle(.borderlessButton)
                         .buttonStyle(.dockHover)
                         .disabled(isSwitchingBranch || workflow.branches.isEmpty)
                         .frame(maxWidth: .infinity, alignment: .leading)

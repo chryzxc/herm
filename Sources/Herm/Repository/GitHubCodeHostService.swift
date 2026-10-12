@@ -90,6 +90,36 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
         return nil
     }
 
+    /// PRs the signed-in user merged in `[since, until)`, across every repository, in one search call.
+    /// Empty when there is no token (`author:@me` needs one) or GitHub is unreachable; the calendar
+    /// just shows no PRs then. ponytail: first 100 only, page through `Link` if a month ever exceeds that.
+    func mergedPullRequests(since: Date, until: Date) async -> [WorkPullRequest] {
+        guard let token = await Self.localGitHubToken(), !token.isEmpty else { return [] }
+        let iso = ISO8601DateFormatter()
+        var components = URLComponents(string: "https://api.github.com/search/issues")!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: "is:pr is:merged author:@me merged:\(iso.string(from: since))..\(iso.string(from: until.addingTimeInterval(-1)))"),
+            URLQueryItem(name: "per_page", value: "100")
+        ]
+        guard let url = components.url else { return [] }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = Self.requestTimeout
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let items = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["items"] as? [[String: Any]] else { return [] }
+        return items.compactMap { item in
+            guard let number = item["number"] as? Int, let title = item["title"] as? String,
+                  let repoURL = item["repository_url"] as? String,
+                  let merged = ((item["pull_request"] as? [String: Any])?["merged_at"] as? String) ?? (item["closed_at"] as? String),
+                  let date = WorkCalendarIndex.parseDate(merged) else { return nil }
+            return WorkPullRequest(repo: String(repoURL.split(separator: "/").last ?? ""), number: number, title: title,
+                                   url: (item["html_url"] as? String).flatMap(URL.init), mergedAt: date)
+        }
+    }
+
     func pullRequests(for repository: GitHubRepositoryReference) async -> Result<[GitHubPullRequestSummary], GitHubCodeHostError> {
         let rows: [[String: Any]]
         do {

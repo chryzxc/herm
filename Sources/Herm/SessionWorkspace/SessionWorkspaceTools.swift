@@ -165,7 +165,7 @@ struct SessionTerminalView: View {
             Spacer(minLength: 8)
 
             if !recipes.isEmpty {
-                Menu {
+                DockMenu {
                     ForEach(recipes) { recipe in
                         Button(recipe.title) {
                             guard let repositoryID, let repositoryFingerprint else { return }
@@ -180,7 +180,6 @@ struct SessionTerminalView: View {
                     Label("Run check", icon: .sealCheck)
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .menuStyle(.borderlessButton)
                 .foregroundStyle(Color.dockAccent)
                 .help("Run verified repository check")
                 .accessibilityLabel("Run verified repository check")
@@ -188,7 +187,7 @@ struct SessionTerminalView: View {
                 .disabled(terminal.state != .ready)
             }
 
-            Menu {
+            DockMenu {
                 Button("Clear output") { terminal.clear() }
                 Button("Interrupt", action: terminal.interrupt)
                     .disabled(!canInterrupt)
@@ -196,7 +195,6 @@ struct SessionTerminalView: View {
             } label: {
                 DockIcon(.dotsThree).frame(width: 44, height: 44)
             }
-            .menuStyle(.borderlessButton)
             .accessibilityLabel("Terminal options")
 
         }

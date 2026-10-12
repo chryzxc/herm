@@ -274,6 +274,31 @@ struct RepositorySnapshot: Equatable {
 }
 
 enum RepositoryService {
+    static func createTaskWorktree(path: String, id: UUID, storage: URL? = nil) async throws -> String {
+        let snapshot = await inspect(path: path)
+        guard snapshot.isGitRepository, let head = snapshot.headRevision else { throw QuickDraftError.message("Select a Git repository with a committed HEAD.") }
+        let root = storage ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Herm/Worktrees")
+        let destination = root.appendingPathComponent(id.uuidString)
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let result = await runGit(path: path, arguments: ["worktree", "add", "-b", "herm/task-\(id.uuidString.lowercased())", destination.path, head])
+        guard result.exitCode == 0 else { throw QuickDraftError.message("Git could not create the worktree. Any partially created directory is preserved at \(destination.path).") }
+        let fresh = await inspect(path: destination.path)
+        guard fresh.isGitRepository else { throw QuickDraftError.message("The created directory could not be verified. It is preserved at \(destination.path).") }
+        return fresh.path
+    }
+    static func changesSince(path: String, head: String) async throws -> [String] {
+        guard !head.isEmpty, head.allSatisfy({ $0.isHexDigit }) else { throw QuickDraftError.message("A valid turn baseline is unavailable.") }
+        let result = await runGit(path: path, arguments: ["diff", "--no-ext-diff", "--name-only", "-z", head], trimOutput: false)
+        guard result.exitCode == 0 else { throw QuickDraftError.message("The turn baseline is no longer accessible. Open repository review.") }
+        let untracked = await runGit(path: path, arguments: ["ls-files", "--others", "--exclude-standard", "-z"], trimOutput: false)
+        return Array(Set((result.output + untracked.output).split(separator: "\0").map(String.init))).sorted()
+    }
+    static func diffSince(path: String, head: String, file: String) async throws -> String {
+        guard !head.isEmpty, head.allSatisfy({ $0.isHexDigit }), isSafeRelativePath(file) else { throw QuickDraftError.message("The selected change cannot be compared safely.") }
+        let result = await runGit(path: path, arguments: ["diff", "--no-ext-diff", "--unified=3", head, "--", file], trimOutput: false)
+        guard result.exitCode == 0 else { throw QuickDraftError.message("The comparison could not be read.") }
+        return boundDiff(result.output).text
+    }
     private static let maxDiffBytes = 48_000
     private static let maxDiffLines = 900
     static let maxDocumentBytes = 256_000
@@ -797,7 +822,7 @@ enum RepositoryService {
         !path.isEmpty && !path.hasPrefix("/") && !path.split(separator: "/").contains("..") && !path.contains("\0")
     }
 
-    /// Non-merge commits authored in `[since, until)` across the repos holding
+    /// The user's non-merge commits (by `user.email`) dated in `[since, until)` across the repos holding
     /// `paths`. Non-git paths are skipped.
     static func commits(paths: some Sequence<String>, since: Date, until: Date) async -> [WorkCommit] {
         // Worktrees of one repo collapse to its main checkout, so git runs once per repo, not per task.
@@ -814,11 +839,14 @@ enum RepositoryService {
     private static func commits(root: String, since: Date, until: Date) async -> [WorkCommit] {
         let repo = URL(fileURLWithPath: root).lastPathComponent
         let iso = ISO8601DateFormatter()
+        // Only the user's own commits: a pulled upstream (e.g. a cloned dependency) is not their work.
+        let email = await runGit(path: root, arguments: ["config", "user.email"])
+        let me = email.exitCode == 0 ? email.output.trimmingCharacters(in: .whitespacesAndNewlines) : ""
         let result = await runGit(path: root, arguments: [
             "log", "--branches", "--no-merges", "--max-count=500",
             "--since=\(iso.string(from: since))", "--until=\(iso.string(from: until))",
             "--pretty=format:%h%x1f%s%x1f%aI"
-        ])
+        ] + (me.isEmpty ? [] : ["--author=\(me)", "--fixed-strings"]))
         guard result.exitCode == 0 else { return [] }
         return result.output.split(separator: "\n").compactMap { line in
             let fields = line.split(separator: "\u{1f}", omittingEmptySubsequences: false)
@@ -856,8 +884,9 @@ enum RepositoryService {
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
             process.arguments = ["git", "-C", path] + arguments
+            process.environment = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("GIT_") }
             process.standardOutput = pipe
-            process.standardError = Pipe()
+            process.standardError = pipe
             do {
                 try process.run()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
