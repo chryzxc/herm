@@ -193,8 +193,9 @@ struct EdgeKanbanProjectionTests {
     private func settle(_ control: ControlCenterModel) async throws {
         for _ in 0..<200 {
             try await Task.sleep(for: .milliseconds(10))
-            if control.pendingActionIDs.isEmpty,
-               control.refreshState(for: "kanban.global")?.isRefreshing != true {
+            if control.pendingActionIDs.isEmpty, !control.hasKanbanReadInFlight,
+               control.refreshState(for: "kanban.global")?.isRefreshing != true,
+               control.refreshState(for: "kanban.visible")?.isRefreshing != true {
                 return
             }
         }

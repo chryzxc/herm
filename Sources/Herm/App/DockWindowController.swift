@@ -66,6 +66,8 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.minSize = NSSize(width: 900, height: 600)
         window.delegate = self
         let host = NSHostingView(rootView: DockPopover(

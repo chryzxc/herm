@@ -1,10 +1,9 @@
 import AppKit
 
 enum EdgeDockLayout {
-    // The vertical inset clears the 8pt shoulder plus the 12pt inner corner
-    // radius so the 4pt side inset stays inside the contour; see EdgeNotchShape.
+    // Clear the 18pt shoulder and 26pt inner corner at the narrow side inset.
     static let workspaceHorizontalInset: CGFloat = 4
-    static let workspaceVerticalInset: CGFloat = 20
+    static let workspaceVerticalInset: CGFloat = 44
 }
 
 enum EdgeDockSide: String, Codable {

@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Combine
 import SwiftUI
 
@@ -12,7 +13,7 @@ final class EdgeDockController: NSObject {
     private let openQuota: () -> Void
     private let openKanban: (KanbanTaskSummary) -> Void
     private let openDock: () -> Void
-    private let state = EdgeNotchState()
+    private let state: EdgeNotchState
     private var petWindow: HermesPetWindow?
     private var subscriptions = Set<AnyCancellable>()
     private var collapseTask: DispatchWorkItem?
@@ -24,6 +25,8 @@ final class EdgeDockController: NSObject {
     private var workspacePresented = false
     private var quickProfileID: String?
     private var completedTaskIDs: Set<String>?
+    private var routineEvents: [String: String] = [:]
+    private var observedRoutineProfiles = Set<String>()
     private var latestToolID: String?
     private var latestToolComplete = false
     private var kanbanActivity = EdgeKanbanActivity()
@@ -34,6 +37,7 @@ final class EdgeDockController: NSObject {
     private var kanbanStatusCurrent = false
     private var latestSessions: [HermesSession] = []
     private var latestAttention: [String: DockModel.SessionAttention] = [:]
+    private var latestAnswers: [AttentionRequest: AttentionAnswerState] = [:]
     private var deliveryQuestions: [EdgeDeliveryQuestion] = []
     private var latestActivityLabels: [String: String] = [:]
     private var lastQuotas: [ProviderQuotaSnapshot]?
@@ -41,12 +45,14 @@ final class EdgeDockController: NSObject {
     /// spent (by Hermes or any other app), so they are read on every tick.
     private var hotQuotaReaders = Set<String>()
     private var quotaTick = 0
+    private var botBannerTask: Task<Void, Never>?
     private var displayID: NSNumber?
     private var fraction: CGFloat = 0.5
     private let defaults: UserDefaults
 
-    init(model: DockModel, controlCenter: ControlCenterModel, defaults: UserDefaults = .standard, openQuota: @escaping () -> Void, openKanban: @escaping (KanbanTaskSummary) -> Void, openDock: @escaping () -> Void) {
+    init(model: DockModel, controlCenter: ControlCenterModel, defaults: UserDefaults = .standard, interruptions: HermInterruptionCoordinator? = nil, openQuota: @escaping () -> Void, openKanban: @escaping (KanbanTaskSummary) -> Void, openDock: @escaping () -> Void) {
         self.model = model
+        state = EdgeNotchState(store: .shared, interruptions: interruptions)
         self.controlCenter = controlCenter
         self.openQuota = openQuota
         self.openKanban = openKanban
@@ -62,8 +68,10 @@ final class EdgeDockController: NSObject {
             if dragging && !self.petDragging { self.petDragging = true; self.expandTask?.cancel(); self.setExpanded(false) }
             if !dragging { self.petDragging = false }
             self.state.petDragging = dragging; self.state.petPull = pull
+            if !dragging { self.surfaceDigestIfPossible() }
         }
         quickProfileID = model.profileScopeID
+        state.switchQuickProfile(model.profileScopeID)
         state.side = EdgeDockSide(rawValue: defaults.string(forKey: "hermes.notch.side") ?? "") ?? .right
         fraction = defaults.object(forKey: "hermes.notch.position") as? Double ?? 0.5
         displayID = defaults.object(forKey: "hermes.notch.display") as? NSNumber
@@ -82,6 +90,9 @@ final class EdgeDockController: NSObject {
             quickMessageModel: model,
             onQuickMessageFocus: { [weak self] active in self?.setQuickMessageFocus(active) },
             onQuickReply: { [weak self] task in self?.beginQuickReply(task) },
+            onResultPeek: { [weak self] task in self?.peekResult(task) },
+            onResultReply: { [weak self] target in self?.beginQuickReply(target.task, target: target.session) },
+            onOpenDigest: { [weak self] notice in self?.openDigestSource(notice) },
             onAnswer: { [weak self] task, choice in self?.answer(task, choice: choice) },
             openDock: { [weak self] in self?.openWorkspace() },
             onOpenTask: { [weak self] task in self?.openTask(task) },
@@ -117,9 +128,22 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] requests in
                 guard let self else { return }
                 let hasNewRequest = requests.contains { self.latestAttention[$0.key] != $0.value }
+                let changedRequests = requests.filter { self.latestAttention[$0.key] != $0.value }
                 self.latestAttention = requests
                 self.updateDetail()
-                if hasNewRequest { self.announce() }
+                if hasNewRequest {
+                    for (owner, request) in changedRequests {
+                        self.announce(notice: self.model.interruptionNotice(request.status == .needsApproval ? .approval : .clarification,
+                            owner: owner, eventID: request.requestID))
+                    }
+                }
+            }.store(in: &subscriptions)
+        model.$attentionAnswers
+            .receive(on: RunLoop.main)
+            .sink { [weak self] answers in
+                guard let self else { return }
+                self.latestAnswers = answers
+                self.rebuildTasks()
             }.store(in: &subscriptions)
         model.$isLoadingSessions
             .receive(on: RunLoop.main)
@@ -130,12 +154,31 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] profile, sending in
                 guard let self, !sending, profile != self.quickProfileID else { return }
                 self.quickProfileID = profile
-                self.state.resetQuickComposition()
+                self.state.resultTarget = nil
+                guard self.state.captureRecord().isEmpty, !self.state.composing, self.state.quickPreparing == 0 else { return }
+                self.state.switchQuickProfile(profile)
                 if !self.workspacePresented { self.setQuickMessageFocus(false) }
             }.store(in: &subscriptions)
         model.$sessions
             .receive(on: RunLoop.main)
             .sink { [weak self] sessions in self?.refreshNoteworthySessions(sessions) }
+            .store(in: &subscriptions)
+        controlCenter.$cronJobs.combineLatest(controlCenter.$cronRuns)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.routineUpdates(); self?.rebuildTasks() }.store(in: &subscriptions)
+        state.preferences.objectWillChange.receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.rebuildTasks() }.store(in: &subscriptions)
+        Publishers.CombineLatest3(state.interruptions.$pendingDigest, state.$composing, model.$isHermesConnected)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] pending, composing, connected in
+                if pending, !composing, connected { self?.surfaceDigestIfPossible() }
+            }.store(in: &subscriptions)
+        state.interruptions.$blockingFailure
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notice in
+                self?.rebuildTasks()
+                if let notice { self?.announce(notice: notice) }
+            }
             .store(in: &subscriptions)
         model.$sessionActivityLabels
             .throttle(for: .seconds(1), scheduler: RunLoop.main, latest: true)
@@ -158,6 +201,11 @@ final class EdgeDockController: NSObject {
         // same aggregate projection, without board filters or supporting reads.
         Timer.publish(every: 5, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in self?.pollKanban(force: false); self?.pollDeliveryQuestions() }
+            .store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: .hermBotActivity)
+            .compactMap { $0.userInfo?["events"] as? [BotActivityEvent] }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.announceBots($0) }
             .store(in: &subscriptions)
         controlCenter.$providerQuotas
             .receive(on: RunLoop.main)
@@ -228,20 +276,34 @@ final class EdgeDockController: NSObject {
         state.activity.responseCompleted = false
         position(animated: false)
         panel.orderFrontRegardless()
+        surfaceDigestIfPossible()
     }
 
-    private func beginQuickReply(_ task: EdgeNotchTask) {
-        guard !state.quickSending else { return }
-        let target = task.session ?? (task.isCurrent ? model.navigationSessionID.map {
+    private func peekResult(_ task: EdgeNotchTask) {
+        guard !state.quickSending, task.phase == .finished, task.kanbanTask == nil else { return }
+        let session = task.session ?? (task.isCurrent ? model.sessions.first(where: { model.currentSessionIDs.contains($0.id) }) : nil) ?? (task.isCurrent ? model.navigationSessionID.map {
+            HermesSession(id: $0, profileID: model.sessionProfileID, title: task.title,
+                          preview: "", startedAt: nil, messageCount: 0, source: "herm")
+        } : nil)
+        guard let session else { return }
+        setQuickMessageFocus(false)
+        state.resultTarget = EdgeResultTarget(task: task, session: session)
+    }
+
+    private func beginQuickReply(_ task: EdgeNotchTask, target: HermesSession? = nil) {
+        guard !state.quickSending, state.quickPreparing == 0 else { return }
+        let target = target ?? task.session ?? (task.isCurrent ? model.navigationSessionID.map {
             HermesSession(id: $0, profileID: model.sessionProfileID, title: task.title,
                           preview: task.detail ?? "", startedAt: nil, messageCount: 0, source: "herm")
         } : nil)
         guard let target else { return }
+        state.resultTarget = nil
         state.selectQuickTarget(target, task: task)
         setQuickMessageFocus(true)
     }
 
     private func setQuickMessageFocus(_ active: Bool) {
+        if active { state.showingDigest = false }
         state.composing = active
         collapseTask?.cancel()
         state.showingAnnouncement = false
@@ -256,6 +318,7 @@ final class EdgeDockController: NSObject {
 
     private func openWorkspace() {
         guard !dragging, Date() >= suppressClickUntil else { return }
+        DebugLog.write("workflow: workspace.open")
         state.activity.backgroundCompleted = false
         state.activity.responseCompleted = false
         openDock()
@@ -263,6 +326,7 @@ final class EdgeDockController: NSObject {
 
     private func openTask(_ task: EdgeNotchTask) {
         guard !dragging, Date() >= suppressClickUntil else { return }
+        if let routine = task.routine { state.routineTarget = routine; return }
         if let card = task.kanbanTask {
             kanbanActivity.acknowledge(card)
             rebuildTasks()
@@ -270,6 +334,7 @@ final class EdgeDockController: NSObject {
             return
         }
         guard let session = task.session else { return openWorkspace() }
+        if task.isFailure { state.interruptions.clearFailure(owner: session.id, profileID: session.profileID) }
         model.resumeSession(session)
         openDock()
     }
@@ -280,8 +345,12 @@ final class EdgeDockController: NSObject {
         latestSessions = sessions
         let previous = state.tasks
         rebuildTasks()
+        state.interruptions.reconcile(profileID: model.profileScopeID, sessions: sessions, kanban: controlCenter.globalKanbanTasks)
         if EdgeNotchTask.newlyFinished(from: previous, to: state.tasks) {
-            announce()
+            let previousWorking = Set(previous.filter { $0.phase == .working }.map(\.id))
+            for task in state.tasks where task.phase == .finished && previousWorking.contains(task.id) {
+                announce(notice: model.interruptionNotice(.completion, owner: task.id))
+            }
             pollQuota(afterWork: true)
         }
     }
@@ -303,15 +372,45 @@ final class EdgeDockController: NSObject {
             current = EdgeNotchTask(
                 id: model.navigationSessionID ?? "current", title: state.sessionTitle, phase: phase,
                 statusLabel: label, detail: request?.summary ?? state.detail, updatedAt: nil, isCurrent: true,
-                isStatusCurrent: activity.status != .offline, session: nil, choices: request?.choices ?? [])
+                isStatusCurrent: activity.status != .offline, session: nil, choices: request?.choices ?? [],
+                attentionRequest: request?.responseTarget)
         }
-        let tasks = EdgeNotchTask.merged(EdgeNotchTask.build(current: current, sessions: latestSessions,
+        var tasks = EdgeNotchTask.merged(EdgeNotchTask.build(current: current, sessions: latestSessions,
                                         activity: latestActivityLabels,
                                         currentSessionIDs: model.currentSessionIDs,
                                         isOnline: activity.status != .offline, attention: latestAttention)
             + kanbanActivity.rows(isCurrent: kanbanStatusCurrent && activity.status != .offline)
-            + deliveryQuestions.map(\.row))
+            + deliveryQuestions.map(\.row)
+            + controlCenter.routineReferences.filter { $0.needsAttention || state.preferences.routinePins.contains($0.id) }.map { reference in
+                var row = reference.row
+                row = EdgeNotchTask(id: row.id, title: row.title, phase: row.phase, statusLabel: row.statusLabel,
+                    detail: row.detail, updatedAt: row.updatedAt, isCurrent: false,
+                    isStatusCurrent: activity.status != .offline && controlCenter.refreshState(for: "cron.jobs")?.isStale != true,
+                    session: nil, routine: reference)
+                return row
+            }).map { task in
+                var task = task
+                if let request = task.attentionRequest { task.answerState = latestAnswers[request] }
+                if let question = task.deliveryQuestion { task.answerState = state.deliveryAnswers[question] }
+                return task
+            }
+        for failure in state.interruptions.failures {
+            guard !tasks.contains(where: {
+                $0.id == failure.sourceID && $0.attentionRequest != nil
+                    && $0.attentionRequest?.profileID == failure.profileID
+            }) else { continue }
+            let session = latestSessions.first { $0.id == failure.sourceID && $0.profileID == failure.profileID }
+                ?? HermesSession(id: failure.sourceID, profileID: failure.profileID, title: failure.sourceID,
+                                 preview: "", startedAt: nil, messageCount: 0, source: "herm")
+            tasks.removeAll { $0.id == session.id && ($0.session?.profileID == session.profileID || $0.isCurrent) }
+            tasks.append(EdgeNotchTask(id: session.id, title: session.displayTitle, phase: .attention,
+                statusLabel: "Failed", detail: "Open the session to inspect the failure", updatedAt: failure.createdAt,
+                isCurrent: model.currentSessionIDs.contains(session.id), isStatusCurrent: model.status != .offline,
+                session: session, isFailure: true))
+            tasks = EdgeNotchTask.merged(tasks)
+        }
         if tasks != state.tasks {
+            state.invalidateNewerResults(tasks)
             state.tasks = tasks
             position(animated: true)
         }
@@ -326,26 +425,56 @@ final class EdgeDockController: NSObject {
         guard questions != deliveryQuestions else { return }
         let isNew = questions.contains { !deliveryQuestions.contains($0) }
         deliveryQuestions = questions
+        state.deliveryAnswers = state.deliveryAnswers.filter { questions.contains($0.key) }
         rebuildTasks()
-        if isNew { announce() }
+        if isNew {
+            for question in questions { announce(notice: model.interruptionNotice(.clarification, owner: question.row.session?.id, eventID: String(question.hashValue))) }
+        }
     }
 
     private func answer(_ task: EdgeNotchTask, choice: String) {
+        guard task.isStatusCurrent, task.choices.contains(choice) else { return }
         if let question = task.deliveryQuestion {
-            guard let session = task.session else { return }
-            model.sendQuickMessage(question.answerText(choice), to: session) { [weak self] error in
+            guard deliveryQuestions.contains(question), let session = task.session,
+                  state.deliveryAnswers[question]?.blocksSubmission != true else { return }
+            if let reason = model.quickMessageUnavailableReason(for: session) {
+                state.deliveryAnswers[question] = .failed(choice, reason)
+                rebuildTasks()
+                return
+            }
+            state.deliveryAnswers[question] = .sending(choice)
+            rebuildTasks()
+            Task { [weak self] in
                 guard let self else { return }
-                // ponytail: a busy Bot Chat keeps the question; tapping again retries.
-                if let error { return DebugLog.write("notch: question answer failed: \(error)") }
-                try? FileManager.default.removeItem(at: question.file)
+                do {
+                    _ = try await self.model.submitQuickDraft(question.answerDraft(choice), progress: { _ in })
+                } catch {
+                    guard EdgeDeliveryQuestion.load().contains(question) else {
+                        self.pollDeliveryQuestions(); return
+                    }
+                    let message = DockModel.safeUserDiagnostic(error.localizedDescription)
+                    self.state.deliveryAnswers[question] = (error as? QuickSubmissionFailure)?.uncertain == true
+                        ? .uncertain(choice, message) : .failed(choice, message)
+                    self.rebuildTasks()
+                    return
+                }
+                guard EdgeDeliveryQuestion.load().contains(question) else {
+                    self.pollDeliveryQuestions()
+                    return
+                }
+                do {
+                    try FileManager.default.removeItem(at: question.file)
+                } catch {
+                    self.state.deliveryAnswers[question] = .answered(choice, "Answer sent. The saved question could not be removed; open the session to review it.")
+                    self.rebuildTasks()
+                    return
+                }
                 self.pollDeliveryQuestions()
             }
             return
         }
-        guard let sessionID = task.isCurrent
-                ? model.currentSessionIDs.first(where: { latestAttention[$0] != nil })
-                : task.session?.id else { return }
-        model.answerAttention(sessionID: sessionID, choice: choice)
+        guard let request = task.attentionRequest else { return }
+        model.answerAttention(request, choice: choice)
     }
 
     private func refreshSelectedTasks() {
@@ -362,7 +491,7 @@ final class EdgeDockController: NSObject {
            let last = lastKanbanPoll, Date().timeIntervalSince(last) < 60 { return }
         lastKanbanPoll = Date()
         controlCenter.refreshGlobalKanban(trigger: .background)
-        guard !loadingBots, lastBotRead.map({ Date().timeIntervalSince($0) >= 60 }) ?? true else { return }
+        guard !loadingBots, lastBotRead.map({ Date().timeIntervalSince($0) >= 15 }) ?? true else { return }
         loadingBots = true
         lastBotRead = Date()
         Task {
@@ -370,7 +499,9 @@ final class EdgeDockController: NSObject {
             let service = BotService(client: model.controlRPCClient)
             let inventory = await service.list()
             guard inventory.availability == .ready else { return }
+            let events = BotActivityEvent.events(from: state.bots, to: inventory.bots, excluding: model.profileScopeID)
             state.bots = inventory.bots
+            announceBots(events)
             for bot in inventory.bots where bot.hasAvatar && state.avatarImages[bot.id] == nil {
                 if let data = await service.avatarImageData(profileID: bot.id) { state.avatarImages[bot.id] = data }
             }
@@ -378,6 +509,7 @@ final class EdgeDockController: NSObject {
     }
 
     private func refreshKanbanActivity() {
+        let previousCards = state.tasks.filter { $0.kanbanTask != nil }
         guard let refresh = controlCenter.refreshState(for: "kanban.global") else {
             kanbanActivity = EdgeKanbanActivity()
             lastKanbanRead = nil
@@ -397,7 +529,15 @@ final class EdgeDockController: NSObject {
             lastKanbanRead = refresh.lastSuccess
         }
         rebuildTasks()
-        if changed { announce() }
+        state.interruptions.reconcile(profileID: model.profileScopeID, sessions: latestSessions, kanban: controlCenter.globalKanbanTasks)
+        if changed {
+            for task in state.tasks where task.kanbanTask != nil && !previousCards.contains(task) {
+                guard let card = task.kanbanTask else { continue }
+                let kind: HermNotice.Kind = card.status == "blocked" ? .failure : .information
+                announce(notice: HermNotice(kind: kind, source: .kanban, profileID: model.profileScopeID,
+                    sourceID: card.id, eventID: UUID().uuidString, boardSlug: card.boardSlug))
+            }
+        }
     }
 
     private func refresh(status: HermesStatus, unread: Bool, tasks: [HermesBackgroundTask]) {
@@ -413,7 +553,7 @@ final class EdgeDockController: NSObject {
             responseCompleted: responseFinished || (previous.responseCompleted && status != .working))
         updateDetail()
         if state.activity.shouldAnnounce(after: previous) || newCompletion || responseFinished {
-            announce()
+            announce(notice: model.interruptionNotice(model.messages.last?.isError == true ? .failure : state.activity.attention ? (status == .needsApproval ? .approval : .clarification) : responseFinished || newCompletion ? .completion : .information))
         } else {
             position(animated: true)
         }
@@ -475,7 +615,27 @@ final class EdgeDockController: NSObject {
               let previous = previousQuotas.first(where: { $0.provider == provider }),
               let current = quotas.first(where: { $0.provider == provider }) else { return }
         state.quotaChange = EdgeQuotaChange(previous: previous, current: current)
-        announce(quota: true)
+        announce(quota: true, notice: HermNotice(kind: .quota, source: .quota, profileID: nil,
+            sourceID: provider, eventID: String(current.updatedAt.timeIntervalSince1970)))
+    }
+
+    /// Both the roster poll here and the workspace's post the same events; the
+    /// stamp-based notice id lets `admit` drop the duplicate.
+    private func announceBots(_ events: [BotActivityEvent]) {
+        let fresh = events.filter { event in
+            state.interruptions.admit(HermNotice(kind: .information, source: .activity, profileID: event.botID,
+                sourceID: "bot", eventID: event.id + "/" + event.stamp), channel: .notch)
+        }
+        guard !fresh.isEmpty, !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail else { return }
+        state.botBanner = fresh
+        state.expanded = true
+        position(animated: true)
+        scheduleCollapse(after: 3)
+        botBannerTask?.cancel()
+        botBannerTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { self?.state.botBanner = [] }
+        }
     }
 
     private func updateDetail() {
@@ -500,10 +660,74 @@ final class EdgeDockController: NSObject {
         rebuildTasks()
     }
 
-    private func announce(quota: Bool = false) {
-        guard !workspacePresented, !dragging, !petDragging, !state.composing else { return }
+    private func routineUpdates() {
+        let profile = controlCenter.routineProfileID
+        let references = controlCenter.routineReferences
+        state.interruptions.reconcileRoutines(profileID: profile, jobIDs: Set(references.map { $0.job.id }))
+        let previouslyObserved = observedRoutineProfiles.contains(profile ?? "")
+        if !references.isEmpty { observedRoutineProfiles.insert(profile ?? "") }
+        for reference in references {
+            guard let stamp = reference.run?.id ?? reference.job.lastRunAt else { continue }
+            let event = stamp + "/" + (reference.run?.status ?? reference.job.lastStatus ?? "") + "/" + SHA256.hash(data: Data((reference.job.details.deliveryError ?? "").utf8)).map { String(format: "%02x", $0) }.joined()
+            let prior = routineEvents.updateValue(event, forKey: reference.id)
+            guard previouslyObserved, prior != event, !reference.running else { continue }
+            let notice = HermNotice(kind: reference.needsAttention ? .failure : .completion, source: .routine,
+                profileID: profile, sourceID: reference.job.id, eventID: event)
+            model.publishWorkflowNotice(notice, body: reference.job.name)
+            announce(notice: notice)
+        }
+    }
+
+    private func openDigestSource(_ notice: HermNotice) {
+        guard !notice.unavailable || notice.canCheckCompletedSession else { return }
+        switch notice.source {
+        case .quota: state.showingDigest = false; state.interruptions.review(notice.id); openQuota()
+        case .session:
+            guard let session = notice.completedSession(in: latestSessions)
+                ?? latestSessions.first(where: { $0.id == notice.sourceID && $0.profileID == notice.profileID }) else {
+                state.interruptions.markUnavailable(notice.id); return
+            }
+            state.showingDigest = false
+            let task = EdgeNotchTask(id: session.id, title: session.displayTitle, phase: session.isWorking ? .working : .finished,
+                statusLabel: session.isWorking ? "Working" : "Finished", detail: session.displayPreview, updatedAt: session.lastUpdatedAt,
+                isCurrent: model.currentSessionIDs.contains(session.id), isStatusCurrent: model.status != .offline, session: session)
+            if notice.kind == .completion, !session.isWorking { state.digestResultID = notice.id; peekResult(task) }
+            else { state.interruptions.review(notice.id); openTask(task) }
+        case .kanban:
+            guard notice.profileID == model.profileScopeID,
+                  let card = controlCenter.globalKanbanTasks.first(where: { $0.id == notice.sourceID && $0.boardSlug == notice.boardSlug }) else {
+                state.interruptions.markUnavailable(notice.id); return
+            }
+            state.showingDigest = false; state.interruptions.review(notice.id); openKanban(card)
+        case .routine:
+            guard let reference = controlCenter.routineReferences.first(where: { $0.profileID == notice.profileID && $0.job.id == notice.sourceID }) else {
+                state.interruptions.markUnavailable(notice.id); return
+            }
+            state.showingDigest = false; state.routineTarget = reference; state.interruptions.review(notice.id)
+        case .repository:
+            guard FileManager.default.fileExists(atPath: notice.sourceID) else { state.interruptions.markUnavailable(notice.id); return }
+            state.showingDigest = false; state.interruptions.review(notice.id)
+            ExternalOpen.reveal([URL(fileURLWithPath: notice.sourceID)])
+        case .activity: state.showingDigest = false; state.interruptions.review(notice.id); openWorkspace()
+        }
+    }
+
+    private func surfaceDigestIfPossible() {
+        guard state.interruptions.pendingDigest, !workspacePresented, !dragging, !petDragging,
+              !state.composing, !hovering, !state.isReadingDetail else { return }
+        state.showingDigest = true
+        state.interruptions.consumeDigestAnnouncement()
+        announce(notice: HermNotice(kind: .information, source: .activity, profileID: nil,
+            sourceID: "digest", eventID: String(state.interruptions.digestPresentationRevision)))
+    }
+
+    private func announce(quota: Bool = false, notice: HermNotice? = nil) {
+        let reference = notice ?? model.interruptionNotice(state.railActivity.attention ? .failure : .information)
+        guard state.interruptions.admit(reference, channel: .notch) else { return }
+        guard !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail else { return }
         // Every notch announcement, including future sources, reaches the pet here.
         controlCenter.pet.react(.announcement(activity: state.railActivity, quota: quota))
+        DebugLog.write("workflow: notch announcement presented")
         if !hovering {
             // Updates landing while one is showing join it rather than replace it.
             if !state.showingAnnouncement {
@@ -540,7 +764,10 @@ final class EdgeDockController: NSObject {
             expandTask = task
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: task)
         }
-        else { scheduleCollapse(after: 0.4) }
+        else {
+            surfaceDigestIfPossible()
+            if !state.showingAnnouncement { scheduleCollapse(after: 0.4) }
+        }
     }
 
     private func scheduleCollapse(after delay: TimeInterval) {
@@ -575,6 +802,7 @@ final class EdgeDockController: NSObject {
         guard !workspacePresented else { return }
         collapseTask?.cancel()
         if !expanded {
+            state.clearPreviewDetails()
             state.composing = false
             panel.acceptsWorkspaceFocus = false
             panel.resignKey()
@@ -602,6 +830,7 @@ final class EdgeDockController: NSObject {
         if ended {
             suppressClickUntil = Date().addingTimeInterval(0.4)
             persistPlacement()
+            surfaceDigestIfPossible()
         }
     }
 
@@ -679,6 +908,7 @@ struct EdgeNotchActivity: Equatable {
     }
     var symbol: Ph {
         if kanbanNeedsAttention || sessionNeedsAttention { return .warningCircle }
+        if status == .needsClarification { return DockActivityState.clarification.icon! }
         if attention { return status.icon }
         if unread { return .chat }
         if backgroundCompleted || responseCompleted || kanbanHasUpdate { return .check }
@@ -729,19 +959,251 @@ enum EdgeQuotaBands {
 
 @MainActor
 final class EdgeNotchState: ObservableObject {
+    var isReadingDetail: Bool { resultTarget != nil || routineTarget != nil || capacityTarget != nil || steeringTarget != nil || showingRecall || showingWorkingSets }
+    func clearPreviewDetails() {
+        resultTarget = nil; routineTarget = nil; capacityTarget = nil; steeringTarget = nil
+        showingRecall = false; showingWorkingSets = false; showingDigest = false
+    }
+    @Published var capacitySnapshots: [String: SessionCapacitySnapshot] = [:]
+    func destinationUnavailable(_ destination: QuickDestination, sessions: [HermesSession], profileID: String?) -> Bool {
+        if let id = destination.sessionID, !sessions.contains(where: { $0.id == id && $0.profileID == destination.profileID }) { return true }
+        if let path = destination.projectPath, !FileManager.default.fileExists(atPath: path) { return true }
+        if let profile = destination.profileID, profile != profileID, !bots.contains(where: { $0.id == profile }) { return true }
+        return false
+    }
+    @Published var steeringTarget: HermesSession?
+    @Published var capacityTarget: HermesSession?
+    @Published var showingWorkingSets = false
+    func useSavedDestination(_ destination: QuickDestination) {
+        guard !quickSending, quickPreparing == 0 else { return }
+        if let session = destination.session {
+            selectQuickTarget(session)
+            quickProjectPath = destination.projectPath
+            var record = captureRecord(); record.destination.projectPath = destination.projectPath
+            draftStore.save(record)
+        }
+        else { switchQuickProfile(destination.profileID); setQuickProject(destination.projectPath) }
+        showingWorkingSets = false; composing = true
+    }
+    func insertRecall(_ hit: RecallHit) {
+        guard !quickSending, !quickNeedsReview else { quickResult = "Review the interrupted draft before inserting material."; return }
+        quickDraft += (quickDraft.isEmpty ? "" : "\n\n") + hit.snippet
+        let reference = "Source conversation: \(hit.session.profileID ?? "Launch profile")/\(hit.session.id)"
+        if !quickSources.contains(reference) { quickSources.append(reference); saveQuickDraft() }
+        showingRecall = false; composing = true
+    }
+    @Published var recallProfileID: String?
+    @Published var showingRecall = false
+    private var preferenceSubscription: AnyCancellable?
+    let preferences = CommandCenterPreferencesStore.shared
+    @Published var routineTarget: RoutineReference?
+    let interruptions: HermInterruptionCoordinator
+    @Published var showingDigest = false
+    var digestResultID: String?
+    private var interruptionSubscription: AnyCancellable?
+    @Published var resultTarget: EdgeResultTarget?
+    private var resultCache: [String: EdgeResultContent] = [:]
+    private var resultCacheOrder: [String] = []
+    private func resultKey(_ target: EdgeResultTarget) -> String {
+        target.id + "/" + String(target.session.lastUpdatedAt?.timeIntervalSince1970 ?? 0) + "/" + (target.task.detail ?? "")
+    }
+    func cachedResult(_ target: EdgeResultTarget) -> EdgeResultContent? { resultCache[resultKey(target)] }
+    func cacheResult(_ content: EdgeResultContent, for target: EdgeResultTarget) {
+        let key = resultKey(target)
+        resultCache[key] = content
+        resultCacheOrder.removeAll { $0 == key }; resultCacheOrder.append(key)
+        while resultCacheOrder.count > 8 { resultCache.removeValue(forKey: resultCacheOrder.removeFirst()) }
+    }
+    func clearResult(_ target: EdgeResultTarget) { resultCache.removeValue(forKey: resultKey(target)) }
+    func invalidateNewerResults(_ incoming: [EdgeNotchTask]) {
+        for task in incoming {
+            guard let old = tasks.first(where: { $0.id == task.id }), old != task else { continue }
+            for key in resultCache.keys.filter({ $0.hasPrefix("\(task.session?.profileID ?? "")/\(task.id)/") }) {
+                resultCache.removeValue(forKey: key)
+            }
+        }
+    }
     @Published var composing = false
     @Published var quickTarget: HermesSession?
     @Published var quickReplyTask: EdgeNotchTask?
     @Published var quickCreatedSession: HermesSession?
-    private var quickDrafts: [String: String] = [:]
-    private var quickDraftKey: String { quickTarget.map { "\($0.profileID ?? "")/\($0.id)" } ?? "new" }
+    let draftStore: QuickDraftStore
+    private var draftSubscription: AnyCancellable?
+    private var applyingDraft = false
+    private var quickRecordID: UUID?
+    @Published private(set) var quickProfileID: String?
+    @Published var quickFiles: [QuickDraftFile] = []
+    @Published var quickPreparing = 0
+    @Published var quickSources: [String] = []
+    @Published private(set) var quickNeedsReview = false
+    @Published private(set) var quickProjectPath: String?
+
+    init(store: QuickDraftStore? = nil, interruptions: HermInterruptionCoordinator? = nil) {
+        draftStore = store ?? QuickDraftStore()
+        self.interruptions = interruptions ?? HermInterruptionCoordinator()
+        draftSubscription = draftStore.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        interruptionSubscription = self.interruptions.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        preferenceSubscription = preferences.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+    }
+
+    var recoverableDrafts: [QuickDraftRecord] {
+        draftStore.records.filter { $0.destination.profileID == quickProfileID }.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    func captureRecord() -> QuickDraftRecord {
+        var record = quickRecordID.flatMap { id in draftStore.records.first { $0.id == id } }
+            ?? QuickDraftRecord(id: quickRecordID ?? UUID(), destination: QuickDestination(profileID: quickTarget?.profileID ?? quickProfileID,
+                sessionID: quickTarget?.id, title: quickTarget?.displayTitle ?? "New session", projectPath: quickProjectPath))
+        record.text = quickDraft; record.files = quickFiles; record.sources = quickSources
+        quickRecordID = record.id
+        return record
+    }
+
+    private func saveQuickDraft() {
+        guard !applyingDraft, !quickSending else { return }
+        var record = captureRecord()
+        record.revision = UUID()
+        draftStore.save(record)
+    }
+
+    func restoreQuickDraft(_ record: QuickDraftRecord) {
+        guard !quickSending, quickPreparing == 0 else { return }
+        applyingDraft = true
+        quickRecordID = record.id
+        quickTarget = record.destination.session
+        quickCreatedSession = record.destination.session
+        quickReplyTask = nil
+        quickProfileID = record.destination.profileID
+        quickProjectPath = record.destination.projectPath
+        quickDraft = record.text; quickFiles = record.files; quickSources = record.sources
+        quickNeedsReview = record.delivery == .needsReview
+        quickResult = quickNeedsReview ? "Interrupted submission. Open the session to review it before sending again." : nil
+        applyingDraft = false
+    }
+
+    func switchQuickProfile(_ profile: String?) {
+        guard !quickSending, quickPreparing == 0 else { return }
+        saveQuickDraft()
+        applyingDraft = true
+        quickProfileID = profile; quickRecordID = nil
+        quickTarget = nil; quickReplyTask = nil; quickCreatedSession = nil
+        quickDraft = ""; quickFiles = []; quickSources = []; quickNeedsReview = false; quickProjectPath = nil
+        quickResult = nil; composing = false
+        applyingDraft = false
+    }
+
+    func setQuickProject(_ path: String?) {
+        guard !quickSending, quickPreparing == 0, quickTarget == nil, quickCreatedSession == nil else { return }
+        saveQuickDraft()
+        applyingDraft = true
+        quickRecordID = nil; quickDraft = ""; quickFiles = []; quickSources = []
+        quickNeedsReview = false; quickProjectPath = path
+        applyingDraft = false
+        if let saved = draftStore.records.first(where: { $0.destination.key == captureRecord().destination.key }) { restoreQuickDraft(saved) }
+    }
+
+    func stageQuickFiles(_ urls: [URL]) {
+        guard !quickSending, !quickNeedsReview else { return }
+        let recordID = captureRecord().id
+        quickPreparing += 1
+        Task {
+            defer { quickPreparing -= 1 }
+            for url in urls {
+                do {
+                    let file = try await QuickDraftFile.capture(url)
+                    guard quickRecordID == recordID, !quickSending else { return }
+                    guard file.kind != .pdf || !quickFiles.contains(where: { $0.kind == .pdf }) else {
+                        quickResult = "Only one PDF can be staged in a quick draft."; continue
+                    }
+                    if !quickFiles.contains(where: { $0.digest == file.digest && $0.name == file.name }) { quickFiles.append(file) }
+                    saveQuickDraft()
+                } catch { quickResult = DockModel.safeUserDiagnostic(error.localizedDescription) }
+            }
+        }
+    }
+
+    func stageQuickImage(_ data: Data) {
+        guard !quickSending, !quickNeedsReview else { return }
+        let recordID = captureRecord().id
+        quickPreparing += 1
+        Task {
+            defer { quickPreparing -= 1 }
+            do {
+                let file = try await draftStore.pasteImage(data)
+                guard quickRecordID == recordID, !quickSending else { draftStore.removeOwned(file.fallbackURL); return }
+                quickFiles.append(file); saveQuickDraft()
+            } catch { quickResult = DockModel.safeUserDiagnostic(error.localizedDescription) }
+        }
+    }
+
+    func removeQuickFile(_ file: QuickDraftFile) {
+        guard !quickSending, !quickNeedsReview, !file.uploaded else { return }
+        quickFiles.removeAll { $0.id == file.id }
+        saveQuickDraft()
+        if file.owned { draftStore.removeOwned(file.fallbackURL) }
+    }
+
+    func addQuickSource(_ value: String) {
+        guard !quickSending, !quickNeedsReview, let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return }
+        if !quickSources.contains(value) { quickSources.append(value); saveQuickDraft() }
+    }
+
+    func updateQuickSubmission(_ record: QuickDraftRecord) throws {
+        guard quickRecordID == record.id else { return }
+        draftStore.save(record); draftStore.flush()
+        quickCreatedSession = record.destination.session
+        quickFiles = record.files
+        if let error = draftStore.error { throw QuickDraftError.message(error) }
+    }
+
+    func finishQuickSubmission(_ record: QuickDraftRecord, failure: QuickSubmissionFailure?) {
+        guard quickRecordID == record.id else { return }
+        let latest = draftStore.records.first { $0.id == record.id } ?? record
+        quickSending = false
+        if let failure {
+            var saved = latest
+            saved.delivery = failure.uncertain ? .needsReview : .editing
+            draftStore.save(saved); draftStore.flush()
+            quickNeedsReview = failure.uncertain
+            quickResult = failure.message
+            DebugLog.write("workflow: quick submission failed uncertain=\(failure.uncertain)")
+        } else {
+            draftStore.remove(latest); draftStore.flush()
+            applyingDraft = true
+            quickDraft = ""; quickFiles = []; quickSources = []; quickRecordID = nil; quickCreatedSession = nil
+            quickNeedsReview = false; quickResult = "Sent. Follow the response in Activity."
+            applyingDraft = false
+        }
+    }
+
+    func confirmQuickDraftReview() {
+        guard !quickSending, quickPreparing == 0, quickNeedsReview else { return }
+        var record = captureRecord(); record.delivery = .editing; record.revision = UUID()
+        draftStore.save(record); draftStore.flush(); restoreQuickDraft(record)
+        quickResult = "Review recorded. Send revalidates this destination; no message was resent."
+    }
+    func discardQuickDraft() {
+        guard !quickSending else { return }
+        draftStore.remove(captureRecord()); draftStore.flush()
+        applyingDraft = true
+        quickRecordID = nil; quickCreatedSession = nil
+        quickDraft = ""; quickFiles = []; quickSources = []; quickNeedsReview = false; quickResult = nil
+        applyingDraft = false
+    }
 
     func selectQuickTarget(_ target: HermesSession?, task: EdgeNotchTask? = nil) {
-        guard !quickSending else { return }
-        quickDrafts[quickDraftKey] = quickDraft
+        guard !quickSending, quickPreparing == 0 else { return }
+        saveQuickDraft()
+        applyingDraft = true
         quickTarget = target
         quickReplyTask = task
-        quickDraft = quickDrafts[quickDraftKey] ?? ""
+        quickCreatedSession = nil; quickRecordID = nil; quickProjectPath = nil
+        quickDraft = ""; quickFiles = []; quickSources = []; quickNeedsReview = false
+        applyingDraft = false
+        let key = captureRecord().destination.key
+        if let record = draftStore.records.first(where: { $0.destination.key == key }) {
+            restoreQuickDraft(record); quickReplyTask = task
+        }
         quickResult = nil
     }
 
@@ -749,9 +1211,7 @@ final class EdgeNotchState: ObservableObject {
     /// to finish before the controller calls this on a profile change.
     func resetQuickComposition() {
         guard !quickSending else { return }
-        quickDrafts.removeAll()
-        quickTarget = nil; quickReplyTask = nil; quickCreatedSession = nil
-        quickDraft = ""; quickResult = nil; composing = false
+        switchQuickProfile(quickProfileID)
     }
 
     var previewTasks: [EdgeNotchTask] {
@@ -759,9 +1219,10 @@ final class EdgeNotchState: ObservableObject {
         return tasks + [quickReplyTask]
     }
 
-    @Published var quickDraft = ""
+    @Published var quickDraft = "" { didSet { saveQuickDraft() } }
     @Published var quickSending = false
     @Published var quickResult: String?
+    @Published var deliveryAnswers: [EdgeDeliveryQuestion: AttentionAnswerState] = [:]
     @Published var bots: [BotSummary] = []
     @Published var avatarImages: [String: Data] = [:]
     @Published var expanded = false
@@ -780,6 +1241,8 @@ final class EdgeNotchState: ObservableObject {
     @Published var announcesTasks = false
     /// The provider reading behind the latest quota announcement.
     @Published var quotaChange: EdgeQuotaChange?
+    /// Bots that just started or finished work; shown for ~3s at the top of the preview.
+    @Published var botBanner: [BotActivityEvent] = []
     var announcedQuotaChange: EdgeQuotaChange? { showingAnnouncement && announcesQuota ? quotaChange : nil }
     /// A task update and a quota drop announced together share one status view.
     var displaysStatus: Bool { showingAnnouncement && announcesTasks && announcedQuotaChange != nil }
@@ -819,7 +1282,7 @@ final class EdgeNotchState: ObservableObject {
     /// The collapsed rail grows with the number of stacked marks (24pt each, 6pt apart, room for the shoulders).
     var railHeight: CGFloat {
         let marks = CGFloat(railActivity.markCount)
-        return expanded ? 136 : max(60, marks * 25 + 30)
+        return expanded ? 136 : max(96, marks * 25 + 50)
     }
     var panelHeight: CGFloat { (expanded ? Self.expandedSize.height : railHeight) + petReserve }
 }
@@ -833,6 +1296,9 @@ struct EdgeNotchView: View {
     var quickMessageModel: DockModel? = nil
     var onQuickMessageFocus: (Bool) -> Void = { _ in }
     var onQuickReply: (EdgeNotchTask) -> Void = { _ in }
+    var onResultPeek: (EdgeNotchTask) -> Void = { _ in }
+    var onResultReply: (EdgeResultTarget) -> Void = { _ in }
+    var onOpenDigest: (HermNotice) -> Void = { _ in }
     var onAnswer: (EdgeNotchTask, String) -> Void = { _, _ in }
     @ObservedObject private var theme = DockThemeStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -851,7 +1317,7 @@ struct EdgeNotchView: View {
                     // Keep the preview close to it so its content does not float
                     // in the middle of the expanded notch.
                     preview.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.horizontal, 4).padding(.vertical, 12)
+                        .padding(.horizontal, 8).padding(.vertical, 26)
                         .transition(.opacity)
                 } else {
                     rail
@@ -909,9 +1375,11 @@ struct EdgeNotchView: View {
             HStack(spacing: 4) {
                 HStack(spacing: 2) {
                     tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
+                        state.clearPreviewDetails()
                         onQuickMessageFocus(false); state.showingAnnouncement = false; state.showsQuota = false
                     }
                     tabButton("Quota", isSelected: state.displaysQuota) {
+                        state.clearPreviewDetails()
                         onQuickMessageFocus(false); state.showingAnnouncement = false; state.showsQuota = true; onQuotaRequested()
                     }
                 }
@@ -921,17 +1389,55 @@ struct EdgeNotchView: View {
                 if state.displaysQuota {
                     EdgeQuotaToolbar(control: controlCenter)
                 } else {
-                    taskToolbar
+                    HStack(spacing: 8) {
+                        EdgeQuietMenu(coordinator: state.interruptions) { onQuickMessageFocus(false); state.showingDigest = true }
+                        taskToolbar
+                    }
                 }
             }
             .frame(height: 40)
             .padding(.horizontal, 6)
             Divider().overlay(Color.dockBorderLight)
-            if state.composing, state.quickTarget == nil, let quickMessageModel {
+            if !state.botBanner.isEmpty {
+                BotActivityBanner(events: state.botBanner)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 6)
+                    .transition(.opacity)
+            }
+            if let target = state.steeringTarget, let model = quickMessageModel {
+                EdgeSubagentSteering(origin: target, service: HermesWorkflowRPC(client: model.quickWorkflowClient, profileID: target.profileID),
+                    back: { state.steeringTarget = nil; onQuickMessageFocus(false) }, open: { model.resumeSession(target); openDock() })
+            } else if let target = state.capacityTarget, let model = quickMessageModel {
+                EdgeSessionCapacity(destination: target, service: HermesWorkflowRPC(client: model.controlRPCClient, profileID: target.profileID),
+                    back: { state.capacityTarget = nil }, loaded: { snapshot in
+                        let key = QuickDestination(profileID: target.profileID, sessionID: target.id).sessionKey
+                        state.capacitySnapshots[key] = snapshot
+                    }, open: { model.resumeSession(target); openDock() })
+            } else if state.showingRecall, let model = quickMessageModel {
+                EdgeRecallView(profileID: state.recallProfileID, client: model.controlRPCClient,
+                    back: { state.showingRecall = false; onQuickMessageFocus(false) },
+                    open: { session in model.resumeSession(session); openDock() },
+                    insert: { hit in state.insertRecall(hit) })
+            } else if state.showingWorkingSets, let model = quickMessageModel {
+                EdgeWorkingSetsView(state: state, model: model, back: { state.showingWorkingSets = false }, openWorkspace: openDock)
+            } else if let routine = state.routineTarget {
+                EdgeRoutinePreview(reference: controlCenter.routineReferences.first { $0.id == routine.id } ?? routine, control: controlCenter, preferences: state.preferences,
+                    back: { state.routineTarget = nil }, openAutomation: {
+                        controlCenter.requestAutomation(routine)
+                        state.routineTarget = nil; openDock()
+                    }).id(routine.id)
+            } else if state.showingDigest {
+                EdgeDigestView(coordinator: state.interruptions, back: { state.showingDigest = false },
+                    open: onOpenDigest, openActivity: openDock)
+            } else if let target = state.resultTarget, let quickMessageModel {
+                resultPreview(target, model: quickMessageModel)
+            } else if state.composing, state.quickTarget == nil || state.quickReplyTask == nil, let quickMessageModel {
                 EdgeQuickMessageView(model: quickMessageModel, state: state,
                                      close: { onQuickMessageFocus(false) }, openDock: openDock)
             } else if state.displaysQuota {
-                EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota, change: state.announcedQuotaChange)
+                EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota, change: state.announcedQuotaChange,
+                    sessionActions: state.captureRecord().destination.session.map { session in { state.capacityTarget = session } })
             } else {
                 EdgeTaskPreview(tasks: state.previewTasks, isOffline: state.activity.status == .offline,
                                 quotaChange: state.displaysStatus ? state.announcedQuotaChange : nil,
@@ -946,9 +1452,65 @@ struct EdgeNotchView: View {
                                 quickState: state, quickModel: quickMessageModel,
                                 closeReply: { onQuickMessageFocus(false) },
                                 answer: onAnswer,
-                                openDock: openDock, openTask: onOpenTask)
+                                peek: quickMessageModel == nil ? nil : onResultPeek,
+                                recall: quickMessageModel == nil ? nil : {
+                                    guard !state.quickSending else { return }
+                                    state.recallProfileID = state.quickProfileID
+                                    onQuickMessageFocus(true); state.showingRecall = true
+                                },
+                                steer: { task in
+                                    guard !state.quickSending else { return }
+                                    let session = task.session ?? (task.isCurrent ? quickMessageModel?.workflowSession : nil)
+                                    if let session { onQuickMessageFocus(true); state.steeringTarget = session }
+                                }, openDock: openDock, openTask: onOpenTask)
             }
         }
+    }
+
+    private func resultPreview(_ target: EdgeResultTarget, model quickMessageModel: DockModel) -> some View {
+        EdgeResultPeek(target: target, load: { session in
+                                   if let cached = state.cachedResult(target) { return cached }
+                                   let loaded = try await quickMessageModel.resultPeek(for: session)
+                                   guard !Task.isCancelled else { return nil }
+                                   if let loaded { state.cacheResult(loaded, for: target) }
+                                   return loaded
+                               },
+                               back: { state.resultTarget = nil },
+                               reply: { onResultReply(target) },
+                               openSession: {
+                                   quickMessageModel.resumeSession(target.session)
+                                   state.resultTarget = nil
+                                   openDock()
+                               },
+                               reviewed: {
+                                   quickMessageModel.markQuickResultReviewed(target.session)
+                                   if let id = state.digestResultID { state.interruptions.review(id); state.digestResultID = nil }
+                               },
+                               refresh: {
+                                   state.clearResult(target)
+                                   if let newer = state.tasks.first(where: {
+                                       $0.id == target.task.id && $0.session?.profileID == target.session.profileID && $0.phase == .finished
+                                   }), let session = newer.session {
+                                       state.resultTarget = EdgeResultTarget(task: newer, session: session)
+                                   }
+                               },
+                               hasNewerResult: state.tasks.contains { $0.id == target.task.id && $0.phase == .finished && $0 != target.task },
+                               correct: { text, sources in
+                                   onResultReply(target)
+                                   guard state.quickTarget?.id == target.session.id, state.quickTarget?.profileID == target.session.profileID,
+                                         !state.quickSending, !state.quickNeedsReview, state.quickPreparing == 0 else { return }
+                                   state.quickDraft += (state.quickDraft.isEmpty ? "" : "\n\n") + text
+                                   sources.forEach { state.addQuickSource($0) }
+                               }, beginEditing: { onQuickMessageFocus(true) }, codingClient: quickMessageModel.controlRPCClient,
+                               openRepository: { path in
+                                   controlCenter.requestedRepositoryReview = QuickDestination(profileID: target.session.profileID, sessionID: target.session.id, title: target.session.displayTitle, projectPath: path)
+                                   quickMessageModel.resumeSession(target.session); state.resultTarget = nil; openDock()
+                               }, createdTask: { setup in
+                                   state.draftStore.save(setup.draft); state.draftStore.flush()
+                                   state.restoreQuickDraft(setup.draft); state.resultTarget = nil
+                                   state.quickResult = setup.error; onQuickMessageFocus(true)
+                               })
+                    .id(target.id)
     }
 
     private var taskToolbar: some View {
@@ -1032,8 +1594,8 @@ struct EdgeNotchShape: Shape {
     var side: EdgeDockSide = .right
 
     func path(in rect: CGRect) -> Path {
-        let shoulder: CGFloat = min(8, rect.width / 4)
-        let radius: CGFloat = min(12, rect.width / 2)
+        let shoulder: CGFloat = min(18, rect.width / 4)
+        let radius: CGFloat = min(26, rect.width / 2)
         var path = Path()
         path.move(to: CGPoint(x: rect.maxX, y: rect.minY))
         path.addQuadCurve(to: CGPoint(x: rect.maxX - shoulder, y: rect.minY + shoulder),
@@ -1075,9 +1637,11 @@ final class EdgeDockHostingView<Content: View>: NSHostingView<Content> {
         guard lastNotchHover != inside else { return }
         lastNotchHover = inside; onHoverChanged?(inside)
     }
-    override func mouseEntered(with event: NSEvent) { updateNotchHover(event) }
-    override func mouseMoved(with event: NSEvent) { updateNotchHover(event) }
+    // super must run: SwiftUI's own hover tracking is delivered through these.
+    override func mouseEntered(with event: NSEvent) { super.mouseEntered(with: event); updateNotchHover(event) }
+    override func mouseMoved(with event: NSEvent) { super.mouseMoved(with: event); updateNotchHover(event) }
     override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
         // Leaving via the pet must still schedule collapse after leaving the panel.
         lastNotchHover = nil; onHoverChanged?(false)
     }

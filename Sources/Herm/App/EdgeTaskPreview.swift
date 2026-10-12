@@ -23,6 +23,10 @@ struct EdgeNotchTask: Identifiable, Equatable {
     /// One-tap answers shown under an attention row (approval, clarify, queued card question).
     var choices: [String] = []
     var deliveryQuestion: EdgeDeliveryQuestion? = nil
+    var attentionRequest: AttentionRequest? = nil
+    var answerState: AttentionAnswerState? = nil
+    var isFailure = false
+    var routine: RoutineReference? = nil
 
     static func choiceLabel(_ choice: String) -> String {
         switch choice {
@@ -70,6 +74,7 @@ struct EdgeNotchTask: Identifiable, Equatable {
 
     var tone: DockStatusTone {
         guard isStatusCurrent || phase == .finished else { return .inactive }
+        if isFailure { return .attention }
         if let kanbanTask {
             switch SessionKanbanActivityPresentation.Status(rawValue: kanbanTask.status) {
             case .blocked: return .attention
@@ -127,7 +132,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
                     isCurrent: false,
                     isStatusCurrent: isOnline,
                     session: session,
-                    choices: attention[session.id]?.choices ?? []
+                    choices: attention[session.id]?.choices ?? [],
+                    attentionRequest: attention[session.id]?.responseTarget
                 )
             }
         return ([current].compactMap { $0 } + others).sorted { lhs, rhs in
@@ -153,6 +159,9 @@ struct EdgeTaskPreview: View {
     var quickModel: DockModel? = nil
     var closeReply: () -> Void = {}
     var answer: ((EdgeNotchTask, String) -> Void)? = nil
+    var peek: ((EdgeNotchTask) -> Void)? = nil
+    var recall: (() -> Void)? = nil
+    var steer: ((EdgeNotchTask) -> Void)? = nil
     let openDock: () -> Void
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     let openTask: (EdgeNotchTask) -> Void
@@ -219,7 +228,7 @@ struct EdgeTaskPreview: View {
         return VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
                 taskButton(task, bots: bots, now: now)
-                if task.kanbanTask == nil, task.phase != .attention, let reply, task.session != nil || task.isCurrent {
+                if task.routine == nil, task.kanbanTask == nil, task.phase != .attention, let reply, task.session != nil || task.isCurrent {
                     replyToggle(task, isReplying: isReplying, visible: isHovered || isReplying || task.isCurrent, reply: reply)
                         .padding(.top, 5)
                         .padding(.trailing, 4)
@@ -235,6 +244,11 @@ struct EdgeTaskPreview: View {
                     .padding(.bottom, 8)
                     .id("reply-\(task.id)")
                     .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .contextMenu {
+            if task.phase == .working, let steer {
+                Button("Steer a live subagent…") { steer(task) }
             }
         }
         .background(
@@ -269,7 +283,33 @@ struct EdgeTaskPreview: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockPress)
+                .disabled(!task.isStatusCurrent || task.answerState?.blocksSubmission == true
+                    || (task.deliveryQuestion == nil && task.attentionRequest == nil))
                 .accessibilityLabel("Answer \(EdgeNotchTask.choiceLabel(choice))")
+            }
+            if let submission = task.answerState {
+                HStack(alignment: .top, spacing: 6) {
+                    if case .sending = submission { ProgressView().controlSize(.mini) }
+                    Text(submission.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(3)
+                    if case .failed = submission {
+                        Button("Retry") { answer(task, submission.choice) }
+                            .buttonStyle(.dockHover)
+                            .font(.system(size: 11, weight: .medium))
+                            .disabled(!task.isStatusCurrent)
+                            .accessibilityLabel("Retry answer to \(task.title)")
+                    }
+                    if case .uncertain = submission,
+                       let request = task.attentionRequest, let quickModel {
+                        Button("Check request") { quickModel.recheckAttention(request) }
+                            .buttonStyle(.dockHover)
+                            .font(.system(size: 11, weight: .medium))
+                            .disabled(!task.isStatusCurrent)
+                            .accessibilityLabel("Check whether request for \(task.title) is still pending")
+                    }
+                }
             }
         }
         .padding(.horizontal, 10)
@@ -292,8 +332,17 @@ struct EdgeTaskPreview: View {
         .accessibilityLabel(isReplying ? "Close reply" : "Reply to \(task.title)")
     }
 
+    @ViewBuilder
+    private func statusMark(_ task: EdgeNotchTask, size: CGFloat = 12) -> some View {
+        if let state = task.activityState { DockActivityIndicator(state: state, size: size) }
+        else { DockStatusDot(tone: task.tone, pulses: true, muted: true) }
+    }
+
     private func taskButton(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
-        Button { openTask(task) } label: {
+        Button {
+            if task.phase == .finished, task.kanbanTask == nil, let peek { peek(task) }
+            else { openTask(task) }
+        } label: {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let assignee = task.kanbanTask?.assignee, !assignee.isEmpty {
                     let bot = bots.bot(for: assignee)
@@ -305,14 +354,14 @@ struct EdgeTaskPreview: View {
                         }
                     }
                     .overlay(alignment: .bottomTrailing) {
-                        DockStatusDot(tone: task.tone, pulses: true, muted: true)
-                            .background(Circle().fill(Color.dockCanvas).padding(-2))
-                            .offset(x: 2, y: 2)
+                        statusMark(task, size: 16)
+                            .background(Circle().fill(Color.dockCanvas).padding(-1))
+                            .offset(x: 4, y: 4)
                     }
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     .accessibilityLabel("Assigned to \(bot?.name ?? assignee)")
                 } else {
-                    DockStatusDot(tone: task.tone, pulses: true, muted: true)
+                    statusMark(task)
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                 }
                 VStack(alignment: .leading, spacing: 3) {
@@ -346,9 +395,9 @@ struct EdgeTaskPreview: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
-        .help(task.kanbanTask != nil ? "Open this Kanban card" : task.isCurrent ? "Open the current session" : "Open this session")
+        .help(task.kanbanTask != nil ? "Open this Kanban card" : task.phase == .finished && peek != nil ? "Preview saved reply" : "Open this session")
         .accessibilityLabel([task.title, task.isCurrent ? "current session" : nil, task.displayStatus, task.detail]
-            .compactMap { $0 }.joined(separator: ". ") + (task.kanbanTask != nil ? ". Open Kanban card" : ". Open session"))
+            .compactMap { $0 }.joined(separator: ". ") + (task.kanbanTask != nil ? ". Open Kanban card" : task.phase == .finished && peek != nil ? ". Preview saved reply" : ". Open session"))
     }
 
     @ViewBuilder
@@ -398,6 +447,7 @@ struct EdgeTaskPreview: View {
             if let quickMessage {
                 EdgePreviewFooterButton(title: "Quick message", icon: .chats, action: quickMessage)
             }
+            if let recall { EdgePreviewFooterButton(title: "Search", icon: .magnifyingGlass, action: recall) }
             Spacer(minLength: 0)
             EdgePreviewFooterButton(title: "Open Herm", icon: .sidebarSimple,
                                     shortcutHelp: workspaceShortcut.title, action: openDock)
@@ -453,7 +503,7 @@ struct EdgePreviewFooterButton: View {
 
 /// A clarify question a headless coordinator turn queued for the user (software-delivery plugin,
 /// `$HERMES_HOME/delivery/questions/<card>.json`). Answered by messaging the asking session.
-struct EdgeDeliveryQuestion: Equatable {
+struct EdgeDeliveryQuestion: Hashable {
     let taskID: String
     let sessionID: String
     var profileID: String? = nil
@@ -462,6 +512,14 @@ struct EdgeDeliveryQuestion: Equatable {
     let file: URL
 
     func answerText(_ choice: String) -> String { "ANSWER \(taskID): \(choice)" }
+
+    func answerDraft(_ choice: String) throws -> QuickDraftRecord {
+        guard !sessionID.isEmpty, choices.contains(choice) else {
+            throw QuickDraftError.message("This question no longer has a valid answer destination.")
+        }
+        return QuickDraftRecord(destination: QuickDestination(profileID: profileID,
+            sessionID: sessionID, title: "Bot Chat"), text: answerText(choice))
+    }
 
     static var directory: URL {
         let home = ProcessInfo.processInfo.environment["HERMES_HOME"].map { URL(fileURLWithPath: $0) }

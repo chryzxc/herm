@@ -187,7 +187,7 @@ struct EdgeNotchTests {
         let state = EdgeNotchState()
         #expect(state.isQuiet)
         #expect(state.railWidth == 56)
-        #expect(state.railHeight == 60)
+        #expect(state.railHeight == 96)
         state.expanded = true
         #expect(!state.isQuiet)
         #expect(state.railWidth == 72)
@@ -241,8 +241,11 @@ struct EdgeNotchTests {
         #expect(ProviderMark(providerID: "codex-hermes-0", displayName: "Codex via Hermes") == .openAI)
         #expect(ProviderMark(providerID: "opencode", displayName: "OpenCode Go") == .openCode)
         #expect(ProviderMark(providerID: "glm", displayName: "GLM Coding Plan") == .zai)
+        #expect(ProviderMark(providerID: "deepseek", displayName: "DeepSeek") == .deepSeek)
+        #expect(ProviderMark(providerID: "kimi", displayName: "Kimi") == .kimi)
+        #expect(ProviderMark(providerID: "openrouter", displayName: "OpenRouter") == .openRouter)
         #expect(ProviderMark(providerID: "antigravity", displayName: "Antigravity") == .antigravity)
-        #expect(ProviderMark(providerID: "kimi", displayName: "Kimi") == .monogram("K"))
+        #expect(ProviderMark(providerID: "mistral", displayName: "Mistral") == .monogram("M"))
     }
 
     @MainActor @Test func dragCancelsPendingExpansionDuringHover() {
