@@ -636,12 +636,8 @@ struct QuotaWorkspaceView: View {
         }
     }
 
-    @ViewBuilder
     private func peakStatusLine(_ providerID: String, now: Date) -> some View {
-        if let notice = ProviderPeakSchedule.notice(forQuotaID: providerID, now: now) {
-            insight(notice.text, color: notice.isPeak ? .dockWarning : .dockSuccess, icon: .clock)
-                .help(notice.help)
-        }
+        PeakNoticeBadge(quotaID: providerID)
     }
 
     private func insight(_ text: String, color: Color, icon: Ph? = nil) -> some View {

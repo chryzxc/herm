@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Fixed daily peak windows a provider publishes (billing or quota-burn rates
 /// differ inside them). Everything outside the windows is off-peak.
@@ -7,6 +8,8 @@ struct ProviderPeakSchedule {
         let isPeak: Bool
         /// When the current period ends and the other begins.
         let changesAt: Date
+        /// The current or next peak window, as absolute instants.
+        let peak: Range<Date>
     }
 
     /// Peak windows as whole local hours, e.g. `9..<12`.
@@ -21,7 +24,7 @@ struct ProviderPeakSchedule {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let today = calendar.startOfDay(for: now)
-        var nextPeakStart: Date?
+        var nextPeak: Range<Date>?
         // ponytail: scans 8 days; a schedule with no weekday in range returns nil.
         for dayOffset in -1...8 {
             guard let day = calendar.date(byAdding: .day, value: dayOffset, to: today),
@@ -29,11 +32,11 @@ struct ProviderPeakSchedule {
             for hours in peakHours {
                 guard let start = calendar.date(byAdding: .hour, value: hours.lowerBound, to: day),
                       let end = calendar.date(byAdding: .hour, value: hours.upperBound, to: day) else { continue }
-                if start <= now, now < end { return Status(isPeak: true, changesAt: end) }
-                if start > now, nextPeakStart.map({ start < $0 }) ?? true { nextPeakStart = start }
+                if start <= now, now < end { return Status(isPeak: true, changesAt: end, peak: start..<end) }
+                if start > now, nextPeak.map({ start < $0.lowerBound }) ?? true { nextPeak = start..<end }
             }
         }
-        return nextPeakStart.map { Status(isPeak: false, changesAt: $0) }
+        return nextPeak.map { Status(isPeak: false, changesAt: $0.lowerBound, peak: $0) }
     }
 
     /// Built-in schedules, used until the first web sync.
@@ -143,8 +146,36 @@ extension ProviderPeakSchedule {
     static func notice(forQuotaID id: String, now: Date = .now) -> Notice? {
         guard let schedule = schedule(for: id), let status = schedule.status(at: now) else { return nil }
         let left = QuotaWorkspacePresentation.compactDuration(from: now, to: status.changesAt)
+        // Formatted in the device's current time zone, so travel needs no refresh.
+        let time = Date.FormatStyle(date: .omitted, time: .shortened, timeZone: .autoupdatingCurrent)
+        let window = "Peak \(status.peak.lowerBound.formatted(time)) – \(status.peak.upperBound.formatted(time)) your time."
         return status.isPeak
-            ? Notice(text: "Peak hours · off-peak in \(left)", help: schedule.peakNote, isPeak: true)
-            : Notice(text: "Off-peak now · \(left) left", help: "Peak starts in \(left). \(schedule.peakNote)", isPeak: false)
+            ? Notice(text: "Peak hours · off-peak in \(left)", help: "\(window) \(schedule.peakNote)", isPeak: true)
+            : Notice(text: "Off-peak now · \(left) left", help: "Peak starts in \(left). \(window) \(schedule.peakNote)", isPeak: false)
+    }
+}
+
+/// Green "ok to use" / amber "peak" capsule, ticking every minute.
+struct PeakNoticeBadge: View {
+    let quotaID: String
+    var compact = false
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            if let notice = ProviderPeakSchedule.notice(forQuotaID: quotaID, now: context.date) {
+                let color = notice.isPeak ? Color.dockWarning : Color.dockSuccess
+                HStack(spacing: 5) {
+                    DockIcon(notice.isPeak ? .warning : .checkCircle, size: compact ? 10 : 12, color: color)
+                    Text(notice.text)
+                        .font(compact ? .system(size: 10, weight: .medium) : DockTypography.control)
+                        .foregroundStyle(color)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, compact ? 7 : 10)
+                .padding(.vertical, compact ? 3 : 5)
+                .background(Capsule().fill(color.opacity(0.14)))
+                .help(notice.help)
+            }
+        }
     }
 }

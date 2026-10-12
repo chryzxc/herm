@@ -184,7 +184,11 @@ struct ModelPickerView: View {
                     DockMenuSection(group.provider) {
                         if let notice = ProviderPeakSchedule.quotaID(forProvider: group.provider)
                             .flatMap({ ProviderPeakSchedule.notice(forQuotaID: $0) }) {
-                            Label(notice.text, icon: notice.isPeak ? .warning : .info)
+                            let color = notice.isPeak ? Color.dockWarning : Color.dockSuccess
+                            HStack(spacing: 6) {
+                                DockIcon(notice.isPeak ? .warning : .checkCircle, size: 12, color: color)
+                                Text(notice.text).foregroundStyle(color)
+                            }
                         }
                         ForEach(group.models) { option in
                             Button {

@@ -174,6 +174,7 @@ struct EdgeQuotaPreview: View {
                             .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                             .frame(height: 20)
+                        PeakNoticeBadge(quotaID: snapshot.provider, compact: true)
                         let windows = Self.compactWindows(snapshot.windows)
                         if windows.isEmpty {
                             Text(snapshot.safeDetail ?? "No quota windows reported")
@@ -247,6 +248,7 @@ struct EdgeQuotaPreview: View {
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
                     }
+                    PeakNoticeBadge(quotaID: snapshot.provider, compact: true)
                     let windows = Self.compactWindows(snapshot.windows)
                     HStack(spacing: 4) {
                         if windows.isEmpty {
