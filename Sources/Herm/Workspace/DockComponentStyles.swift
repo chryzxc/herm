@@ -362,16 +362,20 @@ extension View {
 /// Battery and Wi-Fi. Keeping this as a view instead of approximating it with
 /// layered SwiftUI colors gives the panel the real appearance-aware blur.
 struct NativePopoverBackground: NSViewRepresentable {
+    /// Glass uses the lighter window-under material so a bright wallpaper
+    /// reads as frosted light/dark glass instead of the popover's gray cast.
+    var material: NSVisualEffectView.Material = .popover
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .popover
+        view.material = material
         view.blendingMode = .behindWindow
         view.state = .active
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = .popover
+        nsView.material = material
         nsView.blendingMode = .behindWindow
         nsView.state = .active
     }
@@ -384,9 +388,23 @@ struct DockWindowBackground: View {
     // Observed so the canvas repaints on theme switch; it has no other inputs.
     @ObservedObject private var themeStore = DockThemeStore.shared
 
+    /// Glass samples the real backdrop with the system Liquid Glass effect
+    /// (macOS 26+); older systems and System skin use the blur material.
+    @ViewBuilder private var glassOrPopover: some View {
+        if DockThemeRuntime.current == .glass, #available(macOS 26.0, *) {
+            // glassEffect alone barely blurs; blur the backdrop first so text
+            // from windows behind Herm cannot be read through it.
+            NativePopoverBackground(material: .hudWindow)
+                .overlay(Color.clear.glassEffect(.regular, in: Rectangle()))
+        } else {
+            NativePopoverBackground(material: DockThemeRuntime.current == .glass ? .underWindowBackground : .popover)
+        }
+    }
+
     var body: some View {
         if DockThemeRuntime.current.usesNativeMaterial {
-            NativePopoverBackground()
+            glassOrPopover
+                .id(DockThemeRuntime.revision)
                 .overlay(DockThemePalette(theme: DockThemeRuntime.current).windowBackground)
         } else {
             Color.dockCanvas.overlay(DockBackdrop())
@@ -479,8 +497,12 @@ struct DockPrimaryButtonStyle: ButtonStyle {
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
             .background {
-                shape.fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1)).stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline)
-                if DockThemeStyle.current.accentGradient {
+                if DockThemeStyle.current.material == .glass {
+                    Color.clear.dockLiquidGlass(shape, tint: Color.dockAccent, interactive: true)
+                } else {
+                    shape.fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1)).stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline)
+                }
+                if DockThemeStyle.current.accentGradient && DockThemeStyle.current.material != .glass {
                     shape.fill(LinearGradient(colors: [Color.white.opacity(0.20), .clear], startPoint: .top, endPoint: .bottom))
                 }
             }
@@ -511,7 +533,9 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
             .background {
-                if DockThemeStyle.current.chrome == .boxed {
+                if DockThemeStyle.current.material == .glass {
+                    Color.clear.dockLiquidGlass(shape, interactive: true)
+                } else if DockThemeStyle.current.chrome == .boxed {
                     shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)).stroke(Color.dockBorder, lineWidth: DockLayout.outline)
                 }
             }
@@ -608,23 +632,25 @@ struct DockPageHeader<Trailing: View>: View {
         self.trailing = trailing
     }
 
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(DockTypography.pageTitle)
-                    .foregroundStyle(Color.dockPrimaryText)
-                Text(subtitle)
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 12)
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(DockTypography.pageTitle)
+                .foregroundStyle(Color.dockPrimaryText)
+            Text(subtitle)
+                .font(.system(size: 10))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
+        }
+    }
+
+    private var refreshButton: some View {
+        Group {
             if let onRefresh {
                 Button(action: onRefresh) {
                     Group {
                         if isRefreshing {
-                            ProgressView().controlSize(.small)
+                            ProgressView().controlSize(.small).tint(Color.dockSecondaryText)
                         } else {
                             DockIcon(.arrowsClockwise)
                                 .font(.system(size: 14, weight: .medium))
@@ -637,7 +663,27 @@ struct DockPageHeader<Trailing: View>: View {
                 .disabled(isRefreshing)
                 .help("Refresh")
             }
-            trailing()
+        }
+    }
+
+    var body: some View {
+        // One row when it fits; in the minimized panel the trailing controls
+        // drop to their own row instead of truncating.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 12) {
+                titleBlock.frame(maxWidth: 360, alignment: .leading)
+                Spacer(minLength: 12)
+                refreshButton
+                trailing().fixedSize(horizontal: true, vertical: false)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .center, spacing: 12) {
+                    titleBlock
+                    Spacer(minLength: 12)
+                    refreshButton
+                }
+                HStack(spacing: 8) { trailing() }
+            }
         }
         .padding(.bottom, 10)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -700,57 +746,146 @@ struct DockCallout<Content: View>: View {
     var body: some View {
         let tint = tone.color
         let shape = DockThemeShape(cornerRadius: DockLayout.paneRadius, role: .pane)
-        VStack(alignment: .leading, spacing: DockSpacing.group) {
-            HStack(alignment: .top, spacing: DockSpacing.control) {
-                DockIcon(icon, size: 15, color: tint)
-                    .frame(width: 28, height: 28)
-                    .background(DockThemeShape(cornerRadius: DockLayout.controlRadius).fill(tint.opacity(0.10)))
-                VStack(alignment: .leading, spacing: DockSpacing.tight) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .firstTextBaseline, spacing: DockSpacing.control) {
-                            titleLabel
-                            Spacer(minLength: 8)
-                            if let badge { statusLabel(badge, tint: tint).fixedSize() }
-                        }
-                        VStack(alignment: .leading, spacing: DockSpacing.tight) {
-                            titleLabel
-                            if let badge { statusLabel(badge, tint: tint) }
-                        }
-                    }
-                    if let message, !message.isEmpty {
-                        Text(message)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockSecondaryText)
-                            .lineSpacing(2)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .padding(.top, 2)
+        VStack(alignment: .leading, spacing: 0) {
+            // Header band: the tone lives here, so every callout reads the same
+            // at a glance and the body stays neutral.
+            HStack(spacing: DockSpacing.control) {
+                DockIcon(icon, size: 14, weight: .fill, color: tint)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: DockSpacing.control)
+                if let badge { statusPill(badge, tint: tint) }
             }
-            content()
+            .padding(.horizontal, DockSpacing.group)
+            .padding(.vertical, DockSpacing.control + 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(tint.opacity(0.09))
+
+            let hasMessage = !(message ?? "").isEmpty
+            if hasMessage || Content.self != EmptyView.self {
+                VStack(alignment: .leading, spacing: DockSpacing.group) {
+                    if let message, hasMessage {
+                        DockExpandableText(message, lineLimit: 4, prominent: true)
+                    }
+                    content()
+                }
+                .padding(DockSpacing.group)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .padding(DockSpacing.group)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(shape.fill(Color.dockSurface))
+        .background(Color.dockSurface)
+        .clipShape(shape)
         .overlay(shape.stroke(tint.opacity(0.35), lineWidth: DockLayout.hairline))
         .dockFoldCrease()
         .accessibilityElement(children: .contain)
     }
 
-    private var titleLabel: some View {
-        Text(title)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color.dockPrimaryText)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func statusLabel(_ badge: String, tint: Color) -> some View {
+    private func statusPill(_ badge: String, tint: Color) -> some View {
         HStack(spacing: DockSpacing.micro) {
             Circle().fill(tint).frame(width: 5, height: 5)
             Text(badge).font(.system(size: 11, weight: .semibold))
         }
         .foregroundStyle(tint)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(tint.opacity(0.14)))
+        .fixedSize()
+    }
+}
+
+/// A labelled, collapsed-by-default block for supporting detail (scope, limits,
+/// stack traces) so the decision and its buttons stay above the fold.
+struct DockCalloutDisclosure: View {
+    let title: String
+    let text: String
+    @State private var isOpen = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DockSpacing.tight) {
+            Button {
+                withAnimation(.easeOut(duration: 0.15)) { isOpen.toggle() }
+            } label: {
+                HStack(spacing: DockSpacing.tight) {
+                    DockIcon(isOpen ? .caretDown : .caretRight, size: 11, color: .dockMetadataText)
+                    Text(title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockSecondaryText)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(.isButton)
+            if isOpen {
+                ScrollView(.vertical) {
+                    Text(text)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineSpacing(2)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                .fill(Color.dockSurface2.opacity(0.6))
+                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+        )
+    }
+}
+
+/// Secondary text that collapses to a few lines with a Show more toggle, so a
+/// long scope or error never pushes the actions off screen. Short text renders
+/// as plain text with no toggle.
+struct DockExpandableText: View {
+    let text: String
+    var lineLimit = 4
+    var monospaced = false
+    var prominent = false
+
+    @State private var isExpanded = false
+
+    init(_ text: String, lineLimit: Int = 4, monospaced: Bool = false, prominent: Bool = false) {
+        self.text = text
+        self.lineLimit = lineLimit
+        self.monospaced = monospaced
+        self.prominent = prominent
+    }
+
+    // ponytail: length/newline heuristic instead of measuring rendered lines.
+    private var isLong: Bool {
+        text.count > lineLimit * 70 || text.split(separator: "\n", omittingEmptySubsequences: false).count > lineLimit
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DockSpacing.tight) {
+            Text(text)
+                .font(.system(size: 12, design: monospaced ? .monospaced : .default))
+                .foregroundStyle(prominent ? Color.dockPrimaryText : Color.dockSecondaryText)
+                .lineSpacing(2)
+                .lineLimit(isExpanded || !isLong ? nil : lineLimit)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            if isLong {
+                Button(isExpanded ? "Show less" : "Show more") {
+                    withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
+            }
+        }
     }
 }
 
@@ -759,6 +894,13 @@ struct DockCalloutActions<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
+        VStack(alignment: .leading, spacing: DockSpacing.group) {
+            Rectangle().fill(Color.dockBorderLight).frame(height: DockLayout.hairline)
+            actions
+        }
+    }
+
+    private var actions: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: DockSpacing.control, content: content)
                 .fixedSize(horizontal: true, vertical: false)
@@ -850,12 +992,13 @@ extension View {
     /// Liquid Glass surface: native `glassEffect` on macOS 26, otherwise a
     /// blurred body with a specular rim and a soft top sheen approximating it.
     @ViewBuilder
-    func dockLiquidGlass<S: Shape>(_ shape: S, interactive: Bool = false) -> some View {
+    func dockLiquidGlass<S: Shape>(_ shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
         if #available(macOS 26.0, *) {
-            self.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+            self.glassEffect({ var g = Glass.regular; if let tint { g = g.tint(tint) }; return interactive ? g.interactive() : g }(), in: shape)
         } else {
             self
                 .background(shape.fill(.ultraThinMaterial))
+                .background(shape.fill((tint ?? .clear).opacity(0.55)))
                 .background(shape.fill(LinearGradient(colors: [.white.opacity(0.14), .clear], startPoint: .top, endPoint: .center)))
                 .overlay(shape.stroke(
                     LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.08), .white.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -940,7 +1083,8 @@ struct DockTabButton: View {
                 .foregroundStyle(isSelected ? (DockThemeStyle.current.selection == .invert ? Color.dockCanvas : Color.dockPrimaryText) : Color.dockSecondaryText)
                 .padding(.horizontal, 10)
                 .frame(height: 30)
-                .dockSelectionBackground(shape, active: isSelected, fill: Color.dockSurface4)
+                .dockSelectionBackground(shape, active: isSelected, fill: DockThemeStyle.current.material == .glass ? .clear : Color.dockSurface4)
+                .background { if isSelected && DockThemeStyle.current.material == .glass { Color.clear.dockLiquidGlass(shape, interactive: true) } }
                 .overlay(shape.stroke(isSelected && DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline))
         }
         .buttonStyle(.dockHover)
@@ -1021,6 +1165,10 @@ extension View {
     func dockHoverTip(_ text: String, edge: Edge = .bottom, gap: CGFloat = 6) -> some View {
         modifier(DockHoverTip(text: text, edge: edge, gap: gap))
     }
+
+    /// Shadows SwiftUI's `.help`: native tooltips only show in the key window, so
+    /// they fail in Herm's non-activating panels. Every `.help("…")` draws our tip.
+    func help(_ text: String) -> some View { dockHoverTip(text) }
 }
 
 /// Pins the SwiftUI colour scheme for fixed light/dark skins; system skins follow macOS.
@@ -1051,5 +1199,23 @@ struct DockBevel: View {
             }
             .allowsHitTesting(false)
         }
+    }
+}
+
+/// A text field whose placeholder follows the theme. The system placeholder
+/// color ignores theme tokens and can vanish on themed surfaces.
+struct DockTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    var axis: Axis = .horizontal
+
+    init(_ placeholder: String, text: Binding<String>, axis: Axis = .horizontal) {
+        self.placeholder = placeholder
+        self._text = text
+        self.axis = axis
+    }
+
+    var body: some View {
+        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(Color.dockMetadataText), axis: axis)
     }
 }

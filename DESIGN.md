@@ -317,8 +317,23 @@ will appear or what to do next.
 
 ### Themes
 
+**Adding a theme (standard).** A theme is one `DockThemeID` case in
+`DockTheme.swift`. The `title`, `detail`, `appearance`, `style`, `hermesSkinID`
+and palette `roles` switches are exhaustive (no `default`), so the compiler
+lists every place to fill in. Then:
+
+1. Pick `appearance` honestly: `.system` only for themes with distinct light and
+   dark palettes (`roles(_, dark:)`); native-material themes (System, Glass) must be `.system`.
+2. Set `style.material = .glass` for Liquid Glass; `usesNativeMaterial` derives
+   from it. Never special-case a theme id in views; add a `DockThemeStyle` knob.
+3. Read colors only through `Color.dock*` tokens and `DockThemeStyle.current`.
+4. Run `DockThemeContrastTests` (text/icon contrast) and
+   `everyThemeSatisfiesTheThemeStandard`; both iterate `allCases`.
+5. Switch to it from a light skin and from a dark skin without relaunching;
+   window appearance is reset per window in `applyToApplication`.
+
 Herm has one global theme preference stored under
-`hermes.dock.theme.v1`. Native macOS is the default and follows the system
+`hermes.dock.theme.v1`. Glass is the default and follows the system
 Light/Dark setting. It composites translucent graphite role colors over
 AppKit's popover material and uses macOS label, accent, and status hues; the
 other themes keep opaque authored canvases. Hermes palettes map stable skin IDs (`default`, `ares`,
@@ -346,7 +361,7 @@ Herm surface consumes these semantic tokens: navigation, workspace,
 conversations, composer, inspectors, repository tools, settings, popovers,
 menus, sheets, and confirmations. One shared theme store drives every window.
 The selected theme also sets the application appearance (Light, Dark, or system
-for Native macOS), so AppKit text, nested hosting views, menus, and sheets
+for System), so AppKit text, nested hosting views, menus, and sheets
 resolve colors under the same theme. Every hosting root, including split-view
 panes, applies the themed default text color and control tint. Views must not
 use system label, separator, or window colors in themed surfaces, and content
@@ -512,7 +527,7 @@ workspace states share the theme's canvas and text colors, with a 1pt
 `dockBorderStrong` border around the contour.
 
 **Preview.** Hover or new work morphs the rail into an attached preview. It is
-a fixed 368 × 360pt panel with 352 × 312pt of content. The size never changes
+a fixed 368 × 360pt panel with stable inset content. The size never changes
 with content, so arriving tasks and refreshes do not resize it. The preview
 has three parts:
 
@@ -544,6 +559,31 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   An empty section is omitted. Pending requests include other sessions, use a
   bounded request summary, and remain visible until answered or expired. Select
   the row to review the full request and respond in the workspace.
+  One-tap answers capture the original profile, session and request ID. Only
+  that request is disabled while submitting; a received refusal exposes Retry
+  in the same card. An unacknowledged response remains unavailable for another
+  quick submission and directs the user to review the session. Answers never
+  retry automatically. Check request uses an authoritative pending-request
+  read before enabling another answer. If the runtime cannot provide that read,
+  the request stays uncertain. Answers never consume the workspace draft or
+  attachments. Missing request IDs require the
+  workspace rather than an unscoped quick answer. File-delivered questions are
+  removed only after acknowledged submission and only while their contents
+  still match the answered question.
+  A finished session row opens Result Peek inside the same fixed preview.
+  Result Peek reads the latest saved reply on demand, with files from that
+  reply's user turn. It never uses the index preview as output or asks Hermes
+  to generate a summary. Reading does not switch the workspace session. A
+  deliberate selection marks a matching completion reviewed after its content
+  loads; hovering does not acknowledge it. Copy copies a bounded excerpt; Reply deliberately
+  enters the targeted quick composer; Open session selects the captured session.
+  Missing files show File not found, and relative paths require the session
+  rather than resolving against Herm's process directory. Loading, unavailable,
+  empty and loaded states keep the same header and footer.
+  The fallback label is Latest completed reply. The excerpt is limited to
+  12,000 characters and 12 actual outputs. At most eight snapshots are held
+  in memory. New activity invalidates cached reads while the displayed result
+  stays frozen; Update explicitly requests new content.
 - Rows are quiet: no border or surface at rest, a `dockSurface4` fill on hover
   and a fainter one for the current session. A one-line 12pt semibold title
   sits beside the status dot and trailing metadata. The next line is the 11pt
@@ -580,7 +620,80 @@ with a result the user has not opened. The list has no cap; the body scrolls.
 - Explicitly entering the composer gives the panel keyboard focus and prevents
   pointer-exit dismissal and automatic announcements from interrupting typing.
   Back, Escape, tab changes, or Open Herm leave composition. The separate draft
-  survives preview collapse in memory.
+  survives preview collapse and restart in a dedicated QuickDraftStore file.
+  To, Add, Paste, Drafts and More operate within the existing composer. The
+  destination names the captured profile and session; a chosen project is
+  explicit. Workspace navigation never retargets a nonempty quick draft.
+  Captured URLs are references, not browser or agent actions. Files use
+  bookmarks; pasted images live in draft-owned storage. One PDF up to 25 MB
+  and image/generic files up to 50 MB are supported. Folders are rejected.
+  Generic files use file.attach and its actual returned reference.
+  Missing, changed and inaccessible files remain visible for repair. Preparing,
+  rejected and uncertain submissions use the existing status slot. Protected
+  attachment submission requires the runtime's advertised exclusive-submit
+  capability. An interrupted operation restores as needing review, never as
+  an in-flight send. Known uploads are retained for safe retry or scoped image
+  cleanup. Only acknowledged sends or confirmed discard clean up owned files.
+
+**Routine recovery.** Activity includes failed execution, blocked configuration, delivery errors,
+and explicitly pinned routines. Routine detail replaces the body, names its owner profile,
+and separates execution from delivery. View report reads its captured report session. Pause,
+Resume and Run now confirm the affected profile/job and refresh authoritative state. Run now
+starts a new execution; it does not retry delivery. Repeat triggers remain disabled until a
+new run is recorded or the user explicitly reviews history and authorizes a fresh attempt.
+Skills & MCP repair opens the existing workspace modal with the captured profile. Lifecycle
+operations keep Hermes' installation checks; credentials use secure fields and never enter
+preview/draft persistence. OAuth polling and skill-removal outcome checks run only during
+an explicit action. A live MCP reload warns that it affects all connected runtime sessions.
+
+**Destinations and Recall.** Named working sets store profile/session/project references, not
+transcripts or runtime aliases. Choosing a destination never navigates the workspace. Missing
+references remain visible, disabled, and repairable. Search replaces the scrolling body from
+an existing footer/menu action and deliberately takes keyboard focus. It searches the chosen
+profile on Hermes with a 300ms debounce and at most 20 results. Open conversation makes no
+exact-message jump claim. Insert preserves the quick draft recipient and adds its source.
+
+**Session capacity.** A user-selected session may expose configured model choices and Stop
+this turn after an owned resume. Changes require acknowledged session scope and idle state.
+Account quota appears only with a stable, unambiguous provider/account match. Multiple account
+pools and unavailable mappings remain aggregate advisories. Read time and missing upstream
+freshness are explicit. Reported remaining allowance of 20% or less adds a nonblocking quick
+Send advisory; it does not switch models or predict completion. Capacity reads occur when the
+user opens the relevant composer/detail, without another idle polling loop.
+
+**Source and coding review.** Result Peek has Sources and Coding review disclosures. Links
+actually present in the saved excerpt are candidates, pinned only explicitly. User-added URLs,
+labels, origin and supplied reply references remain references; they do not verify particular claims. Selected
+sources and quoted corrections target the original session. Markdown export names the bounded
+reviewed excerpt and its pins. Coding reads the originating session directory only when expanded.
+A clean captured HEAD plus acknowledged and observed turn ownership enables Changes since turn started, with a warning about other writers;
+missing/dirty baselines show current repository scope. Verification requires matching repository
+and revision provenance. Refresh is explicit and external changes invalidate known evidence.
+New task in worktree confirms the repository/profile, creates a native Git worktree from HEAD,
+then verifies Hermes' explicit directory before presenting the unsent task. Partial setup retains
+the worktree and recoverable draft. Live-subagent steering selects a child from its owned parent
+session; Queued remains distinct from delivery. Memory correction loads the actual fingerprinted
+entry/profile and confirms edit/delete. No memory graph or pending-write approval is recreated.
+
+**Quiet periods.** Quiet is explicitly started from the existing Tasks header;
+60 minutes is the default, with 30 minutes and Until I end it alternatives.
+One app-boundary coordinator classifies existing notices. Approval, clarification
+and authoritative stopping failures may interrupt; ordinary completion, quota
+and informational notices enter a digest. This policy applies before notch
+expansion, pet announcement reactions and opted-in system notifications. The rail
+keeps meaningful attention and unread indicators. No new polling loop is added.
+
+The digest replaces the preview body and keeps its surrounding slots. It holds
+at most 50 origin/event references and an overflow count, persisted with quiet
+expiry; it does not save response bodies. Restored card and other unavailable
+source references wait for their owner inventory to reconcile. Selecting a
+completion opens Result Peek, and only a successful deliberate read reviews it.
+A completion retains its original profile and session even outside the visible
+inventory. Restored completions permit an explicit scoped read with the existing
+retry state; this does not restore expired questions as actionable decisions.
+Other entries open their actual source. At period end, one announcement waits
+for composition, dragging and result-reading guards to permit it. Clear requires
+confirmation and removes only Herm's saved references.
 
 **Kanban activity.** The Kanban selection shows all running, blocked, and
 review cards across boards,
@@ -755,7 +868,7 @@ the hue of the theme's base surface at fixed lightness, with saturation capped
 so strong themes tint rather than flood the scene. Furniture stays one
 honey-oak studio set with low-poly potted trees in every theme. Dark themes
 dim the same materials; light and sky follow the clock in every theme. The theme accent tints glass, signage and screens only. Room floor finishes blend toward the base floor so they stay calm
-in both appearances. Native macOS follows the system appearance. Changing the theme
+in both appearances. System follows the system appearance. Changing the theme
 rebuilds the room materials, lights and background in place. Rooms are
 identified by numbered hanging signs with a title and a short subtitle that
 names the room's work (for example, QA Lab: Tests & verification). Bots stay small white robots in every theme, with a dark
@@ -798,6 +911,12 @@ roster.
 
 The sidebar is the reference implementation of the navigation patterns in
 the design system; other panes copy it rather than restyle it.
+
+The desktop conversation list keeps its 300pt minimum while resizing; the
+workspace takes the remaining width when both pane minimums cannot fit.
+Section headings stay on one line and truncate rather than wrapping vertically.
+When the conversation and inspector cannot fit side by side, the inspector
+uses the workspace pane with a Back to conversation action.
 
 The 56pt header bar holds the Bot switcher (avatar, name over role,
 chevrons-up-down when more than one Bot is visible) and two `DockIconButton`s:
@@ -843,6 +962,26 @@ project remains neutral and uses only an accent folder to show containment.
 Session selection is profile-scoped and owned by navigation state, so refreshes
 may update projections but never clear a still-valid selection. Only explicit
 navigation or authoritative removal can clear it.
+
+### Pinned messages
+
+Message pins are Hermes-owned bookmarks, separate from conversation pins and
+model context. Completed user and assistant messages with verified stored row
+identities offer Pin/Unpin in their existing action row. An unpersisted or
+streaming row never guesses its durable identity from text or position.
+
+The conversation header's pin action opens a fixed-size popover with 12pt
+titles and previews. Selecting a pin pages in older history if necessary and
+jumps to the exact original message; it never falls back to a nearby message.
+Refresh, loading, empty, unavailable, stale, and mutation errors stay inside
+this popover. A failed refresh retains existing pins with an error and disables
+mutations until a successful refresh. Mutations display pending state and
+change the pin projection only after Hermes confirms and is reread.
+
+Pins follow the compression lineage's stable message identities. Explicit
+branches have independent pin sets. Profile or conversation changes discard
+the local projection and fence late responses from the previous selection.
+Older Hermes runtimes must show support as unavailable, never local-only pins.
 
 ### Settings workspace
 

@@ -41,8 +41,9 @@ struct DockThemeContrastTests {
                     }
                 }
                 check("primary", p.primaryText, surfaces, min: 4.5)
-                check("secondary", p.secondaryText, Array(surfaces.prefix(4)), min: 4.0)
-                check("metadata", p.metadataText, Array(surfaces.prefix(2)), min: 3.0)
+                check("secondary", p.secondaryText, Array(surfaces.prefix(4)), min: 5.0)
+                check("secondary", p.secondaryText, [surfaces[4]], min: 4.5)
+                check("metadata", p.metadataText, Array(surfaces.prefix(3)), min: 4.5)
                 check("accent", p.accent, Array(surfaces.prefix(2)), min: 3.0)
                 check("success", p.success, Array(surfaces.prefix(2)), min: 3.0)
                 check("warning", p.warning, Array(surfaces.prefix(2)), min: 3.0)

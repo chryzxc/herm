@@ -512,6 +512,9 @@ struct DockSectionHeader<Actions: View>: View {
             Text(title.uppercased())
                 .font(DockTypography.sectionLabel)
                 .tracking(0.6)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
                 .foregroundStyle(isHovering && isExpanded != nil ? style.secondaryText : style.metadataText)
             if let count {
                 Text(count > 99 ? "99+" : "\(count)")

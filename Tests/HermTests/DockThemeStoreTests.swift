@@ -4,12 +4,12 @@ import Testing
 
 @MainActor
 struct DockThemeStoreTests {
-    @Test func defaultsToNativeMacOSAndPersistsSelection() {
+    @Test func defaultsToGlassAndPersistsSelection() {
         let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let first = DockThemeStore(defaults: defaults)
-        #expect(first.selectedThemeID == .nativeMacOS)
+        #expect(first.selectedThemeID == .glass)
         first.selectedThemeID = .retro
         #expect(DockThemeStore(defaults: defaults).selectedThemeID == .retro)
     }
@@ -21,7 +21,7 @@ struct DockThemeStoreTests {
         defaults.set("hermesEditorial", forKey: DockThemeStore.legacyStorageKey)
         defaults.set("unknown", forKey: DockThemeStore.storageKey)
         let store = DockThemeStore(defaults: defaults)
-        #expect(store.selectedThemeID == .nativeMacOS)
+        #expect(store.selectedThemeID == .glass)
         #expect(defaults.string(forKey: DockThemeStore.legacyStorageKey) == nil)
     }
 
@@ -65,7 +65,7 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.warmLight.appearance == .light)
         #expect(DockThemeID.slate.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.nativeMacOS, .cartoon, .terminal, .flat, .brutalist, .origami, .dusk, .retro, .glass, .eInk, .swiss, .clay, .pixel, .notebook, .hud])
+        #expect(DockThemeID.hermOnly == [.glass, .nativeMacOS, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud])
         #expect(DockThemeID.hermesClassic.style.fontDesign == .serif && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
         #expect(DockThemeID.terminal.style.glow > 0 && DockThemeID.terminal.style.selection == .invert)
         #expect(DockThemeID.dusk.style.accentGradient && DockThemeID.warmLight.style.cardShadow > 0)
@@ -78,12 +78,12 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.eInk.style.selection == .invert && !DockThemeID.eInk.style.animates)
         #expect(DockThemeID.swiss.style.chrome == .open && DockThemeID.swiss.presentation.composer == .line)
         #expect(DockThemeID.terminal.appearance == .dark && DockThemeID.terminal.style.fontDesign == .monospaced)
-        #expect(DockThemeID.flat.appearance == .system && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
+        #expect(DockThemeID.glass.appearance == .system && DockThemeID.brutalist.style.outlineWidth > DockThemeID.cartoon.style.outlineWidth)
         #expect(DockThemeID.cartoon.appearance == .light)
         #expect(DockThemeID.cartoon.style.stickerShadow > 0 && DockThemeID.cartoon.style.fontDesign == .rounded)
         #expect(DockThemeID.origami.appearance == .light && DockThemeID.origami.style.geometry == .folded)
         #expect(DockThemeID.origami.style.outlineWidth == 1 && DockThemeID.origami.style.pressScale == 0.98)
-        #expect(DockThemeID.slate.style == DockThemeStyle())
+        #expect(DockThemeID.nativeMacOS.style == DockThemeStyle() && DockThemeID.slate.style.backdrop == .grid)
     }
 
     @Test func retroIsAvailableWithoutHermesSkins() {
@@ -174,5 +174,21 @@ struct DockThemeStoreTests {
             let luma = 0.2126 * c.redComponent + 0.7152 * c.greenComponent + 0.0722 * c.blueComponent
             #expect(luma <= 0.86, "\(id) primary text too bright")
         }
+    }
+
+    /// Rules every theme must satisfy. Adding a `DockThemeID` case is covered
+    /// automatically; a failure here names the theme and the broken rule.
+    @Test func everyThemeSatisfiesTheThemeStandard() {
+        var problems: [String] = []
+        for t in DockThemeID.allCases {
+            let s = t.style
+            if t.title.isEmpty || t.detail.isEmpty { problems.append("\(t): missing title/detail") }
+            if DockThemeID.allCases.filter({ $0.title == t.title }).count > 1 { problems.append("\(t): duplicate title") }
+            if t.usesNativeMaterial && t.appearance != .system { problems.append("\(t): native material must follow the system appearance") }
+            if s.material == .glass && !t.usesNativeMaterial { problems.append("\(t): glass material requires native material") }
+            if !(0.85...1).contains(s.pressScale) { problems.append("\(t): pressScale out of range") }
+            if s.controlRadius < 0 || s.paneRadius < 0 || s.outlineWidth < 0 { problems.append("\(t): negative geometry") }
+        }
+        #expect(problems.isEmpty, Comment(rawValue: problems.joined(separator: "\n")))
     }
 }

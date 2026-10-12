@@ -174,7 +174,7 @@ struct EdgeNotchStatusIndicator: View {
     private func chip(_ m: Mark, _ c: Color, _ level: Double, _ t: Double, number: Int = 0) -> some View {
         let symbol: String? = switch m {
         case .done: "checkmark"
-        case .blocked: "exclamationmark"
+        case .blocked: activity.status == .needsClarification ? "questionmark" : "exclamationmark"
         case .offline: "moon.zzz.fill"
         default: nil
         }

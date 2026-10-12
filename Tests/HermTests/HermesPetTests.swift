@@ -241,17 +241,17 @@ struct HermesPetTests {
 
     @MainActor @Test func petFitsBelowTheCollapsedNotch() {
         let state = EdgeNotchState()
-        #expect(state.railHeight == 60)
+        #expect(state.railHeight == 96)
         state.hasPet = true
-        #expect(state.railHeight == 60)
-        #expect(state.panelHeight == 108)
+        #expect(state.railHeight == 96)
+        #expect(state.panelHeight == 144)
         #expect(state.railWidth == 56)
         state.expanded = true
         #expect(state.railHeight == 136)
         #expect(state.panelHeight == 408)
     }
 
-    @MainActor @Test func profileResetClearsQuickDraftWithoutChangingPreviewTab() {
+    @MainActor @Test func profileResetRetainsRecoverableDraftWithoutChangingPreviewTab() {
         let state = EdgeNotchState()
         state.showsQuota = true; state.quickDraft = "Previous profile draft"
         state.composing = true; state.quickSending = true
@@ -263,7 +263,8 @@ struct HermesPetTests {
         #expect(!state.composing)
         #expect(state.showsQuota)
         state.selectQuickTarget(nil)
-        #expect(state.quickDraft.isEmpty)
+        #expect(state.quickDraft == "Previous profile draft")
+        #expect(state.recoverableDrafts.count == 1)
     }
 
     @MainActor @Test func everyPetRequestCarriesItsProfileAndExactParameters() async throws {

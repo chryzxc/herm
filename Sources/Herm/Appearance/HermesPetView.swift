@@ -160,7 +160,7 @@ struct HermesPetSettingsView: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Select a pet").font(.system(size: 12, weight: .semibold))
-                TextField("Search pets", text: $query).textFieldStyle(.dockGlass)
+                DockTextField("Search pets", text: $query).textFieldStyle(.dockGlass)
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         if let gallery = pet.gallery {
