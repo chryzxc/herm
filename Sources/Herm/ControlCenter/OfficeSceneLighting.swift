@@ -34,9 +34,10 @@ struct OfficeSceneLighting {
     /// Shadow reach follows the camera so near views keep crisp shadows and
     /// the whole-office view still grounds every wall and desk.
     func updateShadow(cameraDistance: Float) {
-        // Stepped, so a zoom swaps the shadow map a handful of times instead
-        // of rebuilding it every frame.
-        let reach = min(90, max(24, ((cameraDistance * 1.9 + 8) / 8).rounded(.up) * 8))
+        // Three tiers, so a full zoom swaps the shadow map at most twice
+        // instead of ~8 times (each swap is a visible hitch).
+        let need = cameraDistance * 1.9 + 8
+        let reach: Float = need <= 24 ? 24 : need <= 48 ? 48 : 90
         if key.shadow?.maximumDistance != reach {
             key.shadow = DirectionalLightComponent.Shadow(maximumDistance: reach, depthBias: 4)
         }

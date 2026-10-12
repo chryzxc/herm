@@ -62,7 +62,7 @@ struct MissionControlNavigationSelectionTests {
 
     @Test func botChatHandoffSelectsTheBotSession() {
         let state = MissionControlNavigationState()
-        state.selectGlobal(.today)
+        state.selectGlobal(.kanban)
 
         state.openBotChat(sessionID: "bot-session")
 
@@ -138,7 +138,7 @@ struct MissionControlNavigationSelectionTests {
 
     @Test func projectSessionHandoffReplacesTheGlobalDestination() {
         let state = MissionControlNavigationState()
-        state.selectGlobal(.today)
+        state.selectGlobal(.kanban)
 
         state.openProjectSession(sessionID: "project-session")
 
@@ -162,9 +162,9 @@ struct MissionControlNavigationSelectionTests {
         let state = MissionControlNavigationState()
 
         state.openSession("active-session")
-        state.selectGlobal(.today)
+        state.selectGlobal(.kanban)
 
-        #expect(state.selection.selection == .global(.today))
+        #expect(state.selection.selection == .global(.kanban))
         #expect(state.selectedSessionID == nil)
         #expect(state.selectedProjectSessionID == nil)
     }

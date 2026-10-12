@@ -109,6 +109,7 @@ enum HermesFeatureIDs {
         case subagentInterrupt = "subagent.interrupt"
         case processKill = "process.kill"
         case approvalRespond = "approval.respond"
+        case approvalPending = "approval.pending"
         case clarifyRespond = "request.answer"
         case clarifyLock = "clarify.lock"
         case delegationStatus = "delegation.status"
@@ -133,6 +134,8 @@ enum HermesFeatureIDs {
         case modelOptions = "model.options"
         case shellExec = "shell.exec"
         case imageAttachBytes = "image.attach_bytes"
+        case fileAttach = "file.attach"
+        case gatewayCapabilities = "gateway.capabilities"
         case imageDetach = "image.detach"
         case pdfAttach = "pdf.attach"
         case profilesList = "profiles.list"
@@ -146,6 +149,21 @@ enum HermesFeatureIDs {
         case rollbackList = "rollback.list"
         case rollbackDiff = "rollback.diff"
         case rollbackRestore = "rollback.restore"
+        case skillsManage = "skills.manage"
+        case mcpCatalog = "mcp.catalog"
+        case mcpServersList = "mcp.servers.list"
+        case mcpServersAdd = "mcp.servers.add"
+        case mcpServersKey = "mcp.servers.set_api_key"
+        case mcpServersTest = "mcp.servers.test"
+        case mcpServersRemove = "mcp.servers.remove"
+        case mcpOAuthStart = "mcp.servers.oauth.start"
+        case mcpOAuthPoll = "mcp.servers.oauth.poll"
+        case mcpOAuthCancel = "mcp.servers.oauth.cancel"
+        case subagentList = "subagent.list"
+        case subagentSteer = "subagent.steer"
+        case learningDetail = "learning.detail"
+        case learningEdit = "learning.edit"
+        case learningDelete = "learning.delete"
         case bots
     }
 
@@ -157,11 +175,12 @@ enum HermesFeatureIDs {
         "groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send", "groups.log",
         "groups.rename", "groups.stop", "groups.disband", "groups.approve", "groups.retry", "groups.peer.invite", "groups.peer.register", "prompt.background", "prompt.btw", "session.title", "session.steer", "session.branch",
         "session.compress", "session.undo", "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill",
-        "approval.respond", "request.answer", "clarify.lock", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
+        "approval.respond", "approval.pending", "request.answer", "clarify.lock", "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list",
         "plugins.list", "config.show", "projects.tree", "projects.project_sessions", "voice.toggle", "voice.record", "voice.tts", "config.get",
         "config.set", "model.options", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach",
-        "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore",
-        "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder"
+        "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore", "file.attach", "gateway.capabilities",
+        "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder",
+        "skills.manage", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete"
     ]
     static let all = ID.allCases.map(\.rawValue)
     static let capabilityIDs = ID.allCases.filter { !transportIDs.contains($0.rawValue) }.map(\.rawValue)
@@ -170,8 +189,7 @@ enum HermesFeatureIDs {
 }
 
 enum HermesFeatureContract {
-    /// Hermes 0.20.6 exposes no `--json` option for `skills list`; this command
-    /// remains the explicit display-only fallback until a stable JSON contract
-    /// is available upstream.
+    /// Display-only CLI fallback; lifecycle controls use the named workflow adapter
+    /// and validate installed-runtime responses independently.
     static let enabledSkillsCommand = HermesCLICommand(["hermes", "skills", "list", "--enabled-only"])
 }

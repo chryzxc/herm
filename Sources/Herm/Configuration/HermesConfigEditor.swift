@@ -460,19 +460,16 @@ private struct HermesConfigFieldRow: View {
             .controlSize(.small)
             .tint(Color.dockAccent)
         } else if let options = editor.options(for: key) {
-            Picker("", selection: Binding(
+            DockMenuPicker(title: stringValue.isEmpty ? "Default" : stringValue, selection: Binding(
                 get: { stringValue },
                 set: { editor.set(key, $0) }
             )) {
-                if !options.contains(stringValue) { Text(stringValue.isEmpty ? "Default" : stringValue).tag(stringValue) }
+                if !options.contains(stringValue) { DockMenuOption(stringValue.isEmpty ? "Default" : stringValue, value: stringValue) }
                 ForEach(options, id: \.self) { option in
-                    Text(option.isEmpty ? "Default" : option).tag(option)
+                    DockMenuOption(option.isEmpty ? "Default" : option, value: option)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
             .controlSize(.small)
-            .fixedSize(horizontal: true, vertical: false)
         } else {
             TextField(editor.type(of: key) == "number" ? "0" : "Default", text: $draft)
                 .textFieldStyle(.dockGlass)

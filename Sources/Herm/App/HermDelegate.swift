@@ -97,6 +97,7 @@ struct CommandDoubleTapDetector {
 
 @MainActor
 final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    private let interruptions = HermInterruptionCoordinator(defaults: .standard)
     private let model: DockModel
     private let controlCenter: ControlCenterModel
     private var dockPanel: DockPanelController?
@@ -112,6 +113,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         model = DockModel()
         controlCenter = ControlCenterModel()
         super.init()
+        model.interruptionCoordinator = interruptions
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -120,7 +122,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         // AppKit's first tooltip waits ~1s; later ones are instant. Make the
         // first match so icon-only buttons explain themselves on hover.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 250])
-        let edge = EdgeDockController(model: model, controlCenter: controlCenter, openQuota: { [weak self] in
+        let edge = EdgeDockController(model: model, controlCenter: controlCenter, interruptions: interruptions, openQuota: { [weak self] in
             self?.dockPanel?.showQuota()
         }, openKanban: { [weak self] task in
             self?.dockPanel?.showKanban(task)
@@ -251,6 +253,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        QuickDraftStore.shared.flush()
         // This is deliberately explicit: a menu-bar app can terminate without
         // releasing its delegate/model graph, so deinit is not a process-life
         // cycle hook for the local Hermes backend.
@@ -258,13 +261,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let attentionID = response.notification.request.content.userInfo["attention_id"] as? String
         await MainActor.run { [weak self] in
-            if let attentionID {
-                self?.model.requestControlAttention(attentionID)
-            } else {
-                self?.model.requestControlInbox()
-            }
             self?.dockPanel?.showFromNotification()
         }
     }
@@ -288,7 +285,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     private let model: DockModel
     private let controlCenter: ControlCenterModel
-    private let preferences = CommandCenterPreferencesStore()
+    private let preferences = CommandCenterPreferencesStore.shared
     private let statusItem: NSStatusItem
     private let unreadBadge = UnreadBadgeView(frame: .zero)
     private let panel = DockPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -367,6 +364,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private func configurePanel() {
         panel.delegate = self
         panel.isFloatingPanel = true
+        // Hover (SwiftUI .onHover) needs mouse-moved events; only fullscreen set this before.
+        panel.acceptsMouseMovedEvents = true
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.backgroundColor = .clear
@@ -477,6 +476,9 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         guard isWorkspaceVisible, !isFullscreen else { return }
         let point = NSEvent.mouseLocation
         guard !panel.frame.contains(point), !statusItemFrame.contains(point) else { return }
+        // A popover belongs to the workspace even where it overhangs the panel;
+        // hiding here would tear it down before its row action runs.
+        guard panel.attachedSheet == nil, panel.childWindows?.isEmpty != false else { return }
         hide()
     }
 
@@ -581,17 +583,24 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         pointerExitTask?.cancel()
         if !isWorkspaceVisible {
             // Read fresh: Settings and the fullscreen toggle both write this key.
-            isFullscreen = UserDefaults.standard.object(forKey: CommandCenterPreferencesStore.opensFullscreenKey) as? Bool
-                ?? preferences.launchesExpandedByDefault
+            isFullscreen = false // the native window is the full-size surface
         }
         onWillShow()
         isWorkspaceVisible = true
         panel.onCancel = { [weak self] in self?.hide() }
         panelPresentation.isEdgeAttached = true
         panelPresentation.edgeSide = placement()?.side ?? .right
+        // A minimized panel would restore with its stale frame.
+        if panel.isMiniaturized { panel.deminiaturize(nil) }
         // The compact workspace grows out of the notch's spot.
         if !panel.isVisible { panel.setFrame(notchPanel.frame, display: false) }
         installPanelContentIfNeeded()
+        // Fullscreen leaves the host sized to the whole screen; resync it so the
+        // compact panel sticks to the notch's edge instead of rendering offset.
+        if let host = panel.contentView {
+            host.autoresizingMask = [.width, .height]
+            host.frame = NSRect(origin: .zero, size: panel.contentRect(forFrameRect: panel.frame).size)
+        }
         if isFullscreen {
             enterFullscreen()
         } else {
@@ -615,10 +624,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         pointerExitTask?.cancel()
         guard isWorkspaceVisible else { return }
         EdgeDockMotion.cancel(workspaceHost)
-        if isFullscreen {
-            exitFullscreen()
-        }
+        // Leave fullscreen state first so exitFullscreen's resize isn't skipped
+        // (resizePanel bails while isFullscreen), which left the stale full-screen frame.
+        let wasFullscreen = isFullscreen
         isFullscreen = false
+        if wasFullscreen { exitFullscreen() }
         isWorkspaceVisible = false
         panel.orderOut(nil)
         model.markPopoverHidden()
@@ -636,8 +646,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private func enterFullscreen() {
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.visibleFrame
+        guard let screenFrame = placement()?.visibleFrame ?? NSScreen.main?.visibleFrame else { return }
 
         panel.isFloatingPanel = false
         panel.hidesOnDeactivate = false
@@ -694,7 +703,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
         if let hostingView = panel.contentView {
             hostingView.layer?.masksToBounds = false
-            hostingView.autoresizingMask = []
+            hostingView.autoresizingMask = [.width, .height]
         }
 
         if isWorkspaceVisible {
@@ -726,6 +735,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 context.duration = EdgeDockMotion.revealDuration
                 context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
                 panel.animator().setFrame(frame, display: true)
+            } completionHandler: { [weak self] in
+                // Closing the native window right before this animation can
+                // interrupt it and strand the panel at an intermediate frame.
+                guard let self, self.isWorkspaceVisible, !self.isFullscreen,
+                      !self.panel.frame.equalTo(frame) else { return }
+                self.panel.setFrame(frame, display: true)
             }
         } else {
             panel.setFrame(frame, display: true)
@@ -742,6 +757,10 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         DebugLog.write("panel: became key (responder: \(panel.responderDescription))")
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        hide()
     }
 
     func windowDidResignKey(_ notification: Notification) {

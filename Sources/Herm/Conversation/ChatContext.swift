@@ -104,7 +104,7 @@ struct AttachToChatMenu: View {
     var body: some View {
         if let router {
             if pill {
-                Menu { items(router) } label: {
+                DockMenu { items(router) } label: {
                     HStack(spacing: 5) {
                         DockIcon(.chatCircleText, size: 12, color: Color.dockSecondaryText)
                         Text("Attach to chat")
@@ -119,12 +119,10 @@ struct AttachToChatMenu: View {
                             .fill(Color.dockControlSurface)
                     )
                 }
-                .menuStyle(.button)
                 .buttonStyle(.dockHover)
-                .menuIndicator(.hidden)
                 .fixedSize()
             } else {
-                Menu("Attach to chat", icon: .chatCircleText) { items(router) }
+                DockMenu("Attach to chat", icon: .chatCircleText) { items(router) }
             }
         }
     }

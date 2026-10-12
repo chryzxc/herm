@@ -184,7 +184,7 @@ struct AttachmentPopover: View {
                 Spacer()
             }
             HStack(spacing: 6) {
-                TextField("https://…", text: $urlText)
+                DockTextField("https://…", text: $urlText)
                     .textFieldStyle(.dockGlass)
                     .font(.system(size: 11))
                     .onSubmit(insertURL)
@@ -200,7 +200,7 @@ struct AttachmentPopover: View {
     }
 
     private var snippetsRow: some View {
-        Menu {
+        DockMenu {
             ForEach(AttachmentPopoverPresentation.promptSnippets) { snippet in
                 Button(snippet.label) { onSelectSnippet(snippet.text) }
             }
@@ -218,7 +218,6 @@ struct AttachmentPopover: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
         .buttonStyle(.dockHover)
         .accessibilityLabel("Prompt snippets")
     }

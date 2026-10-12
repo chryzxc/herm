@@ -72,6 +72,8 @@ struct SessionConversationIsolationTests {
         let sessionB = HermesSession(id: Fixtures.sessionB, title: "B", preview: "", startedAt: nil, messageCount: 0, source: "test")
         model.resumeSession(sessionA)
         try await waitUntil { model.sessionID == "runtime-a-1" && model.status == .idle }
+        model.status = .working
+        model.isSending = true
         model.draft = "Follow up in A"
         model.queueDraft()
         let queuedID = try #require(model.queuedPrompts.first?.id)
@@ -80,6 +82,8 @@ struct SessionConversationIsolationTests {
         model.resumeSession(sessionB)
         try await waitUntil { model.sessionID == "runtime-b" && model.status == .idle }
         #expect(model.currentSessionQueuedPrompts.isEmpty)
+        model.status = .working
+        model.isSending = true
         model.draft = "Follow up in B"
         model.queueDraft()
         #expect(model.currentSessionQueuedPrompts.map(\.text) == ["Follow up in B"])
@@ -112,6 +116,8 @@ struct SessionConversationIsolationTests {
         try Data([1, 2, 3]).write(to: imageURL)
         defer { try? FileManager.default.removeItem(at: imageURL) }
         model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
+        model.status = .working
+        model.isSending = true
         model.draft = "Use the image"
         model.queueDraft()
         let id = try #require(model.currentSessionQueuedPrompts.first?.id)

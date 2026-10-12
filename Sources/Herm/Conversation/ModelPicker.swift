@@ -117,7 +117,7 @@ struct ModelPickerView: View {
     }
 
     var body: some View {
-        Menu {
+        DockMenu {
             pickerContent
         } label: {
             // Plain-button menu draws this SwiftUI label as-is, so long
@@ -126,14 +126,15 @@ struct ModelPickerView: View {
                 Text(selectedOption?.model ?? "Select model")
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let notice = selectedPeakNotice, notice.isPeak {
+                    DockIcon(.warning, size: 11, color: Color.dockWarning)
+                }
                 DockIcon(.caretDown, size: 10, color: Color.dockMetadataText)
             }
             .contentShape(Rectangle())
         }
-        .menuStyle(.button)
         .buttonStyle(.dockHover)
-        .menuIndicator(.hidden)
-        .help(selectedOption?.provider ?? "")
+        .help([selectedOption?.provider, selectedPeakNotice?.text].compactMap { $0 }.joined(separator: " · "))
         .accessibilityLabel("Select model, currently \(selectedOption?.displayName ?? "none")")
         .sheet(isPresented: $showingEditor) {
             ModelPickerEditorView(options: options, activeID: selectedID, disabledIDs: $disabledModelIDs)
@@ -144,7 +145,7 @@ struct ModelPickerView: View {
 
     @ViewBuilder
     private var pickerContent: some View {
-        TextField("Search models", text: $query)
+        DockTextField("Search models", text: $query)
             .accessibilityLabel("Search models")
         Button {
             onRefresh()
@@ -180,7 +181,11 @@ struct ModelPickerView: View {
                 Label("No matching models", icon: .magnifyingGlass)
             } else {
                 ForEach(groups) { group in
-                    Section(group.provider) {
+                    DockMenuSection(group.provider) {
+                        if let notice = ProviderPeakSchedule.quotaID(forProvider: group.provider)
+                            .flatMap({ ProviderPeakSchedule.notice(forQuotaID: $0) }) {
+                            Label(notice.text, icon: notice.isPeak ? .warning : .info)
+                        }
                         ForEach(group.models) { option in
                             Button {
                                 onSelect(option)
@@ -200,8 +205,17 @@ struct ModelPickerView: View {
             }
     }
 
+    private var selectedPeakNotice: ProviderPeakSchedule.Notice? {
+        selectedOption.flatMap { ProviderPeakSchedule.quotaID(forProvider: $0.provider) }
+            .flatMap { ProviderPeakSchedule.notice(forQuotaID: $0) }
+    }
+
     private var selectedOption: HermesModelOption? {
-        options.first { $0.id == selectedID }
+        if let match = options.first(where: { $0.id == selectedID }) { return match }
+        // Hermes' default may sit outside the explicit catalog; still name it.
+        guard let selectedID, let bar = selectedID.firstIndex(of: "|") else { return nil }
+        return HermesModelOption(provider: String(selectedID[..<bar]),
+                                 model: String(selectedID[selectedID.index(after: bar)...]))
     }
 
     private func reconcileActiveModelPreference() {

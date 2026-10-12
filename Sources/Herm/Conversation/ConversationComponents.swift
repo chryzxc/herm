@@ -130,6 +130,7 @@ struct MarkdownFence {
 
 struct MarkdownMessageView: View, Equatable {
   let markdown: String
+  private let bodyFont: Font
   private let renderCacheKey: String?
   private let blocks: [RenderBlock]
 
@@ -144,8 +145,9 @@ struct MarkdownMessageView: View, Equatable {
     case tableRow([AttributedString])
   }
 
-  init(markdown: String, cacheResult: Bool = true, cacheKey: String? = nil) {
+  init(markdown: String, cacheResult: Bool = true, cacheKey: String? = nil, bodyFont: Font = .system(size: 14)) {
     self.markdown = markdown
+    self.bodyFont = bodyFont
     self.renderCacheKey = cacheKey
     // SwiftUI rebuilds each transcript row's view value on every parent
     // render and each lazy row build while scrolling. The shared cache keeps
@@ -158,10 +160,10 @@ struct MarkdownMessageView: View, Equatable {
 
   /// Transcript activity and scrolling can invalidate the surrounding stack
   /// without changing a completed message. The Markdown body is immutable,
-  /// so use it as the equality boundary and let SwiftUI retain the already
+  /// so use it and the body font as the equality boundary and retain the already
   /// laid-out rich subtree until the message itself changes.
   nonisolated static func == (lhs: MarkdownMessageView, rhs: MarkdownMessageView) -> Bool {
-    lhs.markdown == rhs.markdown
+    lhs.markdown == rhs.markdown && lhs.bodyFont == rhs.bodyFont
   }
 
   /// Parsed-and-rendered output keyed by the raw Markdown string. NSCache is
@@ -213,16 +215,16 @@ struct MarkdownMessageView: View, Equatable {
         case .heading(let level, let text):
           renderedText(text).font(.system(size: Self.headingSize(level), weight: .semibold)).foregroundStyle(Color.dockMarkdownText).padding(
             .top, 2)
-        case .paragraph(let text): renderedText(text).font(.system(size: 14)).lineSpacing(3)
+        case .paragraph(let text): renderedText(text).font(bodyFont).lineSpacing(3)
         case .listItem(let text, let marker):
           HStack(alignment: .top, spacing: 6) {
-            Text(marker).font(.system(size: 14, weight: .medium)).foregroundStyle(Color.dockAccent)
+            Text(marker).font(bodyFont.weight(.medium)).foregroundStyle(Color.dockAccent)
               .frame(minWidth: 16, alignment: .trailing)
-            renderedText(text).font(.system(size: 14)).lineSpacing(3)
+            renderedText(text).font(bodyFont).lineSpacing(3)
           }
         case .code(let code, let language): codeBlock(code, language: language)
         case .quote(let text):
-          renderedText(text).font(.system(size: 14)).foregroundStyle(Color.dockSecondaryText).padding(
+          renderedText(text).font(bodyFont).foregroundStyle(Color.dockSecondaryText).padding(
             .leading, 10
           ).overlay(alignment: .leading) { Rectangle().fill(Color.dockBorder).frame(width: 2) }
         case .tableRow(let columns):
@@ -560,9 +562,11 @@ struct NativeMarkdownMessageView: NSViewRepresentable, Equatable {
     } else {
       width = NativeMarkdownDocumentSizing.fallbackWidth
     }
-    let height = nsView.measuredHeight(forWidth: width)
-    guard hugsContent else { return CGSize(width: width, height: height) }
-    return CGSize(width: min(width, nsView.usedWidth(forWidth: width)), height: height)
+    guard hugsContent else { return CGSize(width: width, height: nsView.measuredHeight(forWidth: width)) }
+    // Measure height at the hugged width: SwiftUI lays the view out at the width
+    // returned here, so a taller wrap at that width must be counted or it spills out of the bubble.
+    let hugged = min(width, nsView.usedWidth(forWidth: width))
+    return CGSize(width: hugged, height: nsView.measuredHeight(forWidth: hugged))
   }
 
   @MainActor

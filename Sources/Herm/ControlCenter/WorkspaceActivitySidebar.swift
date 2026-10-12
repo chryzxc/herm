@@ -41,9 +41,7 @@ struct WorkspaceActivitySidebar: View {
     var onSessionOpened: (String) -> Void = { _ in }
     var showsHeader = true
     var showsModePicker = true
-    @State private var selectedMode: ControlTab = .today
-    @State private var selectedAttentionID: String?
-    @State private var inboxFilter: InboxFilter = .all
+    @State private var selectedMode: ControlTab = .kanban
     @State private var isShowingCommandPalette = false
     @State private var searchQuery = ""
     @State private var selectedModelID = ""
@@ -56,8 +54,6 @@ struct WorkspaceActivitySidebar: View {
     @State private var isLoadingRepositoryDiff = false
     @State private var isRefreshingRepository = false
     @State private var showingRepositoryPicker = false
-    @State private var reminderForConfirmation: ReminderSummary?
-    @State private var isShowingReminderConfirmation = false
     @State private var cronRemovalRequest: CronSummary?
     @State private var isShowingCronRemovalConfirmation = false
     @State private var cronRunRequest: CronSummary?
@@ -81,8 +77,6 @@ struct WorkspaceActivitySidebar: View {
     @State private var kanbanMutationRequest: KanbanMutationRequest?
     @State private var cronEditJob: CronSummary?
     @State private var cronReportRequest: CronReportRequest?
-    @State private var clarificationItem: AttentionItem?
-    @State private var clarificationResponse = ""
     @State private var expandedCronReportIDs: Set<String> = []
     @State private var isShowingAllSkills = false
     @State private var expandedSettingsCapabilityCategories: Set<CapabilityCategory> = [.core]
@@ -162,7 +156,7 @@ struct WorkspaceActivitySidebar: View {
         onSessionOpened: @escaping (String) -> Void = { _ in },
         showsHeader: Bool = true,
         showsModePicker: Bool = true,
-        initialMode: ControlTab = .today,
+        initialMode: ControlTab = .kanban,
         agentUpdateService: HermesUpdateService
     ) {
         self.model = model
@@ -211,10 +205,6 @@ struct WorkspaceActivitySidebar: View {
                     ScrollView {
                         Group {
                             switch selectedMode {
-                            case .today: nowContent
-                            case .session: sessionOverviewContent
-                            case .inbox: inboxContent
-                            case .activity: activityContent
                             case .changes: changesContent
                             case .verification: verificationContent
                             case .automations: automationsContent
@@ -229,6 +219,8 @@ struct WorkspaceActivitySidebar: View {
                             case .calendar: EmptyView()
                             }
                         }
+                        .frame(maxWidth: readingWidthModes.contains(selectedMode) ? 1280 : .infinity, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, alignment: .top)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
                     }
@@ -237,6 +229,9 @@ struct WorkspaceActivitySidebar: View {
         }
         .font(.system(size: 13))
     }
+
+    // Dashboard-style pages read badly stretched edge to edge; boards, diffs and previews keep the full width.
+    private var readingWidthModes: Set<ControlTab> { [.quota, .usage, .core] }
 
     private var pageHeader: some View {
         if selectedMode == .kanban {
@@ -254,10 +249,10 @@ struct WorkspaceActivitySidebar: View {
                 isRefreshing: automationIsRefreshing,
                 trailing: {
                 Button(action: { isShowingAutomationComposer = true }) {
-                    DockIconLabel("New automation", icon: .plus, iconColor: .dockOnAccentText)
+                    DockIconLabel("New automation", icon: .plus)
                 }
-                .buttonStyle(.dockPrimary)
-                .font(.system(size: 12, weight: .semibold))
+                .buttonStyle(.dockSecondary)
+                .controlSize(.small)
                 }
             ))
         } else if selectedMode == .core {
@@ -324,16 +319,15 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var settingsCategoryMenu: some View {
-        Picker("Settings category", selection: $selectedSettingsCategory) {
+        DockMenuPicker(title: selectedSettingsCategory.title, selection: $selectedSettingsCategory) {
             ForEach(SettingsCategoryGroup.allCases) { group in
-                Section(group.rawValue) {
+                DockMenuSection(group.rawValue) {
                     ForEach(group.categories) { category in
-                        Text(category.title).tag(category)
+                        DockMenuOption(category.title, value: category)
                     }
                 }
             }
         }
-        .pickerStyle(.menu)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -428,7 +422,8 @@ struct WorkspaceActivitySidebar: View {
                 onOpenTask: { task in
                     select(.kanban)
                     control.revealKanbanTask(task)
-                }
+                },
+                onOpenUsage: { select(.usage) }
             )
             .task { await botMode.refreshNow() }
             .padding(.horizontal, 16)
@@ -496,16 +491,6 @@ struct WorkspaceActivitySidebar: View {
 
     private var pageHeaderSubtitle: String {
         switch selectedMode {
-        case .today:
-            return projectionHeaderSubtitle(
-                control.projectionState(for: "sessions"),
-                fallback: selectedMode.pageHeaderSubtitle
-            )
-        case .session:
-            return projectionHeaderSubtitle(
-                model.sessionProjectionState,
-                fallback: selectedMode.pageHeaderSubtitle
-            )
         case .kanban:
             return projectionHeaderSubtitle(
                 control.projectionState(for: "kanban.board"),
@@ -684,10 +669,6 @@ struct WorkspaceActivitySidebar: View {
                 control.refreshProviderQuota()
             }
         }
-        .onChange(of: model.controlInboxRequest) { _, _ in
-            selectedMode = .inbox
-            selectedAttentionID = model.requestedAttentionID
-        }
         .onChange(of: searchQuery) { _, query in
             guard selectedMode == .search else { return }
             control.search(query)
@@ -718,16 +699,6 @@ struct WorkspaceActivitySidebar: View {
         }
         .sheet(isPresented: $isShowingAutomationComposer) {
             automationComposer
-        }
-        .confirmationDialog("Complete Apple Reminder?", isPresented: $isShowingReminderConfirmation) {
-            if let reminder = reminderForConfirmation {
-                Button("Complete Reminder") { control.completeReminder(reminder) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            if let reminder = reminderForConfirmation {
-                Text("Hermes will submit a request to complete ‘\(reminder.title)’ through the Apple Reminders skill. No other reminder will be changed.")
-            }
         }
         .confirmationDialog("Remove Scheduled Job?", isPresented: $isShowingCronRemovalConfirmation) {
             if let job = cronRemovalRequest {
@@ -923,100 +894,21 @@ struct WorkspaceActivitySidebar: View {
         } message: {
             Text("Hermes will interrupt the selected native subagent. Synthesized placeholders are not interruptible.")
         }
-        .sheet(item: $clarificationItem, onDismiss: { clarificationResponse = "" }) { item in
-            DockModal(icon: .question, title: "Clarification Required", subtitle: "Hermes needs your input to continue.", width: 440) {
-                Text(item.detail)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let choices = item.choices, !choices.isEmpty {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("SUGGESTED RESPONSES")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .tracking(1.1)
-                            .foregroundStyle(Color.dockMetadataText)
-                        ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
-                            Button {
-                                clarificationResponse = choice
-                            } label: {
-                                HStack(alignment: .top, spacing: 8) {
-                                    DockIcon(clarificationResponse == choice ? .checkCircle : .circle)
-                                        .font(.system(size: 12, weight: .medium))
-                                    Text(choice)
-                                        .font(.system(size: 12))
-                                        .multilineTextAlignment(.leading)
-                                    Spacer(minLength: 0)
-                                }
-                                .foregroundStyle(clarificationResponse == choice ? Color.dockAccent : Color.dockPrimaryText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 8)
-                                .background(
-                                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                                        .fill(clarificationResponse == choice ? Color.dockAccent.opacity(0.12) : Color.dockControlSurface)
-                                        .stroke(clarificationResponse == choice ? Color.dockAccent.opacity(0.65) : Color.dockBorder, lineWidth: 0.5)
-                                )
-                            }
-                            .buttonStyle(.dockHover)
-                        }
-                    }
-                }
-                TextField("Your response", text: $clarificationResponse, axis: .vertical)
-                    .textFieldStyle(.dockGlass)
-                    .lineLimit(3...6)
-            } footer: {
-                modalActions(
-                    primaryTitle: "Send Response",
-                    isDisabled: clarificationResponse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                    isPending: false,
-                    onCancel: { clarificationItem = nil }
-                ) {
-                    control.respond(to: item, action: .respond, response: clarificationResponse)
-                    clarificationItem = nil
-                }
-            }
-        }
     }
 
     private var modePicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
-            ForEach(compactRailNavigation) { mode in
-                compactTabButton(
-                    title: mode.globalRailLabel,
-                    icon: mode.icon,
-                    count: badgeCount(for: mode),
-                    isUrgent: badgeIsUrgent(for: mode),
-                    isSelected: selectedMode == mode
-                ) {
-                    select(mode)
-                }
-            }
+            ForEach(compactRailLeading) { compactModeButton($0) }
 
             compactTabButton(title: "Artifacts", icon: .fileMagnifyingGlass, isSelected: false) {
                 onOpenArtifacts()
             }
-            compactTabButton(
-                title: "Conversations",
-                icon: .chats,
-                count: compactUnlinkedSessions.count,
-                isUrgent: false,
-                isSelected: selectedMode == .session
-            ) {
-                select(.session)
-            }
-            compactTabButton(
-                title: "Projects",
-                icon: .folder,
-                count: compactProjectGroups.count,
-                isUrgent: false,
-                isSelected: selectedMode == .projects
-            ) {
-                select(.projects)
-            }
 
-            Menu {
-                Section("More") {
+            ForEach(compactRailTrailing) { compactModeButton($0) }
+
+            DockMenu {
+                DockMenuSection("More") {
                     ForEach(compactOverflowNavigation) { mode in
                         secondaryModeButton(mode)
                     }
@@ -1031,7 +923,6 @@ struct WorkspaceActivitySidebar: View {
                     isSelected: isToolsModeSelected
                 )
             }
-            .menuStyle(.borderlessButton)
             .buttonStyle(.dockHover)
             .help(isToolsModeSelected ? selectedMode.tabLabel : "More control views")
         }
@@ -1112,15 +1003,26 @@ struct WorkspaceActivitySidebar: View {
             .sorted { ($0.sessions.first?.lastUpdatedAt ?? .distantPast) > ($1.sessions.first?.lastUpdatedAt ?? .distantPast) }
     }
 
-    private var compactUnlinkedSessions: [HermesSession] {
-        let linkedIDs = Set(compactProjectGroups.flatMap { $0.sessions.map(\.id) })
-        return compactSortedSessions.filter { !linkedIDs.contains($0.id) }
-    }
-
     /// Compact mode mirrors the fullscreen rail's daily operator destinations.
     /// Repository and setup surfaces remain available from More.
-    private var compactRailNavigation: [ControlTab] {
-        [.today, .inbox, .kanban, .quota, .automations]
+    private var compactRailLeading: [ControlTab] {
+        [.kanban, .calendar, .automations].filter { $0 != .kanban || showsKanbanInSidebar }.filter { $0 != .calendar || showsCalendarInSidebar }
+    }
+
+    private var compactRailTrailing: [ControlTab] {
+        [.officePreview, .usage, .quota, .core].filter { $0 != .officePreview || showsOfficeInSidebar }
+    }
+
+    private func compactModeButton(_ mode: ControlTab) -> some View {
+        compactTabButton(
+            title: mode.globalRailLabel,
+            icon: mode.icon,
+            count: badgeCount(for: mode),
+            isUrgent: badgeIsUrgent(for: mode),
+            isSelected: selectedMode == mode
+        ) {
+            select(mode)
+        }
     }
 
     /// Every repository Herm has attached to a session, for the Calendar's git log.
@@ -1129,7 +1031,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var compactOverflowNavigation: [ControlTab] {
-        [.usage, .calendar, .projects, .search, .officePreview, .core]
+        [.projects, .changes, .verification, .search]
     }
 
     private var isToolsModeSelected: Bool {
@@ -1255,88 +1157,6 @@ struct WorkspaceActivitySidebar: View {
             let repositoryContext = activeRepositoryPath.map { " Repository: \($0)." } ?? ""
             Task { _ = await control.startBackgroundTask(recipe.prompt + repositoryContext) }
         }
-    }
-
-    private var activityContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                sectionLabel("BACKGROUND TASKS")
-                HStack(spacing: 8) {
-                    TextField("Run a task in the background…", text: $backgroundTaskPrompt)
-                        .textFieldStyle(.dockGlass)
-                    Button(isStartingBackgroundTask ? "STARTING…" : "RUN") {
-                        let prompt = backgroundTaskPrompt
-                        isStartingBackgroundTask = true
-                        Task {
-                            if await control.startBackgroundTask(prompt) { backgroundTaskPrompt = "" }
-                            isStartingBackgroundTask = false
-                        }
-                    }
-                    .buttonStyle(.dockHover)
-                    .foregroundStyle(Color.dockAccent)
-                    .disabled(isStartingBackgroundTask || backgroundTaskPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                ForEach(model.currentSessionBackgroundTasks.reversed()) { task in
-                    DisclosureGroup {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("PROMPT").foregroundStyle(Color.dockMetadataText)
-                            Text(task.prompt).foregroundStyle(Color.dockSecondaryText)
-                            if let output = task.output {
-                                Text("OUTPUT").foregroundStyle(Color.dockMetadataText).padding(.top, 3)
-                                Text(output).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
-                                if task.kind == .handoff {
-                                    Button("OPEN KANBAN DRAFT") {
-                                        kanbanTitle = "Handoff follow-up"
-                                        kanbanBody = output
-                                        select(.kanban)
-                                    }
-                                    .buttonStyle(.dockHover)
-                                    .foregroundStyle(Color.dockAccent)
-                                }
-                            }
-                        }
-                        .font(.system(size: 11))
-                        .padding(.top, 5)
-                    } label: {
-                        HStack {
-                            Circle().fill(task.status == .completed ? Color.dockSuccess : Color.dockAccent).frame(width: 6, height: 6)
-                            Text(task.status == .completed ? "COMPLETE" : "RUNNING")
-                            if task.kind != .general { Text(task.kind.rawValue.uppercased()) }
-                            Text(task.prompt).lineLimit(1).foregroundStyle(Color.dockSecondaryText)
-                            Spacer()
-                            Text(HumanDateFormatting.timeOnly(task.startedAt)).foregroundStyle(Color.dockMetadataText)
-                        }
-                        .font(.system(size: 11))
-                    }
-                    .foregroundStyle(Color.dockAccent)
-                }
-            }
-            SessionBotActivityView(
-                model: model,
-                botMode: botMode,
-                sessionID: model.kanbanSessionID,
-                onOpenBotChat: { bot in model.resumeBotChat(bot) }
-            )
-            AgentBoardView(model: model, embedded: true)
-        }
-    }
-
-    private func openSessionKanban() {
-        // The left Control Kanban is always global. Session attribution belongs
-        // to the Activity projection, not this board surface.
-        kanbanCurrentSessionOnly = false
-        withAnimation(.dockEase(duration: 0.2)) { selectedMode = .kanban }
-        applyKanbanFilters()
-    }
-
-    private func openSessionKanbanTask(_ taskID: String) {
-        guard let task = control.sessionKanbanTasks.first(where: { $0.id == taskID }) else {
-            openSessionKanban()
-            return
-        }
-        openSessionKanban()
-        selectedKanbanTask = task
-        control.loadKanbanTask(task)
     }
 
     private var changesContent: some View {
@@ -1981,14 +1801,14 @@ struct WorkspaceActivitySidebar: View {
         DockModal(icon: .magicWand, title: "New Automation", subtitle: "Set the intent once; Hermes will keep the cadence.", width: 520) {
             HStack(alignment: .top, spacing: 10) {
                 labeledField("Name") {
-                    TextField("Morning review", text: $automationName).textFieldStyle(.dockGlass)
+                    DockTextField("Morning review", text: $automationName).textFieldStyle(.dockGlass)
                 }
                 labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
-                    TextField("When should Hermes run this?", text: $automationSchedule).textFieldStyle(.dockGlass)
+                    DockTextField("When should Hermes run this?", text: $automationSchedule).textFieldStyle(.dockGlass)
                 }
             }
             labeledField("Request") {
-                TextField("What should Hermes do?", text: $automationPrompt, axis: .vertical)
+                DockTextField("What should Hermes do?", text: $automationPrompt, axis: .vertical)
                     .lineLimit(3...6)
                     .textFieldStyle(.dockGlass)
             }
@@ -2076,14 +1896,13 @@ struct WorkspaceActivitySidebar: View {
                 .accessibilityLabel("Run \(job.name) now")
             }
 
-            Menu { cronContextActions(job) } label: {
+            DockMenu { cronContextActions(job) } label: {
                 DockIcon(.dotsThree)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
             .help("More actions for \(job.name)")
         }
         .padding(.leading, 10)
@@ -2368,9 +2187,6 @@ struct WorkspaceActivitySidebar: View {
 
     private var tabBadges: ControlTabBadgeState {
         ControlTabBadgeState.make(
-            attention: control.attention,
-            activeAgentCount: model.activeSubagents.filter { AgentActivityPresentation.isActiveStatus($0.status) }.count,
-            activeToolCount: model.activeToolCalls.filter { !$0.isComplete }.count,
             changeCount: workflow.repository.conflictedFiles > 0 ? workflow.repository.conflictedFiles : workflow.repository.changedFiles,
             verificationCount: control.verification?.state == .failed ? 1 : (control.verification?.evidence?.scope?.lowercased() == "targeted" ? 1 : 0)
         )
@@ -2573,7 +2389,7 @@ struct WorkspaceActivitySidebar: View {
     private func startNewChat(in path: String) {
         store.attachProject(at: path)
         control.closeProject()
-        selectedMode = .today
+        selectedMode = .kanban
         Task { @MainActor in
             await model.startNewChat(in: path)
             if let sessionID = model.sessionID {
@@ -2748,7 +2564,7 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var kanbanContent: some View {
-        HSplitView {
+        AdaptiveSplit(breakpoint: 940, primaryMinWidth: 560, showsSecondary: selectedKanbanTask != nil, onBack: nil) {
             // Header and toolbar stay fixed; the board takes the remaining
             // height so each lane scrolls its own cards.
             VStack(alignment: .leading, spacing: 0) {
@@ -2804,7 +2620,7 @@ struct WorkspaceActivitySidebar: View {
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(Color.dockMetadataText)
                         Spacer()
-                        Menu(kanbanDiagnosticSeverity) {
+                        DockMenu(kanbanDiagnosticSeverity) {
                             ForEach(["ALL", "ERROR", "WARNING", "INFO"], id: \.self) { severity in
                                 Button(severity) {
                                     kanbanDiagnosticSeverity = severity
@@ -2855,7 +2671,7 @@ struct WorkspaceActivitySidebar: View {
                 .padding(.bottom, 12)
                 .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(minWidth: 560, maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onChange(of: control.requestedKanbanTask, initial: true) { _, task in
                 guard let task else { return }
                 control.requestedKanbanTask = nil
@@ -2875,6 +2691,7 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
 
+        } secondary: {
             if let task = selectedKanbanTask {
                 // Bot lookup only; card details are not needed by the inspector.
                 kanbanDetailPanel(task, presentation: KanbanBoardPresentation.makeSnapshot(
@@ -2919,7 +2736,7 @@ struct WorkspaceActivitySidebar: View {
 
     private var kanbanToolbar: some View {
         HStack(spacing: 8) {
-            Menu {
+            DockMenu {
                 if control.kanbanBoards.isEmpty {
                     Text("Board inventory unavailable")
                 } else {
@@ -2946,9 +2763,7 @@ struct WorkspaceActivitySidebar: View {
                     icon: .kanban
                 )
             }
-            .menuStyle(.button)
             .buttonStyle(.dockHover)
-            .menuIndicator(.hidden)
             .fixedSize()
             .disabled(control.kanbanBoards.count < 2 || control.isKanbanRefreshPending)
             .help("Select Kanban board")
@@ -3040,15 +2855,13 @@ struct WorkspaceActivitySidebar: View {
             } label: {
                 kanbanFilterChip("Mine", icon: .user, isSelected: kanbanMineOnly)
             }
-            Menu {
+            DockMenu {
                 ForEach(["updated", "created-desc", "priority-desc", "title"], id: \.self) { value in
                     Button(kanbanSortLabel(value)) { kanbanSort = value; applyKanbanFilters() }
                 }
             } label: {
                 kanbanFilterChip(kanbanSort == "updated" ? "Sort" : kanbanSortLabel(kanbanSort), icon: .arrowsDownUp)
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
             .fixedSize()
         }
         .buttonStyle(.dockHover)
@@ -3287,7 +3100,7 @@ struct WorkspaceActivitySidebar: View {
                 .disabled(!canCreateKanbanTask || control.isCreatingKanbanTask)
                 .help("Create task")
             }
-            TextField("Add context for Hermes (optional)", text: $kanbanBody, axis: .vertical)
+            DockTextField("Add context for Hermes (optional)", text: $kanbanBody, axis: .vertical)
                 .lineLimit(1...3)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
@@ -3425,15 +3238,13 @@ struct WorkspaceActivitySidebar: View {
                 }
                 Spacer(minLength: 8)
                 HStack(spacing: 2) {
-                    Menu {
+                    DockMenu {
                         kanbanDetailActions(task, lane: lane)
                     } label: {
                         kanbanDetailHeaderIcon(.dotsThree)
                     }
                     // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
-                    .menuStyle(.button)
                     .buttonStyle(.dockHover)
-                    .menuIndicator(.hidden)
                     .fixedSize()
                     .help("Task actions")
                     .accessibilityLabel("Task actions")
@@ -3514,6 +3325,14 @@ struct WorkspaceActivitySidebar: View {
                         }
                     } else {
                         kanbanActivitySection(detail)
+                            .task(id: detail.id) {
+                                // ponytail: 4s poll of `kanban show`; Hermes has no per-task push stream.
+                                while !Task.isCancelled, !["done", "archived"].contains(task.status.lowercased()) {
+                                    try? await Task.sleep(for: .seconds(4))
+                                    if Task.isCancelled { break }
+                                    await control.refreshKanbanTaskQuietly(task)
+                                }
+                            }
                     }
                 }
                 .padding(16)
@@ -3555,6 +3374,21 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    private struct KanbanTimelineRow: Identifiable {
+        let id: String, title: String, text: String?, date: Date?
+    }
+
+    /// Events and comments merged, newest first, capped so a long run stays light.
+    private func kanbanTimeline(_ detail: KanbanTaskDetail) -> [KanbanTimelineRow] {
+        let events = detail.events.map {
+            KanbanTimelineRow(id: "e-\($0.id)", title: $0.kind.replacingOccurrences(of: "_", with: " ").capitalized, text: $0.note, date: $0.createdAt)
+        }
+        let comments = detail.comments.map {
+            KanbanTimelineRow(id: "c-\($0.id)", title: "\($0.author) commented", text: $0.body, date: $0.createdAt)
+        }
+        return Array((events + comments).sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }.prefix(60))
+    }
+
     private func kanbanActivitySection(_ detail: KanbanTaskDetail) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             if let step = selectedKanbanTask?.currentStepKey, !step.isEmpty {
@@ -3572,6 +3406,32 @@ struct WorkspaceActivitySidebar: View {
                         if let note = selectedKanbanTask?.latestEventNote, !note.isEmpty {
                             Text(note).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
                         }
+                    }
+                }
+            }
+            kanbanInspectorSection("TIMELINE · \(detail.events.count + detail.comments.count)") {
+                let rows = kanbanTimeline(detail)
+                if rows.isEmpty {
+                    Text("No events yet. This updates live while the task runs.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                } else {
+                    ForEach(rows) { row in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(row.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                                Spacer()
+                                if let date = row.date {
+                                    Text(date.formatted(date: .omitted, time: .standard))
+                                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                }
+                            }
+                            if let text = row.text {
+                                Text(text).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).textSelection(.enabled)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
                     }
                 }
             }
@@ -3696,7 +3556,7 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockAccent)
                     .frame(width: 16)
-                TextField("Sessions, projects, Inbox, reminders", text: $searchQuery)
+                DockTextField("Sessions, projects, Inbox, reminders", text: $searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Color.dockPrimaryText)
@@ -3737,7 +3597,7 @@ struct WorkspaceActivitySidebar: View {
                         .foregroundStyle(Color.dockSecondaryText)
                 }
             } else if control.searchResults.isEmpty {
-                emptyState(icon: .question, title: "No matches", detail: "Try a session title, project name, reminder, or Inbox detail.")
+                emptyState(icon: .question, title: "No matches", detail: "Try a session title, project name, or reminder.")
             } else {
                 sectionLabel("RESULTS  ·  \(control.searchResults.count)")
                 ForEach(control.searchResults) { result in
@@ -3788,865 +3648,6 @@ struct WorkspaceActivitySidebar: View {
         .contentShape(Rectangle())
     }
 
-    private var inboxContent: some View {
-        let visibleItems = control.attention.filter { $0.state == .open && inboxFilter.includes($0) }
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                sectionLabel("ATTENTION  ·  \(visibleItems.count)")
-                Spacer()
-                Picker("Inbox filter", selection: $inboxFilter) {
-                    ForEach(InboxFilter.allCases) { filter in Text(filter.rawValue).tag(filter) }
-                }
-                .labelsHidden()
-                .font(.system(size: 11))
-            }
-            if visibleItems.isEmpty {
-                emptyState(icon: .checkCircle, title: "Nothing needs your attention", detail: "Approvals, failures, clarifications, and due reminders will appear here.")
-            } else {
-                ForEach(visibleItems) { item in
-                    attentionItemRow(item, isSelected: selectedAttentionID == item.id)
-                }
-            }
-        }
-    }
-
-    private func attentionItemRow(_ item: AttentionItem, isSelected: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .top, spacing: 9) {
-                DockIcon(item.kind == .approval ? .warning : .circleDashed)
-                    .font(.system(size: 12)).foregroundStyle(item.kind == .approval ? Color.dockWarning : Color.dockAccent)
-                    .frame(width: 15)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
-                    Text(item.detail).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(4)
-                }
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: 12) {
-                ForEach(item.actions.filter { $0 != .dismiss }, id: \.self) { action in
-                    let isPending = control.isActionPending(control.attentionActionID(action, item: item))
-                    Button {
-                        if action == .complete, let reminder = control.reminder(withID: item.reference.sourceID) {
-                            reminderForConfirmation = reminder
-                            isShowingReminderConfirmation = true
-                        } else if action == .respond {
-                            clarificationItem = item
-                        } else {
-                            control.respond(to: item, action: action)
-                        }
-                    } label: {
-                        DockActionLabel(
-                            title: action.rawValue.uppercased(),
-                            pendingTitle: action == .stop ? "STOPPING…" : "WORKING…",
-                            isPending: isPending,
-                            tint: action == .deny || action == .stop ? Color.dockWarning : Color.dockAccent
-                        )
-                    }
-                    .buttonStyle(.dockHover)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(action == .deny || action == .stop ? Color.dockWarning : Color.dockAccent)
-                    .disabled(isPending)
-                }
-                Button("DISMISS") { control.dismiss(item.id) }
-                    .buttonStyle(.dockHover)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockMetadataText)
-                Button("SNOOZE") { control.snooze(item.id) }
-                    .buttonStyle(.dockHover)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-        }
-        .padding(12)
-        .dockGlassPane()
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(isSelected ? Color.dockAccent : .clear, lineWidth: 0.5))
-    }
-
-    /// Global operations overview. It deliberately excludes the active chat's
-    /// focus, readiness, handoff, and runtime transcript; those live in the
-    /// Session overview.
-    /// Global cross-session Control Center overview dashboard.
-    /// Aggregates state across all sessions including active agents, processes,
-    /// tasks, reminders, automations, and global operational controls.
-    private var nowContent: some View {
-        // Collect cross-session metrics and states
-        let openAttention = control.attention.filter { $0.state == .open }
-        let activeSessions = control.activeSessions
-        let totalRunningCount = WorkspaceOverviewMetrics.runningCount(
-            activeSessions: activeSessions,
-            agents: control.activeAgents,
-            processes: control.processes,
-            backgroundTasks: model.backgroundTasks
-        )
-        let setupCapabilities = unavailableSetupCapabilities
-
-        return VStack(alignment: .leading, spacing: 20) {
-            // Banner if delegation is globally paused
-            if control.delegationPaused {
-                HStack(spacing: 8) {
-                    DockIcon(.pauseCircle, weight: .fill)
-                        .font(.system(size: 14))
-                        .foregroundStyle(Color.dockWarning)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("DELEGATION PAUSED")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Color.dockWarning)
-                        Text("Subagent auto-dispatch is currently paused globally.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.dockMetadataText)
-                    }
-                    Spacer(minLength: 0)
-                    Button("RESUME") {
-                        Task { _ = await control.pauseDelegation(false) }
-                    }
-                    .buttonStyle(.dockHover)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Color.dockAccent)
-                }
-                .padding(10)
-                .dockGlassPane()
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
-            }
-
-            todayOverviewHeader(
-                attentionCount: openAttention.count,
-                runningCount: totalRunningCount,
-                scheduledCount: control.cronJobs.count
-            )
-
-            // Triage section for items needing immediate user action
-            sectionLabel(openAttention.isEmpty ? "CLEAR TO PROCEED" : "NEEDS YOUR ATTENTION")
-            if let attention = openAttention.first {
-                attentionItemRow(attention)
-                if openAttention.count > 1 {
-                    Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
-                        .buttonStyle(.dockHover)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
-                }
-            } else {
-                attentionRow(icon: .checkCircle, title: "All clear", detail: "No approvals, clarifications, or failures need a response.", color: .dockSuccess)
-            }
-
-            // The feed is flattened across every persisted session, then sorted
-            // globally so one session can contribute multiple recent steps.
-            let latestActivities = control.latestActivities
-            if latestActivities.isEmpty,
-               let state = control.refreshState(for: "latest.activity"),
-               state.isStale {
-                Text("Latest activity is unavailable. \(state.error ?? "Retry when Hermes reconnects.")")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(12)
-                    .dockGlassPane()
-            }
-            if !latestActivities.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.pulse)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                        Text("Recent activity  ·  \(latestActivities.count)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.dockAccent)
-                        Spacer(minLength: 0)
-                        Button("VIEW ALL") { select(.activity) }
-                            .buttonStyle(.dockHover)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    if let state = control.refreshState(for: "latest.activity"), state.isStale {
-                        Text("Showing the last successful activity snapshot. \(state.error ?? "Retry when Hermes reconnects.")")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.dockWarning)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 6)
-                    }
-
-                    ForEach(latestActivities.prefix(4)) { activity in
-                        Button {
-                            control.openLatestActivitySession(activity)
-                        } label: {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(activity.sessionID == model.sessionID ? Color.dockAccent : sessionStateColor(activity.state))
-                                    .frame(width: 5, height: 5)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    if let project = control.project(forSessionID: activity.sessionID),
-                                       !project.name.isEmpty,
-                                       project.name != "__no_project__" {
-                                        Text(projectDisplayName(project))
-                                            .font(.system(size: 12, weight: .semibold))
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                            .lineLimit(1)
-                                        MarkdownMessageView(
-                                            markdown: LatestActivityPresentation.boundedMarkdown(activity.sessionTitle)
-                                        )
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.dockMetadataText)
-                                        .frame(maxHeight: 20, alignment: .top)
-                                        .clipped()
-                                        .accessibilityLabel(activity.sessionTitle)
-                                    } else {
-                                        MarkdownMessageView(
-                                            markdown: LatestActivityPresentation.boundedMarkdown(activity.sessionTitle)
-                                        )
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                        .frame(maxHeight: 20, alignment: .top)
-                                        .clipped()
-                                        .accessibilityLabel(activity.sessionTitle)
-                                    }
-                                    MarkdownMessageView(
-                                        markdown: LatestActivityPresentation.boundedMarkdown(activity.activityName)
-                                    )
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockMetadataText)
-                                    .frame(maxHeight: 42, alignment: .top)
-                                    .clipped()
-                                    .accessibilityLabel(activity.activityName)
-                                }
-                                Spacer(minLength: 0)
-                                DockIcon(.caretRight)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(Color.dockAccent)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .dockListRow()
-                        }
-                        .buttonStyle(.dockHover)
-                    }
-                }
-                .dockGlassPane()
-            }
-
-            // Cross-session active agents, processes, and running background tasks
-            let hasRunningWork = !control.activeAgents.isEmpty
-                || !control.processes.isEmpty
-                || model.backgroundTasks.contains(where: { $0.status == .running })
-            if hasRunningWork {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.lightning)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                        Text("Running Now")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.dockAccent)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Display active subagents across all sessions
-                        ForEach(control.activeAgents) { agent in
-                            HStack(spacing: 8) {
-                                DockIcon(.users)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockAccent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(agent.name)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                        .lineLimit(1)
-                                    Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.dockMetadataText)
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .dockListRow()
-                        }
-
-                        // Display active processes
-                        ForEach(control.processes) { process in
-                            HStack(spacing: 8) {
-                                DockIcon(.gearSix)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockSecondaryText)
-                                Text(process.name)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockPrimaryText)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                                Text(process.state.uppercased())
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Color.dockMetadataText)
-                            }
-                            .dockListRow()
-                        }
-
-                        // Display running background tasks
-                        ForEach(model.backgroundTasks.filter { $0.status == .running }) { bgTask in
-                            HStack(spacing: 8) {
-                                DockIcon(.terminal)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockAccent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(bgTask.prompt)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                        .lineLimit(1)
-                                    Text(bgTask.id)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.dockMetadataText)
-                                }
-                                Spacer(minLength: 0)
-                                Text("RUNNING")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Color.dockAccent)
-                            }
-                            .dockListRow()
-                        }
-                    }
-                }
-                .dockGlassPane()
-            }
-
-            // List of active sessions with state indicator badges
-            if !activeSessions.isEmpty {
-                sectionLabel("ACTIVE SESSIONS  ·  \(activeSessions.count)")
-                ForEach(activeSessions.prefix(4)) { session in
-                    let lifecycle = SessionLifecyclePresentation.status(for: session, refresh: control.refreshState(for: "sessions"))
-                    Button {
-                        if session.id != model.sessionID {
-                            openProjectSession(session)
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Circle().fill(sessionLifecycleColor(lifecycle)).frame(width: 5, height: 5)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-                                HStack(spacing: 6) {
-                                    if let projectID = control.projectIDBySessionID[session.id] {
-                                        Text(projectID.uppercased())
-                                            .font(.system(size: 10, weight: .semibold))
-                                            .foregroundStyle(Color.dockAccent)
-                                    }
-                                    Text(session.displayPreview ?? lifecycle.label).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
-                                }
-                            }
-                            Spacer(minLength: 0)
-                            Text(SessionLifecyclePresentation.rowLabel(for: session, isCurrent: session.id == model.sessionID, refresh: control.refreshState(for: "sessions")).uppercased())
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(sessionLifecycleColor(lifecycle))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .dockListRow()
-                        .accessibilityLabel(SessionLifecyclePresentation.accessibilityLabel(for: session, isCurrent: session.id == model.sessionID, refresh: control.refreshState(for: "sessions")))
-                    }
-                    .buttonStyle(.dockHover)
-                }
-                if activeSessions.count > 4 {
-                    Button("VIEW ALL CONVERSATIONS") { select(.session) }
-                        .buttonStyle(.dockHover)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
-                        .padding(.top, 4)
-                }
-            }
-
-            // Scheduled automations
-            if !control.cronJobs.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.calendarDots)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Text("Scheduled Work  ·  \(control.cronJobs.count)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(control.cronJobs.prefix(2)) { job in
-                            HStack(spacing: 8) {
-                                Circle().fill(job.enabled ? Color.dockAccent : Color.dockMetadataText)
-                                    .frame(width: 5, height: 5)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(job.name)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                    Text(CronScheduleFormatting.humanReadable(job.schedule))
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.dockMetadataText)
-                                }
-                                Spacer(minLength: 0)
-                                if job.sessionID != nil {
-                                    Button("OPEN") { control.openCronSession(job) }
-                                        .buttonStyle(.dockHover)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundStyle(Color.dockAccent)
-                                }
-                            }
-                            .dockListRow()
-                        }
-                    }
-
-                    Button("VIEW ALL AUTOMATIONS") { select(.automations) }
-                        .buttonStyle(.dockHover)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                }
-                .dockGlassPane()
-            }
-
-            // Reminders section
-            if !control.reminders.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.listChecks)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Text("REMINDERS  ·  \(control.reminders.count)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(control.reminders.prefix(2)) { reminder in
-                            Button {
-                                reminderForConfirmation = reminder
-                                isShowingReminderConfirmation = true
-                            } label: {
-                                HStack(spacing: 8) {
-                                    DockIcon(reminder.isOverdue ? .warningCircle : .listChecks)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(reminder.isOverdue ? Color.dockWarning : Color.dockAccent)
-                                    Text(reminder.title)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                        .lineLimit(1)
-                                    Spacer(minLength: 0)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .dockListRow()
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.dockHover)
-                        }
-                    }
-                }
-                .dockGlassPane()
-            }
-
-            // Integration & capability setup warning banner
-            if !setupCapabilities.isEmpty {
-                Button { select(.core) } label: {
-                    HStack(spacing: 9) {
-                        DockIcon(.warning)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockWarning)
-                            .frame(width: 15)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("SETUP  ·  \(setupCapabilities.count)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .tracking(0.7)
-                                .foregroundStyle(Color.dockPrimaryText)
-                            Text("Review integrations and required permissions in Settings.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Color.dockMetadataText)
-                        }
-                        Spacer(minLength: 0)
-                        DockIcon(.caretRight)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                    }
-                    .padding(12)
-                    .dockGlassPane()
-                    .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.dockHover)
-            }
-        }
-    }
-
-    /// The active-chat dashboard. All focus, readiness, and runtime details
-    /// below are scoped to `model.sessionID`.
-    private var sessionOverviewContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            let openAttention = control.attention.filter { $0.state == .open }
-            let mission = MissionControlSnapshotBuilder.make(
-                sessionTitle: model.currentSessionTitle,
-                repository: workflow.repository.isGitRepository ? workflow.repository : nil,
-                model: model.runtimeConfiguration?.model,
-                context: control.sessionContext,
-                attention: control.attention,
-                sessions: control.activeSessions,
-                activeSessionID: model.sessionID,
-                agents: control.activeAgents,
-                processes: control.processes,
-                backgroundTasks: model.backgroundTasks,
-                activities: model.agentActivities,
-                cronRuns: control.cronRuns,
-                verification: control.verification
-            )
-
-            sessionWorkspaceHeader
-            missionFocusStrip(mission.focus)
-            readinessCard(mission.readiness)
-            sessionHandoffCard(mission: mission)
-
-            HStack(spacing: 8) {
-                todayMetric("ATTENTION", value: openAttention.count, color: openAttention.isEmpty ? Color.dockSuccess : Color.dockWarning)
-                todayMetric("RUNNING", value: control.activeAgents.count + control.processes.count, color: Color.dockAccent)
-                todayMetric("SCHEDULED", value: control.cronJobs.count, color: Color.dockSuccess)
-            }
-
-            sectionLabel("NEEDS ME")
-            if !openAttention.isEmpty {
-                attentionItemRow(openAttention.first!, isSelected: false)
-                if openAttention.count > 1 {
-                    Button("VIEW ALL IN INBOX  ·  \(openAttention.count) ITEMS") { select(.inbox) }
-                        .buttonStyle(.dockHover)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
-                        .padding(.top, 2)
-                }
-            } else {
-                attentionRow(
-                    icon: .checkCircle,
-                    title: "All clear",
-                    detail: "No approvals, clarifications, or failures need a response.",
-                    color: .dockSuccess
-                )
-            }
-
-            let backgroundSessions = control.activeSessions.filter { $0.id != model.sessionID }
-            let hasRunningWork = !backgroundSessions.isEmpty || !control.activeAgents.isEmpty || !control.processes.isEmpty
-            if hasRunningWork {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.lightning)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                        Text("Running Now")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.dockAccent)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(control.activeAgents) { agent in
-                            HStack(spacing: 8) {
-                                DockIcon(.users)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockAccent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(agent.name)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                        .lineLimit(1)
-                                    Text(agent.sessionID.map { "\($0)  ·  \(agent.state.uppercased())" } ?? agent.state.uppercased())
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.dockMetadataText)
-                                        .lineLimit(1)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .dockListRow()
-                        }
-
-                        ForEach(backgroundSessions) { session in
-                            Button {
-                                Task {
-                                    _ = try? await model.requestControl(HermesFeatureIDs.ID.sessionActivate, params: ["session_id": session.id])
-                                    model.requestComposerFocus()
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Circle().fill(Color.dockAccent).frame(width: 5, height: 5)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(session.title)
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundStyle(Color.dockPrimaryText)
-                                            .lineLimit(1)
-                                        Text(session.displayPreview ?? session.state.uppercased())
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(Color.dockMetadataText)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer(minLength: 0)
-                                    DockIcon(.caretRight)
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.dockAccent)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .dockListRow()
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.dockHover)
-                        }
-
-                        ForEach(control.processes) { process in
-                            HStack(spacing: 8) {
-                                DockIcon(.gearSix)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockSecondaryText)
-                                Text(process.name)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.dockPrimaryText)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                                Text(process.state.uppercased())
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.dockMetadataText)
-                            }
-                            .dockListRow()
-                        }
-                    }
-                }
-                .dockGlassPane()
-            }
-
-            if !model.agentActivities.isEmpty || !control.cronRuns.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.clockCounterClockwise)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Text("CHANGED · CURRENT RUNTIME WINDOW")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(model.agentActivities.suffix(3).reversed())) { activity in
-                            todayActivityRow(
-                                timestamp: HumanDateFormatting.timeOnly(activity.timestamp),
-                                label: activity.kind.replacingOccurrences(of: "subagent.", with: "").uppercased(),
-                                detail: activity.text,
-                                color: Color.dockAccent
-                            )
-                        }
-                        ForEach(control.cronRuns.prefix(3)) { run in
-                            todayActivityRow(
-                                timestamp: run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Recent",
-                                label: "AUTOMATION  ·  \(run.status.uppercased())",
-                                detail: run.jobID ?? "Scheduled job execution",
-                                color: cronRunIsSuccessful(run) ? Color.dockSuccess : Color.dockWarning
-                            )
-                        }
-                    }
-                }
-                .dockGlassPane()
-            }
-
-            if !control.cronJobs.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.calendarDots)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Text("Scheduled Work  ·  \(control.cronJobs.count)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(control.cronJobs.prefix(3)) { job in
-                            HStack(spacing: 8) {
-                                Circle().fill(job.enabled ? Color.dockAccent : Color.dockMetadataText)
-                                    .frame(width: 5, height: 5)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(job.name)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                    Text(CronScheduleFormatting.humanReadable(job.schedule))
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                    Text(job.schedule)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(Color.dockMetadataText)
-                                }
-                                Spacer(minLength: 0)
-                                if job.sessionID != nil {
-                                    Button("OPEN") { control.openCronSession(job) }
-                                        .buttonStyle(.dockHover)
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(Color.dockAccent)
-                                }
-                            }
-                            .dockListRow()
-                        }
-                    }
-
-                    Button("VIEW ALL AUTOMATIONS") { select(.automations) }
-                        .buttonStyle(.dockHover)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockAccent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                }
-                .dockGlassPane()
-            }
-
-            if !control.reminders.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        DockIcon(.listChecks)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Text("REMINDERS  ·  \(control.reminders.count)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .tracking(0.8)
-                            .foregroundStyle(Color.dockSecondaryText)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 6)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(control.reminders.prefix(3)) { reminder in
-                            Button {
-                                reminderForConfirmation = reminder
-                                isShowingReminderConfirmation = true
-                            } label: {
-                                HStack(spacing: 8) {
-                                    DockIcon(reminder.isOverdue ? .warningCircle : .listChecks)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(reminder.isOverdue ? Color.dockWarning : Color.dockAccent)
-                                    Text(reminder.title)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(Color.dockPrimaryText)
-                                        .lineLimit(1)
-                                    Spacer(minLength: 0)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .dockListRow()
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.dockHover)
-                        }
-                    }
-                }
-                .dockGlassPane()
-            }
-
-            let setupCapabilities = unavailableSetupCapabilities
-            if !setupCapabilities.isEmpty {
-                Button { select(.core) } label: {
-                    HStack(spacing: 9) {
-                        DockIcon(.warning)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockWarning)
-                            .frame(width: 15)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("SETUP  ·  \(setupCapabilities.count)")
-                                .font(.system(size: 12, weight: .semibold))
-                                .tracking(0.7)
-                                .foregroundStyle(Color.dockPrimaryText)
-                            Text("Review integrations and required permissions in Settings.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.dockMetadataText)
-                        }
-                        Spacer(minLength: 0)
-                        DockIcon(.caretRight)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                    }
-                    .padding(12)
-                    .dockGlassPane()
-                    .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4, style: .continuous).stroke(Color.dockWarning.opacity(0.55), lineWidth: 0.5))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.dockHover)
-            }
-
-            if activeRepositoryPath != nil {
-                repositoryContent
-            }
-        }
-    }
-
-    private var sessionWorkspaceHeader: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Button {
-                select(.today)
-            } label: {
-                DockIconLabel("WORKSPACE", icon: .caretLeft)
-            }
-            .buttonStyle(.dockHover)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Color.dockAccent)
-
-            Rectangle().fill(Color.dockBorderLight).frame(width: 0.5, height: 18)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.currentSessionTitle ?? "Untitled session")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 0)
-
-            Menu {
-                ForEach(ControlTab.sessionNavigation) { mode in
-                    secondaryModeButton(mode)
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Text(selectedMode.tabLabel.uppercased())
-                    if badgeCount(for: selectedMode) > 0 {
-                        badgeView(count: badgeCount(for: selectedMode), isUrgent: badgeIsUrgent(for: selectedMode))
-                    }
-                }
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.65)
-                .foregroundStyle(Color.dockAccent)
-            }
-            .menuStyle(.borderlessButton)
-            .buttonStyle(.dockHover)
-            .help("Session view")
-        }
-        .padding(.bottom, 2)
-    }
-
-    /// Returns the color indicator matching a session's current operational state.
-    private func sessionStateColor(_ state: String) -> Color {
-        switch state.lowercased() {
-        case "running", "active": Color.dockAccent
-        case "blocked", "error", "failed": Color.dockWarning
-        case "completed", "idle", "done": Color.dockSuccess
-        default: Color.dockSecondaryText
-        }
-    }
-
     private func sessionLifecycleColor(_ status: SessionLifecycleStatus) -> Color {
         switch status {
         case .active: Color.dockAccent
@@ -4654,84 +3655,6 @@ struct WorkspaceActivitySidebar: View {
         case .failed: Color.dockDestructive
         case .stale: Color.dockWarning
         case .unavailable: Color.dockSecondaryText
-        }
-    }
-
-    /// A compact orientation point for the global Today surface.  The counts
-    /// remain actionable, but avoid turning the opening of the page into a
-    /// dashboard of equally weighted metric cards.
-    private func todayOverviewHeader(
-        attentionCount: Int,
-        runningCount: Int,
-        scheduledCount: Int
-    ) -> some View {
-        HStack(spacing: 0) {
-            todayPulseMetric(
-                value: "\(attentionCount)",
-                label: "NEEDS YOU",
-                icon: .warningCircle,
-                tint: attentionCount > 0 ? .dockWarning : .dockSuccess
-            ) { select(.inbox) }
-            todayPulseMetric(
-                value: "\(runningCount)",
-                label: "IN FLIGHT",
-                icon: .lightning,
-                tint: runningCount > 0 ? .dockAccent : .dockSecondaryText
-            ) { select(.session) }
-            todayPulseMetric(
-                value: "\(control.activeSessions.count)",
-                label: "SESSIONS",
-                icon: .chats,
-                tint: control.activeSessions.isEmpty ? .dockSecondaryText : .dockAccent
-            ) { select(.session) }
-            todayPulseMetric(
-                value: "\(scheduledCount)",
-                label: "SCHEDULED",
-                icon: .calendarDots,
-                tint: scheduledCount > 0 ? .dockSuccess : .dockSecondaryText
-            ) { select(.automations) }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous)
-                .fill(Color.dockSurface.opacity(0.34))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: DockLayout.paneRadius + 2, style: .continuous)
-                .stroke(Color.dockBorderLight, lineWidth: 0.5)
-        }
-    }
-
-    private func todayPulseMetric(
-        value: String,
-        label: String,
-        icon: Ph,
-        tint: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    DockIcon(icon)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.dockOnAccentText)
-                    Text(value)
-                        .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                }
-                .foregroundStyle(tint)
-                Text(label)
-                    .font(.system(size: 9, weight: .bold))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.dockMetadataText)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.dockHover)
-        .overlay(alignment: .trailing) {
-            Color.dockBorderLight.frame(width: 0.5, height: 30)
         }
     }
 
@@ -4768,116 +3691,6 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
-    private var workspaceOverviewMetricColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: 150, maximum: 230), spacing: 8, alignment: .leading)]
-    }
-
-    private func missionFocusStrip(_ focus: MissionControlFocus) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 7) {
-                DockIcon(.crosshair).foregroundStyle(Color.dockAccent)
-                Text("MISSION CONTROL")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.8).foregroundStyle(Color.dockAccent)
-                Spacer()
-                if focus.runningCount > 0 { Text("\(focus.runningCount) RUNNING").font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent) }
-            }
-            Text([focus.sessionTitle, focus.branch, focus.model].compactMap { $0 }.joined(separator: "  ·  "))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.dockPrimaryText)
-                .lineLimit(1)
-            let telemetry = [
-                focus.contextPercent.map { "Context \(Int($0.rounded()))%" },
-                focus.changedFiles.map { "\($0) changed" }
-            ].compactMap { $0 }
-            if !telemetry.isEmpty {
-                Text(telemetry.joined(separator: "  ·  "))
-                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-            }
-        }
-        .padding(12)
-        .dockGlassPane()
-    }
-
-    private func readinessCard(_ readiness: ReadinessSummary) -> some View {
-        let color: Color
-        switch readiness.state {
-        case .ready: color = .dockSuccess
-        case .blocked: color = .dockDestructive
-        case .needsReview: color = .dockWarning
-        case .notApplicable: color = .dockSecondaryText
-        }
-        return HStack(alignment: .top, spacing: 9) {
-            DockIcon(readiness.state == .ready ? .sealCheck : readiness.state == .blocked ? .xCircle : .warningCircle)
-                .foregroundStyle(color)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("READINESS · \(readiness.state.rawValue.uppercased())")
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(color)
-                Text(readiness.detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
-                if let scope = readiness.verificationScope { Text("EVIDENCE · \(scope.uppercased())").font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText) }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .dockGlassPane()
-    }
-
-    private func sessionHandoffCard(mission: MissionControlSnapshot) -> some View {
-        let sessionID = model.sessionID
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("SESSION HANDOFF")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.7).foregroundStyle(Color.dockAccent)
-                Spacer()
-                let isPinned = sessionID.map(model.isSessionPinned) ?? false
-                if isPinned {
-                    Text("PINNED").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
-                }
-                if let session = (model.sessions + model.pinnedSessions).first(where: { $0.id == sessionID }) {
-                    Button(isPinned ? "UNPIN" : "PIN") { Task { await model.toggleSessionPinned(session) } }
-                        .buttonStyle(.dockHover).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockAccent)
-                        .disabled(model.pinningSessionID != nil)
-                }
-            }
-            if let title = mission.focus.sessionTitle { Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1) }
-            if let activity = model.agentActivities.last {
-                Text("LAST ACTIVITY · " + activity.text)
-                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
-            } else {
-                Text("No Hermes activity in the current runtime window.")
-                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
-            }
-            let files = Array(Set(model.activeSubagents.flatMap(\.filesWritten))).sorted()
-            if !files.isEmpty { Text("FILES WRITTEN · " + files.prefix(3).joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText).lineLimit(1) }
-        }
-        .padding(12)
-        .dockGlassPane()
-        .onAppear { if let sessionID { commandCenterPreferences.markSeen("session:\(sessionID)") } }
-    }
-
-    private func todayActivityRow(timestamp: String, label: String, detail: String, color: Color) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Circle().fill(color).frame(width: 5, height: 5).padding(.top, 5)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 7) {
-                    Text(label)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(color)
-                    Text(timestamp)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockMetadataText)
-                }
-                Text(detail)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(2)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .dockListRow()
-    }
-
     private var repositoryContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 9) {
@@ -4900,7 +3713,7 @@ struct WorkspaceActivitySidebar: View {
                 if isRefreshingRepository { ProgressView().controlSize(.small) }
             }
             if workflow.repository.isGitRepository {
-                Menu {
+                DockMenu {
                     if workflow.branches.isEmpty {
                         Text("No local branches found")
                     } else {
@@ -4926,7 +3739,6 @@ struct WorkspaceActivitySidebar: View {
                             .font(.system(size: 8, weight: .bold))
                     }
                 }
-                .menuStyle(.borderlessButton)
                 .buttonStyle(.dockHover)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
@@ -5697,7 +4509,7 @@ struct WorkspaceActivitySidebar: View {
                         Text("Create a handoff or branch before context pressure grows. Compression remains an explicit confirmed action.")
                             .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 8) {
-                            TextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.dockGlass)
+                            DockTextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.dockGlass)
                             Button("Handoff") { isShowingHandoffConfirmation = true }
                                 .buttonStyle(.dockHover).foregroundStyle(Color.dockAccent)
                                 .disabled(!control.capabilityAvailable("gateway"))
@@ -5737,7 +4549,7 @@ struct WorkspaceActivitySidebar: View {
                     Text("Hermes will apply this guidance after the next tool-result boundary without restarting the turn.")
                         .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                     HStack(spacing: 8) {
-                    TextField("Steer the active turn…", text: $sessionSteerText)
+                    DockTextField("Steer the active turn…", text: $sessionSteerText)
                         .textFieldStyle(.dockGlass)
                     Button("Steer") {
                         let text = sessionSteerText
@@ -5777,7 +4589,7 @@ struct WorkspaceActivitySidebar: View {
             settingsDisclosure(title: "Session actions", subtitle: "Rename, redirect, branch, or pause the active session", icon: .lightning, isExpanded: $isSessionActionsExpanded) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        TextField("New session title", text: $sessionRenameText)
+                        DockTextField("New session title", text: $sessionRenameText)
                             .textFieldStyle(.dockGlass)
                         Button("Rename") {
                             Task { if await control.renameActiveSession(sessionRenameText) { sessionRenameText = "" } }
@@ -5787,7 +4599,7 @@ struct WorkspaceActivitySidebar: View {
                         .disabled(sessionRenameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     HStack(spacing: 8) {
-                        TextField("Redirect the active turn…", text: $sessionRedirectText)
+                        DockTextField("Redirect the active turn…", text: $sessionRedirectText)
                             .textFieldStyle(.dockGlass)
                         Button("Redirect") {
                             let text = sessionRedirectText
@@ -5800,13 +4612,13 @@ struct WorkspaceActivitySidebar: View {
                         .disabled(sessionRedirectText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     HStack(spacing: 8) {
-                        TextField("Optional branch name", text: $sessionBranchName)
+                        DockTextField("Optional branch name", text: $sessionBranchName)
                             .textFieldStyle(.dockGlass)
                         Button("Branch") { isShowingBranchConfirmation = true }
                             .buttonStyle(.dockHover)
                             .foregroundStyle(Color.dockAccent)
                             .disabled(!control.capabilityAvailable("rpc-sessions"))
-                        TextField("Compression focus (optional)", text: $sessionCompressTopic)
+                        DockTextField("Compression focus (optional)", text: $sessionCompressTopic)
                             .textFieldStyle(.dockGlass)
                         Button("Compress") { isShowingCompressConfirmation = true }
                             .buttonStyle(.dockHover)
@@ -5975,7 +4787,7 @@ struct WorkspaceActivitySidebar: View {
                         Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 12)).tracking(0.5).foregroundStyle(Color.dockSecondaryText)
                     }
                 } else {
-                    Menu {
+                    DockMenu {
                         ForEach(model.runtimeModelOptions) { option in
                             Button {
                                 selectedModelID = option.id
@@ -6007,7 +4819,6 @@ struct WorkspaceActivitySidebar: View {
                         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
                         .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
                     }
-                    .menuStyle(.borderlessButton)
                     .buttonStyle(.dockHover)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .disabled(model.isLoadingRuntimeConfiguration)
@@ -6189,13 +5000,6 @@ struct WorkspaceActivitySidebar: View {
             }
             SettingsSection(title: "Startup", subtitle: "", tint: .dockAccent) {
                 VStack(alignment: .leading, spacing: 0) {
-                    SettingsPreferenceRow(title: "Launch in expanded view", detail: "Open the full workspace instead of the compact popup.") {
-                        settingsSwitch(isOn: Binding(
-                            get: { commandCenterPreferences.launchesExpandedByDefault },
-                            set: { commandCenterPreferences.setLaunchesExpandedByDefault($0) }
-                        ))
-                    }
-                    Divider().overlay(Color.dockBorderLight)
                     SettingsPreferenceRow(title: "Open at login", detail: "Start Herm automatically when you sign in to this Mac.") {
                         settingsSwitch(isOn: Binding(
                             get: { opensAtLogin },
@@ -6292,14 +5096,12 @@ struct WorkspaceActivitySidebar: View {
 
     /// Each modifier drives at most one shortcut, so the other's choice is hidden.
     private func shortcutPicker(_ selection: Binding<DoubleTapShortcut>, excluding other: DoubleTapShortcut) -> some View {
-        Picker("", selection: selection) {
+        let label = { (option: DoubleTapShortcut) in option.keycap.map { "\(option.title)  \($0)" } ?? option.title }
+        return DockMenuPicker(title: label(selection.wrappedValue), selection: selection) {
             ForEach(DoubleTapShortcut.allCases.filter { $0 == .off || $0 != other }) { option in
-                Text(option.keycap.map { "\(option.title)  \($0)" } ?? option.title).tag(option)
+                DockMenuOption(label(option), value: option)
             }
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .fixedSize()
     }
 
     private func settingsSwitch(isOn: Binding<Bool>) -> some View {

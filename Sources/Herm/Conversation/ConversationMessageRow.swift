@@ -6,6 +6,8 @@ enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
     case readAloud
     case branch
     case refresh
+    case reply
+    case pin
 
     var id: String { rawValue }
 
@@ -15,6 +17,8 @@ enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
         case .readAloud: .speakerHigh
         case .branch: .gitBranch
         case .refresh: .arrowClockwise
+        case .reply: .arrowBendUpLeft
+        case .pin: .pushPin
         }
     }
 
@@ -24,6 +28,8 @@ enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
         case .readAloud: "Read message aloud"
         case .branch: "Branch from this message"
         case .refresh: "Refresh this response"
+        case .reply: "Reply to this message"
+        case .pin: "Pin message"
         }
     }
 }
@@ -49,6 +55,16 @@ struct ConversationMessageRow: View, Equatable {
     let onBranch: () -> Void
     let onReadAloud: () -> Void
     let onRefresh: () -> Void
+    let onReply: () -> Void
+    let showsPinAction: Bool
+    let isPinAvailable: Bool
+    let isPinned: Bool
+    let onPin: () -> Void
+    let onForward: ((BotSummary, String, @escaping (String?) -> Void) -> Void)?
+    @State private var sendTarget: BotSummary?
+    @State private var sendNote = ""
+    @State private var sendError: String?
+    @State private var isForwarding = false
     let loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)?
     init(
         message: ChatMessage,
@@ -68,6 +84,12 @@ struct ConversationMessageRow: View, Equatable {
         onBranch: @escaping () -> Void = {},
         onReadAloud: @escaping () -> Void = {},
         onRefresh: @escaping () -> Void = {},
+        onReply: @escaping () -> Void = {},
+        showsPinAction: Bool = false,
+        isPinAvailable: Bool = false,
+        isPinned: Bool = false,
+        onPin: @escaping () -> Void = {},
+        onForward: ((BotSummary, String, @escaping (String?) -> Void) -> Void)? = nil,
         loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)? = nil
     ) {
         self.message = message
@@ -87,6 +109,12 @@ struct ConversationMessageRow: View, Equatable {
         self.onBranch = onBranch
         self.onReadAloud = onReadAloud
         self.onRefresh = onRefresh
+        self.onReply = onReply
+        self.showsPinAction = showsPinAction
+        self.isPinAvailable = isPinAvailable
+        self.isPinned = isPinned
+        self.onPin = onPin
+        self.onForward = onForward
         self.loadKanbanDetail = loadKanbanDetail
     }
 
@@ -109,6 +137,9 @@ struct ConversationMessageRow: View, Equatable {
             && lhs.pendingAction == rhs.pendingAction
             && lhs.areSessionActionsAvailable == rhs.areSessionActionsAvailable
             && lhs.isSpeaking == rhs.isSpeaking
+            && lhs.showsPinAction == rhs.showsPinAction
+            && lhs.isPinAvailable == rhs.isPinAvailable
+            && lhs.isPinned == rhs.isPinned
             && lhs.metrics == rhs.metrics
     }
 
@@ -134,7 +165,9 @@ struct ConversationMessageRow: View, Equatable {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user {
-                let userText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let fullText = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let replySplit = ReplyQuote.split(fullText)
+                let userText = replySplit?.body ?? fullText
                 Spacer(minLength: 40)
                 VStack(alignment: .trailing, spacing: 4) {
                     // Attachments sit above the text surface instead of inside
@@ -169,6 +202,7 @@ struct ConversationMessageRow: View, Equatable {
                             ? userText.dropFirst(mentionPrefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
                             : userText
                         VStack(alignment: .leading, spacing: 8) {
+                            if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
                             if let command {
                                 Text(command.name)
                                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
@@ -209,6 +243,7 @@ struct ConversationMessageRow: View, Equatable {
                                 .foregroundStyle(Color.dockAccent)
                         }
                         actionButton(.copy, action: onCopy)
+                        if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
                         Text(message.timeLabel)
                             .font(DockTypography.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
@@ -316,6 +351,7 @@ struct ConversationMessageRow: View, Equatable {
         }
         .padding(.horizontal, metrics.contentInset)
         .padding(.vertical, message.systemEvent != nil || message.kanbanNotice != nil ? 1 : 8)
+        .padding(.top, message.role == .user ? 12 : 0)
     }
 
     /// The tail corner points toward the sender edge so consecutive prompts
@@ -338,6 +374,23 @@ struct ConversationMessageRow: View, Equatable {
         return "Steering · \(status)"
     }
 
+    private enum AssistantBlock { case markdown(String), image(String), files([String]) }
+
+    /// Merges consecutive non-image attachments into one block so they render as a single card.
+    private static func groupFiles(_ segments: [ChatMediaSegment]) -> [AssistantBlock] {
+        var blocks: [AssistantBlock] = []
+        for segment in segments {
+            switch segment {
+            case .markdown(let text): blocks.append(.markdown(text))
+            case .media(let path) where ArtifactService.kind(for: path) == .image: blocks.append(.image(path))
+            case .media(let path):
+                if case .files(let paths)? = blocks.last { blocks[blocks.count - 1] = .files(paths + [path]) }
+                else { blocks.append(.files([path])) }
+            }
+        }
+        return blocks
+    }
+
     @ViewBuilder
     private var assistantBody: some View {
         let segments = ChatMediaSegment.split(message.text, delivered: ArtifactService.deliveredFiles(in: message.activity))
@@ -345,12 +398,21 @@ struct ConversationMessageRow: View, Equatable {
             messageMarkdownView(message.text)
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                    switch segment {
+                ForEach(Array(Self.groupFiles(segments).enumerated()), id: \.offset) { _, block in
+                    switch block {
                     case .markdown(let text):
                         messageMarkdownView(text)
-                    case .media(let path):
+                    case .image(let path):
                         ChatMediaAttachmentCard(path: path)
+                    case .files(let paths):
+                        VStack(spacing: 0) {
+                            ForEach(Array(paths.enumerated()), id: \.offset) { index, path in
+                                if index > 0 { Divider().overlay(Color.dockBorderLight) }
+                                ChatMediaAttachmentCard(path: path, grouped: true)
+                            }
+                        }
+                        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
                     }
                 }
             }
@@ -386,13 +448,14 @@ struct ConversationMessageRow: View, Equatable {
 
     private var messageActions: some View {
         HStack(spacing: 0) {
-            ForEach(ConversationMessageActionKind.allCases) { kind in
+            ForEach(ConversationMessageActionKind.allCases.filter { $0 != .pin || showsPinAction }) { kind in
                 actionButton(
                     kind,
                     action: { perform(kind) },
-                    isAvailable: kind == .copy || areSessionActionsAvailable
+                    isAvailable: kind == .pin ? isPinAvailable : kind == .copy || kind == .reply || areSessionActionsAvailable
                 )
             }
+            sendToBotMenu
             Rectangle()
                 .fill(Color.dockBorderLight)
                 .frame(width: 1, height: 12)
@@ -401,6 +464,75 @@ struct ConversationMessageRow: View, Equatable {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Message actions")
+    }
+
+    @ViewBuilder
+    private var sendToBotMenu: some View {
+        let targets = botsByID.values
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        if let onForward, message.hasBodyText, message.systemEvent == nil, !message.isError {
+            Menu {
+                ForEach(targets) { bot in
+                    Button(bot.name) { sendNote = ""; sendError = nil; sendTarget = bot }
+                }
+            } label: {
+                DockIcon(.paperPlaneTilt, size: 12, color: .dockSecondaryText)
+            }
+            .menuStyle(.button)
+            .buttonStyle(DockPressButtonStyle())
+            .menuIndicator(.hidden)
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+            .popover(item: $sendTarget, arrowEdge: .bottom) { bot in
+                forwardPopover(bot, onForward: onForward)
+            }
+            .help(targets.isEmpty ? "No bots available" : "Forward to bot")
+            .accessibilityLabel("Forward to bot")
+            .disabled(!areSessionActionsAvailable || targets.isEmpty)
+        }
+    }
+
+    /// The forwarded message rides along as an attachment-style quote; the
+    /// optional note is the user's own text above it.
+    private func forwardPopover(_ bot: BotSummary, onForward: @escaping (BotSummary, String, @escaping (String?) -> Void) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Forward to \(bot.name) in a new session")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockSecondaryText)
+            Text(message.text)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockSecondaryText)
+                .lineLimit(5)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorderLight, lineWidth: 1))
+            TextField("Add a message (optional)", text: $sendNote, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(1...4)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorderStrong, lineWidth: 1))
+            if let sendError {
+                Text(sendError).font(.system(size: 11)).foregroundStyle(Color.red)
+            }
+            HStack {
+                Spacer()
+                Button("Cancel") { sendTarget = nil }
+                Button(isForwarding ? "Sending…" : "Forward") {
+                    let note = sendNote.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let body = "Forwarded message:\n\(message.text)"
+                    isForwarding = true
+                    sendError = nil
+                    onForward(bot, note.isEmpty ? body : "\(note)\n\n\(body)") { error in
+                        isForwarding = false
+                        if let error { sendError = error } else { sendTarget = nil }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(isForwarding)
+            }
+        }
+        .padding(12)
+        .frame(width: 320)
     }
 
     private var messageMetadata: some View {
@@ -432,6 +564,8 @@ struct ConversationMessageRow: View, Equatable {
         case .copy: onCopy()
         case .readAloud: onReadAloud()
         case .refresh: onRefresh()
+        case .reply: onReply()
+        case .pin: onPin()
         }
     }
 
@@ -452,13 +586,13 @@ struct ConversationMessageRow: View, Equatable {
             .frame(width: 28, height: 28)
             .contentShape(Rectangle())
         } else {
-            let icon = kind == .readAloud && isSpeaking ? Ph.stop : kind.icon
-            let label = kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
+            let icon = kind == .pin && isPinned ? Ph.pushPinSlash : kind == .readAloud && isSpeaking ? Ph.stop : kind.icon
+            let label = kind == .pin && isPinned ? "Unpin message" : kind == .readAloud && isSpeaking ? "Stop reading aloud" : kind.label
             let isPending = pendingAction == kind
             let anotherMutationIsPending = pendingAction != nil
                 && (kind == .branch || kind == .refresh)
                 && !isPending
-            let iconColor = kind == .readAloud && isSpeaking
+            let iconColor = (kind == .readAloud && isSpeaking) || (kind == .pin && isPinned)
                 ? Color.dockAccent
                 : Color.dockSecondaryText
             Button(action: action) {

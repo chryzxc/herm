@@ -7,6 +7,7 @@ struct ComposerTextTests {
     @Test func markdownMessagesUseTheirSourceAsTheRenderEqualityBoundary() {
         #expect(MarkdownMessageView(markdown: "- One") == MarkdownMessageView(markdown: "- One"))
         #expect(MarkdownMessageView(markdown: "- One") != MarkdownMessageView(markdown: "- Two"))
+        #expect(MarkdownMessageView(markdown: "- One") != MarkdownMessageView(markdown: "- One", bodyFont: .system(size: 12)))
     }
 
     @Test func markdownLinksUseDockAffordancesWithoutStylingSurroundingText() throws {

@@ -966,6 +966,8 @@ struct ProviderQuotaWindow: Identifiable, Equatable {
     let limitDisplay: String?
     let resetsAt: Date?
     let resetsDisplay: String?
+    /// USD balance behind `remainingDisplay` for pay-as-you-go providers.
+    var amount: Double? = nil
 
     var threshold: ProviderQuotaThreshold {
         guard let remainingPercent else { return .unknown }
@@ -1091,7 +1093,10 @@ struct TodaySnapshot: Equatable {
     var developmentContext: RepositorySnapshot?
 }
 
+struct CronOwner: Codable, Equatable { let profileID: String? }
+
 struct CronSummary: Identifiable, Codable, Equatable {
+    var owner: CronOwner? = nil
     let id: String
     let name: String
     let schedule: String
@@ -1248,6 +1253,7 @@ struct CronReportDetail: Identifiable, Equatable {
 }
 
 struct CronReportRequest: Identifiable, Equatable {
+    var profileID: String? = nil
     let job: CronSummary
     let sessionID: String
     var id: String { sessionID }
@@ -1513,10 +1519,6 @@ struct HermesCheckpointSummary: Identifiable, Equatable, Sendable {
 }
 
 enum ControlTab: String, CaseIterable, Identifiable {
-    case today = "Today"
-    case session = "Session"
-    case inbox = "Inbox"
-    case activity = "Activity"
     case changes = "Source Control"
     case verification = "Verification"
     case automations = "Automations"
@@ -1532,11 +1534,11 @@ enum ControlTab: String, CaseIterable, Identifiable {
     /// The fixed navigation strip is deliberately limited to the destinations
     /// used to orient, triage, and act on work. Everything else remains one
     /// click away in a grouped menu instead of competing for horizontal space.
-    static let primaryNavigation: [ControlTab] = [.today, .inbox, .kanban]
+    static let primaryNavigation: [ControlTab] = [.kanban]
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
-    static let globalNavigation: [ControlTab] = [.today, .inbox, .kanban, .projects, .quota, .usage, .calendar]
-    static let sessionNavigation: [ControlTab] = [.session, .activity, .changes, .verification]
+    static let globalNavigation: [ControlTab] = [.kanban, .projects, .quota, .usage, .calendar]
+    static let sessionNavigation: [ControlTab] = [.changes, .verification]
     static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .officePreview, .core]
 
@@ -1547,7 +1549,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var tabLabel: String {
         switch self {
-        case .session: "Overview"
         case .changes: "Source Control"
         case .automations: "Automate"
         case .officePreview: "Office"
@@ -1568,10 +1569,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
 
     var icon: Ph {
         switch self {
-        case .today: .sun
-        case .session: .chats
-        case .inbox: .tray
-        case .activity: .pulse
         case .changes: .gitBranch
         case .verification: .sealCheck
         case .automations: .clockCounterClockwise
@@ -1588,7 +1585,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
 
     var pageHeaderTitle: String {
         switch self {
-        case .session: "Conversations"
         case .changes: "Source Control"
         case .automations: "Automation"
         case .officePreview: "Office"
@@ -1599,10 +1595,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
 
     var pageHeaderSubtitle: String {
         switch self {
-        case .today: "A clear view of active work and decisions"
-        case .session: "Sessions and active work"
-        case .inbox: "Approvals, clarifications, and follow-ups"
-        case .activity: "Background tasks and agent activity"
         case .changes: "Review local changes safely"
         case .verification: "Observed checks and delivery evidence"
         case .automations: "Recurring work, visible at a glance"
@@ -1618,60 +1610,16 @@ enum ControlTab: String, CaseIterable, Identifiable {
     }
 }
 
-enum InboxFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case needsResponse = "Needs response"
-    case approvals = "Approvals"
-    case clarifications = "Clarifications"
-    case failures = "Failures"
-    case reminders = "Reminders"
-    case completed = "Completed"
-
-    var id: String { rawValue }
-
-    func includes(_ item: AttentionItem) -> Bool {
-        switch self {
-        case .all: true
-        case .needsResponse: item.kind == .approval || item.kind == .clarification
-        case .approvals: item.kind == .approval
-        case .clarifications: item.kind == .clarification
-        case .failures: item.kind == .failure
-        case .reminders: item.kind == .reminder
-        case .completed: item.kind == .completed
-        }
-    }
-}
-
 struct ControlTabBadgeState: Equatable {
-    let urgentAttentionCount: Int
-    let inboxCount: Int
-    let activityCount: Int
     let changeCount: Int
     let verificationCount: Int
 
-    static func make(attention: [AttentionItem], activeAgentCount: Int, activeToolCount: Int, changeCount: Int = 0, verificationCount: Int = 0) -> ControlTabBadgeState {
-        let openAttention = attention.filter { $0.state == .open }
-        let urgent = openAttention.filter { item in
-            switch item.kind {
-            case .approval, .clarification, .failure: true
-            case .completed, .reminder: false
-            }
-        }
-        return ControlTabBadgeState(
-            urgentAttentionCount: urgent.count,
-            inboxCount: openAttention.count,
-            activityCount: max(0, activeAgentCount) + max(0, activeToolCount),
-            changeCount: max(0, changeCount),
-            verificationCount: max(0, verificationCount)
-        )
+    static func make(changeCount: Int = 0, verificationCount: Int = 0) -> ControlTabBadgeState {
+        ControlTabBadgeState(changeCount: max(0, changeCount), verificationCount: max(0, verificationCount))
     }
 
     func count(for tab: ControlTab) -> Int {
         switch tab {
-        case .today: urgentAttentionCount
-        case .session: 0
-        case .inbox: inboxCount
-        case .activity: activityCount
         case .changes: changeCount
         case .verification: verificationCount
         case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar: 0
@@ -1680,12 +1628,9 @@ struct ControlTabBadgeState: Equatable {
 
     func isUrgent(for tab: ControlTab) -> Bool {
         switch tab {
-        case .today: urgentAttentionCount > 0
-        case .session: false
-        case .inbox: urgentAttentionCount > 0
         case .changes: changeCount > 0
         case .verification: verificationCount > 0
-        case .activity, .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar: false
+        case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar: false
         }
     }
 }

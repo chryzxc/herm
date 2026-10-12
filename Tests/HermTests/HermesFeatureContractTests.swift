@@ -26,13 +26,14 @@ struct HermesFeatureContractTests {
             "session.list", "session.active_list", "session.activate", "session.resume", "session.delete",
             "session.interrupt", "session.messages", "session.usage", "session.context_breakdown", "session.close", "session.set_hidden", "session.events.since", "project.facts", "verification.status",
             "prompt.background", "bot_relay.deliver", "groups.capabilities", "groups.list", "groups.create", "groups.state", "groups.send", "groups.log", "groups.rename", "groups.stop", "groups.disband", "groups.approve", "groups.retry", "groups.peer.invite", "groups.peer.register", "session.title", "session.steer", "session.branch", "session.compress", "session.undo",
-            "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill", "approval.respond", "request.answer", "clarify.lock",
+            "session.redirect", "delegation.pause", "subagent.interrupt", "process.kill", "approval.respond", "approval.pending", "request.answer", "clarify.lock",
             "delegation.status", "cron.manage", "reload.mcp", "process.list", "tools.list", "plugins.list", "config.show",
-            "projects.tree", "projects.project_sessions", "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach", "session.create", "prompt.submit", "voice.toggle",
+            "projects.tree", "projects.project_sessions", "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach", "file.attach", "session.create", "prompt.submit", "voice.toggle",
             "complete.slash", "complete.path", "commands.catalog", "slash.exec", "command.dispatch", "prompt.btw",
             "voice.record", "voice.tts", "config.get", "config.set", "model.options",
             "profiles.list", "profiles.describe", "profiles.create", "profiles.configure",
-            "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore"
+            "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore", "gateway.capabilities",
+            "skills.manage", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete"
         ]
         #expect(Set(HermesFeatureIDs.transportIDs) == Set(expectedMethods))
 

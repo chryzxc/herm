@@ -6,7 +6,8 @@ import Combine
 /// the same state can drive accessibility, help, and rendering.
 enum SidebarSessionStatus: Equatable, Codable {
     case working
-    case needsAttention
+    case needsApproval
+    case needsClarification
     case failed
     case unreadComplete
     case none
@@ -14,7 +15,8 @@ enum SidebarSessionStatus: Equatable, Codable {
     var label: String {
         switch self {
         case .working: "Working"
-        case .needsAttention: "Needs your attention"
+        case .needsApproval: "Needs your approval"
+        case .needsClarification: "Needs your answer"
         case .failed: "Failed"
         case .unreadComplete: "Completed with new activity"
         case .none: "No new status"
@@ -34,8 +36,14 @@ enum SidebarSessionStatusResolver {
         seenAt: Date?,
         isProfileBaselined: Bool
     ) -> SidebarSessionStatus {
-        if attention == .warning { return .needsAttention }
+        if attention == .warning { return .needsApproval }
+        if attention == .clarification { return .needsClarification }
         if attention == .failure { return .failed }
+
+        if session.id == activeSessionID {
+            if activeStatus == .needsApproval { return .needsApproval }
+            if activeStatus == .needsClarification { return .needsClarification }
+        }
 
         let lifecycle: SessionLifecycleStatus = {
             if session.id == activeSessionID, let activeStatus {

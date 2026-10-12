@@ -50,18 +50,19 @@ struct ConversationMessageRowTests {
     @Test func messageActionsAreUniqueAndHaveHoverLabels() {
         let actions = ConversationMessageActionKind.allCases
 
-        #expect(actions.count == 4)
         #expect(Set(actions.map(\.id)).count == actions.count)
         #expect(Set(actions.map(\.icon)).count == actions.count)
         #expect(actions.map(\.label) == [
             "Copy message",
             "Read message aloud",
             "Branch from this message",
-            "Refresh this response"
+            "Refresh this response",
+            "Reply to this message",
+            "Pin message"
         ])
     }
 
-    @Test func messageActionStateTracksOnlyTheInitiatingAction() async {
+    @Test func messageActionStateTracksOnlyTheInitiatingAction() async throws {
         let state = ConversationMessageActionState()
         let messageID = UUID()
 
@@ -72,7 +73,10 @@ struct ConversationMessageRowTests {
         #expect(state.pendingAction(for: messageID) == .refresh)
         #expect(state.pendingActions.count == 1)
 
-        try? await Task.sleep(for: .milliseconds(40))
+        let deadline = Date().addingTimeInterval(5)
+        while state.pendingAction(for: messageID) != nil && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         #expect(state.pendingAction(for: messageID) == nil)
     }
 
@@ -97,7 +101,7 @@ struct ConversationMessageRowTests {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         let message = ChatMessage(role: .hermes, text: "body", timestamp: timestamp, responseDuration: 95)
 
-        #expect(message.timeLabel == HumanDateFormatting.timeOnly(timestamp))
+        #expect(message.timeLabel == timestamp.formatted(date: .abbreviated, time: .shortened))
         #expect(message.durationLabel == ResponseDurationFormatting.string(seconds: 95))
         #expect(ChatMessage(role: .hermes, text: "body").durationLabel == nil)
     }

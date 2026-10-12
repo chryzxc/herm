@@ -296,11 +296,11 @@ final class HermesCLIAdapter {
     }
 
     func cronRun(jobID: String) async throws -> HermesCLIResult { try await run(["hermes", "cron", "run", jobID]) }
-    func cronRuns(limit: Int = 20, jobID: String? = nil) async throws -> HermesCLIResult {
-        try await run(["hermes", "cron", "runs", "--limit", String(limit)] + (jobID.map { [$0] } ?? []))
+    func cronRuns(limit: Int = 20, jobID: String? = nil, profileID: String? = nil) async throws -> HermesCLIResult {
+        try await run(["hermes"] + (profileID.map { ["--profile", $0] } ?? []) + ["cron", "runs", "--limit", String(limit)] + (jobID.map { [$0] } ?? []))
     }
-    func cronEdit(jobID: String, changes: [CronEditField: String]) async throws -> HermesCLIResult {
-        var words = ["hermes", "cron", "edit"]
+    func cronEdit(jobID: String, changes: [CronEditField: String], profileID: String? = nil) async throws -> HermesCLIResult {
+        var words = ["hermes"] + (profileID.map { ["--profile", $0] } ?? []) + ["cron", "edit"]
         for field in CronEditField.allCases {
             if let value = changes[field] { words.append("\(field.flag)=\(value)") }
         }

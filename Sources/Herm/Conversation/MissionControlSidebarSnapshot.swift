@@ -266,8 +266,8 @@ struct MissionControlSidebarSnapshot: Equatable {
         var dots: [String: SessionAttentionDot] = [:]
         for item in inputs.attention {
             guard let sessionID = item.reference.sessionID else { continue }
-            dots[sessionID] = item.kind == .approval || item.kind == .clarification
-                ? .warning
+            dots[sessionID] = item.kind == .approval ? .warning
+                : item.kind == .clarification ? .clarification
                 : item.kind == .failure ? .failure : .activity
         }
         for activity in inputs.latestActivities where dots[activity.sessionID] == nil {
@@ -277,7 +277,9 @@ struct MissionControlSidebarSnapshot: Equatable {
                 dots[activity.sessionID] = .failure
             } else if state.contains("complete") || state.contains("success") || state == "done" {
                 dots[activity.sessionID] = .success
-            } else if name.contains("permission") || name.contains("approval") || name.contains("clarif") {
+            } else if name.contains("clarif") {
+                dots[activity.sessionID] = .clarification
+            } else if name.contains("permission") || name.contains("approval") {
                 dots[activity.sessionID] = .warning
             }
         }

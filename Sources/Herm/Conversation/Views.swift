@@ -272,8 +272,12 @@ struct DockPopover: View {
     @State private var valuePromptIdentifier = ""
     @State private var unseenMessageCount = 0
     @State private var isShowingMessageSearch = false
+    @State private var isShowingMessagePins = false
+    @State private var pinnedMessageJumpID: UUID?
     @State private var isSessionIdentityHovering = false
     @State private var isSessionMenuHovering = false
+    @State private var isRenamingSession = false
+    @State private var renameDraft = ""
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var conversationScrollRequest = 0
     @State private var mountedMessageRange: Range<Int> = 0..<0
@@ -296,11 +300,11 @@ struct DockPopover: View {
     @StateObject private var messageActionState = ConversationMessageActionState()
     @StateObject private var workspaceStore = WorkspaceStore()
     @StateObject private var agentUpdateService = HermesUpdateService()
-    @StateObject private var developerWorkflow = DeveloperWorkflowModel()
+    @StateObject private var developerWorkflow = DeveloperWorkflowModel.shared
     @StateObject private var pullRequestCenter = PullRequestCenterModel()
     @StateObject private var pullRequestChatLinks = PullRequestChatLinkStore()
     @State private var chatContextRouter = ChatContextRouter()
-    @StateObject private var repositoryPreferences = CommandCenterPreferencesStore()
+    @StateObject private var repositoryPreferences = CommandCenterPreferencesStore.shared
     @ObservedObject private var dockThemeStore = DockThemeStore.shared
     @StateObject private var botMode = BotModeModel()
     @StateObject private var missionControlNavigation = MissionControlNavigationState()
@@ -309,7 +313,6 @@ struct DockPopover: View {
     /// Full voice mode: the voice stage covers the navigation and inspector.
     @State private var isVoiceImmersive = false
     @State private var voiceSubtitles = VoiceSubtitleTrack()
-    @State private var isVoiceTranscriptVisible = false
     @State private var voiceHUD = VoiceHUDState()
     @State private var sessionPendingDeletion: HermesSession?
     // These selections are owned by the active session/repository scope. The
@@ -529,7 +532,12 @@ struct DockPopover: View {
             handleSessionIDChange(oldValue: oldValue, newValue: newValue)
         }
         .onChange(of: model.sessionID) { _, _ in
+            isShowingMessagePins = false
+            pinnedMessageJumpID = nil
             handleSessionMetadataChange()
+        }
+        .onChange(of: model.messagePinError) { _, error in
+            if error != nil && model.messagePinsSupported { isShowingMessagePins = true }
         }
         .onChange(of: model.currentSessionTitle) { _, _ in handleWorkspaceChange() }
         .onChange(of: controlCenter.projectSessions) { _, _ in
@@ -571,8 +579,8 @@ struct DockPopover: View {
         }
             .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
             .frame(width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth), height: isFullscreen ? nil : panelPresentation.compactHeight)
-            .padding(.horizontal, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceHorizontalInset : 0)
-            .padding(.vertical, !isFullscreen && panelPresentation.isEdgeAttached ? EdgeDockLayout.workspaceVerticalInset : 0)
+            .padding(.horizontal, panelPresentation.isEdgeAttached && !usesWindowChrome ? (isFullscreen ? 0 : EdgeDockLayout.workspaceHorizontalInset) : 0)
+            .padding(.vertical, panelPresentation.isEdgeAttached && !usesWindowChrome ? (isFullscreen ? 20 : EdgeDockLayout.workspaceVerticalInset) : 0)
             .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
             .onChange(of: isGlobalSurfaceActive) { _, _ in synchronizePanelLayout() }
             .onChange(of: panelPresentation.isFullscreen, initial: true) { _, fullscreen in
@@ -595,24 +603,33 @@ struct DockPopover: View {
             .padding(.top, usesWindowChrome ? 38 : 0) // titlebar height; the surface itself runs under it
             .background { DockWindowBackground() }
             .clipShape(DockPanelSurfaceShape(
-                isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
+                isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
                 cornerRadius: usesWindowChrome ? 0 : 22,
                 edgeSide: panelPresentation.edgeSide
             ))
             .overlay {
                 DockPanelSurfaceShape(
-                    isEdgeAttached: !isFullscreen && panelPresentation.isEdgeAttached,
+                    isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
                     cornerRadius: usesWindowChrome ? 0 : 22,
                     edgeSide: panelPresentation.edgeSide
                 )
                     .stroke(Color.dockBorderStrong, lineWidth: panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline)
             }
+            .overlay(alignment: .top) {
+                // The content fills the titlebar, so AppKit's own double-click-to-zoom never sees it.
+                if usesWindowChrome { TitlebarDoubleClickArea().frame(height: 38) }
+            }
             .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
             .dockThemedRoot()
-            .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : nil)
+            .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light))
             .sheet(item: $selectedChatImage) { preview in
                 ChatImagePreviewModal(image: preview.image)
             }
+            .sheet(item: $controlCenter.integrationDestination) { destination in
+                WorkflowIntegrationView(destination: destination, client: model.controlRPCClient)
+            }
+            .modifier(WorkflowWorkspaceNavigation(model: model, control: controlCenter,
+                openRepository: openRequestedRepositoryReview, openAutomation: openRequestedAutomation))
             .confirmationDialog(
                 "Delete Session?",
                 isPresented: Binding(
@@ -669,27 +686,33 @@ struct DockPopover: View {
         if !isNarrowLayout {
             desktopWorkspaceShell
         } else {
-            HStack(spacing: 2) {
-                if !isNarrowLayout || !isNarrowControlVisible {
-                    conversationColumn
-                        .frame(
-                            width: isFullscreen ? .infinity : min(showsDesktopContextPanel ? 480 : 500, panelPresentation.compactWidth),
-                            height: isFullscreen ? .infinity : panelPresentation.compactHeight
-                        )
-                }
+            // Same shell as fullscreen, compacted: the rail stays and only the
+            // content pane narrows. Global destinations replace the chat/inspector pair.
+            HStack(spacing: 0) {
+                missionControlRail
+                if isGlobalSurfaceActive {
+                    fullscreenGlobalSurface
+                } else {
+                    HStack(spacing: 2) {
+                        if !isNarrowControlVisible {
+                            conversationColumn
+                                .frame(width: narrowPaneWidth, height: panelPresentation.compactHeight)
+                        }
 
-                if isWorkspaceVisibleForLayout {
-                    Rectangle().fill(Color.dockBorder).frame(width: DockLayout.hairline)
-                    contextPanel
-                        .frame(
-                            width: isFullscreen ? .infinity : min(isNarrowLayout ? 500 : 480, panelPresentation.compactWidth),
-                            height: isFullscreen ? .infinity : panelPresentation.compactHeight
-                        )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        if isWorkspaceVisibleForLayout {
+                            Rectangle().fill(Color.dockBorder).frame(width: DockLayout.hairline)
+                            contextPanel
+                                .frame(width: narrowPaneWidth, height: panelPresentation.compactHeight)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
+                    }
                 }
             }
         }
     }
+
+    /// Narrow panes give up the rail's 52pt so the whole panel keeps its 500pt width.
+    private var narrowPaneWidth: CGFloat { min(500, panelPresentation.compactWidth) - 52 }
 
     /// Keep the navigation rail in one AppKit host for every desktop
     /// destination. Replacing a two-pane global host with a three-pane chat
@@ -700,6 +723,7 @@ struct DockPopover: View {
     private var desktopWorkspaceShell: some View {
         HStack(spacing: 0) {
             missionControlRail
+            Color.dockBorder.frame(width: DockLayout.hairline)
             if showsChatsPanel {
                 FullscreenPanelSplitView(
                     leading: missionControlQueue,
@@ -733,6 +757,8 @@ struct DockPopover: View {
                 missionControlNavigation.clearSelection()
                 fullscreenSurface = .conversation
                 inspectorScope = .session
+                // Narrow layout shows the inspector instead of the chat; Chats brings the chat back.
+                if isNarrowLayout { isNarrowControlVisible = false }
             },
             onOpenGlobal: { tab in
                 missionControlNavigation.selectGlobal(tab)
@@ -778,20 +804,36 @@ struct DockPopover: View {
             // The nested split keeps the conversation and inspector resizable
             // without disturbing the outer, persistent navigation split.
             AnyView(
-                FullscreenPanelSplitView(
-                    leading: conversationColumn,
-                    trailing: contextPanel,
-                    // Fraction of the *remaining* space after the outer
-                    // queue split, chosen so the three visible columns land
-                    // at the DesktopWorkspaceFractions targets (queue /
-                    // conversation / inspector) rather than an even split.
-                    leadingFraction: sessionWorkspaceMode == .explorer ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
-                    initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
-                    minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : DesktopWorkspaceFractions.minimumConversationWidth,
-                    maximumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
-                    minimumTrailingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
-                    leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil
-                )
+                GeometryReader { geometry in
+                    let minimumWidth = sessionWorkspaceMode == .explorer
+                        ? ExplorerWorkspaceMetrics.minimumNavigatorWidth + 1 + ExplorerWorkspaceMetrics.minimumEditorWidth
+                        : DesktopWorkspaceFractions.minimumConversationWidth + 1 + 360
+                    if geometry.size.width < minimumWidth {
+                        VStack(spacing: 0) {
+                            HStack {
+                                DockIconButton(icon: .caretLeft, label: "Back to conversation", style: DockThemePalette(theme: dockThemeStore.selectedThemeID), action: toggleInspectorPanel)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 8)
+                            contextPanel
+                        }
+                    } else {
+                        FullscreenPanelSplitView(
+                            leading: conversationColumn,
+                            trailing: contextPanel,
+                            // Fraction of the *remaining* space after the outer
+                            // queue split, chosen so the three visible columns land
+                            // at the DesktopWorkspaceFractions targets (queue /
+                            // conversation / inspector) rather than an even split.
+                            leadingFraction: sessionWorkspaceMode == .explorer ? nil : DesktopWorkspaceFractions.conversationOfRemainder,
+                            initialLeadingWidth: sessionWorkspaceMode == .explorer ? explorerNavigatorWidth : nil,
+                            minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : DesktopWorkspaceFractions.minimumConversationWidth,
+                            maximumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
+                            minimumTrailingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
+                            leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil
+                        )
+                    }
+                }
             )
         } else {
             AnyView(conversationColumn)
@@ -914,6 +956,38 @@ struct DockPopover: View {
                 )
             }
         }
+    }
+
+    private func openRequestedAutomation() async {
+        guard let id = controlCenter.requestedAutomationJobID else { return }
+        let owner = controlCenter.requestedAutomationOwner
+        let profile = owner?.profileID ?? "default"
+        if owner != nil, (model.profileScopeID ?? "default") != profile {
+            await botMode.refreshNow(force: true)
+            guard controlCenter.requestedAutomationJobID == id, controlCenter.requestedAutomationOwner == owner else { return }
+            guard botMode.bots.contains(where: { $0.id == profile && !$0.isHidden }) else {
+                controlCenter.automationNavigationError = "The routine belongs to \(profile). Refresh the profile inventory or reopen its notch detail; Herm did not select another profile's routine."
+                controlCenter.requestedAutomationJobID = nil; controlCenter.requestedAutomationOwner = nil
+                return
+            }
+            botMode.selectProfile(profile)
+            handleProfileScopeChange(profile)
+        }
+        controlCenter.refresh()
+        missionControlNavigation.selectGlobal(.automations)
+        fullscreenGlobalTab = .automations; fullscreenSurface = .global
+        controlCenter.requestedAutomationDidNavigate = true
+    }
+
+    private func openRequestedRepositoryReview() {
+        guard let request = controlCenter.requestedRepositoryReview, let id = request.sessionID,
+              let path = request.projectPath, !model.isRestoringSession,
+              model.currentSessionIDs.contains(id), model.workflowSession?.profileID == request.profileID else { return }
+        controlCenter.requestedRepositoryReview = nil
+        missionControlNavigation.openSession(id); fullscreenSurface = .conversation; inspectorScope = .session
+        cachedSessionRepositoryPath = path
+        selectSessionMode(.sourceControl)
+        Task { await developerWorkflow.setActiveRepository(path: path, preferences: repositoryPreferences, control: controlCenter) }
     }
 
     private func loadInitialModelConfiguration() {
@@ -1167,6 +1241,9 @@ struct DockPopover: View {
                 Task { await botMode.refreshNow(force: true) }
                 fullscreenSurface = .bots
             },
+            onOpenBotChat: { bot, recent in
+                if let recent { openRecentBotSession(bot, recent: recent) } else { openBotChat(bot) }
+            },
             onOpenGroupChat: { roomID in
                 missionControlNavigation.selection.selectGroupChat(roomID)
                 fullscreenSurface = .groupChat(roomID)
@@ -1191,6 +1268,7 @@ struct DockPopover: View {
     private func handleProfileScopeChange(_ profileID: String?) {
         let normalized = profileID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let selected = normalized?.isEmpty == false ? normalized : nil
+        if model.profileScopeID == selected, !model.profileScopeUnavailable { controlCenter.setProjectProfile(selected); return }
         model.setProfileScope(selected)
         controlCenter.setProjectProfile(selected)
         missionControlNavigation.clearSelection()
@@ -1353,7 +1431,7 @@ struct DockPopover: View {
                     .transition(.opacity)
                     .animation(.dockEase(duration: 0.2), value: sessionWorkspaceMode)
             } else {
-                if !usesMissionControlLayout {
+                if !usesMissionControlLayout && !isNarrowLayout {
                     contextPanelHeader
                 }
 
@@ -1541,7 +1619,7 @@ struct DockPopover: View {
         HStack(spacing: 0) {
             // The fullscreen right region is an inspector for the active
             // center surface, never a competing global workspace.
-            let scopes: [InspectorScope] = usesMissionControlLayout
+            let scopes: [InspectorScope] = usesMissionControlLayout || isNarrowLayout
                 ? [.session, .artifacts]
                 : InspectorScope.allCases
             ForEach(scopes) { scope in
@@ -1605,22 +1683,30 @@ struct DockPopover: View {
                     .layoutPriority(0)
 
                 if sessionWorkspaceMode == .chat, !model.messageNavigatorItems.isEmpty {
-                    DockIconButton(
-                        icon: .magnifyingGlass,
-                        label: isShowingMessageSearch ? "Close message search" : "Find a message (⌘F)",
-                        isProminent: isShowingMessageSearch,
-                        style: style
-                    ) { isShowingMessageSearch.toggle() }
-                    .keyboardShortcut("f", modifiers: .command)
+                    // Pinned messages open from the "…" menu; the popover anchors here.
+                    Color.clear.frame(width: 0, height: 0)
+                    .popover(isPresented: $isShowingMessagePins, arrowEdge: .bottom) {
+                        MessagePinsView(model: model) { pin in
+                            let sessionID = model.sessionID
+                            Task { @MainActor in
+                                guard let id = await model.messageID(forPin: pin), model.sessionID == sessionID else { return }
+                                isShowingMessagePins = false
+                                pinnedMessageJumpID = id
+                            }
+                        }
+                        .task { await model.refreshMessagePins() }
+                    }
+                    // Search lives in the "…" menu; this keeps ⌘F working.
+                    Button("") { isShowingMessageSearch.toggle() }
+                        .keyboardShortcut("f", modifiers: .command)
+                        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
                 }
 
                 DockIconButton(
                     icon: sessionWorkspaceMode == .voice ? .chatCircleText : .waveform,
                     label: sessionWorkspaceMode == .voice ? "Return to chat" : "Voice conversation",
-                    isProminent: sessionWorkspaceMode == .voice,
                     style: style
                 ) { selectSessionMode(sessionWorkspaceMode == .voice ? .chat : .voice) }
-                .accessibilityAddTraits(sessionWorkspaceMode == .voice ? .isSelected : [])
 
                 sessionViewMenu(includesInspector: !showsInspector, style: style)
                     .fixedSize()
@@ -1675,13 +1761,41 @@ struct DockPopover: View {
     }
 
     private func sessionViewMenu(includesInspector: Bool, style: DockThemePalette) -> some View {
-        Menu {
-            ForEach(SessionWorkspaceMode.allCases) { mode in
-                Button { selectSessionMode(mode) } label: {
-                    if mode == sessionWorkspaceMode {
-                        Label(mode.label, icon: .check)
-                    } else {
-                        Text(mode.label)
+        DockMenu {
+            if let session = currentSession {
+                let pinned = model.isSessionPinned(session.id)
+                Button(pinned ? "Unpin conversation" : "Pin conversation", icon: pinned ? .pushPinSlash : .pushPin) {
+                    Task { await model.toggleSessionPinned(session) }
+                }
+                Button("Rename…", icon: .pencilSimple) {
+                    renameDraft = session.displayTitle
+                    isRenamingSession = true
+                }
+                Button(session.isHidden ? "Show in list" : "Hide from list", icon: session.isHidden ? .eye : .eyeSlash) {
+                    Task { @MainActor in
+                        if await model.setSessionHidden(session, hidden: !session.isHidden) {
+                            controlCenter.refreshProjectNavigation()
+                        }
+                    }
+                }
+                Divider()
+            }
+            if sessionWorkspaceMode == .chat {
+                Button(isShowingMessageSearch ? "Close message search" : "Find in conversation", icon: .magnifyingGlass) {
+                    isShowingMessageSearch.toggle()
+                }
+                if !model.messageNavigatorItems.isEmpty {
+                    Button("Pinned messages", icon: .pushPin) { isShowingMessagePins.toggle() }
+                }
+            }
+            DockMenu("View") {
+                ForEach(SessionWorkspaceMode.allCases) { mode in
+                    Button { selectSessionMode(mode) } label: {
+                        if mode == sessionWorkspaceMode {
+                            Label(mode.label, icon: .check)
+                        } else {
+                            Text(mode.label)
+                        }
                     }
                 }
             }
@@ -1699,10 +1813,27 @@ struct DockPopover: View {
                 .contentShape(Rectangle())
         }
         .onHover { isSessionMenuHovering = $0 }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .help("Session views: \(sessionWorkspaceMode.label)")
-        .accessibilityLabel("Session views, current view: \(sessionWorkspaceMode.label)")
+        .help("Conversation actions")
+        .accessibilityLabel("Conversation actions")
+        .alert("Rename conversation", isPresented: $isRenamingSession) {
+            TextField("Title", text: $renameDraft)
+            Button("Rename") {
+                let title = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !title.isEmpty, let session = currentSession, title != session.title else { return }
+                Task { @MainActor in
+                    if await model.renameSession(session, title: title) { controlCenter.refreshProjectNavigation() }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    /// The open conversation as a session row, so list actions can target it.
+    private var currentSession: HermesSession? {
+        guard let id = model.navigationSessionID else { return nil }
+        return model.sessions.first { $0.id == id } ?? HermesSession(
+            id: id, profileID: model.sessionProfileID, title: model.currentSessionTitle ?? "",
+            preview: "", startedAt: nil, messageCount: 0, source: "herm")
     }
 
     private func showFilePreview() {
@@ -1852,7 +1983,7 @@ struct DockPopover: View {
     @ViewBuilder
     private var sessionConfigurationRow: some View {
         HStack(spacing: 0) {
-            Menu {
+            DockMenu {
                 if model.runtimeModelOptions.isEmpty {
                     Text("Loading model catalog…")
                 } else {
@@ -1877,7 +2008,6 @@ struct DockPopover: View {
                     truncatesValue: true
                 )
             }
-            .menuStyle(.borderlessButton)
             .buttonStyle(.dockHover)
             .disabled(model.isUpdatingSessionModel)
             .help("Change the model for \(configurationScopeLabel)")
@@ -1886,13 +2016,12 @@ struct DockPopover: View {
             Color.dockBorderLight
                 .frame(width: 0.5, height: 24)
 
-            Menu {
-                Picker("", selection: reasoningVariantSelection) {
+            DockMenu {
+                DockMenuChoices(selection: reasoningVariantSelection) {
                     ForEach(HermesReasoningVariant.allCases) { variant in
-                        Text(variant.displayName).tag(Optional(variant))
+                        DockMenuOption(variant.displayName, value: Optional(variant))
                     }
                 }
-                .pickerStyle(.inline)
             } label: {
                 sessionConfigurationLabel(
                     icon: .brain,
@@ -1900,7 +2029,6 @@ struct DockPopover: View {
                     value: sessionReasoningDisplayName
                 )
             }
-            .menuStyle(.borderlessButton)
             .buttonStyle(.dockHover)
             .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
             .help("Change thinking depth for \(configurationScopeLabel)")
@@ -1958,7 +2086,7 @@ struct DockPopover: View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         return VStack(alignment: .leading, spacing: 4) {
             DockSectionHeader(
-                title: "Conversations",
+                title: "Recents",
                 count: model.sessions.isEmpty ? nil : model.sessions.count,
                 style: style
             ) {
@@ -2056,7 +2184,6 @@ struct DockPopover: View {
             VoiceStatusStrip(model: model, repositoryPath: activeSessionRepositoryPath)
                 .padding(.top, 12)
                 .padding(.horizontal, 16)
-                .opacity(isVoiceTranscriptVisible ? 0 : 1)
             Spacer(minLength: 12)
             Button(action: handleVoiceOrbTap) {
                 VoiceOrbView(mode: voiceOrbMode, audioLevel: max(speechInput.audioLevel, micLevelMeter.level))
@@ -2106,9 +2233,11 @@ struct DockPopover: View {
                             text: reply.text,
                             now: context.date.timeIntervalSinceReferenceDate
                         )
-                        Text(cue ?? "")
-                            .font(.system(size: immersive ? 17 : 14, weight: .medium))
-                            .foregroundStyle(Color.dockPrimaryText)
+                        MarkdownMessageView(
+                            markdown: cue ?? "",
+                            bodyFont: .system(size: immersive ? 17 : 14, weight: .medium)
+                        )
+                            .equatable()
                             .lineLimit(3)
                             .id(cue)
                             .transition(.opacity)
@@ -2154,16 +2283,6 @@ struct DockPopover: View {
         }
         .overlay { VoiceWakeFlash(count: model.wakeCount) }
         .onChange(of: model.activeToolCalls) { _, calls in voiceHUD = VoiceHUDState(calls: calls) }
-        .overlay(alignment: .top) {
-            if isVoiceTranscriptVisible {
-                VoiceRecentTranscript(messages: model.messages)
-                    .frame(maxWidth: immersive ? 520 : 400)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .animation(.dockEase(duration: 0.25), value: isVoiceTranscriptVisible)
         .animation(.dockEase(duration: 0.3), value: model.voiceState)
         .animation(.dockEase(duration: 0.25), value: captions.user)
         .animation(.dockEase(duration: 0.25), value: captions.reply == nil)
@@ -2292,13 +2411,6 @@ struct DockPopover: View {
                     style: style
                 ) { model.toggleVoiceMicMuted() }
             }
-            DockIconButton(
-                icon: .chatCircleText,
-                label: isVoiceTranscriptVisible ? "Hide recent conversation" : "Show recent conversation",
-                isProminent: isVoiceTranscriptVisible,
-                size: 34,
-                style: style
-            ) { isVoiceTranscriptVisible.toggle() }
             switch voiceOrbMode {
             case .listening:
                 DockIconButton(icon: .arrowUp, label: "Send now", size: 34, style: style, action: handleVoiceOrbTap)
@@ -2439,7 +2551,7 @@ struct DockPopover: View {
                             // before it corrects those estimates.
                             VStack(spacing: 0) {
                                 if model.messages.isEmpty && model.status != .working {
-                                    StartupAssistantView(agentName: model.agentDisplayName)
+                                    StartupAssistantView()
                                         .frame(maxWidth: .infinity)
                                         .frame(minHeight: max(300, viewport.size.height - 16))
                                 } else if model.messages.isEmpty {
@@ -2685,15 +2797,14 @@ struct DockPopover: View {
                             conversationScrollRequest &+= 1
                         } label: {
                             HStack(spacing: 7) {
-                                DockIcon(.arrowDown, size: 11, color: Color.dockOnAccentText)
+                                DockIcon(.arrowDown, size: 11, color: Color.dockPrimaryText)
                                 Text("\(unseenMessageCount) new \(unseenMessageCount == 1 ? "message" : "messages")")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .foregroundStyle(Color.dockOnAccentText)
+                            .foregroundStyle(Color.dockPrimaryText)
                             .padding(.horizontal, 14)
                             .frame(height: 34)
-                            .background(Capsule().fill(Color.dockAccent))
-                            .shadow(color: Color.dockAccent.opacity(0.3), radius: 10, y: 3)
+                            .background(Capsule().fill(Color.dockControlSurface).stroke(Color.dockBorder, lineWidth: DockLayout.outline))
                         }
                         .buttonStyle(.dockHover)
                         .padding(.bottom, 12)
@@ -2722,6 +2833,11 @@ struct DockPopover: View {
                         .padding(.trailing, 24)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     }
+                }
+                .onChange(of: pinnedMessageJumpID) { _, id in
+                    guard let id, let item = model.messageNavigatorItems.first(where: { $0.messageID == id }) else { return }
+                    jumpToMessage(item, proxy: proxy)
+                    pinnedMessageJumpID = nil
                 }
             }
         }
@@ -3001,6 +3117,10 @@ struct DockPopover: View {
         }
     }
 
+    private func forwardToBot(_ bot: BotSummary, _ text: String, _ completion: @escaping (String?) -> Void) {
+        model.sendQuickMessage(text, profileID: bot.id, completion: completion)
+    }
+
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
         let isStreaming = message.id == model.streamingMessageIDForPresentation
@@ -3042,6 +3162,17 @@ struct DockPopover: View {
                         await model.refreshCurrentSession()
                     }
                 },
+                onReply: {
+                    model.replyQuote = ReplyQuote(author: message.botDisplayName ?? botMode.botsByID[message.botProfileID ?? model.activeBotProfileID ?? ""]?.name ?? "Hermes", text: message.text)
+                },
+                showsPinAction: model.messagePinsSupported && model.storedMessageReferences[message.id] != nil
+                    && message.systemEvent == nil && message.kanbanNotice == nil && !message.isError,
+                isPinAvailable: model.canPinMessage(message),
+                isPinned: model.isMessagePinned(message),
+                onPin: {
+                    messageActionState.run(message.id, action: .pin) { await model.toggleMessagePinned(message) }
+                },
+                onForward: forwardToBot,
                 loadKanbanDetail: { notice in await controlCenter.sessionKanbanTaskDetail(notice.taskSummary) }
             )
             .equatable()
@@ -3105,10 +3236,7 @@ struct DockPopover: View {
                 )
 
                 if let reason = approval.reason {
-                    Label { Text(reason) } icon: { DockIcon(.info, size: 12) }
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    DockCalloutDisclosure(title: "Scope and limits", text: reason)
                 }
 
                 DockCalloutActions {
@@ -3247,7 +3375,7 @@ struct DockPopover: View {
                     Text("Username or email")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockSecondaryText)
-                    TextField("Username or email", text: $valuePromptIdentifier)
+                    DockTextField("Username or email", text: $valuePromptIdentifier)
                         .font(.system(size: 12))
                         .textFieldStyle(.dockGlass)
                         .textContentType(.username)
@@ -3311,7 +3439,7 @@ struct DockPopover: View {
     }
 
     private var quickPromptOverflowMenu: some View {
-        Menu {
+        DockMenu {
             ForEach(QuickPrompt.allCases.dropFirst(2)) { quickPrompt in
                 Button(quickPrompt.label) {
                     selectQuickPrompt(quickPrompt)
@@ -3326,7 +3454,6 @@ struct DockPopover: View {
                 .frame(minHeight: 26)
                 .background(Capsule().fill(Color.dockSurface4).stroke(Color.dockBorderLight, lineWidth: 0.5))
         }
-        .menuStyle(.borderlessButton)
         .fixedSize(horizontal: true, vertical: false)
     }
 
@@ -3347,11 +3474,12 @@ struct DockPopover: View {
 /// intentionally list-led rather than another dashboard: selecting an item
 /// always changes the central work surface.
 enum SessionAttentionDot: Equatable {
-    case warning, failure, success, activity
+    case warning, clarification, failure, success, activity
 
     var color: Color {
         switch self {
         case .warning: .dockWarning
+        case .clarification: .dockAccent
         case .failure: .dockDestructive
         case .success: .dockSuccess
         case .activity: .dockAccent
@@ -3368,9 +3496,9 @@ struct SessionActivityGlyph: View {
 
     var body: some View {
         if isWorking {
-            ProgressView().controlSize(.mini).frame(width: 8, height: 8)
+            DockActivityIndicator(state: .running, size: 10)
         } else if hasUnreadUpdate {
-            Circle().fill(Color.dockSuccess).frame(width: 6, height: 6)
+            DockActivityIndicator(state: .done, size: 10, unreadDot: true)
         }
     }
 }
@@ -3498,17 +3626,16 @@ struct MissionControlRail: View {
                 destination("Bots", icon: .robot, isSelected: navigationState.selection.selection == .bots, style: style, action: onOpenBots)
                 globalDestination(.usage, style: style)
             }
-            Spacer(minLength: 0)
             VStack(spacing: 2) {
                 globalDestination(.quota, style: style)
                 globalDestination(.core, style: style)
             }
+            Spacer(minLength: 0)
             // Global window chrome: applies to the whole workspace, not one chat.
             VStack(spacing: 2) {
                 if let onOpenWindow {
                     destination(isDockedWindow ? "Back to floating panel" : "Open as window", icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style, action: onOpenWindow)
                 }
-                destination(isFullscreen ? "Exit fullscreen" : "Enter fullscreen", icon: isFullscreen ? .cornersIn : .cornersOut, isSelected: false, style: style, action: onFullscreenToggle)
             }
         }
         .padding(.horizontal, 7)
@@ -3517,7 +3644,6 @@ struct MissionControlRail: View {
         .frame(width: 52)
         .frame(maxHeight: .infinity)
         .background(style.background)
-        .overlay(alignment: .trailing) { style.divider.frame(width: 0.5) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes navigation")
     }
@@ -3577,6 +3703,7 @@ struct MissionControlQueue: View {
     let onOpenGlobal: (ControlTab) -> Void
     let onOpenArtifacts: () -> Void
     let onOpenBots: () -> Void
+    let onOpenBotChat: (BotSummary, BotChatReference?) -> Void
     let onOpenGroupChat: (String) -> Void
     let onOpenPullRequests: () -> Void
     let onOpenIssues: () -> Void
@@ -3615,6 +3742,7 @@ struct MissionControlQueue: View {
         onOpenGlobal: @escaping (ControlTab) -> Void,
         onOpenArtifacts: @escaping () -> Void,
         onOpenBots: @escaping () -> Void,
+        onOpenBotChat: @escaping (BotSummary, BotChatReference?) -> Void,
         onOpenGroupChat: @escaping (String) -> Void,
         onOpenPullRequests: @escaping () -> Void,
         onOpenIssues: @escaping () -> Void,
@@ -3646,6 +3774,7 @@ struct MissionControlQueue: View {
         self.onOpenGlobal = onOpenGlobal
         self.onOpenArtifacts = onOpenArtifacts
         self.onOpenBots = onOpenBots
+        self.onOpenBotChat = onOpenBotChat
         self.onOpenGroupChat = onOpenGroupChat
         self.onOpenPullRequests = onOpenPullRequests
         self.onOpenIssues = onOpenIssues
@@ -3689,7 +3818,8 @@ struct MissionControlQueue: View {
     private var sidebarSessionStatuses: [String: SidebarSessionStatus] {
         let summaries = Dictionary(uniqueKeysWithValues: sidebarSnapshot.inputs.activeSessions.map { ($0.id, $0) })
         let profileID = sidebarSnapshot.inputs.profileScopeID ?? model.profileScopeID
-        return Dictionary(uniqueKeysWithValues: sidebarSnapshot.conversations.map { session in
+        // Pins can sit past the recents page, so they need their own status.
+        return Dictionary((sidebarSnapshot.conversations + pinnedSessionPresentation.sessions).map { session in
             let status = SidebarSessionStatusResolver.resolve(
                 session: session,
                 summary: summaries[session.id],
@@ -3700,7 +3830,7 @@ struct MissionControlQueue: View {
                 isProfileBaselined: sidebarSessionSeenStore.isBaselined(profileID: session.profileID ?? profileID)
             )
             return (session.id, status)
-        })
+        }, uniquingKeysWith: { first, _ in first })
     }
 
     private func markSessionSeen(_ session: HermesSession) {
@@ -3790,6 +3920,16 @@ struct MissionControlQueue: View {
             }
             .padding(.horizontal, 6)
             .frame(height: 56)
+            .overlay(alignment: .bottomLeading) {
+                if !botMode.activityBanner.isEmpty {
+                    BotActivityBanner(events: botMode.activityBanner)
+                        .padding(.horizontal, 8)
+                        .offset(y: 38)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
+            .zIndex(1)
             .overlay(alignment: .bottom) { style.divider.frame(height: 0.5) }
 
             ScrollView {
@@ -3864,6 +4004,8 @@ struct MissionControlQueue: View {
             }
             Spacer(minLength: 0)
             if isSwitchable {
+                // Other Bots' activity, so it is visible without opening the switcher.
+                botActivityBadge(for: visibleBots.filter { $0.id != bot?.id }, style: style)
                 DockIcon(.caretUpDown, size: 12, color: style.metadataText)
             }
         }
@@ -3895,6 +4037,38 @@ struct MissionControlQueue: View {
         }
     }
 
+    /// Spinner + count while Bots are working, green check + count once a Bot
+    /// has finished with activity you have not looked at yet.
+    @ViewBuilder
+    private func botActivityBadge(for bots: [BotSummary], style: DockThemePalette) -> some View {
+        // Working is time-based (heartbeat age), so re-evaluate on a slow
+        // local tick; the roster itself republishes only when it changes.
+        TimelineView(.periodic(from: .now, by: 15)) { _ in
+        let workingBots = bots.filter { $0.isWorkingNow || $0.isRecentlyActive }
+        let doneBots = bots.filter { !($0.isWorkingNow || $0.isRecentlyActive) && botMode.hasUnread($0) }
+        let working = workingBots.count, done = doneBots.count
+        let summary = (workingBots.map { "\($0.name) is running" } + doneBots.map { "\($0.name) is done" }).joined(separator: "\n")
+        HStack(spacing: 6) {
+            if working > 0 {
+                HStack(spacing: 4) {
+                    DockActivityIndicator(state: .running, size: 12)
+                    if bots.count > 1 { Text("\(working)").font(.system(size: 10, weight: .bold)) }
+                }
+                .foregroundStyle(DockActivityState.running.color)
+            }
+            if done > 0 {
+                HStack(spacing: 3) {
+                    DockActivityIndicator(state: .done, size: 12)
+                    if bots.count > 1 { Text("\(done)").font(.system(size: 10, weight: .bold)) }
+                }
+                .foregroundStyle(DockActivityState.done.color)
+            }
+        }
+        .help(summary)
+        .accessibilityLabel(summary.replacingOccurrences(of: "\n", with: ", "))
+        }
+    }
+
     private func profileSelectorPopover(selectedBot: BotSummary?, style: DockThemePalette) -> some View {
         let popoverHeight = min(CGFloat(visibleBots.count) * 40 + 12, 360)
         return ScrollView {
@@ -3915,6 +4089,19 @@ struct MissionControlQueue: View {
                                 .foregroundStyle(style.primaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
+                            botActivityBadge(for: [option], style: style)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    // The spinner doubles as "view the running session".
+                                    guard let worker = option.liveWorkerChat else {
+                                        onSelectProfile(option.id)
+                                        isProfileSelectorPresented = false
+                                        return
+                                    }
+                                    onSelectProfile(option.id)
+                                    onOpenBotChat(option, worker)
+                                    isProfileSelectorPresented = false
+                                }
                             if option.id == selectedBot?.id {
                                 DockIcon(.check)
                                     .font(.system(size: 11, weight: .semibold))
@@ -3943,7 +4130,7 @@ struct MissionControlQueue: View {
     /// selection independent from every neighbouring destination.
     private func globalRailBar(style: DockThemePalette) -> some View {
         let projects = sidebarSnapshot.linkedProjectGroups
-        let allConversations = sidebarSnapshot.conversations
+        let allConversations = botScopedConversations(sidebarSnapshot.conversations)
         // Built once per pass; rows previously rebuilt it per row (O(n²)).
         let statuses = sidebarSessionStatuses
 
@@ -4019,6 +4206,16 @@ struct MissionControlQueue: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task {
+            // ponytail: 10s roster poll while the rail is on screen (cancelled
+            // on disappear); Hermes has no roster push event.
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                await botMode.refreshNow()
+                // ponytail: poll the session index so turns running elsewhere show a spinner.
+                model.loadSessions(quiet: true)
+            }
+        }
         .sheet(isPresented: $isShowingNewGroupChat) {
             NewGroupChatSheet(store: botMode.groupChats, bots: botMode.bots.filter { !$0.isHidden }, onCreated: onOpenGroupChat)
         }
@@ -4094,7 +4291,42 @@ struct MissionControlQueue: View {
         .buttonStyle(.dockHover)
     }
 
+    /// Recents follow the selected Bot: another Bot's chat (kept in the model
+    /// while it is open) must not leak into this Bot's list.
+    private func botScopedConversations(_ base: [HermesSession]) -> [HermesSession] {
+        guard base.contains(where: { $0.source == "hermes-bot" }) else { return base }
+        let selectedID = selectedBot?.id
+        return base.filter { session in
+            guard session.source == "hermes-bot" else { return true }
+            return botForSession(session)?.id == selectedID
+        }
+    }
+
+    private func botForSession(_ session: HermesSession) -> BotSummary? {
+        guard session.source == "hermes-bot" else { return nil }
+        return visibleBots.first { $0.id == session.profileID } ?? visibleBots.first { $0.name == session.title }
+    }
+
+    @ViewBuilder
     private func conversationSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
+        if let bot = botForSession(session) {
+            MissionControlBotSessionRow(
+                session: session,
+                bot: bot,
+                imageData: botMode.avatarImages[bot.id],
+                isSelected: isSessionSelected(session),
+                style: style
+            ) {
+                markSessionSeen(session)
+                onOpenBotChat(bot, bot.chat?.sessionID == session.id ? nil : bot.recentSession)
+            }
+            .equatable()
+        } else {
+            plainConversationSessionRow(session, statuses: statuses, style: style)
+        }
+    }
+
+    private func plainConversationSessionRow(_ session: HermesSession, statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
         MissionControlSidebarSessionRow(
             session: session,
             selectedSessionID: isSessionSelected(session) ? session.id : nil,
@@ -4205,7 +4437,7 @@ struct MissionControlQueue: View {
     @ViewBuilder
     private func conversationOutline(_ conversations: [HermesSession], statuses: [String: SidebarSessionStatus], style: DockThemePalette) -> some View {
         DockSectionHeader(
-            title: "Conversations",
+            title: "Recents",
             count: conversations.count,
             isExpanded: $navigationState.areConversationsExpanded,
             style: style
@@ -4426,7 +4658,11 @@ struct MissionControlConversationSessionRow: View, Equatable {
                 Spacer(minLength: 4)
                 SessionActivityGlyph(isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate)
                 if let attentionDot {
-                    Circle().fill(attentionDot.color).frame(width: 6, height: 6)
+                    if let state = attentionDot.activityState {
+                        DockActivityIndicator(state: state, size: 10, unreadDot: true)
+                    } else {
+                        Circle().fill(attentionDot.color).frame(width: 6, height: 6)
+                    }
                 }
             }
             if let badge = ConversationRepositoryBadgePresentation.make(
@@ -4605,6 +4841,7 @@ private struct MissionControlProjectList: View {
             }
             .buttonStyle(.dockHover)
             .accessibilityLabel(isCollapsed ? "Expand project \(group.title)" : "Collapse project \(group.title)")
+            .layoutPriority(1)
 
             // Count at rest; actions replace it while the row is hovered.
             let showsActions = hoveredProjectRowID == group.id || isCreatingHere
@@ -4791,6 +5028,67 @@ struct SidebarProjectTarget: Identifiable, Equatable {
     var id: String { path }
 }
 
+/// A conversation that belongs to a Bot: avatar on the left and a tinted card
+/// so it reads differently from the selected Bot's own conversations.
+private struct MissionControlBotSessionRow: View, Equatable {
+    let session: HermesSession
+    let bot: BotSummary
+    let imageData: Data?
+    let isSelected: Bool
+    let style: DockThemePalette
+    let onOpen: () -> Void
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.session == rhs.session && lhs.bot == rhs.bot && lhs.imageData == rhs.imageData
+            && lhs.isSelected == rhs.isSelected && lhs.style.theme == rhs.style.theme
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            BotAvatarView(bot: bot, imageData: imageData, size: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(bot.name)
+                        .font(style.labelFont)
+                        .foregroundStyle(style.primaryText)
+                        .lineLimit(1)
+                    Text("BOT")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(style.accent)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().fill(style.selectedFill))
+                    Spacer(minLength: 4)
+                    SessionActivityGlyph(isWorking: session.isWorking, hasUnreadUpdate: session.hasUnreadUpdate)
+                    if let date = session.lastUpdatedAt {
+                        Text(SidebarSessionTime.short(date))
+                            .font(.subheadline.monospacedDigit())
+                            .foregroundStyle(style.metadataText)
+                            .fixedSize()
+                    }
+                }
+                if let preview = session.displayPreview {
+                    Text(preview)
+                        .font(.subheadline)
+                        .foregroundStyle(style.metadataText)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous)
+                .fill(isSelected ? style.selectedFill : style.selectedFill.opacity(0.35))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
+        .dockHoverable().onTapGesture(perform: onOpen)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(bot.name) bot chat")
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
 private struct MissionControlSidebarSessionRow: View, Equatable {
     let session: HermesSession
     let selectedSessionID: String?
@@ -4934,7 +5232,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     private var titleLine: some View {
         HStack(spacing: 6) {
             if isEditingTitle {
-                TextField("Session title", text: $titleDraft)
+                DockTextField("Session title", text: $titleDraft)
                     .textFieldStyle(.plain)
                     .font(Font.body.weight(.medium))
                     .foregroundStyle(style.primaryText)
@@ -5024,35 +5322,13 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
     /// row has status. Only working rows spin, so scrolling stays cheap.
     private var statusIndicator: some View {
         Group {
-            switch sessionStatus {
-            case .working:
-                ProgressView()
-                    .controlSize(.small)
-                    .scaleEffect(0.6)
-                    .tint(statusColor)
-            case .needsAttention:
-                DockIcon(.warningCircle, size: 10, color: statusColor)
-            case .failed:
-                DockIcon(.xCircle, size: 10, color: statusColor)
-            case .unreadComplete:
-                Circle().frame(width: 6, height: 6)
-            case .none:
+            if let state = sessionStatus.activityState {
+                DockActivityIndicator(state: state, size: 12, unreadDot: true)
+            } else {
                 Color.clear
             }
         }
-        .foregroundStyle(statusColor)
         .frame(width: 14, height: 14)
-        .help(sessionStatus.help)
-        .accessibilityHidden(true)
-    }
-
-    private var statusColor: Color {
-        switch sessionStatus {
-        case .working, .unreadComplete: style.accent
-        case .needsAttention: .dockWarning
-        case .failed: .dockDestructive
-        case .none: .clear
-        }
     }
 
     private var actionSurface: some View {
@@ -5070,13 +5346,11 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
                 ProgressView().controlSize(.mini).frame(width: 24, height: 24)
             } else {
                 // Menu labels on macOS only reliably render Text/Image.
-                Menu { contextActions } label: {
+                DockMenu { contextActions } label: {
                     Ph.dotsThree.image(size: 13, color: NSColor(Color.dockSecondaryText))
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
                 .fixedSize()
                 .help("More session actions")
                 .accessibilityLabel("More actions for \(session.displayTitle)")
@@ -5099,7 +5373,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         }
         .disabled(isUpdatingVisibility || isDeleting)
         if !projectTargets.isEmpty {
-            Menu("Add to project") {
+            DockMenu("Add to project") {
                 ForEach(projectTargets) { target in
                     Button(target.title) { onAddToProject(session, target) }
                 }
@@ -5312,11 +5586,13 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
     func updateNSView(_ splitView: NSSplitView, context: Context) {
         context.coordinator.leadingHost.rootView = AnyView(
             leading.dockThemedRoot()
-                .overlay(alignment: .trailing) {
+        )
+        context.coordinator.trailingHost.rootView = AnyView(
+            trailing.dockThemedRoot()
+                .overlay(alignment: .leading) {
                     Color.dockBorder.frame(width: DockLayout.hairline)
                 }
         )
-        context.coordinator.trailingHost.rootView = AnyView(trailing.dockThemedRoot())
         context.coordinator.leadingWidth = leadingWidth
         if let splitView = splitView as? FractionPreservingSplitView {
             splitView.fraction = leadingFraction
@@ -5411,7 +5687,7 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
 /// resize so proportional splits stay proportional, unless the person has
 /// dragged a divider (tracked via delegate resize-subviews callbacks driven
 /// by the divider itself rather than the window).
-private final class FractionPreservingSplitView: NSSplitView {
+final class FractionPreservingSplitView: NSSplitView {
     // AppKit can paint the divider at the old coordinate after a host/window
     // width change. The hosting view paints the hairline at its real edge;
     // this transparent divider still provides the native drag target.
@@ -5424,7 +5700,8 @@ private final class FractionPreservingSplitView: NSSplitView {
     private var lastAppliedWidth: CGFloat = 0
 
     var minimumLeadingPosition: CGFloat {
-        min(minimumLeadingWidth, max(0, bounds.width - dividerThickness - minimumTrailingWidth))
+        // Preserve readable navigation when the workspace cannot fit both minimums.
+        min(minimumLeadingWidth, max(0, bounds.width - dividerThickness))
     }
 
     var maximumLeadingPosition: CGFloat {
@@ -5442,13 +5719,16 @@ private final class FractionPreservingSplitView: NSSplitView {
         // Cache the width we last applied the fraction to so we only call
         // setPosition() when width actually changes, not on every layout pass.
         // This prevents cascading layout invalidations that cause stuttering.
-        guard let fraction, !userAdjusted, bounds.width > 0, bounds.width != lastAppliedWidth,
+        guard bounds.width > 0, bounds.width != lastAppliedWidth,
               arrangedSubviews.count >= 2 else { return }
         lastAppliedWidth = bounds.width
         // Passing an out-of-range fraction lets AppKit clamp the subview but
         // leaves its drawn divider at the requested coordinate. This happens
         // when the inspector closes and the window narrows to 720pt.
-        let position = min(max(bounds.width * fraction, minimumLeadingPosition), maximumLeadingPosition)
+        let proposed = userAdjusted || fraction == nil
+            ? arrangedSubviews[0].frame.width
+            : bounds.width * (fraction ?? 0.30)
+        let position = min(max(proposed, minimumLeadingPosition), maximumLeadingPosition)
         setPosition(position, ofDividerAt: 0)
     }
 }
@@ -5633,5 +5913,52 @@ private struct WorkingTitleShimmer: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// Transparent titlebar strip: double-click follows the system title-bar preference (zoom by default), single-click drags it.
+private struct TitlebarDoubleClickArea: NSViewRepresentable {
+    final class Strip: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 {
+                // Honor System Settings > Desktop & Dock > "Double-click a window's title bar to".
+                switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+                case "Minimize": window?.miniaturize(nil)
+                case "None": break
+                default: window?.zoom(nil)
+                }
+            } else { super.mouseDown(with: event) }
+        }
+    }
+
+    func makeNSView(context: Context) -> Strip { Strip() }
+    func updateNSView(_ view: Strip, context: Context) {}
+}
+
+/// The 3-second "bot is running / finished" pill stack, shared by the rail and the notch.
+struct BotActivityBanner: View {
+    let events: [BotActivityEvent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(events) { event in
+                HStack(spacing: 6) {
+                    DockActivityIndicator(state: event.finished ? .done : .running, size: 12)
+                    Text(event.text)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.dockSurface2))
+                .background(.thickMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(events.map(\.text).joined(separator: ", "))
     }
 }

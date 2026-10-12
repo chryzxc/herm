@@ -454,9 +454,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.botDisplayName = botDisplayName
         self.contentRevision = contentRevision ?? Self.revision(for: text)
         self.hasBodyText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        self.timeLabel = Calendar.current.isDateInToday(timestamp)
-            ? timestamp.formatted(date: .omitted, time: .shortened)
-            : timestamp.formatted(date: .abbreviated, time: .shortened)
+        self.timeLabel = timestamp.formatted(date: .abbreviated, time: .shortened)
         self.durationLabel = responseDuration.map { ResponseDurationFormatting.string(seconds: $0) }
         self.activity = activity
         self.kanbanNotice = kanbanNotice

@@ -6,7 +6,8 @@ SWIFT_FORMAT ?= $(shell xcrun --find swift-format 2>/dev/null)
 .PHONY: test build build-release run lint format smoke-contract check package
 
 test:
-	swift test --disable-automatic-resolution
+	# Native UI fixtures share the main actor; serialize to keep their deadlines meaningful.
+	swift test --no-parallel --disable-automatic-resolution
 
 build:
 	swift build --disable-automatic-resolution

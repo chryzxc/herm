@@ -349,7 +349,7 @@ struct MessageNavigatorView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 DockIcon(.magnifyingGlass, size: 13, color: Color.dockMetadataText)
-                TextField("Find a message", text: $searchQuery)
+                DockTextField("Find a message", text: $searchQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Color.dockPrimaryText)

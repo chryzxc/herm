@@ -65,7 +65,7 @@ enum TranscriptHistoryPaging {
         ])
     }
 
-    private static func sessionPath(sessionID: String, endpoint: String, profileID: String?, query: [URLQueryItem]) -> String? {
+    static func sessionPath(sessionID: String, endpoint: String, profileID: String?, query: [URLQueryItem]) -> String? {
         var pathAllowed = CharacterSet.urlPathAllowed
         pathAllowed.remove(charactersIn: "/")
         guard let encodedID = sessionID.addingPercentEncoding(withAllowedCharacters: pathAllowed) else { return nil }
@@ -175,6 +175,7 @@ enum TranscriptHistoryPaging {
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !activity.isEmpty else { return nil }
             var display: [String: Any] = activity.merging(["role": role, "text": text]) { _, new in new }
             if let id = rowID(row) { display["row_id"] = id }
+            if let uid = row["message_uid"] as? String { display["message_uid"] = uid }
             if let timestamp = row["timestamp"] { display["timestamp"] = timestamp }
             if let kind = row["display_kind"] as? String { display["display_kind"] = kind }
             return display

@@ -3,136 +3,30 @@ import SwiftUI
 import Foundation
 import UniformTypeIdentifiers
 struct StartupAssistantView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let agentName: String
+    @State private var appeared = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: reduceMotion ? 1 : 1.0 / 12.0)) { context in
-            let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
-
-            VStack(spacing: 0) {
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(Color.dockSuccess)
-                        .frame(width: 5, height: 5)
-                        .shadow(color: Color.dockSuccess.opacity(0.8), radius: 5)
-                    Text("\(agentName.uppercased()) // ONLINE")
-                        .font(.system(size: 12, weight: .semibold))
-                        .tracking(1.5)
-                        .foregroundStyle(Color.dockAccent.opacity(0.85))
-                }
-                .padding(.top, 24)
-
-                Spacer(minLength: 16)
-
-                startupOrb(time: t)
-                    .frame(width: 250, height: 250)
-
-                Spacer(minLength: 14)
-
-                VStack(spacing: 5) {
-                    Text("Good to see you.")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    Text("All systems nominal. How may I assist you?")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-                .multilineTextAlignment(.center)
-
-                HStack(spacing: 6) {
-                    Capsule().fill(Color.dockAccent.opacity(0.35)).frame(width: 18, height: 1)
-                    Text("AWAITING COMMAND")
-                        .font(.system(size: 12, weight: .medium))
-                        .tracking(1.25)
-                        .foregroundStyle(Color.dockMetadataText)
-                    Capsule().fill(Color.dockAccent.opacity(0.35)).frame(width: 18, height: 1)
-                }
-                .padding(.top, 15)
-                .padding(.bottom, 22)
-            }
+        VStack(spacing: 6) {
+            Spacer(minLength: 0)
+            // The voice orb at rest, scaled down: chat and voice share one visual language.
+            VoiceOrbView(mode: .idle, audioLevel: 0)
+                .frame(width: 300, height: 300)
+                .scaleEffect(0.5)
+                .frame(width: 150, height: 150)
+            Text("What can I help with?")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            Text("Ask a question, give it a task, or attach files and folders.")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockSecondaryText)
+            Spacer(minLength: 0)
         }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 24)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 6)
+        .onAppear { withAnimation(.easeOut(duration: 0.5)) { appeared = true } }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(agentName) online. All systems nominal. Awaiting command.")
-    }
-
-    @ViewBuilder
-    private func startupOrb(time t: TimeInterval) -> some View {
-        ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.dockAccent.opacity(0.12), Color.dockAccent.opacity(0.025), .clear],
-                        center: .center,
-                        startRadius: 15,
-                        endRadius: 122
-                    )
-                )
-                .blur(radius: 5)
-
-            ForEach(0..<3) { index in
-                let phase = t * 0.72 + Double(index) * 1.75
-                let scale = 0.94 + 0.045 * sin(phase)
-                Circle()
-                    .stroke(
-                        Color.dockAccent.opacity(index == 1 ? 0.2 : 0.12),
-                        style: StrokeStyle(lineWidth: index == 1 ? 0.7 : 0.5, dash: index == 1 ? [2, 5] : [])
-                    )
-                    .frame(width: CGFloat(158 + index * 35), height: CGFloat(158 + index * 35))
-                    .scaleEffect(scale)
-                    .opacity(0.5 + 0.25 * sin(phase))
-            }
-
-            Circle()
-                .trim(from: 0.05, to: 0.28)
-                .stroke(Color.dockAccent.opacity(0.75), style: StrokeStyle(lineWidth: 1.25, lineCap: .round))
-                .frame(width: 212, height: 212)
-                .rotationEffect(.degrees(t * 18))
-            Circle()
-                .trim(from: 0.57, to: 0.78)
-                .stroke(Color.dockAccent.opacity(0.4), style: StrokeStyle(lineWidth: 0.8, lineCap: .round))
-                .frame(width: 212, height: 212)
-                .rotationEffect(.degrees(-t * 12))
-
-            ForEach(0..<18) { index in
-                let angle = Double(index) / 18 * .pi * 2 + t * 0.18
-                Circle()
-                    .fill(Color.dockAccent.opacity(index.isMultiple(of: 3) ? 0.75 : 0.28))
-                    .frame(width: index.isMultiple(of: 3) ? 2.5 : 1.5, height: index.isMultiple(of: 3) ? 2.5 : 1.5)
-                    .offset(x: cos(angle) * 98, y: sin(angle) * 98)
-            }
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.white.opacity(0.26), Color.dockAccent.opacity(0.32), Color.dockAccent.opacity(0.07)],
-                        center: UnitPoint(x: 0.35, y: 0.28),
-                        startRadius: 1,
-                        endRadius: 62
-                    )
-                )
-                .frame(width: 116, height: 116)
-                .overlay(Circle().stroke(Color.dockAccent.opacity(0.35), lineWidth: 0.7))
-                .shadow(color: Color.dockAccent.opacity(0.24), radius: 20)
-                .scaleEffect(1 + 0.025 * sin(t * 1.7))
-
-            Circle()
-                .trim(from: 0.08, to: 0.92)
-                .stroke(Color.white.opacity(0.26), style: StrokeStyle(lineWidth: 0.5, lineCap: .round))
-                .frame(width: 82, height: 82)
-                .rotationEffect(.degrees(-t * 20))
-
-            DockIcon(.waveform)
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(Color.dockAccent.opacity(0.9))
-                .shadow(color: Color.dockAccent.opacity(0.7), radius: 8)
-
-            Capsule()
-                .fill(Color.dockAccent.opacity(0.55))
-                .frame(width: 58, height: 0.8)
-                .offset(y: 42)
-                .scaleEffect(x: 0.7 + 0.3 * (sin(t * 2.2) + 1) / 2, y: 1)
-        }
     }
 }
 
@@ -394,7 +288,7 @@ struct KanbanMutationEditor: View {
                 .lineLimit(2...5)
                 .textFieldStyle(.dockGlass)
             if (request.kind == .assign || request.kind == .reassign), !assignees.isEmpty {
-                Menu {
+                DockMenu {
                     ForEach(assignees, id: \.self) { assignee in
                         Button(assignee) { value = assignee }
                     }
@@ -403,7 +297,6 @@ struct KanbanMutationEditor: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                 }
-                .menuStyle(.borderlessButton)
                 .fixedSize()
             }
             if request.kind == .reassign {
@@ -446,17 +339,17 @@ struct CronEditEditor: View {
         DockModal(icon: .clock, title: "Edit Scheduled Job", subtitle: job.name, width: 460) {
             if job.editableFields.contains(.name) {
                 labeledField("Name") {
-                    TextField("Name", text: $draft.name).textFieldStyle(.dockGlass)
+                    DockTextField("Name", text: $draft.name).textFieldStyle(.dockGlass)
                 }
             }
             if job.editableFields.contains(.schedule) {
                 labeledField("Schedule", hint: "every 2h · 0 9 * * *") {
-                    TextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
+                    DockTextField("Schedule", text: $draft.schedule).textFieldStyle(.dockGlass)
                 }
             }
             if job.editableFields.contains(.prompt), job.prompt != nil {
                 labeledField("Prompt") {
-                    TextField("Prompt", text: $draft.prompt, axis: .vertical)
+                    DockTextField("Prompt", text: $draft.prompt, axis: .vertical)
                         .lineLimit(3...6)
                         .textFieldStyle(.dockGlass)
                 }
@@ -625,7 +518,7 @@ struct DockActionPalette: View {
 
     var body: some View {
         DockModal(icon: .command, title: "Command Center", subtitle: "Search actions  ·  ⌘K", width: 480, contentPadding: 16) {
-            TextField("Search actions", text: $query)
+            DockTextField("Search actions", text: $query)
                 .textFieldStyle(.dockGlass)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {

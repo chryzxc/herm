@@ -4,7 +4,11 @@ import Foundation
 /// content, diffs, prompts, and tool results deliberately never enter this store.
 @MainActor
 final class CommandCenterPreferencesStore: ObservableObject {
+    static let shared = CommandCenterPreferencesStore()
     @Published private(set) var pinnedRepositoryIDs: [String]
+    @Published private(set) var workingSets: [WorkingSet] = []
+    @Published private(set) var sourcePins: [PinnedSource] = []
+    @Published private(set) var routinePins: [String] = []
     @Published private(set) var collapsedSections: Set<String>
     @Published private(set) var sectionOrder: [String]
     @Published private(set) var recentActionIDs: [String]
@@ -21,6 +25,9 @@ final class CommandCenterPreferencesStore: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         let saved = defaults.dictionary(forKey: key) ?? [:]
+        if let data = saved["workingSets"] as? Data { workingSets = (try? JSONDecoder().decode([WorkingSet].self, from: data)) ?? [] }
+        if let data = saved["sourcePins"] as? Data { sourcePins = (try? JSONDecoder().decode([PinnedSource].self, from: data)) ?? [] }
+        routinePins = saved["routinePins"] as? [String] ?? []
         pinnedRepositoryIDs = saved["pinnedRepositoryIDs"] as? [String] ?? []
         collapsedSections = Set(saved["collapsedSections"] as? [String] ?? [])
         sectionOrder = saved["sectionOrder"] as? [String] ?? MissionControlSection.allCases.map(\.rawValue)
@@ -35,6 +42,31 @@ final class CommandCenterPreferencesStore: ObservableObject {
     func togglePinnedRepository(_ id: String) {
         if let index = pinnedRepositoryIDs.firstIndex(of: id) { pinnedRepositoryIDs.remove(at: index) }
         else { pinnedRepositoryIDs.append(id) }
+        save()
+    }
+
+    func saveWorkingSet(name: String, destination: QuickDestination, addingTo id: UUID? = nil) {
+        var destination = destination; destination.runtimeID = nil
+        if let id, let index = workingSets.firstIndex(where: { $0.id == id }) {
+            if !workingSets[index].destinations.contains(where: { $0.key == destination.key }) { workingSets[index].destinations.append(destination) }
+        } else if !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            workingSets.append(WorkingSet(name: String(name.prefix(120)), destinations: [destination]))
+        }
+        save()
+    }
+    func removeWorkingSet(_ id: UUID) { workingSets.removeAll { $0.id == id }; save() }
+    func removeDestination(_ key: String, from id: UUID) {
+        if let index = workingSets.firstIndex(where: { $0.id == id }) { workingSets[index].destinations.removeAll { $0.key == key }; save() }
+    }
+    func pinSource(origin: QuickDestination, url: String, label: String? = nil, revisionID: String? = nil) {
+        var origin = origin; origin.runtimeID = nil
+        guard let parsed = URL(string: url), ["http", "https"].contains(parsed.scheme?.lowercased() ?? ""), parsed.host != nil,
+              !sourcePins.contains(where: { $0.origin.key == origin.key && $0.url == url && $0.revisionID == revisionID }) else { return }
+        sourcePins.append(PinnedSource(origin: origin, url: url, label: label.map { String($0.prefix(120)) }, revisionID: revisionID)); save()
+    }
+    func removeSource(_ id: UUID) { sourcePins.removeAll { $0.id == id }; save() }
+    func toggleRoutinePin(_ id: String) {
+        if routinePins.contains(id) { routinePins.removeAll { $0 == id } } else { routinePins.append(id) }
         save()
     }
 
@@ -102,6 +134,9 @@ final class CommandCenterPreferencesStore: ObservableObject {
 
     private func save() {
         defaults.set([
+            "workingSets": (try? JSONEncoder().encode(workingSets)) ?? Data(),
+            "sourcePins": (try? JSONEncoder().encode(sourcePins)) ?? Data(),
+            "routinePins": routinePins,
             "pinnedRepositoryIDs": pinnedRepositoryIDs,
             "collapsedSections": Array(collapsedSections),
             "sectionOrder": sectionOrder,

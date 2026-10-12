@@ -130,7 +130,8 @@ final class HermesGateway: NSObject {
         let sessionID = payload["session_id"] as? String ?? ""
         switch method {
         case "approval":
-            break // Keeps Hermes' own approval `request_id`.
+            // Cancellation identifies the server request; answering identifies the tool approval.
+            payload["server_request_id"] = id
         case "clarify":
             // A batch keeps `questions`; the first one also fills the single-question
             // fields for surfaces that show one question (Inbox, notifications).

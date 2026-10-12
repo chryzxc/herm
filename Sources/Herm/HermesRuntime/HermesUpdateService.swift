@@ -398,7 +398,7 @@ final class HermesUpdateService: ObservableObject {
     /// Runs a read-only Hermes CLI command locally with a timeout. The Dock
     /// launches the Hermes backend the same way, so this stays consistent
     /// with the app's existing process-launch boundary.
-    nonisolated private static func runHermes(arguments: [String], timeout: TimeInterval) async -> (succeeded: Bool, text: String) {
+    nonisolated static func runHermes(arguments: [String], timeout: TimeInterval) async -> (succeeded: Bool, text: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["hermes"] + arguments

@@ -158,6 +158,11 @@ struct ChatComposerView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
+            if let quote = model.replyQuote {
+                ReplyQuoteChip(quote: quote, showsAuthor: false) { model.replyQuote = nil }
+                    .padding(.horizontal, 12)
+            }
+
             if !queuedPrompts.isEmpty {
                 QueuedPromptList(model: model, prompts: queuedPrompts)
             }
@@ -239,6 +244,8 @@ struct ChatComposerView: View {
                                     DockIcon(.x)
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockSecondaryText)
+                                    .frame(width: 22, height: 22)
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.dockHover)
                                 .help("Remove image")
@@ -266,6 +273,8 @@ struct ChatComposerView: View {
                                     DockIcon(.x)
                                         .font(.system(size: 10, weight: .bold))
                                         .foregroundStyle(Color.dockSecondaryText)
+                                    .frame(width: 22, height: 22)
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.dockHover)
                                 .help("Remove context")
@@ -290,6 +299,8 @@ struct ChatComposerView: View {
                         DockIcon(.x)
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.dockHover)
                     .help("Remove PDF")
@@ -506,13 +517,12 @@ struct ChatComposerView: View {
 
     private var composerReasoningPicker: some View {
         // Thinking depth variant selector menu
-        Menu {
-            Picker("", selection: reasoningVariantSelection) {
+        DockMenu {
+            DockMenuChoices(selection: reasoningVariantSelection) {
                 ForEach(HermesReasoningVariant.allCases) { variant in
-                    Text(variant.displayName).tag(Optional(variant))
+                    DockMenuOption(variant.displayName, value: Optional(variant))
                 }
             }
-            .pickerStyle(.inline)
         } label: {
             // A plain button-style menu renders this SwiftUI
             // label as drawn; a borderless menu keeps only native
@@ -536,9 +546,7 @@ struct ChatComposerView: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .menuStyle(.button)
         .buttonStyle(.dockHover)
-        .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Thinking depth, currently \(sessionReasoningDisplayName)")
         .disabled(model.sessionID != nil && model.isUpdatingSessionReasoning)
@@ -659,7 +667,7 @@ struct ChatComposerView: View {
            ),
            let bot = botMode.visibleBots.first(where: { $0.id == request.profileID }) {
             closeCompletions()
-            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text, chatSessionID: bot.chat?.sessionID)
+            model.sendDirectBotRequest(profileID: bot.id, displayName: bot.name, text: request.text, chatSessionID: bot.chat?.sessionID, quote: model.replyQuote)
             return
         }
         // Other mentions are identified for the session agent, which can
@@ -748,7 +756,9 @@ struct ChatComposerView: View {
 
     private var selectedModelOptionID: String? {
         if let id = model.sessionModelOptionID { return id }
-        guard model.sessionID == nil, let provider = model.runtimeConfiguration?.provider,
+        guard model.sessionID == nil else { return nil }
+        if let id = model.defaultModelOptionID { return id }
+        guard let provider = model.runtimeConfiguration?.provider,
               let modelName = model.runtimeConfiguration?.model else { return nil }
         return HermesModelOption(provider: provider, model: modelName).id
     }
@@ -944,7 +954,7 @@ private struct QueuedPromptList: View {
                             .help(image.fileName)
                     }
                     if isEditing {
-                        TextField("Queued message", text: Binding(
+                        DockTextField("Queued message", text: Binding(
                             get: { prompt.text },
                             set: { model.updateQueuedPrompt(prompt.id, text: $0) }
                         ), axis: .vertical)

@@ -31,17 +31,13 @@ struct ProjectFolderSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Projects").font(.headline)
             if !projects.isEmpty {
-                Picker("", selection: $mode) {
-                    ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                DockSegmentedPicker(selection: $mode, options: Mode.allCases.map { ($0, $0.rawValue) })
             }
             if mode == .newProject {
-                TextField("Project name", text: $name).textFieldStyle(.roundedBorder)
+                DockTextField("Project name", text: $name).textFieldStyle(.roundedBorder)
             } else {
-                Picker("Project", selection: Binding(get: { target?.id ?? "" }, set: { targetID = $0 })) {
-                    ForEach(projects) { Text(URL(fileURLWithPath: $0.name).lastPathComponent).tag($0.id) }
+                DockMenuPicker("Project", title: target.map { URL(fileURLWithPath: $0.name).lastPathComponent } ?? "Choose…", selection: Binding(get: { target?.id ?? "" }, set: { targetID = $0 })) {
+                    ForEach(projects) { DockMenuOption(URL(fileURLWithPath: $0.name).lastPathComponent, value: $0.id) }
                 }
             }
             HStack {

@@ -3,7 +3,82 @@ import Combine
 
 @MainActor
 final class ControlCenterModel: ObservableObject {
+    var interruptionCoordinator: HermInterruptionCoordinator? { dockModel?.interruptionCoordinator }
     let pet = HermesPetModel()
+    @Published var integrationDestination: IntegrationDestination?
+    @Published var requestedRepositoryReview: QuickDestination?
+    @Published var requestedAutomationDidNavigate = false
+    @Published var requestedAutomationOwner: CronOwner?
+    @Published var automationNavigationError: String?
+    @Published var requestedAutomationJobID: String?
+    @Published private(set) var routineProfileID: String?
+    @Published private(set) var routineActions = Set<String>()
+    @Published private(set) var unavailableRoutineActions = Set<String>()
+    @Published private(set) var routineActionErrors: [String: String] = [:]
+    private var triggeredRoutineIDs = Set<String>()
+    private var triggeredRoutineRevisions: [String: String] = [:]
+    var routineReferences: [RoutineReference] {
+        cronJobs.map { job in RoutineReference(profileID: routineProfileID, job: job,
+            run: (cronRunsByJob[job.id] ?? cronRuns.filter { $0.jobID == job.id }).first) }
+    }
+    func profileForRoutine(_ job: CronSummary) -> String? {
+        if let owner = job.owner { return owner.profileID }
+        return routineProfileID
+    }
+    func requestAutomation(_ reference: RoutineReference) {
+        requestedAutomationDidNavigate = false
+        requestedAutomationOwner = CronOwner(profileID: reference.profileID)
+        requestedAutomationJobID = reference.job.id
+        automationNavigationError = nil
+    }
+    func requestedAutomationMatchesInventory() -> Bool {
+        guard let owner = requestedAutomationOwner else { return true }
+        return (owner.profileID ?? "default") == (routineProfileID ?? "default")
+    }
+    var routineReportClient: HermesControlRPC? { rpc }
+    func routineService(profileID: String?) -> HermesWorkflowRPC? {
+        rpc?.workflow(profileID: profileID)
+    }
+    func canTriggerRoutine(_ reference: RoutineReference) -> Bool {
+        capabilityAvailable("cron.runNow") && !unavailableRoutineActions.contains("run") && !reference.running && !routineActions.contains(reference.id) && !triggeredRoutineIDs.contains(reference.id)
+    }
+    func routineNeedsReview(_ reference: RoutineReference) -> Bool { triggeredRoutineIDs.contains(reference.id) && !routineActions.contains(reference.id) }
+    func confirmRoutineReview(_ reference: RoutineReference) async {
+        guard routineNeedsReview(reference), let service = routineService(profileID: reference.profileID) else { return }
+        routineActions.insert(reference.id); defer { routineActions.remove(reference.id) }
+        do {
+            let jobs = try await service.routineJobs()
+            guard let job = jobs.first(where: { $0.id == reference.job.id }), !["running", "pending", "claimed"].contains(job.lastStatus ?? "") else {
+                throw QuickDraftError.message("This routine still has a known active run. Inspect Automation.")
+            }
+            triggeredRoutineIDs.remove(reference.id); triggeredRoutineRevisions.removeValue(forKey: reference.id)
+            routineActionErrors[reference.id] = "Review recorded. Starting another run remains a separate confirmed action."
+            if reference.profileID == routineProfileID { cronJobs = jobs }
+        } catch { routineActionErrors[reference.id] = Self.safeUserDiagnostic(error.localizedDescription) }
+    }
+    func recoverRoutine(_ reference: RoutineReference, run: Bool, paused: Bool = false) async {
+        guard !routineActions.contains(reference.id), let service = routineService(profileID: reference.profileID) else { return }
+        if run, !canTriggerRoutine(reference) { return }
+        routineActions.insert(reference.id); routineActionErrors[reference.id] = nil
+        defer { routineActions.remove(reference.id) }
+        do {
+            let jobs = try await service.routineJobs()
+            guard let current = jobs.first(where: { $0.id == reference.job.id }), !run || !["running", "pending", "claimed"].contains(current.lastStatus ?? "") else { throw HermesGateway.GatewayError.malformedResponse }
+            if run {
+                triggeredRoutineIDs.insert(reference.id)
+                triggeredRoutineRevisions[reference.id] = reference.job.lastRunAt ?? ""
+                try await service.runRoutine(reference.job.id)
+            }
+            else { try await service.setRoutinePaused(reference.job.id, paused: paused) }
+            let fresh = try await service.routineJobs()
+            if reference.profileID == routineProfileID { cronJobs = fresh }
+            refreshCronRuns()
+        } catch {
+            if BotService.isUnsupportedMethod(error) { unavailableRoutineActions.insert(run ? "run" : paused ? "pause" : "resume") }
+            DebugLog.write("workflow: routine mutation failed or uncertain")
+            routineActionErrors[reference.id] = run ? "The new run could not be confirmed. Review Automation before triggering again." : Self.safeUserDiagnostic(error.localizedDescription)
+        }
+    }
     let gatewayService = HermesGatewayLifecycleModel()
     enum KanbanRefreshTrigger {
         case user
@@ -69,13 +144,17 @@ final class ControlCenterModel: ObservableObject {
     @Published private(set) var memoryHealthStatus: HermesReadOnlyStatus?
     @Published private(set) var sessionUsage: SessionUsageSummary?
     @Published private(set) var sessionContext: SessionContextSummary?
-    @Published private(set) var tokenUsage: TokenUsageReport?
+    @Published private(set) var tokenUsage: TokenUsageReport? {
+        didSet { applyProviderQuotaPresentation() }
+    }
+    /// A year of daily usage for the heatmap, independent of the range picker.
+    @Published private(set) var yearActivity: [TokenUsageReport.Day] = []
     private var tokenUsageGeneration = UUID()
     private var tokenUsageModelRows: [String: Any] = [:]
     @Published private(set) var workCalendar: WorkCalendarIndex?
     /// Fetched sessions/commits/usage per month start; Kanban and cron runs are
     /// folded in from the live projections at build time.
-    private var workCalendarSources: [Date: (sessions: [SessionSummary], commits: [WorkCommit], usage: [TokenUsageReport.Day])] = [:]
+    private var workCalendarSources: [Date: (sessions: [SessionSummary], commits: [WorkCommit], pullRequests: [WorkPullRequest], usage: [TokenUsageReport.Day])] = [:]
     private var workCalendarMonth: Date?
     /// Paths each cached month's git read covered, so newly seen worktrees trigger one re-read.
     private var workCalendarPaths: [Date: Set<String>] = [:]
@@ -214,6 +293,7 @@ final class ControlCenterModel: ObservableObject {
     private var searchGeneration = UUID()
     private var aggregateKanbanRefreshGeneration = UUID()
     private var visibleKanbanRefreshGeneration = UUID()
+    var hasKanbanReadInFlight: Bool { !kanbanRefreshInFlight.isEmpty }
     private var kanbanRefreshInFlight: Set<KanbanRefreshScope> = []
     private var providerQuotaReadsInFlight = 0
     private var sessionKanbanRefreshGeneration = UUID()
@@ -726,13 +806,22 @@ final class ControlCenterModel: ObservableObject {
             if let rpc {
                 let sessionID = dockModel?.sessionID ?? ""
                 do {
-                    let result = try await rpc.cron(action: "list")
+                    let scope = dockModel?.profileScopeID
+                    let result = try await rpc.cron(action: "list", profileID: scope)
                     var jobs = Self.parseCronJobs(result)
-                    if let sessions = try? await rpc.sessions(limit: 200) {
+                    if let sessions = try? await rpc.sessions(limit: 200, profileID: scope) {
                         jobs = Self.attachLatestCronSessions(to: jobs, from: sessions)
                     }
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
-                    cronJobs = jobs
+                    guard dockModel?.profileScopeID == scope else { return }
+                    if routineProfileID != scope { cronRunsByJob = [:]; cronRuns = [] }
+                    routineProfileID = scope
+                    cronJobs = jobs.map { job in var job = job; job.owner = CronOwner(profileID: scope); return job }
+                    triggeredRoutineIDs = triggeredRoutineIDs.filter { id in
+                        guard let prior = jobs.first(where: { "routine/\(scope ?? "")/\($0.id)" == id }) else { return false }
+                        return (prior.lastRunAt ?? "") == triggeredRoutineRevisions[id]
+                            || ["running", "pending", "claimed"].contains(prior.lastStatus ?? "")
+                    }
                     recordProjectionSuccess("cron.jobs")
                 } catch {
                     guard self.isCurrentRefresh(generation, clientIdentity: clientIdentity) else { return }
@@ -893,6 +982,9 @@ final class ControlCenterModel: ObservableObject {
         ("codex-hermes", CodexQuotaService.readHermes),
         ("opencode", OpenCodeQuotaService.read),
         ("glm", GLMQuotaService.read),
+        ("deepseek", DeepSeekQuotaService.read),
+        ("kimi", KimiQuotaService.read),
+        ("openrouter", OpenRouterQuotaService.read),
         ("claude", ClaudeQuotaService.read),
         ("antigravity", AntigravityQuotaService.read)
     ]
@@ -924,6 +1016,8 @@ final class ControlCenterModel: ObservableObject {
             return
         }
         if !quiet { beginProjectionRefresh("provider.quota") }
+        // Balance cards derive spend and runway from usage analytics.
+        if !quiet, tokenUsage == nil { refreshTokenUsage(days: UsageWorkspaceView.storedDays) }
         let readers = Self.quotaReaders.filter { readerIDs?.contains($0.id) ?? true }
         providerQuotaReadsInFlight += 1
         Task { @MainActor in
@@ -1007,12 +1101,38 @@ final class ControlCenterModel: ObservableObject {
                 displayName: providerNicknameStore.nickname(for: snapshot.provider) ?? snapshot.displayName,
                 model: snapshot.model,
                 updatedAt: snapshot.updatedAt,
-                windows: snapshot.windows,
+                windows: snapshot.windows + Self.balanceUsageWindows(for: snapshot, usage: tokenUsage),
                 safeDetail: snapshot.safeDetail,
                 hermesCredential: snapshot.hermesCredential
             )
         }
         providerQuotas = QuotaWorkspacePresentation.ordered(named, savedOrder: providerQuotaOrder)
+    }
+
+    /// Pay-as-you-go APIs only report a balance, so their cards add spend,
+    /// top model, and runway from Hermes' own usage analytics.
+    static func balanceUsageWindows(for snapshot: ProviderQuotaSnapshot, usage: TokenUsageReport?) -> [ProviderQuotaWindow] {
+        guard let usage, usage.days > 0, ["deepseek", "kimi", "openrouter"].contains(snapshot.provider) else { return [] }
+        let models = usage.models.filter { model in
+            (model.providers.isEmpty ? [model.model] : model.providers)
+                .contains { ChatQuotaChip.quotaProviderID(for: $0) == snapshot.provider }
+        }
+        guard !models.isEmpty else { return [] }
+        let cost = models.reduce(0) { $0 + $1.estimatedCost }
+        let tokens = models.reduce(0) { $0 + $1.totalTokens }
+        let calls = models.reduce(0) { $0 + $1.apiCalls }
+        func window(_ id: String, _ label: String, _ value: String, _ detail: String?) -> ProviderQuotaWindow {
+            ProviderQuotaWindow(id: id, label: label, remainingPercent: nil, remainingDisplay: value, limitDisplay: detail, resetsAt: nil, resetsDisplay: nil)
+        }
+        var windows = [window("hermes-spend", "Spent · last \(usage.days)d", "\(UsageWorkspaceView.cost(cost)) est.", "\(UsageWorkspaceView.tokens(tokens)) tokens · \(calls) calls")]
+        if let top = models.max(by: { $0.totalTokens < $1.totalTokens }) {
+            windows.append(window("hermes-top-model", "Top model", top.model, "\(UsageWorkspaceView.tokens(top.totalTokens)) tokens · \(UsageWorkspaceView.cost(top.estimatedCost))"))
+        }
+        if cost > 0, let balance = snapshot.windows.lazy.compactMap(\.amount).first {
+            let days = balance / (cost / Double(usage.days))
+            windows.append(window("hermes-runway", "Runway", days < 1 ? "Under a day" : "~\(Int(days.rounded())) days", "at the \(usage.days)-day pace"))
+        }
+        return windows
     }
 
     /// Sets a custom display name (nickname) for a provider. Persists across
@@ -1292,32 +1412,16 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func runCronNow(_ job: CronSummary) {
-        guard let cli, capabilityAvailable("cron.runNow") else {
-            lastError = "Run-now is unavailable through the installed Hermes CLI."
-            return
-        }
-        let actionID = cronActionID("run", job: job)
-        guard beginAction(actionID) else { return }
-        Task {
-            defer { finishAction(actionID) }
-            do {
-                let result = try await cli.cronRun(jobID: job.id)
-                guard result.succeeded else {
-                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes could not run the scheduled job." : Self.safeUserDiagnostic(result.stderr)
-                    return
-                }
-                refreshCronRuns()
-                refresh()
-            } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
-            }
-        }
+        let reference = RoutineReference(profileID: profileForRoutine(job), job: job, run: cronRunsByJob[job.id]?.first ?? cronRuns.first { $0.jobID == job.id })
+        guard canTriggerRoutine(reference) else { lastError = "Run-now is unavailable or a run needs review."; return }
+        Task { await recoverRoutine(reference, run: true) }
     }
 
     func refreshCronRuns(refreshGeneration: UInt64? = nil, clientIdentity: ObjectIdentifier? = nil) {
         guard let cli else { return }
         let resolvedClientIdentity = clientIdentity ?? dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         let bindingGeneration = self.clientBindingGeneration
+        let profile = routineProfileID
         guard isCurrentClient(resolvedClientIdentity, bindingGeneration: bindingGeneration) else { return }
         let isCurrent: () -> Bool = {
             if let refreshGeneration {
@@ -1330,8 +1434,8 @@ final class ControlCenterModel: ObservableObject {
         cronRunsGeneration = generation
         Task {
             do {
-                let result = try await cli.cronRuns()
-                guard generation == cronRunsGeneration, isCurrent() else { return }
+                let result = try await cli.cronRuns(profileID: profile)
+                guard generation == cronRunsGeneration, isCurrent(), routineProfileID == profile else { return }
                 cronHistoryAvailable = result.succeeded
                 guard cronHistoryAvailable else {
                     let message = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes automation history is temporarily unavailable." : Self.safeUserDiagnostic(result.stderr)
@@ -1342,7 +1446,7 @@ final class ControlCenterModel: ObservableObject {
                 cronRuns = Self.parseCronRuns(result.stdout)
                 recordProjectionSuccess("cron.history")
             } catch {
-                guard generation == cronRunsGeneration, isCurrent() else { return }
+                guard generation == cronRunsGeneration, isCurrent(), routineProfileID == profile else { return }
                 cronHistoryAvailable = false
                 let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
                 recordProjectionFailure("cron.history", error: message)
@@ -1357,13 +1461,14 @@ final class ControlCenterModel: ObservableObject {
         guard let cli else { return }
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         let bindingGeneration = clientBindingGeneration
+        let profile = routineProfileID
         let key = cronRunsProjectionKey(jobID: jobID)
         guard projectionRefreshStates[key]?.isRefreshing != true else { return }
         beginProjectionRefresh(key)
         Task {
             do {
-                let result = try await cli.cronRuns(limit: 50, jobID: jobID)
-                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                let result = try await cli.cronRuns(limit: 50, jobID: jobID, profileID: profile)
+                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile else { return }
                 guard result.succeeded else {
                     let message = Self.safeUserDiagnostic(result.stderr)
                     recordProjectionFailure(key, error: message.isEmpty ? "Hermes automation history is temporarily unavailable." : message)
@@ -1372,7 +1477,7 @@ final class ControlCenterModel: ObservableObject {
                 cronRunsByJob[jobID] = Self.parseCronRuns(result.stdout)
                 recordProjectionSuccess(key)
             } catch {
-                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+                guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile else { return }
                 recordProjectionFailure(key, error: Self.safeUserDiagnostic(error.localizedDescription))
             }
         }
@@ -1596,7 +1701,7 @@ final class ControlCenterModel: ObservableObject {
         defer { finishAction(actionID) }
         do {
             guard let rpc else { return false }
-            _ = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt)
+            _ = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, profileID: routineProfileID)
             refresh()
             return true
         } catch {
@@ -1612,11 +1717,12 @@ final class ControlCenterModel: ObservableObject {
         }
         let actionID = cronActionID("remove", job: job)
         guard beginAction(actionID) else { return }
+        let profile = profileForRoutine(job)
         Task {
             defer { finishAction(actionID) }
             do {
                 guard let rpc else { return }
-                _ = try await rpc.removeCron(jobID: job.id)
+                _ = try await rpc.removeCron(jobID: job.id, profileID: profile)
                 refresh()
             } catch {
                 lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
@@ -1628,6 +1734,7 @@ final class ControlCenterModel: ObservableObject {
         guard let sessionID = job.sessionID, let dockModel else { return }
         dockModel.resumeSession(HermesSession(
             id: sessionID,
+            profileID: profileForRoutine(job),
             title: "Automation · \(job.name)",
             preview: "",
             startedAt: nil,
@@ -1646,7 +1753,7 @@ final class ControlCenterModel: ObservableObject {
                 userInfo: [NSLocalizedDescriptionKey: "Hermes has not recorded a report session for this job."]
             )
         }
-        let result = try await rpc.sessionMessages(sessionID: request.sessionID)
+        let result = try await rpc.sessionMessages(sessionID: request.sessionID, profileID: request.profileID)
         guard let report = Self.parseCronReport(result, job: request.job, sessionID: request.sessionID) else {
             throw NSError(
                 domain: "HermesControl",
@@ -1661,7 +1768,7 @@ final class ControlCenterModel: ObservableObject {
         guard let jobID = run.jobID,
               let sessionID = run.sessionID,
               let job = cronJobs.first(where: { $0.id == jobID }) else { return nil }
-        return CronReportRequest(job: job, sessionID: sessionID)
+        return CronReportRequest(profileID: profileForRoutine(job), job: job, sessionID: sessionID)
     }
 
     func openProject(_ project: ProjectSummary) {
@@ -2526,6 +2633,17 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    func refreshYearActivity() {
+        guard let rpc else { return }
+        let bindingGeneration = clientBindingGeneration
+        let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
+        Task { @MainActor in
+            guard let result = try? await rpc.usageAnalytics(days: 365),
+                  isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
+            yearActivity = Self.parseTokenUsage(result).daily
+        }
+    }
+
     /// Loads one month of work for the Calendar tab. A month already fetched
     /// is rebuilt from cache unless `force` is set.
     func refreshWorkCalendar(month: Date, repoPaths: [String], force: Bool = false) {
@@ -2554,6 +2672,7 @@ final class ControlCenterModel: ObservableObject {
         Task { @MainActor in
             do {
                 async let commits = RepositoryService.commits(paths: paths, since: monthStart, until: monthEnd)
+                async let pullRequests = GitHubCodeHostService().mergedPullRequests(since: monthStart, until: monthEnd)
                 let sessions = try await Self.workCalendarSessions(rpc: rpc, since: monthStart)
                 // Usage is best-effort: older Hermes builds lack the web server.
                 let usageDays = (calendar.dateComponents([.day], from: monthStart, to: Date()).day ?? -1) + 1
@@ -2561,7 +2680,7 @@ final class ControlCenterModel: ObservableObject {
                 if (1...365).contains(usageDays), let result = try? await rpc.usageAnalytics(days: usageDays) {
                     usage = Self.parseTokenUsage(result).daily
                 }
-                let fetched = (sessions: sessions, commits: await commits, usage: usage)
+                let fetched = (sessions: sessions, commits: await commits, pullRequests: await pullRequests, usage: usage)
                 guard generation == workCalendarGeneration,
                       isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration) else { return }
                 workCalendarSources[monthStart] = fetched
@@ -2597,6 +2716,7 @@ final class ControlCenterModel: ObservableObject {
             sessions: sources.sessions,
             tasks: globalKanbanTasks,
             commits: sources.commits,
+            pullRequests: sources.pullRequests,
             runs: cronRuns,
             usage: sources.usage
         )
@@ -3117,6 +3237,18 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
+    /// Silent re-read of the open card for the live Activity tab: unlike
+    /// `loadKanbanTask` it keeps the current detail on screen and drops errors.
+    func refreshKanbanTaskQuietly(_ task: KanbanTaskSummary) async {
+        guard let cli else { return }
+        let boardSlug = task.boardSlug ?? selectedKanbanBoardSlug
+        let identity = KanbanTaskIdentity(boardSlug: boardSlug, taskID: task.id)
+        guard kanbanDetailTaskIdentity == identity,
+              let detail = try? await fetchKanbanTaskDetail(task, boardSlug: boardSlug, cli: cli).detail,
+              kanbanDetailTaskIdentity == identity, detail != kanbanDetail else { return }
+        kanbanDetail = detail
+    }
+
     /// Hermes posts only terminal kanban events to chat, so handoffs (picked
     /// up, review requested, changes requested…) are read from each session
     /// card's history and inserted as the same notice cards. A card is
@@ -3508,10 +3640,11 @@ final class ControlCenterModel: ObservableObject {
         }
         let actionID = cronActionID("edit", job: job)
         guard beginAction(actionID) else { return }
+        let profile = profileForRoutine(job)
         Task {
             defer { finishAction(actionID) }
             do {
-                let result = try await cli.cronEdit(jobID: job.id, changes: changes)
+                let result = try await cli.cronEdit(jobID: job.id, changes: changes, profileID: profile)
                 guard result.succeeded else {
                     lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes could not edit the scheduled job." : Self.safeUserDiagnostic(result.stderr)
                     return
@@ -4555,7 +4688,8 @@ final class ControlCenterModel: ObservableObject {
                 remainingDisplay: boundedQuotaText(row["remaining_display"]),
                 limitDisplay: boundedQuotaText(row["limit_display"]),
                 resetsAt: resetsAt,
-                resetsDisplay: boundedQuotaText(row["resets_display"])
+                resetsDisplay: boundedQuotaText(row["resets_display"]),
+                amount: doubleValue(row["amount"])
             )
         }
         var unique: [ProviderQuotaWindow] = []

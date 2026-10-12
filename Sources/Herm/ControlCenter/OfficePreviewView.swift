@@ -68,8 +68,8 @@ struct OfficePreviewView: View {
 
                     hud(in: geometry.size)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4))
-                .overlay(RoundedRectangle(cornerRadius: DockLayout.paneRadius + 4).stroke(Color.dockBorder, lineWidth: 0.5))
+                .clipShape(Rectangle())
+                .overlay(Rectangle().stroke(Color.dockBorder, lineWidth: 0.5))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -535,7 +535,7 @@ private struct OfficeAgentInspector: View {
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }
-        Menu {
+        DockMenu {
             ForEach(assignableTasks) { task in Button(task.title) { onAssignTask(task) } }
         } label: {
             Label("Assign existing task…", icon: .plusCircle)

@@ -94,7 +94,7 @@ struct StreamingPerformanceTests {
 
         #expect(model.draft.isEmpty)
         #expect(model.pendingImages.isEmpty)
-        #expect(model.messages.isEmpty)
+        #expect(model.messages.last?.text == "Use this image", "Text redirects immediately while the image waits for the next turn")
         #expect(model.queuedPrompts.count == 1)
         #expect(model.queuedPrompts.first?.images.count == 1)
 

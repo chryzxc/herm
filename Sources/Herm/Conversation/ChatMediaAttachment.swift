@@ -89,6 +89,8 @@ enum ArtifactOpener {
 
 struct ChatMediaAttachmentCard: View {
     let path: String
+    /// Rendered as a row inside a shared container, which supplies the chrome.
+    var grouped = false
     @State private var status: String?
     @State private var changes: RepositoryAttachmentChanges?
     @State private var preview: RepositoryAttachmentChanges?
@@ -172,8 +174,8 @@ struct ChatMediaAttachmentCard: View {
                 .disabled(!exists && changes == nil)
         }
         .padding(10)
-        .background(Color.dockSurface2.opacity(0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
+        .background(Color.dockSurface2.opacity(grouped ? 0 : 0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+        .overlay { if !grouped { RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5) } }
         .contextMenu {
             if isLocal { Button("Reveal in Finder") { ArtifactOpener.reveal(path) } }
             Button("Copy Path") {

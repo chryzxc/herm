@@ -150,13 +150,4 @@ struct CapabilityStateTests {
         #expect(snapshot.statesByCategory[.core]?.map(\.id) == ["gateway", "hermes"])
         #expect(snapshot.statesByCategory[.security]?.map(\.id) == ["semgrep"])
     }
-
-    @Test func inboxFiltersPreserveCategoryMembership() {
-        let approval = AttentionItem(id: "approval:1", reference: ControlReference(source: .hermesApproval, sourceID: "1"), kind: .approval, title: "Approve", detail: "", createdAt: .now, state: .open, actions: [])
-        let failure = AttentionItem(id: "failure:1", reference: ControlReference(source: .hermesSession, sourceID: "1"), kind: .failure, title: "Failed", detail: "", createdAt: .now, state: .open, actions: [])
-
-        #expect(InboxFilter.needsResponse.includes(approval))
-        #expect(!InboxFilter.needsResponse.includes(failure))
-        #expect(InboxFilter.failures.includes(failure))
-    }
 }

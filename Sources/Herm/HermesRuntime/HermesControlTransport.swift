@@ -72,6 +72,7 @@ final class HermesEventRouter {
 /// remains available on the protocol for forward-compatible Hermes methods.
 @MainActor
 final class HermesControlRPC {
+    func workflow(profileID: String?) -> HermesWorkflowRPC { HermesWorkflowRPC(client: client, profileID: profileID) }
     private let client: HermesRPCClientProtocol
 
     init(client: HermesRPCClientProtocol) {
@@ -117,9 +118,14 @@ final class HermesControlRPC {
         return canonical
     }
     /// Sessions whose ID or message text matches `query` (Hermes FTS).
-    func searchSessions(query: String, limit: Int = 20) async throws -> [[String: Any]] {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return [] }
-        return try await client.fetchHTTP("/api/sessions/search?q=\(encoded)&limit=\(limit)")["results"] as? [[String: Any]] ?? []
+    func searchSessions(query: String, limit: Int = 20, profileID: String? = nil) async throws -> [[String: Any]] {
+        var components = URLComponents()
+        components.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "limit", value: String(max(1, min(limit, 20))))]
+        if let profileID { components.queryItems?.append(URLQueryItem(name: "profile", value: profileID)) }
+        guard let encoded = components.percentEncodedQuery else { return [] }
+        let result = try await client.fetchHTTP("/api/sessions/search?\(encoded)")
+        guard let rows = result["results"] as? [[String: Any]] else { throw HermesGateway.GatewayError.malformedResponse }
+        return rows
     }
     func activate(sessionID: String) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionActivate.rawValue, params: ["session_id": sessionID]) }
     func resume(sessionID: String, profileID: String? = nil) async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.sessionResume.rawValue, params: Self.profileParams(["session_id": sessionID, "source": "herm-control"], profileID: profileID)) }
@@ -185,18 +191,18 @@ final class HermesControlRPC {
         try await client.request(HermesFeatureIDs.ID.clarifyRespond.rawValue, params: ["id": requestID, "result": ["answer": answer]])
     }
     func delegationStatus() async throws -> [String: Any] { try await client.request(HermesFeatureIDs.ID.delegationStatus.rawValue, params: [:]) }
-    func cron(action: String, jobID: String? = nil) async throws -> [String: Any] {
-        var params: [String: Any] = ["action": action]
+    func cron(action: String, jobID: String? = nil, profileID: String? = nil) async throws -> [String: Any] {
+        var params: [String: Any] = ["action": action, "include_disabled": true]
         if let jobID { params["name"] = jobID }
-        return try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: params)
+        return try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: Self.profileParams(params, profileID: profileID))
     }
-    func createCron(name: String, schedule: String, prompt: String) async throws -> [String: Any] {
-        try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: [
+    func createCron(name: String, schedule: String, prompt: String, profileID: String? = nil) async throws -> [String: Any] {
+        try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: Self.profileParams([
             "action": "add", "name": name, "schedule": schedule, "prompt": prompt
-        ])
+        ], profileID: profileID))
     }
-    func removeCron(jobID: String) async throws -> [String: Any] {
-        try await cron(action: "remove", jobID: jobID)
+    func removeCron(jobID: String, profileID: String? = nil) async throws -> [String: Any] {
+        try await cron(action: "remove", jobID: jobID, profileID: profileID)
     }
     func reloadMCP(sessionID: String) async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.reloadMCP.rawValue, params: ["session_id": sessionID, "confirm": true])

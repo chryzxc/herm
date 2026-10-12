@@ -21,6 +21,9 @@ struct RestoredTranscript {
 
 @MainActor
 final class DockModel: ObservableObject {
+    var interruptionCoordinator: HermInterruptionCoordinator?
+    private var completionNoticeIDs: [String: String] = [:]
+    private var quickSessionOwners: [String: QuickDestination] = [:]
     nonisolated static func safeUserDiagnostic(_ raw: String) -> String {
         HermesDiagnosticsService.safeSummary(raw)
     }
@@ -56,6 +59,23 @@ final class DockModel: ObservableObject {
         get { composer.text }
         set { composer.text = newValue }
     }
+    /// Message the next prompt replies to; sent as a leading quote line (see ReplyQuote).
+    @Published var replyQuote: ReplyQuote?
+    @Published private(set) var pinnedMessages: [PinnedMessage] = [] {
+        didSet {
+            pinnedMessageUIDs = Set(pinnedMessages.map(\.uid))
+            pinnedMessageRowIDs = Set(pinnedMessages.map(\.rowID))
+        }
+    }
+    private var pinnedMessageUIDs: Set<String> = []
+    private var pinnedMessageRowIDs: Set<Int> = []
+    @Published private(set) var messagePinsSupported = false
+    @Published private(set) var isLoadingMessagePins = false
+    @Published private(set) var updatingMessagePinRowID: Int?
+    var isUpdatingMessagePin: Bool { updatingMessagePinRowID != nil }
+    @Published private(set) var messagePinError: String?
+    @Published private(set) var storedMessageReferences: [UUID: StoredMessageReference] = [:]
+    private var submittedMessageIDForPin: UUID?
     @Published var pendingImages: [ImageAttachment] = []
     /// Context chips prepended to the next prompt (Kanban cards, PRs, issues).
     @Published var attachedContexts: [ChatContext] = []
@@ -91,6 +111,8 @@ final class DockModel: ObservableObject {
         let title: String
         let detail: String
         let presentation: ApprovalPresentation
+        let responseTarget: AttentionRequest?
+        let serverRequestID: String?
     }
     private var pendingApprovalsBySessionID: [String: PendingApproval] = [:] {
         didSet { refreshSessionAttention() }
@@ -104,6 +126,7 @@ final class DockModel: ObservableObject {
         /// Batch clarify: every question, and the answers Hermes has already locked.
         var batch: [ClarifyQuestion] = []
         var lockedAnswers: [String: String] = [:]
+        var responseTarget: AttentionRequest? = nil
 
         var current: ClarifyQuestion? { batch.first { lockedAnswers[$0.id] == nil } }
         var remainingCount: Int { batch.filter { lockedAnswers[$0.id] == nil }.count }
@@ -121,20 +144,26 @@ final class DockModel: ObservableObject {
         let requestID: String?
         /// Answers the notch can send without opening the chat; empty when it must open.
         var choices: [String] = []
+        var responseTarget: AttentionRequest? = nil
     }
     @Published private(set) var sessionAttention: [String: SessionAttention] = [:]
+    @Published private(set) var attentionAnswers: [AttentionRequest: AttentionAnswerState] = [:]
 
     private func refreshSessionAttention() {
         var requests = pendingClarificationsBySessionID.mapValues {
             SessionAttention(status: .needsClarification, summary: String($0.transcriptText.prefix(180)), requestID: $0.requestID,
-                             choices: $0.batch.count > 1 || $0.multiSelect ? [] : $0.choices)
+                             choices: $0.batch.count > 1 || $0.multiSelect ? [] : $0.choices,
+                             responseTarget: $0.responseTarget)
         }
         for (id, approval) in pendingApprovalsBySessionID {
             let what = approval.detail.isEmpty ? approval.title : "\(approval.title): \(approval.detail)"
             requests[id] = SessionAttention(status: .needsApproval, summary: String(what.prefix(180)),
                                             requestID: approval.presentation.requestID,
-                                            choices: [ApprovalChoice.once, ApprovalChoice.deny])
+                                            choices: [ApprovalChoice.once, ApprovalChoice.deny], responseTarget: approval.responseTarget)
         }
+        let liveRequests = Set(requests.values.compactMap(\.responseTarget))
+        let answers = attentionAnswers.filter { liveRequests.contains($0.key) }
+        if answers != attentionAnswers { attentionAnswers = answers }
         if requests != sessionAttention { sessionAttention = requests }
     }
     private var pendingClarificationAliasesBySessionID: [String: Set<String>] = [:]
@@ -238,6 +267,8 @@ final class DockModel: ObservableObject {
     @Published var runtimeModelOptions: [HermesModelOption] = []
     private var runtimeModelOptionsRefreshGeneration = 0
     @Published private(set) var sessionModelOptionID: String?
+    /// Hermes' resolved default provider/model, reported by sessionless `model.options`.
+    @Published private(set) var defaultModelOptionID: String?
     /// The canonical session response can provide a model before the optional
     /// catalog has resolved its provider/model option identity.
     @Published private(set) var sessionModelValue: String?
@@ -253,8 +284,6 @@ final class DockModel: ObservableObject {
     @Published private(set) var isVoiceMicMuted = false
     @Published private(set) var composerFocusRequest = 0
     @Published var isComposerEditing = false
-    @Published private(set) var controlInboxRequest = 0
-    @Published private(set) var requestedAttentionID: String?
     @Published private(set) var scrollToLatestMessageRequest = 0
 
     /// The default bot's name from Hermes' roster, so a rename reaches the
@@ -274,6 +303,10 @@ final class DockModel: ObservableObject {
 
     private let gateway = HermesGateway()
     private let sessionRPCClient: HermesRPCClientProtocol
+    var workflowSession: HermesSession? {
+        navigationSessionID.map { HermesSession(id: $0, profileID: sessionProfileID, title: currentSessionTitle ?? "Session", preview: "", startedAt: nil, messageCount: 0, source: "herm") }
+    }
+    var quickWorkflowClient: HermesRPCClientProtocol { sessionRPCClient }
     private let interruptRPC: HermesControlRPC
     let eventRouter = HermesEventRouter()
     @Published private(set) var sessionID: String?
@@ -344,7 +377,7 @@ final class DockModel: ObservableObject {
 
     /// Maps the open chat's runtime alias onto its stored row id.
     private func rowSessionID(_ id: String) -> String {
-        id == sessionID ? (sessionStorageID ?? id) : id
+        quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : id)
     }
     /// The durable identifier selected by the user for session-scoped durable
     /// projections. Gateway resume may return a transient alias for streaming,
@@ -603,6 +636,7 @@ final class DockModel: ObservableObject {
             self?.isHermesConnected = connected
             DebugLog.write("model: Hermes connection \(connected ? "online" : "offline")")
             if connected { self?.replayTrackedGatewayEvents() }
+            else { DeveloperWorkflowModel.shared.turnBaselines.removeAll() }
         }
     }
 
@@ -641,9 +675,40 @@ final class DockModel: ObservableObject {
         return nil
     }
 
+    func submitQuickDraft(_ draft: QuickDraftRecord, progress: (QuickDraftRecord) throws -> Void) async throws -> QuickDraftRecord {
+        if let reason = quickMessageUnavailableReason(for: draft.destination.session) {
+            throw QuickSubmissionFailure(message: reason, uncertain: false)
+        }
+        let submitted = try await QuickDraftSubmission.send(draft, client: sessionRPCClient, progress: { record in
+            rememberQuickSession(record.destination)
+            try progress(record)
+        }, beforeSubmit: { record, directory in
+            await DeveloperWorkflowModel.shared.captureTurnBaseline(origin: record.destination, path: directory, attemptID: record.revision)
+        })
+        rememberQuickSession(submitted.destination)
+        DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(origin: submitted.destination, attemptID: submitted.revision)
+        loadSessions()
+        return submitted
+    }
+
+    private func rememberQuickSession(_ destination: QuickDestination) {
+        guard let runtime = destination.runtimeID, let owner = destination.sessionID else { return }
+        quickSessionOwners[runtime] = destination; quickSessionOwners[owner] = destination
+        if quickSessionOwners.count > 256 { quickSessionOwners = [runtime: destination]; quickSessionOwners[owner] = destination }
+        let ids = Set([runtime, owner]).union(pendingApprovalAliasesBySessionID[owner] ?? [])
+        for id in ids {
+            pendingApprovalAliasesBySessionID[id] = ids
+            pendingClarificationAliasesBySessionID[id] = ids
+        }
+    }
+
+    func cleanupQuickDraftUploads(_ draft: QuickDraftRecord) async throws {
+        try await QuickDraftSubmission.detach(draft, client: sessionRPCClient)
+    }
+
     /// A nil target explicitly creates an independent session. Existing targets
     /// are captured by identity; neither path changes the workspace selection.
-    func sendQuickMessage(_ text: String, to target: HermesSession? = nil,
+    func sendQuickMessage(_ text: String, to target: HermesSession? = nil, profileID: String? = nil,
                           onCreated: @escaping (HermesSession) -> Void = { _ in },
                           completion: @escaping (String?) -> Void) {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -655,7 +720,7 @@ final class DockModel: ObservableObject {
             send(QueuedPrompt(sessionID: target.id, text: clean, images: [], pdfURL: nil), onSubmission: completion)
             return
         }
-        let profile = target?.profileID ?? profileScopeID
+        let profile = target?.profileID ?? profileID ?? profileScopeID
         Task {
             do {
                 try await sessionRPCClient.connect()
@@ -727,7 +792,8 @@ final class DockModel: ObservableObject {
 
         let text: String
         if !prompt.isEmpty || !contexts.isEmpty {
-            text = ChatContext.prompt(ComposerCompletion.pathifyingBareRefs(prompt), contexts: contexts)
+            let quoted = queued == nil ? replyQuote?.composing(prompt) : nil
+            text = ChatContext.prompt(ComposerCompletion.pathifyingBareRefs(quoted ?? prompt), contexts: contexts)
         } else if attachedPDF != nil {
             text = attachedImages.isEmpty ? "What does this document contain?" : "What do you see in these attachments?"
         } else {
@@ -739,11 +805,16 @@ final class DockModel: ObservableObject {
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
         }
         let sendGeneration = sessionResumeGeneration
-        if queued == nil { draft = ""; attachedContexts = [] }
+        if queued == nil { draft = ""; attachedContexts = []; replyQuote = nil }
         let transcriptText = attachedPDF.map { "[PDF: \($0.lastPathComponent)]\n\(text)" } ?? text
         messages.append(ChatMessage(role: .user, text: transcriptText, images: attachedImages.map(\.image)))
+        submittedMessageIDForPin = messages.last?.id
         status = .working
         isSending = true
+        if voiceState.isNativeConversationActive, !isVoicePromptActive {
+            nativeVoiceCapture.receivedTranscript(hasText: true)
+            voiceState = .thinking
+        }
         DebugLog.write("model: send started (\(prompt.count) characters, images: \(attachedImages.count))")
 
         Task {
@@ -810,7 +881,21 @@ final class DockModel: ObservableObject {
 
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": submittedText]))
+                let baselineAttempt = UUID()
+                let baselineOrigin = QuickDestination(profileID: sessionProfileID, sessionID: navigationSessionID ?? promptSessionID, title: currentSessionTitle ?? "Session")
+                var baselineDirectory = createdSessionProjectPaths[promptSessionID]
+                if baselineDirectory == nil {
+                    let origin = HermesSession(id: navigationSessionID ?? promptSessionID, profileID: sessionProfileID,
+                        title: currentSessionTitle ?? "Session", preview: "", startedAt: nil, messageCount: 0, source: "herm")
+                    baselineDirectory = try? await HermesWorkflowRPC(client: controlRPCClient, profileID: sessionProfileID).sessionDirectory(origin)
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
+                }
+                if let directory = baselineDirectory {
+                    await DeveloperWorkflowModel.shared.captureTurnBaseline(origin: baselineOrigin, path: directory, attemptID: baselineAttempt)
+                    guard self.sessionResumeGeneration == sendGeneration, self.sessionID == promptSessionID else { return }
+                }
+                let acknowledgment = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scopedSessionParams(["session_id": promptSessionID, "text": submittedText, "queued": queued != nil]))
+                if acknowledgment["status"] as? String == "streaming" { DeveloperWorkflowModel.shared.acknowledgeTurnBaseline(origin: baselineOrigin, attemptID: baselineAttempt) }
                 submissionReported = true
                 onSubmission?(nil)
                 guard self.sessionResumeGeneration == sendGeneration,
@@ -818,6 +903,7 @@ final class DockModel: ObservableObject {
                 pendingImages.removeAll { attachedImage in
                     attachedImages.contains { $0.id == attachedImage.id }
                 }
+                if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
                 DebugLog.write("model: prompt submitted")
             } catch {
                 // A request from a previous session must not publish its error
@@ -852,6 +938,7 @@ final class DockModel: ObservableObject {
                 isSending = false
                 submissionReported = true
                 onSubmission?(message)
+                if !transportFailure { drainQueuedPromptIfIdle() }
             }
         }
     }
@@ -889,16 +976,18 @@ final class DockModel: ObservableObject {
         // RPC response: record the correction first, below what already
         // streamed, and let the resumed output continue in a fresh row under it.
         let hadLiveStream = streamingMessageID != nil
-        if hadLiveStream {
-            if streamingMessageBuffer.isEmpty, streamingTurnActivity.isEmpty {
-                discardStreamingMessage()
-            } else {
-                commitStreamingMessage()
-            }
-        }
         let correction = ChatMessage(role: .user, text: text)
-        messages.append(correction)
-        if hadLiveStream { beginStreamingMessage() }
+        if hadLiveStream, streamingMessageBuffer.isEmpty, streamingTurnActivity.isEmpty {
+            discardStreamingMessage()
+            messages.append(correction)
+            beginStreamingMessage()
+        } else if hadLiveStream {
+            // Activity already shown stays above the correction; only calls
+            // still running follow into the new row.
+            splitLiveTurn { messages.append(correction) }
+        } else {
+            messages.append(correction)
+        }
         let resumedRowID = hadLiveStream ? streamingMessageID : nil
 
         Task {
@@ -936,6 +1025,7 @@ final class DockModel: ObservableObject {
         draft = ""
         pendingImages = []
         pendingPDFURL = nil
+        drainQueuedPromptIfIdle()
     }
 
     func removeQueuedPrompt(_ id: UUID) {
@@ -953,6 +1043,7 @@ final class DockModel: ObservableObject {
     /// One still being edited lands in the composer, attachments included.
     private func drainQueuedPromptIfIdle() {
         guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
+              !nativeVoiceCapture.isAwaitingPlaybackDrain,
               sessionID != nil, let sessionID = queuedPromptSessionID,
               let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID }) else { return }
         let next = queuedPrompts.remove(at: index)
@@ -1365,6 +1456,20 @@ final class DockModel: ObservableObject {
         }
     }
 
+    func resultPeek(for session: HermesSession) async throws -> EdgeResultContent? {
+        let started = Date()
+        defer { DebugLog.write("workflow: result.read_ms=\(Int(Date().timeIntervalSince(started) * 1000))") }
+        let result = try await interruptRPC.sessionMessages(sessionID: session.id, profileID: session.profileID, latest: true)
+        return try EdgeResultContent.parse(result, session: session)
+    }
+
+    func markQuickResultReviewed(_ snapshot: HermesSession) {
+        guard let live = sessions.first(where: { $0.id == snapshot.id && $0.profileID == snapshot.profileID }),
+              !live.isWorking, live.lastUpdatedAt == snapshot.lastUpdatedAt else { return }
+        updateSessionActivity(sessionID: live.id, unread: false)
+        if currentSessionIDs.contains(live.id), status == .idle { hasUnreadResponse = false }
+    }
+
     func updateCurrentSessionTitle(_ title: String) {
         guard sessionID != nil else { return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1378,7 +1483,7 @@ final class DockModel: ObservableObject {
     }
 
     @discardableResult
-    func loadSessions(profileID: String? = nil) -> Task<Void, Never>? {
+    func loadSessions(profileID: String? = nil, quiet: Bool = false) -> Task<Void, Never>? {
         let scope = profileID ?? profileScopeID
         if profileScopeUnavailable, scope == nil {
             sessions = []
@@ -1390,7 +1495,7 @@ final class DockModel: ObservableObject {
         sessionLoadGeneration &+= 1
         let generation = sessionLoadGeneration
         let previousProjectionState = sessionProjectionState
-        sessionProjectionState = Self.refreshingProjectionState(sessionProjectionState)
+        if !quiet { sessionProjectionState = Self.refreshingProjectionState(sessionProjectionState) }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { isLoadingSessions = false }
@@ -1414,11 +1519,12 @@ final class DockModel: ObservableObject {
                 let loaded = rawSessions.compactMap { Self.parseSession($0, profileID: scope) }
                     .filter { !feedIDs.contains($0.id) || $0.id == self.navigationSessionID }
                     .map { Self.withRecency($0, from: index?.lastActive ?? [:]) }
+                let working = index?.working
                 // The session index can lag behind the live gateway stream.
                 // Keep a newer event timestamp until Hermes publishes an equal
                 // or newer canonical row, so navigation never regresses its
                 // visible “Updated” time after a completed message.
-                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions, keeping: self.navigationSessionID))
+                let merged = self.applyPersistedUnreadState(Self.mergingSessionIndex(loaded, with: sessions, keeping: self.navigationSessionID, working: working))
                 sessions = merged
                 sessionProjectionState = merged.isEmpty ? .empty : .ready(merged)
                 DebugLog.write("model: loaded \(sessions.count) saved sessions")
@@ -1514,7 +1620,7 @@ final class DockModel: ObservableObject {
         return ((row["model"] as? String) ?? "").isEmpty
     }
 
-    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>) {
+    static func fetchSessionIndex(client: HermesRPCClientProtocol, profileID: String?) async throws -> (pinned: [HermesSession], lastActive: [String: Date], feedIDs: Set<String>, working: Set<String>) {
         var path = "/api/sessions?limit=100&order=recent"
         if let profileID, !profileID.isEmpty,
            let encoded = profileID.addingPercentEncoding(withAllowedCharacters: .alphanumerics) {
@@ -1523,12 +1629,25 @@ final class DockModel: ObservableObject {
         guard let rows = try await client.fetchHTTP(path)["sessions"] as? [[String: Any]] else {
             throw HermesGateway.GatewayError.malformedResponse
         }
-        let pinned = rows.filter { $0["pinned"] as? Bool == true }.compactMap { parseSession($0, profileID: profileID) }
         let lastActive = Dictionary(rows.compactMap { row in
             parseSession(row, profileID: profileID).flatMap { session in session.updatedAt.map { (session.id, $0) } }
         }, uniquingKeysWith: max)
         let feedIDs = Set(rows.filter(isModellessFeed).compactMap { $0["id"] as? String })
-        return (pinned, lastActive, feedIDs)
+        // `is_active` stays true for 5 min after the last write; a tighter
+        // window keeps the spinner from lingering once a turn has finished.
+        let working = Set(rows.compactMap { row -> String? in
+            guard row["is_active"] as? Bool == true, let id = row["id"] as? String,
+                  let date = parseSession(row, profileID: profileID)?.updatedAt,
+                  Date().timeIntervalSince(date) < 90 else { return nil }
+            return id
+        })
+        let pinned = rows.filter { $0["pinned"] as? Bool == true }.compactMap { parseSession($0, profileID: profileID) }.map { session in
+            guard working.contains(session.id) else { return session }
+            return HermesSession(id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
+                                 startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
+                                 source: session.source, isHidden: session.isHidden, isWorking: true, hasUnreadUpdate: session.hasUnreadUpdate)
+        }
+        return (pinned, lastActive, feedIDs, working)
     }
 
     static func withRecency(_ session: HermesSession, from lastActive: [String: Date]) -> HermesSession {
@@ -1767,6 +1886,7 @@ final class DockModel: ObservableObject {
         earlierTranscriptRetryAfter = nil
         transcriptTimeline = []
         transcriptMessageIDsByRowID = [:]
+        clearMessagePins()
         sessionID = session.id
         updateSessionActivity(sessionID: session.id, unread: false)
         sessionProfileID = owningProfileID
@@ -1886,6 +2006,7 @@ final class DockModel: ObservableObject {
                 defaultBotDisplayName: profileID == nil ? nil : session.displayTitle
             )
             transcriptMessageIDsByRowID = restored.rowIDs
+            storedMessageReferences = StoredMessageReference.references(rows: transcriptRows, rowIDs: restored.rowIDs)
             // A turn that went live while the transcript loaded keeps its row.
             let liveRow = streamingMessageID.flatMap { id in messages.first { $0.id == id } }
             messages = restored.messages + [liveRow].compactMap { $0 }
@@ -1920,6 +2041,7 @@ final class DockModel: ObservableObject {
                 status = .idle
             }
             DebugLog.write("model: resumed session \(session.id) (\(messages.count) messages, \(activeSubagents.count) rehydrated agents)")
+            Task { await refreshMessagePins() }
             return true
         } catch {
             guard resumeGeneration == sessionResumeGeneration, sessionID == session.id else { return false }
@@ -2052,6 +2174,7 @@ final class DockModel: ObservableObject {
         )
         guard !restored.messages.isEmpty else { return }
         transcriptMessageIDsByRowID.merge(restored.rowIDs) { current, _ in current }
+        storedMessageReferences.merge(StoredMessageReference.references(rows: rows, rowIDs: restored.rowIDs)) { current, _ in current }
         transcriptPrependGeneration &+= 1
         lastTranscriptPrepend = TranscriptHistoryPrepend(
             generation: transcriptPrependGeneration,
@@ -2150,6 +2273,124 @@ final class DockModel: ObservableObject {
         return rowID.flatMap(loadedMessageID(forRowID:))
     }
 
+    func canPinMessage(_ message: ChatMessage) -> Bool {
+        messagePinsSupported && !isUpdatingMessagePin && message.id != streamingMessageID
+            && storedMessageReferences[message.id] != nil
+            && message.systemEvent == nil && message.kanbanNotice == nil && !message.isError
+    }
+
+    func isMessagePinned(_ message: ChatMessage) -> Bool {
+        guard let reference = storedMessageReferences[message.id] else { return false }
+        return reference.uid.map { pinnedMessageUIDs.contains($0) } ?? pinnedMessageRowIDs.contains(reference.rowID)
+    }
+
+    private func clearMessagePins() {
+        pinnedMessages = []
+        messagePinsSupported = false
+        isLoadingMessagePins = false
+        updatingMessagePinRowID = nil
+        messagePinError = nil
+        storedMessageReferences = [:]
+        submittedMessageIDForPin = nil
+    }
+
+    func refreshMessagePins() async {
+        guard let owner = navigationSessionID, !isLoadingMessagePins else { return }
+        let generation = sessionResumeGeneration
+        let profile = sessionProfileID
+        isLoadingMessagePins = true
+        defer { if generation == sessionResumeGeneration { isLoadingMessagePins = false } }
+        do {
+            var pins: [PinnedMessage] = []
+            var hasMore = true
+            for _ in 0..<20 {
+                guard let path = TranscriptHistoryPaging.sessionPath(sessionID: owner, endpoint: "message-pins", profileID: profile,
+                    query: [URLQueryItem(name: "offset", value: String(pins.count))]) else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                let result = try await sessionRPCClient.fetchHTTP(path)
+                let page = try PinnedMessage.parse(result, sessionID: owner)
+                pins += page
+                hasMore = (result["pagination"] as? [String: Any])?["has_more"] as? Bool == true
+                if !hasMore { break }
+                if page.isEmpty { throw HermesGateway.GatewayError.malformedResponse }
+            }
+            guard !hasMore, Set(pins.map(\.id)).count == pins.count else { throw HermesGateway.GatewayError.malformedResponse }
+            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile else { return }
+            pinnedMessages = pins
+            messagePinsSupported = true
+            messagePinError = nil
+        } catch {
+            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile else { return }
+            messagePinsSupported = false
+            switch error {
+            case HermesGateway.GatewayError.httpError(404), HermesGateway.GatewayError.httpRefused(404, _):
+                messagePinError = "This Hermes runtime does not support message pins. Install the backend patch and restart Hermes."
+            default:
+                messagePinError = "Pinned messages unavailable. \(Self.safeUserDiagnostic(error.localizedDescription))"
+            }
+        }
+    }
+
+    func toggleMessagePinned(_ message: ChatMessage) async {
+        guard canPinMessage(message), let reference = storedMessageReferences[message.id] else { return }
+        await setMessagePinned(rowID: reference.rowID, pinned: !isMessagePinned(message))
+    }
+
+    func setMessagePinned(rowID: Int, pinned: Bool) async {
+        guard messagePinsSupported, !isUpdatingMessagePin, let owner = navigationSessionID,
+              let path = TranscriptHistoryPaging.sessionPath(sessionID: owner, endpoint: "message-pins/\(rowID)", profileID: sessionProfileID, query: []) else { return }
+        let generation = sessionResumeGeneration
+        let profile = sessionProfileID
+        updatingMessagePinRowID = rowID
+        defer { if generation == sessionResumeGeneration { updatingMessagePinRowID = nil } }
+        do {
+            let result = try await sessionRPCClient.sendHTTP("PUT", path: path, body: ["pinned": pinned])
+            guard result["requested_session_id"] as? String == owner, result["row_id"] as? Int == rowID,
+                  result["pinned"] as? Bool == pinned,
+                  let uid = result["message_uid"] as? String, !uid.isEmpty else { throw HermesGateway.GatewayError.malformedResponse }
+            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile else { return }
+            for (id, reference) in storedMessageReferences where reference.rowID == rowID {
+                storedMessageReferences[id] = StoredMessageReference(rowID: rowID, uid: uid)
+            }
+            while isLoadingMessagePins {
+                try await Task.sleep(for: .milliseconds(20))
+                guard generation == sessionResumeGeneration else { return }
+            }
+            await refreshMessagePins()
+        } catch {
+            guard generation == sessionResumeGeneration, navigationSessionID == owner, sessionProfileID == profile else { return }
+            messagePinError = "Could not \(pinned ? "pin" : "unpin") message. \(Self.safeUserDiagnostic(error.localizedDescription))"
+        }
+    }
+
+    func messageID(forPin pin: PinnedMessage) async -> UUID? {
+        let generation = sessionResumeGeneration
+        if let id = storedMessageReferences.first(where: { pin.matches($0.value) })?.key,
+           messages.contains(where: { $0.id == id }) { return id }
+        _ = await loadTranscriptHistory(through: pin.rowID)
+        guard generation == sessionResumeGeneration else { return nil }
+        guard let id = storedMessageReferences.first(where: { pin.matches($0.value) })?.key,
+              messages.contains(where: { $0.id == id }) else {
+            messagePinError = "The pinned message is no longer in the loaded history. Refresh the conversation and try again."
+            return nil
+        }
+        return id
+    }
+
+    func applyMessagePinReceipt(_ receipt: [String: Any]?, assistantMessageID: UUID?) {
+        defer { submittedMessageIDForPin = nil }
+        guard let receipt, receipt["complete"] as? Bool == true else { return }
+        if let id = submittedMessageIDForPin, let rowID = TranscriptHistoryPaging.rowID(receipt, key: "user_row_id"), rowID > 0 {
+            storedMessageReferences[id] = StoredMessageReference(rowID: rowID, uid: nil)
+            transcriptMessageIDsByRowID[rowID] = id
+        }
+        if let id = assistantMessageID, let rowID = TranscriptHistoryPaging.rowID(receipt, key: "final_assistant_row_id"), rowID > 0 {
+            storedMessageReferences[id] = StoredMessageReference(rowID: rowID, uid: nil)
+            transcriptMessageIDsByRowID[rowID] = id
+        }
+    }
+
     /// The message for a stored row, or the next loaded message after it when
     /// that row itself has no visible message.
     private func loadedMessageID(forRowID rowID: Int) -> UUID? {
@@ -2171,7 +2412,7 @@ final class DockModel: ObservableObject {
     /// contract. Relay owns the Bot Chat turn; this model keeps the foreground
     /// session untouched and projects the returned reply into its transcript.
     /// Generic `delegate_task` workers are never relabelled as the Bot.
-    func sendDirectBotRequest(profileID: String, displayName: String, text: String, chatSessionID: String? = nil) {
+    func sendDirectBotRequest(profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !request.isEmpty,
               !isSending,
@@ -2194,9 +2435,10 @@ final class DockModel: ObservableObject {
             updateBotActivity(id: activity.id, state: .working)
         }
         let sendGeneration = sessionResumeGeneration
-        let transcriptText = "@\(displayName) \(request)"
-        let relayMessage = Self.botRelayMessage(request: request, transcript: messages)
+        let transcriptText = quote?.composing("@\(displayName) \(request)") ?? "@\(displayName) \(request)"
+        let relayMessage = Self.botRelayMessage(request: quote?.composing(request) ?? request, transcript: messages)
         draft = ""
+        replyQuote = nil
         messages.append(ChatMessage(role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName))
         status = .working
         isSending = true
@@ -2428,6 +2670,8 @@ final class DockModel: ObservableObject {
         activeBotDisplayName = nil
         sessionProfileID = profileScopeID
         sessionStorageID = nil
+        transcriptMessageIDsByRowID = [:]
+        clearMessagePins()
         newSessionCreationAuthorized = true
         newSessionProjectPath = projectPath
         showClarification(nil)
@@ -2571,6 +2815,29 @@ final class DockModel: ObservableObject {
     /// different session cannot appear in Control without reaching the menu bar.
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
         guard acceptGatewayEvent(type: type, params: params) else { return }
+        let noticePayload = params["payload"] as? [String: Any] ?? [:]
+        let failed = type == "error" || type == "message.error" || (type == "message.complete" && (noticePayload["error"] as? String)?.isEmpty == false)
+        if type == "message.start", let owner = params["session_id"] as? String {
+            let reference = interruptionNotice(.information, owner: owner)
+            interruptionCoordinator?.clearFailure(owner: reference.sourceID, profileID: reference.profileID)
+        }
+        if failed, let owner = params["session_id"] as? String {
+            let identity = (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" } ?? UUID().uuidString
+            completionNoticeIDs[rowSessionID(owner)] = identity
+            interruptionCoordinator?.recordFailure(interruptionNotice(.failure, owner: owner, eventID: identity))
+        }
+        if type == "message.complete", let owner = params["session_id"] as? String {
+            let identity = (failed ? completionNoticeIDs[rowSessionID(owner)] : nil)
+                ?? (params["seq"] as? NSNumber).map { "\(gatewayReplayEpoch ?? "legacy"):\($0.stringValue)" } ?? UUID().uuidString
+            completionNoticeIDs[rowSessionID(owner)] = identity
+            if completionNoticeIDs.count > 256 { completionNoticeIDs = [rowSessionID(owner): identity] }
+            if !failed { _ = interruptionCoordinator?.admit(interruptionNotice(.completion, owner: owner), channel: .record) }
+        }
+        if let owner = params["session_id"] as? String, type == "message.start" || type == "message.complete" || failed {
+            let origin = interruptionNotice(.information, owner: owner)
+            DeveloperWorkflowModel.shared.observeTurnBaseline(origin: QuickDestination(profileID: origin.profileID, sessionID: origin.sourceID),
+                started: type == "message.start", completed: type == "message.complete", failed: failed)
+        }
         captureObservedKanbanTaskIDs(type: type, params: params)
         eventRouter.route(type: type, params: params)
         reconcileDirectBotLifecycle(type: type, params: params)
@@ -2578,7 +2845,10 @@ final class DockModel: ObservableObject {
         capturePendingClarification(type: type, params: params)
         let eventPayload = params["payload"] as? [String: Any] ?? [:]
         let eventSessionID = (params["session_id"] as? String) ?? (eventPayload["session_id"] as? String)
-        if type == "approval.expire", let eventSessionID { resolveApproval(for: eventSessionID) }
+        if type == "approval.expire", let eventSessionID {
+            let requestID = Self.nestedClarificationString(keys: ["request_id"], in: params)
+            resolveApproval(for: eventSessionID, requestID: requestID)
+        }
         if type == "message.start" || type == "message.complete" || type == "sessions.changed" {
             touchSession(sessionID: eventSessionID, at: dateValue(params["timestamp"]) ?? dateValue(eventPayload["timestamp"]) ?? Date())
         }
@@ -2792,7 +3062,9 @@ final class DockModel: ObservableObject {
         let pendingApproval = PendingApproval(
             title: approval.title,
             detail: approval.detail,
-            presentation: approval
+            presentation: approval,
+            responseTarget: attentionTarget(sessionID: ownerSessionID, requestID: approval.requestID, params: params),
+            serverRequestID: payload["server_request_id"] as? String
         )
         let aliases = pendingApprovalAliasesBySessionID[ownerSessionID] ?? [ownerSessionID]
         for alias in aliases {
@@ -2852,7 +3124,8 @@ final class DockModel: ObservableObject {
             return
         }
 
-        let clarification = Self.pendingClarification(from: params)
+        var clarification = Self.pendingClarification(from: params)
+        clarification.responseTarget = attentionTarget(sessionID: ownerSessionID, requestID: clarification.requestID, params: params)
         if let requestID = clarification.requestID,
            resolvedClarificationRequestIDs.contains(requestID) {
             return
@@ -2896,10 +3169,21 @@ final class DockModel: ObservableObject {
             return []
         }
         for alias in aliases {
-            pendingClarificationsBySessionID.removeValue(forKey: alias)
-            pendingClarificationAliasesBySessionID.removeValue(forKey: alias)
+            if requestID == nil || pendingClarificationsBySessionID[alias]?.requestID == requestID {
+                pendingClarificationsBySessionID.removeValue(forKey: alias)
+                pendingClarificationAliasesBySessionID.removeValue(forKey: alias)
+            }
         }
         return aliases
+    }
+
+    private func attentionTarget(sessionID: String, requestID: String?, params: [String: Any]) -> AttentionRequest? {
+        guard let requestID, !requestID.isEmpty else { return nil }
+        let payload = params["payload"] as? [String: Any] ?? [:]
+        let profile = (params["profile"] as? String) ?? (payload["profile"] as? String) ?? quickSessionOwners[sessionID]?.profileID
+            ?? sessions.first(where: { $0.id == sessionID })?.profileID
+            ?? (currentSessionIDs.contains(sessionID) ? sessionProfileID ?? profileScopeID : nil)
+        return AttentionRequest(sessionID: sessionID, profileID: profile, requestID: requestID)
     }
 
     private static func pendingClarification(from params: [String: Any]) -> PendingClarification {
@@ -3129,16 +3413,6 @@ final class DockModel: ObservableObject {
         defaults.set(enabled, forKey: completionNotificationsKey)
     }
 
-    func requestControlInbox() {
-        requestedAttentionID = nil
-        controlInboxRequest &+= 1
-    }
-
-    func requestControlAttention(_ id: String) {
-        requestedAttentionID = id
-        controlInboxRequest &+= 1
-    }
-
     func markPopoverHidden() {
         isPopoverVisible = false
     }
@@ -3216,7 +3490,7 @@ final class DockModel: ObservableObject {
 
         Task {
             do {
-                try await gateway.connect()
+                try await sessionRPCClient.connect()
                 guard voiceConversationGeneration == generation else { return }
                 if sessionID == nil {
                     _ = try await createAuthorizedSession(source: "herm")
@@ -3224,7 +3498,7 @@ final class DockModel: ObservableObject {
                 guard sessionID != nil else { throw HermesGateway.GatewayError.malformedResponse }
                 guard voiceConversationGeneration == generation else { return }
 
-                let requirements = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "status"])
+                let requirements = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "status"])
                 guard voiceConversationGeneration == generation else { return }
                 guard (requirements["available"] as? Bool) != false,
                       (requirements["stt_available"] as? Bool) != false else {
@@ -3235,10 +3509,10 @@ final class DockModel: ObservableObject {
                     return
                 }
 
-                let enabled = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "on"])
+                let enabled = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "on"])
                 guard voiceConversationGeneration == generation else { return }
                 if (enabled["tts"] as? Bool) != true {
-                    _ = try await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
+                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
                 }
                 // Before the first capture picks its path: without an answer
                 // yet, turn one fell to Hermes' recorder and never ended.
@@ -3340,10 +3614,20 @@ final class DockModel: ObservableObject {
         guard wasNative else { return }
         Task {
             if let sessionID {
-                _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+                _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
             }
-            _ = try? await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "off"])
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "off"])
         }
+    }
+
+    /// Hermes consumes a bare stop phrase without starting a model turn.
+    /// Its acknowledgment is the terminal boundary for that submission.
+    private func finishVoiceStopSubmission() {
+        stopVoiceConversation()
+        guard streamingMessageID == nil else { return }
+        isSending = false
+        status = .idle
+        conversationActivityPhase = .idle
     }
 
     /// Ends the current utterance now instead of waiting for Hermes' VAD
@@ -3369,6 +3653,7 @@ final class DockModel: ObservableObject {
                 redirectTurn(with: spoken, sessionID: sessionID)
             } else {
                 queuedPrompts.append(QueuedPrompt(sessionID: queuedPromptSessionID ?? sessionID, text: spoken, images: [], pdfURL: nil))
+                drainQueuedPromptIfIdle()
             }
             return
         }
@@ -3396,7 +3681,7 @@ final class DockModel: ObservableObject {
         }
         voiceState = .transcribing
         Task {
-            _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
         }
     }
 
@@ -3457,7 +3742,7 @@ final class DockModel: ObservableObject {
         nativeVoiceCapture.reset()
         voiceState = .paused
         Task {
-            _ = try? await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
+            _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "stop", "session_id": sessionID])
         }
     }
 
@@ -3466,7 +3751,7 @@ final class DockModel: ObservableObject {
         let generation = voiceConversationGeneration
         voiceRepliesEnabled.toggle()
         Task {
-            let result = try? await gateway.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
+            let result = try? await sessionRPCClient.request(HermesFeatureIDs.ID.voiceToggle.rawValue, params: ["action": "tts"])
             guard voiceConversationGeneration == generation else { return }
             if let tts = result?["tts"] as? Bool { voiceRepliesEnabled = tts }
         }
@@ -3569,14 +3854,17 @@ final class DockModel: ObservableObject {
         nonisolated(unsafe) let params = params
         voiceRequestChain = Task {
             await previous?.value
-            _ = try? await gateway.request(method, params: params)
+            _ = try? await sessionRPCClient.request(method, params: params)
         }
     }
 
     func respondToApproval(_ choice: String) {
         guard let sessionID else { return }
         guard !isRespondingToApproval else { return }
+        if let request = sessionAttention[sessionID]?.responseTarget,
+           attentionAnswers[request]?.blocksSubmission == true { return }
         let responseGeneration = sessionResumeGeneration
+        let requestID = approvalDetails?.requestID
         isRespondingToApproval = true
         Task {
             defer {
@@ -3587,11 +3875,11 @@ final class DockModel: ObservableObject {
             }
             do {
                 var params: [String: Any] = ["session_id": sessionID, "choice": choice]
-                if let requestID = approvalDetails?.requestID { params["request_id"] = requestID }
-                _ = try await gateway.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
+                if let requestID { params["request_id"] = requestID }
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
                 guard self.sessionResumeGeneration == responseGeneration,
                       self.sessionID == sessionID else { return }
-                resolveApproval(for: sessionID)
+                resolveApproval(for: sessionID, requestID: requestID)
             } catch {
                 DebugLog.write("model: approval response failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
             }
@@ -3599,30 +3887,112 @@ final class DockModel: ObservableObject {
     }
 
     /// The notch's one-tap answer for any session's approval or single clarify question.
-    func answerAttention(sessionID: String, choice: String) {
-        if let approval = pendingApprovalsBySessionID[sessionID] {
-            Task {
-                var params: [String: Any] = ["session_id": sessionID, "choice": choice]
-                if let requestID = approval.presentation.requestID { params["request_id"] = requestID }
-                do {
-                    _ = try await gateway.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
-                    resolveApproval(for: sessionID)
-                } catch {
-                    DebugLog.write("model: notch approval failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
-                }
-            }
-            return
+    func answerAttention(_ request: AttentionRequest, choice: String) {
+        guard let attention = sessionAttention[request.sessionID], attention.responseTarget == request,
+              attention.choices.contains(choice), attentionAnswers[request]?.blocksSubmission != true else { return }
+        if currentSessionIDs.contains(request.sessionID) {
+            guard !isRespondingToApproval, !isRespondingToClarification else { return }
         }
-        guard let requestID = pendingClarificationsBySessionID[sessionID]?.requestID else { return }
-        if currentSessionIDs.contains(sessionID) { return respondToClarification(choice) }
+        attentionAnswers[request] = .sending(choice)
+        let responseGeneration = sessionResumeGeneration
         Task {
             do {
-                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.clarifyRespond.rawValue,
-                                                       params: ["id": requestID, "result": ["answer": choice]])
-                markClarificationResolved(requestID)
-                _ = removePendingClarification(for: sessionID, requestID: requestID)
+                var params: [String: Any]
+                let method: String
+                if attention.status == .needsApproval {
+                    method = HermesFeatureIDs.ID.approvalRespond.rawValue
+                    params = ["session_id": request.sessionID, "request_id": request.requestID, "choice": choice]
+                } else {
+                    method = HermesFeatureIDs.ID.clarifyRespond.rawValue
+                    params = ["id": request.requestID, "result": ["answer": choice]]
+                }
+                if let profile = request.profileID { params["profile"] = profile }
+                let result = try await sessionRPCClient.request(method, params: params)
+                guard sessionAttention[request.sessionID]?.responseTarget == request else { return }
+                let expired: Bool
+                if attention.status == .needsApproval {
+                    guard let resolved = result["resolved"] as? Int, resolved >= 0 else {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    expired = resolved == 0
+                    resolveApproval(for: request.sessionID, requestID: request.requestID, resumesWork: !expired)
+                } else {
+                    guard let answerStatus = result["status"] as? String, ["ok", "expired"].contains(answerStatus) else {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    expired = answerStatus == "expired"
+                    markClarificationResolved(request.requestID)
+                    _ = removePendingClarification(for: request.sessionID, requestID: request.requestID)
+                    guard sessionResumeGeneration == responseGeneration,
+                          currentSessionIDs.contains(request.sessionID), clarificationRequestID == request.requestID else { return }
+                    showClarification(nil)
+                    if !expired {
+                        messages.append(ChatMessage(role: .user, text: choice))
+                        isAwaitingClarificationResume = true
+                        status = .working
+                        isSending = true
+                        conversationActivityPhase = .thinking
+                        setInFlightBotActivityWorking(for: request.sessionID)
+                    } else {
+                        status = .idle
+                        isSending = false
+                        clarificationResponseError = "This question expired before Hermes received an answer."
+                    }
+                }
             } catch {
-                DebugLog.write("model: notch clarification failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+                guard sessionAttention[request.sessionID]?.responseTarget == request else { return }
+                attentionAnswers[request] = .failure(error, choice: choice)
+                DebugLog.write("model: notch answer failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
+            }
+        }
+    }
+
+    /// Only a fresh authoritative pending-request read permits retry after a lost acknowledgment.
+    func recheckAttention(_ request: AttentionRequest) {
+        guard let attention = sessionAttention[request.sessionID], attention.responseTarget == request,
+              let previous = attentionAnswers[request], case .uncertain = previous else { return }
+        attentionAnswers[request] = .checking(previous.choice)
+        let responseGeneration = sessionResumeGeneration
+        Task {
+            do {
+                var params: [String: Any] = ["session_id": request.sessionID]
+                if let profile = request.profileID { params["profile"] = profile }
+                let isApproval = attention.status == .needsApproval
+                if !isApproval { params["last_seen"] = 0 }
+                let method = isApproval ? HermesFeatureIDs.ID.approvalPending : HermesFeatureIDs.ID.sessionEventsSince
+                let result = try await sessionRPCClient.request(method.rawValue, params: params)
+                guard sessionAttention[request.sessionID]?.responseTarget == request else { return }
+                let stillPending: Bool
+                if isApproval {
+                    guard let pending = result["approvals"] as? [[String: Any]],
+                          pending.allSatisfy({ ($0["request_id"] as? String)?.isEmpty == false }) else {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    stillPending = pending.contains { $0["request_id"] as? String == request.requestID }
+                } else {
+                    guard let pending = result["open_requests"] as? [[String: Any]],
+                          pending.allSatisfy({ ($0["id"] as? String)?.isEmpty == false && $0["method"] is String && $0["params"] is [String: Any] }) else {
+                        throw HermesGateway.GatewayError.malformedResponse
+                    }
+                    stillPending = pending.contains { $0["id"] as? String == request.requestID && $0["method"] as? String == "clarify" }
+                }
+                if stillPending {
+                    attentionAnswers.removeValue(forKey: request)
+                } else if isApproval {
+                    resolveApproval(for: request.sessionID, requestID: request.requestID, resumesWork: false)
+                } else {
+                    markClarificationResolved(request.requestID)
+                    _ = removePendingClarification(for: request.sessionID, requestID: request.requestID)
+                    guard sessionResumeGeneration == responseGeneration,
+                          currentSessionIDs.contains(request.sessionID), clarificationRequestID == request.requestID else { return }
+                    showClarification(nil)
+                    status = .idle
+                    isSending = false
+                    clarificationResponseError = "This question is no longer pending. Open the session to review the result."
+                }
+            } catch {
+                guard sessionAttention[request.sessionID]?.responseTarget == request else { return }
+                attentionAnswers[request] = previous
             }
         }
     }
@@ -3632,6 +4002,8 @@ final class DockModel: ObservableObject {
         let images = pendingImages
         guard !trimmed.isEmpty || !images.isEmpty, !isRespondingToClarification else { return }
         guard let responseSessionID = sessionID, !responseSessionID.isEmpty else { return }
+        if let request = sessionAttention[responseSessionID]?.responseTarget,
+           attentionAnswers[request]?.blocksSubmission == true { return }
         let responseGeneration = sessionResumeGeneration
         guard let requestID = clarificationRequestID, !requestID.isEmpty else {
             clarificationResponseError = "Hermes did not provide an ID for this question. Please ask it again."
@@ -3790,7 +4162,11 @@ final class DockModel: ObservableObject {
     /// Reconciles an approval answered through another surface, such as Inbox.
     /// Responses for other sessions clear their retained request without
     /// altering the visible conversation.
-    func resolveApproval(for resolvedSessionID: String) {
+    func resolveApproval(for resolvedSessionID: String, requestID: String? = nil, resumesWork: Bool = true) {
+        if let requestID {
+            guard let pending = pendingApprovalsBySessionID[resolvedSessionID],
+                  pending.presentation.requestID == requestID || pending.serverRequestID == requestID else { return }
+        }
         // A direct Bot relay can pause in its own Bot Chat session while the
         // foreground conversation remains selected. Resolve that activity by
         // its exact event session before applying the foreground approval UI.
@@ -3805,7 +4181,7 @@ final class DockModel: ObservableObject {
         approvalText = nil
         approvalDetails = nil
         if status == .needsApproval {
-            status = .working
+            status = resumesWork ? .working : .idle
             setInFlightBotActivityWorking(for: resolvedSessionID)
             setInFlightBotActivityWorking(for: sessionID)
         }
@@ -3960,6 +4336,7 @@ final class DockModel: ObservableObject {
             // TTS. Ignore recorder status during that drain window: only the
             // playback-drain owner may reopen the ordinary capture path.
             guard !nativeVoiceCapture.isAwaitingPlaybackDrain, voiceState != .paused else { return }
+            guard !isSending || isVoicePromptActive else { return }
             let state = payload["state"] as? String
             switch state {
             case "recording", "listening":
@@ -3983,6 +4360,12 @@ final class DockModel: ObservableObject {
             voiceState = .interrupted
             recoverNativeVoiceCaptureIfInterruptedTranscriptIsMissing(generation: interruptionGeneration)
         case "message.start":
+            status = .working
+            isSending = true
+            if voiceState.isNativeConversationActive, !isVoicePromptActive {
+                nativeVoiceCapture.receivedTranscript(hasText: true)
+                voiceState = .thinking
+            }
             let model = (payload["model"] as? String) ?? (payload["model_name"] as? String)
             if let model {
                 currentModelName = model
@@ -4015,12 +4398,17 @@ final class DockModel: ObservableObject {
             scheduleStreamingMessageFlush()
         case "message.complete":
             isAwaitingClarificationResume = false
+            let completedMessageIDForPin = streamingMessageID
             if let completedText = Self.completedMessageText(from: payload),
                !completedText.isEmpty {
                 if streamingMessageID == nil {
                     beginStreamingMessage()
                 }
-                streamingMessageBuffer = completedText
+                if !turnCommittedText.isEmpty, completedText.hasPrefix(turnCommittedText) {
+                    streamingMessageBuffer = String(completedText.dropFirst(turnCommittedText.count))
+                } else if turnCommittedText.isEmpty {
+                    streamingMessageBuffer = completedText
+                }
             }
             var turnTokens: Int?
             compactingSessionID = nil
@@ -4064,6 +4452,8 @@ final class DockModel: ObservableObject {
                 notify(title: "Hermes could not complete the request", body: text, identifier: "failure:\(sessionID ?? "hermes")")
             } else {
                 commitStreamingMessage(tokenCount: turnTokens)
+                applyMessagePinReceipt(payload["persisted_turn"] as? [String: Any], assistantMessageID: completedMessageIDForPin ?? messages.last?.id)
+                Task { await refreshMessagePins() }
                 let result = messages.last(where: { $0.role == .hermes })?.text
                 updateInFlightBotActivity(for: eventSessionID, state: wasInterrupting ? .canceled : .completed, result: result)
             }
@@ -4178,6 +4568,7 @@ final class DockModel: ObservableObject {
             isSending = false
             status = .idle
             conversationActivityPhase = .idle
+            drainQueuedPromptIfIdle()
         case "error":
             commitStreamingMessage()
             let raw = (payload["message"] as? String) ?? "Hermes reported an error."
@@ -4194,10 +4585,11 @@ final class DockModel: ObservableObject {
                 skipNextVoicePlaybackDrain = false
                 nativeVoiceCapture.reset()
                 voiceState = .listening
-                armNativeVoiceCapture()
             }
             notify(title: "Hermes encountered an error", body: text, identifier: "failure:\(sessionID ?? "hermes")")
             updateInFlightBotActivity(for: eventSessionID, state: .failed, result: text)
+            drainQueuedPromptIfIdle()
+            if voiceState.isNativeConversationActive { armNativeVoiceCapture() }
 
         case "reasoning.start", "thinking":
             conversationActivityPhase = .thinking
@@ -4271,6 +4663,12 @@ final class DockModel: ObservableObject {
             // row with the same identity: ForEach diffing and the expand toggle
             // key on this id, and duplicates crash the activity list.
             guard !activeToolCalls.contains(where: { $0.id == id }) else { break }
+            // Text streamed so far belongs above this call: close the row so
+            // the call (and later text) renders below it, in timeline order.
+            if streamingMessageID != nil, streamingMessageSessionID == sessionID,
+               !streamingMessageBuffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                splitLiveTurn()
+            }
             activeToolCalls.append(ActiveToolCall(
                 id: id,
                 name: name,
@@ -4375,6 +4773,7 @@ final class DockModel: ObservableObject {
         streamingMessagePublishedText = ""
         streamingTurnActivity = []
         splitOffCallIDs = []
+        turnCommittedText = ""
         streamingText.clearPresentation()
         streamingMessageGeneration &+= 1
     }
@@ -4462,13 +4861,25 @@ final class DockModel: ObservableObject {
             messages.insert(message, at: index)
             return
         }
+        splitLiveTurn { messages.append(message) }
+    }
+
+    /// Text of earlier rows of the split live turn, so `message.complete`'s
+    /// full text doesn't re-add what they already show.
+    private var turnCommittedText = ""
+
+    /// Commits the live row (text above, its activity), runs `between`, and
+    /// opens a fresh live row so later text and tool calls land below.
+    private func splitLiveTurn(between: () -> Void = {}) {
         let startedAt = streamingResponseStartedAt
         let running = streamingTurnActivity.filter { !$0.isComplete }
         streamingTurnActivity.removeAll { !$0.isComplete }
         let splitOff = splitOffCallIDs.union(streamingTurnActivity.map(\.id))
+        let committed = turnCommittedText + streamingMessageBuffer
         commitStreamingMessage()
-        messages.append(message)
+        between()
         beginStreamingMessage()
+        turnCommittedText = committed
         streamingTurnActivity = running
         splitOffCallIDs = splitOff
         streamingResponseStartedAt = startedAt
@@ -4930,7 +5341,7 @@ final class DockModel: ObservableObject {
 
         Task {
             do {
-                let recording = try await gateway.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "start", "session_id": sessionID])
+                let recording = try await sessionRPCClient.request(HermesFeatureIDs.ID.voiceRecord.rawValue, params: ["action": "start", "session_id": sessionID])
                 guard nativeVoiceCapture.isCurrent(generation: captureGeneration),
                       voiceState.isNativeConversationActive else { return }
                 if (recording["status"] as? String) == "busy" {
@@ -4993,6 +5404,7 @@ final class DockModel: ObservableObject {
                   self.nativeVoiceCapture.playbackDrainCompleted(generation: generation) else { return }
             self.voiceTelemetry.beginListening()
             self.voiceState = .listening
+            self.drainQueuedPromptIfIdle()
             self.armNativeVoiceCapture()
         }
     }
@@ -5008,12 +5420,13 @@ final class DockModel: ObservableObject {
         voiceTelemetry.submittedRequest()
         Task {
             do {
-                _ = try await gateway.request(
+                let acknowledgment = try await sessionRPCClient.request(
                     HermesFeatureIDs.ID.promptSubmit.rawValue,
                     params: ["session_id": sessionID, "text": text]
                 )
                 guard self.sessionResumeGeneration == requestGeneration,
                       self.sessionID == sessionID else { return }
+                if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
             } catch {
                 guard self.sessionResumeGeneration == requestGeneration,
                       self.sessionID == sessionID else { return }
@@ -5027,7 +5440,31 @@ final class DockModel: ObservableObject {
         }
     }
 
+    func interruptionNotice(_ kind: HermNotice.Kind, owner: String? = nil, eventID: String? = nil) -> HermNotice {
+        let raw = owner ?? navigationSessionID ?? "activity"
+        let stable = rowSessionID(raw)
+        let profile = quickSessionOwners[raw]?.profileID ?? sessions.first(where: { $0.id == stable })?.profileID
+            ?? (currentSessionIDs.contains(raw) ? sessionProfileID ?? profileScopeID : nil)
+        let request = sessionAttention[raw]?.responseTarget
+        let identity = eventID ?? ([HermNotice.Kind.completion, .failure].contains(kind) ? completionNoticeIDs[stable] : nil)
+            ?? (kind.blocking ? request?.requestID : nil) ?? messages.last?.id.uuidString ?? UUID().uuidString
+        return HermNotice(kind: kind, source: raw == "activity" ? .activity : .session,
+                          profileID: profile, sourceID: stable, eventID: identity)
+    }
+
+    func publishWorkflowNotice(_ notice: HermNotice, body: String) {
+        if interruptionCoordinator?.admit(notice, channel: .system) == false { return }
+        guard defaults.bool(forKey: completionNotificationsKey), !isPopoverVisible, HermesAppRuntime.supportsUserNotifications else { return }
+        let content = UNMutableNotificationContent()
+        content.title = notice.kind.title; content.body = String(body.prefix(240)); content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil))
+    }
+
     private func notify(title: String, body: String, identifier: String) {
+        let kind: HermNotice.Kind = identifier.hasPrefix("completed:") ? .completion
+            : identifier.hasPrefix("failure:") ? .failure : identifier.hasPrefix("approval:") ? .approval : .clarification
+        let owner = identifier.split(separator: ":", maxSplits: 1).last.map(String.init)
+        if interruptionCoordinator?.admit(interruptionNotice(kind, owner: owner), channel: .system) == false { return }
         guard !isPopoverVisible, HermesAppRuntime.supportsUserNotifications else { return }
         let content = UNMutableNotificationContent()
         content.title = title
@@ -5898,6 +6335,11 @@ final class DockModel: ObservableObject {
                     return
                 }
                 runtimeModelOptions = try Self.runtimeModelOptions(from: result)
+                if sessionID == nil,
+                   let provider = result["provider"] as? String,
+                   let model = result["model"] as? String {
+                    defaultModelOptionID = HermesModelOption(provider: provider, model: model).id
+                }
                 if let sessionID, sessionID == self.sessionID,
                    let provider = result["provider"] as? String,
                    let model = result["model"] as? String {
@@ -6031,31 +6473,26 @@ final class DockModel: ObservableObject {
             return
         }
         guard !isUpdatingSessionModel else { return }
+        let generation = sessionResumeGeneration
+        let params = scopedSessionParams(Self.sessionRuntimeModelSwitchRequest(option: option, sessionID: sessionID, reasoning: sessionReasoningVariant).parameters)
         isUpdatingSessionModel = true
         runtimeConfigurationError = nil
-        let request = Self.sessionRuntimeModelSwitchRequest(
-            option: option, sessionID: sessionID, reasoning: sessionReasoningVariant)
         
-        // Update UI optimistically so user sees selection immediately
-        let previousModelOptionID = sessionModelOptionID
-        let previousModelValue = sessionModelValue
-        let previousModelName = currentModelName
-        sessionModelOptionID = option.id
-        sessionModelValue = option.displayName
-        currentModelName = option.model
 
         Task { [weak self] in
             guard let self else { return }
+            defer { self.isUpdatingSessionModel = false }
             do {
-                let result = try await gateway.request(HermesFeatureIDs.ID.configSet.rawValue, params: request.parameters)
-                if result["deferred"] as? Bool == true {
-                    DebugLog.write("model: session provider/model switch queued for the next turn")
+                let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.configSet.rawValue, params: params)
+                guard self.sessionResumeGeneration == generation, self.sessionID == sessionID else { return }
+                guard result["key"] as? String == "model", result["scope"] as? String == "session",
+                      let value = result["value"] as? String, !value.isEmpty,
+                      result["confirm_required"] as? Bool != true, result["deferred"] as? Bool != true else {
+                    throw QuickDraftError.message("Hermes has not acknowledged the model change. Refresh before retrying.")
                 }
+                refreshSessionModelOptions()
             } catch {
-                // Revert to previous values on failure
-                sessionModelOptionID = previousModelOptionID
-                sessionModelValue = previousModelValue
-                currentModelName = previousModelName
+                guard self.sessionResumeGeneration == generation, self.sessionID == sessionID else { return }
                 runtimeConfigurationError = "Hermes could not apply the session provider/model change: \(Self.safeUserDiagnostic(error.localizedDescription))"
             }
             isUpdatingSessionModel = false
@@ -6173,7 +6610,7 @@ final class DockModel: ObservableObject {
     /// from the gateway. The index remains authoritative for session metadata,
     /// while a live event remains authoritative for recency until the index
     /// catches up.
-    private static func mergingSessionIndex(_ loaded: [HermesSession], with existing: [HermesSession], keeping openSessionID: String? = nil) -> [HermesSession] {
+    private static func mergingSessionIndex(_ loaded: [HermesSession], with existing: [HermesSession], keeping openSessionID: String? = nil, working: Set<String>? = nil) -> [HermesSession] {
         let existingByID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         // A just-created chat can be missing from an index read that raced
         // its creation; keep the open row until Hermes lists it.
@@ -6181,7 +6618,12 @@ final class DockModel: ObservableObject {
             loaded.contains { $0.id == id } ? nil : existingByID[id]
         }
         return (pending.map { [$0] } ?? []) + loaded.map { session in
-            guard let observed = existingByID[session.id] else { return session }
+            guard let observed = existingByID[session.id] else {
+                guard working?.contains(session.id) == true else { return session }
+                return HermesSession(id: session.id, profileID: session.profileID, title: session.title, preview: session.preview,
+                                     startedAt: session.startedAt, updatedAt: session.updatedAt, messageCount: session.messageCount,
+                                     source: session.source, isHidden: session.isHidden, isWorking: true, hasUnreadUpdate: session.hasUnreadUpdate)
+            }
             let updatedAt: Date?
             if let observedDate = observed.lastUpdatedAt, observedDate > (session.lastUpdatedAt ?? .distantPast) {
                 updatedAt = observedDate
@@ -6198,7 +6640,9 @@ final class DockModel: ObservableObject {
                 messageCount: session.messageCount,
                 source: session.source,
                 isHidden: session.isHidden,
-                isWorking: observed.isWorking,
+                // Rows other than the open one have no live stream here, so the
+                // index (also covering turns started elsewhere) is the truth.
+                isWorking: session.id != openSessionID ? (working?.contains(session.id) ?? observed.isWorking) : observed.isWorking,
                 hasUnreadUpdate: observed.hasUnreadUpdate
             )
         }

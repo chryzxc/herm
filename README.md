@@ -10,7 +10,7 @@
 
 *Named after the herms, the markers of Hermes that stood at doorways and crossroads, always in view and always within reach.*
 
-Glance at the notch to see what your agents are doing and how much provider allowance remains. Send a quick message without opening the workspace, reply to a running session, or talk with your agent through continuous **Voice mode**. Expand into the full workspace when you want to inspect files, review changes, answer an approval, or manage your bots and tasks.
+Glance at the notch to see what your agents are doing and how much provider allowance remains. Send a quick message without opening the workspace, reply to a specific session when it is idle, or talk with your agent through continuous **Voice mode**. Expand into the full workspace when you want to inspect files, review changes, answer an approval, or manage your bots and tasks.
 
 > **Ask from anywhere → keep working → notice when needed → respond quickly → inspect the result.**
 
@@ -120,6 +120,14 @@ Conversation approvals, clarification choices, and secret/login requests share a
 
 Choose **Quick message** in either Tasks view to start a new session without opening the workspace. Choose **Reply** on a session row to compose directly beneath it. Replies stay tied to that session, and neither action changes the workspace’s selected chat. The compact composer keeps its own draft, preserves workspace attachments, and stays open while typing; **Back** or Escape leaves it. Failed sends keep the text for retry. Kanban rows show the assigned bot’s stored avatar or its existing fallback identity.
 
+Choose a finished session row to peek at its **Latest completed reply** inside the notch. Copy an excerpt, open or reveal generated files, reply to that session, or open it in the workspace. Reading leaves the selected workspace chat alone. A deliberate selection marks the matching completion reviewed after its content loads; hovering does not. New results offer **Update** while the displayed excerpt remains stable.
+
+The quick composer accepts dropped files and links, pasted text and images, and an explicitly chosen project for a new session. Its **To** picker captures the profile and session before sending. **Drafts** restores unsent content after a restart; missing or changed files remain visible. Images, one PDF up to 25 MB, and generic files use Hermes' attachment methods when supported. Interrupted or uncertain submissions require reviewing the destination session before resending.
+
+Choose **Quiet** in the Tasks header for 30 minutes, 60 minutes, or until you end it. Completions, ordinary quota changes, and informational updates enter a digest. Approvals, questions, and failures that stop work can still interrupt. The same policy controls notch announcements, pet announcement reactions, and opted-in system notifications. **Review digest** returns to the recorded sources; it stores references rather than response bodies.
+
+Quick approval and clarification answers stay tied to their original request, session, and profile. A pending answer blocks repeated clicks. A confirmed refusal offers **Retry**; an uncertain acknowledgment offers **Check request**, which enables another answer only after Hermes confirms that request is still pending. These answers preserve the workspace draft and attachments.
+
 
 The composer’s **@** picker shows each bot’s description beside its handle when available. Hover or click the context gauge to see usage, the estimated category breakdown, and the runtime’s compaction threshold with remaining tokens in a popover, without a separate hover tooltip. Older runtimes show when the threshold is unavailable.
 
@@ -147,7 +155,7 @@ Choose **Dots**, **Vertical line**, or **Ring** in **Settings → Appearance →
 Workspace page headers use consistent text titles and subtitles, with refresh
 and other actions on the right.
 
-The default **Native macOS** appearance follows the system Light/Dark setting
+The default **System** appearance follows the system Light/Dark setting
 and uses the real macOS popover material, graphite surfaces, and system accent
 colors. The other Herm themes keep their authored opaque palettes.
 
@@ -165,6 +173,7 @@ Discord sessions show a compact tinted pill with the Discord icon beside the pre
 - **Attachments**: files, pasted images, URLs, prompt snippets, several images at once, or a single PDF up to 25 MB.
 - **Message actions**: branch from a message, copy it, have it read aloud, or refresh it from Hermes.
 - **Pinned conversations** use Hermes' own pin, so pins are shared with Hermes Agent Desktop and `hermes sessions pin`.
+- **Pinned messages**: pin or unpin saved user and assistant messages, then use the header's pin button to jump to them. Pins live in Hermes, survive compression, and stay separate for each profile and branch. Requires the message-pins backend patch in [docs/message-pins.md](docs/message-pins.md); stock runtimes show an unavailable notice.
 - **Model picker** grouped by provider, with search.
 - **Context guardrails**: the composer shows context progress without a session token total. Its percentage measures the full context window; Hermes can compact earlier based on its configured token limit or other runtime triggers. During compaction, the composer shows **Compacting**, including during streaming turns, and refreshes usage afterward. Context usage is labelled normal, warning (80%), or critical (90%), with actions to branch, compress, or hand off.
 - **Dangerous-command approvals**: *Deny*, *Allow once*, or *Always allow*. *Always allow* is saved to the Hermes allowlist.
@@ -175,7 +184,7 @@ Voice mode is more than a microphone button for dictating a prompt. Speak with y
 
 - **Continuous conversation** using Hermes' voice loop, speech recognition, voice activity detection, and streaming text-to-speech. It returns to listening after a reply while Voice mode remains active.
 - **Spoken interruption and steering**: speak over a reply to interrupt it, or give additional guidance while Hermes is working. The orb also lets you send an utterance immediately, interrupt, or resume listening.
-- **A native voice stage** with an audio-reactive orb, listening/thinking/speaking states, captions, a recent transcript, tool activity cards, and subagent indicators. Immersive mode gives the conversation the workspace while keeping live work visible. Activity chips stay in separate, spaced columns and make room for tool cards.
+- **A native voice stage** with an audio-reactive orb, listening/thinking/speaking states, Markdown-rendered reply captions, tool activity cards, and subagent indicators. Immersive mode gives the conversation the workspace while keeping live work visible. Activity chips stay in separate, spaced columns and make room for tool cards.
 - **Spoken approvals and clarifications** when on-device recognition is available. Requests remain visible, and spoken answers go to the pending request rather than becoming a new prompt. Permanent **Always allow** approvals still require the on-screen control.
 - **Follow-up and wake behavior**: with on-device recognition, a quiet follow-up window can pause into wake-phrase listening. Say `Hey <agent name>` to resume; this applies while Voice mode is active, not as a system-wide wake listener.
 - **Separate microphone and spoken-reply controls**, so you can mute input or turn off spoken replies.
@@ -184,6 +193,18 @@ Voice mode is more than a microphone button for dictating a prompt. Speak with y
 Voice mode requires microphone access; on-device recognition also requires macOS speech-recognition permission. Transcription and speech output depend on the installed Hermes runtime and its configured voice services. “Real-time” here describes the interactive spoken experience, not a claim of a provider-independent, full-duplex speech-to-speech transport.
 
 Hermes Agent Desktop [also documents voice mode](https://hermes-agent.nousresearch.com/docs/user-guide/desktop). Herm's emphasis is its native voice stage and its integration with the rest of the agent workspace, not an exclusive claim to voice support.
+
+The notch also offers **Recall** for profile-scoped conversation search, **saved working sets**
+for explicit destinations, and **session capacity actions** with acknowledged model changes.
+Result Peek includes explicitly pinned sources, quoted corrections, Markdown export, and coding
+review. Clean turn baselines enable scoped diffs; **New task in worktree** creates an isolated
+Git directory and verifies Hermes' session directory before you send the recovered draft.
+
+Failed or pinned routines open a compact recovery view with execution and delivery shown
+separately. Supported Pause, Resume and Run now actions retain the owning profile. Skills & MCP
+repair uses Hermes' own installation, credential and OAuth paths. Targeted subagent steering
+labels queued corrections honestly; fingerprinted memory entries can be inspected and corrected.
+Each operation remains unavailable when its installed-runtime contract cannot be verified.
 
 ### 🔀 Pull requests
 
@@ -217,6 +238,7 @@ Hermes Agent Desktop [also documents voice mode](https://hermes-agent.nousresear
 - Browse projects and their conversations within the selected bot's scope.
 - Create a project, set it active, archive it, or delete it when the installed Hermes runtime exposes the corresponding project methods.
 - Keep queued messages, edits, and attachments with their session when switching conversations or starting a new chat. Reopening a session restores its queue, including when Hermes assigns a new runtime session ID.
+- Queued messages advance automatically when the active turn settles. Voice mode sends the next message after reply audio drains; an explicit Stop keeps the remaining queue for you to resume.
 - Share conversation pins with the Hermes CLI and Desktop rather than maintaining a separate pin list.
 
 ### 🤖 Bots
@@ -315,11 +337,11 @@ For more detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Herm doesn't yet support everything Hermes can do. Some features require additional frontend work or stable runtime support; others are deliberately left out for now:
 
-- Discovering and calling third-party MCP tools (you can view the MCP inventory and test connections today)
-- Structured cron reports and more detailed diagnostics
+- Directly invoking arbitrary third-party MCP tools from Herm (catalog/setup, credentials, authorization, connection tests and removal are available through supported Hermes lifecycle methods)
+- Structured cron report contracts and more detailed diagnostics (recorded chat-backed run output can already be read)
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
 - Calendar, email, and iMessage integrations
-- Deleting bot profiles, group chats, and connecting to Hermes on another machine
+- Deleting bot profiles and connecting to Hermes on another machine (group chats are already available when supported by Hermes)
 - Merging and commenting on pull requests, force-pushing, and dispatching workflows (left out on purpose for now)
 
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. See [HERMES_COMMAND_CENTER_CONTRACTS.md](HERMES_COMMAND_CENTER_CONTRACTS.md) for runtime contracts; the feature descriptions above reflect the current frontend.

@@ -4,7 +4,6 @@ import SwiftUI
 /// A text attachment keeps the mention on the first baseline and lets later
 /// lines wrap across the full bubble width.
 struct InlineBotMentionText: NSViewRepresentable {
-    @Environment(\.colorScheme) private var colorScheme
     let text: String
     let botID: String
     let displayName: String?
@@ -13,10 +12,18 @@ struct InlineBotMentionText: NSViewRepresentable {
     let themeRevision: Int
 
     func makeNSView(context: Context) -> NativeMarkdownTextView {
-        NativeMarkdownTextView()
+        // Fill before the first sizeThatFits: SwiftUI can measure a fresh view
+        // before updateNSView, which cached a zero-height (empty) bubble.
+        let view = NativeMarkdownTextView()
+        apply(to: view, colorScheme: context.environment.colorScheme)
+        return view
     }
 
     func updateNSView(_ view: NativeMarkdownTextView, context: Context) {
+        apply(to: view, colorScheme: context.environment.colorScheme)
+    }
+
+    private func apply(to view: NativeMarkdownTextView, colorScheme: ColorScheme) {
         let renderer = ImageRenderer(content:
             BotChip(id: botID, botsByID: botsByID, avatarImages: avatarImages, displayName: displayName)
                 .environment(\.colorScheme, colorScheme)
