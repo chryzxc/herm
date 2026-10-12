@@ -9,6 +9,8 @@ struct BotRosterPage: View {
     let onSelectBot: (BotSummary) -> Void
     let onOpenRecentSession: (BotSummary, BotChatReference) -> Void
     @State private var isShowingCreateSheet = false
+    @State private var isPopulatingAvatars = false
+    @State private var avatarResult: String?
     @State private var editingBot: BotSummary?
     @State private var duplicatingBot: BotSummary?
     @State private var isShowingRoutineForm = false
@@ -25,6 +27,11 @@ struct BotRosterPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
+        .alert("Generate Avatars", isPresented: Binding(get: { avatarResult != nil }, set: { if !$0 { avatarResult = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(avatarResult ?? "")
+        }
         .sheet(isPresented: $isShowingCreateSheet) {
             BotCreationSheet(model: model, roster: model.bots)
         }
@@ -117,6 +124,18 @@ struct BotRosterPage: View {
                     .controlSize(.regular)
                     .disabled(!model.canCreateBots)
                     .help(model.canCreateBots ? "Create a new Hermes Bot profile" : "Bot creation requires a Hermes runtime with profile support")
+                    Button {
+                        Task {
+                            isPopulatingAvatars = true
+                            avatarResult = await model.populateAvatars()
+                            isPopulatingAvatars = false
+                        }
+                    } label: {
+                        DockActionLabel(title: "Generate Avatars", pendingTitle: "Generating…", isPending: isPopulatingAvatars)
+                    }
+                    .controlSize(.regular)
+                    .disabled(isPopulatingAvatars)
+                    .help("Create avatars for Bots that don't have one")
                 } else {
                     Button {
                         isShowingRoutineForm = true
@@ -205,7 +224,7 @@ struct BotRosterPage: View {
                 DockIcon(.magnifyingGlass)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockMetadataText)
-                TextField("Search Bots", text: $model.searchText)
+                DockTextField("Search Bots", text: $model.searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundStyle(Color.dockPrimaryText)
@@ -220,7 +239,7 @@ struct BotRosterPage: View {
                     .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
             }
 
-            Menu {
+            DockMenu {
                 ForEach(BotRosterActivityFilter.allCases) { filter in
                     Button {
                         activityFilter = filter
@@ -245,10 +264,9 @@ struct BotRosterPage: View {
                             .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
                     }
             }
-            .menuStyle(.borderlessButton)
             .help("Filter Bots by activity")
 
-            Menu {
+            DockMenu {
                 Button {
                     showsHiddenBots = false
                 } label: {
@@ -274,7 +292,6 @@ struct BotRosterPage: View {
                             .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
                     }
             }
-            .menuStyle(.borderlessButton)
             .disabled(model.hiddenBots.isEmpty)
             .help("Choose whether hidden Bots are included")
 
@@ -318,7 +335,7 @@ struct BotRosterPage: View {
             bot: bot,
             avatarData: model.avatarImages[bot.id],
             onSelect: { onSelectBot(bot) },
-            onOpenRecentSession: { if let session = bot.recentSession { onOpenRecentSession(bot, session) } },
+            onOpenRecentSession: { if let session = bot.liveWorkerChat ?? bot.recentSession { onOpenRecentSession(bot, session) } },
             onEdit: { editingBot = bot },
             onShowActivity: { activityBot = bot },
             onDuplicate: { duplicatingBot = bot },
@@ -502,18 +519,18 @@ struct BotCreationSheet: View {
         DockModal(icon: .robot, title: "New Bot", subtitle: "Create a Hermes profile with its own identity and skills.", width: 420) {
             modalSection("IDENTITY") {
                 labeledField("Name", hint: "Lowercase letters, numbers, dashes, or underscores") {
-                    TextField("e.g. researcher", text: $name)
+                    DockTextField("e.g. researcher", text: $name)
                         .textFieldStyle(.dockGlass)
                 }
                 if !trimmedName.isEmpty && !isValidName {
                     ModalNote(text: "Use lowercase letters, numbers, dashes, or underscores.", icon: .warning, tone: .dockWarning)
                 }
                 labeledField("Title", hint: "Optional role label") {
-                    TextField("e.g. Research Analyst", text: $title)
+                    DockTextField("e.g. Research Analyst", text: $title)
                         .textFieldStyle(.dockGlass)
                 }
                 labeledField("Description", hint: "Optional one-line responsibility") {
-                    TextField("What this Bot is responsible for", text: $descriptionText)
+                    DockTextField("What this Bot is responsible for", text: $descriptionText)
                         .textFieldStyle(.dockGlass)
                 }
             }
@@ -553,10 +570,10 @@ struct BotCreationSheet: View {
             }
             .buttonStyle(.dockPress)
             if showsAdvanced {
-                Picker("Clone from", selection: $cloneFrom) {
-                    Text("Fresh profile").tag("")
+                DockMenuPicker("Clone from", title: roster.first { $0.id == cloneFrom }?.name ?? "Fresh profile", selection: $cloneFrom) {
+                    DockMenuOption("Fresh profile", value: "")
                     ForEach(roster.filter { !$0.isDefault }) { bot in
-                        Text(bot.name).tag(bot.id)
+                        DockMenuOption(bot.name, value: bot.id)
                     }
                 }
                 Toggle("Create empty (skip bundled skills)", isOn: $skipsSkills)
@@ -752,7 +769,7 @@ private struct BotRoutineRow: View, Equatable {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Menu {
+            DockMenu {
                 Button("Remove", icon: .trash, role: .destructive, action: onRemove)
             } label: {
                 DockIcon(.dotsThree)
@@ -761,7 +778,6 @@ private struct BotRoutineRow: View, Equatable {
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .menuStyle(.borderlessButton)
             .disabled(isRemoving)
             .help("More routine actions")
         }
@@ -875,9 +891,11 @@ struct MissionControlBotRow: View, Equatable {
 
     private var footer: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(isActive ? Color.dockAccent : Color.dockMetadataText.opacity(0.5))
-                .frame(width: 6, height: 6)
+            if isActive {
+                DockActivityIndicator(state: .running, size: 10)
+            } else {
+                Circle().fill(Color.dockMetadataText.opacity(0.5)).frame(width: 6, height: 6)
+            }
             Group {
                 if bot.isWorkingNow {
                     Text("Working")
@@ -915,7 +933,7 @@ struct MissionControlBotRow: View, Equatable {
     }
 
     private var actions: some View {
-        Menu {
+        DockMenu {
             Button("Open Chat", icon: .chatText) { onSelect() }
             if let onOpenRecentSession {
                 Button("Open Recent Session", icon: .clock, action: onOpenRecentSession)
@@ -933,7 +951,6 @@ struct MissionControlBotRow: View, Equatable {
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
         .dockHitTarget()
         .help("More actions for \(bot.name)")
         .accessibilityLabel("More actions for \(bot.name)")

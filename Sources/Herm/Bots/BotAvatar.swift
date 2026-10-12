@@ -79,22 +79,66 @@ struct BotAvatarView: View {
     }
 
     private var deterministicFace: some View {
+        BotFaceMark(id: bot.id, size: size)
+    }
+}
+
+/// Hermes-style face: a flat colored shape with two eyes. Shape and color are
+/// derived from the profile ID so a Bot always gets the same face.
+struct BotFaceMark: View {
+    let id: String
+    var size: CGFloat = 160
+
+    private var seed: UInt64 {
+        id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8.reduce(UInt64(14695981039346656037)) {
+            ($0 ^ UInt64($1)) &* 1099511628211
+        }
+    }
+
+    var body: some View {
+        let colors = BotAvatarPresentation.palette(for: id)
+        let shape = BotFaceShape(kind: Int(seed / 360 % 5))
+        let pupil = size * 0.045
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: BotAvatarPresentation.palette(for: bot.id),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-            Circle()
-                .stroke(.white.opacity(0.20), lineWidth: max(0.6, size * 0.018))
-                .frame(width: size * 0.64, height: size * 0.64)
-            DockIcon(BotAvatarPresentation.symbol(for: bot.id))
-                .font(.system(size: size * 0.34, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.96))
-                .shadow(color: .black.opacity(0.22), radius: size * 0.06, y: size * 0.04)
+            shape.fill(colors[0]).frame(width: size * 0.82, height: size * 0.82)
+            HStack(spacing: size * 0.1) {
+                ForEach(0..<2, id: \.self) { _ in
+                    Circle().fill(Color(white: 0.96))
+                        .frame(width: size * 0.15, height: size * 0.15)
+                        .overlay(Circle().fill(colors[1]).frame(width: pupil * 2, height: pupil * 2))
+                }
+            }
+            .offset(y: size * 0.04)
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+private struct BotFaceShape: Shape {
+    let kind: Int
+
+    func path(in r: CGRect) -> Path {
+        switch kind {
+        case 0: return Circle().path(in: r)
+        case 1: return RoundedRectangle(cornerRadius: r.width * 0.3, style: .continuous).path(in: r)
+        case 2: return Capsule().path(in: r.insetBy(dx: r.width * 0.12, dy: 0))
+        case 3: // drop
+            var p = Path()
+            let c = CGPoint(x: r.midX, y: r.maxY - r.width * 0.36), rad = r.width * 0.36
+            p.move(to: CGPoint(x: r.midX, y: r.minY))
+            p.addQuadCurve(to: CGPoint(x: c.x + rad, y: c.y), control: CGPoint(x: c.x + rad, y: c.y - rad * 1.2))
+            p.addArc(center: c, radius: rad, startAngle: .zero, endAngle: .degrees(180), clockwise: false)
+            p.addQuadCurve(to: CGPoint(x: r.midX, y: r.minY), control: CGPoint(x: c.x - rad, y: c.y - rad * 1.2))
+            return p
+        default: // hexagon
+            var p = Path()
+            for i in 0..<6 {
+                let a = Double(i) * .pi / 3 - .pi / 2
+                let pt = CGPoint(x: r.midX + r.width / 2 * cos(a), y: r.midY + r.height / 2 * sin(a))
+                i == 0 ? p.move(to: pt) : p.addLine(to: pt)
+            }
+            p.closeSubpath()
+            return p
         }
     }
 }

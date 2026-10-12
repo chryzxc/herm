@@ -55,6 +55,10 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     let hasAvatar: Bool
     let hasCustomAvatar: Bool
     let isDefault: Bool
+    /// Exact busy flag from the gateway's live session list (`working`/`waiting`
+    /// vs `idle`). nil when none of the bot's sessions is live in that process
+    /// (kanban or cron workers), where the heartbeat heuristic still applies.
+    var liveBusy: Bool?
 
     init(id: String, name: String, title: String?, description: String?, model: String?, provider: String? = nil, isActive: Bool, chat: BotChatReference?, recentSession: BotChatReference? = nil, worker: BotWorkerReference? = nil, avatarURL: URL?, preview: String?, lastActive: Date?, isHidden: Bool, hasAvatar: Bool, hasCustomAvatar: Bool = false, isDefault: Bool) {
         self.id = id
@@ -78,11 +82,18 @@ struct BotSummary: Identifiable, Equatable, Sendable {
     /// Newest of the canonical-chat and worker watermarks; Hermes reports
     /// both in epoch seconds and Bot Mode treats ~90s as "working now".
     var isRecentlyActive: Bool {
-        guard let lastActive else { return false }
+        guard liveBusy == nil, let lastActive else { return false }
         return (0...90).contains(Date().timeIntervalSince(lastActive))
     }
 
-    var isWorkingNow: Bool { worker?.isLive == true }
+    var isWorkingNow: Bool { liveBusy ?? (worker?.isLive == true) }
+
+    /// The kanban/cron worker session while it is live. Worker sessions are
+    /// kept out of Recents, so this is the only way to open one.
+    var liveWorkerChat: BotChatReference? {
+        guard let worker, worker.isLive else { return nil }
+        return BotChatReference(sessionID: worker.sessionID, profileID: id, title: worker.title, lastActive: worker.lastActive)
+    }
 }
 
 struct BotDetails: Equatable, Sendable {
@@ -195,4 +206,33 @@ struct BotRuntimeConfig: Equatable, Sendable {
     /// Hermes' order: `fallback_providers` first, legacy `fallback_model` after.
     var fallbacks: [ModelRef] = []
     var compressionThreshold: Int?
+}
+
+/// A bot starting or finishing work, detected by diffing two roster reads.
+struct BotActivityEvent: Identifiable, Equatable, Sendable {
+    let botID: String
+    let name: String
+    let finished: Bool
+    /// The bot's `lastActive` epoch, so every observer derives the same notice id.
+    let stamp: String
+    var id: String { "\(botID)/\(finished)" }
+    var text: String { finished ? "\(name) finished" : "\(name) is running" }
+
+    /// ponytail: "working" is the roster's own 90s/live heuristic, so a finish
+    /// surfaces up to ~90s after the last write; Hermes has no bot push event.
+    static func events(from old: [BotSummary], to new: [BotSummary], excluding profileID: String?) -> [BotActivityEvent] {
+        guard !old.isEmpty else { return [] }
+        let before = Dictionary(old.map { ($0.id, $0.isWorkingNow || $0.isRecentlyActive) }, uniquingKeysWith: { _, n in n })
+        return new.compactMap { bot in
+            guard bot.id != profileID, let was = before[bot.id] else { return nil }
+            let now = bot.isWorkingNow || bot.isRecentlyActive
+            guard now != was else { return nil }
+            return BotActivityEvent(botID: bot.id, name: bot.name, finished: !now,
+                                    stamp: String(Int(bot.lastActive?.timeIntervalSince1970 ?? 0)))
+        }
+    }
+}
+
+extension Notification.Name {
+    static let hermBotActivity = Notification.Name("hermBotActivity")
 }

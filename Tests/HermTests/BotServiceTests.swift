@@ -143,6 +143,10 @@ struct BotServiceTests {
         #expect(afterFirst > before)
 
         await model.refreshNow()
+        #expect(model.rosterRevision == afterFirst, "An unchanged roster should not invalidate transcript rows")
+        let changedClient = BotFixtureClient(result: ["profiles": [["name": "research", "has_avatar": false], ["name": "coding", "has_avatar": false]]])
+        model.bind(to: changedClient, capabilityAvailable: true)
+        await model.refreshNow()
         #expect(model.rosterRevision > afterFirst)
     }
 

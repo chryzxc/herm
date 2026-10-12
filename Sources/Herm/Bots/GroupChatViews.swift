@@ -69,6 +69,10 @@ private struct GroupChatSidebarRow: View {
 
     private var isWorking: Bool { store.workingRooms.contains(room.id) }
     private var isUnread: Bool { !isSelected && store.isUnread(room) }
+    private var activity: DockActivityState? {
+        if !(store.approvals[room.id] ?? []).isEmpty { return .approval }
+        return isWorking ? .running : isUnread ? .done : nil
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -82,20 +86,17 @@ private struct GroupChatSidebarRow: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if isHovered {
-                        Menu { actions } label: {
+                        DockMenu { actions } label: {
                             Ph.dotsThree.image(size: 13, color: NSColor(Color.dockSecondaryText))
                                 .frame(width: 24, height: 24)
                                 .contentShape(Rectangle())
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
                         .fixedSize()
                         .help("More group actions")
                         .accessibilityLabel("More actions for \(room.name)")
-                    } else if isWorking {
-                        ProgressView().controlSize(.mini)
+                    } else if let activity {
+                        DockActivityIndicator(state: activity, size: 12, unreadDot: true)
                     } else {
-                        if isUnread { Circle().fill(Color.dockAccent).frame(width: 7, height: 7) }
                         Text(SidebarSessionTime.short(date))
                             .font(.subheadline.monospacedDigit())
                             .foregroundStyle(style.metadataText)
@@ -122,7 +123,7 @@ private struct GroupChatSidebarRow: View {
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .contextMenu { actions }
         .alert("Rename group", isPresented: $isRenaming) {
-            TextField("Name", text: $renameText)
+            DockTextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) {}
             Button("Rename") { Task { await store.rename(room.id, to: renameText) } }
         }
@@ -151,11 +152,11 @@ private struct GroupChatSidebarRow: View {
         Button("Disband…", icon: .trash, role: .destructive) { isConfirmingDisband = true }
     }
 
-    /// Up to three overlapping avatars; each names its member on hover.
+    /// Up to three avatars; each names its member on hover.
     private var avatars: some View {
         let shown = room.members.prefix(3)
         let tile = RoundedRectangle(cornerRadius: 20 * 0.28, style: .continuous)
-        return HStack(spacing: -6) {
+        return HStack(spacing: -4) {
             ForEach(Array(shown), id: \.memberID) { member in
                 Group {
                     if let bot = botMode.botsByID[member.profile] {
@@ -168,7 +169,7 @@ private struct GroupChatSidebarRow: View {
                             .background(tile.fill(Color.dockSurface2))
                     }
                 }
-                .background(tile.stroke(Color.dockCanvas, lineWidth: 3))
+                .background(tile.stroke(Color.dockCanvas, lineWidth: 2))
                 .help("\(member.displayName) · @\(member.handle)")
             }
             if room.members.count > shown.count {
@@ -177,7 +178,7 @@ private struct GroupChatSidebarRow: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 20, height: 20)
                     .background(tile.fill(Color.dockSurface2))
-                    .background(tile.stroke(Color.dockCanvas, lineWidth: 3))
+                    .background(tile.stroke(Color.dockCanvas, lineWidth: 2))
                     .help(room.members.dropFirst(3).map(\.displayName).joined(separator: ", "))
             }
         }
@@ -220,12 +221,7 @@ struct NewGroupChatSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(mode == .create ? "New Group Chat" : "Share a Bot").font(.title3.weight(.semibold))
             if store.isRoomLinkEnabled {
-                Picker("", selection: $mode) {
-                    Text("Create a group").tag(Mode.create)
-                    Text("Join from another Mac").tag(Mode.share)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                DockSegmentedPicker(selection: $mode, options: [(Mode.create, "Create a group"), (Mode.share, "Join from another Mac")])
             }
             if mode == .create { createForm } else { ShareBotForm(store: store, bots: bots) }
             if let message = store.errorMessage {
@@ -260,7 +256,7 @@ struct NewGroupChatSheet: View {
 
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 14) {
-            TextField("Name", text: $name)
+            DockTextField("Name", text: $name)
                 .textFieldStyle(.roundedBorder)
             Text("Members (\(GroupChatStore.memberLimits.lowerBound)–\(GroupChatStore.memberLimits.upperBound))")
                 .font(.caption)
@@ -296,7 +292,7 @@ struct NewGroupChatSheet: View {
                                                                memberID: seat.wrappedValue.id, handle: handle))
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                TextField("Handle, e.g. scout", text: seat.handle).textFieldStyle(.roundedBorder)
+                DockTextField("Handle, e.g. scout", text: seat.handle).textFieldStyle(.roundedBorder)
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(request, forType: .string)
@@ -305,7 +301,7 @@ struct NewGroupChatSheet: View {
                 Button { remote.removeAll { $0.id == seat.wrappedValue.id } } label: { DockIcon(.x) }
                     .buttonStyle(.dockHover)
             }
-            TextField("Paste the invite from the other Mac", text: seat.reply).textFieldStyle(.roundedBorder)
+            DockTextField("Paste the invite from the other Mac", text: seat.reply).textFieldStyle(.roundedBorder)
             if !seat.wrappedValue.reply.isEmpty, seat.wrappedValue.invite == nil {
                 Text("That invite isn't for this seat.").font(.caption).foregroundStyle(Color.dockWarning)
             } else if let invite = seat.wrappedValue.invite {
@@ -335,10 +331,10 @@ private struct ShareBotForm: View {
                 .font(.caption)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
-            TextField("Request code", text: $requestCode).textFieldStyle(.roundedBorder)
-            Picker("Bot", selection: $botID) {
-                Text("Choose…").tag(String?.none)
-                ForEach(bots) { Text($0.name).tag(Optional($0.id)) }
+            DockTextField("Request code", text: $requestCode).textFieldStyle(.roundedBorder)
+            DockMenuPicker("Bot", title: bots.first { $0.id == botID }?.name ?? "Choose…", selection: $botID) {
+                DockMenuOption("Choose…", value: String?.none)
+                ForEach(bots) { DockMenuOption($0.name, value: Optional($0.id)) }
             }
             Button(isWorking ? "Creating invite…" : "Create invite") {
                 guard let request, let bot = bots.first(where: { $0.id == botID }) else { return }
@@ -363,10 +359,16 @@ struct GroupChatView: View {
     @ObservedObject var botMode: BotModeModel
     let roomID: String
     let onDisbanded: () -> Void
+    @StateObject private var voiceOutput = VoiceOutput()
+    @State private var speakingEventID: String?
+    @State private var replyQuote: ReplyQuote?
     @State private var draft = ""
     @State private var mentionIndex = 0
     @State private var dismissedMentionToken: String?
-    @State private var pendingCaret: Int?
+    // Not @State: the editor consumes it during a view update, where a state write is dropped and the caret keeps snapping back.
+    private final class CaretBox { var value: Int? }
+    private let pendingCaretBox = CaretBox()
+    private var pendingCaret: Int? { get { pendingCaretBox.value } nonmutating set { pendingCaretBox.value = newValue } }
     @State private var editorHeight = ComposerLayout.minHeight
     @State private var isEditorFocused = true
     @State private var renameText = ""
@@ -457,7 +459,7 @@ struct GroupChatView: View {
             }
         }
         .alert("Rename group", isPresented: $isRenaming) {
-            TextField("Name", text: $renameText)
+            DockTextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) {}
             Button("Rename") { Task { await store.rename(roomID, to: renameText) } }
         }
@@ -475,16 +477,19 @@ struct GroupChatView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 12) {
-            memberAvatars
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(room?.name ?? "Group Chat")
                     .font(DockTypography.pageTitle)
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(1)
-                Text(headerSubtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    memberAvatars
+                    Text(headerSubtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                    if isWorking { ThinkingDots() }
+                }
             }
             Spacer(minLength: 12)
             if isWorking {
@@ -498,7 +503,7 @@ struct GroupChatView: View {
             }
             .buttonStyle(.dockHover)
             .help("Refresh")
-            Menu {
+            DockMenu {
                 Button("New thread") { startThread() }
                 Button("Rename…") { renameText = room?.name ?? ""; isRenaming = true }
                 Button("Disband…", role: .destructive) { isConfirmingDisband = true }
@@ -508,8 +513,6 @@ struct GroupChatView: View {
                     .foregroundStyle(Color.dockSecondaryText)
                     .frame(width: 28, height: 28)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
             .fixedSize()
             .help("More")
         }
@@ -521,14 +524,14 @@ struct GroupChatView: View {
     private var headerSubtitle: String {
         guard let room else { return "" }
         let thinking = thinkingMembers.map(\.displayName)
-        if !thinking.isEmpty { return "\(thinking.joined(separator: ", ")) thinking…" }
-        return "\(room.members.count) members · " + room.members.map { "@\($0.handle)" }.joined(separator: " ")
+        if !thinking.isEmpty { return "\(ListFormatter.localizedString(byJoining: thinking)) \(thinking.count == 1 ? "is" : "are") replying" }
+        return "\(room.members.count) members"
     }
 
-    /// Overlapping round chips for the room's members; a working member gets an accent ring.
+    /// Stacked member chips under the title; hover names the member, a working member gets an accent ring.
     private var memberAvatars: some View {
         let thinking = Set(thinkingMembers.map(\.memberID))
-        return HStack(spacing: -10) {
+        return HStack(spacing: -7) {
             ForEach(room?.members ?? [], id: \.memberID) { member in
                 ZStack {
                     Circle().fill(Color.dockSurface)
@@ -536,13 +539,13 @@ struct GroupChatView: View {
                         BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 22)
                     } else {
                         Text(member.displayName.prefix(1).uppercased())
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Color.dockSecondaryText)
                     }
                 }
-                .frame(width: 34, height: 34)
-                .overlay(Circle().stroke(thinking.contains(member.memberID) ? Color.dockAccent : Color.dockBorderLight, lineWidth: 1.5))
-                .background(Circle().stroke(Color.dockCanvas, lineWidth: 5))
+                .frame(width: 26, height: 26)
+                .overlay(Circle().stroke(thinking.contains(member.memberID) ? Color.dockAccent : Color.dockBorderLight, lineWidth: 1))
+                .background(Circle().stroke(Color.dockCanvas, lineWidth: 3))
                 .help("\(member.displayName) · @\(member.handle)")
             }
         }
@@ -603,9 +606,12 @@ struct GroupChatView: View {
                         HStack(alignment: .top, spacing: 10) {
                             avatar(for: member)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(member.displayName)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.dockSecondaryText)
+                                HStack(spacing: 8) {
+                                    Text(member.displayName)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(Color.dockSecondaryText)
+                                    ThinkingDots()
+                                }
                                 TurnActivityView(
                                     activity: store.liveTools(for: member.memberID, in: roomID),
                                     runningSince: startedAt(member.memberID) ?? .now,
@@ -631,8 +637,12 @@ struct GroupChatView: View {
         case .user:
             HStack {
                 Spacer(minLength: 80)
-                Text.withFileIcons(AttributedString(event.text), iconSize: 13)
-                    .textSelection(.enabled)
+                let split = ReplyQuote.split(event.text)
+                VStack(alignment: .leading, spacing: 6) {
+                    if let quote = split?.quote { ReplyQuoteChip(quote: quote) }
+                    Text.withFileIcons(AttributedString(split?.body ?? event.text), iconSize: 13)
+                        .textSelection(.enabled)
+                }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.dockAccentMuted))
@@ -651,6 +661,7 @@ struct GroupChatView: View {
                     }
                     MarkdownMessageView(markdown: event.text, cacheKey: event.id)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    replyActions(for: event, author: member?.displayName ?? memberID)
                 }
             }
         case .failed(let memberID):
@@ -664,6 +675,43 @@ struct GroupChatView: View {
                 .frame(maxWidth: .infinity)
         case .started:
             EmptyView()
+        }
+    }
+
+    /// Copy / read aloud / timestamp under a member reply, matching the single-chat row.
+    private func replyActions(for event: GroupRoomEvent, author: String) -> some View {
+        let isSpeaking = voiceOutput.isSpeaking && speakingEventID == event.id
+        return HStack(spacing: 0) {
+            DockCopyButton(event.text, accessibilityLabel: "Copy message", presentation: .icon, iconSize: 12)
+                .buttonStyle(DockPressButtonStyle())
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+            Button {
+                if isSpeaking { voiceOutput.stop() } else {
+                    speakingEventID = event.id
+                    voiceOutput.speak(messageID: UUID(), text: event.text)
+                }
+            } label: {
+                DockIcon(isSpeaking ? .stop : .speakerHigh, size: 12, color: isSpeaking ? .dockAccent : .dockSecondaryText)
+            }
+            .buttonStyle(DockPressButtonStyle())
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+            .help(isSpeaking ? "Stop reading aloud" : "Read message aloud")
+            Button {
+                replyQuote = ReplyQuote(author: author, text: event.text)
+                isEditorFocused = true
+            } label: {
+                DockIcon(.arrowBendUpLeft, size: 12, color: .dockSecondaryText)
+            }
+            .buttonStyle(DockPressButtonStyle())
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+            .help("Reply to this message")
+            Rectangle().fill(Color.dockBorderLight).frame(width: 1, height: 12).padding(.horizontal, 6)
+            Text(event.createdAt.formatted(date: .abbreviated, time: .shortened))
+                .font(DockTypography.machineMetadata)
+                .foregroundStyle(Color.dockMetadataText)
         }
     }
 
@@ -774,6 +822,10 @@ struct GroupChatView: View {
             }
             // Same native editor and card as the main chat composer; rooms are text-only, so no
             // attachment, model or voice controls.
+            if let quote = replyQuote {
+                ReplyQuoteChip(quote: quote) { replyQuote = nil }
+                    .padding(.horizontal, 12)
+            }
             VStack(spacing: 6) {
                 ZStack(alignment: .topLeading) {
                     ComposerInputEditor(
@@ -876,16 +928,14 @@ struct GroupChatView: View {
         if let member = locals.first(where: { $0.memberID == modelMemberID }) ?? locals.first,
            let bot = botMode.botsByID[member.profile] {
             HStack(spacing: 2) {
-                Menu {
+                DockMenu {
                     ForEach(locals, id: \.memberID) { item in
                         Button(item.displayName) { modelMemberID = item.memberID }
                     }
                 } label: {
                     BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 18)
                 }
-                .menuStyle(.button)
                 .buttonStyle(.dockHover)
-                .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Choose whose model to change")
                 ModelPickerView(
@@ -926,6 +976,8 @@ struct GroupChatView: View {
         let text = draft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         draft = ""
-        Task { await store.send(text, to: roomID, thread: thread) }
+        let outgoing = replyQuote?.composing(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? text
+        replyQuote = nil
+        Task { await store.send(outgoing, to: roomID, thread: thread) }
     }
 }

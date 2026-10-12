@@ -31,6 +31,7 @@ struct BotProfileEditorSheet: View {
     @State private var showsSkills = false
     @State private var showsToolsets = false
     @State private var showsMCPServers = false
+    @State private var showsIntegrationSetup = false
 
     var body: some View {
         DockModal(
@@ -52,6 +53,11 @@ struct BotProfileEditorSheet: View {
         }
         .frame(minHeight: 480)
         .task { await load() }
+        .sheet(isPresented: $showsIntegrationSetup) {
+            if let client = model.integrationClient {
+                WorkflowIntegrationView(destination: IntegrationDestination(profileID: bot.id), client: client)
+            }
+        }
         .alert("Confirm Model", isPresented: Binding(get: { pendingConfirmMessage != nil }, set: { if !$0 { pendingConfirmMessage = nil } })) {
             Button("Cancel", role: .cancel) { pendingConfirmMessage = nil }
             Button("Use This Model") { Task { await save(confirm: true) } }
@@ -66,11 +72,11 @@ struct BotProfileEditorSheet: View {
                 modalSection("IDENTITY") {
                     avatarRow
                     labeledField("Title") {
-                        TextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
+                        DockTextField("Roster title", text: Binding(get: { detail?.title ?? "" }, set: { detail?.title = $0 }))
                             .textFieldStyle(.dockGlass)
                     }
                     labeledField("Description") {
-                        TextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }), axis: .vertical)
+                        DockTextField("What this Bot does", text: Binding(get: { detail?.description ?? "" }, set: { detail?.description = $0 }), axis: .vertical)
                             .lineLimit(2...5)
                             .textFieldStyle(.dockGlass)
                     }
@@ -78,6 +84,7 @@ struct BotProfileEditorSheet: View {
                 modalSection("MODELS") { modelCard }
                 modalSection("PERSONA") { soulRow }
                 modalSection("CAPABILITIES") {
+                    Button("Manage skills & MCP…") { showsIntegrationSetup = true }.buttonStyle(.dockSecondary)
                     VStack(alignment: .leading, spacing: 10) {
                         DisclosureGroup(isExpanded: $showsSkills) {
                             toggleSection(items: skillBinding)
@@ -167,15 +174,15 @@ struct BotProfileEditorSheet: View {
             }
             if isChangingModel {
                 HStack(spacing: 8) {
-                    Picker("Provider", selection: $selectedProvider) {
-                        Text("Provider…").tag("")
+                    DockMenuPicker(title: selectedProvider.isEmpty ? "Provider…" : selectedProvider, selection: $selectedProvider) {
+                        DockMenuOption("Provider…", value: "")
                         ForEach(modelChoices, id: \.provider) { choice in
-                            Text(choice.provider).tag(choice.provider)
+                            DockMenuOption(choice.provider, value: choice.provider)
                         }
                     }
-                    Picker("Model", selection: $selectedModel) {
-                        Text("Model…").tag("")
-                        ForEach(availableModels, id: \.self) { Text($0).tag($0) }
+                    DockMenuPicker(title: selectedModel.isEmpty ? "Model…" : selectedModel, selection: $selectedModel) {
+                        DockMenuOption("Model…", value: "")
+                        ForEach(availableModels, id: \.self) { DockMenuOption($0, value: $0) }
                     }
                 }
                 .labelsHidden()
@@ -228,13 +235,13 @@ struct BotProfileEditorSheet: View {
             }
             if fallbackDraft != nil {
                 HStack(spacing: 8) {
-                    Picker("Provider", selection: $fallbackProvider) {
-                        Text("Provider…").tag("")
-                        ForEach(modelChoices, id: \.provider) { Text($0.provider).tag($0.provider) }
+                    DockMenuPicker(title: fallbackProvider.isEmpty ? "Provider…" : fallbackProvider, selection: $fallbackProvider) {
+                        DockMenuOption("Provider…", value: "")
+                        ForEach(modelChoices, id: \.provider) { DockMenuOption($0.provider, value: $0.provider) }
                     }
-                    Picker("Model", selection: $fallbackModel) {
-                        Text("Model…").tag("")
-                        ForEach(modelChoices.first { $0.provider == fallbackProvider }?.models ?? [], id: \.self) { Text($0).tag($0) }
+                    DockMenuPicker(title: fallbackModel.isEmpty ? "Model…" : fallbackModel, selection: $fallbackModel) {
+                        DockMenuOption("Model…", value: "")
+                        ForEach(modelChoices.first { $0.provider == fallbackProvider }?.models ?? [], id: \.self) { DockMenuOption($0, value: $0) }
                     }
                     Button("Add") {
                         let ref = BotRuntimeConfig.ModelRef(provider: fallbackProvider, model: fallbackModel)
@@ -490,7 +497,7 @@ struct BotDuplicateSheet: View {
     var body: some View {
         DockModal(icon: .copy, title: "Duplicate \(bot.name)", subtitle: "Clones config, skills, SOUL, and memory into a new profile.", width: 400) {
             labeledField("New profile name", hint: "Lowercase letters, numbers, dashes, or underscores") {
-                TextField("e.g. \(bot.name)-copy", text: $newName)
+                DockTextField("e.g. \(bot.name)-copy", text: $newName)
                     .textFieldStyle(.dockGlass)
             }
             if let error = model.botCreationError {
@@ -525,10 +532,9 @@ struct BotRoutineFormSheet: View {
         DockModal(icon: .calendarBlank, title: "New Routine", subtitle: "Recurring work a Bot runs on a schedule.", width: 440) {
             modalSection("ASSIGNMENT") {
                 labeledField("Bot", hint: "The profile that owns this routine") {
-                    Picker("Bot", selection: $selectedProfile) {
-                        ForEach(bots) { bot in Text(bot.name).tag(bot.id) }
+                    DockMenuPicker(title: bots.first { $0.id == selectedProfile }?.name ?? "Choose…", selection: $selectedProfile) {
+                        ForEach(bots) { bot in DockMenuOption(bot.name, value: bot.id) }
                     }
-                    .pickerStyle(.menu)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 10)
                     .frame(minHeight: DockLayout.controlHeight)
@@ -542,15 +548,15 @@ struct BotRoutineFormSheet: View {
 
             modalSection("SCHEDULE") {
                 labeledField("Title", hint: "A short name for the recurring work") {
-                    TextField("e.g. Summarize inbox", text: $title)
+                    DockTextField("e.g. Summarize inbox", text: $title)
                         .textFieldStyle(.dockGlass)
                 }
                 labeledField("Schedule", hint: "Use a plain-language interval") {
-                    TextField("e.g. every day 9am", text: $schedule)
+                    DockTextField("e.g. every day 9am", text: $schedule)
                         .textFieldStyle(.dockGlass)
                 }
                 labeledField("Prompt", hint: "Instructions sent to the Bot") {
-                    TextField("What should this routine do?", text: $prompt)
+                    DockTextField("What should this routine do?", text: $prompt)
                         .textFieldStyle(.dockGlass)
                 }
             }

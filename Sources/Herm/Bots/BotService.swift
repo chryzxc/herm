@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import SwiftUI
 
 /// Hermes-owned profile integration. This adapter accepts only the structured
 /// profile fields documented by Hermes; it never reads ~/.hermes directly.
@@ -12,8 +14,30 @@ final class BotService {
     private let client: HermesRPCClientProtocol
 
     init(client: HermesRPCClientProtocol) { self.client = client }
+    var integrationClient: HermesRPCClientProtocol { client }
+
+    /// Stored session id -> busy, for sessions live in the gateway process.
+    func liveBusy() async -> [String: Bool] {
+        guard let rows = try? await client.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])["sessions"] as? [[String: Any]] else { return [:] }
+        return Dictionary(rows.compactMap { row in
+            (row["session_key"] as? String).map { ($0, (row["status"] as? String ?? "idle") != "idle") }
+        }, uniquingKeysWith: { $0 || $1 })
+    }
 
     func list() async -> BotInventory {
+        let roster = await rosterList()
+        let live = await liveBusy()
+        guard !live.isEmpty else { return roster }
+        return BotInventory(availability: roster.availability, bots: roster.bots.map { bot in
+            let states = [bot.chat?.sessionID, bot.recentSession?.sessionID, bot.worker?.sessionID].compactMap { $0 }.compactMap { live[$0] }
+            guard !states.isEmpty else { return bot }
+            var bot = bot
+            bot.liveBusy = states.contains(true)
+            return bot
+        }, diagnostic: roster.diagnostic)
+    }
+
+    private func rosterList() async -> BotInventory {
         do {
             let result = try await client.request(HermesFeatureIDs.ID.profilesList.rawValue, params: [:])
             return try Self.parseInventory(result)
@@ -458,6 +482,7 @@ private extension BotDetails {
 
 @MainActor
 final class BotModeModel: ObservableObject {
+    var integrationClient: HermesRPCClientProtocol? { service?.integrationClient }
     @Published private(set) var inventory = BotInventory(availability: .unavailable, bots: [], diagnostic: "Bot inventory is unavailable.") {
         didSet { rebuildRosterIndex() }
     }
@@ -489,13 +514,52 @@ final class BotModeModel: ObservableObject {
         }
     }
 
+    private let seenKey = "hermes.dock.bot-seen.v1"
+    /// When the user last looked at each Bot. A Bot is unread when its roster
+    /// activity is newer. ponytail: roster `last_active` only; per-session
+    /// unread state exists for the selected Bot alone.
+    private var seenAt: [String: Date] = {
+        (UserDefaults.standard.dictionary(forKey: "hermes.dock.bot-seen.v1") as? [String: Double] ?? [:])
+            .mapValues { Date(timeIntervalSince1970: $0) }
+    }()
+
+    /// Roster refreshes touch this constantly; only persist when asked.
+    private func markSeen(_ ids: [String], persist: Bool = true) {
+        let now = Date()
+        for id in ids { seenAt[id] = now }
+        if persist { UserDefaults.standard.set(seenAt.mapValues(\.timeIntervalSince1970), forKey: seenKey) }
+    }
+
+    func hasUnread(_ bot: BotSummary) -> Bool {
+        guard bot.id != selectedProfileID, let last = bot.lastActive, let seen = seenAt[bot.id] else { return false }
+        return last > seen
+    }
+
     private func rebuildRosterIndex() {
+        // First sighting is the baseline, so existing history is not "unread".
+        let fresh = inventory.bots.filter { seenAt[$0.id] == nil }.map(\.id)
+        if !fresh.isEmpty { markSeen(fresh) }
+        if let selectedProfileID { markSeen([selectedProfileID], persist: false) }
         botsByID = Dictionary(inventory.bots.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
         rosterRevision &+= 1
         BotMentions.update(bots: inventory.bots, avatars: avatarImages)
     }
 
     var bots: [BotSummary] { inventory.bots }
+
+    /// Short-lived banner for bots that just started or finished work.
+    @Published private(set) var activityBanner: [BotActivityEvent] = []
+    private var bannerTask: Task<Void, Never>?
+
+    private func announce(_ events: [BotActivityEvent]) {
+        activityBanner = events
+        NotificationCenter.default.post(name: .hermBotActivity, object: nil, userInfo: ["events": events])
+        bannerTask?.cancel()
+        bannerTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { activityBanner = [] }
+        }
+    }
 
     var filteredBots: [BotSummary] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -540,7 +604,11 @@ final class BotModeModel: ObservableObject {
         if refreshed.availability == .ready { capabilityAvailable = true }
         // Unchanged rosters must not republish: every observer (the rail,
         // activity rows) re-renders on it.
-        if inventory != refreshed { inventory = refreshed }
+        if inventory != refreshed {
+            let events = BotActivityEvent.events(from: inventory.bots, to: refreshed.bots, excluding: selectedProfileID)
+            inventory = refreshed
+            if !events.isEmpty { announce(events) }
+        }
         resolveSelectedProfile()
         isRefreshing = false
         await loadAvatars()
@@ -570,6 +638,7 @@ final class BotModeModel: ObservableObject {
     func selectProfile(_ profileID: String) {
         guard let bot = inventory.bots.first(where: { $0.id == profileID }), !bot.isHidden else { return }
         guard selectedProfileID != bot.id else { return }
+        markSeen([selectedProfileID, bot.id].compactMap { $0 })
         selectedProfileID = bot.id
         UserDefaults.standard.set(bot.id, forKey: selectedProfileKey)
     }
@@ -622,6 +691,44 @@ final class BotModeModel: ObservableObject {
                 avatarImages[bot.id] = data
             }
         }
+    }
+
+    /// Saves a Hermes-style face (160px, like Hermes Desktop's) for every Bot with
+    /// no avatar or only Herm's old 256px placeholder. Returns a status message.
+    func populateAvatars() async -> String {
+        guard let service else { return "Bot Mode is unavailable." }
+        for bot in inventory.bots where bot.hasAvatar && avatarImages[bot.id] == nil {
+            if let data = await service.avatarImageData(profileID: bot.id) { avatarImages[bot.id] = data }
+        }
+        let targets = inventory.bots.filter { !$0.hasAvatar || avatarImages[$0.id].map(Self.isLegacyPlaceholder) == true }
+        if targets.isEmpty { return "Every Bot already has an avatar." }
+        var saved = 0
+        var failure: String?
+        for bot in targets {
+            let renderer = ImageRenderer(content: BotFaceMark(id: bot.id, size: 160))
+            renderer.scale = 1
+            guard let tiff = renderer.nsImage?.tiffRepresentation,
+                  let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+                failure = "Could not render the avatar for \(bot.name)."
+                continue
+            }
+            do {
+                try await service.setAvatar(profileID: bot.id, dataURL: "data:image/png;base64," + png.base64EncodedString())
+                avatarImages[bot.id] = png
+                saved += 1
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+        if saved > 0 { await refreshNow(force: true) }
+        return "Created \(saved) of \(targets.count) avatars." + (failure.map { " \($0)" } ?? "")
+    }
+
+    /// Herm's first avatar fill saved a 256px rounded-square gradient (transparent corners).
+    /// ponytail: heuristic; an uploaded 256px PNG with transparent corners would match too.
+    private static func isLegacyPlaceholder(_ data: Data) -> Bool {
+        guard let rep = NSBitmapImageRep(data: data), rep.pixelsWide == 256, rep.pixelsHigh == 256 else { return false }
+        return (rep.colorAt(x: 0, y: 0)?.alphaComponent ?? 1) < 0.05
     }
 
     func checkImageGeneration() async {
