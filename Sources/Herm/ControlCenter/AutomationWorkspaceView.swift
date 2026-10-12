@@ -75,6 +75,7 @@ struct AutomationWorkspaceView: View {
     @State private var selectedJobID: String?
     @State private var selectedRunID: String?
     @State private var isRunPanelOpen = true
+    @State private var isCompactList = false
     @State private var tab: AutomationWorkspaceTab = .history
     @State private var searchText = ""
     @State private var isShowingCreationSheet = false
@@ -121,23 +122,31 @@ struct AutomationWorkspaceView: View {
     }
 
     var body: some View {
-        // Same shell as the Kanban inspector: a full-height, resizable,
-        // closable sibling panel rather than a column inside the page.
-        HSplitView {
-            page
-                .frame(minWidth: 600)
-            if isRunPanelOpen, let job = selectedJob {
-                Group {
-                    if let run = selectedRun(for: job) {
-                        AutomationRunDetailPanel(run: run, job: job, control: control, onClose: { isRunPanelOpen = false })
-                    } else {
-                        emptyRunPanel
+        // Wide: the Kanban-style resizable inspector beside the page. Narrow (the
+        // minimized panel): the run detail replaces the page, and below 760pt the
+        // schedule list collapses into a menu.
+        GeometryReader { geo in
+            let wide = AutomationWorkspaceLayout.usesPersistentInspector(width: geo.size.width)
+            Group {
+                if wide {
+                    HSplitView {
+                        page.frame(minWidth: 600)
+                        if isRunPanelOpen, let job = selectedJob {
+                            runPanel(for: job)
+                                .frame(minWidth: 340, idealWidth: 400, maxWidth: 520, maxHeight: .infinity, alignment: .topLeading)
+                                .background(Color.dockCanvas)
+                                .overlay(alignment: .leading) { Color.dockBorder.frame(width: DockLayout.hairline) }
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
                     }
+                } else if isRunPanelOpen, let job = selectedJob {
+                    runPanel(for: job).background(Color.dockCanvas)
+                } else {
+                    page
                 }
-                .frame(minWidth: 340, idealWidth: 400, maxWidth: 520, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color.dockCanvas)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+            .onChange(of: wide, initial: true) { _, wide in isRunPanelOpen = wide }
+            .onChange(of: geo.size.width < 760, initial: true) { _, compact in isCompactList = compact }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $isShowingCreationSheet) {
@@ -161,7 +170,7 @@ struct AutomationWorkspaceView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently removes the schedule from Hermes.")
+            Text("This permanently removes \(removeRequest?.name ?? "the schedule") from profile \(removeRequest.flatMap { control.profileForRoutine($0) } ?? "Launch profile").")
         }
         .confirmationDialog("Run automation now?", isPresented: $isShowingRunConfirmation) {
             if let runRequest {
@@ -169,9 +178,14 @@ struct AutomationWorkspaceView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This starts an additional run immediately and does not change the schedule.")
+            Text("This starts a new execution of \(runRequest?.name ?? "the routine") in profile \(runRequest.flatMap { control.profileForRoutine($0) } ?? "Launch profile"). It does not retry delivery or change the schedule.")
         }
-        .onAppear { reconcileSelection() }
+        .onAppear { applyRequestedRoutineSelection(); reconcileSelection() }
+        .onChange(of: control.cronJobs) { _, _ in applyRequestedRoutineSelection() }
+        .onChange(of: control.requestedAutomationDidNavigate) { _, _ in applyRequestedRoutineSelection() }
+        .onChange(of: control.requestedAutomationJobID, initial: true) { _, id in
+            applyRequestedRoutineSelection()
+        }
         .onChange(of: selectedJobID) { _, id in
             selectedRunID = nil
             if let id { control.refreshCronRuns(jobID: id) }
@@ -187,6 +201,15 @@ struct AutomationWorkspaceView: View {
                 selectedJobID = created.id
                 self.pendingCreatedName = nil
             }
+        }
+    }
+
+    @ViewBuilder
+    private func runPanel(for job: CronSummary) -> some View {
+        if let run = selectedRun(for: job) {
+            AutomationRunDetailPanel(run: run, job: job, control: control, onClose: { isRunPanelOpen = false })
+        } else {
+            emptyRunPanel
         }
     }
 
@@ -226,14 +249,26 @@ struct AutomationWorkspaceView: View {
                 emptyWorkspace
             } else {
                 HStack(spacing: 0) {
-                    jobList
-                        .frame(width: AutomationWorkspaceLayout.listWidth)
-                    Divider().overlay(Color.dockBorderLight)
-                    Group {
-                        if let selectedJob { jobPanel(selectedJob) }
-                        else { placeholder("Select an automation", detail: "Choose a schedule to see its run history.") }
+                    if !isCompactList {
+                        jobList
+                            .frame(width: AutomationWorkspaceLayout.listWidth)
+                        Divider().overlay(Color.dockBorderLight)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    VStack(spacing: 0) {
+                        if isCompactList {
+                            DockMenuPicker(title: selectedJob?.name ?? "Select an automation", selection: $selectedJobID) {
+                                ForEach(control.cronJobs) { DockMenuOption($0.name, value: Optional($0.id)) }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            Divider().overlay(Color.dockBorderLight)
+                        }
+                        Group {
+                            if let selectedJob { jobPanel(selectedJob) }
+                            else { placeholder("Select an automation", detail: "Choose a schedule to see its run history.") }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
                 }
             }
         }
@@ -260,12 +295,10 @@ struct AutomationWorkspaceView: View {
             Button {
                 isShowingCreationSheet = true
             } label: {
-                Label("New automation", icon: .plus)
-                    .font(.system(size: 12, weight: .semibold))
-                    .padding(.horizontal, 12)
-                    .frame(height: 32)
+                DockIconLabel("New automation", icon: .plus)
             }
-            .buttonStyle(.dockPrimary)
+            .buttonStyle(.dockSecondary)
+            .controlSize(.small)
             .disabled(!control.cronControlAvailable)
             .help(control.cronControlAvailable ? "Create a new schedule" : "Automation control is unavailable through this Hermes gateway.")
         }
@@ -301,7 +334,7 @@ struct AutomationWorkspaceView: View {
 
     private var jobList: some View {
         VStack(spacing: 0) {
-            TextField("Filter automations", text: $searchText)
+            TextField("", text: $searchText, prompt: Text("Filter automations").foregroundColor(Color.dockMetadataText))
                 .textFieldStyle(.dockGlass)
                 .padding(10)
             Divider().overlay(Color.dockBorderLight)
@@ -426,13 +459,11 @@ struct AutomationWorkspaceView: View {
                 .foregroundStyle(isRunPanelOpen ? Color.dockAccent : Color.dockSecondaryText)
                 .help(isRunPanelOpen ? "Hide run panel" : "Show run panel")
                 if hasMenuActions(for: job) {
-                    Menu { menuActions(for: job) } label: {
+                    DockMenu { menuActions(for: job) } label: {
                         Ph.dotsThree.image(size: 14, color: NSColor(Color.dockSecondaryText))
                             .frame(width: 28, height: 28)
                             .contentShape(Rectangle())
                     }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
                     .buttonStyle(.dockHover)
                     .fixedSize()
                     .help("More actions")
@@ -704,6 +735,11 @@ struct AutomationWorkspaceView: View {
 
     @ViewBuilder
     private func menuActions(for job: CronSummary) -> some View {
+        let reference = RoutineReference(profileID: control.routineProfileID, job: job, run: runs(for: job).first)
+        Button(CommandCenterPreferencesStore.shared.routinePins.contains(reference.id) ? "Unpin from notch" : "Pin to notch") {
+            CommandCenterPreferencesStore.shared.toggleRoutinePin(reference.id)
+        }
+        Button("Repair skills or MCP…") { control.integrationDestination = IntegrationDestination(profileID: reference.profileID) }
         if control.capabilityAvailable("cron.runNow") {
             Button("Run now", icon: .play) {
                 runRequest = job
@@ -722,11 +758,12 @@ struct AutomationWorkspaceView: View {
         }
     }
 
-    private func hasMenuActions(for job: CronSummary) -> Bool {
-        control.capabilityAvailable("cron.runNow")
-            || (control.capabilityAvailable("cron.edit") && !job.editableFields.isEmpty)
-            || control.cronControlAvailable
+    private func applyRequestedRoutineSelection() {
+        guard control.requestedAutomationDidNavigate, let id = control.requestedAutomationJobID, control.requestedAutomationMatchesInventory(), control.cronJobs.contains(where: { $0.id == id }) else { return }
+        selectedJobID = id
+        control.requestedAutomationJobID = nil; control.requestedAutomationOwner = nil; control.requestedAutomationDidNavigate = false
     }
+    private func hasMenuActions(for job: CronSummary) -> Bool { true }
 
     private var emptyWorkspace: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -819,7 +856,7 @@ private struct AutomationRunDetailPanel: View {
             .background(Color.dockSurface2)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 6) {
                         AutomationDetailRow(label: "Automation", value: job.name)
                         if let claimedAt = run.claimedAt {
@@ -829,15 +866,21 @@ private struct AutomationRunDetailPanel: View {
                         AutomationDetailRow(label: "Run ID", value: run.id, monospaced: true)
                         if let sessionID = run.sessionID { AutomationDetailRow(label: "Session", value: sessionID, monospaced: true) }
                     }
+                    .padding(18)
                     if let error = run.error {
+                        Color.dockBorderLight.frame(height: 0.5)
                         AutomationCallout(title: "Error", message: error, tint: Color.dockDestructive)
+                            .padding(18)
                     }
-                    Text("OUTPUT")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.dockMetadataText)
-                    output
+                    Color.dockBorderLight.frame(height: 0.5)
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("OUTPUT")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.dockMetadataText)
+                        output
+                    }
+                    .padding(18)
                 }
-                .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -951,16 +994,16 @@ private struct AutomationCreationSheet: View {
     var body: some View {
         DockModal(icon: .magicWand, title: "New Automation", subtitle: "Define when Hermes should run and what it should do.", width: 520) {
             labeledField("Name") {
-                TextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
+                DockTextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
             }
             labeledField("Schedule", hint: "every 2h or 0 9 * * *") {
-                TextField("When should Hermes run this?", text: $schedule).textFieldStyle(.dockGlass)
+                DockTextField("When should Hermes run this?", text: $schedule).textFieldStyle(.dockGlass)
             }
             if !schedule.isEmpty {
                 ModalNote(text: CronScheduleFormatting.humanReadable(schedule), icon: .clock)
             }
             labeledField("Request") {
-                TextField("What should Hermes do?", text: $prompt, axis: .vertical)
+                DockTextField("What should Hermes do?", text: $prompt, axis: .vertical)
                     .lineLimit(4...8)
                     .textFieldStyle(.dockGlass)
             }

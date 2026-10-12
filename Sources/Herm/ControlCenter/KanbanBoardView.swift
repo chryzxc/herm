@@ -399,7 +399,7 @@ private struct KanbanTaskCard: View {
         // click, and kept in the tree so losing hover while the menu is open
         // does not tear it down.
         .overlay(alignment: .topTrailing) {
-            Menu { actionMenu } label: {
+            DockMenu { actionMenu } label: {
                 Group {
                     if isMutationPending {
                         ProgressView().controlSize(.mini)
@@ -412,9 +412,7 @@ private struct KanbanTaskCard: View {
                     .contentShape(Rectangle())
             }
             // `.borderlessButton` drops custom labels on macOS, leaving only the indicator.
-            .menuStyle(.button)
             .buttonStyle(.dockHover)
-            .menuIndicator(.hidden)
             .fixedSize()
             .padding(.top, 6)
             .padding(.trailing, 6)
@@ -492,7 +490,7 @@ private struct KanbanTaskCard: View {
         AttachToChatMenu { ChatContext(kanbanTask: task) }
         let destinations = actions.destinations(for: task.status)
         if !destinations.isEmpty {
-            Menu("Move to") {
+            DockMenu("Move to") {
                 ForEach(destinations) { destination in
                     Button(destination.rawValue) { onMove(task, destination) }
                 }
@@ -508,7 +506,7 @@ private struct KanbanTaskCard: View {
         if actions.archive { actionButton("Archive", icon: .archive, action: .archive) }
         if actions.assign, !assignableBots.isEmpty {
             Divider()
-            Menu("Assign to", icon: .userCircle) {
+            DockMenu("Assign to", icon: .userCircle) {
                 ForEach(assignableBots) { bot in
                     Button {
                         onAssign(task, bot.id)

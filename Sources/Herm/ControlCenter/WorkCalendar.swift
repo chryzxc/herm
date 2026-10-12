@@ -9,18 +9,30 @@ struct WorkCommit: Identifiable, Equatable, Sendable {
     var id: String { repo + hash }
 }
 
+/// A pull request the user merged, from GitHub search.
+struct WorkPullRequest: Identifiable, Equatable, Sendable {
+    let repo: String
+    let number: Int
+    let title: String
+    let url: URL?
+    let mergedAt: Date
+    var id: String { "\(repo)#\(number)" }
+}
+
 /// Everything that happened on one local day. Built once per month by
 /// `WorkCalendarIndex.build`; the view only reads it.
 struct WorkDay: Equatable {
     var sessions: [SessionSummary] = []
     var doneTasks: [KanbanTaskSummary] = []
     var commits: [WorkCommit] = []
+    /// Merged PRs are the rollup of commits, so they stay out of `shippedCount` and `activityCount`.
+    var pullRequests: [WorkPullRequest] = []
     var cronRuns: [CronRunSummary] = []
     var usage: TokenUsageReport.Day?
     /// 0 (idle) … 4 (busiest day of the month).
     var heat = 0
     /// Bots that finished tasks, busiest first.
-    var crew: [WorkCount] = []
+    var assignees: [WorkCount] = []
     /// Activity per local hour, 0…23.
     var hours: [Int] = Array(repeating: 0, count: 24)
     var firstAt: Date?
@@ -29,7 +41,31 @@ struct WorkDay: Equatable {
     var activityCount: Int { sessions.count + doneTasks.count + commits.count + cronRuns.count }
     var shippedCount: Int { doneTasks.count + commits.count + cronRuns.filter { !$0.isFailure }.count }
     var hasFailedRun: Bool { cronRuns.contains(where: \.isFailure) }
-    var isEmpty: Bool { activityCount == 0 && usage == nil }
+    var isEmpty: Bool { activityCount == 0 && pullRequests.isEmpty && usage == nil }
+
+    /// Hours of the day with any activity.
+    var activeHours: Int { hours.reduce(0) { $0 + ($1 > 0 ? 1 : 0) } }
+    /// The longest run of consecutive active hours.
+    var longestStretch: Int {
+        var best = 0, run = 0
+        for count in hours {
+            run = count > 0 ? run + 1 : 0
+            best = max(best, run)
+        }
+        return best
+    }
+    /// Finished work for cost-per-item: tasks plus merged PRs, or commits when no PR was merged.
+    var shippedItems: Int { doneTasks.count + (pullRequests.isEmpty ? commits.count : pullRequests.count) }
+    var cost: Double { usage?.estimatedCost ?? 0 }
+}
+
+extension Double {
+    /// Whole-percent change against `usual`, nil when there's no baseline or the change is under 10%.
+    func percentChange(from usual: Double?) -> Int? {
+        guard let usual, usual > 0 else { return nil }
+        let change = Int(((self - usual) / usual * 100).rounded())
+        return abs(change) >= 10 ? change : nil
+    }
 }
 
 /// A name with a tally: a bot's finished tasks or a repo's commits.
@@ -58,17 +94,28 @@ struct WorkCalendarIndex: Equatable {
     let monthCost: Double
     var monthTokens = 0
     var busiestDay: Date?
-    var crew: [WorkCount] = []
+    var assignees: [WorkCount] = []
     var repos: [WorkCount] = []
-    var taskCount = 0, commitCount = 0, sessionCount = 0, runCount = 0
+    var taskCount = 0, commitCount = 0, sessionCount = 0, runCount = 0, pullRequestCount = 0
 
     func day(_ date: Date) -> WorkDay? { days[date] }
+
+    /// Mean activity per active day outside `range`; nil under 3 days, too few to call anything usual.
+    func usualActivity(excluding range: ClosedRange<Date>) -> Double? {
+        var total = 0, count = 0
+        for (date, day) in days where !range.contains(date) && day.activityCount > 0 {
+            total += day.activityCount
+            count += 1
+        }
+        return count >= 3 ? Double(total) / Double(count) : nil
+    }
 
     static func build(
         month: Date,
         sessions: [SessionSummary],
         tasks: [KanbanTaskSummary],
         commits: [WorkCommit],
+        pullRequests: [WorkPullRequest] = [],
         runs: [CronRunSummary],
         usage: [TokenUsageReport.Day],
         now: Date = Date(),
@@ -85,11 +132,12 @@ struct WorkCalendarIndex: Equatable {
         for session in sessions { if let k = key(session.updatedAt) { days[k, default: WorkDay()].sessions.append(session) } }
         for task in tasks { if let k = key(task.completedAt) { days[k, default: WorkDay()].doneTasks.append(task) } }
         for commit in commits { if let k = key(commit.date) { days[k, default: WorkDay()].commits.append(commit) } }
+        for pr in pullRequests { if let k = key(pr.mergedAt) { days[k, default: WorkDay()].pullRequests.append(pr) } }
         for run in runs { if let k = key(run.claimedDate) { days[k, default: WorkDay()].cronRuns.append(run) } }
         for row in usage { if let k = key(row.day) { days[k, default: WorkDay()].usage = row } }
 
         let busiest = days.values.map(\.activityCount).max() ?? 0
-        var monthCrew: [String: Int] = [:]
+        var monthAssignees: [String: Int] = [:]
         var monthRepos: [String: Int] = [:]
         for k in days.keys {
             var day = days[k]!
@@ -97,13 +145,13 @@ struct WorkCalendarIndex: Equatable {
                 day.heat = max(1, Int((4.0 * Double(day.activityCount) / Double(busiest)).rounded(.up)))
             }
             day.doneTasks.sort { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-            var crew: [String: Int] = [:]
-            for task in day.doneTasks { if let bot = task.assignee, !bot.isEmpty { crew[bot, default: 0] += 1 } }
-            day.crew = crew.map { WorkCount(id: $0.key, count: $0.value) }.sorted { ($0.count, $1.id) > ($1.count, $0.id) }
-            for (bot, count) in crew { monthCrew[bot, default: 0] += count }
+            var assignees: [String: Int] = [:]
+            for task in day.doneTasks { if let bot = task.assignee, !bot.isEmpty { assignees[bot, default: 0] += 1 } }
+            day.assignees = assignees.map { WorkCount(id: $0.key, count: $0.value) }.sorted { ($0.count, $1.id) > ($1.count, $0.id) }
+            for (bot, count) in assignees { monthAssignees[bot, default: 0] += count }
             for commit in day.commits { monthRepos[commit.repo, default: 0] += 1 }
             let stamps = day.sessions.compactMap(\.updatedAt) + day.doneTasks.compactMap(\.completedAt)
-                + day.commits.map(\.date) + day.cronRuns.compactMap(\.claimedDate)
+                + day.commits.map(\.date) + day.pullRequests.map(\.mergedAt) + day.cronRuns.compactMap(\.claimedDate)
             for stamp in stamps { day.hours[calendar.component(.hour, from: stamp)] += 1 }
             day.firstAt = stamps.min()
             day.lastAt = stamps.max()
@@ -142,20 +190,22 @@ struct WorkCalendarIndex: Equatable {
             monthCost: days.values.reduce(0) { $0 + ($1.usage?.estimatedCost ?? 0) },
             monthTokens: days.values.reduce(0) { $0 + ($1.usage.map { $0.inputTokens + $0.outputTokens } ?? 0) },
             busiestDay: days.max { ($0.value.activityCount, $1.key) < ($1.value.activityCount, $0.key) }?.key,
-            crew: ranked(monthCrew),
+            assignees: ranked(monthAssignees),
             repos: ranked(monthRepos),
             taskCount: days.values.reduce(0) { $0 + $1.doneTasks.count },
             commitCount: days.values.reduce(0) { $0 + $1.commits.count },
             sessionCount: days.values.reduce(0) { $0 + $1.sessions.count },
-            runCount: days.values.reduce(0) { $0 + $1.cronRuns.count }
+            runCount: days.values.reduce(0) { $0 + $1.cronRuns.count },
+            pullRequestCount: days.values.reduce(0) { $0 + $1.pullRequests.count }
         )
     }
 
     /// Plain-text standup for one day, ready to paste into chat.
     static func standupMarkdown(for date: Date, day: WorkDay) -> String {
         var lines = ["## \(date.formatted(.dateTime.weekday(.wide).month(.wide).day().year()))"]
-        if day.shippedCount > 0 {
+        if day.shippedCount > 0 || !day.pullRequests.isEmpty {
             lines.append("\n**Shipped**")
+            lines += day.pullRequests.map { "- PR #\($0.number): \($0.title) (\($0.repo))" }
             lines += day.doneTasks.map { task in
                 "- \(task.title)" + (task.assignee.map { $0.isEmpty ? "" : " (\($0))" } ?? "")
             }
@@ -187,5 +237,104 @@ struct WorkCalendarIndex: Equatable {
 
     static func parseDate(_ string: String) -> Date? {
         plainISO.date(from: string) ?? fractionalISO.date(from: string)
+    }
+}
+
+/// A run of days from one month's index, summed for the Week and Month scopes.
+struct WorkRange: Equatable {
+    struct Point: Equatable, Identifiable {
+        let date: Date
+        let shipped: Int
+        let sessions: Int
+        let runs: Int
+        let hasFailure: Bool
+        var id: Date { date }
+        var total: Int { shipped + sessions + runs }
+    }
+    var points: [Point] = []
+    var pullRequests = 0, tasks = 0, commits = 0, sessions = 0, runs = 0, activeDays = 0, tokens = 0
+    var activeHours = 0, shippedItems = 0
+    struct Job: Identifiable, Equatable {
+        let id: String
+        var runs = 0
+        var failed = 0
+    }
+    /// Automation runs per job, most runs first.
+    var jobs: [Job] = []
+    /// Mean activity per occurrence of each weekday (index 0 = Sunday); empty under two weeks of days.
+    var weekdayMeans: [Double] = []
+    /// Activity per active day against the month's other active days.
+    var vsUsual: Int?
+    var cost = 0.0
+    /// Only set when the range is the whole month.
+    var streak = 0
+    var repos: [WorkCount] = []
+    var assignees: [WorkCount] = []
+
+    var isEmpty: Bool { points.allSatisfy { $0.total == 0 } && pullRequests == 0 }
+}
+
+extension WorkCalendarIndex {
+    /// Days in `[from, to]` that fall inside this month; a week crossing a month edge only counts the loaded side.
+    func range(from: Date, to: Date, calendar: Calendar = .current) -> WorkRange {
+        var range = WorkRange()
+        var repoTally: [String: Int] = [:], assigneeTally: [String: Int] = [:]
+        var jobTally: [String: WorkRange.Job] = [:]
+        var weekdayTotals = [Int](repeating: 0, count: 7), weekdayDays = [Int](repeating: 0, count: 7)
+        let monthEnd = calendar.date(byAdding: .month, value: 1, to: month) ?? month
+        var cursor = max(calendar.startOfDay(for: from), month)
+        let last = min(calendar.startOfDay(for: to), calendar.date(byAdding: .day, value: -1, to: monthEnd) ?? to)
+        while cursor <= last {
+            let day = days[cursor]
+            range.points.append(.init(
+                date: cursor,
+                shipped: (day?.doneTasks.count ?? 0) + (day?.commits.count ?? 0),
+                sessions: day?.sessions.count ?? 0,
+                runs: day?.cronRuns.count ?? 0,
+                hasFailure: day?.hasFailedRun ?? false
+            ))
+            if let day {
+                range.pullRequests += day.pullRequests.count
+                range.tasks += day.doneTasks.count
+                range.commits += day.commits.count
+                range.sessions += day.sessions.count
+                range.runs += day.cronRuns.count
+                if day.activityCount > 0 { range.activeDays += 1 }
+                range.activeHours += day.activeHours
+                range.shippedItems += day.shippedItems
+                if let usage = day.usage {
+                    range.tokens += usage.inputTokens + usage.outputTokens
+                    range.cost += usage.estimatedCost
+                }
+                for commit in day.commits { repoTally[commit.repo, default: 0] += 1 }
+                for run in day.cronRuns {
+                    let id = run.jobID ?? "manual"
+                    var job = jobTally[id] ?? WorkRange.Job(id: id)
+                    job.runs += 1
+                    if run.isFailure { job.failed += 1 }
+                    jobTally[id] = job
+                }
+                for bot in day.assignees { assigneeTally[bot.id, default: 0] += bot.count }
+            }
+            let weekday = calendar.component(.weekday, from: cursor) - 1
+            weekdayTotals[weekday] += range.points.last?.total ?? 0
+            weekdayDays[weekday] += 1
+            cursor = calendar.date(byAdding: .day, value: 1, to: cursor) ?? monthEnd
+        }
+        func ranked(_ tally: [String: Int]) -> [WorkCount] {
+            tally.map { WorkCount(id: $0.key, count: $0.value) }.sorted { ($0.count, $1.id) > ($1.count, $0.id) }
+        }
+        range.repos = ranked(repoTally)
+        range.jobs = jobTally.values.sorted { ($0.runs, $1.id) > ($1.runs, $0.id) }
+        if range.points.count >= 14 {
+            range.weekdayMeans = (0..<7).map { weekdayDays[$0] > 0 ? Double(weekdayTotals[$0]) / Double(weekdayDays[$0]) : 0 }
+        }
+        range.assignees = ranked(assigneeTally)
+        if range.activeDays > 0, let first = range.points.first?.date, let last = range.points.last?.date {
+            let perDay = Double(range.points.reduce(0) { $0 + $1.total }) / Double(range.activeDays)
+            range.vsUsual = perDay.percentChange(from: usualActivity(excluding: first...last))
+        }
+        if range.points.count == calendar.range(of: .day, in: .month, for: month)?.count { range.streak = currentStreak }
+        return range
     }
 }
