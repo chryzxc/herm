@@ -84,7 +84,7 @@ struct KnowledgeCenterView: View {
     private var skillSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionTitle("SKILLS", detail: "\(filteredSkills.count) visible")
-            TextField("Search verified skill summaries", text: $query)
+            DockTextField("Search verified skill summaries", text: $query)
                 .textFieldStyle(.dockGlass)
                 .accessibilityLabel("Search skills")
             if filteredSkills.isEmpty {
