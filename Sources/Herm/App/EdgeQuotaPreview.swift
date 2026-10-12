@@ -103,6 +103,7 @@ struct EdgeQuotaPreview: View {
     let openQuota: () -> Void
     /// Set while a quota announcement is showing: only that provider is drawn.
     var change: EdgeQuotaChange? = nil
+    var sessionActions: (() -> Void)? = nil
     @AppStorage(EdgeQuotaLayout.storageKey) private var layout: EdgeQuotaLayout = .list
 
     private var refreshing: Bool { control.refreshState(for: "provider.quota")?.isRefreshing == true }
@@ -153,6 +154,7 @@ struct EdgeQuotaPreview: View {
                 }
             }
             Spacer(minLength: 0)
+            if let sessionActions { Button("Session…", action: sessionActions).buttonStyle(.dockHover).accessibilityLabel("Capacity and actions for the selected quick destination") }
             EdgePreviewFooterButton(title: "Open Quota", icon: .arrowRight, action: openQuota)
         }
         .lineLimit(1)
@@ -298,12 +300,17 @@ struct EdgeQuotaPreview: View {
                         + Text("%")
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundColor(Color.dockSecondaryText)
+                    } else if let value = Self.ringValue(window) {
+                        Text(value)
+                            .font(.system(size: 10, weight: .semibold))
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.6)
+                            .frame(maxWidth: 32)
                     } else {
                         Text("—").font(.system(size: 11, weight: .semibold))
                     }
                 }
                 .lineLimit(1)
-                .fixedSize()
             }
             .frame(width: 38, height: 38)
             HStack(spacing: 4) {
@@ -352,6 +359,14 @@ struct EdgeQuotaPreview: View {
         return parts.joined(separator: ", ")
     }
 
+    /// Short in-ring text for windows that report a value, not a percentage
+    /// (pay-as-you-go balance and runway).
+    nonisolated static func ringValue(_ window: ProviderQuotaWindow) -> String? {
+        guard let display = window.remainingDisplay else { return nil }
+        if display == "Under a day" { return "<1d" }
+        return display.replacingOccurrences(of: " days", with: "d").replacingOccurrences(of: " est.", with: "")
+    }
+
     /// Picks the 5-hour ("Session") and weekly windows every quota service
     /// reports, labelled compactly. Providers without those windows fall back
     /// to their first two windows under their own names.
@@ -360,6 +375,10 @@ struct EdgeQuotaPreview: View {
         let weekly = windows.first { $0.label == "Weekly" || $0.id == "gemini-weekly" }
         let known = [session.map { ("5h", $0) }, weekly.map { ("7d", $0) }].compactMap { $0 }
         if !known.isEmpty { return known.map { (label: $0.0, window: $0.1) } }
+        // Pay-as-you-go cards: balance plus how long it lasts.
+        if let runway = windows.first(where: { $0.id == "hermes-runway" }), let balance = windows.first {
+            return [(label: balance.label, window: balance), (label: "Runway", window: runway)]
+        }
         return windows.prefix(2).map { (label: $0.label, window: $0) }
     }
 
@@ -520,6 +539,9 @@ struct ChatQuotaChip: View {
         case let p where p.contains("zai") || p.contains("glm"): return "glm"
         case let p where p.contains("opencode"): return "opencode"
         case let p where p.contains("gemini") || p.contains("antigravity"): return "antigravity"
+        case let p where p.contains("deepseek"): return "deepseek"
+        case let p where p.contains("kimi") || p.contains("moonshot"): return "kimi"
+        case let p where p.contains("openrouter"): return "openrouter"
         default: return nil
         }
     }

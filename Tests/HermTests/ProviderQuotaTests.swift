@@ -93,6 +93,65 @@ struct ProviderQuotaTests {
     }
 
     @MainActor
+    @Test func normalizesDeepSeekBalance() {
+        let raw = DeepSeekQuotaService.normalize([
+            "is_available": true,
+            "balance_infos": [["currency": "USD", "total_balance": "12.5", "granted_balance": "0.00", "topped_up_balance": "12.5"]]
+        ], now: Date(timeIntervalSince1970: 1_700_000_000))
+        let snapshot = ControlCenterModel.parseProviderQuota(raw)
+        #expect(snapshot?.provider == "deepseek")
+        #expect(snapshot?.windows.first?.remainingDisplay == "$12.50")
+        #expect(snapshot?.windows.first?.remainingPercent == nil)
+        #expect(snapshot?.windows.first?.amount == 12.5)
+        #expect(snapshot?.windows.first?.limitDisplay == "Topped up")
+        #expect(BalanceQuota.envValue("DEEPSEEK_API_KEY", in: "A=1\nexport DEEPSEEK_API_KEY=\"sk-x\"\n") == "sk-x")
+        #expect(BalanceQuota.envValue("DEEPSEEK_API_KEY", in: "DEEPSEEK_API_KEY=\n") == nil)
+    }
+
+    @MainActor
+    @Test func balanceCardsAddSpendTopModelAndRunwayFromHermesUsage() throws {
+        let balance = try #require(ControlCenterModel.parseProviderQuota(DeepSeekQuotaService.normalize([
+            "is_available": true, "balance_infos": [["currency": "USD", "total_balance": "5.00"]]
+        ])))
+        func model(_ name: String, _ providers: [String], cost: Double, tokens: Int) -> TokenUsageReport.Model {
+            .init(model: name, inputTokens: tokens, outputTokens: 0, estimatedCost: cost, sessions: 1, apiCalls: 2, tasks: [], providers: providers)
+        }
+        let usage = TokenUsageReport(
+            days: 10, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0, estimatedCost: 0, actualCost: 0,
+            sessions: 0, apiCalls: 0, daily: [],
+            models: [model("deepseek-chat", ["deepseek"], cost: 0.5, tokens: 1000), model("deepseek-reasoner", [], cost: 0.5, tokens: 3000), model("deepseek-chat-or", ["openrouter"], cost: 9, tokens: 9)],
+            tasks: [], tools: [], skills: [], skillLoads: 0, distinctSkills: 0
+        )
+        let windows = ControlCenterModel.balanceUsageWindows(for: balance, usage: usage)
+        #expect(windows.map(\.id) == ["hermes-spend", "hermes-top-model", "hermes-runway"])
+        #expect(windows[1].remainingDisplay == "deepseek-reasoner")
+        #expect(windows[2].remainingDisplay == "~50 days")
+        #expect(ControlCenterModel.balanceUsageWindows(for: balance, usage: nil).isEmpty)
+        let compact = EdgeQuotaPreview.compactWindows(balance.windows + windows)
+        #expect(compact.map(\.label) == ["Balance", "Runway"])
+        #expect(compact.map { EdgeQuotaPreview.ringValue($0.window) } == ["$5.00", "~50d"])
+    }
+
+    @MainActor
+    @Test func normalizesKimiAndOpenRouterBalances() {
+        let kimi = ControlCenterModel.parseProviderQuota(KimiQuotaService.normalize([
+            "code": 0, "data": ["available_balance": 49.58, "voucher_balance": 46.58, "cash_balance": 3.0]
+        ]))
+        #expect(kimi?.windows.first?.remainingDisplay == "$49.58")
+        #expect(kimi?.windows.first?.remainingPercent == nil)
+
+        let openrouter = ControlCenterModel.parseProviderQuota(OpenRouterQuotaService.normalize(
+            credits: ["data": ["total_credits": 20, "total_usage": 5]],
+            key: ["data": ["limit": 10, "limit_remaining": 2.5, "usage": 7.5]]
+        ))
+        #expect(openrouter?.windows.map(\.id) == ["credits", "key-limit"])
+        #expect(openrouter?.windows.map(\.remainingPercent) == [75, 25])
+
+        let usageOnly = ControlCenterModel.parseProviderQuota(OpenRouterQuotaService.normalize(credits: nil, key: ["data": ["limit": NSNull(), "usage": 1.25]]))
+        #expect(usageOnly?.windows.first?.remainingDisplay == "$1.25 spent")
+    }
+
+    @MainActor
     @Test func normalizesClaudeUsageWindows() {
         let raw = ClaudeQuotaService.normalize([
             "five_hour": ["utilization": 25, "resets_at": "2026-08-22T12:00:00Z"],

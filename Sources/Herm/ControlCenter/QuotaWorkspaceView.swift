@@ -11,11 +11,15 @@ struct QuotaWorkspaceView: View {
     @AppStorage("dock.quota.autoRefreshMinutes") private var autoRefreshMinutes = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var connectTarget: QuotaProviderDescriptor?
+    @State private var addingPoolAccount = false
     @State private var renamingProviderID: String?
     @State private var renameDraft = ""
     @State private var draggingProviderID: String?
     @State private var removalCandidate: ProviderQuotaSnapshot?
     @FocusState private var renameFieldFocused: Bool
+    @State private var isSyncingPeak = false
+    @State private var peakSyncError: String?
+    @State private var peakSyncedAt = ProviderPeakSchedule.syncedAt
 
     private static let autoRefreshChoices = [0, 1, 5, 15]
 
@@ -74,6 +78,7 @@ struct QuotaWorkspaceView: View {
         .sheet(item: $connectTarget) { descriptor in
             ProviderConnectSheet(descriptor: descriptor, control: control)
         }
+        .sheet(isPresented: $addingPoolAccount) { AddPoolAccountSheet(control: control) }
         .task(id: autoRefreshMinutes) { await runAutoRefresh() }
         .task { await control.configEditor.load() }  // rotation strategy for the credential menu
         .confirmationDialog(
@@ -114,7 +119,28 @@ struct QuotaWorkspaceView: View {
 
             Spacer(minLength: 8)
 
+            Button { addingPoolAccount = true } label: {
+                DockIconLabel("Add Account", icon: .plus)
+            }
+            .buttonStyle(.dockSecondary)
+            .help("Add an account to a Hermes credential pool")
+
             autoRefreshMenu
+
+            Button {
+                guard !isSyncingPeak else { return }
+                isSyncingPeak = true
+                Task {
+                    peakSyncError = await ProviderPeakSchedule.syncFromWeb()
+                    peakSyncedAt = ProviderPeakSchedule.syncedAt
+                    isSyncingPeak = false
+                }
+            } label: {
+                DockIconLabel(isSyncingPeak ? "Syncing…" : "Sync Peak Hours", icon: .arrowsClockwise)
+            }
+            .buttonStyle(.dockSecondary)
+            .disabled(isSyncingPeak)
+            .help(peakSyncError ?? peakSyncedAt.map { "Peak hours synced \($0.formatted(.relative(presentation: .named))). Ask Hermes to search the web again." } ?? "Ask Hermes to search the web for current provider peak and off-peak hours.")
 
             if let lastSuccess = refreshState?.lastSuccess {
                 Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
@@ -136,13 +162,12 @@ struct QuotaWorkspaceView: View {
     }
 
     private var autoRefreshMenu: some View {
-        Menu {
-            Picker("Auto-refresh", selection: $autoRefreshMinutes) {
+        DockMenu {
+            DockMenuChoices(selection: $autoRefreshMinutes) {
                 ForEach(Self.autoRefreshChoices, id: \.self) { minutes in
-                    Text(Self.autoRefreshTitle(minutes)).tag(minutes)
+                    DockMenuOption(Self.autoRefreshTitle(minutes), value: minutes)
                 }
             }
-            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 5) {
                 DockIcon(.clock, size: 13, color: Color.dockMetadataText)
@@ -151,8 +176,6 @@ struct QuotaWorkspaceView: View {
                     .foregroundStyle(Color.dockSecondaryText)
             }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .fixedSize()
         .help("Re-read provider quota automatically while this page is open")
     }
@@ -289,6 +312,8 @@ struct QuotaWorkspaceView: View {
         return VStack(alignment: .leading, spacing: 14) {
             providerHeader(snapshot, health: health)
 
+            peakStatusLine(snapshot.provider, now: now)
+
             if snapshot.windows.isEmpty {
                 Text("No quota windows were reported.")
                     .font(DockTypography.body)
@@ -370,13 +395,11 @@ struct QuotaWorkspaceView: View {
                     .frame(width: DockControlMetrics.compactHeight, height: DockControlMetrics.compactHeight)
                     .accessibilityLabel("Removing \(snapshot.displayName) from Hermes")
             } else {
-                Menu { providerActions(snapshot) } label: {
+                DockMenu { providerActions(snapshot) } label: {
                     DockIcon(.dotsThree, size: 15, color: Color.dockSecondaryText)
                         .frame(width: DockControlMetrics.compactHeight, height: DockControlMetrics.compactHeight)
                         .contentShape(Rectangle())
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Provider actions")
                 .accessibilityLabel("Actions for \(snapshot.displayName)")
@@ -610,6 +633,14 @@ struct QuotaWorkspaceView: View {
                 )
                 .help("Compared with spending this window evenly until it resets.")
             }
+        }
+    }
+
+    @ViewBuilder
+    private func peakStatusLine(_ providerID: String, now: Date) -> some View {
+        if let notice = ProviderPeakSchedule.notice(forQuotaID: providerID, now: now) {
+            insight(notice.text, color: notice.isPeak ? .dockWarning : .dockSuccess, icon: .clock)
+                .help(notice.help)
         }
     }
 

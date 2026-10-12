@@ -29,7 +29,7 @@ struct QuotaProviderDescriptor: Identifiable, Equatable, Hashable {
 }
 
 enum QuotaProviderCatalog {
-    static let all: [QuotaProviderDescriptor] = [codexHermes, opencode, glm, claude, antigravity]
+    static let all: [QuotaProviderDescriptor] = [codexHermes, opencode, glm, deepseek, kimi, openrouter, claude, antigravity]
     private static let orderDefaultsKey = "quota.providerOrder"
 
     static let codexHermes = QuotaProviderDescriptor(
@@ -62,6 +62,39 @@ enum QuotaProviderCatalog {
         connect: .apiKey(
             instruction: "Paste your Z.ai API key. It is stored in Herm's own provider config and used only to read quota.",
             storageKey: "glm"
+        )
+    )
+
+    static let deepseek = QuotaProviderDescriptor(
+        id: "deepseek",
+        displayName: "DeepSeek",
+        summary: "DeepSeek API pay-as-you-go balance.",
+        website: URL(string: "https://platform.deepseek.com"),
+        connect: .apiKey(
+            instruction: "Paste your DeepSeek API key, or leave it to Hermes' DEEPSEEK_API_KEY. It is stored in Herm's own provider config and used only to read the balance.",
+            storageKey: "deepseek"
+        )
+    )
+
+    static let kimi = QuotaProviderDescriptor(
+        id: "kimi",
+        displayName: "Kimi",
+        summary: "Moonshot (Kimi) open platform pay-as-you-go balance.",
+        website: URL(string: "https://platform.moonshot.ai"),
+        connect: .apiKey(
+            instruction: "Paste your Moonshot platform API key, or leave it to Hermes' MOONSHOT_API_KEY / KIMI_API_KEY. It is stored in Herm's own provider config and used only to read the balance.",
+            storageKey: "kimi"
+        )
+    )
+
+    static let openrouter = QuotaProviderDescriptor(
+        id: "openrouter",
+        displayName: "OpenRouter",
+        summary: "OpenRouter credits and the key's spend limit.",
+        website: URL(string: "https://openrouter.ai"),
+        connect: .apiKey(
+            instruction: "Paste your OpenRouter API key, or leave it to Hermes' OPENROUTER_API_KEY. It is stored in Herm's own provider config and used only to read credits.",
+            storageKey: "openrouter"
         )
     )
 

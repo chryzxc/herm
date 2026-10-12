@@ -274,7 +274,7 @@ struct ProviderConnectSheet: View {
             if login.isRunning {
                 labeledField("Authorization code", hint: "Shown in the browser after you sign in") {
                     HStack(spacing: 8) {
-                        TextField("Paste the code", text: $callbackCodeInput)
+                        DockTextField("Paste the code", text: $callbackCodeInput)
                             .textFieldStyle(.dockGlass)
                             .onSubmit { submitCallbackCode() }
                         Button("Submit") { submitCallbackCode() }

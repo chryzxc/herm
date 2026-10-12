@@ -21,6 +21,7 @@ struct UsageWorkspaceView: View {
             if let report = control.tokenUsage {
                 overview(report)
                 DailyUsageChart(daily: report.daily)
+                UsageHeatmap(daily: control.yearActivity)
                 modelsSection(report)
                 if !report.tasks.isEmpty { tasksSection(report) }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 320), spacing: 16, alignment: .top)], alignment: .leading, spacing: 16) {
@@ -44,18 +45,21 @@ struct UsageWorkspaceView: View {
         }
         .padding(.top, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .task { control.refreshYearActivity() }
     }
+
+    /// Indent that lines sub-rows up under the model name, past the provider icon.
+    private func inset(_ model: TokenUsageReport.Model) -> CGFloat { model.providers.isEmpty ? 18 : 44 }
 
     // MARK: Toolbar
 
     private var toolbar: some View {
         HStack(spacing: 10) {
-            Picker("Range", selection: $days) {
-                ForEach(Self.dayChoices, id: \.self) { Text("\($0) days").tag($0) }
+            HStack(spacing: 4) {
+                ForEach(Self.dayChoices, id: \.self) { choice in
+                    DockTabButton(title: "\(choice) days", isSelected: days == choice) { days = choice }
+                }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
             .onChange(of: days) { _, days in control.refreshTokenUsage(days: days) }
 
             Spacer(minLength: 8)
@@ -72,7 +76,10 @@ struct UsageWorkspaceView: View {
                 label: refreshState?.isRefreshing == true ? "Refreshing usage" : "Refresh usage",
                 isBusy: refreshState?.isRefreshing == true,
                 style: DockThemePalette(theme: DockThemeRuntime.current)
-            ) { control.refreshTokenUsage(days: days) }
+            ) {
+                control.refreshTokenUsage(days: days)
+                control.refreshYearActivity()
+            }
         }
         .frame(minHeight: DockControlMetrics.hitTarget)
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
@@ -147,6 +154,9 @@ struct UsageWorkspaceView: View {
                                 .foregroundStyle(Color.dockMetadataText)
                                 .frame(width: 10)
                                 .opacity(model.tasks.isEmpty ? 0 : 1)
+                            if let provider = model.providers.first {
+                                ProviderMarkBadge(mark: ProviderMark(hermesProvider: provider), size: 18)
+                            }
                             Text(model.model)
                                 .font(DockTypography.rowTitle)
                                 .foregroundStyle(Color.dockPrimaryText)
@@ -173,13 +183,13 @@ struct UsageWorkspaceView: View {
                     .disabled(model.tasks.isEmpty)
 
                     meter(Double(model.totalTokens) / Double(maxTokens))
-                        .padding(.leading, 18)
+                        .padding(.leading, inset(model))
 
                     Text("\(Self.tokens(model.inputTokens)) in · \(Self.tokens(model.outputTokens)) out · \(model.sessions) sessions · \(model.apiCalls.formatted()) calls · \(model.estimatedCost > 0 ? Self.cost(model.estimatedCost) : "no per-token cost")")
                         .font(DockTypography.metadata)
                         .foregroundStyle(Color.dockMetadataText)
                         .lineLimit(1)
-                        .padding(.leading, 18)
+                        .padding(.leading, inset(model))
 
                     if expandedModels.contains(model.id) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -187,7 +197,7 @@ struct UsageWorkspaceView: View {
                                 taskLine(task)
                             }
                         }
-                        .padding(.leading, 18)
+                        .padding(.leading, inset(model))
                         .padding(.top, 2)
                     }
                 }
@@ -363,12 +373,11 @@ private struct DailyUsageChart: View {
             HStack {
                 DockSectionLabel(title: "Daily")
                 Spacer()
-                Picker("Metric", selection: $metric) {
-                    ForEach(DailyMetric.allCases) { Text($0.rawValue).tag($0) }
+                HStack(spacing: 4) {
+                    ForEach(DailyMetric.allCases) { choice in
+                        DockTabButton(title: choice.rawValue, isSelected: metric == choice) { metric = choice }
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
             }
 
             if daily.isEmpty {
