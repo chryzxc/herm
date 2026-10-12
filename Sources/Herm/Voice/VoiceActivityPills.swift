@@ -351,9 +351,19 @@ struct VoiceRecentTranscript: View {
                     }
                     ForEach(recent) { message in
                         let isUser = message.role == .user
-                        Text(message.text.trimmingCharacters(in: .whitespacesAndNewlines))
-                            .font(.system(size: 12, weight: isUser ? .medium : .regular))
-                            .foregroundStyle(isUser ? Color.dockSecondaryText : Color.dockPrimaryText)
+                        Group {
+                            if isUser {
+                                Text(message.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Color.dockSecondaryText)
+                            } else {
+                                MarkdownMessageView(
+                                    markdown: message.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                                    bodyFont: .system(size: 12)
+                                )
+                                .equatable()
+                            }
+                        }
                             .lineLimit(5)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
