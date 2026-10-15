@@ -320,3 +320,102 @@ struct SessionSurfacePreviewPlaceholder: View {
         .background(Color.dockCanvas)
     }
 }
+
+/// Chooses which git worktree the session inspector shows. View-only: the
+/// agent keeps working in its own folder.
+struct WorktreePicker: View {
+    let worktrees: [RepositoryWorktreeSummary]
+    /// The session's bound source folder.
+    let mainPath: String?
+    @Binding var selection: String?
+    @State private var isOpen = false
+    @State private var query = ""
+
+    private var current: RepositoryWorktreeSummary? { worktrees.first { $0.path == selection } }
+
+    private var filtered: [RepositoryWorktreeSummary] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return worktrees }
+        return worktrees.filter { $0.displayName.localizedCaseInsensitiveContains(q) || ($0.branch ?? "").localizedCaseInsensitiveContains(q) }
+    }
+
+    var body: some View {
+        Button { isOpen.toggle() } label: {
+            HStack(spacing: 8) {
+                DockIcon(.folder).font(.system(size: 12)).foregroundStyle(Color.dockAccent)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text("Viewing").foregroundStyle(Color.dockMetadataText)
+                        Text(current?.displayName ?? "Worktree").foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    Text(branchLabel(current))
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 4)
+                if worktrees.count > 1 {
+                    DockIcon(.caretUpDown).font(.system(size: 10)).foregroundStyle(Color.dockMetadataText)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(worktrees.count < 2)
+        .help(current?.path ?? "")
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            VStack(spacing: 0) {
+                if worktrees.count > 6 {
+                    DockTextField("Search worktrees", text: $query).textFieldStyle(.dockGlass).padding(8)
+                }
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filtered) { tree in row(tree) }
+                    }
+                    .padding(.vertical, 4)
+                }
+                .frame(maxHeight: 320)
+            }
+            .frame(width: 320)
+        }
+    }
+
+    private func branchLabel(_ tree: RepositoryWorktreeSummary?) -> String {
+        guard let tree else { return "" }
+        return tree.branch ?? tree.headRevision.map { "detached @ \($0)" } ?? "detached"
+    }
+
+    private func row(_ tree: RepositoryWorktreeSummary) -> some View {
+        Button {
+            selection = tree.path
+            isOpen = false
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: tree.path == selection ? "checkmark" : (tree.isLocked ? "lock" : "arrow.triangle.branch"))
+                    .frame(width: 14).foregroundStyle(tree.path == selection ? Color.dockAccent : Color.dockMetadataText)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                        Text(tree.displayName).font(.callout).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.middle)
+                        if tree.path == mainPath {
+                            Text("source folder").font(.caption2).foregroundStyle(Color.dockMetadataText)
+                        }
+                    }
+                    Text(branchLabel(tree)).font(.caption.monospaced()).foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(.middle)
+                }
+                Spacer(minLength: 4)
+                if (tree.snapshot?.changedFiles ?? 0) > 0 { Circle().fill(Color.dockAccent).frame(width: 6, height: 6) }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(tree.path)
+        .disabled(tree.isPrunable)
+        .opacity(tree.isPrunable ? 0.45 : 1)
+    }
+}

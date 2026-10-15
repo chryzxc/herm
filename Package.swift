@@ -17,7 +17,7 @@ let package = Package(
             name: "Herm",
             dependencies: [.product(name: "SwiftTerm", package: "SwiftTerm")],
             exclude: ["Info.plist", "Resources/DockAppIcon.icns"],
-            resources: [.copy("Resources/DockAppIcon.png"), .copy("Resources/FileIcons")],
+            resources: [.copy("Resources/DockAppIcon.png"), .copy("Resources/FileIcons"), .copy("Resources/HermesSSHBridge.mjs"), .copy("Resources/HermesSSHBridge.LICENSE"), .copy("Resources/BrowserFinder.js"), .copy("Resources/BrowserFinder.LICENSE"), .copy("Resources/BrowserAnnotate.js")],
             linkerSettings: [
                 .unsafeFlags([
                     "-Xlinker", "-sectcreate",

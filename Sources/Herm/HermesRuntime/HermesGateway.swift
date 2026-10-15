@@ -51,6 +51,10 @@ final class HermesGateway: NSObject {
     var onEvent: ((String, [String: Any]) -> Void)?
     var onConnectionChange: ((Bool) -> Void)?
     private let workingDirectory: URL?
+    private let connectionSettings: GatewayConnectionSettings
+    private let connectionSettingsError: String?
+    private var baseURL: URL?
+    private var sshBridge: GatewaySSHBridge?
     private var backend: Process?
     private var urlSession: URLSession?
     private var socket: URLSessionWebSocketTask?
@@ -71,8 +75,11 @@ final class HermesGateway: NSObject {
     /// to 16 MiB for attachments; allow comfortably more than that inbound.
     static let maximumWebSocketMessageSize = 256 * 1024 * 1024
 
-    init(workingDirectory: URL? = nil) {
+    init(workingDirectory: URL? = nil, connectionSettings: GatewayConnectionSettings? = nil, sessionToken: String? = nil) {
         self.workingDirectory = workingDirectory
+        self.connectionSettings = connectionSettings ?? GatewayConnectionStore.shared.launchSettings
+        self.connectionSettingsError = connectionSettings == nil ? GatewayConnectionStore.shared.error : nil
+        self.token = sessionToken ?? (connectionSettings == nil ? GatewayConnectionStore.shared.launchToken : nil) ?? ""
         super.init()
     }
 
@@ -100,11 +107,20 @@ final class HermesGateway: NSObject {
 
     private func establishConnection() async throws {
         DebugLog.write("connect: starting")
-        try await startBackendIfNeeded()
-        guard let port else { throw GatewayError.backendUnavailable }
-        DebugLog.write("connect: backend ready on port \(port)")
-        let request = Self.webSocketRequest(port: port, token: token)
-        let session = URLSession(configuration: .ephemeral)
+        try await prepareEndpoint()
+        guard let baseURL else { throw GatewayError.backendUnavailable }
+        let request: URLRequest
+        if usesBrowserSignIn {
+            let (status, json) = try await GatewayHTTP.request(GatewayConnectionSettings.endpoint(baseURL, "/api/auth/ws-ticket"), method: "POST", signIn: true, authBase: baseURL)
+            guard (200..<300).contains(status) else { throw GatewayError.httpError(status) }
+            guard let ticket = json["ticket"] as? String, !ticket.isEmpty else { throw GatewayError.malformedResponse }
+            request = try Self.webSocketRequest(baseURL: baseURL, credential: ticket, ticket: true)
+        } else {
+            request = try Self.webSocketRequest(baseURL: baseURL, credential: token)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        let session = URLSession(configuration: configuration, delegate: GatewaySessionDelegate(), delegateQueue: nil)
         urlSession = session
         let task = session.webSocketTask(with: request)
         task.maximumMessageSize = Self.maximumWebSocketMessageSize
@@ -158,8 +174,19 @@ final class HermesGateway: NSObject {
         // there, while the /api/ws handler itself rejects header-only auth.
         // Supplying both forms is required for compatibility across those
         // versions.
-        var request = URLRequest(url: URL(string: "ws://127.0.0.1:\(port)/api/ws?token=\(token)")!)
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        try! webSocketRequest(baseURL: URL(string: "http://127.0.0.1:\(port)")!, credential: token)
+    }
+
+    static func webSocketRequest(baseURL: URL, credential: String, ticket: Bool = false) throws -> URLRequest {
+        guard !credential.isEmpty, !credential.contains("\r"), !credential.contains("\n") else { throw GatewayConnectionError.missingToken }
+        var parts = URLComponents(url: try GatewayConnectionSettings.endpoint(baseURL, "/api/ws"), resolvingAgainstBaseURL: false)!
+        parts.scheme = baseURL.scheme == "https" ? "wss" : "ws"
+        parts.queryItems = [URLQueryItem(name: ticket ? "ticket" : "token", value: credential)]
+        // Hermes decodes queries as form data; a literal plus would become a space.
+        parts.percentEncodedQuery = parts.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        guard let url = parts.url else { throw GatewayError.malformedResponse }
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        if !ticket { request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization") }
         return request
     }
 
@@ -182,6 +209,9 @@ final class HermesGateway: NSObject {
         backend?.terminate()
         backend = nil
         port = nil
+        baseURL = nil
+        sshBridge?.close()
+        sshBridge = nil
         backendOutput = ""
         backendStartWaiters.forEach { $0.resume(throwing: GatewayError.disconnected) }
         backendStartWaiters.removeAll()
@@ -194,23 +224,9 @@ final class HermesGateway: NSObject {
 
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         try await connect()
-        guard let port else { throw GatewayError.backendUnavailable }
-        guard let url = URL(string: "http://127.0.0.1:\(port)\(path)") else {
-            throw GatewayError.malformedResponse
-        }
-        var req = URLRequest(url: url)
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let session = urlSession ?? URLSession(configuration: .ephemeral)
-        let (data, response) = try await session.data(for: req)
-        guard let response = response as? HTTPURLResponse else {
-            throw GatewayError.malformedResponse
-        }
-        guard (200..<300).contains(response.statusCode) else {
-            throw GatewayError.httpError(response.statusCode)
-        }
-        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw GatewayError.malformedResponse
-        }
+        guard let baseURL else { throw GatewayError.backendUnavailable }
+        let (status, result) = try await GatewayHTTP.request(GatewayConnectionSettings.endpoint(baseURL, path), token: usesBrowserSignIn ? nil : token, signIn: usesBrowserSignIn, authBase: baseURL)
+        guard (200..<300).contains(status) else { throw GatewayError.httpError(status) }
         return result
     }
 
@@ -218,28 +234,56 @@ final class HermesGateway: NSObject {
     /// `detail` is surfaced verbatim so the user sees why (e.g. open parents).
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
         try await connect()
-        guard let port else { throw GatewayError.backendUnavailable }
-        guard let url = URL(string: "http://127.0.0.1:\(port)\(path)") else {
-            throw GatewayError.malformedResponse
-        }
-        var req = URLRequest(url: url)
-        req.httpMethod = method
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let session = urlSession ?? URLSession(configuration: .ephemeral)
-        let (data, response) = try await session.data(for: req)
-        guard let response = response as? HTTPURLResponse else {
-            throw GatewayError.malformedResponse
-        }
-        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-        guard (200..<300).contains(response.statusCode) else {
-            if let detail = json?["detail"] as? String, !detail.isEmpty {
-                throw GatewayError.httpRefused(response.statusCode, detail)
+        guard let baseURL else { throw GatewayError.backendUnavailable }
+        let (status, json) = try await GatewayHTTP.request(GatewayConnectionSettings.endpoint(baseURL, path), method: method, token: usesBrowserSignIn ? nil : token, signIn: usesBrowserSignIn, authBase: baseURL, body: body)
+        guard (200..<300).contains(status) else {
+            if let detail = json["detail"] as? String, !detail.isEmpty {
+                throw GatewayError.httpRefused(status, detail)
             }
-            throw GatewayError.httpError(response.statusCode)
+            throw GatewayError.httpError(status)
         }
-        return json ?? [:]
+        return json
+    }
+
+    private var usesBrowserSignIn: Bool {
+        connectionSettings.mode == .cloud || (connectionSettings.mode == .remote && connectionSettings.authentication == .signIn)
+    }
+
+    private func prepareEndpoint() async throws {
+        if let connectionSettingsError { throw GatewayConnectionError.unavailable(connectionSettingsError) }
+        if baseURL != nil { return }
+        switch connectionSettings.mode {
+        case .local:
+            try await startBackendIfNeeded()
+            guard let port else { throw GatewayError.backendUnavailable }
+            baseURL = URL(string: "http://127.0.0.1:\(port)")
+        case .remote, .cloud:
+            let url = try GatewayConnectionSettings.normalizedURL(connectionSettings.remoteURL)
+            if !usesBrowserSignIn, token.isEmpty { token = try GatewayConnectionStore.shared.token(for: connectionSettings) }
+            baseURL = url
+        case .ssh:
+            let bridge = GatewaySSHBridge()
+            sshBridge = bridge
+            let endpoint = try await bridge.connect(connectionSettings)
+            baseURL = endpoint.0
+            token = endpoint.1
+        }
+    }
+
+    func testConnection() async throws {
+        _ = try await fetchHTTP("/api/status")
+        guard let socket else { throw GatewayError.disconnected }
+        let deadline = Task {
+            do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            socket.cancel(with: .goingAway, reason: nil)
+        }
+        defer { deadline.cancel() }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            socket.sendPing { error in
+                if let error { continuation.resume(throwing: error) }
+                else { continuation.resume() }
+            }
+        }
     }
 
     /// Relay delivery can wait for an entire agent turn, unlike control RPCs.
@@ -428,6 +472,7 @@ final class HermesGateway: NSObject {
                     let wasReady = self.port != nil
                     self.backend = nil
                     self.port = nil
+                    self.baseURL = nil
                     self.backendOutput = ""
                     self.onConnectionChange?(false)
                     let waiters = self.backendStartWaiters
