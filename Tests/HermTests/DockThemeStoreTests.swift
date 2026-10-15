@@ -65,7 +65,7 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.warmLight.appearance == .light)
         #expect(DockThemeID.slate.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.glass, .nativeMacOS, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud])
+        #expect(DockThemeID.hermOnly == [.glass, .clean, .nativeMacOS, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud])
         #expect(DockThemeID.hermesClassic.style.fontDesign == .serif && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
         #expect(DockThemeID.terminal.style.glow > 0 && DockThemeID.terminal.style.selection == .invert)
         #expect(DockThemeID.dusk.style.accentGradient && DockThemeID.warmLight.style.cardShadow > 0)

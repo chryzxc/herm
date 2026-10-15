@@ -18,13 +18,15 @@ extension Color {
     // Match the cool navy tint of macOS menu-bar popovers instead of allowing
     // the host window's warm/black material to determine the panel palette.
     static var dockCanvas: Color { DockThemePalette(theme: DockThemeRuntime.current).background }
+    /// Navigation rail and window title rows share this, so the chrome reads as one frame.
+    static var dockSidebar: Color { DockThemePalette(theme: DockThemeRuntime.current).sidebarBackground }
     static var dockSurface: Color { DockThemePalette(theme: DockThemeRuntime.current).surface }
     static var dockSurface2: Color { DockThemePalette(theme: DockThemeRuntime.current).surface2 }
     static var dockSurface4: Color { DockThemePalette(theme: DockThemeRuntime.current).surface4 }
     static var dockSurface6: Color { DockThemePalette(theme: DockThemeRuntime.current).surface6 }
     static var dockSurface8: Color { DockThemePalette(theme: DockThemeRuntime.current).surface8 }
     static var dockMessageBubble: Color { dockSurface }
-    static var dockUserMessageBubble: Color { dockAccent.opacity(0.12) }
+    static var dockUserMessageBubble: Color { DockThemeStyle.current.neutralUserBubble ? dockSurface4 : dockAccent.opacity(0.12) }
     /// Opaque panel fill for popovers/overlays: system window colour for the translucent native skins, the skin canvas otherwise.
     static var dockOpaqueCanvas: Color { DockThemeRuntime.current.usesNativeMaterial ? Color(nsColor: .windowBackgroundColor) : dockCanvas }
     static var dockControlSurface: Color { dockSurface4 }
@@ -68,6 +70,8 @@ enum DockLayout {
     static let compactInset: CGFloat = 12
     static let controlHeight: CGFloat = 36
     static let iconControlSize: CGFloat = 28
+    /// Glyph size for every icon control in a title row or toolbar.
+    static let toolbarIconSize: CGFloat = 14
     static var controlRadius: CGFloat { DockThemeStyle.current.controlRadius }
     static var paneRadius: CGFloat { DockThemeStyle.current.paneRadius }
     static var outline: CGFloat { DockThemeStyle.current.outlineWidth }
@@ -246,6 +250,7 @@ extension View {
     func dockThemedRoot() -> some View {
         foregroundStyle(Color.dockPrimaryText)
             .tint(Color.dockAccent)
+            .buttonStyle(.dockHover)
             .fontDesign(DockThemeStyle.current.fontDesign)
             // Native controls (placeholders, carets, menus) follow the colour
             // scheme, not our tokens; pin it so a light skin under dark macOS
@@ -417,16 +422,19 @@ struct DockWindowBackground: View {
 /// styles from leaking into individual Control, chat, or Activity views.
 struct DockPressButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius - 1)
         configuration.label
+            .font(DockTypography.control)
+            .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(3)
-            .dockSelectionBackground(shape, active: isHovering, fill: Color.dockAccent.opacity(0.12), allowsInvert: false)
-            .overlay(shape.stroke(isHovering ? Color.dockAccent.opacity(0.28) : Color.clear, lineWidth: DockLayout.outline))
+            .dockSelectionBackground(shape, active: isHovering && isEnabled, fill: Color.dockSurface4.opacity(0.7), allowsInvert: false)
+            .contentShape(shape)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
-            .opacity(configuration.isPressed ? 0.86 : 1)
+            .opacity(!isEnabled ? 0.42 : configuration.isPressed ? 0.86 : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: isHovering)
             .onHover { isHovering = $0 }
@@ -469,7 +477,13 @@ struct DockHoverButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .font(DockTypography.control)
+            .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .brightness(configuration.isPressed ? -0.06 : isHovering && isEnabled ? 0.12 : 0)
+            .opacity(isEnabled ? 1 : 0.42)
+            // Squash on press, spring back on release.
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.95 : 1)
+            .animation(reduceMotion ? nil : .spring(response: 0.24, dampingFraction: 0.55), value: configuration.isPressed)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.12), value: isHovering)
             .onHover { isHovering = $0 }
     }
@@ -481,38 +495,43 @@ extension View {
     }
 }
 
-/// The single filled action treatment from DESIGN.md. Use it only for the
+/// The single accent-tinted action treatment from DESIGN.md. Use it only for the
 /// primary action in a section; secondary actions stay text-on-glass.
 struct DockPrimaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         let isCompact = controlSize == .small || controlSize == .mini
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
+        let tint = configuration.role == .destructive ? Color.dockDestructive : Color.dockAccent
+        let highlighted = isHovering && isEnabled
         configuration.label
-            .font(isCompact ? .system(size: 12, weight: .semibold) : .body.weight(.semibold))
-            .foregroundStyle(Color.dockOnAccentText)
+            .font(DockTypography.control)
+            .foregroundStyle(Color.dockPrimaryText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
+            .background(shape.fill(tint.opacity(configuration.isPressed ? 0.30 : highlighted ? 0.24 : 0.14)))
             .background {
                 if DockThemeStyle.current.material == .glass {
-                    Color.clear.dockLiquidGlass(shape, tint: Color.dockAccent, interactive: true)
+                    Color.clear.dockLiquidGlass(shape, interactive: true)
                 } else {
-                    shape.fill(Color.dockAccent.opacity(configuration.isPressed ? 0.82 : 1)).stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : .clear, lineWidth: DockLayout.outline)
-                }
-                if DockThemeStyle.current.accentGradient && DockThemeStyle.current.material != .glass {
-                    shape.fill(LinearGradient(colors: [Color.white.opacity(0.20), .clear], startPoint: .top, endPoint: .bottom))
+                    shape.fill(Color.dockCanvas)
                 }
             }
+            .background(shape.fill(Color.dockCanvas))
+            .overlay(shape.stroke(tint.opacity(highlighted ? 0.6 : 0.35), lineWidth: DockLayout.outline))
             .dockStickerShadow(shape, pressed: configuration.isPressed)
             .dockEmboss(shape, pressed: configuration.isPressed)
             .dockBevel(pressed: configuration.isPressed)
-            .shadow(color: Color.dockAccent.opacity(configuration.isPressed || !isEnabled ? 0 : 0.14 + (DockThemeStyle.current.glow > 0 ? 0.4 : 0)), radius: 6 + DockThemeStyle.current.glow)
+            .contentShape(shape)
             .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: highlighted)
+            .onHover { isHovering = $0 }
     }
 }
 
@@ -528,20 +547,25 @@ struct DockSecondaryButtonStyle: ButtonStyle {
         let isCompact = controlSize == .small || controlSize == .mini
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration.label
-            .font(isCompact ? .system(size: 12, weight: .medium) : .body.weight(.medium))
+            .font(DockTypography.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(.horizontal, isCompact ? 10 : 12)
             .frame(minHeight: isCompact ? 26 : DockLayout.controlHeight)
             .background {
+                if DockThemeStyle.current.material == .glass && isHovering && isEnabled {
+                    shape.fill(Color.dockSurface4.opacity(0.7))
+                }
+            }
+            .background {
                 if DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(shape, interactive: true)
                 } else if DockThemeStyle.current.chrome == .boxed {
-                    shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)).stroke(Color.dockBorder, lineWidth: DockLayout.outline)
+                    shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)).stroke(Color.dockBorder, lineWidth: DockLayout.outline)
                 }
             }
             .overlay(alignment: .bottom) {
                 // Open chrome: text-only control that underlines on hover.
-                if DockThemeStyle.current.chrome == .open && (isHovering || configuration.isPressed) {
+                if DockThemeStyle.current.chrome == .open && isEnabled && (isHovering || configuration.isPressed) {
                     Color.dockAccent.frame(height: 2)
                 }
             }
@@ -552,6 +576,7 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .opacity(isEnabled ? 1 : 0.42)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: configuration.isPressed)
+            .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: isHovering)
             .onHover { isHovering = $0 }
     }
 }
@@ -616,6 +641,8 @@ struct DockPageHeader<Trailing: View>: View {
     let subtitle: String
     let onRefresh: (() -> Void)?
     let isRefreshing: Bool
+    /// Pages with a list column pass this to get the sidebar toggle before the title.
+    let sidebarCollapsed: Binding<Bool>?
     @ViewBuilder let trailing: () -> Trailing
 
     init(
@@ -623,13 +650,19 @@ struct DockPageHeader<Trailing: View>: View {
         subtitle: String,
         onRefresh: (() -> Void)? = nil,
         isRefreshing: Bool = false,
+        sidebarCollapsed: Binding<Bool>? = nil,
         @ViewBuilder trailing: @escaping () -> Trailing
     ) {
         self.title = title
         self.subtitle = subtitle
         self.onRefresh = onRefresh
         self.isRefreshing = isRefreshing
+        self.sidebarCollapsed = sidebarCollapsed
         self.trailing = trailing
+    }
+
+    @ViewBuilder private var sidebarToggle: some View {
+        if let sidebarCollapsed { DockSidebarToggle(isCollapsed: sidebarCollapsed) }
     }
 
     private var titleBlock: some View {
@@ -667,10 +700,51 @@ struct DockPageHeader<Trailing: View>: View {
     }
 
     var body: some View {
+        if let titleRow {
+            windowTitleRow(titleRow)
+        } else {
+            panelHeader
+        }
+    }
+
+    @Environment(\.dockTitleRow) private var titleRow
+
+    /// In a window the header is the title row beside the traffic lights: one
+    /// line, title then status, actions trailing, like a native toolbar.
+    private func windowTitleRow(_ row: DockTitleRow) -> some View {
+        HStack(spacing: 8) {
+            sidebarToggle
+            Text(title)
+                .font(.system(size: 13, weight: .semibold, design: DockThemeStyle.current.fontDesign))
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+                .layoutPriority(1)
+            Text(subtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(Color.dockMetadataText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 12)
+            refreshButton
+            trailing().fixedSize()
+        }
+        // The toggle sits where every title row puts it; without one the title gets the usual inset.
+        .padding(.leading, sidebarCollapsed != nil ? DockWindowChrome.sidebarToggleLeading : 16 + row.leadingClearance)
+        .padding(.trailing, 12)
+        .frame(height: row.height)
+        .background { TitlebarDoubleClickArea() }
+        .background(Color.dockSidebar)
+        .overlay(alignment: .bottom) { DockWindowChrome.titleRowSeparator }
+        // Same gap under the line as the panel header, so every page's content sits alike.
+        .padding(.bottom, 10)
+    }
+
+    private var panelHeader: some View {
         // One row when it fits; in the minimized panel the trailing controls
         // drop to their own row instead of truncating.
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: 12) {
+                sidebarToggle
                 titleBlock.frame(maxWidth: 360, alignment: .leading)
                 Spacer(minLength: 12)
                 refreshButton
@@ -678,6 +752,7 @@ struct DockPageHeader<Trailing: View>: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .center, spacing: 12) {
+                    sidebarToggle
                     titleBlock
                     Spacer(minLength: 12)
                     refreshButton
@@ -693,9 +768,65 @@ struct DockPageHeader<Trailing: View>: View {
     }
 }
 
+/// Set by the window shell when a page's header should fill the window's title row.
+struct DockTitleRow: Equatable {
+    var height: CGFloat
+    var leadingClearance: CGFloat
+}
+
+extension EnvironmentValues {
+    @Entry var dockTitleRow: DockTitleRow? = nil
+}
+
 extension DockPageHeader where Trailing == EmptyView {
-    init(title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false) {
-        self.init(title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing) { EmptyView() }
+    init(title: String, subtitle: String, onRefresh: (() -> Void)? = nil, isRefreshing: Bool = false, sidebarCollapsed: Binding<Bool>? = nil) {
+        self.init(title: title, subtitle: subtitle, onRefresh: onRefresh, isRefreshing: isRefreshing, sidebarCollapsed: sidebarCollapsed) { EmptyView() }
+    }
+}
+
+/// Shows or hides a page's first column (session list, PR list, settings
+/// categories). Sits right after the traffic lights, like a native sidebar toggle.
+struct DockSidebarToggle: View {
+    enum Edge { case leading, trailing }
+
+    let isCollapsed: Bool
+    var edge: Edge = .leading
+    var panel: String?
+    let action: () -> Void
+
+    init(isCollapsed: Binding<Bool>) {
+        self.isCollapsed = isCollapsed.wrappedValue
+        self.action = { withAnimation(.dockEase(duration: 0.2)) { isCollapsed.wrappedValue.toggle() } }
+    }
+
+    /// Panel toggles on either side share one look: outline glyph, no selected fill.
+    init(isCollapsed: Bool, edge: Edge, panel: String? = nil, action: @escaping () -> Void) {
+        self.isCollapsed = isCollapsed
+        self.edge = edge
+        self.panel = panel
+        self.action = action
+    }
+
+    private var noun: String { panel ?? (edge == .leading ? "sidebar" : "inspector") }
+
+    var body: some View {
+        let button = Button(action: action) {
+            // The collapsed glyph shows the hidden panel's rows; trailing panels mirror it.
+            DockIcon(isCollapsed ? .sidebar : .sidebarSimple, size: DockLayout.toolbarIconSize)
+                .scaleEffect(x: edge == .trailing ? -1 : 1)
+                .foregroundStyle(Color.dockSecondaryText)
+                .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .accessibilityLabel(isCollapsed ? "Show \(noun)" : "Hide \(noun)")
+        if edge == .leading, panel == nil {
+            button
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .help(isCollapsed ? "Show sidebar (⇧⌘S)" : "Hide sidebar (⇧⌘S)")
+        } else {
+            button.help(isCollapsed ? "Show \(noun)" : "Hide \(noun)")
+        }
     }
 }
 
@@ -1050,8 +1181,9 @@ extension View {
         } else {
             self
                 .padding(padding)
-                .background(shape.fill(Color.dockSurface.opacity(0.26)))
-                .overlay(shape.stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline))
+                .background(shape.fill(Color.dockSurface.opacity(style.cardFill)))
+                // A 0-width stroke still draws a hairline, so outline-free skins skip it.
+                .overlay(shape.stroke(DockLayout.outline > 1 ? Color.dockBorderStrong : Color.dockBorderLight.opacity(0.72), lineWidth: DockLayout.outline).opacity(DockLayout.outline > 0 ? 1 : 0))
                 .dockStickerShadow(shape)
                 .dockFoldCrease()
                 .dockEmboss(shape)
@@ -1108,56 +1240,17 @@ struct DockTabBar<Option: Hashable>: View {
     }
 }
 
-/// `.help` tooltips never appear in Herm's non-activating panels, so hover
-/// draws its own label beside the control after a short delay.
+/// A native floating tip stays above sibling views and outside scroll clipping.
 struct DockHoverTip: ViewModifier {
     let text: String
     let edge: Edge
     var gap: CGFloat = 6
-    @State private var shown = false
-    @State private var pending: Task<Void, Never>?
+    @State private var hovering = false
 
     func body(content: Content) -> some View {
         content
-            .onHover { hovering in
-                pending?.cancel()
-                guard hovering else { shown = false; return }
-                pending = Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(450))
-                    if !Task.isCancelled { shown = true }
-                }
-            }
-            .onDisappear { pending?.cancel(); shown = false }
-            .overlay(alignment: alignment) {
-                if shown {
-                    Text(text)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .fixedSize()
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Color.dockSurface4))
-                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Color.dockBorderStrong, lineWidth: 1))
-                        .alignmentGuide(.leading) { $0[.trailing] + gap }
-                        .alignmentGuide(.trailing) { $0[.leading] - gap }
-                        .alignmentGuide(.top) { $0[.bottom] + gap }
-                        .alignmentGuide(.bottom) { $0[.top] - gap }
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
-            .zIndex(shown ? 10 : 0)
-            .animation(.dockEase(duration: 0.12), value: shown)
-    }
-
-    private var alignment: Alignment {
-        switch edge {
-        case .leading: .leading
-        case .trailing: .trailing
-        case .top: .top
-        case .bottom: .bottom
-        }
+            .onHover { hovering = $0 }
+            .background(DockHoverTipAnchor(text: text, edge: edge, gap: gap, hovering: hovering))
     }
 }
 
@@ -1167,7 +1260,7 @@ extension View {
     }
 
     /// Shadows SwiftUI's `.help`: native tooltips only show in the key window, so
-    /// they fail in Herm's non-activating panels. Every `.help("…")` draws our tip.
+    /// they fail in Herm's non-activating panels. Every `.help("…")` uses our floating tip.
     func help(_ text: String) -> some View { dockHoverTip(text) }
 }
 

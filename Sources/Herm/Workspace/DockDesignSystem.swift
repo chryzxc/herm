@@ -418,10 +418,10 @@ struct DockCopyButton: View {
             ZStack {
                 buttonLabel(isConfirmation: false)
                     .opacity(didCopy ? 0 : 1)
-                    .scaleEffect(didCopy ? 0.72 : 1)
+                    .scaleEffect(didCopy ? 0.8 : 1)
+                    .offset(x: didCopy ? 3 : 0, y: didCopy ? -3 : 0)
                 buttonLabel(isConfirmation: true)
                     .opacity(didCopy ? 1 : 0)
-                    .scaleEffect(didCopy ? 1 : 0.72)
             }
             .contentShape(Rectangle())
         }
@@ -439,7 +439,7 @@ struct DockCopyButton: View {
 
         switch presentation {
         case .icon:
-            DockIcon(icon, size: iconSize, color: foreground)
+            confirmationAwareIcon(icon, isConfirmation: isConfirmation, color: foreground)
         case .text:
             HStack(spacing: 5) {
                 if isConfirmation { DockIcon(icon, size: iconSize, color: foreground) }
@@ -448,10 +448,19 @@ struct DockCopyButton: View {
             .foregroundStyle(foreground)
         case .iconAndText:
             HStack(spacing: 6) {
-                DockIcon(icon, size: iconSize, color: foreground)
+                confirmationAwareIcon(icon, isConfirmation: isConfirmation, color: foreground)
                 Text(title)
             }
             .foregroundStyle(foreground)
+        }
+    }
+
+    @ViewBuilder
+    private func confirmationAwareIcon(_ icon: Ph, isConfirmation: Bool, color: Color) -> some View {
+        if isConfirmation {
+            DockDrawOnIcon(icon: icon, size: iconSize, color: color, isDrawn: didCopy)
+        } else {
+            DockIcon(icon, size: iconSize, color: color)
         }
     }
 
@@ -509,20 +518,17 @@ struct DockSectionHeader<Actions: View>: View {
 
     private func label(isExpanded: Bool?) -> some View {
         HStack(spacing: 6) {
-            Text(title.uppercased())
-                .font(DockTypography.sectionLabel)
-                .tracking(0.6)
+            // Sentence case, quiet weight: a label, not a banner.
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
                 .foregroundStyle(isHovering && isExpanded != nil ? style.secondaryText : style.metadataText)
             if let count {
                 Text(count > 99 ? "99+" : "\(count)")
-                    .font(.caption.weight(.medium).monospacedDigit())
-                    .foregroundStyle(style.secondaryText)
-                    .padding(.horizontal, 5)
-                    .frame(minWidth: 18, minHeight: 16)
-                    .background(Capsule().fill(style.surface4.opacity(0.8)))
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(style.metadataText)
             }
             if let isExpanded {
                 DockIcon(.caretRight, size: 10, color: style.metadataText)

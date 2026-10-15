@@ -30,6 +30,16 @@ enum DockActivityState: Int, Comparable, CaseIterable, Sendable {
         }
     }
 
+    /// Glyph knocked out of the solid disc.
+    var mark: Ph {
+        switch self {
+        case .approval: .exclamationMark
+        case .clarification: .question
+        case .failed: .x
+        case .running, .done: .check
+        }
+    }
+
     var color: Color {
         switch self {
         case .approval: .dockWarning
@@ -47,24 +57,39 @@ struct DockActivityIndicator: View {
     var size: CGFloat = 12
     /// Overrides the state's color (e.g. on an accent-filled surface).
     var tint: Color?
-    /// Chat rows mark finished-with-news as an unread dot instead of a check.
+    /// Only a session that finished work with news you haven't seen shows a dot instead of the check.
     var unreadDot = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
             if state == .done, unreadDot {
                 Circle().fill(tint ?? state.color).frame(width: size * 0.6, height: size * 0.6)
-            } else if let icon = state.icon {
-                // Opaque backing: the filled glyph's cut-out would otherwise show whatever sits behind it.
-                DockIcon(icon, size: size, weight: .fill, color: tint ?? state.color)
-                    .background(Circle().fill(Color.dockCanvas).padding(size * 0.12))
+            } else if state.icon != nil {
+                // Solid disc with a knocked-out glyph so nothing behind it shows through.
+                Circle().fill(tint ?? state.color).padding(size * 0.06)
+                    .overlay { DockIcon(state.mark, size: size * 0.65, weight: .fill, color: .dockCanvas) }
             } else {
-                ProgressView().controlSize(.small).scaleEffect(size / 20).tint(tint ?? state.color)
+                spinner(tint ?? state.color)
             }
         }
         .frame(width: size, height: size)
         .help(state.label)
         .accessibilityLabel(state.label)
+    }
+
+    /// Drawn arc rather than ProgressView, which ignores tint and washes out on avatars.
+    private func spinner(_ color: Color) -> some View {
+        let line = max(1.8, size * 0.16)
+        return TimelineView(.animation(paused: reduceMotion)) { timeline in
+            let turn = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+            Circle().stroke(color.opacity(0.25), lineWidth: line)
+                .overlay {
+                    Circle().trim(from: 0, to: 0.7).stroke(color, style: StrokeStyle(lineWidth: line, lineCap: .round))
+                        .rotationEffect(.degrees(turn * 360))
+                }
+                .padding(line / 2)
+        }
     }
 }
 

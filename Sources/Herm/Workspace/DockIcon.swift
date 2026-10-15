@@ -47,6 +47,30 @@ struct DockIcon: View {
     }
 }
 
+/// A glyph that draws its outline on, then fills, when `isDrawn` turns true.
+/// One-shot trim + opacity animation; Reduce Motion shows it at once.
+struct DockDrawOnIcon: View {
+    let icon: Ph
+    let size: CGFloat
+    var color: Color = .dockPrimaryText
+    let isDrawn: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let shape = PhosphorShape(icon: icon)
+        ZStack {
+            shape.trim(from: 0, to: isDrawn ? 1 : 0)
+                .stroke(color, style: StrokeStyle(lineWidth: max(0.6, size / 18), lineCap: .round, lineJoin: .round))
+                .animation(reduceMotion ? nil : .easeOut(duration: 0.32), value: isDrawn)
+            shape.fill(color)
+                .opacity(isDrawn ? 1 : 0)
+                .animation(reduceMotion ? nil : .easeIn(duration: 0.16).delay(isDrawn ? 0.2 : 0), value: isDrawn)
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Icon-and-text control content with a fixed 16pt icon.
 struct DockIconLabel: View {
     let title: String

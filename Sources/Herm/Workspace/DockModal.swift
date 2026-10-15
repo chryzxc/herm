@@ -172,11 +172,32 @@ func modalActions(primaryTitle: String, pendingTitle: String = "Saving…", isDi
     Spacer()
     Button("Cancel", action: onCancel)
         .keyboardShortcut(.cancelAction)
-        .buttonStyle(.dockSecondary)
+        .buttonStyle(DockModalButtonStyle(isPrimary: false))
     Button(action: onPrimary) {
         DockActionLabel(title: primaryTitle, pendingTitle: pendingTitle, isPending: isPending, tint: .dockOnAccentText)
     }
     .keyboardShortcut(.defaultAction)
-    .buttonStyle(.dockPrimary)
+    .buttonStyle(DockModalButtonStyle(isPrimary: true))
     .disabled(isDisabled)
+}
+
+/// Footer buttons shared by every modal: equal minimum width, a solid accent
+/// fill for the primary action and a quiet outline for Cancel, all from theme tokens.
+struct DockModalButtonStyle: ButtonStyle {
+    let isPrimary: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(isPrimary ? Color.dockOnAccentText : Color.dockPrimaryText)
+            .padding(.horizontal, 16)
+            .frame(minWidth: 92, minHeight: DockLayout.controlHeight)
+            .background(shape.fill(isPrimary ? Color.dockAccent : Color.dockControlSurface))
+            .overlay(shape.stroke(isPrimary ? Color.clear : Color.dockBorder, lineWidth: DockLayout.outline))
+            .overlay(shape.fill(Color.black.opacity(configuration.isPressed ? 0.12 : 0)))
+            .contentShape(shape)
+            .opacity(isEnabled ? 1 : 0.42)
+    }
 }

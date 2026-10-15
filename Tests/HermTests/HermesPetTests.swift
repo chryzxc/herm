@@ -245,7 +245,7 @@ struct HermesPetTests {
         state.hasPet = true
         #expect(state.railHeight == 96)
         #expect(state.panelHeight == 144)
-        #expect(state.railWidth == 56)
+        #expect(state.railWidth == 66)
         state.expanded = true
         #expect(state.railHeight == 136)
         #expect(state.panelHeight == 408)

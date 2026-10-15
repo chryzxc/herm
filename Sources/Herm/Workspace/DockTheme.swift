@@ -2,20 +2,20 @@ import AppKit
 import SwiftUI
 
 enum DockThemeID: String, CaseIterable, Identifiable, Codable {
-    case glass, nativeMacOS, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud
+    case glass, clean, nativeMacOS, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud
     var id: String { rawValue }
     var hermesSkinID: String? {
-        switch self { case .nativeMacOS: nil; case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .eInk, .swiss, .clay, .pixel, .notebook, .hud: nil }
+        switch self { case .nativeMacOS: nil; case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel, .notebook, .hud: nil }
     }
     var title: String {
-        switch self { case .nativeMacOS: "System"; case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD" }
+        switch self { case .nativeMacOS: "System"; case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .clean: "Clean"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD" }
     }
     var detail: String {
-        switch self { case .nativeMacOS: "System menu blur with neutral surfaces and macOS accent colors."; case .hermesClassic: "Serif type, gold accent bars, and a soft gold glow on calm midnight surfaces."; case .ares: "Sharp command-center panels with crimson gradient actions, bronze hard shadows, and bar selection."; case .mono: "Grayscale ledger lines with inverted selection and no color distraction."; case .slate: "Blueprint grid, tight corners, and cool blue bar selection."; case .warmLight: "Embossed warm paper cards with serif type and soft raised shadows."; case .cartoon: "Chunky ink outlines, sticker shadows, rounded type, and bright comic colors."; case .terminal: "Phosphor green on black with scanline rules, glow, monospaced type, and square corners."; case .brutalist: "Graph-paper grid, heavy black borders, hard offset shadows, and loud color."; case .origami: "Folded corners, layered paper shadows, bar selection, and indigo ink accents."; case .retro: "Raised and sunken bevels on square gray panels, navy selection, and a classic desktop feel."; case .dusk: "Near-black surfaces with glowing pastel accents, deep shadows, and generous corners."; case .glass: "Liquid Glass panels, buttons, and tabs that refract soft colored light behind them."; case .eInk: "Pure black and white with inverted selection, and no motion."; case .swiss: "Boxless typographic layout on a modular grid with a single red accent and underline selection."; case .clay: "Soft inflated controls with molded light and shadow, rounded type, and warm pastels."; case .pixel: "Stepped pixel corners, a pixel grid, chunky outlines, hard shadows, and arcade neon on deep indigo."; case .notebook: "Hand-drawn pencil outlines, ruled paper, tape-corner cards, and highlighter selection."; case .hud: "Chamfered panels with glowing corner brackets, a faint grid, and cyan telemetry accents." }
+        switch self { case .nativeMacOS: "System menu blur with neutral surfaces and macOS accent colors."; case .hermesClassic: "Serif type, gold accent bars, and a soft gold glow on calm midnight surfaces."; case .ares: "Sharp command-center panels with crimson gradient actions, bronze hard shadows, and bar selection."; case .mono: "Grayscale ledger lines with inverted selection and no color distraction."; case .slate: "Blueprint grid, tight corners, and cool blue bar selection."; case .warmLight: "Embossed warm paper cards with serif type and soft raised shadows."; case .cartoon: "Chunky ink outlines, sticker shadows, rounded type, and bright comic colors."; case .terminal: "Phosphor green on black with scanline rules, glow, monospaced type, and square corners."; case .brutalist: "Graph-paper grid, heavy black borders, hard offset shadows, and loud color."; case .origami: "Folded corners, layered paper shadows, bar selection, and indigo ink accents."; case .retro: "Raised and sunken bevels on square gray panels, navy selection, and a classic desktop feel."; case .dusk: "Near-black surfaces with glowing pastel accents, deep shadows, and generous corners."; case .glass: "Liquid Glass panels, buttons, and tabs that refract soft colored light behind them."; case .clean: "Borderless soft-gray cards on white, gray selection, and color saved for avatars and links."; case .eInk: "Pure black and white with inverted selection, and no motion."; case .swiss: "Boxless typographic layout on a modular grid with a single red accent and underline selection."; case .clay: "Soft inflated controls with molded light and shadow, rounded type, and warm pastels."; case .pixel: "Stepped pixel corners, a pixel grid, chunky outlines, hard shadows, and arcade neon on deep indigo."; case .notebook: "Hand-drawn pencil outlines, ruled paper, tape-corner cards, and highlighter selection."; case .hud: "Chamfered panels with glowing corner brackets, a faint grid, and cyan telemetry accents." }
     }
     var appearance: DockThemeAppearance {
         switch self {
-        case .nativeMacOS, .glass, .swiss: .system
+        case .nativeMacOS, .glass, .clean, .swiss: .system
         case .warmLight, .cartoon, .brutalist, .origami, .eInk, .clay, .notebook, .retro: .light
         case .hermesClassic, .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud: .dark
         }
@@ -39,9 +39,10 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
         case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .grid, pressScale: 1)
         case .dusk: DockThemeStyle(controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 14, cardShadow: 16, accentGradient: true, pressScale: 0.98)
         case .origami: DockThemeStyle(controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, selection: .bar, cardShadow: 10, pressScale: 0.98)
-        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 14, accentGradient: true, pressScale: 0.97)
+        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 14, accentGradient: true, pressScale: 0.97, neutralUserBubble: true)
         case .eInk: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 1, selection: .invert, animates: false, pressScale: 1)
         case .swiss: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open, backdrop: .grid, pressScale: 1)
+        case .clean: DockThemeStyle(controlRadius: 10, paneRadius: 18, outlineWidth: 0, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
         case .slate: DockThemeStyle(controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .bar, backdrop: .grid, pressScale: 0.98)
         case .nativeMacOS: DockThemeStyle()
         }
@@ -95,6 +96,12 @@ struct DockThemeStyle: Equatable {
     var bevel: Bool = false
     var backdrop: DockThemeBackdrop = .none
     var pressScale: CGFloat = 0.96
+    /// Opacity of the surface fill behind cards; solid skins raise it so cards read by tone alone.
+    var cardFill: CGFloat = 0.26
+    /// User bubbles take a neutral surface instead of the accent tint.
+    var neutralUserBubble: Bool = false
+    /// Rail and session list sit on a tinted surface so the chat reads as the page.
+    var tintedSidebar: Bool = false
 
     static var current: DockThemeStyle { DockThemeRuntime.current.style }
 }
@@ -183,7 +190,8 @@ struct DockThemePalette {
         case .notebook: return ("#FBF6E9", "#FFFDF5", "#F5EFDC", "#E9E0C6", "#2B2A33", "#55525E", "#6C6879", "#2F4FA8", "#FFF0A8", "#77747F", "#3F8F5B", "#A86F00", "#C8362E")
         case .hud: return ("#060B14", "#0C1626", "#09111E", "#12263D", "#A9DCEB", "#83B8CA", "#5C8796", "#19D3F3", "#0F3A52", "#1F5C75", "#3DEB9A", "#FFB020", "#FF4D5E")
         case .dusk: return ("#0B0B0E", "#131318", "#0F0F13", "#1E1E26", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740", "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B")
-        case .glass: return isDark ? ("#101114", "#1C1D22", "#15161A", "#2A2B31", "#D6D6DC", "#B3B4BC", "#85868F", "#0A84FF", "#243A5C", "#3A3B42", "#30D158", "#FF9F0A", "#FF453A") : ("#F2F3F7", "#FFFFFF", "#F7F8FB", "#E3E5EC", "#17181C", "#555862", "#6B6D76", "#007AFF", "#D6E6FF", "#C9CCD6", "#248A3D", "#C93400", "#D70015")
+        case .glass: return isDark ? ("#121214", "#1D1D20", "#161618", "#2B2B2F", "#D8D8DC", "#B4B4BA", "#88888F", "#0A84FF", "#303035", "#3A3A3F", "#30D158", "#FF9F0A", "#FF453A") : ("#F4F4F5", "#FFFFFF", "#F8F8F9", "#E6E6E9", "#18181B", "#52525B", "#6B6B73", "#007AFF", "#E2E2E6", "#D4D4D8", "#248A3D", "#C93400", "#D70015")
+        case .clean: return isDark ? ("#141414", "#1E1E1E", "#191919", "#2A2A2A", "#D6D6D6", "#B0B0B0", "#8C8C8C", "#5A9BFF", "#2C2C2C", "#303030", "#4CC27A", "#E5A640", "#FF6B6B") : ("#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#2672E8", "#EBEBEB", "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A")
         case .eInk: return ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#EDEDED", "#000000", "#2B2B2B", "#555555", "#000000", "#D9D9D9", "#000000", "#1A1A1A", "#333333", "#000000")
         case .swiss: return isDark ? ("#0A0A0A", "#0A0A0A", "#0A0A0A", "#1C1C1C", "#D4D4D4", "#B0B0B0", "#7A7A7A", "#FF3B30", "#2A1412", "#2E2E2E", "#9A9A9A", "#B0B0B0", "#FF3B30") : ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#F0F0F0", "#0A0A0A", "#4A4A4A", "#747474", "#E30613", "#FBE4E5", "#D9D9D9", "#555555", "#777777", "#E30613")
         }
@@ -199,6 +207,8 @@ struct DockThemePalette {
     var surface6: Color { surface4.opacity(0.86) }; var surface8: Color { surface4.opacity(0.72) }
     var onAccent: Color { resolvedTokens.onAccent }
     var primaryText: Color { resolvedTokens.primaryText }; var secondaryText: Color { resolvedTokens.secondaryText }; var metadataText: Color { resolvedTokens.metadataText }; var accent: Color { resolvedTokens.accent }; var selectedFill: Color { resolvedTokens.selectedFill }; var divider: Color { resolvedTokens.divider }; var success: Color { resolvedTokens.success }; var warning: Color { resolvedTokens.warning }; var destructive: Color { resolvedTokens.destructive }
+    /// Rail and session list; tinted skins set them apart from the chat page.
+    var sidebarBackground: Color { theme.style.tintedSidebar ? surface2 : background }
     var swatches: [Color] { [background, selectedFill, primaryText, accent, success] }
 }
 
@@ -227,7 +237,7 @@ private struct Tokens {
         // tint matches dark menu-bar popovers (Battery, Wi-Fi) and is dense
         // enough to neutralize colorful wallpapers while the blur shows through. Branded themes stay
         // opaque so their authored colors render exactly as specified.
-        windowBackground = color({ $0.bg }, nativeAlpha: theme == .glass ? 0.40 : 0.60)
+        windowBackground = color({ $0.bg }, nativeAlpha: theme == .glass ? 0.62 : 0.60)
         background = color({ $0.bg }, nativeAlpha: 0.16)
         surface = color({ $0.surface }, nativeAlpha: 0.40)
         surface2 = color({ $0.surface2 }, nativeAlpha: 0.32)

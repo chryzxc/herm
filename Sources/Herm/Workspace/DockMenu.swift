@@ -303,3 +303,58 @@ private struct DockMenuLabelStyle: LabelStyle {
         }
     }
 }
+
+/// Right-click (or Control-click) opens the same themed `DockMenu` popover that
+/// a "…" button shows, instead of AppKit's native context menu.
+extension View {
+    func dockContextMenu<Content: View>(@ViewBuilder _ content: @escaping () -> Content) -> some View {
+        modifier(DockContextMenuModifier(menu: content))
+    }
+}
+
+private struct DockContextMenuModifier<Menu: View>: ViewModifier {
+    let menu: () -> Menu
+    @State private var isOpen = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(SecondaryClickCatcher { isOpen = true })
+            .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+                DockMenuPanel(content: menu())
+                    // Depth 1 makes nested DockMenus render as submenu rows.
+                    .environment(\.dockMenuDepth, 1)
+                    .environment(\.dockMenuDismiss, { isOpen = false })
+            }
+    }
+}
+
+/// Transparent overlay that only claims secondary clicks; every other event
+/// falls through to the view underneath.
+private struct SecondaryClickCatcher: NSViewRepresentable {
+    let onClick: () -> Void
+
+    func makeNSView(context: Context) -> NSView { CatcherView(onClick: onClick) }
+    func updateNSView(_ view: NSView, context: Context) { (view as? CatcherView)?.onClick = onClick }
+
+    private final class CatcherView: NSView {
+        var onClick: () -> Void
+        init(onClick: @escaping () -> Void) {
+            self.onClick = onClick
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        private static func isSecondary(_ event: NSEvent?) -> Bool {
+            guard let event else { return false }
+            return event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            Self.isSecondary(NSApp.currentEvent) ? super.hitTest(point) : nil
+        }
+        override func rightMouseDown(with event: NSEvent) { onClick() }
+        override func mouseDown(with event: NSEvent) {
+            if Self.isSecondary(event) { onClick() } else { super.mouseDown(with: event) }
+        }
+    }
+}

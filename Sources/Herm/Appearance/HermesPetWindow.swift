@@ -149,7 +149,7 @@ final class HermesPetWindow {
     }
 
     private func tick() {
-        defer { if !allowed { motion.direction = 0 } }
+        defer { if !allowed, motion.direction != 0 { motion.direction = 0 } }
         guard allowed, pet.visible, screen.width > 0 else { panel.orderOut(nil); return }
         updateSize()
         let identity = "\(pet.profile ?? "")/\(pet.info.slug ?? "")"
@@ -157,12 +157,15 @@ final class HermesPetWindow {
         if !panel.isVisible { panel.orderFrontRegardless() }
         let roaming = !attached && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && pet.online && !pet.stale
         if !roaming {
-            motion.direction = 0
+            if motion.direction != 0 { motion.direction = 0 }
             if attached, !snapping, dragOrigin == nil, panel.frame.origin != home { panel.setFrameOrigin(home) }
             return
         }
         // Like Desktop, live activity and direct interactions pause wandering.
-        guard !hovering, !holding, dragOrigin == nil, pet.pose == "idle" else { motion.direction = 0; return }
+        guard !hovering, !holding, dragOrigin == nil, pet.pose == "idle" else {
+            if motion.direction != 0 { motion.direction = 0 }
+            return
+        }
         if destination == nil {
             guard Date.now >= nextTrip else { return }
             destination = Self.strollTarget(from: panel.frame.origin, screen: screen, fraction: .random(in: 0...1), size: windowSize)

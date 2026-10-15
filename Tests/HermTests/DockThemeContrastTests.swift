@@ -49,6 +49,20 @@ struct DockThemeContrastTests {
                 check("warning", p.warning, Array(surfaces.prefix(2)), min: 3.0)
                 check("destructive", p.destructive, Array(surfaces.prefix(2)), min: 3.0)
                 check("onAccent", p.onAccent, [("accent", p.accent)], min: 3.5)
+                // Primary buttons keep themed text over a tonal control fill.
+                for opacity in [0.14, 0.24, 0.30] {
+                    for tint in [p.accent, p.destructive] {
+                        let base = c(p.background), overlay = c(tint)
+                        let fill = NSColor(
+                            red: base.redComponent * (1 - opacity) + overlay.redComponent * opacity,
+                            green: base.greenComponent * (1 - opacity) + overlay.greenComponent * opacity,
+                            blue: base.blueComponent * (1 - opacity) + overlay.blueComponent * opacity,
+                            alpha: 1
+                        )
+                        let r = ratio(c(p.primaryText), fill)
+                        if r < 4.5 { out.append("\(tag) primary button at \(opacity) = \(String(format: "%.2f", r)) < 4.5") }
+                    }
+                }
                 check("divider", p.divider, [("bg", p.background)], min: 1.3)
             }
         }

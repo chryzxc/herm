@@ -65,6 +65,11 @@ final class DockWindowController: NSObject, NSWindowDelegate {
         // Unified chrome: app background runs under the titlebar, like VS Code.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
+        // An empty unified toolbar gives the native 52pt title row with the
+        // traffic lights centered in it; the sidebar header and chat title fill that row.
+        window.toolbar = NSToolbar(identifier: "HermDockWindowToolbar")
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
         window.isReleasedWhenClosed = false
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -81,6 +86,9 @@ final class DockWindowController: NSObject, NSWindowDelegate {
             usesWindowChrome: true
         ))
         host.sizingOptions = []
+        // Herm lays out its own 52pt title row. A titlebar safe area would let
+        // split and scroll views stretch up behind it and cover page headers.
+        host.safeAreaRegions = []
         window.contentView = host
         if !window.setFrameUsingName("HermDockWindow") {
             // First launch: prefer a secondary display, since that is the point.

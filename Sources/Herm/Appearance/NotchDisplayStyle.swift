@@ -84,7 +84,7 @@ struct EdgeNotchStatusIndicator: View {
     var body: some View {
         TimelineView(.animation(paused: !animates)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            VStack(spacing: 5) {
+            VStack(spacing: 10) {
                 mark(primary, t)
                 ForEach(Array(badges.enumerated()), id: \.offset) { mark($0.element, t) }
             }
@@ -190,6 +190,8 @@ struct EdgeNotchStatusIndicator: View {
                     .padding(2)
                     .rotationEffect(.degrees(animates ? phase(t, period: 1.2) * 360 : -90))
                 Circle().fill(c).frame(width: 4, height: 4)
+            } else if m == .done, !activity.backgroundCompleted {
+                Circle().fill(c.opacity(level)).frame(width: 6, height: 6)
             } else if let symbol {
                 Image(systemName: symbol).font(.system(size: 9, weight: .bold)).foregroundStyle(c.opacity(level))
             }
