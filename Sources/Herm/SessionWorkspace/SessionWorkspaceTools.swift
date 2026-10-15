@@ -57,7 +57,10 @@ struct SessionTerminalView: View {
     let recipes: [VerificationRecipe]
     let repositoryID: String?
     let repositoryFingerprint: String?
+    /// Bumped by the inspector's + menu to open another shell.
+    var newShellRequest = 0
     @StateObject private var terminalTabs = TerminalTabStore()
+    @State private var isHoveringNewShell = false
 
     private var directory: String { projectPath ?? FileManager.default.homeDirectoryForCurrentUser.path }
 
@@ -87,6 +90,7 @@ struct SessionTerminalView: View {
         .task(id: projectPath) {
             terminal.start(directory: directory)
         }
+        .onChange(of: newShellRequest) { _, _ in terminalTabs.add(directory: directory) }
         .onDisappear { terminalTabs.closeAll() }
     }
 
@@ -107,10 +111,16 @@ struct SessionTerminalView: View {
             } label: {
                 DockIcon(.plus)
                     .font(.system(size: 16, weight: .light))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .frame(width: 44, height: 44)
+                    .foregroundStyle(isHoveringNewShell ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    .frame(width: 32, height: 32)
+                    .background(isHoveringNewShell ? Color.dockSurface2 : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
+                    .padding(.horizontal, 6)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.dockHover)
+            .buttonStyle(.plain)
+            .onHover { isHoveringNewShell = $0 }
+            .animation(.dockEase(duration: 0.12), value: isHoveringNewShell)
             .help("New terminal session")
         }
         .padding(.horizontal, 0)
@@ -132,6 +142,8 @@ struct SessionTerminalView: View {
             } label: {
                 DockIcon(.x)
                     .font(.system(size: 9, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
             .help("Close terminal")

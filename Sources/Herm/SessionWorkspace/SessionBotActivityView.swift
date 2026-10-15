@@ -101,20 +101,7 @@ struct SessionBotActivityView: View {
             if let bot = botMode.visibleBots.first(where: { $0.id == record.botID }) {
                 BotAvatarView(bot: bot, imageData: botMode.avatarImages[bot.id], size: 34)
             } else {
-                RoundedRectangle(cornerRadius: DockLayout.paneRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: BotAvatarPresentation.palette(for: record.botID),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay {
-                        DockIcon(BotAvatarPresentation.symbol(for: record.botID))
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.96))
-                    }
-                    .frame(width: 34, height: 34)
+                BotFaceMark(id: record.botID, size: 34, animated: true)
             }
 
             VStack(alignment: .leading, spacing: 3) {

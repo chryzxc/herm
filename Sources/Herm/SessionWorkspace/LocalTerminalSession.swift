@@ -24,6 +24,8 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         let maxBytes: Int
         let maxLines: Int
         private(set) var text = ""
+        private var byteCount = 0
+        private var newlineCount = 0
 
         init(maxBytes: Int = LocalTerminalSession.maxOutputBytes, maxLines: Int = LocalTerminalSession.maxOutputLines) {
             self.maxBytes = max(1, maxBytes)
@@ -32,29 +34,45 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
 
         mutating func append(_ addition: String) {
             text.append(addition)
+            byteCount += addition.utf8.count
+            newlineCount += addition.utf8.count { $0 == 10 }
             trim()
         }
 
-        mutating func removeAll() { text.removeAll(keepingCapacity: true) }
+        mutating func removeAll() {
+            text.removeAll(keepingCapacity: true)
+            byteCount = 0
+            newlineCount = 0
+        }
 
         private mutating func trim() {
-            var bytes = Array(text.utf8)
-            if bytes.count > maxBytes {
-                bytes.removeFirst(bytes.count - maxBytes)
-                if let newline = bytes.firstIndex(of: 10) {
-                    bytes.removeFirst(newline + 1)
+            let partialLine = text.isEmpty || text.hasSuffix("\n") ? 0 : 1
+            guard byteCount > maxBytes || newlineCount + partialLine > maxLines else { return }
+            let bytes = text.utf8
+            var start = bytes.startIndex
+            while byteCount > maxBytes || newlineCount + partialLine > maxLines {
+                if let newline = bytes[start...].firstIndex(of: 10) {
+                    let next = bytes.index(after: newline)
+                    byteCount -= bytes.distance(from: start, to: next)
+                    newlineCount -= 1
+                    start = next
+                } else {
+                    // A single oversized line keeps its newest valid UTF-8 suffix.
+                    start = bytes.index(bytes.endIndex, offsetBy: -maxBytes)
+                    while start < bytes.endIndex, bytes[start] & 0xC0 == 0x80 {
+                        start = bytes.index(after: start)
+                    }
+                    byteCount = bytes.distance(from: start, to: bytes.endIndex)
+                    break
                 }
-                text = String(decoding: bytes, as: UTF8.self)
             }
-
-            let hasTrailingNewline = text.last == "\n"
-            var lines = text.split(separator: "\n", omittingEmptySubsequences: true)
-            if lines.count > maxLines { lines.removeFirst(lines.count - maxLines) }
-            text = lines.joined(separator: "\n") + (hasTrailingNewline ? "\n" : "")
+            text = String(decoding: bytes[start...], as: UTF8.self)
         }
     }
 
-    @Published private(set) var output = ""
+    // SwiftTerm renders bytes directly; output retention must not rebuild the
+    // enclosing SwiftUI workspace for every PTY chunk.
+    var output: String { outputBuffer.text }
     @Published private(set) var state: State = .idle
     @Published private(set) var workingDirectory: String?
     @Published private(set) var commandHistory: [String] = []
@@ -80,7 +98,6 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
         }
         state = .starting
         outputBuffer.removeAll()
-        output = outputBuffer.text
         commandHistory = []
         lastVerificationRun = nil
         verificationMarker = nil
@@ -208,13 +225,11 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
     func clear() {
         emulator.view.feed(text: "\u{1b}[2J\u{1b}[3J\u{1b}[H")
         outputBuffer.removeAll()
-        output = outputBuffer.text
     }
 
     private func consume(_ text: String) {
         guard let marker = verificationMarker, let pending = verificationRun else {
             outputBuffer.append(text)
-            output = outputBuffer.text
             return
         }
         verificationTail.append(text)
@@ -225,13 +240,11 @@ final class LocalTerminalSession: ObservableObject, Identifiable {
                 let flushIndex = verificationTail.index(verificationTail.startIndex, offsetBy: flushCount)
                 outputBuffer.append(String(verificationTail[..<flushIndex]))
                 verificationTail = String(verificationTail[flushIndex...])
-                output = outputBuffer.text
             }
             return
         }
         let before = String(verificationTail[..<markerRange.lowerBound])
         outputBuffer.append(before)
-        output = outputBuffer.text
         let afterMarker = verificationTail[markerRange.upperBound...]
         guard let exitCode = Self.verificationExitCode(marker: marker, in: "\(marker):\(afterMarker)") else { return }
         let completed = VerificationRun(id: pending.id, recipeID: pending.recipeID, repositoryID: pending.repositoryID, repositoryFingerprint: pending.repositoryFingerprint, command: pending.command, startedAt: pending.startedAt, finishedAt: .now, exitCode: exitCode, outputSummary: HermesDiagnosticsService.safeSummary(before))

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import Herm
@@ -24,6 +25,14 @@ struct LocalTerminalSessionTests {
         let terminal = LocalTerminalSession()
         terminal.start(directory: directory.path)
         defer { terminal.close() }
+        // Wait for the login shell to execute input before testing its line editor.
+        // Octal escapes ensure the marker cannot be satisfied by PTY input echo.
+        #expect(terminal.submitCommand("printf '\\110\\105\\122\\115\\137\\122\\105\\101\\104\\131'"))
+        for _ in 0..<100 {
+            if terminal.output.contains("HERM_READY") { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        try #require(terminal.output.contains("HERM_READY"))
         // Send actual keystrokes, including backspace and Return, through the PTY.
         terminal.sendInput(Array("printf inspector-test > result.txX\u{7f}t\r".utf8)[...])
         let result = directory.appendingPathComponent("result.txt")
@@ -43,6 +52,21 @@ struct LocalTerminalSessionTests {
 
         #expect(terminal.state == .failed("Project directory is unavailable."))
         #expect(terminal.workingDirectory == nil)
+    }
+
+    @MainActor @Test func terminalOutputDoesNotRebuildTheSwiftUIWorkspace() async throws {
+        let terminal = LocalTerminalSession()
+        terminal.start(directory: FileManager.default.temporaryDirectory.path)
+        #expect(terminal.submitCommand("printf '__HERM_OUTPUT_TEST__\\n'"))
+        var publications = 0
+        let subscription = terminal.objectWillChange.sink { publications += 1 }
+        defer { subscription.cancel(); terminal.close() }
+        for _ in 0..<100 {
+            if terminal.output.contains("__HERM_OUTPUT_TEST__") { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(terminal.output.contains("__HERM_OUTPUT_TEST__"))
+        #expect(publications == 0)
     }
 
     @MainActor @Test func closingAnIdleTerminalDoesNotCreateAProcess() {
@@ -73,6 +97,25 @@ struct LocalTerminalSessionTests {
 
         #expect(String(decoding: buffer.text.utf8, as: UTF8.self) == buffer.text)
         #expect(buffer.text.utf8.count <= 12)
+        #expect(!buffer.text.contains("\u{FFFD}"))
+    }
+
+    @Test func outputBufferPreservesBlankLinesAndSplitChunks() {
+        var buffer = LocalTerminalSession.OutputBuffer(maxBytes: 100, maxLines: 4)
+        buffer.append("one\n\n")
+        buffer.append("tw")
+        buffer.append("o\n\nthree")
+        #expect(buffer.text == "\ntwo\n\nthree")
+        buffer.removeAll()
+        buffer.append("fresh\n\n")
+        #expect(buffer.text == "fresh\n\n")
+    }
+
+    @Test func oversizedSingleLineRetainsAValidUnicodeSuffix() {
+        var buffer = LocalTerminalSession.OutputBuffer(maxBytes: 7, maxLines: 4)
+        buffer.append("aこんにちは")
+        #expect(buffer.text == "ちは")
+        #expect(buffer.text.utf8.count <= 7)
     }
 
     @Test func outputBufferClearRemovesAllContent() {

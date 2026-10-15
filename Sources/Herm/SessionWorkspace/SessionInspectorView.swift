@@ -9,8 +9,27 @@ struct SessionInspector: View {
     @ObservedObject var workflow: DeveloperWorkflowModel
     let sessionRepositoryPath: String?
     let sessionProjectIsBound: Bool
+    /// The session's bound folder; `sessionRepositoryPath` may be a worktree of it.
+    var sessionRootPath: String? = nil
+    var onSelectWorktree: ((String) -> Void)? = nil
     var showsHeader = true
-    @State private var selectedSection = Section.activity
+    /// Collapses the inspector; shown at the right of the tab strip when set.
+    var onToggle: (() -> Void)?
+    /// Matches the chat header beside it so both rows share one baseline and separator.
+    var headerHeight: CGFloat = 44
+    // Persisted so collapsing and reopening the panel keeps the open tab.
+    @AppStorage("sessionInspector.selectedSection") private var selectedSection = Section.activity
+    @AppStorage("sessionInspector.closedSections") private var closedRaw = "Browser"
+    /// Sessions whose Browser tab is open. The browser belongs to the session it was
+    /// opened in (by Hermes or a chat link) and stays out of every other session.
+    @AppStorage("sessionInspector.browserSessions") private var browserSessionsRaw = ""
+    @State private var isShowingNewTab = false
+    /// Extra Terminal/Browser instances opened from +. They stay mounted while
+    /// another tab is selected so their shells and pages keep running.
+    @State private var extras: [ExtraTab] = []
+    @State private var selectedExtraID: UUID?
+    /// Narrow panel: unselected tabs shrink to icons and + stays pinned.
+    @State private var isCompactStrip = false
     @State private var hoveredSection: Section?
     @State private var isSwitchingBranch = false
     @StateObject private var preferences = CommandCenterPreferencesStore()
@@ -18,11 +37,20 @@ struct SessionInspector: View {
 
     private let sessionTabFont = Font.system(size: 12, weight: .semibold)
 
+    private struct ExtraTab: Identifiable {
+        let id = UUID()
+        let kind: Section
+        let number: Int
+        /// Extra browsers belong to the session they were opened in; terminals are shared.
+        var sessionID: String?
+    }
+
     private enum Section: String, CaseIterable, Identifiable {
         case activity = "Activity"
         case files = "Files"
         case changes = "Source Control"
         case terminal = "Terminal"
+        case browser = "Browser"
 
         var id: Self { self }
         var navigationTitle: String {
@@ -31,6 +59,7 @@ struct SessionInspector: View {
             case .terminal: "Terminal"
             case .activity: "Activity"
             case .changes: "Changes"
+            case .browser: "Browser"
             }
         }
         var icon: Ph {
@@ -39,6 +68,7 @@ struct SessionInspector: View {
             case .files: .folder
             case .changes: .gitBranch
             case .terminal: .terminal
+            case .browser: .globe
             }
         }
     }
@@ -49,6 +79,14 @@ struct SessionInspector: View {
                 inspectorHeader
             }
             sessionModePicker
+            if selectedSection == .changes, let onSelectWorktree, workflow.repository.isGitRepository, !workflow.worktrees.isEmpty {
+                WorktreePicker(
+                    worktrees: workflow.worktrees,
+                    mainPath: sessionRootPath,
+                    selection: Binding(get: { sessionRepositoryPath }, set: { $0.map(onSelectWorktree) })
+                )
+                .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            }
 
             if let workflowError = workflow.error {
                 HStack(spacing: 8) {
@@ -68,24 +106,76 @@ struct SessionInspector: View {
                 }
             }
 
-            if selectedSection == .terminal || selectedSection == .files {
-                inspectorContent
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    inspectorContent
+            ZStack {
+                baseContent
+                    .opacity(selectedExtraID == nil ? 1 : 0)
+                    .allowsHitTesting(selectedExtraID == nil)
+                ForEach(extras) { extra in
+                    extraContent(extra)
+                        .opacity(isVisible(extra) ? 1 : 0)
                         .padding(.horizontal, 12)
-                        .padding(.bottom, 12)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .opacity(selectedExtraID == extra.id ? 1 : 0)
+                        .allowsHitTesting(selectedExtraID == extra.id)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
+        .onAppear { if InAppBrowser.pending != nil { reopen(.browser) } }
+        .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { _ in reopen(.browser) }
+        .onChange(of: model.navigationSessionID, initial: true) { _, _ in
+            if let extra = extras.first(where: { $0.id == selectedExtraID }), !isVisible(extra) { selectedExtraID = nil }
+            if !openSections.contains(selectedSection), let first = openSections.first { selectedSection = first }
+        }
         .onChange(of: hasSessionGitRepository) { _, hasRepository in
             if !hasRepository, selectedSection == .changes { selectedSection = .activity }
         }
+    }
+
+    @ViewBuilder
+    private var baseContent: some View {
+        if selectedSection == .terminal || selectedSection == .files || selectedSection == .browser {
+            inspectorContent
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                inspectorContent
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func extraContent(_ extra: ExtraTab) -> some View {
+        if extra.kind == .browser {
+            SessionBrowserView(model: model, isPrimary: false)
+        } else {
+            SessionTerminalView(
+                projectPath: sessionRepositoryPath,
+                recipes: VerificationRecipeBuilder.make(facts: control.projectFacts, repository: workflow.repository),
+                repositoryID: workflow.repository.isGitRepository ? workflow.repository.repositoryID : nil,
+                repositoryFingerprint: workflow.repositoryFingerprint
+            )
+        }
+    }
+
+    /// Opens another Terminal/Browser; the first one reuses the built-in tab.
+    private func openNew(_ kind: Section) {
+        if !openSections.contains(kind) { return reopen(kind) }
+        let sessionID = kind == .browser ? model.navigationSessionID : nil
+        let extra = ExtraTab(kind: kind, number: extras.filter { $0.kind == kind && $0.sessionID == sessionID }.count + 2,
+                             sessionID: sessionID)
+        extras.append(extra)
+        selectedExtraID = extra.id
+    }
+
+    private func closeExtra(_ extra: ExtraTab) {
+        extras.removeAll { $0.id == extra.id }
+        if selectedExtraID == extra.id { selectedExtraID = nil }
     }
 
     /// Changes only makes sense when the session's folder is a Git working tree.
@@ -95,52 +185,191 @@ struct SessionInspector: View {
     }
 
     private var visibleSections: [Section] {
-        hasSessionGitRepository ? [.activity, .terminal, .files, .changes] : [.activity, .terminal, .files]
+        hasSessionGitRepository ? [.activity, .terminal, .files, .changes, .browser] : [.activity, .terminal, .files, .browser]
+    }
+
+    private var browserSessions: [String] { browserSessionsRaw.split(separator: "|").map(String.init) }
+
+    private var isBrowserOpenHere: Bool {
+        model.navigationSessionID.map(browserSessions.contains) ?? false
+    }
+
+    private func setBrowserOpenHere(_ open: Bool) {
+        guard let id = model.navigationSessionID else { return }
+        var ids = browserSessions.filter { $0 != id }
+        if open { ids.append(id) }
+        browserSessionsRaw = ids.suffix(50).joined(separator: "|")  // ponytail: drops the oldest past 50 sessions
+    }
+
+    private func isVisible(_ extra: ExtraTab) -> Bool {
+        extra.sessionID == nil || extra.sessionID == model.navigationSessionID
+    }
+
+    /// Tabs the user hasn't closed; closed ones come back through the + menu.
+    /// Browser follows this session's own open state instead of the shared list.
+    private var openSections: [Section] {
+        let closed = Set(closedRaw.split(separator: "|").map(String.init))
+        let open = visibleSections.filter { $0 == .browser ? isBrowserOpenHere : !closed.contains($0.rawValue) }
+        return open.isEmpty ? [selectedSection] : open
+    }
+
+    private func close(_ section: Section) {
+        guard openSections.count > 1 else { return }
+        if section == .browser { setBrowserOpenHere(false) } else { closedRaw += "|" + section.rawValue }
+        if selectedSection == section, let next = openSections.first(where: { $0 != section }) { selectedSection = next }
+    }
+
+    private func reopen(_ section: Section) {
+        if section == .browser { setBrowserOpenHere(true) }
+        closedRaw = closedRaw.split(separator: "|").filter { $0 != section.rawValue }.joined(separator: "|")
+        selectedSection = section
+        selectedExtraID = nil
+    }
+
+    /// Sits right after the last tab, like a browser's new-tab button.
+    private var newTabMenu: some View {
+        let closedSections = visibleSections.filter { !openSections.contains($0) }
+        return Button { isShowingNewTab.toggle() } label: {
+            DockIcon(.plus, size: 14, color: Color.dockPrimaryText)
+                .frame(width: 28, height: 28)
+                .background(isShowingNewTab ? Color.dockSurface2 : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("New tab")
+        .accessibilityLabel("New tab")
+        .popover(isPresented: $isShowingNewTab, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 2) {
+                newTabRow("New Terminal", icon: .terminal) { openNew(.terminal) }
+                newTabRow("New Browser", icon: .globe) { openNew(.browser) }
+                ForEach(closedSections.filter { $0 != .terminal && $0 != .browser }) { section in
+                    newTabRow(section.navigationTitle, icon: section.icon) { reopen(section) }
+                }
+            }
+            .padding(6)
+            .frame(minWidth: 180)
+        }
+    }
+
+    private func newTabRow(_ title: String, icon: Ph, action: @escaping () -> Void) -> some View {
+        Button {
+            isShowingNewTab = false
+            action()
+        } label: {
+            HStack(spacing: 8) {
+                DockIcon(icon, size: 14, color: Color.dockSecondaryText)
+                Text(title).font(.system(size: 12, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
     }
 
     private var sessionModePicker: some View {
-        // Keep every session destination in one horizontally scrollable strip.
-        // There is no overflow menu competing with the same navigation model.
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                ForEach(visibleSections) { section in
-                    sectionButton(section)
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    ForEach(openSections) { section in
+                        sectionButton(section)
+                    }
+                    ForEach(extras.filter(isVisible)) { extraButton($0) }
+                    if !isCompactStrip { newTabMenu }
                 }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 10)
+
+            if isCompactStrip { newTabMenu }
+
+            Spacer(minLength: 0)
+
+            if let onToggle {
+                DockSidebarToggle(isCollapsed: false, edge: .trailing, action: onToggle)
+                .padding(.horizontal, 8)
+            }
         }
-        .padding(.vertical, 2)
-        .frame(height: 44)
+        .frame(height: headerHeight)
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { isCompactStrip = proxy.size.width < 420 }
+                    .onChange(of: proxy.size.width) { _, width in isCompactStrip = width < 420 }
+            }
+        )
         .background(Color.dockSurface2.opacity(0.58))
         .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
     private func sectionButton(_ section: Section) -> some View {
-        Button {
-            withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) {
-                selectedSection = section
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Text(section.navigationTitle)
-                    .lineLimit(1)
-            }
-                .font(sessionTabFont)
-                .foregroundStyle(selectedSection == section ? Color.dockPrimaryText : Color.dockSecondaryText)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 32)
-                .background(selectedSection == section ? Color.dockAccentMuted : hoveredSection == section ? Color.dockSurface2 : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
-                .frame(minHeight: 44)
+        let isSelected = selectedSection == section && selectedExtraID == nil
+        return HStack(spacing: 6) {
+            Button {
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) { selectedSection = section; selectedExtraID = nil }
+            } label: {
+                HStack(spacing: 6) {
+                    DockIcon(section.icon, size: 12, color: isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    if isSelected || !isCompactStrip { Text(section.navigationTitle).lineLimit(1) }
+                }
                 .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(section.navigationTitle)
+            .accessibilityLabel("Show \(section.rawValue)")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            if isSelected, openSections.count + extras.filter(isVisible).count > 1 {
+                Button { close(section) } label: {
+                    DockIcon(.x, size: 10, color: Color.dockSecondaryText)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close \(section.navigationTitle)")
+            }
         }
-        .buttonStyle(.dockHover)
+        .font(sessionTabFont)
+        .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(isSelected ? Color.dockAccentMuted : hoveredSection == section ? Color.dockSurface2 : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
         .fixedSize(horizontal: true, vertical: false)
-        .onHover { isHovering in
-            hoveredSection = isHovering ? section : nil
+        .onHover { hoveredSection = $0 ? section : nil }
+    }
+
+    private func extraButton(_ extra: ExtraTab) -> some View {
+        let isSelected = selectedExtraID == extra.id
+        return HStack(spacing: 6) {
+            Button {
+                withAnimation(reduceMotion ? nil : .dockEase(duration: 0.16)) { selectedExtraID = extra.id }
+            } label: {
+                HStack(spacing: 6) {
+                    DockIcon(extra.kind.icon, size: 12, color: isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    if isSelected || !isCompactStrip { Text("\(extra.kind.navigationTitle) \(extra.number)").lineLimit(1) }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+
+            Button { closeExtra(extra) } label: {
+                DockIcon(.x, size: 10, color: Color.dockSecondaryText)
+                    .frame(width: 16, height: 16)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close \(extra.kind.navigationTitle) \(extra.number)")
         }
-        .accessibilityLabel("Show \(section.rawValue)")
-        .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
+        .font(sessionTabFont)
+        .foregroundStyle(isSelected ? Color.dockPrimaryText : Color.dockSecondaryText)
+        .padding(.horizontal, 10)
+        .frame(height: 32)
+        .background(isSelected ? Color.dockAccentMuted : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1))
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private var inspectorHeader: some View {
@@ -209,6 +438,8 @@ struct SessionInspector: View {
                 repositoryID: workflow.repository.isGitRepository ? workflow.repository.repositoryID : nil,
                 repositoryFingerprint: workflow.repositoryFingerprint
             )
+        case .browser:
+            SessionBrowserView(model: model)
         }
     }
 

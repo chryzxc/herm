@@ -229,9 +229,15 @@ struct SessionFilesView: View {
             }
             .disabled(isRefreshing)
             DockMenu {
-                Toggle("Show generated files", isOn: $showsGeneratedFiles)
-                Button("Reveal project in Finder") {
+                Button {
+                    showsGeneratedFiles.toggle()
+                } label: {
+                    Label("Show generated files", icon: showsGeneratedFiles ? .eye : .eyeSlash)
+                }
+                Button {
                     projectPath.map { ExternalOpen.reveal([URL(fileURLWithPath: $0)]) }
+                } label: {
+                    Label("Reveal project in Finder", icon: .folderOpen)
                 }
             } label: {
                 ExplorerToolbarIcon(icon: .dotsThree)

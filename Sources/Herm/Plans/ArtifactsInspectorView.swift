@@ -685,7 +685,7 @@ struct ArtifactsInspectorView: View {
                 .frame(maxWidth: 420)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dockPrimary)
                     .tint(Color.dockAccent)
                     .controlSize(.small)
             }
