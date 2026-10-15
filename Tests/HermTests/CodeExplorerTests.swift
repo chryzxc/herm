@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import Herm
@@ -36,6 +37,21 @@ struct CodeExplorerTests {
         #expect(last[#""http://x""#] == .string)
         #expect(last["1"] == .number)
         #expect(last[#"// "note""#] == .comment)
+    }
+
+    @Test func pendingHighlightCannotOverwriteAReplacementDocument() async throws {
+        let source = String(repeating: "let value = 42 // comment\n", count: 10_000)
+        let editor = CodeEditorContainerView(text: source, filePath: "old.swift")
+        await Task.yield()
+        editor.setText("123", filePath: "new.json")
+        let storage = try #require(editor.textView.textStorage)
+        let deadline = Date().addingTimeInterval(3)
+        while storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor != CodeToken.number.color,
+              Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(editor.textView.string == "123")
+        #expect(storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor == CodeToken.number.color)
     }
 
     @Test func expandingAFolderCutByTheScanBudgetLoadsItsChildren() async throws {

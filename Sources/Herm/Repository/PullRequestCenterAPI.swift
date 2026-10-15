@@ -13,7 +13,11 @@ protocol PullRequestMutationExecuting {
 /// Keeping it separate from the SwiftUI surface makes request policy and data
 /// parsing independently reviewable.
 struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
-    private let session = URLSession(configuration: .ephemeral)
+    private let transport: any GitHubIssueTransport
+
+    init(transport: any GitHubIssueTransport = URLSession(configuration: .ephemeral)) {
+        self.transport = transport
+    }
 
     func viewer() async -> String? {
         guard let row = try? await request(path: "/user") as? [String: Any] else { return nil }
@@ -25,7 +29,13 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
             async let authored = search("is:pr is:open author:\(viewerLogin)", localPaths: localPaths)
             async let reviewing = search("is:pr is:open review-requested:\(viewerLogin)", localPaths: localPaths)
             var unique: [String: PullRequestRecord] = [:]
-            for record in try await authored + reviewing { unique[record.id] = record }
+            let (authoredRows, reviewingRows) = try await (authored, reviewing)
+            for record in authoredRows { unique[record.id] = record }
+            // Search omits requested_reviewers; membership in this result is authoritative.
+            for var record in reviewingRows {
+                record.requestedReviewers = [viewerLogin]
+                unique[record.id] = record
+            }
             return .success(Array(unique.values))
         } catch { return .failure(PullRequestCenterFailure(repository: "GitHub account search")) }
     }
@@ -39,24 +49,6 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
             page += 1
         }
         return rows
-    }
-
-    func enrichIndex(_ records: [PullRequestRecord], batchSize: Int = 6) async -> [PullRequestRecord] {
-        guard !records.isEmpty else { return [] }
-        var enriched: [PullRequestRecord] = []
-        enriched.reserveCapacity(records.count)
-        for start in stride(from: 0, to: records.count, by: batchSize) {
-            guard !Task.isCancelled else { break }
-            let batch = Array(records[start..<min(start + batchSize, records.count)])
-            let details = await withTaskGroup(of: (Int, PullRequestRecord?).self, returning: [(Int, PullRequestRecord?)].self) { group in
-                for (offset, record) in batch.enumerated() { group.addTask { (offset, await detail(record)) } }
-                var output: [(Int, PullRequestRecord?)] = []
-                for await result in group { output.append(result) }
-                return output.sorted { $0.0 < $1.0 }
-            }
-            enriched.append(contentsOf: details.map { $0.1 ?? batch[$0.0] })
-        }
-        return enriched
     }
 
     func index(repository: GitHubRepositoryReference, localPath: String) async -> Result<[PullRequestRecord], PullRequestCenterFailure> {
@@ -173,7 +165,7 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept"); request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token = await GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body) }
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await transport.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }
         return try JSONSerialization.jsonObject(with: data)
     }

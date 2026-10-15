@@ -305,7 +305,7 @@ struct PullRequestBranchIcon: View {
     }
 }
 
-struct PullRequestRecord: Identifiable, Equatable {
+struct PullRequestRecord: Identifiable, Equatable, Sendable {
     let repository: GitHubRepositoryReference
     let localPath: String
     let number: Int
@@ -342,13 +342,16 @@ struct PullRequestCenterFailure: Error { let repository: String }
 
 @MainActor
 final class PullRequestCenterModel: ObservableObject {
+    private let api: PullRequestCenterAPI
     private let mutationExecutor: any PullRequestMutationExecuting
+    private var summaryTasks: [String: Task<PullRequestRecord?, Never>] = [:]
     @Published private(set) var records: [PullRequestRecord] = []
     @Published private(set) var filesByID: [String: [PullRequestFile]] = [:]
     @Published private(set) var commentsByID: [String: [PullRequestComment]] = [:]
     @Published private(set) var commitsByID: [String: [PullRequestCommit]] = [:]
     @Published private(set) var eventsByID: [String: [PullRequestEvent]] = [:]
     @Published private(set) var isRefreshing = false
+    @Published private(set) var hasLoaded = false
     @Published private(set) var loadingDetailIDs = Set<String>()
     @Published private(set) var isPostingComment = false
     @Published private(set) var isUpdatingStatus = false
@@ -360,8 +363,9 @@ final class PullRequestCenterModel: ObservableObject {
     @Published var selectedID: String?
     private var generation = UUID()
 
-    init(mutationExecutor: any PullRequestMutationExecuting = PullRequestCenterAPI()) {
-        self.mutationExecutor = mutationExecutor
+    init(api: PullRequestCenterAPI = PullRequestCenterAPI(), mutationExecutor: (any PullRequestMutationExecuting)? = nil) {
+        self.api = api
+        self.mutationExecutor = mutationExecutor ?? api
     }
 
     var isLoadingDetail: Bool { !loadingDetailIDs.isEmpty }
@@ -395,9 +399,11 @@ final class PullRequestCenterModel: ObservableObject {
     }
 
     func refresh(projects: [ProjectSummary]) async {
+        guard !isRefreshing else { return }
         let paths = Array(Set(projects.filter(\.isRenderableProject).map(\.name))).filter { !$0.isEmpty }
         let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil; failedRepositories = []
-        let api = PullRequestCenterAPI()
+        resetSummaryCache()
+        loadingDetailIDs.removeAll()
         // Resolve the viewer while local git remotes are being read.
         async let viewerLookup = api.viewer()
         let remotes = await withTaskGroup(of: (String, GitHubRepositoryReference?).self, returning: [(String, GitHubRepositoryReference)].self) { group in
@@ -420,17 +426,13 @@ final class PullRequestCenterModel: ObservableObject {
             guard token == generation else { return }
             switch global {
             case .success(let rows):
-                // Show search rows right away, then fill in the head/base
-                // refs that GitHub search items omit in the background.
+                // Row metadata is loaded as the lazy list reveals each PR.
                 records = rows.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
                 filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:]
                 failedRepositories = []
                 errorMessage = nil
                 repairSelection()
-                let enriched = await api.enrichIndex(rows)
-                guard token == generation else { return }
-                let byID = Dictionary(enriched.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-                records = records.map { byID[$0.id] ?? $0 }
+                hasLoaded = true
                 isRefreshing = false
                 return
             case .failure:
@@ -455,7 +457,7 @@ final class PullRequestCenterModel: ObservableObject {
         }
         let results = await withTaskGroup(of: Result<[PullRequestRecord], PullRequestCenterFailure>.self, returning: [Result<[PullRequestRecord], PullRequestCenterFailure>].self) { group in
             for (path, remote) in remotes {
-                group.addTask { await api.index(repository: remote, localPath: path) }
+                group.addTask { [api] in await api.index(repository: remote, localPath: path) }
             }
             var output: [Result<[PullRequestRecord], PullRequestCenterFailure>] = []
             for await result in group { output.append(result) }
@@ -470,6 +472,11 @@ final class PullRequestCenterModel: ObservableObject {
         if !fresh.isEmpty { records = fresh.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }; filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:] }
         failedRepositories = failures
         if fresh.isEmpty && !failures.isEmpty { errorMessage = "GitHub could not load pull requests. Check your GitHub sign-in or try again." }
+        if failures.isEmpty { hasLoaded = true }
+        if fresh.isEmpty && failures.isEmpty {
+            records = []
+            filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:]
+        }
         isRefreshing = false
         repairSelection()
     }
@@ -479,6 +486,8 @@ final class PullRequestCenterModel: ObservableObject {
     /// pull-request workspace performs.
     func refreshScoped(repositoryPath: String) async {
         let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil; failedRepositories = []
+        resetSummaryCache()
+        loadingDetailIDs.removeAll()
         let remote = await RepositoryService.githubRemote(path: repositoryPath)
         guard token == generation else { return }
         guard let remote else {
@@ -489,14 +498,14 @@ final class PullRequestCenterModel: ObservableObject {
             isRefreshing = false
             return
         }
-        let api = PullRequestCenterAPI()
-        let viewer = await api.viewer()
+        async let viewerLookup = api.viewer()
+        async let indexLookup = api.index(repository: remote, localPath: repositoryPath)
+        let (viewer, result) = await (viewerLookup, indexLookup)
         guard token == generation else { return }
         viewerLogin = viewer
-        let result = await api.index(repository: remote, localPath: repositoryPath)
-        guard token == generation else { return }
         switch result {
         case .success(let rows):
+            hasLoaded = true
             records = rows.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
             filesByID = [:]; commentsByID = [:]; commitsByID = [:]; eventsByID = [:]
             failedRepositories = []
@@ -511,21 +520,41 @@ final class PullRequestCenterModel: ObservableObject {
 
     func repairSelection() { if !visible.contains(where: { $0.id == selectedID }) { selectedID = visible.first?.id } }
 
+    private func resetSummaryCache() {
+        for task in summaryTasks.values { task.cancel() }
+        summaryTasks.removeAll()
+    }
+
+    @discardableResult
+    func loadSummary(for record: PullRequestRecord) async -> PullRequestRecord? {
+        guard !isRefreshing else { return nil }
+        if let task = summaryTasks[record.id] { return await task.value }
+        let token = generation
+        let api = api
+        let task = Task { await api.detail(record) }
+        summaryTasks[record.id] = task
+        let updated = await task.value
+        guard token == generation, !task.isCancelled else { return nil }
+        if let updated, let index = records.firstIndex(where: { $0.id == record.id }) {
+            records[index] = updated
+        }
+        return updated
+    }
+
     func loadSelectedDetail() async {
-        guard let selected,
+        guard !isRefreshing, let selected,
               filesByID[selected.id] == nil
         else { return }
         guard beginDetailLoad(for: selected.id) else { return }
-        defer { finishDetailLoad(for: selected.id) }
-        let api = PullRequestCenterAPI()
-        async let detail = api.detail(selected)
+        let token = generation
+        defer { if token == generation { finishDetailLoad(for: selected.id) } }
+        async let detail = loadSummary(for: selected)
         async let files = api.files(selected)
         async let comments = api.comments(selected)
         async let commits = api.commits(selected)
         async let events = api.events(selected)
-        let (updated, loadedFiles, loadedComments, loadedCommits, loadedEvents) = await (detail, files, comments, commits, events)
-        guard !Task.isCancelled else { return }
-        if let updated, let index = records.firstIndex(where: { $0.id == selected.id }) { records[index] = updated }
+        let (_, loadedFiles, loadedComments, loadedCommits, loadedEvents) = await (detail, files, comments, commits, events)
+        guard token == generation, !Task.isCancelled else { return }
         // `nil` means this selection has never attempted a detail load. Store
         // an empty terminal value on failure so selection changes cannot leave
         // the detail task eligible for an immediate retry loop. The code-tab
@@ -539,6 +568,7 @@ final class PullRequestCenterModel: ObservableObject {
 
     func refreshSelectedDetail() async {
         guard let selected else { return }
+        summaryTasks.removeValue(forKey: selected.id)?.cancel()
         filesByID[selected.id] = nil
         commentsByID[selected.id] = nil
         commitsByID[selected.id] = nil
@@ -573,6 +603,7 @@ final class PullRequestCenterModel: ObservableObject {
             errorMessage = "GitHub could not update this pull request status. Check your sign-in and try again."
             return false
         }
+        summaryTasks.removeValue(forKey: record.id)?.cancel()
         if status == .closed {
             records.removeAll { $0.id == record.id }
             filesByID[record.id] = nil
@@ -804,11 +835,12 @@ struct PullRequestDetailView: View {
     @State private var commentDraft = ""
     @StateObject private var diffPresentationCache = PullRequestDiffPresentationCache()
     @StateObject private var mutationCoordinator = PullRequestMutationCoordinator()
+    @Environment(\.dockTitleRow) private var titleRow
 
     var body: some View {
         detailPane
-            .task(id: center.selectedID) {
-                guard center.selectedID != nil else { return }
+            .task(id: "\(center.selectedID ?? ""):\(center.isRefreshing)") {
+                guard center.selectedID != nil, !center.isRefreshing else { return }
                 await center.loadSelectedDetail()
             }
             .onChange(of: center.selectedID) { _, _ in
@@ -887,7 +919,7 @@ struct PullRequestDetailView: View {
                 RepositoryShimmerBlock(width: 88, height: 28, cornerRadius: 7)
             }
             .padding(.horizontal, 16)
-            .frame(height: 44)
+            .frame(height: 52)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             ScrollView {
@@ -945,7 +977,9 @@ struct PullRequestDetailView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .frame(height: 44)
+            .frame(height: 52)
+            .background { if titleRow != nil { TitlebarDoubleClickArea() } }
+            .background(titleRow != nil ? Color.dockSidebar : .clear)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             if detailTab == 1 {
@@ -1391,18 +1425,9 @@ struct PullRequestDetailView: View {
             .buttonStyle(.dockHover)
             .help("Switch to \(reviewPreferences.diffMode == .unified ? "split" : "unified") diff")
 
-            Button {
+            DockSidebarToggle(isCollapsed: !reviewPreferences.showsFileTree, edge: .leading, panel: "file tree") {
                 reviewPreferences.showsFileTree.toggle()
-            } label: {
-                PullRequestReviewToolbarIcon(
-                    name: .sidebar,
-                    accessibilityLabel: reviewPreferences.showsFileTree ? "Hide file tree" : "Show file tree",
-                    isSelected: reviewPreferences.showsFileTree,
-                    tooltip: reviewPreferences.showsFileTree ? "Hide file tree" : "Show file tree"
-                )
             }
-            .buttonStyle(.dockHover)
-            .help(reviewPreferences.showsFileTree ? "Hide file tree" : "Show file tree")
         }
         .frame(height: 34)
     }
@@ -1591,50 +1616,69 @@ enum RepositoryReviewWorkspaceMode: Equatable {
 }
 
 struct PullRequestWorkspace: View {
+    @AppStorage("herm.repositoryListCollapsed") private var isListCollapsed = false
     @ObservedObject var center: PullRequestCenterModel
     let projects: [ProjectSummary]
     let onOpenChat: (PullRequestRecord) -> Void
     var onOpenIssueChat: (GitHubIssueRecord) -> Void = { _ in }
     let mode: RepositoryReviewWorkspaceMode
-    @StateObject private var issueCenter = IssueCenterModel()
+    @ObservedObject var issueCenter: IssueCenterModel
     @State private var showsDetail = false
+    @Environment(\.dockTitleRow) private var titleRow
 
     init(
         center: PullRequestCenterModel,
+        issueCenter: IssueCenterModel,
         projects: [ProjectSummary],
         onOpenChat: @escaping (PullRequestRecord) -> Void,
         onOpenIssueChat: @escaping (GitHubIssueRecord) -> Void = { _ in },
         mode: RepositoryReviewWorkspaceMode = .pullRequests
     ) {
         self.center = center
+        self.issueCenter = issueCenter
         self.projects = projects
         self.onOpenChat = onOpenChat
         self.onOpenIssueChat = onOpenIssueChat
         self.mode = mode
     }
 
+    private var header: some View {
+        DockPageHeader(
+            title: mode.title,
+            subtitle: mode.subtitle,
+            onRefresh: { Task { await refreshActiveWorkspace() } },
+            isRefreshing: mode.isIssues ? issueCenter.isRefreshing : center.isRefreshing,
+            sidebarCollapsed: $isListCollapsed
+        )
+    }
+
     var body: some View {
+        // In the window the detail runs up into the title row like the chat;
+        // the page header then tops only the list column.
+        let headerInList = titleRow != nil && !isListCollapsed
         VStack(spacing: 0) {
-            DockPageHeader(
-                title: mode.title,
-                subtitle: mode.subtitle,
-                onRefresh: { Task { await refreshActiveWorkspace() } },
-                isRefreshing: mode.isIssues ? issueCenter.isRefreshing : center.isRefreshing
-            )
+            if !headerInList { header }
             if mode.isIssues {
-                IssueWorkspace(center: issueCenter, projects: projects, onOpenChat: onOpenIssueChat)
+                IssueWorkspace(center: issueCenter, projects: projects, onOpenChat: onOpenIssueChat, hidesList: isListCollapsed,
+                               listHeader: headerInList ? AnyView(header) : nil)
             } else {
-                AdaptiveSplit(primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
-                    listPane.frame(idealWidth: 390, maxWidth: 460)
+                AdaptiveSplit(primaryMinWidth: 300, secondaryMinWidth: 360, alwaysSplitWhenWide: true, hidesPrimary: isListCollapsed, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
+                    VStack(spacing: 0) {
+                        if headerInList { header }
+                        listPane
+                    }
+                    .frame(idealWidth: 390, maxWidth: 460)
                 } secondary: {
                     PullRequestDetailView(center: center, onOpenChat: onOpenChat)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The split's GeometryReader honors the titlebar safe area; the detail fills that row itself.
+        .ignoresSafeArea(.container, edges: headerInList ? .top : [])
         .background(Color.dockCanvas)
         .task {
-            if mode == .pullRequests, center.records.isEmpty { await center.refresh(projects: projects) }
+            if mode == .pullRequests, !center.hasLoaded, !center.isRefreshing { await center.refresh(projects: projects) }
         }
         .onChange(of: center.filter) { _, _ in center.repairSelection() }
         .onChange(of: center.query) { _, _ in center.repairSelection() }
@@ -1680,7 +1724,12 @@ struct PullRequestWorkspace: View {
                     ForEach(0..<6, id: \.self) { index in listLoadingRow(index: index) }
                 } else {
                     ForEach(center.visible) { pr in
-                        Button { center.selectedID = pr.id; showsDetail = true } label: { PullRequestRowView(pullRequest: pr, isSelected: center.selectedID == pr.id) }.buttonStyle(.dockHover)
+                        Button { center.selectedID = pr.id; showsDetail = true } label: { PullRequestRowView(pullRequest: pr, isSelected: center.selectedID == pr.id) }
+                            .buttonStyle(.dockHover)
+                            .task(id: center.isRefreshing) {
+                                guard !center.isRefreshing else { return }
+                                await center.loadSummary(for: pr)
+                            }
                     }
                 }
             }

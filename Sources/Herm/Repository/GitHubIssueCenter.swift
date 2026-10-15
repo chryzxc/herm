@@ -130,20 +130,20 @@ struct GitHubIssueCenterAPI: Sendable {
                   !viewerLogin.isEmpty else {
                 return .failure(PullRequestCenterFailure(repository: "GitHub issue search"))
             }
-            let queries = [
-                "is:issue is:open author:\(viewerLogin)",
-                "is:issue is:open assignee:\(viewerLogin)"
-            ]
+            async let authored = search("is:issue is:open author:\(viewerLogin)", localPaths: localPaths)
+            async let assigned = search("is:issue is:open assignee:\(viewerLogin)", localPaths: localPaths)
             var unique: [String: GitHubIssueRecord] = [:]
-            for query in queries {
-                let payload = try await request(path: "/search/issues", query: ["q": query, "per_page": "100"])
-                guard let items = (payload as? [String: Any])?["items"] as? [[String: Any]] else { throw GitHubCodeHostError.malformedResponse }
-                for item in items {
-                    if let issue = GitHubIssueParser.parse(item, localPaths: localPaths) { unique[issue.id] = issue }
-                }
-            }
+            for issue in try await authored + assigned { unique[issue.id] = issue }
             return .success(Array(unique.values))
         } catch { return .failure(PullRequestCenterFailure(repository: "GitHub issue search")) }
+    }
+
+    private func search(_ query: String, localPaths: [String: String]) async throws -> [GitHubIssueRecord] {
+        let payload = try await request(path: "/search/issues", query: ["q": query, "per_page": "100"])
+        guard let items = (payload as? [String: Any])?["items"] as? [[String: Any]] else {
+            throw GitHubCodeHostError.malformedResponse
+        }
+        return items.compactMap { GitHubIssueParser.parse($0, localPaths: localPaths) }
     }
 
     func detail(_ issue: GitHubIssueRecord) async -> GitHubIssueRecord? {
@@ -241,15 +241,17 @@ final class IssueCenterModel: ObservableObject {
     }
 
     func refresh(projects: [ProjectSummary]) async {
+        guard !isRefreshing else { return }
         let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
         let paths = Array(Set(projects.filter(\.isRenderableProject).map(\.name))).filter { !$0.isEmpty }
+        async let viewerLookup = api.viewer()
         let remotes = await withTaskGroup(of: (String, GitHubRepositoryReference?).self, returning: [String: String].self) { group in
             for path in paths { group.addTask { (path, await self.repositoryRemote(path)) } }
             var output: [String: String] = [:]
             for await (path, remote) in group { if let remote { output[remote.id] = path } }
             return output
         }
-        let viewerResult = await api.viewer()
+        let viewerResult = await viewerLookup
         guard token == generation else { return }
         guard case .success(let viewer) = viewerResult else {
             viewerLogin = nil
@@ -262,21 +264,27 @@ final class IssueCenterModel: ObservableObject {
         let result = await api.searchIssues(viewerLogin: viewer, localPaths: remotes)
         guard token == generation else { return }
         switch result {
-        case .success(let issues): records = issues.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }; hasLoaded = true; errorMessage = nil
+        case .success(let issues):
+            records = issues.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+            detailByID = [:]
+            loadingDetailID = nil
+            hasLoaded = true
+            errorMessage = nil
         case .failure: errorMessage = hasLoaded ? "Using last known GitHub issues. Refresh to retry." : "GitHub issues are unavailable. Check your sign-in or try again."
         }
         isRefreshing = false; repairSelection()
     }
 
     func loadSelectedDetail() async {
-        guard let issue = selected, detailByID[issue.id] == nil else { return }
+        guard !isRefreshing, let issue = selected, detailByID[issue.id] == nil else { return }
+        let token = generation
         loadingDetailID = issue.id
         detailErrorMessage = nil
         defer {
-            if loadingDetailID == issue.id { loadingDetailID = nil }
+            if token == generation, loadingDetailID == issue.id { loadingDetailID = nil }
         }
         let detail = await api.detail(issue)
-        guard !Task.isCancelled, selectedIssueID == issue.id else { return }
+        guard token == generation, !Task.isCancelled, selectedIssueID == issue.id else { return }
         if let detail {
             detailByID[issue.id] = detail
         } else {
@@ -379,6 +387,7 @@ extension GitHubIssueRecord {
 struct IssueDetailView: View {
     @ObservedObject var center: IssueCenterModel
     let onOpenChat: (GitHubIssueRecord) -> Void
+    @Environment(\.dockTitleRow) private var titleRow
 
     var body: some View {
         Group {
@@ -390,7 +399,7 @@ struct IssueDetailView: View {
                         issueContent(issue)
                     }
                 }
-                .task(id: issue.id) { await center.loadSelectedDetail() }
+                .task(id: "\(issue.id):\(center.isRefreshing)") { await center.loadSelectedDetail() }
             } else if center.isRefreshing && center.records.isEmpty {
                 detailLoadingPane
             } else {
@@ -493,6 +502,8 @@ struct IssueDetailView: View {
             }
             .padding(.horizontal, 24)
             .frame(height: 52)
+            .background { if titleRow != nil { TitlebarDoubleClickArea() } }
+            .background(titleRow != nil ? Color.dockSidebar : .clear)
             .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
 
             if let error = center.detailErrorMessage {
@@ -558,17 +569,20 @@ struct IssueWorkspace: View {
     @ObservedObject var center: IssueCenterModel
     let projects: [ProjectSummary]
     let onOpenChat: (GitHubIssueRecord) -> Void
+    var hidesList = false
+    /// The page header, when it tops the list column instead of the whole page.
+    var listHeader: AnyView?
     @State private var collapsedRepositories: Set<String> = []
     @State private var showsDetail = false
 
     var body: some View {
-        AdaptiveSplit(primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
+        AdaptiveSplit(primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, hidesPrimary: hidesList, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
             listPane.frame(idealWidth: 390, maxWidth: 460)
         } secondary: {
             IssueDetailView(center: center, onOpenChat: onOpenChat)
         }
         .background(Color.dockCanvas)
-        .task { if center.records.isEmpty { await center.refresh(projects: projects) } }
+        .task { if !center.hasLoaded, !center.isRefreshing { await center.refresh(projects: projects) } }
         .onChange(of: center.filter) { _, _ in center.repairSelection() }
         .onChange(of: center.query) { _, _ in center.repairSelection() }
         .onChange(of: center.repositoryScope) { _, _ in center.repairSelection() }
@@ -576,6 +590,7 @@ struct IssueWorkspace: View {
 
     private var listPane: some View {
         VStack(spacing: 0) {
+            listHeader
             issueToolbar
             ScrollView {
                 LazyVStack(spacing: 2) {

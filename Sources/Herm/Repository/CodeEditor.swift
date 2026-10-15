@@ -61,7 +61,7 @@ final class CodeEditorContainerView: NSView {
     private var filePath: String
     private var wrapsLines: Bool?
     private var lastFindRequest = 0
-    private var highlightWork: DispatchWorkItem?
+    private var highlightTask: Task<Void, Never>?
     private var observers: [NSObjectProtocol] = []
 
     override var isFlipped: Bool { true }
@@ -110,7 +110,8 @@ final class CodeEditorContainerView: NSView {
         addSubview(scrollView)
 
         textView.recomputeLineStarts()
-        CodeSyntaxHighlighter.apply(to: textView, filePath: filePath)
+        CodeSyntaxHighlighter.apply(to: textView, tokens: [])
+        scheduleHighlight()
 
         let center = NotificationCenter.default
         observers.append(center.addObserver(forName: NSText.didChangeNotification, object: textView, queue: .main) { [weak self] _ in
@@ -123,12 +124,22 @@ final class CodeEditorContainerView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
+    deinit {
+        highlightTask?.cancel()
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
 
     override func layout() {
         super.layout()
         scrollView.frame = bounds
-        if wrapsLines == true { textView.frame.size.width = scrollView.contentSize.width }
+        if wrapsLines == true { textView.frame.size.width = wrapWidth }
+    }
+
+    /// The clip view spans the whole scroll view and insets its content by the
+    /// gutter, so wrapped text must subtract that inset.
+    private var wrapWidth: CGFloat {
+        let insets = scrollView.contentView.contentInsets
+        return max(0, scrollView.contentSize.width - insets.left - insets.right)
     }
 
     func setText(_ text: String, filePath: String) {
@@ -138,7 +149,8 @@ final class CodeEditorContainerView: NSView {
         textView.string = text
         textView.recomputeLineStarts()
         gutter.updateThickness()
-        CodeSyntaxHighlighter.apply(to: textView, filePath: filePath)
+        CodeSyntaxHighlighter.apply(to: textView, tokens: [])
+        scheduleHighlight()
         let length = (text as NSString).length
         textView.setSelectedRange(NSRange(location: min(selection.location, length), length: 0))
         gutter.needsDisplay = true
@@ -159,10 +171,10 @@ final class CodeEditorContainerView: NSView {
         textView.autoresizingMask = wraps ? [.width] : []
         container.widthTracksTextView = wraps
         container.containerSize = NSSize(
-            width: wraps ? scrollView.contentSize.width : CGFloat.greatestFiniteMagnitude,
+            width: wraps ? wrapWidth : CGFloat.greatestFiniteMagnitude,
             height: CGFloat.greatestFiniteMagnitude
         )
-        if wraps { textView.frame.size.width = scrollView.contentSize.width }
+        if wraps { textView.frame.size.width = wrapWidth }
         textView.sizeToFit()
         gutter.needsDisplay = true
     }
@@ -183,15 +195,29 @@ final class CodeEditorContainerView: NSView {
         gutter.updateThickness()
         selectionDidChange()
         onTextChanged(textView.string)
-        // ponytail: full-document re-highlight, debounced; switch to
-        // paragraph-scoped highlighting if 256 KB files feel laggy.
-        highlightWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            CodeSyntaxHighlighter.apply(to: self.textView, filePath: self.filePath)
+        scheduleHighlight(debounced: true)
+    }
+
+    private func scheduleHighlight(debounced: Bool = false) {
+        highlightTask?.cancel()
+        let source = textView.string
+        let path = filePath
+        highlightTask = Task { @MainActor [weak self] in
+            if debounced {
+                do { try await Task.sleep(for: .milliseconds(150)) } catch { return }
+            }
+            let work = Task.detached(priority: .userInitiated) {
+                CodeTokenizer.tokens(in: source, language: CodeLanguage(path: path))
+            }
+            let tokens = await withTaskCancellationHandler {
+                await work.value
+            } onCancel: {
+                work.cancel()
+            }
+            guard !Task.isCancelled, let self,
+                  self.filePath == path, self.textView.string == source else { return }
+            CodeSyntaxHighlighter.apply(to: self.textView, tokens: tokens)
         }
-        highlightWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
     private func selectionDidChange() {
@@ -373,10 +399,9 @@ final class CodeGutterView: NSRulerView {
                 fragment = layoutManager.lineFragmentRect(forGlyphAt: layoutManager.glyphIndexForCharacter(at: start), effectiveRange: nil)
             }
             let y = convert(NSPoint(x: 0, y: fragment.minY + textView.textContainerOrigin.y), from: textView).y
-            let baselineOffset = start < text.length
-                ? layoutManager.location(forGlyphAt: layoutManager.glyphIndexForCharacter(at: start)).y
-                : CodeSyntaxHighlighter.font.ascender
-            let baseline = y + baselineOffset
+            // Empty lines report the newline glyph's baseline at the fragment
+            // bottom, so use the font's baseline for every line.
+            let baseline = y + layoutManager.defaultBaselineOffset(for: CodeSyntaxHighlighter.font)
 
             let isCurrent = line == textView.currentLine
             let number = NSAttributedString(string: "\(line)", attributes: [
@@ -538,12 +563,12 @@ final class CodeMenuItem: NSMenuItem {
         return [.font: font, .foregroundColor: NSColor.codeText, .paragraphStyle: paragraph]
     }
 
-    static func apply(to textView: NSTextView, filePath: String) {
+    static func apply(to textView: NSTextView, tokens: [(NSRange, CodeToken)]) {
         guard let storage = textView.textStorage else { return }
         let full = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
         storage.setAttributes(baseAttributes, range: full)
-        for (range, token) in CodeTokenizer.tokens(in: storage.string, language: CodeLanguage(path: filePath)) {
+        for (range, token) in tokens {
             storage.addAttribute(.foregroundColor, value: token.color, range: range)
         }
         storage.endEditing()
@@ -551,7 +576,7 @@ final class CodeMenuItem: NSMenuItem {
     }
 }
 
-enum CodeToken: Equatable {
+enum CodeToken: Equatable, Sendable {
     case keyword, string, number, comment, type, function, property, heading, link
 
     @MainActor var color: NSColor {
@@ -568,7 +593,7 @@ enum CodeToken: Equatable {
     }
 }
 
-struct CodeLanguage: Equatable {
+struct CodeLanguage: Equatable, Sendable {
     let name: String
     var keywords: [String] = []
     var lineComments: [String] = []
@@ -649,8 +674,9 @@ enum CodeTokenizer {
         var result: [(NSRange, CodeToken)] = []
 
         func add(_ pattern: String, _ token: CodeToken, group: Int = 0, options: NSRegularExpression.Options = [.anchorsMatchLines]) {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return }
+            guard !Task.isCancelled, let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return }
             for match in regex.matches(in: source, range: full) where match.range(at: group).location != NSNotFound {
+                guard !Task.isCancelled else { return }
                 result.append((match.range(at: group), token))
             }
         }
@@ -689,8 +715,9 @@ enum CodeTokenizer {
         alternatives.append(#"(?<s>"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')"#)
         if language.backtickStrings { alternatives.append(#"(?<bt>`(?:\\.|[^`\\])*`)"#) }
 
-        if let regex = try? NSRegularExpression(pattern: alternatives.joined(separator: "|"), options: [.anchorsMatchLines]) {
+        if !Task.isCancelled, let regex = try? NSRegularExpression(pattern: alternatives.joined(separator: "|"), options: [.anchorsMatchLines]) {
             for match in regex.matches(in: source, range: full) {
+                guard !Task.isCancelled else { break }
                 let isComment = ["cb", "cl"].contains { match.range(withName: $0).location != NSNotFound }
                 var token: CodeToken = isComment ? .comment : .string
                 if !isComment, language.keysBeforeColon, followedByColon(text, after: NSMaxRange(match.range)) {

@@ -186,8 +186,11 @@ private final class IssueTestTransport: GitHubIssueTransport, @unchecked Sendabl
     private let responses: [String: Any]
     private let failing: Bool
     private let failingPaths: Set<String>
-    private(set) var paths: [String] = []
-    private(set) var searchQueries: [String] = []
+    private let lock = NSLock()
+    private var recordedPaths: [String] = []
+    private var recordedQueries: [String] = []
+    var paths: [String] { lock.withLock { recordedPaths } }
+    var searchQueries: [String] { lock.withLock { recordedQueries } }
 
     init(responses: [String: Any] = [:], failing: Bool = false, failingPaths: Set<String> = []) {
         self.responses = responses
@@ -197,11 +200,11 @@ private final class IssueTestTransport: GitHubIssueTransport, @unchecked Sendabl
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         let path = request.url?.path ?? ""
-        paths.append(path)
+        lock.withLock { recordedPaths.append(path) }
         if path == "/search/issues",
            let url = request.url,
            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "q" })?.value {
-            searchQueries.append(query)
+            lock.withLock { recordedQueries.append(query) }
         }
         if failing || failingPaths.contains(path) { throw GitHubCodeHostError.unavailable }
         let payload = responses[request.url?.path ?? ""] ?? [String: Any]()
