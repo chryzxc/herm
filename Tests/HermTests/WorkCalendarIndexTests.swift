@@ -64,7 +64,7 @@ struct WorkCalendarIndexTests {
     @Test func worktreesResolveToTheirMainCheckout() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
-        let repo = root.appendingPathComponent("climateRX")
+        let repo = root.appendingPathComponent("sample-repo")
         let worktree = repo.appendingPathComponent(".worktrees/t_1")
         try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git/worktrees/t_1"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: worktree.appendingPathComponent("src"), withIntermediateDirectories: true)

@@ -106,25 +106,59 @@ struct QuotaWorkspaceView: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
-        HStack(spacing: 10) {
-            Text(QuotaWorkspacePresentation.overviewSentence(
-                providerCount: control.providerQuotas.count + availableDescriptors.count,
-                connectedCount: control.providerQuotas.count,
-                attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
-            ))
-            .font(DockTypography.control)
-            .foregroundStyle(Color.dockSecondaryText)
-            .lineLimit(1)
-            .truncationMode(.tail)
+        VStack(alignment: .leading, spacing: DockSpacing.control) {
+            HStack(spacing: DockSpacing.group) {
+                Text(QuotaWorkspacePresentation.overviewSentence(
+                    providerCount: control.providerQuotas.count + availableDescriptors.count,
+                    connectedCount: control.providerQuotas.count,
+                    attentionCount: control.providerQuotas.filter(QuotaWorkspacePresentation.needsAttention).count
+                ))
+                .font(DockTypography.control)
+                .foregroundStyle(Color.dockSecondaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-            Spacer(minLength: 8)
+                Spacer(minLength: 0)
 
-            Button { addingPoolAccount = true } label: {
-                DockIconLabel("Add Account", icon: .plus)
+                Text(refreshState?.lastSuccess.map {
+                    "Updated \($0.formatted(.dateTime.hour().minute()))"
+                } ?? "Not updated yet")
+                .font(DockTypography.machineMetadata)
+                .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
+                .fixedSize()
+                .help(refreshState?.isStale == true ? "The last refresh failed; figures are from this time." : "Last successful provider read")
             }
-            .buttonStyle(.dockSecondary)
-            .help("Add an account to a Hermes credential pool")
+            .frame(minHeight: DockControlMetrics.compactHeight)
 
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: DockSpacing.group) {
+                    addAccountButton
+                    Spacer(minLength: DockSpacing.group)
+                    quotaRefreshControls
+                }
+                VStack(alignment: .leading, spacing: DockSpacing.control) {
+                    addAccountButton
+                    quotaRefreshControls
+                }
+            }
+        }
+        .padding(.bottom, DockSpacing.group)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+    }
+
+    private var addAccountButton: some View {
+        Button { addingPoolAccount = true } label: {
+            DockIconLabel("Add account", icon: .plus)
+        }
+        .buttonStyle(.dockPrimary)
+        .controlSize(.small)
+        .dockHitTarget()
+        .fixedSize()
+        .help("Add an account to a Hermes credential pool")
+    }
+
+    private var quotaRefreshControls: some View {
+        HStack(spacing: DockSpacing.control) {
             autoRefreshMenu
 
             Button {
@@ -136,19 +170,28 @@ struct QuotaWorkspaceView: View {
                     isSyncingPeak = false
                 }
             } label: {
-                DockIconLabel(isSyncingPeak ? "Syncing…" : "Sync Peak Hours", icon: .arrowsClockwise)
+                DockIconLabel("Sync peak hours", icon: .arrowsClockwise)
+                    .hidden()
+                    .overlay {
+                        if isSyncingPeak {
+                            DockActionLabel(
+                                title: "Sync peak hours",
+                                pendingTitle: "Syncing…",
+                                isPending: true
+                            )
+                        } else {
+                            DockIconLabel("Sync peak hours", icon: .arrowsClockwise)
+                        }
+                    }
+                    .font(DockTypography.control)
+                    .foregroundStyle(Color.dockSecondaryText)
             }
-            .buttonStyle(.dockSecondary)
+            .buttonStyle(.dockPress)
+            .dockHitTarget()
+            .fixedSize()
             .disabled(isSyncingPeak)
+            .accessibilityLabel(isSyncingPeak ? "Syncing peak hours" : "Sync peak hours")
             .help(peakSyncError ?? peakSyncedAt.map { "Peak hours synced \($0.formatted(.relative(presentation: .named))). Ask Hermes to search the web again." } ?? "Ask Hermes to search the web for current provider peak and off-peak hours.")
-
-            if let lastSuccess = refreshState?.lastSuccess {
-                Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
-                    .font(DockTypography.machineMetadata)
-                    .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
-                    .lineLimit(1)
-                    .help(refreshState?.isStale == true ? "The last refresh failed; figures are from this time." : "Last successful provider read")
-            }
 
             DockIconButton(
                 icon: .arrowsClockwise,
@@ -156,9 +199,9 @@ struct QuotaWorkspaceView: View {
                 isBusy: refreshState?.isRefreshing == true,
                 style: DockThemePalette(theme: DockThemeRuntime.current)
             ) { control.refreshProviderQuota() }
+            .dockHitTarget()
         }
-        .frame(minHeight: DockControlMetrics.hitTarget)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .fixedSize()
     }
 
     private var autoRefreshMenu: some View {
@@ -169,14 +212,19 @@ struct QuotaWorkspaceView: View {
                 }
             }
         } label: {
-            HStack(spacing: 5) {
+            HStack(spacing: DockSpacing.tight) {
                 DockIcon(.clock, size: 13, color: Color.dockMetadataText)
-                Text(autoRefreshMinutes == 0 ? "Auto off" : "Every \(autoRefreshMinutes)m")
+                Text(autoRefreshMinutes == 0 ? "Auto-refresh off" : "Every \(autoRefreshMinutes)m")
                     .font(DockTypography.control)
                     .foregroundStyle(Color.dockSecondaryText)
+                DockIcon(.caretDown, size: 12, color: Color.dockMetadataText)
             }
+            .padding(.horizontal, DockSpacing.control)
+            .dockHitTarget()
         }
         .fixedSize()
+        .accessibilityLabel("Auto-refresh provider quota")
+        .accessibilityValue(Self.autoRefreshTitle(autoRefreshMinutes))
         .help("Re-read provider quota automatically while this page is open")
     }
 
@@ -684,7 +732,7 @@ struct QuotaWorkspaceView: View {
                     .font(DockTypography.control)
                     .frame(minWidth: 76, minHeight: DockControlMetrics.compactHeight)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.dockSecondary)
             if let website = descriptor.website {
                 Link(destination: website) {
                     DockIcon(.arrowSquareOut, size: 13, color: Color.dockSecondaryText)
@@ -815,6 +863,36 @@ private struct QuotaReorderDropDelegate: DropDelegate {
 // MARK: - Presentation
 
 struct QuotaWorkspacePresentation {
+    static func quotaProviderID(for hermesProvider: String?) -> String? {
+        guard let p = hermesProvider?.lowercased() else { return nil }
+        switch p {
+        case let p where p.contains("codex") || p == "openai": return "codex"
+        case let p where p.contains("anthropic") || p.contains("claude"): return "claude"
+        case let p where p.contains("zai") || p.contains("glm"): return "glm"
+        case let p where p.contains("opencode"): return "opencode"
+        case let p where p.contains("gemini") || p.contains("antigravity"): return "antigravity"
+        case let p where p.contains("deepseek"): return "deepseek"
+        case let p where p.contains("kimi") || p.contains("moonshot"): return "kimi"
+        case let p where p.contains("openrouter"): return "openrouter"
+        default: return nil
+        }
+    }
+
+    /// All compact surfaces use the page's limiting window and presented snapshots.
+    static func reading(_ snapshots: [ProviderQuotaSnapshot], for provider: String?) -> (snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double)? {
+        let quotaID = quotaProviderID(for: provider)
+        let matching = snapshots.filter { snapshot in
+            guard let quotaID else { return false }
+            return snapshot.provider == quotaID || snapshot.provider.hasPrefix(quotaID + "-")
+        }
+        // A known provider without a reading must not display another provider's quota.
+        let candidates = quotaID == nil ? snapshots : matching
+        return candidates.compactMap { snapshot in
+            guard let window = limitingWindow(snapshot), let remaining = window.remainingPercent else { return nil }
+            return (snapshot: snapshot, window: window, remaining: remaining)
+        }.min { $0.remaining < $1.remaining }
+    }
+
     struct ResetEvent {
         let snapshot: ProviderQuotaSnapshot
         let window: ProviderQuotaWindow

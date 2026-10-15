@@ -250,7 +250,7 @@ struct EdgeQuotaPreview: View {
                     }
                     PeakNoticeBadge(quotaID: snapshot.provider, compact: true)
                     let windows = Self.compactWindows(snapshot.windows)
-                    HStack(spacing: 4) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 60))], spacing: 8) {
                         if windows.isEmpty {
                             Text(snapshot.safeDetail ?? "No quota windows reported")
                                 .font(.system(size: 11))
@@ -369,19 +369,21 @@ struct EdgeQuotaPreview: View {
         return display.replacingOccurrences(of: " days", with: "d").replacingOccurrences(of: " est.", with: "")
     }
 
-    /// Picks the 5-hour ("Session") and weekly windows every quota service
-    /// reports, labelled compactly. Providers without those windows fall back
-    /// to their first two windows under their own names.
+    /// Keeps every reported allowance, with the common session and weekly windows first.
     nonisolated static func compactWindows(_ windows: [ProviderQuotaWindow]) -> [(label: String, window: ProviderQuotaWindow)] {
         let session = windows.first { $0.label == "Session" || $0.id == "gemini-5h" }
         let weekly = windows.first { $0.label == "Weekly" || $0.id == "gemini-weekly" }
         let known = [session.map { ("5h", $0) }, weekly.map { ("7d", $0) }].compactMap { $0 }
-        if !known.isEmpty { return known.map { (label: $0.0, window: $0.1) } }
+        if !known.isEmpty {
+            let ids = Set(known.map { $0.1.id })
+            return known.map { (label: $0.0, window: $0.1) }
+                + windows.filter { !ids.contains($0.id) }.map { (label: $0.label, window: $0) }
+        }
         // Pay-as-you-go cards: balance plus how long it lasts.
         if let runway = windows.first(where: { $0.id == "hermes-runway" }), let balance = windows.first {
             return [(label: balance.label, window: balance), (label: "Runway", window: runway)]
         }
-        return windows.prefix(2).map { (label: $0.label, window: $0) }
+        return windows.map { (label: $0.label, window: $0) }
     }
 
     static func shortDuration(_ interval: TimeInterval) -> String {
@@ -514,6 +516,7 @@ enum ChatQuotaSettingsKey {
 /// Each bot may spend a different provider, so this tracks the lowest of all;
 /// clicking lists every provider.
 struct ChatQuotaChip: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var control: ControlCenterModel
     let openQuota: () -> Void
     /// Hermes provider of the selected model (e.g. `openai-codex`); its quota is shown when known.
@@ -521,31 +524,8 @@ struct ChatQuotaChip: View {
     @AppStorage(ChatQuotaSettingsKey.chip) private var enabled = true
     @State private var showingDetail = false
 
-    /// The provider whose headline window (5h, else its first) has the least left.
     private var lowest: (snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double)? {
-        let quotaID = Self.quotaProviderID(for: selectedProvider)
-        let matching = control.providerQuotas.filter { quotaID != nil && ($0.provider == quotaID || $0.provider.hasPrefix(quotaID! + "-")) }
-        return (matching.isEmpty ? control.providerQuotas : matching).compactMap { snapshot in
-            guard let window = EdgeQuotaPreview.compactWindows(snapshot.windows).first?.window,
-                  let remaining = EdgeQuotaPreview.remainingPercent(window.remainingPercent) else { return nil }
-            return (snapshot, window, remaining)
-        }.min { $0.remaining < $1.remaining }
-    }
-
-    /// Hermes provider name -> quota provider id; nil keeps the lowest-of-all fallback.
-    static func quotaProviderID(for hermesProvider: String?) -> String? {
-        guard let p = hermesProvider?.lowercased() else { return nil }
-        switch p {
-        case let p where p.contains("codex") || p == "openai": return "codex"
-        case let p where p.contains("anthropic") || p.contains("claude"): return "claude"
-        case let p where p.contains("zai") || p.contains("glm"): return "glm"
-        case let p where p.contains("opencode"): return "opencode"
-        case let p where p.contains("gemini") || p.contains("antigravity"): return "antigravity"
-        case let p where p.contains("deepseek"): return "deepseek"
-        case let p where p.contains("kimi") || p.contains("moonshot"): return "kimi"
-        case let p where p.contains("openrouter"): return "openrouter"
-        default: return nil
-        }
+        control.quotaReading(for: selectedProvider)
     }
 
     var body: some View {
@@ -557,6 +537,8 @@ struct ChatQuotaChip: View {
                     Text("\(Int(lowest.remaining.rounded()))%")
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(QuotaWorkspaceView.color(for: lowest.window.threshold))
+                        .contentTransition(.numericText(value: lowest.remaining.rounded()))
+                        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: Int(lowest.remaining.rounded()))
                 }
                 .fixedSize()
                 .contentShape(Rectangle())

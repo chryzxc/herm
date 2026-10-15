@@ -164,6 +164,7 @@ enum HermesFeatureIDs {
         case learningDetail = "learning.detail"
         case learningEdit = "learning.edit"
         case learningDelete = "learning.delete"
+        case browserManage = "browser.manage"
         case bots
     }
 
@@ -180,7 +181,7 @@ enum HermesFeatureIDs {
         "config.set", "model.options", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach",
         "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore", "file.attach", "gateway.capabilities",
         "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder",
-        "skills.manage", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete"
+        "skills.manage", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage"
     ]
     static let all = ID.allCases.map(\.rawValue)
     static let capabilityIDs = ID.allCases.filter { !transportIDs.contains($0.rawValue) }.map(\.rawValue)

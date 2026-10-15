@@ -79,6 +79,15 @@ struct ProviderConnectTests {
     }
 
     @MainActor
+    @Test func loginOutputRemovesTerminalFormatting() {
+        let lines = ProviderLoginModel.cappedLines([], newLines: [
+            "Open \u{001B}[94mhttps://auth.openai.com/device\u{001B}[0m",
+            "Code: \u{001B}[1mABCD-1234\u{001B}[0m"
+        ])
+        #expect(lines == ["Open https://auth.openai.com/device", "Code: ABCD-1234"])
+    }
+
+    @MainActor
     @Test func loginOutputIsBounded() {
         let many = (1...500).map { "line \($0)" }
         let capped = ProviderLoginModel.cappedLines([], newLines: many)

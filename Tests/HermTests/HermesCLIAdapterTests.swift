@@ -156,6 +156,42 @@ struct HermesCLIAdapterTests {
         let priorityRows = try #require(JSONSerialization.jsonObject(with: priorityData) as? [[String: Any]])
         #expect(priorityRows.compactMap { $0["id"] as? String } == ["new-task", "old-task", "ready-task", "undated-task"])
     }
+
+    @Test func largeISODatedBoardSortsWithoutMultiSecondStalls() async throws {
+        let client = CLITestRPCClient()
+        let formatter = ISO8601DateFormatter()
+        client.boardTasks = (0..<500).map { index in
+            let rank = (index * 7919) % 500
+            return ["id": "task-\(rank)", "title": "Work", "status": "ready",
+                    "updated_at": formatter.string(from: Date(timeIntervalSince1970: 1_750_000_000 + Double(rank)))]
+        }
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        let start = ContinuousClock.now
+        let result = try await adapter.kanbanList(boardSlug: "main", filter: KanbanListFilter(sort: "updated"))
+        let elapsed = start.duration(to: .now)
+        let data = try #require(result.stdout.data(using: .utf8))
+        let rows = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+
+        #expect(rows.compactMap { $0["id"] as? String } == (0..<500).reversed().map { "task-\($0)" })
+        #expect(elapsed < .seconds(2))
+    }
+
+    @Test func isoDatesAndNumericStringsKeepStableDateOrdering() async throws {
+        let client = CLITestRPCClient()
+        client.boardTasks = [
+            ["id": "first", "title": "First", "status": "ready", "updated_at": "2025-01-01T00:00:00Z", "created_at": "2025-01-01T00:00:00Z"],
+            ["id": "undated", "title": "Undated", "status": "ready"],
+            ["id": "equal", "title": "Equal", "status": "ready", "updated_at": "1735689600", "created_at": "1735689600"],
+            ["id": "newest", "title": "Newest", "status": "ready", "updated_at": "2025-01-02T00:00:00Z", "created_at": "2025-01-02T00:00:00Z"]
+        ]
+        let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
+        for sort in ["updated", "created-desc"] {
+            let result = try await adapter.kanbanList(boardSlug: "main", filter: KanbanListFilter(sort: sort))
+            let data = try #require(result.stdout.data(using: .utf8))
+            let rows = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+            #expect(rows.compactMap { $0["id"] as? String } == ["newest", "first", "equal", "undated"])
+        }
+    }
     @Test func kanbanDiagnosticsAndAttachmentsForwardBoardScope() async throws {
         let client = CLITestRPCClient()
         let adapter = HermesCLIAdapter(rpc: HermesControlRPC(client: client))
@@ -194,6 +230,7 @@ private final class CLITestRPCClient: HermesRPCClientProtocol {
     private(set) var commands: [String] = []
     private(set) var httpPaths: [String] = []
     var result: [String: Any] = ["code": 0, "stdout": "ok"]
+    var boardTasks: [[String: Any]]?
 
     func connect() async throws {}
     func close() {}
@@ -211,6 +248,7 @@ private final class CLITestRPCClient: HermesRPCClientProtocol {
                 "id": "archived-task", "title": "Archived task", "status": "archived"
             ]]]]]
         }
+        if let boardTasks { return ["columns": [["tasks": boardTasks]]] }
         return ["columns": [["name": "ready", "tasks": [
             ["id": "ready-task", "title": "Ready task", "status": "ready"],
             ["id": "new-task", "title": "New task", "status": "ready", "updated_at": 200, "created_at": 200, "priority": 80],

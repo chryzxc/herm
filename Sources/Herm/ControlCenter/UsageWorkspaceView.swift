@@ -7,16 +7,17 @@ struct UsageWorkspaceView: View {
     @ObservedObject var control: ControlCenterModel
     @AppStorage(Self.daysKey) private var days = 30
     @State private var expandedModels: Set<String> = []
+    @Environment(\.dockTitleRow) private var titleRow
 
     static let daysKey = "dock.usage.days"
     static var storedDays: Int { UserDefaults.standard.object(forKey: daysKey) as? Int ?? 30 }
-    private static let dayChoices = [7, 30, 90]
 
     private var refreshState: ProjectionRefreshState? { control.refreshState(for: "token.usage") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            toolbar
+            // In the window the page header carries these controls.
+            if titleRow == nil { toolbar }
 
             if let report = control.tokenUsage {
                 overview(report)
@@ -54,35 +55,9 @@ struct UsageWorkspaceView: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 4) {
-                ForEach(Self.dayChoices, id: \.self) { choice in
-                    DockTabButton(title: "\(choice) days", isSelected: days == choice) { days = choice }
-                }
-            }
-            .onChange(of: days) { _, days in control.refreshTokenUsage(days: days) }
-
-            Spacer(minLength: 8)
-
-            if let lastSuccess = refreshState?.lastSuccess {
-                Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
-                    .font(DockTypography.machineMetadata)
-                    .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
-                    .lineLimit(1)
-            }
-
-            DockIconButton(
-                icon: .arrowsClockwise,
-                label: refreshState?.isRefreshing == true ? "Refreshing usage" : "Refresh usage",
-                isBusy: refreshState?.isRefreshing == true,
-                style: DockThemePalette(theme: DockThemeRuntime.current)
-            ) {
-                control.refreshTokenUsage(days: days)
-                control.refreshYearActivity()
-            }
-        }
-        .frame(minHeight: DockControlMetrics.hitTarget)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        UsageToolbar(control: control)
+            .frame(minHeight: DockControlMetrics.hitTarget)
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
     }
 
     // MARK: Overview
@@ -340,7 +315,8 @@ struct UsageWorkspaceView: View {
     }
 
     static func cost(_ value: Double) -> String {
-        value.formatted(.currency(code: "USD").precision(.fractionLength(value < 10 ? 2 : 0)))
+        // A literal "$": the USD currency style prints "US$" outside the US locale.
+        "$" + value.formatted(.number.precision(.fractionLength(value < 10 ? 2 : 0)))
     }
 
     static func percent(_ value: Double) -> String {
@@ -407,7 +383,7 @@ private struct DailyUsageChart: View {
                     if let selected {
                         RuleMark(x: .value("Day", selected.day, unit: .day))
                             .foregroundStyle(Color.dockBorderStrong)
-                            .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                            .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
                                 dayTooltip(selected)
                             }
                     }
@@ -458,7 +434,46 @@ private struct DailyUsageChart: View {
             .foregroundStyle(Color.dockSecondaryText)
         }
         .padding(8)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockCanvas))
+        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).fill(Color.dockOpaqueCanvas))
         .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 1))
+    }
+}
+
+/// Range picker, freshness and refresh for Usage; shared by the page body and the window title row.
+struct UsageToolbar: View {
+    @ObservedObject var control: ControlCenterModel
+    @AppStorage(UsageWorkspaceView.daysKey) private var days = 30
+    private static let dayChoices = [7, 30, 90]
+
+    private var refreshState: ProjectionRefreshState? { control.refreshState(for: "token.usage") }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 4) {
+                ForEach(Self.dayChoices, id: \.self) { choice in
+                    DockTabButton(title: "\(choice) days", isSelected: days == choice) { days = choice }
+                }
+            }
+            .onChange(of: days) { _, days in control.refreshTokenUsage(days: days) }
+
+            Spacer(minLength: 8)
+
+            if let lastSuccess = refreshState?.lastSuccess {
+                Text("Updated \(lastSuccess, format: .dateTime.hour().minute())")
+                    .font(DockTypography.machineMetadata)
+                    .foregroundStyle(refreshState?.isStale == true ? Color.dockWarning : Color.dockMetadataText)
+                    .lineLimit(1)
+            }
+
+            DockIconButton(
+                icon: .arrowsClockwise,
+                label: refreshState?.isRefreshing == true ? "Refreshing usage" : "Refresh usage",
+                isBusy: refreshState?.isRefreshing == true,
+                style: DockThemePalette(theme: DockThemeRuntime.current)
+            ) {
+                control.refreshTokenUsage(days: days)
+                control.refreshYearActivity()
+            }
+        }
     }
 }

@@ -27,7 +27,7 @@ final class ProviderLoginModel: ObservableObject {
         let arguments = command.split(separator: " ").map(String.init)
         let searchDirectories = Self.defaultSearchDirectories()
         guard let executablePath = Self.executablePath(command: command, searchDirectories: searchDirectories) else {
-            failureText = "The \(arguments.first ?? command) command was not found on this Mac. Install it, or run \(command) in a terminal and refresh."
+            failureText = "The \(arguments.first ?? "provider") command was not found on this Mac. Install it and try again."
             return
         }
 
@@ -61,7 +61,7 @@ final class ProviderLoginModel: ObservableObject {
         do {
             try child.run()
         } catch {
-            failureText = "\(command) could not be started: \(error.localizedDescription)"
+            failureText = "The sign-in command could not be started: \(error.localizedDescription)"
             pipe.fileHandleForReading.readabilityHandler = nil
             return
         }
@@ -106,7 +106,7 @@ final class ProviderLoginModel: ObservableObject {
     // MARK: - Pure helpers
 
     static func cappedLines(_ existing: [String], newLines: [String], lineLimit: Int = 400, characterLimit: Int = 16_000) -> [String] {
-        var lines = existing + newLines
+        var lines = existing + newLines.map(HermesRuntimeInspector.stripANSI)
         while lines.count > lineLimit { lines.removeFirst(lines.count - lineLimit) }
         while lines.joined(separator: "\n").count > characterLimit && lines.count > 1 { lines.removeFirst(1) }
         return lines

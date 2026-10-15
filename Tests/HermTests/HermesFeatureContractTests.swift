@@ -33,7 +33,7 @@ struct HermesFeatureContractTests {
             "voice.record", "voice.tts", "config.get", "config.set", "model.options",
             "profiles.list", "profiles.describe", "profiles.create", "profiles.configure",
             "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore", "gateway.capabilities",
-            "skills.manage", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete"
+            "skills.manage", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage"
         ]
         #expect(Set(HermesFeatureIDs.transportIDs) == Set(expectedMethods))
 

@@ -356,7 +356,7 @@ private struct OfficeToolbar: View {
                 iconButton(.users, help: showsAgents ? "Hide bots" : "Show bots",
                            isOn: showsAgents, action: onToggleAgents)
                 if canShowRoster {
-                    iconButton(.sidebar, help: showsRoster ? "Hide crew roster" : "Show crew roster",
+                    iconButton(.sidebarSimple, help: showsRoster ? "Hide crew roster" : "Show crew roster",
                                isOn: showsRoster, action: onToggleRoster)
                 }
                 iconButton(.kanban, help: "Kanban task board", isOn: false, action: onShowBoard)
@@ -476,7 +476,7 @@ private struct OfficeAgentInspector: View {
             Label("Open conversation", icon: .chats)
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.dockPrimary)
         .tint(Color.dockAccent)
         OfficeCard(title: "Current work") {
             Text(session.title)

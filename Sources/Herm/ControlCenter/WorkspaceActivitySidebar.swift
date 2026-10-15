@@ -224,6 +224,8 @@ struct WorkspaceActivitySidebar: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
                     }
+                    // Keeps content scrolled past the top from drawing through the title row.
+                    .clipped()
                 }
             }
         }
@@ -239,7 +241,8 @@ struct WorkspaceActivitySidebar: View {
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
                 onRefresh: { applyKanbanFilters() },
-                isRefreshing: control.isKanbanRefreshPending
+                isRefreshing: control.isKanbanRefreshPending,
+                trailing: { if titleRow != nil { kanbanToolbarControls } }
             ))
         } else if selectedMode == .automations {
             AnyView(DockPageHeader(
@@ -260,7 +263,14 @@ struct WorkspaceActivitySidebar: View {
                 title: selectedMode.pageHeaderTitle,
                 subtitle: pageHeaderSubtitle,
                 onRefresh: { control.refresh() },
-                isRefreshing: control.isRefreshing
+                isRefreshing: control.isRefreshing,
+                sidebarCollapsed: $isSettingsRailCollapsed
+            ))
+        } else if selectedMode == .usage {
+            AnyView(DockPageHeader(
+                title: selectedMode.pageHeaderTitle,
+                subtitle: pageHeaderSubtitle,
+                trailing: { if titleRow != nil { UsageToolbar(control: control) } }
             ))
         } else {
             AnyView(DockPageHeader(
@@ -270,13 +280,19 @@ struct WorkspaceActivitySidebar: View {
         }
     }
 
+    @AppStorage("herm.settingsRailCollapsed") private var isSettingsRailCollapsed = false
+    /// Set in the window: page toolbars move up into the title row like a native toolbar.
+    @Environment(\.dockTitleRow) private var titleRow
+
     private var settingsWorkspaceContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             pageHeader
             GeometryReader { geometry in
                 let layout = SettingsLayoutMode.forWidth(geometry.size.width)
                 Group {
-                    if layout == .rail {
+                    if layout == .rail, isSettingsRailCollapsed {
+                        settingsDetailScroll
+                    } else if layout == .rail {
                         HStack(spacing: 0) {
                             settingsCategoryRail
                                 .frame(width: 240)
@@ -385,7 +401,7 @@ struct WorkspaceActivitySidebar: View {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .appearance, .notifications, .runtime, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
+        case .general, .gateway, .appearance, .notifications, .runtime, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
             return nil
         }
     }
@@ -1490,17 +1506,6 @@ struct WorkspaceActivitySidebar: View {
                 }
             }
         }
-        .task(id: selectedMode == .kanban) {
-            guard selectedMode == .kanban else { return }
-            while !Task.isCancelled {
-                let hasLiveCards = control.kanbanTasks.contains {
-                    ["running", "claimed", "in_progress", "blocked", "review", "waiting"].contains($0.status.lowercased())
-                }
-                try? await Task.sleep(for: hasLiveCards ? .seconds(5) : .seconds(15))
-                guard !Task.isCancelled, selectedMode == .kanban else { return }
-                applyKanbanFilters(trigger: .background)
-            }
-        }
     }
 
     private var automationsContent: some View {
@@ -2376,7 +2381,7 @@ struct WorkspaceActivitySidebar: View {
     private var projectDirectoryActions: some View {
         HStack(spacing: 10) {
             addProjectDirectoryButton
-            if control.capabilityAvailable(HermesFeatureIDs.ID.projectsCreate.rawValue) {
+            if control.projectMutationsAvailable {
                 Button("CREATE PROJECT") { chooseProjectForCreation() }
                     .buttonStyle(.dockHover)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
@@ -2452,15 +2457,15 @@ struct WorkspaceActivitySidebar: View {
                     .truncationMode(.middle)
             }
             HStack(spacing: 10) {
-                if !project.isActive, control.capabilityAvailable(HermesFeatureIDs.ID.projectsSetActive.rawValue) {
+                if !project.isActive, control.projectMutationsAvailable {
                     Button("SET ACTIVE") { requestProjectMutation(.activate) }
                         .foregroundStyle(Color.dockAccent)
                 }
-                if control.capabilityAvailable(HermesFeatureIDs.ID.projectsArchive.rawValue) {
+                if control.projectMutationsAvailable {
                     Button("ARCHIVE") { requestProjectMutation(.archive) }
                         .foregroundStyle(Color.dockWarning)
                 }
-                if control.capabilityAvailable(HermesFeatureIDs.ID.projectsDelete.rawValue) {
+                if control.projectMutationsAvailable {
                     Button("DELETE") { requestProjectMutation(.delete) }
                         .foregroundStyle(Color.dockDestructive)
                 }
@@ -2564,14 +2569,15 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var kanbanContent: some View {
+        VStack(spacing: 0) {
+        pageHeader
         AdaptiveSplit(breakpoint: 940, primaryMinWidth: 560, showsSecondary: selectedKanbanTask != nil, onBack: nil) {
             // Header and toolbar stay fixed; the board takes the remaining
             // height so each lane scrolls its own cards.
             VStack(alignment: .leading, spacing: 0) {
-                pageHeader
 
                 VStack(alignment: .leading, spacing: 12) {
-                        kanbanToolbar
+                        if titleRow == nil { kanbanToolbar }
 
                         if control.capabilityAvailable("kanban.create"), !kanbanCurrentSessionOnly, isShowingKanbanComposer {
                             createKanbanTaskForm
@@ -2703,7 +2709,19 @@ struct WorkspaceActivitySidebar: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task(id: selectedMode == .kanban) {
+            guard selectedMode == .kanban else { return }
+            while !Task.isCancelled {
+                let hasLiveCards = control.kanbanTasks.contains {
+                    ["running", "claimed", "in_progress", "blocked", "review", "waiting"].contains($0.status.lowercased())
+                }
+                try? await Task.sleep(for: hasLiveCards ? .seconds(5) : .seconds(15))
+                guard !Task.isCancelled, selectedMode == .kanban else { return }
+                applyKanbanFilters(trigger: .background)
+            }
+        }
     }
 
     private var kanbanBoard: some View {
@@ -2735,6 +2753,14 @@ struct WorkspaceActivitySidebar: View {
     }
 
     private var kanbanToolbar: some View {
+        kanbanToolbarControls
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Color.dockSurface.opacity(0.28))
+            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    private var kanbanToolbarControls: some View {
         HStack(spacing: 8) {
             DockMenu {
                 if control.kanbanBoards.isEmpty {
@@ -2803,10 +2829,6 @@ struct WorkspaceActivitySidebar: View {
                 .font(.system(size: 11, weight: .semibold))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Color.dockSurface.opacity(0.28))
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
     private var kanbanFiltersAreActive: Bool {
@@ -3087,7 +3109,7 @@ struct WorkspaceActivitySidebar: View {
                 } label: {
                     Group {
                         if control.isCreatingKanbanTask {
-                            ProgressView().controlSize(.small).tint(Color.dockOnAccentText)
+                            ProgressView().controlSize(.small).tint(Color.dockPrimaryText)
                         } else {
                             DockIcon(.arrowUpRight)
                                 .font(.system(size: 13, weight: .bold))
@@ -3095,7 +3117,7 @@ struct WorkspaceActivitySidebar: View {
                     }
                     .frame(width: 36, height: 36)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.dockPrimary)
                 .opacity(canCreateKanbanTask && !control.isCreatingKanbanTask ? 1 : 0.42)
                 .disabled(!canCreateKanbanTask || control.isCreatingKanbanTask)
                 .help("Create task")
@@ -4343,6 +4365,9 @@ struct WorkspaceActivitySidebar: View {
         VStack(alignment: .leading, spacing: 17) {
             if selectedSettingsCategory == .general {
                 generalPreferencesSection
+            }
+            if selectedSettingsCategory == .gateway {
+                GatewayConnectionSettingsView(onRestart: onRestartDock)
             }
             if selectedSettingsCategory == .notifications {
                 notificationPreferencesSection
@@ -5592,7 +5617,7 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
 
     var categories: [SettingsCategory] {
         switch self {
-        case .app: [.general, .appearance, .notifications]
+        case .app: [.general, .gateway, .appearance, .notifications]
         case .agent: [.runtime, .chat, .memory, .voice, .advanced]
         case .tools: [.workspace, .browser, .safety, .integrations]
         case .activity: [.session, .project, .diagnostics, .updates]
@@ -5602,6 +5627,7 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
 
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case general
+    case gateway
     case appearance
     case notifications
     case runtime
@@ -5623,6 +5649,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
+        case .gateway: "Gateway"
         case .appearance: "Appearance"
         case .notifications: "Notifications"
         case .updates: "Updates"
@@ -5644,6 +5671,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .general: "Startup and keyboard shortcuts"
+        case .gateway: "Local, remote, SSH, and Hermes Cloud connections"
         case .appearance: "Themes, sidebar, notch, and companion"
         case .notifications: "Completion alerts and repository changes"
         case .updates: "Herm and Hermes versions and updates"
@@ -5665,6 +5693,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var icon: Ph {
         switch self {
         case .general: .slidersHorizontal
+        case .gateway: .globe
         case .appearance: .sparkle
         case .notifications: .bell
         case .updates: .arrowsClockwise

@@ -175,7 +175,7 @@ struct CalendarWorkspaceView: View {
             .padding(.leading, 4)
             if !calendar.isDate(month, equalTo: Date(), toGranularity: .month) || selected != calendar.startOfDay(for: Date()) {
                 Button("Today") { load(Date(), select: calendar.startOfDay(for: Date())) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.dockSecondary)
                     .controlSize(.small)
             }
 
@@ -727,7 +727,7 @@ private struct CalendarDayPane: View, Equatable {
                 } label: {
                     Label(copied ? "Copied" : "Copy standup", icon: copied ? .check : .copy)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.dockSecondary)
                 .controlSize(.small)
                 .disabled(day.isEmpty)
             }

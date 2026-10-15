@@ -233,6 +233,23 @@ struct ProviderQuotaTests {
         #expect(QuotaWorkspacePresentation.healthLabel(snapshot("x", [("Weekly", 15, nil)])) == "Low")
     }
 
+    @Test func compactQuotaUsesPageLimitingWindowAndSelectedProvider() {
+        let codex = snapshot("codex-hermes-a", [("Session", 97, nil), ("Weekly", 0, nil)])
+        let claude = snapshot("claude", [("Session", 60, nil)])
+        let quotas = [claude, codex]
+        let reading = QuotaWorkspacePresentation.reading(quotas, for: "openai-codex")
+        #expect(reading?.snapshot == codex)
+        #expect(reading?.window == QuotaWorkspacePresentation.limitingWindow(codex))
+        #expect(reading?.remaining == 0)
+        #expect(QuotaWorkspacePresentation.reading(quotas, for: "anthropic")?.snapshot == claude)
+        #expect(QuotaWorkspacePresentation.reading(quotas, for: "glm") == nil)
+        #expect(QuotaWorkspacePresentation.reading(quotas, for: nil)?.snapshot == codex)
+        #expect(QuotaWorkspacePresentation.reading([], for: nil) == nil)
+        let antigravity = snapshot("antigravity", [("gemini-5h", 80, nil), ("gemini-weekly", 90, nil), ("3p-5h", 10, nil), ("3p-weekly", 0, nil)])
+        #expect(EdgeQuotaPreview.compactWindows(antigravity.windows).map { $0.window } == antigravity.windows)
+        #expect(QuotaWorkspacePresentation.reading([antigravity], for: "antigravity")?.remaining == 0)
+    }
+
     @Test func quotaCompactDurationFormatsCountdowns() {
         let now = Date(timeIntervalSince1970: 0)
         #expect(QuotaWorkspacePresentation.compactDuration(from: now, to: now.addingTimeInterval(30)) == "<1m")

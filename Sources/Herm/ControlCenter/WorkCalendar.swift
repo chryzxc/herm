@@ -221,7 +221,7 @@ struct WorkCalendarIndex: Equatable {
         }
         if let usage = day.usage {
             let tokens = usage.inputTokens + usage.outputTokens
-            lines.append("\n**Spend**: \(tokens.formatted()) tokens · \(usage.estimatedCost.formatted(.currency(code: "USD")))")
+            lines.append("\n**Spend**: \(tokens.formatted()) tokens · \(UsageWorkspaceView.cost(usage.estimatedCost))")
         }
         if day.isEmpty { lines.append("\nNo recorded activity.") }
         return lines.joined(separator: "\n")

@@ -107,6 +107,10 @@ struct AutomationWorkspaceView: View {
         AutomationWorkspaceRowPresentation.make(job: job, latestRun: runs(for: job).first)
     }
 
+    @AppStorage("herm.automationListCollapsed") private var isJobListCollapsed = false
+    /// Narrow widths or the sidebar toggle swap the list for a picker.
+    private var hidesJobList: Bool { isCompactList || isJobListCollapsed }
+
     private var activeCount: Int { control.cronJobs.filter(\.enabled).count }
 
     private var attentionCount: Int {
@@ -125,6 +129,8 @@ struct AutomationWorkspaceView: View {
         // Wide: the Kanban-style resizable inspector beside the page. Narrow (the
         // minimized panel): the run detail replaces the page, and below 760pt the
         // schedule list collapses into a menu.
+        VStack(spacing: 0) {
+        workspaceHeader
         GeometryReader { geo in
             let wide = AutomationWorkspaceLayout.usesPersistentInspector(width: geo.size.width)
             Group {
@@ -147,6 +153,7 @@ struct AutomationWorkspaceView: View {
             }
             .onChange(of: wide, initial: true) { _, wide in isRunPanelOpen = wide }
             .onChange(of: geo.size.width < 760, initial: true) { _, compact in isCompactList = compact }
+        }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $isShowingCreationSheet) {
@@ -239,8 +246,6 @@ struct AutomationWorkspaceView: View {
 
     private var page: some View {
         VStack(spacing: 0) {
-            workspaceHeader
-            Divider().overlay(Color.dockBorderLight)
             if overdueCount > 0 { overdueBanner }
 
             if control.cronJobs.isEmpty, control.refreshState(for: "cron.jobs")?.isRefreshing == true {
@@ -249,13 +254,13 @@ struct AutomationWorkspaceView: View {
                 emptyWorkspace
             } else {
                 HStack(spacing: 0) {
-                    if !isCompactList {
+                    if !hidesJobList {
                         jobList
                             .frame(width: AutomationWorkspaceLayout.listWidth)
                         Divider().overlay(Color.dockBorderLight)
                     }
                     VStack(spacing: 0) {
-                        if isCompactList {
+                        if hidesJobList {
                             DockMenuPicker(title: selectedJob?.name ?? "Select an automation", selection: $selectedJobID) {
                                 ForEach(control.cronJobs) { DockMenuOption($0.name, value: Optional($0.id)) }
                             }
@@ -283,7 +288,8 @@ struct AutomationWorkspaceView: View {
             title: "Automation",
             subtitle: "Recurring work Hermes runs on your behalf",
             onRefresh: refreshWorkspace,
-            isRefreshing: isRefreshing
+            isRefreshing: isRefreshing,
+            sidebarCollapsed: $isJobListCollapsed
         ) {
             HStack(spacing: 6) {
                 summaryChip("\(control.cronJobs.count)", label: "schedules", tint: Color.dockSecondaryText)
@@ -447,17 +453,9 @@ struct AutomationWorkspaceView: View {
                     .buttonStyle(.dockPrimary)
                     .disabled(control.isActionPending(control.cronActionID("run", job: job)))
                 }
-                Button {
+                DockSidebarToggle(isCollapsed: !isRunPanelOpen, edge: .trailing, panel: "run panel") {
                     isRunPanelOpen.toggle()
-                } label: {
-                    DockIcon(isRunPanelOpen ? .sidebarSimple : .square)
-                        .font(.system(size: 13))
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.dockHover)
-                .foregroundStyle(isRunPanelOpen ? Color.dockAccent : Color.dockSecondaryText)
-                .help(isRunPanelOpen ? "Hide run panel" : "Show run panel")
                 if hasMenuActions(for: job) {
                     DockMenu { menuActions(for: job) } label: {
                         Ph.dotsThree.image(size: 14, color: NSColor(Color.dockSecondaryText))

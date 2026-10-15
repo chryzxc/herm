@@ -5,6 +5,7 @@ import Combine
 final class ControlCenterModel: ObservableObject {
     var interruptionCoordinator: HermInterruptionCoordinator? { dockModel?.interruptionCoordinator }
     let pet = HermesPetModel()
+    let workingSetWatch = WorkingSetWatchProjection()
     @Published var integrationDestination: IntegrationDestination?
     @Published var requestedRepositoryReview: QuickDestination?
     @Published var requestedAutomationDidNavigate = false
@@ -161,6 +162,10 @@ final class ControlCenterModel: ObservableObject {
     private var workCalendarRepoPaths: [String] = []
     private var workCalendarGeneration = UUID()
     @Published private(set) var providerQuotas: [ProviderQuotaSnapshot] = []
+    func quotaReading(for provider: String?) -> (snapshot: ProviderQuotaSnapshot, window: ProviderQuotaWindow, remaining: Double)? {
+        QuotaWorkspacePresentation.reading(providerQuotas, for: provider)
+    }
+
     /// Snapshots exactly as the providers reported them. `providerQuotas` is
     /// derived from these plus the user's nicknames and display order, so a
     /// rename or reorder never needs another provider read.
@@ -293,6 +298,7 @@ final class ControlCenterModel: ObservableObject {
     private var searchGeneration = UUID()
     private var aggregateKanbanRefreshGeneration = UUID()
     private var visibleKanbanRefreshGeneration = UUID()
+    private var queuedVisibleKanbanFilter: KanbanListFilter?
     var hasKanbanReadInFlight: Bool { !kanbanRefreshInFlight.isEmpty }
     private var kanbanRefreshInFlight: Set<KanbanRefreshScope> = []
     private var providerQuotaReadsInFlight = 0
@@ -364,6 +370,11 @@ final class ControlCenterModel: ObservableObject {
     var capabilitySnapshot: CapabilitySnapshot {
         CapabilitySnapshot(states: capabilities, generatedAt: capabilitySnapshotGeneratedAt)
     }
+
+    /// The mutating project RPCs have no capability probe (and `rpc-projects` can be
+    /// unavailable when the probe times out), so attempt them whenever Hermes is
+    /// connected and surface the RPC's own error on failure.
+    var projectMutationsAvailable: Bool { rpc != nil }
 
     func capabilityAvailable(_ id: String) -> Bool {
         capabilities.first(where: { $0.id == id })?.isAvailable == true
@@ -597,6 +608,7 @@ final class ControlCenterModel: ObservableObject {
     func bind(to model: DockModel) {
         pet.bind(to: model)
         if dockModel !== model {
+            workingSetWatch.invalidate()
             refreshGeneration &+= 1
             clientBindingGeneration &+= 1
             refreshTask?.cancel()
@@ -700,6 +712,8 @@ final class ControlCenterModel: ObservableObject {
             promptBudgetGeneration = UUID()
             aggregateKanbanRefreshGeneration = UUID()
             visibleKanbanRefreshGeneration = UUID()
+            queuedVisibleKanbanFilter = nil
+            kanbanRefreshInFlight = []
             sessionKanbanRefreshGeneration = UUID()
             kanbanBoardsGeneration = UUID()
             kanbanStatsGeneration = UUID()
@@ -717,13 +731,18 @@ final class ControlCenterModel: ObservableObject {
             }
         }
         dockModel = model
+        workingSetWatch.read = { [weak model] profile in
+            guard let model else { throw CancellationError() }
+            return try await HermesWorkflowRPC(client: model.controlRPCClient, profileID: profile).storedSessionMetadata()
+        }
         rpc = HermesControlRPC(client: model.controlRPCClient)
         cli = HermesCLIAdapter(rpc: HermesControlRPC(client: model.controlRPCClient))
         remindersAdapter = AppleRemindersAdapter(client: model.controlRPCClient)
         focus(sessionID: model.sessionID)
         if eventSubscription == nil {
-            eventSubscription = model.eventRouter.subscribe { [weak self] type, params in
+            eventSubscription = model.eventRouter.subscribe { [weak self, weak model] type, params in
                 self?.ingestEvent(type, params: params)
+                self?.workingSetWatch.ingest(type, params: params, origin: model?.knownEventOrigin(params))
             }
         }
         rebuildAttention()
@@ -1115,7 +1134,7 @@ final class ControlCenterModel: ObservableObject {
         guard let usage, usage.days > 0, ["deepseek", "kimi", "openrouter"].contains(snapshot.provider) else { return [] }
         let models = usage.models.filter { model in
             (model.providers.isEmpty ? [model.model] : model.providers)
-                .contains { ChatQuotaChip.quotaProviderID(for: $0) == snapshot.provider }
+                .contains { QuotaWorkspacePresentation.quotaProviderID(for: $0) == snapshot.provider }
         }
         guard !models.isEmpty else { return [] }
         let cost = models.reduce(0) { $0 + $1.estimatedCost }
@@ -1935,7 +1954,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func setActiveProject(_ project: ProjectSummary?) async -> Bool {
-        guard capabilityAvailable(HermesFeatureIDs.ID.projectsSetActive.rawValue), let rpc else { return false }
+        guard projectMutationsAvailable, let rpc else { return false }
         do {
             _ = try await rpc.setActiveProject(id: project?.id, profileID: projectProfileID)
             refresh()
@@ -1947,9 +1966,13 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func createProject(name: String, folder: String) async -> Bool {
-        guard capabilityAvailable(HermesFeatureIDs.ID.projectsCreate.rawValue), let rpc, !name.isEmpty, !folder.isEmpty else { return false }
+        guard let rpc else { lastError = "Hermes is not connected."; return false }
+        guard !name.isEmpty, !folder.isEmpty else { return false }
         do {
             _ = try await rpc.createProject(name: name, folders: [folder], profileID: projectProfileID)
+            // `refresh()` is a no-op while one is in flight, which would leave the
+            // new project out of the list until the next manual refresh.
+            for _ in 0..<40 where isRefreshing { try? await Task.sleep(for: .milliseconds(250)) }
             refresh()
             return true
         } catch {
@@ -1959,7 +1982,8 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func addProjectFolder(_ project: ProjectSummary, folder: String) async -> Bool {
-        guard capabilityAvailable(HermesFeatureIDs.ID.projectsAddFolder.rawValue), let rpc, !folder.isEmpty else { return false }
+        guard let rpc else { lastError = "Hermes is not connected."; return false }
+        guard !folder.isEmpty else { return false }
         do {
             _ = try await rpc.addProjectFolder(id: project.id, path: folder, profileID: projectProfileID)
             refresh()
@@ -1971,7 +1995,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func archiveProject(_ project: ProjectSummary, restore: Bool = false) async -> Bool {
-        guard capabilityAvailable(HermesFeatureIDs.ID.projectsArchive.rawValue), let rpc else { return false }
+        guard projectMutationsAvailable, let rpc else { return false }
         do {
             _ = try await rpc.archiveProject(id: project.id, restore: restore, profileID: projectProfileID)
             closeProject()
@@ -1984,7 +2008,7 @@ final class ControlCenterModel: ObservableObject {
     }
 
     func deleteProject(_ project: ProjectSummary) async -> Bool {
-        guard capabilityAvailable(HermesFeatureIDs.ID.projectsDelete.rawValue), let rpc else { return false }
+        guard projectMutationsAvailable, let rpc else { return false }
         do {
             _ = try await rpc.deleteProject(id: project.id, profileID: projectProfileID)
             closeProject()
@@ -2092,7 +2116,13 @@ final class ControlCenterModel: ObservableObject {
         let actionID = scope.isAggregate ? aggregateKanbanRefreshActionID : visibleKanbanRefreshActionID
         switch trigger {
         case .user:
-            guard beginAction(actionID) else { return }
+            guard beginAction(actionID) else {
+                if !scope.isAggregate {
+                    queuedVisibleKanbanFilter = filter ?? kanbanFilter
+                    visibleKanbanRefreshGeneration = UUID()
+                }
+                return
+            }
         case .background:
             // A poll must not replace the generation for an explicit refresh.
             // User refreshes are allowed to supersede a poll, but not vice versa.
@@ -2127,11 +2157,19 @@ final class ControlCenterModel: ObservableObject {
         let generation = UUID()
         if scope.isAggregate { aggregateKanbanRefreshGeneration = generation }
         else { visibleKanbanRefreshGeneration = generation }
+        let bindingGeneration = clientBindingGeneration
         Task {
             defer {
-                switch trigger {
-                case .user: finishAction(actionID)
-                case .background: kanbanRefreshInFlight.remove(scope)
+                if bindingGeneration == clientBindingGeneration {
+                    switch trigger {
+                    case .user:
+                        finishAction(actionID)
+                        if !scope.isAggregate, let filter = queuedVisibleKanbanFilter {
+                            queuedVisibleKanbanFilter = nil
+                            refreshVisibleKanban(filter: filter)
+                        }
+                    case .background: kanbanRefreshInFlight.remove(scope)
+                    }
                 }
             }
             do {
@@ -2176,6 +2214,7 @@ final class ControlCenterModel: ObservableObject {
                         refreshedTasks.append(task)
                     }
                 }
+                guard isCurrentKanbanRefresh(generation, scope: scope, boardSlug: requestedBoardSlug) else { return }
                 // Automatic polling commonly returns the same board. Avoid
                 // publishing an unchanged array: the Kanban surface observes
                 // this model, so an unnecessary publish forces SwiftUI to
@@ -5406,7 +5445,7 @@ final class ControlCenterModel: ObservableObject {
             let sessionCount = max(max(declaredSessionCount ?? 0, sessions.count), projectSessions.count)
             return ProjectSummary(
                 id: id,
-                name: (row["name"] as? String) ?? id,
+                name: projectPath(row, repos: repos) ?? (row["name"] as? String) ?? id,
                 repoCount: (row["repo_count"] as? NSNumber)?.intValue ?? repos.count,
                 sessionCount: sessionCount,
                 sessionIDs: Set(projectSessions.map(\.id)),
@@ -5414,6 +5453,19 @@ final class ControlCenterModel: ObservableObject {
                 isActive: (row["active"] as? Bool) ?? (id == activeID)
             )
         }
+    }
+
+    /// The sidebar treats `ProjectSummary.name` as the repository path, but projects
+    /// created through `projects.create` carry a display name. Prefer the first
+    /// repository's path whenever the declared name is not already a path.
+    private static func projectPath(_ row: [String: Any], repos: [[String: Any]]) -> String? {
+        if let name = row["name"] as? String, name.hasPrefix("/") { return name }
+        for repo in repos {
+            for key in ["path", "root", "repo_path", "folder", "cwd"] {
+                if let path = repo[key] as? String, path.hasPrefix("/") { return path }
+            }
+        }
+        return nil
     }
 
     static func parseProjectSessions(_ result: [String: Any]) -> [SessionSummary] {

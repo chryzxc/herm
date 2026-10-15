@@ -39,7 +39,7 @@ enum HermesCLIError: LocalizedError {
     }
 }
 
-struct HermesCLIResult: Equatable {
+struct HermesCLIResult: Equatable, Sendable {
     let stdout: String
     let stderr: String
     let succeeded: Bool
@@ -108,14 +108,13 @@ final class HermesCLIAdapter {
             return results.sorted { $0.index < $1.index }
         }
 
-        var rows: [[String: Any]] = []
-        for board in fetchedBoards {
-            rows += board.rows
-        }
-        rows = rows.filter { Self.matches($0, filter: filter) }
-        if let sort = filter.sort { rows = Self.sorted(rows, by: sort) }
-        let data = try JSONSerialization.data(withJSONObject: rows)
-        return HermesCLIResult(stdout: String(decoding: data, as: UTF8.self), stderr: "", succeeded: true)
+        return try await Task.detached(priority: .utility) {
+            var rows = fetchedBoards.flatMap(\.rows)
+            rows = rows.filter { Self.matches($0, filter: filter) }
+            if let sort = filter.sort { rows = Self.sorted(rows, by: sort) }
+            let data = try JSONSerialization.data(withJSONObject: rows)
+            return HermesCLIResult(stdout: String(decoding: data, as: UTF8.self), stderr: "", succeeded: true)
+        }.value
     }
 
     private func fetchKanbanBoardRows(index: Int, boardSlug: String, path: String) async throws -> KanbanBoardRows {
@@ -142,7 +141,7 @@ final class HermesCLIAdapter {
         return "/api/plugins/kanban/board?board=\(encoded)"
     }
 
-    private static func matches(_ row: [String: Any], filter: KanbanListFilter) -> Bool {
+    nonisolated private static func matches(_ row: [String: Any], filter: KanbanListFilter) -> Bool {
         if !filter.includeArchived, row["status"] as? String == "archived" { return false }
         if let status = filter.status, row["status"] as? String != status { return false }
         if let assignee = filter.assignee, !assignee.isEmpty, row["assignee"] as? String != assignee { return false }
@@ -153,14 +152,18 @@ final class HermesCLIAdapter {
         return !filter.mine || (row["is_mine"] as? Bool ?? row["mine"] as? Bool ?? false)
     }
 
-    private static func sorted(_ rows: [[String: Any]], by key: String) -> [[String: Any]] {
-        let indexed = rows.enumerated().map { (index: $0.offset, row: $0.element) }
+    nonisolated private static func sorted(_ rows: [[String: Any]], by key: String) -> [[String: Any]] {
         guard key == "updated" || key == "created-desc" || key == "priority-desc" || key == "title" || key == "status" || key == "assignee" else { return rows }
+        let formatter = ISO8601DateFormatter()
+        // Parse each timestamp once, rather than for every sort comparison.
+        let indexed = rows.enumerated().map {
+            (index: $0.offset, row: $0.element, date: key == "updated"
+                ? updatedDate($0.element, formatter: formatter)
+                : key == "created-desc" ? createdDate($0.element, formatter: formatter) : nil)
+        }
         return indexed.sorted { lhs, rhs in
             if key == "updated" || key == "created-desc" {
-                let leftDate = key == "updated" ? updatedDate(lhs.row) : createdDate(lhs.row)
-                let rightDate = key == "updated" ? updatedDate(rhs.row) : createdDate(rhs.row)
-                switch (leftDate, rightDate) {
+                switch (lhs.date, rhs.date) {
                 case let (left?, right?) where left != right: return left > right
                 case (_?, nil): return true
                 case (nil, _?): return false
@@ -182,31 +185,31 @@ final class HermesCLIAdapter {
         }.map(\.row)
     }
 
-    private static func updatedDate(_ row: [String: Any]) -> Date? {
+    nonisolated private static func updatedDate(_ row: [String: Any], formatter: ISO8601DateFormatter) -> Date? {
         for key in ["updated_at", "updatedAt", "updated", "last_updated_at", "latest_event_at", "completed_at", "started_at"] {
             if let number = row[key] as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
             if let value = row[key] as? Double { return Date(timeIntervalSince1970: value) }
             if let value = row[key] as? String {
                 if let timestamp = Double(value) { return Date(timeIntervalSince1970: timestamp) }
-                if let date = ISO8601DateFormatter().date(from: value) { return date }
+                if let date = formatter.date(from: value) { return date }
             }
         }
         return nil
     }
 
-    private static func createdDate(_ row: [String: Any]) -> Date? {
+    nonisolated private static func createdDate(_ row: [String: Any], formatter: ISO8601DateFormatter) -> Date? {
         for key in ["created_at", "createdAt", "created"] {
             if let number = row[key] as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
             if let value = row[key] as? Double { return Date(timeIntervalSince1970: value) }
             if let value = row[key] as? String {
                 if let timestamp = Double(value) { return Date(timeIntervalSince1970: timestamp) }
-                if let date = ISO8601DateFormatter().date(from: value) { return date }
+                if let date = formatter.date(from: value) { return date }
             }
         }
         return nil
     }
 
-    private static func priority(_ row: [String: Any]) -> Int? {
+    nonisolated private static func priority(_ row: [String: Any]) -> Int? {
         if let number = row["priority"] as? NSNumber { return number.intValue }
         if let value = row["priority"] as? Int { return value }
         if let value = row["priority"] as? String { return Int(value) }

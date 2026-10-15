@@ -563,9 +563,9 @@ struct ProjectSummary: Identifiable, Codable, Equatable {
               normalizedName != "__no_project__",
               normalizedName != "tmp" else { return false }
 
-        let generatedIDPattern = "^p_[0-9a-f]{8,}$"
-        return normalizedName.range(of: generatedIDPattern, options: .regularExpression) == nil
-            && id.lowercased().range(of: generatedIDPattern, options: .regularExpression) == nil
+        // Hermes gives every real project a generated `p_<hex>` id, so only a
+        // generated-looking *name* (a bucket that defaulted to its id) is internal.
+        return normalizedName.range(of: "^p_[0-9a-f]{8,}$", options: .regularExpression) == nil
     }
 }
 
@@ -778,7 +778,7 @@ struct KanbanBoardSummary: Identifiable, Equatable {
 
 /// A read-only projection of Hermes' Kanban list flags. Hermes remains the
 /// canonical owner of filtering and ordering; the Dock only forwards options.
-struct KanbanListFilter: Equatable {
+struct KanbanListFilter: Equatable, Sendable {
     var status: String?
     var assignee: String?
     var mine = false
