@@ -44,6 +44,24 @@ struct WorkspaceStoreTests {
         #expect(store.task(forSessionID: "session-2")?.projectPath == "/tmp/project")
     }
 
+    @Test func viewedWorktreeIsScopedToItsSessionAndKeepsTheProject() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+        store.attachProject(at: "/tmp/project", toSessions: [
+            SessionSummary(id: "session-1", title: "First", state: "active", preview: nil),
+            SessionSummary(id: "session-2", title: "Second", state: "idle", preview: nil)
+        ])
+
+        store.setWorktreePath("/tmp/elsewhere/feature", forSessionID: "session-1", title: "First")
+        store.setWorktreePath("/tmp/wt", forSessionID: "session-new", title: "New")
+
+        #expect(store.worktreePath(forSessionID: "session-1") == "/tmp/elsewhere/feature")
+        #expect(store.task(forSessionID: "session-1")?.projectPath == "/tmp/project")
+        #expect(store.worktreePath(forSessionID: "session-2") == nil)
+        #expect(store.worktreePath(forSessionID: "session-new") == "/tmp/wt")
+    }
+
     @Test func selectedProjectFolderDoesNotLeakIntoUnrelatedSession() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }

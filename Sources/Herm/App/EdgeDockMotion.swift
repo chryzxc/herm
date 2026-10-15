@@ -1,11 +1,16 @@
 import AppKit
 import QuartzCore
+import SwiftUI
 
 /// Content motion complements the native edge-anchored window resize.
 @MainActor
 enum EdgeDockMotion {
     static let revealDuration: TimeInterval = 0.46
     static let collapseDuration: TimeInterval = 0.26
+    /// The notch shell's rail ⇄ preview spring; `morphSettle` is when it is visually at rest.
+    static let morph = Animation.spring(response: 0.4, dampingFraction: 0.8)
+    static let morphSettle: TimeInterval = 0.45
+    static let windowResize: TimeInterval = 0.12
 
     static func reveal(_ view: NSView?, side: EdgeDockSide, fromShortcut: Bool) {
         guard let view else { return }

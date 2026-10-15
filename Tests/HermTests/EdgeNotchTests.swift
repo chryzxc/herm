@@ -186,11 +186,11 @@ struct EdgeNotchTests {
     @MainActor @Test func quietNotchDoesNotExposePassiveLabelsOrLargeRail() {
         let state = EdgeNotchState()
         #expect(state.isQuiet)
-        #expect(state.railWidth == 56)
+        #expect(state.railWidth == 66)
         #expect(state.railHeight == 96)
         state.expanded = true
         #expect(!state.isQuiet)
-        #expect(state.railWidth == 72)
+        #expect(state.railWidth == 80)
     }
 
     @MainActor @Test func generatedIconIsPackagedAndReadable() {
@@ -228,11 +228,11 @@ struct EdgeNotchTests {
             ProviderQuotaWindow(id: id, label: label, remainingPercent: 50, remainingDisplay: nil, limitDisplay: nil, resetsAt: nil, resetsDisplay: nil)
         }
         let claude = EdgeQuotaPreview.compactWindows([window("opus", "Opus"), window("weekly", "Weekly"), window("session", "Session")])
-        #expect(claude.map { $0.label } == ["5h", "7d"])
-        #expect(claude.map { $0.window.id } == ["session", "weekly"])
+        #expect(claude.map { $0.label } == ["5h", "7d", "Opus"])
+        #expect(claude.map { $0.window.id } == ["session", "weekly", "opus"])
 
         let other = EdgeQuotaPreview.compactWindows([window("a", "Daily"), window("b", "Monthly"), window("c", "Search")])
-        #expect(other.map { $0.label } == ["Daily", "Monthly"])
+        #expect(other.map { $0.label } == ["Daily", "Monthly", "Search"])
         #expect(EdgeQuotaPreview.compactWindows([]).isEmpty)
     }
 

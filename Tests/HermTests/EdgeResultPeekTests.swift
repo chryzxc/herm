@@ -96,7 +96,7 @@ struct EdgeResultPeekTests {
                 value: "./reports/review.md", sessionID: session.id,
                 sessionTitle: session.displayTitle, timestamp: .now),
             ])
-        }, back: {}, reply: {}, openSession: {}
+        }, back: {}, reply: {}, openSession: {}, showingComparison: .constant(false)
       )
       .frame(width: 352, height: 272)
       .background(Color.dockCanvas)

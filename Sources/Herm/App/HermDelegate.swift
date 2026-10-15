@@ -253,7 +253,10 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        edgeDock?.shutdown()
         QuickDraftStore.shared.flush()
+        WorkflowContentStore.shared.flush()
+        FilePreviewCenter.shared.flushSaves()
         // This is deliberately explicit: a menu-bar app can terminate without
         // releasing its delegate/model graph, so deinit is not a process-life
         // cycle hook for the local Hermes backend.
@@ -299,7 +302,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
     private var workspaceHost: NSView?
     private var isWorkspaceVisible = false
-    private var pointerExitTask: DispatchWorkItem?
     private let placement: () -> EdgeDockPlacement?
     private let onWillShow: () -> Void
     private let onHide: () -> Void
@@ -402,9 +404,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 self?.switchToWindow()
             })
         )
-        hostingView.onHoverChanged = { [weak self] inside in
-            self?.workspaceHoverChanged(inside)
-        }
         hostingView.wantsLayer = true
         // DockPopover owns the contour so a shortcut can attach cleanly to the
         // screen edge while ordinary presentations remain fully rounded.
@@ -412,23 +411,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         hostingView.sizingOptions = []
         workspaceHost = hostingView
         panel.contentView = hostingView
-    }
-
-    private func workspaceHoverChanged(_ inside: Bool) {
-        pointerExitTask?.cancel()
-        guard !inside, isWorkspaceVisible, !isFullscreen else { return }
-        let task = DispatchWorkItem { [weak self] in
-            guard let self, self.isWorkspaceVisible, !self.isFullscreen,
-                  !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
-            // A sheet or popover belongs to the workspace, even outside its frame.
-            guard self.panel.attachedSheet == nil, self.panel.childWindows?.isEmpty != false else {
-                self.workspaceHoverChanged(false)
-                return
-            }
-            self.hide()
-        }
-        pointerExitTask = task
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: task)
     }
 
     private func observeModel() {
@@ -478,7 +460,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         guard !panel.frame.contains(point), !statusItemFrame.contains(point) else { return }
         // A popover belongs to the workspace even where it overhangs the panel;
         // hiding here would tear it down before its row action runs.
-        guard panel.attachedSheet == nil, panel.childWindows?.isEmpty != false else { return }
+        guard panel.attachedSheet == nil, !panel.dockHasInteractiveChildWindow else { return }
         hide()
     }
 
@@ -580,7 +562,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             switchToWindow()
             return
         }
-        pointerExitTask?.cancel()
         if !isWorkspaceVisible {
             // Read fresh: Settings and the fullscreen toggle both write this key.
             isFullscreen = false // the native window is the full-size surface
@@ -621,7 +602,6 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     private func hide() {
-        pointerExitTask?.cancel()
         guard isWorkspaceVisible else { return }
         EdgeDockMotion.cancel(workspaceHost)
         // Leave fullscreen state first so exitFullscreen's resize isn't skipped

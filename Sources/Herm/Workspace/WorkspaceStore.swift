@@ -67,6 +67,8 @@ struct WorkspaceTask: Identifiable, Codable, Equatable {
     var title: String
     var status: WorkspaceTaskStatus
     var projectPath: String?
+    /// The git worktree the session's inspector is viewing; nil means `projectPath` itself.
+    var worktreePath: String?
     var sessionID: String?
     var createdAt: Date
     var updatedAt: Date
@@ -163,6 +165,19 @@ final class WorkspaceStore: ObservableObject {
             controlReferences.removeAll { $0.source == .hermesSession && $0.sourceID == sessionID }
         }
         tasks.removeAll { $0.id == taskID }
+        save()
+    }
+
+    func worktreePath(forSessionID sessionID: String?) -> String? {
+        sessionID.flatMap { task(forSessionID: $0)?.worktreePath }
+    }
+
+    /// View-only: changes what Herm shows for the session, never the agent's cwd.
+    func setWorktreePath(_ path: String?, forSessionID sessionID: String, title: String) {
+        if task(forSessionID: sessionID) == nil { ensureTask(title: title, sessionID: sessionID) }
+        guard let index = tasks.firstIndex(where: { $0.sessionID == sessionID }),
+              tasks[index].worktreePath != path else { return }
+        tasks[index].worktreePath = path
         save()
     }
 

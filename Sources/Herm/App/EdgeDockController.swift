@@ -16,8 +16,11 @@ final class EdgeDockController: NSObject {
     private let state: EdgeNotchState
     private var petWindow: HermesPetWindow?
     private var subscriptions = Set<AnyCancellable>()
+    private var interactionMonitors: [Any] = []
+    private var previousApplication: NSRunningApplication?
     private var collapseTask: DispatchWorkItem?
     private var expandTask: DispatchWorkItem?
+    private var fitTask: DispatchWorkItem?
     private var hovering = false
     private var dragging = false
     private var petDragging = false
@@ -39,6 +42,7 @@ final class EdgeDockController: NSObject {
     private var latestAttention: [String: DockModel.SessionAttention] = [:]
     private var latestAnswers: [AttentionRequest: AttentionAnswerState] = [:]
     private var deliveryQuestions: [EdgeDeliveryQuestion] = []
+    private var deliveryQuestionPoll: Task<Void, Never>?
     private var latestActivityLabels: [String: String] = [:]
     private var lastQuotas: [ProviderQuotaSnapshot]?
     /// Quota readers whose usage has moved; these are the services being
@@ -52,7 +56,7 @@ final class EdgeDockController: NSObject {
 
     init(model: DockModel, controlCenter: ControlCenterModel, defaults: UserDefaults = .standard, interruptions: HermInterruptionCoordinator? = nil, openQuota: @escaping () -> Void, openKanban: @escaping (KanbanTaskSummary) -> Void, openDock: @escaping () -> Void) {
         self.model = model
-        state = EdgeNotchState(store: .shared, interruptions: interruptions)
+        state = EdgeNotchState(store: .shared, interruptions: interruptions, content: .shared)
         self.controlCenter = controlCenter
         self.openQuota = openQuota
         self.openKanban = openKanban
@@ -106,7 +110,8 @@ final class EdgeDockController: NSObject {
         host.onHoverChanged = { [weak self] value in self?.hoverChanged(value) }
         host.sizingOptions = []
         panel.contentView = host
-        panel.onCancel = { [weak self] in self?.setExpanded(false) }
+        panel.onCancel = { [weak self] in self?.escapePreview() }
+        installInteractionMonitors()
         controlCenter.pet.$info.combineLatest(controlCenter.pet.$sheet)
             .map { $0.enabled && $1 != nil }
             .removeDuplicates()
@@ -167,7 +172,16 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.routineUpdates(); self?.rebuildTasks() }.store(in: &subscriptions)
         state.preferences.objectWillChange.receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.rebuildTasks() }.store(in: &subscriptions)
+            .sink { [weak self] _ in self?.selectWorkingSetWatch(); self?.rebuildTasks() }.store(in: &subscriptions)
+        controlCenter.workingSetWatch.objectWillChange.receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.state.watchedSessions = self.controlCenter.workingSetWatch.records.compactMapValues { $0.session }
+                self.rebuildTasks()
+            }.store(in: &subscriptions)
+        model.$isHermesConnected.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] in self?.controlCenter.workingSetWatch.connectionChanged($0) }.store(in: &subscriptions)
+        selectWorkingSetWatch()
         Publishers.CombineLatest3(state.interruptions.$pendingDigest, state.$composing, model.$isHermesConnected)
             .receive(on: RunLoop.main)
             .sink { [weak self] pending, composing, connected in
@@ -261,6 +275,8 @@ final class EdgeDockController: NSObject {
         collapseTask?.cancel()
         expandTask?.cancel()
         state.composing = false
+        state.previewInteraction.mode = .passive
+        previousApplication = nil
         state.expanded = false
         hovering = false
         panel.acceptsWorkspaceFocus = false
@@ -307,10 +323,11 @@ final class EdgeDockController: NSObject {
         state.composing = active
         collapseTask?.cancel()
         state.showingAnnouncement = false
-        panel.acceptsWorkspaceFocus = active
+        panel.acceptsWorkspaceFocus = active || state.previewInteraction.mode == .keyboard
         if active {
             panel.makeKeyAndOrderFront(nil)
         } else {
+            if state.previewInteraction.mode == .keyboard { return }
             panel.resignKey()
             if !hovering { scheduleCollapse(after: 0.4) }
         }
@@ -334,6 +351,7 @@ final class EdgeDockController: NSObject {
             return
         }
         guard let session = task.session else { return openWorkspace() }
+        controlCenter.workingSetWatch.review(session)
         if task.isFailure { state.interruptions.clearFailure(owner: session.id, profileID: session.profileID) }
         model.resumeSession(session)
         openDock()
@@ -394,6 +412,30 @@ final class EdgeDockController: NSObject {
                 if let question = task.deliveryQuestion { task.answerState = state.deliveryAnswers[question] }
                 return task
             }
+        if controlCenter.workingSetWatch.selectedSet != nil {
+            let members = Set(controlCenter.workingSetWatch.records.keys)
+            tasks = tasks.filter { task in
+                if task.phase == .attention || task.deliveryQuestion != nil || task.routine != nil { return true }
+                let key = ProfileScopedID(profileID: task.isCurrent ? model.sessionProfileID : task.session?.profileID, resourceID: task.id)
+                return members.contains(key)
+            }
+            for row in controlCenter.workingSetWatch.rows {
+                guard !tasks.contains(where: { $0.previewIdentity(currentProfileID: model.sessionProfileID) == row.previewIdentity(currentProfileID: model.sessionProfileID) }) else { continue }
+                tasks.append(row)
+            }
+        }
+        // Decisions remain global even when their session is outside the current inventory or watched set.
+        for request in latestAttention.values {
+            guard let target = request.responseTarget,
+                  !tasks.contains(where: { $0.attentionRequest == target }) else { continue }
+            let session = HermesSession(id: target.sessionID, profileID: target.profileID, title: target.sessionID,
+                preview: "", startedAt: nil, messageCount: 0, source: "herm")
+            var row = EdgeNotchTask(id: session.id, title: session.displayTitle, phase: .attention,
+                statusLabel: request.status.title, detail: request.summary, updatedAt: nil, isCurrent: false,
+                isStatusCurrent: activity.status != .offline, session: session, choices: request.choices, attentionRequest: target)
+            row.answerState = latestAnswers[target]
+            tasks.append(row)
+        }
         for failure in state.interruptions.failures {
             guard !tasks.contains(where: {
                 $0.id == failure.sourceID && $0.attentionRequest != nil
@@ -402,13 +444,14 @@ final class EdgeDockController: NSObject {
             let session = latestSessions.first { $0.id == failure.sourceID && $0.profileID == failure.profileID }
                 ?? HermesSession(id: failure.sourceID, profileID: failure.profileID, title: failure.sourceID,
                                  preview: "", startedAt: nil, messageCount: 0, source: "herm")
-            tasks.removeAll { $0.id == session.id && ($0.session?.profileID == session.profileID || $0.isCurrent) }
+            tasks.removeAll { $0.id == session.id && ($0.session?.profileID == session.profileID || ($0.isCurrent && model.sessionProfileID == session.profileID)) }
             tasks.append(EdgeNotchTask(id: session.id, title: session.displayTitle, phase: .attention,
                 statusLabel: "Failed", detail: "Open the session to inspect the failure", updatedAt: failure.createdAt,
-                isCurrent: model.currentSessionIDs.contains(session.id), isStatusCurrent: model.status != .offline,
+                isCurrent: model.sessionProfileID == session.profileID && model.currentSessionIDs.contains(session.id), isStatusCurrent: model.status != .offline,
                 session: session, isFailure: true))
             tasks = EdgeNotchTask.merged(tasks)
         }
+        tasks = EdgeNotchTask.merged(tasks)
         if tasks != state.tasks {
             state.invalidateNewerResults(tasks)
             state.tasks = tasks
@@ -420,15 +463,24 @@ final class EdgeDockController: NSObject {
     }
 
     /// Headless coordinator turns cannot ask; the delivery plugin queues their questions as files.
-    private func pollDeliveryQuestions() {
-        let questions = EdgeDeliveryQuestion.load()
-        guard questions != deliveryQuestions else { return }
-        let isNew = questions.contains { !deliveryQuestions.contains($0) }
-        deliveryQuestions = questions
-        state.deliveryAnswers = state.deliveryAnswers.filter { questions.contains($0.key) }
-        rebuildTasks()
-        if isNew {
-            for question in questions { announce(notice: model.interruptionNotice(.clarification, owner: question.row.session?.id, eventID: String(question.hashValue))) }
+    private func pollDeliveryQuestions(force: Bool = false) {
+        if force {
+            deliveryQuestionPoll?.cancel()
+            deliveryQuestionPoll = nil
+        }
+        guard deliveryQuestionPoll == nil else { return }
+        deliveryQuestionPoll = Task { [weak self] in
+            let questions = await EdgeDeliveryQuestion.loadOffMain()
+            guard !Task.isCancelled, let self else { return }
+            self.deliveryQuestionPoll = nil
+            guard questions != self.deliveryQuestions else { return }
+            let isNew = questions.contains { !self.deliveryQuestions.contains($0) }
+            self.deliveryQuestions = questions
+            self.state.deliveryAnswers = self.state.deliveryAnswers.filter { questions.contains($0.key) }
+            self.rebuildTasks()
+            if isNew {
+                for question in questions { self.announce(notice: self.model.interruptionNotice(.clarification, owner: question.row.session?.id, eventID: String(question.hashValue))) }
+            }
         }
     }
 
@@ -449,8 +501,8 @@ final class EdgeDockController: NSObject {
                 do {
                     _ = try await self.model.submitQuickDraft(question.answerDraft(choice), progress: { _ in })
                 } catch {
-                    guard EdgeDeliveryQuestion.load().contains(question) else {
-                        self.pollDeliveryQuestions(); return
+                    guard await EdgeDeliveryQuestion.loadOffMain().contains(question) else {
+                        self.pollDeliveryQuestions(force: true); return
                     }
                     let message = DockModel.safeUserDiagnostic(error.localizedDescription)
                     self.state.deliveryAnswers[question] = (error as? QuickSubmissionFailure)?.uncertain == true
@@ -458,18 +510,17 @@ final class EdgeDockController: NSObject {
                     self.rebuildTasks()
                     return
                 }
-                guard EdgeDeliveryQuestion.load().contains(question) else {
-                    self.pollDeliveryQuestions()
-                    return
-                }
                 do {
-                    try FileManager.default.removeItem(at: question.file)
+                    guard try await question.removeIfCurrent() else {
+                        self.pollDeliveryQuestions(force: true)
+                        return
+                    }
                 } catch {
                     self.state.deliveryAnswers[question] = .answered(choice, "Answer sent. The saved question could not be removed; open the session to review it.")
                     self.rebuildTasks()
                     return
                 }
-                self.pollDeliveryQuestions()
+                self.pollDeliveryQuestions(force: true)
             }
             return
         }
@@ -478,8 +529,13 @@ final class EdgeDockController: NSObject {
     }
 
     private func refreshSelectedTasks() {
+        controlCenter.workingSetWatch.refresh()
         pollKanban()
         model.loadSessions()
+    }
+    private func selectWorkingSetWatch() {
+        let preferences = state.preferences
+        controlCenter.workingSetWatch.select(preferences.workingSets.first { $0.id == preferences.watchedWorkingSetID })
     }
 
     /// Idle polls are throttled to once a minute: each aggregate read pulls and
@@ -626,7 +682,7 @@ final class EdgeDockController: NSObject {
             state.interruptions.admit(HermNotice(kind: .information, source: .activity, profileID: event.botID,
                 sourceID: "bot", eventID: event.id + "/" + event.stamp), channel: .notch)
         }
-        guard !fresh.isEmpty, !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail else { return }
+        guard !fresh.isEmpty, !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail, state.previewInteraction.mode == .passive else { return }
         state.botBanner = fresh
         state.expanded = true
         position(animated: true)
@@ -690,7 +746,7 @@ final class EdgeDockController: NSObject {
             state.showingDigest = false
             let task = EdgeNotchTask(id: session.id, title: session.displayTitle, phase: session.isWorking ? .working : .finished,
                 statusLabel: session.isWorking ? "Working" : "Finished", detail: session.displayPreview, updatedAt: session.lastUpdatedAt,
-                isCurrent: model.currentSessionIDs.contains(session.id), isStatusCurrent: model.status != .offline, session: session)
+                isCurrent: model.sessionProfileID == session.profileID && model.currentSessionIDs.contains(session.id), isStatusCurrent: model.status != .offline, session: session)
             if notice.kind == .completion, !session.isWorking { state.digestResultID = notice.id; peekResult(task) }
             else { state.interruptions.review(notice.id); openTask(task) }
         case .kanban:
@@ -714,7 +770,7 @@ final class EdgeDockController: NSObject {
 
     private func surfaceDigestIfPossible() {
         guard state.interruptions.pendingDigest, !workspacePresented, !dragging, !petDragging,
-              !state.composing, !hovering, !state.isReadingDetail else { return }
+              !state.composing, !hovering, !state.isReadingDetail, state.previewInteraction.mode == .passive else { return }
         state.showingDigest = true
         state.interruptions.consumeDigestAnnouncement()
         announce(notice: HermNotice(kind: .information, source: .activity, profileID: nil,
@@ -724,7 +780,7 @@ final class EdgeDockController: NSObject {
     private func announce(quota: Bool = false, notice: HermNotice? = nil) {
         let reference = notice ?? model.interruptionNotice(state.railActivity.attention ? .failure : .information)
         guard state.interruptions.admit(reference, channel: .notch) else { return }
-        guard !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail else { return }
+        guard !workspacePresented, !dragging, !petDragging, !state.composing, !state.isReadingDetail, state.previewInteraction.mode == .passive else { return }
         // Every notch announcement, including future sources, reaches the pet here.
         controlCenter.pet.react(.announcement(activity: state.railActivity, quota: quota))
         DebugLog.write("workflow: notch announcement presented")
@@ -756,13 +812,14 @@ final class EdgeDockController: NSObject {
             // Delay expansion long enough for a drag gesture to register before
             // the view hierarchy changes from rail (with drag gesture) to preview;
             // 80ms was too short for a user to start moving the notch before it
-            // expanded out from under the cursor.
+            // expanded out from under the cursor. It also lets a click on the rail
+            // open the workspace before the hover preview ever appears.
             let task = DispatchWorkItem { [weak self] in
                 guard let self, self.hovering, !self.dragging, !self.petDragging else { return }
                 self.setExpanded(true)
             }
             expandTask = task
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: task)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: task)
         }
         else {
             surfaceDigestIfPossible()
@@ -774,8 +831,9 @@ final class EdgeDockController: NSObject {
         collapseTask?.cancel()
         let task = DispatchWorkItem { [weak self] in
             guard let self, !self.hovering, !self.dragging, !self.workspacePresented, !self.state.composing,
+                  self.state.previewInteraction.mode == .passive,
                   !self.panel.frame.contains(NSEvent.mouseLocation) else { return }
-            guard self.panel.attachedSheet == nil, self.panel.childWindows?.isEmpty != false else {
+            guard self.panel.attachedSheet == nil, !self.panel.dockHasInteractiveChildWindow else {
                 self.scheduleCollapse(after: 0.4)
                 return
             }
@@ -788,20 +846,76 @@ final class EdgeDockController: NSObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: task)
     }
 
-    /// Keyboard counterpart to hovering the notch: stays open while the
-    /// pointer is over it, otherwise folds back after a few seconds.
+    /// Explicit keyboard invocation owns focus until dismissal; hovering remains passive.
     func toggleQuickPreview() {
         guard !workspacePresented, !dragging, !petDragging else { return }
-        if state.expanded { return setExpanded(false) }
+        if state.expanded, state.previewInteraction.mode == .keyboard { return dismissKeyboardPreview(returnFocus: true) }
+        previousApplication = NSWorkspace.shared.frontmostApplication
+        if previousApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier { previousApplication = nil }
+        expandTask?.cancel()
+        state.previewInteraction.mode = .keyboard
+        state.previewInteraction.reconcile(previous: [], current: state.tasks.map { $0.previewIdentity(currentProfileID: model.sessionProfileID) })
         state.showingAnnouncement = false
         setExpanded(true)
-        scheduleCollapse(after: 5)
+        panel.acceptsWorkspaceFocus = true
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func escapePreview() {
+        guard NSApp.modalWindow == nil, panel.attachedSheet == nil, !panel.dockHasInteractiveChildWindow else { return }
+        if state.showingResultComparison { state.showingResultComparison = false; return }
+        if state.composing || state.isReadingDetail || state.showingDigest {
+            if !state.quickSending { state.draftStore.save(state.captureRecord()); state.draftStore.flush() }
+            state.clearPreviewDetails()
+            setQuickMessageFocus(false)
+        } else { dismissKeyboardPreview(returnFocus: true) }
+    }
+
+    private func dismissKeyboardPreview(returnFocus: Bool) {
+        let previous = previousApplication
+        let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        previousApplication = nil
+        setExpanded(false)
+        if returnFocus, let previous, !previous.isTerminated,
+           frontmost == ProcessInfo.processInfo.processIdentifier || frontmost == previous.processIdentifier {
+            previous.activate(options: [])
+        }
+    }
+
+    private func installInteractionMonitors() {
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
+            Task { @MainActor in self?.outsidePreviewClick() }
+        }) { interactionMonitors.append(monitor) }
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                if let self, event.window?.level != .popUpMenu,
+                   event.window !== self.panel, event.window?.parent !== self.panel {
+                    self.outsidePreviewClick()
+                }
+            }
+            return event
+        }) { interactionMonitors.append(monitor) }
+    }
+
+    private func outsidePreviewClick() {
+        guard state.previewInteraction.mode == .keyboard, NSApp.modalWindow == nil, panel.attachedSheet == nil,
+              !panel.dockHasInteractiveChildWindow, !panel.frame.contains(NSEvent.mouseLocation) else { return }
+        if !state.quickSending { state.draftStore.save(state.captureRecord()); state.draftStore.flush() }
+        dismissKeyboardPreview(returnFocus: false)
+    }
+
+    func shutdown() {
+        interactionMonitors.forEach(NSEvent.removeMonitor)
+        interactionMonitors = []
     }
 
     private func setExpanded(_ expanded: Bool) {
         guard !workspacePresented else { return }
+        if expanded, !state.expanded { controlCenter.workingSetWatch.refresh() }
         collapseTask?.cancel()
         if !expanded {
+            state.previewInteraction.mode = .passive
             state.clearPreviewDetails()
             state.composing = false
             panel.acceptsWorkspaceFocus = false
@@ -819,6 +933,7 @@ final class EdgeDockController: NSObject {
         dragging = !ended
         hovering = false
         state.expanded = false
+        (ended ? NSCursor.arrow : NSCursor.closedHand).set()
         let point = NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
             let location = EdgeDockPlacement.dragged(to: point, screenFrame: screen.frame, visibleFrame: screen.visibleFrame)
@@ -844,20 +959,38 @@ final class EdgeDockController: NSObject {
         guard let placement else { return }
         (panel.contentView as? EdgeDockHostingView<EdgeNotchView>)?.bottomHoverExclusion = state.petReserve
         let target = placement.frame(width: state.expanded ? EdgeNotchState.expandedSize.width : state.railWidth,
-                                     height: state.panelHeight)
+                                     height: state.panelHeight).integral
         petWindow?.update(home: NSPoint(x: state.side == .right ? target.maxX - 44 : target.minX, y: target.minY),
                           screen: placement.visibleFrame, visible: !workspacePresented, side: state.side)
+        fitTask?.cancel(); fitTask = nil
         guard !panel.frame.equalTo(target) else { return }
-        if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { context in
-                let expanding = target.width > panel.frame.width
-                context.duration = expanding ? EdgeDockMotion.revealDuration : EdgeDockMotion.collapseDuration
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
-                panel.animator().setFrame(target, display: true)
-            }
-        } else {
-            panel.setFrame(target, display: true)
+        // SwiftUI owns the morph: the transparent window grows at once to cover
+        // both shapes and only shrinks to fit after the spring has settled, so
+        // AppKit never resizes (and relays out) the panel frame by frame.
+        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, panel.frame.intersects(target) else {
+            return panel.setFrame(target, display: true)
         }
+        let cover = panel.frame.union(target)
+        if !panel.frame.equalTo(cover) { setPanelFrame(cover, after: 0) }
+        guard !cover.equalTo(target) else { return }
+        setPanelFrame(target, after: EdgeDockMotion.morphSettle)
+    }
+
+    /// Resizes go through the animator even when nearly instant: an immediate
+    /// setFrame while the notch view is mid-spring sends NSHostingView into an
+    /// endless update-constraints loop that AppKit aborts.
+    private func setPanelFrame(_ frame: NSRect, after delay: TimeInterval) {
+        let apply = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if delay > 0 { self.fitTask = nil }
+            guard !self.panel.frame.equalTo(frame) else { return }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = EdgeDockMotion.windowResize
+                self.panel.animator().setFrame(frame, display: true)
+            }
+        }
+        if delay > 0 { fitTask = apply }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: apply)
     }
 
     static func frame(screenFrame: NSRect, visibleFrame: NSRect, expanded: Bool, railHeight: CGFloat = 136) -> NSRect {
@@ -911,7 +1044,8 @@ struct EdgeNotchActivity: Equatable {
         if status == .needsClarification { return DockActivityState.clarification.icon! }
         if attention { return status.icon }
         if unread { return .chat }
-        if backgroundCompleted || responseCompleted || kanbanHasUpdate { return .check }
+        if backgroundCompleted { return .checkCircle }
+        if responseCompleted || kanbanHasUpdate { return .dot }
         return status == .offline ? .wifiSlash : .sidebarSimple
     }
 }
@@ -959,14 +1093,21 @@ enum EdgeQuotaBands {
 
 @MainActor
 final class EdgeNotchState: ObservableObject {
-    var isReadingDetail: Bool { resultTarget != nil || routineTarget != nil || capacityTarget != nil || steeringTarget != nil || showingRecall || showingWorkingSets }
+    @Published var previewInteraction = EdgePreviewInteraction()
+    @Published var showingResultComparison = false
+    var isReadingDetail: Bool { resultTarget != nil || routineTarget != nil || capacityTarget != nil || steeringTarget != nil || showingRecall || showingWorkingSets || showingActions || checkpointSetID != nil }
     func clearPreviewDetails() {
+        showingResultComparison = false
         resultTarget = nil; routineTarget = nil; capacityTarget = nil; steeringTarget = nil
         showingRecall = false; showingWorkingSets = false; showingDigest = false
+        showingActions = false
+        checkpointSetID = nil
     }
     @Published var capacitySnapshots: [String: SessionCapacitySnapshot] = [:]
+    @Published var watchedSessions: [ProfileScopedID: HermesSession] = [:]
     func destinationUnavailable(_ destination: QuickDestination, sessions: [HermesSession], profileID: String?) -> Bool {
-        if let id = destination.sessionID, !sessions.contains(where: { $0.id == id && $0.profileID == destination.profileID }) { return true }
+        if let id = destination.sessionID, !sessions.contains(where: { $0.id == id && $0.profileID == destination.profileID }),
+           watchedSessions[ProfileScopedID(profileID: destination.profileID, resourceID: id)] == nil { return true }
         if let path = destination.projectPath, !FileManager.default.fileExists(atPath: path) { return true }
         if let profile = destination.profileID, profile != profileID, !bots.contains(where: { $0.id == profile }) { return true }
         return false
@@ -995,7 +1136,7 @@ final class EdgeNotchState: ObservableObject {
     @Published var recallProfileID: String?
     @Published var showingRecall = false
     private var preferenceSubscription: AnyCancellable?
-    let preferences = CommandCenterPreferencesStore.shared
+    let preferences: CommandCenterPreferencesStore
     @Published var routineTarget: RoutineReference?
     let interruptions: HermInterruptionCoordinator
     @Published var showingDigest = false
@@ -1017,13 +1158,17 @@ final class EdgeNotchState: ObservableObject {
     func clearResult(_ target: EdgeResultTarget) { resultCache.removeValue(forKey: resultKey(target)) }
     func invalidateNewerResults(_ incoming: [EdgeNotchTask]) {
         for task in incoming {
-            guard let old = tasks.first(where: { $0.id == task.id }), old != task else { continue }
+            guard let old = tasks.first(where: { $0.presentationID == task.presentationID }), old != task else { continue }
             for key in resultCache.keys.filter({ $0.hasPrefix("\(task.session?.profileID ?? "")/\(task.id)/") }) {
                 resultCache.removeValue(forKey: key)
             }
         }
     }
     @Published var composing = false
+    @Published var showingActions = false
+    @Published var checkpointSetID: UUID?
+    let workflowContent: WorkflowContentStore
+    private var contentSubscription: AnyCancellable?
     @Published var quickTarget: HermesSession?
     @Published var quickReplyTask: EdgeNotchTask?
     @Published var quickCreatedSession: HermesSession?
@@ -1038,12 +1183,15 @@ final class EdgeNotchState: ObservableObject {
     @Published private(set) var quickNeedsReview = false
     @Published private(set) var quickProjectPath: String?
 
-    init(store: QuickDraftStore? = nil, interruptions: HermInterruptionCoordinator? = nil) {
+    init(store: QuickDraftStore? = nil, interruptions: HermInterruptionCoordinator? = nil, content: WorkflowContentStore? = nil, preferences: CommandCenterPreferencesStore? = nil) {
+        self.preferences = preferences ?? .shared
         draftStore = store ?? QuickDraftStore()
+        workflowContent = content ?? WorkflowContentStore()
         self.interruptions = interruptions ?? HermInterruptionCoordinator()
+        contentSubscription = workflowContent.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         draftSubscription = draftStore.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         interruptionSubscription = self.interruptions.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
-        preferenceSubscription = preferences.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        preferenceSubscription = self.preferences.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
     }
 
     var recoverableDrafts: [QuickDraftRecord] {
@@ -1057,6 +1205,53 @@ final class EdgeNotchState: ObservableObject {
         record.text = quickDraft; record.files = quickFiles; record.sources = quickSources
         quickRecordID = record.id
         return record
+    }
+
+    /// Preparing an action never submits, uploads, or borrows the workspace composer.
+    @discardableResult
+    func applyQuickAction(_ action: SavedQuickAction, confirmDestinationChange: Bool = false) -> Bool {
+        guard showingActions, !quickSending, quickPreparing == 0, !quickNeedsReview else { return false }
+        let current = captureRecord()
+        if let destination = action.destination, destination.key != current.destination.key {
+            guard confirmDestinationChange else { return false }
+            saveQuickDraft(); draftStore.flush()
+            guard draftStore.error == nil else { return false }
+            applyingDraft = true
+            quickRecordID = UUID()
+            quickProfileID = destination.profileID; quickTarget = destination.session
+            quickProjectPath = destination.projectPath; quickCreatedSession = nil; quickReplyTask = nil
+            quickFiles = []; quickSources = []; quickNeedsReview = false
+            quickDraft = action.instructions
+            applyingDraft = false
+        } else {
+            quickDraft = action.instructions + (quickDraft.isEmpty ? "" : "\n\n" + quickDraft)
+        }
+        saveQuickDraft(); draftStore.flush()
+        quickResult = draftStore.error
+        showingActions = false; composing = true
+        return true
+    }
+
+    @discardableResult
+    func restoreCheckpoint(_ checkpoint: WorkingSetCheckpoint, from set: WorkingSet) -> Bool {
+        guard !quickSending, quickPreparing == 0, checkpoint.workingSetID == set.id,
+              let destination = set.destinations.first(where: { $0.key == checkpoint.destinationKey }) else { return false }
+        saveQuickDraft(); draftStore.flush()
+        guard draftStore.error == nil else { return false }
+        if let draftID = checkpoint.draftID,
+           let draft = draftStore.records.first(where: { $0.id == draftID && $0.destination.key == destination.key }) {
+            restoreQuickDraft(draft)
+        } else {
+            applyingDraft = true
+            quickRecordID = UUID(); quickProfileID = destination.profileID
+            quickTarget = destination.session; quickReplyTask = nil; quickCreatedSession = nil
+            quickProjectPath = destination.projectPath; quickDraft = ""; quickFiles = []; quickSources = []
+            quickNeedsReview = false
+            applyingDraft = false
+            quickResult = checkpoint.draftID == nil ? nil : "Saved draft unavailable. The note and destination remain."
+        }
+        checkpointSetID = nil; showingWorkingSets = false; composing = true
+        return true
     }
 
     private func saveQuickDraft() {
@@ -1215,7 +1410,7 @@ final class EdgeNotchState: ObservableObject {
     }
 
     var previewTasks: [EdgeNotchTask] {
-        guard composing, let quickReplyTask, !tasks.contains(where: { $0.id == quickReplyTask.id }) else { return tasks }
+        guard composing, let quickReplyTask, !tasks.contains(where: { $0.presentationID == quickReplyTask.presentationID }) else { return tasks }
         return tasks + [quickReplyTask]
     }
 
@@ -1271,19 +1466,17 @@ final class EdgeNotchState: ObservableObject {
     @Published var petPull = 0.0
     /// The collapsed bar widens to receive a dragged pet and stays a little wider while it is docked.
     var barWidth: CGFloat {
-        if petDragging { return 28 + (petAttached ? 10 : 25) * petPull }
-        return hasPet && petAttached ? 38 : 28
+        if petDragging { return 38 + (petAttached ? 10 : 25) * petPull }
+        return hasPet && petAttached ? 46 : 38
     }
     /// Accent glow grows as a free pet is dragged toward the notch.
     var barGlow: Double { petDragging && !petAttached ? petPull : 0 }
-    var railWidth: CGFloat { expanded ? 72 : 56 }
+    var railWidth: CGFloat { expanded ? 80 : 66 }
     var petReserve: CGFloat { hasPet ? Self.petFootprint : 0 }
     static let petFootprint: CGFloat = 48
     /// The collapsed rail grows with the number of stacked marks (24pt each, 6pt apart, room for the shoulders).
-    var railHeight: CGFloat {
-        let marks = CGFloat(railActivity.markCount)
-        return expanded ? 136 : max(96, marks * 25 + 50)
-    }
+    var railHeight: CGFloat { expanded ? 136 : collapsedRailHeight }
+    var collapsedRailHeight: CGFloat { max(96, CGFloat(railActivity.markCount) * 30 + 56) }
     var panelHeight: CGFloat { (expanded ? Self.expandedSize.height : railHeight) + petReserve }
 }
 
@@ -1302,6 +1495,10 @@ struct EdgeNotchView: View {
     var onAnswer: (EdgeNotchTask, String) -> Void = { _, _ in }
     @ObservedObject private var theme = DockThemeStore.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Visual open state. It trails `state.expanded` by one run-loop turn so the
+    /// spring starts after the window has grown; changes applied inside the
+    /// window-resize layout pass are not animated.
+    @State private var open = false
     let openDock: () -> Void
     var onOpenTask: (EdgeNotchTask) -> Void = { _ in }
     var onDrag: (Bool) -> Void = { _ in }
@@ -1312,24 +1509,33 @@ struct EdgeNotchView: View {
         GeometryReader { geometry in
             VStack(spacing: 4) {
             HStack(spacing: 0) {
-                if state.expanded {
+                if open {
                     // The outer contour already supplies visual breathing room.
                     // Keep the preview close to it so its content does not float
                     // in the middle of the expanded notch.
                     preview.frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.horizontal, 8).padding(.vertical, 26)
-                        .transition(.opacity)
+                        .transition(reduceMotion ? .opacity : .asymmetric(
+                            insertion: .islandContent(side: state.side).animation(.easeOut(duration: 0.24).delay(0.1)),
+                            removal: .opacity.animation(.easeIn(duration: 0.1))))
                 } else {
-                    rail
+                    rail.transition(.opacity.animation(.easeOut(duration: 0.16)))
                 }
             }
-            .frame(width: geometry.size.width, height: geometry.size.height - state.petReserve,
+            // Sized from state only, never the window: the window grows ahead of
+            // the shape (non-animated), and tying the shape to it made the
+            // preview pop to full size instead of growing with the spring.
+            .frame(width: open ? EdgeNotchState.expandedSize.width : state.railWidth,
+                   height: open ? EdgeNotchState.expandedSize.height : state.collapsedRailHeight,
                    alignment: state.side == .right ? .trailing : .leading)
+            // The content is revealed through the growing shell rather than
+            // appearing at full size beside it.
+            .mask { shell(EdgeNotchShape(side: state.side).fill(.black)) }
+            // One persistent shell: the rail bar itself stretches into the preview
+            // panel and back, so the two states read as a single growing notch.
             .background {
-                if state.expanded {
-                    DockWindowBackground().clipShape(EdgeNotchShape(side: state.side))
-                        .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 1) }
-                }
+                shell(DockWindowBackground().clipShape(EdgeNotchShape(side: state.side))
+                    .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 1) })
             }
             // Attach drag gesture to parent so it works in both collapsed and expanded states
             .simultaneousGesture(DragGesture(minimumDistance: 6)
@@ -1342,19 +1548,38 @@ struct EdgeNotchView: View {
                     Color.clear.frame(height: max(44, state.petReserve - 4)).allowsHitTesting(false)
                 }
             }
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: state.side == .right ? .trailing : .leading)
         }
         .clipped()
-        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.86), value: state.expanded)
+        // Rail growth (more stacked marks) uses the same spring as the open/close morph.
+        .animation(reduceMotion ? nil : EdgeDockMotion.morph, value: state.collapsedRailHeight)
+        .onAppear { open = state.expanded }
+        .onChange(of: state.expanded) { _, expanded in
+            DispatchQueue.main.async {
+                guard state.expanded == expanded else { return }
+                withAnimation(reduceMotion ? nil : EdgeDockMotion.morph) { open = expanded }
+            }
+        }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state.isQuiet)
         .dockThemedRoot()
         .preferredColorScheme(theme.selectedThemeID.appearance == .light ? .light : theme.selectedThemeID.appearance == .dark ? .dark : nil)
         .id(theme.selectedThemeID)
     }
 
+    /// The notch outline at its current size: the rail bar when closed, the whole panel when open.
+    private func shell(_ surface: some View) -> some View {
+        GeometryReader { shell in
+            surface
+                .frame(width: open ? shell.size.width : min(shell.size.width, state.barWidth), height: shell.size.height)
+                .frame(maxWidth: .infinity, alignment: state.side == .right ? .trailing : .leading)
+        }
+        .animation(reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.68), value: state.barWidth)
+    }
+
     private var rail: some View {
         Button(action: openDock) {
-            EdgePetRail(activity: state.railActivity, side: state.side, width: state.barWidth, height: state.railHeight, glow: state.barGlow, docked: state.petAttached && state.hasPet)
-            .frame(width: state.railWidth, height: state.railHeight)
+            EdgePetRail(activity: state.railActivity, side: state.side, width: state.barWidth, height: state.collapsedRailHeight, glow: state.barGlow, docked: state.petAttached && state.hasPet)
+            .frame(width: state.railWidth, height: state.collapsedRailHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -1367,7 +1592,6 @@ struct EdgeNotchView: View {
         }
         .accessibilityLabel("\(state.name), \(state.railActivity.title). Open Herm")
         .accessibilityHint("Drag to move along either screen edge")
-        .help("\(state.railActivity.title). Hover for details; drag to reposition.")
     }
 
     private var preview: some View {
@@ -1385,6 +1609,19 @@ struct EdgeNotchView: View {
                 }
                 .padding(2)
                 .background(Capsule().fill(Color.dockSurface4.opacity(0.6)))
+                if !state.displaysQuota, !state.preferences.workingSets.isEmpty {
+                    Menu {
+                        Button("All activity") { state.preferences.watchWorkingSet(nil) }
+                        ForEach(state.preferences.workingSets) { set in
+                            Button("Watch \(set.name)") { state.preferences.watchWorkingSet(set.id) }
+                                .disabled(set.destinations.allSatisfy { $0.sessionID == nil })
+                        }
+                    } label: {
+                        Text(state.preferences.workingSets.first { $0.id == state.preferences.watchedWorkingSetID }?.name ?? "All")
+                            .font(.system(size: 12)).lineLimit(1).frame(maxWidth: 80)
+                    }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Activity scope")
+                }
                 Spacer()
                 if state.displaysQuota {
                     EdgeQuotaToolbar(control: controlCenter)
@@ -1409,7 +1646,7 @@ struct EdgeNotchView: View {
                 EdgeSubagentSteering(origin: target, service: HermesWorkflowRPC(client: model.quickWorkflowClient, profileID: target.profileID),
                     back: { state.steeringTarget = nil; onQuickMessageFocus(false) }, open: { model.resumeSession(target); openDock() })
             } else if let target = state.capacityTarget, let model = quickMessageModel {
-                EdgeSessionCapacity(destination: target, service: HermesWorkflowRPC(client: model.controlRPCClient, profileID: target.profileID),
+                EdgeSessionCapacity(destination: target, control: controlCenter, service: HermesWorkflowRPC(client: model.controlRPCClient, profileID: target.profileID),
                     back: { state.capacityTarget = nil }, loaded: { snapshot in
                         let key = QuickDestination(profileID: target.profileID, sessionID: target.id).sessionKey
                         state.capacitySnapshots[key] = snapshot
@@ -1427,13 +1664,19 @@ struct EdgeNotchView: View {
                         controlCenter.requestAutomation(routine)
                         state.routineTarget = nil; openDock()
                     }).id(routine.id)
+            } else if let setID = state.checkpointSetID, let quickMessageModel {
+                EdgeCheckpointView(setID: setID, state: state, model: quickMessageModel,
+                    back: { state.checkpointSetID = nil; state.showingWorkingSets = true }, activate: { onQuickMessageFocus(true) })
+            } else if state.showingActions, let quickMessageModel {
+                EdgeQuickActionsView(state: state, model: quickMessageModel,
+                    back: { state.showingActions = false }, activate: { onQuickMessageFocus(true) })
             } else if state.showingDigest {
                 EdgeDigestView(coordinator: state.interruptions, back: { state.showingDigest = false },
                     open: onOpenDigest, openActivity: openDock)
             } else if let target = state.resultTarget, let quickMessageModel {
                 resultPreview(target, model: quickMessageModel)
             } else if state.composing, state.quickTarget == nil || state.quickReplyTask == nil, let quickMessageModel {
-                EdgeQuickMessageView(model: quickMessageModel, state: state,
+                EdgeQuickMessageView(model: quickMessageModel, control: controlCenter, state: state,
                                      close: { onQuickMessageFocus(false) }, openDock: openDock)
             } else if state.displaysQuota {
                 EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota, change: state.announcedQuotaChange,
@@ -1449,7 +1692,7 @@ struct EdgeNotchView: View {
                                     onQuickMessageFocus(true)
                                 },
                                 reply: quickMessageModel == nil ? nil : onQuickReply,
-                                quickState: state, quickModel: quickMessageModel,
+                                quickState: state, quickModel: quickMessageModel, quotaControl: controlCenter,
                                 closeReply: { onQuickMessageFocus(false) },
                                 answer: onAnswer,
                                 peek: quickMessageModel == nil ? nil : onResultPeek,
@@ -1462,7 +1705,7 @@ struct EdgeNotchView: View {
                                     guard !state.quickSending else { return }
                                     let session = task.session ?? (task.isCurrent ? quickMessageModel?.workflowSession : nil)
                                     if let session { onQuickMessageFocus(true); state.steeringTarget = session }
-                                }, openDock: openDock, openTask: onOpenTask)
+                                }, beginEditing: { onQuickMessageFocus(true) }, openDock: openDock, openTask: onOpenTask)
             }
         }
     }
@@ -1484,6 +1727,7 @@ struct EdgeNotchView: View {
                                },
                                reviewed: {
                                    quickMessageModel.markQuickResultReviewed(target.session)
+                                   controlCenter.workingSetWatch.review(target.session)
                                    if let id = state.digestResultID { state.interruptions.review(id); state.digestResultID = nil }
                                },
                                refresh: {
@@ -1494,7 +1738,7 @@ struct EdgeNotchView: View {
                                        state.resultTarget = EdgeResultTarget(task: newer, session: session)
                                    }
                                },
-                               hasNewerResult: state.tasks.contains { $0.id == target.task.id && $0.phase == .finished && $0 != target.task },
+                               hasNewerResult: state.tasks.contains { $0.id == target.task.id && $0.session?.profileID == target.session.profileID && $0.phase == .finished && $0 != target.task },
                                correct: { text, sources in
                                    onResultReply(target)
                                    guard state.quickTarget?.id == target.session.id, state.quickTarget?.profileID == target.session.profileID,
@@ -1509,7 +1753,7 @@ struct EdgeNotchView: View {
                                    state.draftStore.save(setup.draft); state.draftStore.flush()
                                    state.restoreQuickDraft(setup.draft); state.resultTarget = nil
                                    state.quickResult = setup.error; onQuickMessageFocus(true)
-                               })
+                               }, showingComparison: $state.showingResultComparison)
                     .id(target.id)
     }
 
@@ -1571,11 +1815,8 @@ private struct EdgePetRail: View {
                 if side == .right { Spacer(minLength: 0) }
                 EdgeNotchStatusIndicator(activity: activity, style: displayStyle)
                     .frame(width: width, height: height)
-                    .background {
-                        DockWindowBackground().clipShape(EdgeNotchShape(side: side))
-                            .overlay { EdgeNotchShape(side: side).stroke(Color.dockBorderStrong, lineWidth: 1) }
-                            .overlay { EdgeNotchShape(side: side).stroke(Color.accentColor, lineWidth: 2).opacity(flash ? 1 : glow * 0.8) }
-                    }
+                    // The shell fill lives in EdgeNotchView so it can grow into the preview.
+                    .overlay { EdgeNotchShape(side: side).stroke(Color.accentColor, lineWidth: 2).opacity(flash ? 1 : glow * 0.8) }
                     .animation(reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.68), value: width)
                 if side == .left { Spacer(minLength: 0) }
             }
@@ -1586,6 +1827,24 @@ private struct EdgePetRail: View {
             flash = true
             withAnimation(.easeOut(duration: 0.7)) { flash = false }
         }
+    }
+}
+
+/// Content settles in from the anchored edge once the shell has opened.
+private struct IslandContentModifier: ViewModifier {
+    let shown: Bool
+    let side: EdgeDockSide
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(shown ? 1 : 0.94, anchor: side == .right ? .trailing : .leading)
+            .opacity(shown ? 1 : 0)
+    }
+}
+
+extension AnyTransition {
+    static func islandContent(side: EdgeDockSide) -> AnyTransition {
+        .modifier(active: IslandContentModifier(shown: false, side: side), identity: IslandContentModifier(shown: true, side: side))
     }
 }
 

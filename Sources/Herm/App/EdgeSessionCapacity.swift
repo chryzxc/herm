@@ -6,11 +6,7 @@ struct SessionCapacitySnapshot {
   let running: Bool
   let options: [HermesModelOption]
   let modelID: String?
-  let allowance: Double?
-  let resetsAt: String?
-  let attribution: String
   let readAt: Date
-  var low: Bool { allowance.map { $0 <= 20 } ?? false }
 
   static func parse(session: HermesSession, runtimeID: String, running: Bool, result: [String: Any])
     throws -> Self
@@ -18,30 +14,9 @@ struct SessionCapacitySnapshot {
     let options = try DockModel.runtimeModelOptions(from: result)
     let provider = result["provider"] as? String ?? ""
     let model = result["model"] as? String ?? ""
-    let row = (result["providers"] as? [[String: Any]])?.first {
-      ($0["slug"] as? String) == provider
-    }
-    let usage = row?["usage"] as? [String: Any] ?? [:]
-    let accounts = usage["accounts"] as? [[String: Any]] ?? []
-    let account = accounts.count == 1 ? accounts.first : nil
-    let valid =
-      (account?["id"] as? String)?.isEmpty == false
-      && ["ready", "limited"].contains(account?["state"] as? String ?? "")
-    let windows = valid ? account?["windows"] as? [[String: Any]] ?? [] : []
-    let relevant = windows.filter { ($0["scope"] as? String ?? "account") == "account" }
-    let lowest = relevant.compactMap { row -> (Double, String?)? in
-      guard let used = (row["used_percent"] as? NSNumber)?.doubleValue, used.isFinite,
-        (0...100).contains(used)
-      else { return nil }
-      return (100 - used, row["resets_at"] as? String)
-    }.min { $0.0 < $1.0 }
     return Self(
       session: session, runtimeID: runtimeID, running: running, options: options,
       modelID: model.isEmpty ? nil : HermesModelOption(provider: provider, model: model).id,
-      allowance: lowest?.0, resetsAt: lowest?.1,
-      attribution: valid
-        ? "Reported account: \(account?["label"] as? String ?? account?["id"] as? String ?? "")"
-        : "Session account mapping is unavailable. Provider quota remains an aggregate advisory.",
       readAt: .now)
   }
 }
@@ -59,6 +34,7 @@ extension HermesWorkflowRPC {
 
 struct EdgeSessionCapacity: View {
   let destination: HermesSession
+  @ObservedObject var control: ControlCenterModel
   let service: HermesWorkflowRPC
   let back: () -> Void
   var loaded: (SessionCapacitySnapshot) -> Void = { _ in }
@@ -79,18 +55,19 @@ struct EdgeSessionCapacity: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 10) {
           if let snapshot {
-            Text(snapshot.attribution)
-            if let allowance = snapshot.allowance {
-              Text("\(Int(allowance))% allowance remaining").font(
-                .system(size: 12, weight: .semibold)
-              ).foregroundStyle(snapshot.low ? Color.dockWarning : Color.dockPrimaryText)
-              if let resets = snapshot.resetsAt {
-                Text("Resets: \(HumanDateFormatting.dateAndTime(resets))")
+            let provider = snapshot.modelID?.components(separatedBy: "|").first
+            if let reading = control.quotaReading(for: provider) {
+              Text("\(reading.snapshot.displayName): \(Int(reading.remaining.rounded()))% provider allowance remaining")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(QuotaWorkspaceView.color(for: reading.window.threshold))
+              if let resets = reading.window.resetsAt {
+                Text("Resets: \(resets.formatted(date: .abbreviated, time: .shortened))")
               }
+              Text("Provider advisory · read \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened))")
+                .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+            } else {
+              Text("Provider quota unavailable. Open Quota to review connected providers.")
             }
-            Text(
-              "Read \(snapshot.readAt.formatted(date: .omitted, time: .shortened)). Hermes returns cached usage; snapshot age is not supplied."
-            ).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
             if snapshot.running {
               Button("Stop this turn") { Task { await act(stop: true) } }.buttonStyle(.dockHover)
                 .disabled(pending)
@@ -137,6 +114,7 @@ struct EdgeSessionCapacity: View {
       }
   }
   private func load() async {
+    control.refreshProviderQuota()
     pending = true
     error = nil
     defer { pending = false }

@@ -46,8 +46,9 @@ struct EdgeResultContent: Equatable {
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !artifacts.isEmpty else {
       return nil
     }
-    return Self(text: String(text.prefix(12_000)), artifacts: Array(artifacts.prefix(12)),
-                revisionID: (reply["id"] as? String) ?? (reply["id"] as? NSNumber)?.stringValue)
+    return Self(
+      text: String(text.prefix(12_000)), artifacts: Array(artifacts.prefix(12)),
+      revisionID: (reply["id"] as? String) ?? (reply["id"] as? NSNumber)?.stringValue)
   }
 }
 
@@ -65,27 +66,43 @@ struct EdgeResultPeek: View {
   var codingClient: HermesRPCClientProtocol? = nil
   var openRepository: ((String) -> Void)? = nil
   var createdTask: ((IsolatedTaskSetup) -> Void)? = nil
+  @Binding var showingComparison: Bool
   @State private var content: EdgeResultContent?
   @State private var error: String?
   @State private var isLoading = true
   @State private var revision = 0
+  @State private var previousContent: EdgeResultContent?
+  @State private var comparison: ResultTextComparison?
 
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 8) {
-        Button(action: back) { DockIcon(.caretLeft, size: 12, color: .dockSecondaryText) }
-          .buttonStyle(.dockHover)
-          .accessibilityLabel("Back to tasks")
+        Button {
+          if showingComparison { showingComparison = false } else { back() }
+        } label: {
+          DockIcon(.caretLeft, size: 12, color: .dockSecondaryText)
+        }
+        .buttonStyle(.dockHover)
+        .accessibilityLabel(showingComparison ? "Back to current result" : "Back to tasks")
         VStack(alignment: .leading, spacing: 2) {
           Text(target.session.displayTitle).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-          Text("Latest completed reply").font(.system(size: 11)).foregroundStyle(
+          Text(showingComparison ? "Compared with previous read" : "Latest completed reply").font(
+            .system(size: 11)
+          ).foregroundStyle(
             Color.dockSecondaryText)
         }
         Spacer(minLength: 4)
         if isLoading { ProgressView().controlSize(.mini) }
-        Button(hasNewerResult ? "Update" : "Refresh") { refresh(); revision += 1 }
-            .font(.system(size: 11)).buttonStyle(.dockHover).disabled(isLoading)
-            .accessibilityLabel("Update saved result")
+        Menu(hasNewerResult ? "Update" : "More") {
+          Button(hasNewerResult ? "Update saved reply" : "Refresh saved reply") {
+            refresh()
+            showingComparison = false
+            revision += 1
+          }
+          Button("Compare with previous read") { showingComparison = true }
+            .disabled(previousContent == nil || comparison == nil)
+        }.font(.system(size: 11)).menuStyle(.borderlessButton).fixedSize().disabled(isLoading)
+          .accessibilityLabel("Result actions")
         if let content, !content.text.isEmpty {
           DockCopyButton(
             content.text, label: "Copy", accessibilityLabel: "Copy excerpt", iconSize: 12
@@ -98,7 +115,10 @@ struct EdgeResultPeek: View {
       Divider().overlay(Color.dockBorderLight)
       ScrollView {
         VStack(alignment: .leading, spacing: 10) {
-          if let content {
+          if showingComparison, let previousContent, let content, let comparison {
+            EdgeResultComparison(
+              previous: previousContent, current: content, comparison: comparison)
+          } else if let content {
             if !content.text.isEmpty {
               Text(content.text).font(.system(size: 12)).textSelection(.enabled)
             }
@@ -111,11 +131,19 @@ struct EdgeResultPeek: View {
               artifactRow(artifact)
             }
             if let correct {
-                EdgeResultSources(content: content, origin: QuickDestination(profileID: target.session.profileID,
-                    sessionID: target.session.id, title: target.session.displayTitle), correct: correct, activate: beginEditing)
+              EdgeResultSources(
+                content: content,
+                origin: QuickDestination(
+                  profileID: target.session.profileID,
+                  sessionID: target.session.id, title: target.session.displayTitle),
+                correct: correct, activate: beginEditing)
             }
             if let codingClient, let createdTask {
-                EdgeResultCoding(origin: target.session, client: codingClient, activate: beginEditing, opened: { path in if let openRepository { openRepository(path) } else { openSession() } }, created: createdTask)
+              EdgeResultCoding(
+                origin: target.session, client: codingClient, activate: beginEditing,
+                opened: { path in
+                  if let openRepository { openRepository(path) } else { openSession() }
+                }, created: createdTask)
             }
           } else if let error {
             Text("Couldn’t load the reply").font(.system(size: 12, weight: .semibold))
@@ -141,13 +169,28 @@ struct EdgeResultPeek: View {
       .padding(10)
     }
     .foregroundStyle(Color.dockPrimaryText)
+    .onDisappear { showingComparison = false }
     .task(id: revision) {
       isLoading = true
       error = nil
       do {
         let loaded = try await load(target.session)
         guard !Task.isCancelled else { return }
-        content = loaded
+        if let old = content, let loaded {
+          let oldText = old.text
+          let newText = loaded.text
+          let result = await Task.detached(priority: .userInitiated) {
+            ResultTextComparison.make(previous: oldText, current: newText)
+          }.value
+          guard !Task.isCancelled else { return }
+          previousContent = old
+          comparison = result
+          content = loaded
+        } else if content != nil, loaded == nil {
+          error = "No completed reply is available yet. Still showing the loaded excerpt."
+        } else {
+          content = loaded
+        }
         if loaded != nil { reviewed() }
       } catch {
         guard !Task.isCancelled else { return }

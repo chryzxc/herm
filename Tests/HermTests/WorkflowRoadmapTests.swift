@@ -120,7 +120,7 @@ struct WorkflowRoadmapTests {
     #expect(client.calls[0].1["profile"] as? String == "research")
     #expect(client.calls[0].1["session_id"] as? String == "owner")
   }
-  @Test func accountMappingAndLowQuotaAreConservative() throws {
+  @Test func sessionCapacityIgnoresSeparateRPCQuota() throws {
     let account: [String: Any] = [
       "id": "account-a", "state": "limited",
       "windows": [
@@ -130,14 +130,14 @@ struct WorkflowRoadmapTests {
     ]
     let single = try SessionCapacitySnapshot.parse(
       session: owner, runtimeID: "runtime", running: false, result: options(accounts: [account]))
-    #expect(single.allowance == 20 && single.low)
-    #expect(single.resetsAt == "tomorrow")
+    #expect(single.modelID != nil)
     for accounts in [
       [], [account, account], [["state": "ready", "windows": [["used_percent": 90]]]],
     ] {
       let unknown = try SessionCapacitySnapshot.parse(
         session: owner, runtimeID: "runtime", running: false, result: options(accounts: accounts))
-      #expect(unknown.allowance == nil && !unknown.low)
+      #expect(unknown.modelID == single.modelID)
+      #expect(unknown.options == single.options)
     }
   }
   @Test func modelChoiceRequiresIdleConfiguredAcknowledgedSessionScope() async throws {
@@ -567,7 +567,7 @@ struct WorkflowRoadmapTests {
     let views: [(String, AnyView)] = [
       (
         "capacity",
-        AnyView(EdgeSessionCapacity(destination: owner, service: service, back: {}, open: {}))
+        AnyView(EdgeSessionCapacity(destination: owner, control: control, service: service, back: {}, open: {}))
       ),
       (
         "steering",

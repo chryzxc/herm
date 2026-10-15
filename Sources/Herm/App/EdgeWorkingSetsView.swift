@@ -41,6 +41,12 @@ struct EdgeWorkingSetsView: View {
                 }.buttonStyle(.dockHover)
                 Button("Remove…") { removal = set.id }.buttonStyle(.dockHover)
               }
+              HStack {
+                Button("Checkpoint…") { state.showingWorkingSets = false; state.checkpointSetID = set.id }.buttonStyle(.dockHover)
+                Button(preferences.watchedWorkingSetID == set.id ? "End watch" : "Watch activity") {
+                  preferences.watchWorkingSet(preferences.watchedWorkingSetID == set.id ? nil : set.id)
+                }.buttonStyle(.dockHover).disabled(set.destinations.allSatisfy { $0.sessionID == nil })
+              }
               ForEach(Array(set.destinations.enumerated()), id: \.offset) { _, destination in
                 let unavailable = state.destinationUnavailable(
                   destination, sessions: model.sessions, profileID: model.profileScopeID)
@@ -86,12 +92,16 @@ struct EdgeWorkingSetsView: View {
         isPresented: Binding(get: { removal != nil }, set: { if !$0 { removal = nil } })
       ) {
         Button("Remove set", role: .destructive) {
-          if let removal { preferences.removeWorkingSet(removal) }
+          if let removal {
+            state.workflowContent.clearCheckpoint(removal)
+            state.workflowContent.flush()
+            if state.workflowContent.error == nil { preferences.removeWorkingSet(removal) }
+          }
           removal = nil
         }
         Button("Cancel", role: .cancel) { removal = nil }
       } message: {
-        Text("This removes Herm's grouping only. Hermes sessions and pins remain.")
+        Text("This removes Herm's grouping and its checkpoint. Independent drafts, Hermes sessions and pins remain.")
       }
   }
 }

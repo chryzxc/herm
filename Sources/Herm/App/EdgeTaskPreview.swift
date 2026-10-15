@@ -8,6 +8,7 @@ struct EdgeNotchTask: Identifiable, Equatable {
     }
 
     let id: String
+    var presentationID: String { "\(session?.profileID ?? attentionRequest?.profileID ?? "")/\(isCurrent ? "current" : "background")/\(id)" }
     let title: String
     let phase: Phase
     let statusLabel: String
@@ -31,6 +32,8 @@ struct EdgeNotchTask: Identifiable, Equatable {
     static func choiceLabel(_ choice: String) -> String {
         switch choice {
         case ApprovalChoice.once: "Allow once"
+        case ApprovalChoice.session: "Allow this session"
+        case ApprovalChoice.always: "Always allow"
         case ApprovalChoice.deny: "Deny"
         default: choice
         }
@@ -157,15 +160,34 @@ struct EdgeTaskPreview: View {
     var reply: ((EdgeNotchTask) -> Void)? = nil
     var quickState: EdgeNotchState? = nil
     var quickModel: DockModel? = nil
+    var quotaControl: ControlCenterModel? = nil
     var closeReply: () -> Void = {}
     var answer: ((EdgeNotchTask, String) -> Void)? = nil
     var peek: ((EdgeNotchTask) -> Void)? = nil
     var recall: (() -> Void)? = nil
     var steer: ((EdgeNotchTask) -> Void)? = nil
+    var beginEditing: () -> Void = {}
     let openDock: () -> Void
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     let openTask: (EdgeNotchTask) -> Void
     @State private var hoveredID: String?
+    @FocusState private var focusedTask: EdgePreviewItemID?
+    private var keyboardItems: [EdgePreviewItemID] {
+        tasks.map { $0.previewIdentity(currentProfileID: quickModel?.sessionProfileID) }
+    }
+
+    private func reconcileKeyboard(previous: [EdgePreviewItemID]) {
+        guard let quickState, quickState.previewInteraction.mode == .keyboard else { return }
+        quickState.previewInteraction.reconcile(previous: previous, current: keyboardItems)
+        focusedTask = quickState.previewInteraction.selected
+    }
+
+    private func moveKeyboard(_ offset: Int) -> KeyPress.Result {
+        guard let quickState, quickState.previewInteraction.mode == .keyboard else { return .ignored }
+        quickState.previewInteraction.move(offset, items: keyboardItems)
+        focusedTask = quickState.previewInteraction.selected
+        return .handled
+    }
 
     var body: some View {
         // One pass per render; grouping keeps the pre-sorted order.
@@ -196,7 +218,13 @@ struct EdgeTaskPreview: View {
                             }
                         }
                         .scrollIndicators(.never)
-                        .onChange(of: quickState?.composing == true ? quickState?.quickReplyTask?.id : nil, initial: true) { _, id in
+                        .onChange(of: focusedTask) { _, id in
+                            if let id {
+                                quickState?.previewInteraction.selected = id
+                                proxy.scrollTo(id, anchor: .center)
+                            }
+                        }
+                        .onChange(of: quickState?.composing == true ? quickState?.quickReplyTask?.presentationID : nil, initial: true) { _, id in
                             if let id { proxy.scrollTo("reply-\(id)", anchor: .bottom) }
                         }
                     }
@@ -210,6 +238,11 @@ struct EdgeTaskPreview: View {
         .foregroundStyle(Color.dockPrimaryText)
         .padding(.horizontal, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { reconcileKeyboard(previous: keyboardItems) }
+        .onChange(of: keyboardItems) { old, _ in reconcileKeyboard(previous: old) }
+        .onChange(of: quickState?.previewInteraction.mode) { _, mode in
+            if mode == .keyboard { reconcileKeyboard(previous: keyboardItems) }
+        }
     }
 
     @ViewBuilder
@@ -217,19 +250,19 @@ struct EdgeTaskPreview: View {
         if !items.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 DockSectionLabel(title: title, count: items.count)
-                ForEach(items) { card($0, bots: bots, now: now) }
+                ForEach(items, id: \.presentationID) { card($0, bots: bots, now: now) }
             }
         }
     }
 
     private func card(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
-        let isHovered = hoveredID == task.id
-        let isReplying = quickState?.composing == true && quickState?.quickReplyTask?.id == task.id
+        let isHovered = hoveredID == task.presentationID
+        let isReplying = quickState?.composing == true && quickState?.quickReplyTask?.presentationID == task.presentationID
         return VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 0) {
                 taskButton(task, bots: bots, now: now)
                 if task.routine == nil, task.kanbanTask == nil, task.phase != .attention, let reply, task.session != nil || task.isCurrent {
-                    replyToggle(task, isReplying: isReplying, visible: isHovered || isReplying || task.isCurrent, reply: reply)
+                    replyToggle(task, isReplying: isReplying, visible: isHovered || isReplying || task.isCurrent || quickState?.previewInteraction.mode == .keyboard, reply: reply)
                         .padding(.top, 5)
                         .padding(.trailing, 4)
                 }
@@ -237,12 +270,12 @@ struct EdgeTaskPreview: View {
             if task.phase == .attention, !task.choices.isEmpty, let answer {
                 choiceButtons(task, answer: answer)
             }
-            if isReplying, let quickState, let quickModel {
-                EdgeQuickMessageView(model: quickModel, state: quickState, inline: true,
+            if isReplying, let quickState, let quickModel, let quotaControl {
+                EdgeQuickMessageView(model: quickModel, control: quotaControl, state: quickState, inline: true,
                                      close: closeReply, openDock: openDock)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
-                    .id("reply-\(task.id)")
+                    .id("reply-\(task.presentationID)")
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -255,37 +288,65 @@ struct EdgeTaskPreview: View {
             RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
                 .fill(isHovered || isReplying ? Color.dockSurface4.opacity(0.6) : task.isCurrent ? Color.dockSurface4.opacity(0.35) : .clear)
         )
-        .onHover { hoveredID = $0 ? task.id : (hoveredID == task.id ? nil : hoveredID) }
+        .onHover { hoveredID = $0 ? task.presentationID : (hoveredID == task.presentationID ? nil : hoveredID) }
         .animation(.dockEase(duration: 0.16), value: isReplying)
+    }
+
+    /// Detail text with the file icon before any word that names a file ("Reading App.vue").
+    private static func detailText(_ detail: String) -> Text {
+        detail.split(separator: " ", omittingEmptySubsequences: false).enumerated().reduce(Text("")) { text, item in
+            let word = String(item.element)
+            let sep = item.offset == 0 ? Text("") : Text(" ")
+            guard let image = ArtifactFileIcon.inlineImage(forPath: word, size: 11) else { return text + sep + Text(word) }
+            return text + sep + Text(Image(nsImage: image)).baselineOffset(-2) + Text("\u{2009}") + Text(word)
+        }
     }
 
     /// The full question and its answers, so a background decision never needs the chat open.
     private func choiceButtons(_ task: EdgeNotchTask, answer: @escaping (EdgeNotchTask, String) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let isApproval = task.choices.contains(ApprovalChoice.once) || task.choices.contains(ApprovalChoice.deny)
+        let isDisabled = !task.isStatusCurrent || task.answerState?.blocksSubmission == true
+            || (task.deliveryQuestion == nil && task.attentionRequest == nil)
+        return VStack(alignment: .leading, spacing: 8) {
             if let detail = task.detail, !detail.isEmpty {
+                // Approvals carry a command or path: show it as code in its own well, like the chat card.
                 Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockSecondaryText)
-                    .lineLimit(4)
+                    .font(isApproval ? .system(size: 11, design: .monospaced) : .system(size: 11))
+                    .foregroundStyle(isApproval ? Color.dockPrimaryText : Color.dockSecondaryText)
+                    .lineLimit(isApproval ? 5 : 4)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, isApproval ? 8 : 0)
+                    .padding(.vertical, isApproval ? 6 : 0)
+                    .background {
+                        if isApproval {
+                            DockThemeShape(cornerRadius: DockLayout.controlRadius)
+                                .fill(Color.dockSurface2)
+                                .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
+                        }
+                    }
             }
-            ForEach(task.choices, id: \.self) { choice in
-                Button { answer(task, choice) } label: {
+            let buttons = ForEach(task.choices, id: \.self) { choice in
+                Button(role: choice == ApprovalChoice.deny ? .destructive : nil) { answer(task, choice) } label: {
                     Text(EdgeNotchTask.choiceLabel(choice))
-                        .font(.system(size: 11, weight: .medium))
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous)
-                            .fill(choice == ApprovalChoice.deny ? Color.dockSurface4.opacity(0.5) : Color.dockAccentMuted))
-                        .contentShape(Rectangle())
+                        .frame(maxWidth: isApproval ? nil : .infinity, alignment: isApproval ? .center : .leading)
                 }
-                .buttonStyle(.dockPress)
-                .disabled(!task.isStatusCurrent || task.answerState?.blocksSubmission == true
-                    || (task.deliveryQuestion == nil && task.attentionRequest == nil))
+                .buttonStyle(DockSecondaryButtonStyle())
+                .disabled(isDisabled)
                 .accessibilityLabel("Answer \(EdgeNotchTask.choiceLabel(choice))")
+            }
+            if isApproval {
+                // Allow once leads in the accent style; the rest wrap below when narrow.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) { approvalButtons(task, answer: answer, disabled: isDisabled) }
+                        .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 6) { approvalButtons(task, answer: answer, disabled: isDisabled) }
+                }
+                .controlSize(.small)
+            } else {
+                VStack(spacing: 5) { buttons }.controlSize(.small)
             }
             if let submission = task.answerState {
                 HStack(alignment: .top, spacing: 6) {
@@ -316,6 +377,19 @@ struct EdgeTaskPreview: View {
         .padding(.bottom, 8)
     }
 
+    @ViewBuilder
+    private func approvalButtons(_ task: EdgeNotchTask, answer: @escaping (EdgeNotchTask, String) -> Void, disabled: Bool) -> some View {
+        ForEach(task.choices, id: \.self) { choice in
+            let label = Button(role: choice == ApprovalChoice.deny ? .destructive : nil) { answer(task, choice) } label: {
+                Text(EdgeNotchTask.choiceLabel(choice)).lineLimit(1)
+            }
+            .disabled(disabled)
+            .accessibilityLabel("Answer \(EdgeNotchTask.choiceLabel(choice))")
+            if choice == ApprovalChoice.once { label.buttonStyle(DockPrimaryButtonStyle()) }
+            else { label.buttonStyle(DockSecondaryButtonStyle()) }
+        }
+    }
+
     /// Reply lives inside the card and turns into a close button while composing.
     private func replyToggle(_ task: EdgeNotchTask, isReplying: Bool, visible: Bool,
                              reply: @escaping (EdgeNotchTask) -> Void) -> some View {
@@ -339,10 +413,25 @@ struct EdgeTaskPreview: View {
     }
 
     private func taskButton(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
-        Button {
+        let identity = task.previewIdentity(currentProfileID: quickModel?.sessionProfileID)
+        return Button {
             if task.phase == .finished, task.kanbanTask == nil, let peek { peek(task) }
             else { openTask(task) }
         } label: {
+            taskButtonLabel(task, bots: bots, now: now)
+        }
+        .buttonStyle(.dockHover)
+        .modifier(EdgeTaskKeyboardControl(identity: identity, selection: $focusedTask,
+            move: moveKeyboard, activate: {
+                if task.phase == .finished, task.kanbanTask == nil, let peek { peek(task) }
+                else { openTask(task) }
+            }))
+        .help(task.kanbanTask != nil ? "Open this Kanban card" : task.phase == .finished && peek != nil ? "Preview saved reply" : "Open this session")
+        .accessibilityLabel([task.title, task.isCurrent ? "current session" : nil, task.displayStatus, task.detail]
+            .compactMap { $0 }.joined(separator: ". ") + (task.kanbanTask != nil ? ". Open Kanban card" : task.phase == .finished && peek != nil ? ". Preview saved reply" : ". Open session"))
+    }
+
+    private func taskButtonLabel(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let assignee = task.kanbanTask?.assignee, !assignee.isEmpty {
                     let bot = bots.bot(for: assignee)
@@ -354,9 +443,9 @@ struct EdgeTaskPreview: View {
                         }
                     }
                     .overlay(alignment: .bottomTrailing) {
-                        statusMark(task, size: 16)
+                        statusMark(task, size: 11)
                             .background(Circle().fill(Color.dockCanvas).padding(-1))
-                            .offset(x: 4, y: 4)
+                            .offset(x: 3, y: 3)
                     }
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
                     .accessibilityLabel("Assigned to \(bot?.name ?? assignee)")
@@ -374,11 +463,15 @@ struct EdgeTaskPreview: View {
                     }
                     HStack(spacing: 0) {
                         // Hue only for trouble; everything else stays neutral.
-                        Text(task.displayStatus)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(task.tone == .attention ? task.tone.color : Color.dockSecondaryText)
+                        // The spinner and shimmer already say "Working"; show only the activity.
+                        let showStatus = !(task.tone == .working && task.detail?.isEmpty == false)
+                        if showStatus {
+                            Text(task.displayStatus)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(task.tone == .attention ? task.tone.color : Color.dockSecondaryText)
+                        }
                         if let detail = task.detail, !detail.isEmpty, task.choices.isEmpty {
-                            Text(" · \(detail)")
+                            (Text(showStatus ? " · " : "") + Self.detailText(detail))
                                 .font(.system(size: 11))
                                 .foregroundStyle(Color.dockMetadataText)
                         }
@@ -393,11 +486,6 @@ struct EdgeTaskPreview: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.dockHover)
-        .help(task.kanbanTask != nil ? "Open this Kanban card" : task.phase == .finished && peek != nil ? "Preview saved reply" : "Open this session")
-        .accessibilityLabel([task.title, task.isCurrent ? "current session" : nil, task.displayStatus, task.detail]
-            .compactMap { $0 }.joined(separator: ". ") + (task.kanbanTask != nil ? ". Open Kanban card" : task.phase == .finished && peek != nil ? ". Preview saved reply" : ". Open session"))
     }
 
     @ViewBuilder
@@ -448,6 +536,16 @@ struct EdgeTaskPreview: View {
                 EdgePreviewFooterButton(title: "Quick message", icon: .chats, action: quickMessage)
             }
             if let recall { EdgePreviewFooterButton(title: "Search", icon: .magnifyingGlass, action: recall) }
+            if let quickState {
+                Menu {
+                    Button("Saved actions") { beginEditing(); quickState.showingActions = true }
+                    Button("Working sets") { beginEditing(); quickState.showingWorkingSets = true }
+                    if quickState.preferences.watchedWorkingSetID != nil {
+                        Button("Show all activity") { quickState.preferences.watchWorkingSet(nil) }
+                    }
+                } label: { DockIcon(.dotsThree, size: 13, color: .dockSecondaryText) }
+                .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("More preview actions")
+            }
             Spacer(minLength: 0)
             EdgePreviewFooterButton(title: "Open Herm", icon: .sidebarSimple,
                                     shortcutHelp: workspaceShortcut.title, action: openDock)
@@ -503,7 +601,7 @@ struct EdgePreviewFooterButton: View {
 
 /// A clarify question a headless coordinator turn queued for the user (software-delivery plugin,
 /// `$HERMES_HOME/delivery/questions/<card>.json`). Answered by messaging the asking session.
-struct EdgeDeliveryQuestion: Hashable {
+struct EdgeDeliveryQuestion: Hashable, Sendable {
     let taskID: String
     let sessionID: String
     var profileID: String? = nil
@@ -538,6 +636,18 @@ struct EdgeDeliveryQuestion: Hashable {
             return EdgeDeliveryQuestion(taskID: taskID, sessionID: json["session_id"] as? String ?? "",
                                         profileID: json["profile"] as? String, question: question, choices: first["choices"] as? [String] ?? [], file: file)
         }
+    }
+
+    static func loadOffMain(from directory: URL = directory) async -> [EdgeDeliveryQuestion] {
+        await Task.detached(priority: .utility) { load(from: directory) }.value
+    }
+
+    func removeIfCurrent() async throws -> Bool {
+        try await Task.detached(priority: .utility) {
+            guard Self.load(from: file.deletingLastPathComponent()).contains(self) else { return false }
+            try FileManager.default.removeItem(at: file)
+            return true
+        }.value
     }
 
     var row: EdgeNotchTask {

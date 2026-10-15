@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 /// A recoverable quick draft; sending never borrows workspace attachments.
 struct EdgeQuickMessageView: View {
     @ObservedObject var model: DockModel
+    @ObservedObject var control: ControlCenterModel
     @ObservedObject var state: EdgeNotchState
     var inline = false
     let close: () -> Void
@@ -30,7 +31,7 @@ struct EdgeQuickMessageView: View {
                     guard !Task.isCancelled, state.captureRecord().destination.sessionKey == destination.sessionKey else { return }
                     state.capacitySnapshots[destination.sessionKey] = snapshot
                     if state.capacitySnapshots.count > 8, let oldest = state.capacitySnapshots.min(by: { $0.value.readAt < $1.value.readAt })?.key { state.capacitySnapshots.removeValue(forKey: oldest) }
-                } catch { /* Submission stays available when quota cannot be read. */ }
+                } catch { /* Submission stays available when session model metadata cannot be read. */ }
             }
             .confirmationDialog("Have you checked the interrupted submission?", isPresented: $confirmingReview) {
                 Button("I checked; allow deliberate retry") { state.confirmQuickDraftReview() }
@@ -175,11 +176,13 @@ struct EdgeQuickMessageView: View {
 
     @ViewBuilder private var capacityAdvisory: some View {
         let destination = state.captureRecord().destination
-        if let snapshot = state.capacitySnapshots[destination.sessionKey], snapshot.low, let remaining = snapshot.allowance {
-            Text("\(Int(remaining))% reported allowance remains · read \(snapshot.readAt.formatted(date: .omitted, time: .shortened)). Cached usage; Send remains available.")
-                .font(.system(size: 11)).foregroundStyle(Color.dockWarning).accessibilityLabel("Low quota advisory")
+        let provider = state.capacitySnapshots[destination.sessionKey]?.modelID?.components(separatedBy: "|").first
+        if let reading = control.quotaReading(for: provider), reading.remaining <= 20 {
+            Text("\(reading.snapshot.displayName): \(Int(reading.remaining.rounded()))% provider allowance remains · read \(reading.snapshot.updatedAt.formatted(date: .omitted, time: .shortened)). Provider advisory; Send remains available.")
+                .font(.system(size: 11)).foregroundStyle(QuotaWorkspaceView.color(for: reading.window.threshold)).accessibilityLabel("Low quota advisory")
         }
     }
+
     private var captureActions: some View {
         HStack(spacing: 8) {
             Menu("To") {
@@ -212,6 +215,8 @@ struct EdgeQuickMessageView: View {
                 }
             }.disabled(state.quickSending || state.quickPreparing > 0 || state.recoverableDrafts.isEmpty)
             Menu("More") {
+                Button("Actions…") { state.showingActions = true }
+                    .disabled(state.quickNeedsReview)
                 if let session = state.captureRecord().destination.session {
                     Button("Capacity & session actions…") { state.capacityTarget = session }
                 }
