@@ -52,6 +52,17 @@ struct ComposerSlashCommand: Equatable {
     }
 }
 
+/// `/command` and inline `/skill` tokens, highlighted in the composer and in
+/// sent messages. Paths (`/usr/bin`, `/a.txt`) and `and/or` are not tokens.
+enum SlashCommandTokens {
+    private static let pattern = try! NSRegularExpression(pattern: #"(?<!\S)/[A-Za-z][\w-]*(?![\w/-]|\.\w)"#)
+
+    static func ranges(in text: String) -> [NSRange] {
+        guard text.contains("/") else { return [] }
+        return pattern.matches(in: text, range: NSRange(location: 0, length: (text as NSString).length)).map(\.range)
+    }
+}
+
 enum ComposerCompletion {
     /// Hermes' TUI-only display toggles that `complete.slash` still appends.
     static let terminalOnlyCommands: Set<String> = ["/density", "/details", "/logs", "/mouse"]

@@ -88,6 +88,18 @@ final class DockModel: ObservableObject {
     /// blocked approval, or a turn that ended first). Not yet submitted, so
     /// removable; sent one per turn once Hermes settles (desktop parity).
     @Published private(set) var queuedPrompts: [QueuedPrompt] = []
+    private struct RedirectingPrompt {
+        let runtimeSessionID: String
+        var completedTurns = 0
+        var isQueuedByHermes = false
+        var wasInterrupted = false
+    }
+    // Hold newer input until a redirect resolves or its Hermes-queued follow-up finishes.
+    @Published private var redirectingPrompts: [String: RedirectingPrompt] = [:]
+    var hasQueuedOrRedirectingPrompt: Bool {
+        !currentSessionQueuedPrompts.isEmpty
+            || queuedPromptSessionID.map { redirectingPrompts[$0] != nil } == true
+    }
     /// Resume may replace the runtime handle; unsent prompts belong to the
     /// durable conversation, not to that temporary handle.
     private var queuedPromptSessionID: String? { sessionStorageID ?? sessionID }
@@ -379,6 +391,19 @@ final class DockModel: ObservableObject {
     private func rowSessionID(_ id: String) -> String {
         quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : id)
     }
+    /// Resolve only captured owners or a profile explicitly supplied by the event.
+    func knownEventOrigin(_ params: [String: Any]) -> QuickDestination? {
+        let payload = params["payload"] as? [String: Any] ?? [:]
+        guard let raw = params["session_id"] as? String ?? payload["session_id"] as? String else { return nil }
+        let profile = params["profile"] as? String ?? payload["profile"] as? String
+        if let owner = quickSessionOwners[raw], profile == nil || profile == owner.profileID { return owner }
+        if currentSessionIDs.contains(raw), let stable = navigationSessionID,
+           profile == nil || profile == sessionProfileID {
+            return QuickDestination(profileID: sessionProfileID, sessionID: stable, title: "Current conversation")
+        }
+        guard let profile else { return nil }
+        return QuickDestination(profileID: profile == "default" ? nil : profile, sessionID: raw, title: raw)
+    }
     /// The durable identifier selected by the user for session-scoped durable
     /// projections. Gateway resume may return a transient alias for streaming,
     /// which must not replace the Kanban attribution boundary.
@@ -668,7 +693,7 @@ final class DockModel: ObservableObject {
             if isRestoringSession || isCreatingSession || isUpdatingSessionModel {
                 return "Wait for the conversation to finish loading."
             }
-            if isSending || status != .idle {
+            if isSending || status != .idle || hasQueuedOrRedirectingPrompt {
                 return "This session is busy. Reply when its current turn finishes."
             }
         }
@@ -771,33 +796,103 @@ final class DockModel: ObservableObject {
         }
     }
 
+    /// Forwards text into a new session under `profileID`. Plain text rides
+    /// `sendQuickMessage`; a slash command runs on the new session with that
+    /// bot's own command set. `completion` gets (error, output): output is a
+    /// command's result text, nil when a prompt was submitted instead.
+    func forwardMessage(_ text: String, toProfile profileID: String, completion: @escaping (String?, String?) -> Void) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let reason = quickMessageUnavailableReason(for: nil) { completion(reason, nil); return }
+        guard !clean.isEmpty else { completion("Enter a message first.", nil); return }
+        let command = ComposerSlashCommand(clean)
+        Task {
+            do {
+                try await sessionRPCClient.connect()
+                let created = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionCreate.rawValue, params: ["profile": profileID, "source": "herm"])
+                guard let createdID = created["session_id"] as? String, !createdID.isEmpty else {
+                    throw HermesGateway.GatewayError.malformedResponse
+                }
+                let storedID = Self.stableSessionID(from: created) ?? createdID
+                let session = HermesSession(id: storedID, profileID: profileID, title: created["title"] as? String ?? "",
+                    preview: clean, startedAt: .now, messageCount: 0, source: "herm")
+                if !sessions.contains(where: { $0.scopedID == session.scopedID }) { sessions.insert(session, at: 0) }
+                let runtimeID = createdID
+                // The agent builds lazily; a turn submitted mid-build is refused
+                // ("no agent attached") without an RPC error. Any session-scoped RPC
+                // waits for the build, so block on a cheap one first.
+                _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalPending.rawValue, params: ["session_id": runtimeID])
+                var scope: [String: Any] = ["session_id": runtimeID, "profile": profileID]
+                guard let command else {
+                    scope["text"] = clean
+                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scope)
+                    updateSessionActivity(sessionID: session.id, isWorking: true)
+                    touchSession(sessionID: session.id, at: .now, preview: clean)
+                    completion(nil, nil)
+                    loadSessions()
+                    return
+                }
+                let payload: [String: Any]
+                do {
+                    let line = command.arg.isEmpty ? command.name : "\(command.name) \(command.arg)"
+                    payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.slashExec.rawValue,
+                        params: ["session_id": runtimeID, "command": line, "profile": profileID])
+                } catch {
+                    // Skills, bundles and pending-input builtins refuse slash.exec.
+                    payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.commandDispatch.rawValue,
+                        params: ["session_id": runtimeID, "name": command.name, "arg": command.arg, "profile": profileID])
+                }
+                switch payload["type"] as? String {
+                case "send", "skill":
+                    let message = (payload["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    guard !message.isEmpty else { completion("/\(command.name): empty message", nil); return }
+                    scope["text"] = message
+                    _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.promptSubmit.rawValue, params: scope)
+                    updateSessionActivity(sessionID: session.id, isWorking: true)
+                    completion(nil, nil)
+                default:
+                    completion(nil, (payload["output"] as? String) ?? (payload["message"] as? String) ?? "(no output)")
+                }
+                loadSessions()
+            } catch {
+                completion(Self.safeUserDiagnostic(error.localizedDescription), nil)
+            }
+        }
+    }
+
     /// Sends the composer draft, or a queued prompt without touching the draft.
     /// The optional callback reports RPC submission, not completion of the turn.
     func send(_ queued: QueuedPrompt? = nil, onSubmission: ((String?) -> Void)? = nil) {
         let prompt = (queued?.text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         let attachedImages = queued?.images ?? pendingImages
         let attachedPDF = queued == nil ? pendingPDFURL : queued?.pdfURL
-        let contexts = queued == nil ? attachedContexts : []
+        let contexts = queued == nil ? attachedContexts : queued?.contexts ?? []
         guard (!prompt.isEmpty || !attachedImages.isEmpty || attachedPDF != nil || !contexts.isEmpty),
               !isSending,
               !isUpdatingSessionModel,
               !isRestoringSession,
               sessionID != nil || (newSessionCreationAuthorized && !isCreatingSession) else { return }
 
+        if queued == nil, hasQueuedOrRedirectingPrompt {
+            queueDraft()
+            return
+        }
+
         if attachedImages.isEmpty, attachedPDF == nil, contexts.isEmpty, let command = ComposerSlashCommand(prompt) {
-            if queued == nil { draft = "" }
+            if queued == nil { draft = ""; replyQuote = nil; clearAttachmentErrors() }
             runSlashCommand(command, echo: prompt)
             return
         }
 
         let text: String
-        if !prompt.isEmpty || !contexts.isEmpty {
-            let quoted = queued == nil ? replyQuote?.composing(prompt) : nil
+        let isAttachmentOnly = prompt.isEmpty && contexts.isEmpty
+        if !isAttachmentOnly {
+            let quote = queued == nil ? replyQuote : queued?.replyQuote
+            let quoted = quote?.composing(prompt)
             text = ChatContext.prompt(ComposerCompletion.pathifyingBareRefs(quoted ?? prompt), contexts: contexts)
         } else if attachedPDF != nil {
-            text = attachedImages.isEmpty ? "What does this document contain?" : "What do you see in these attachments?"
+            text = attachedImages.isEmpty ? "[document]" : "[attachments]"
         } else {
-            text = "What do you see in these images?"
+            text = "[image]"
         }
         let submittedText = ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles)
         let sessionBeforeSend = sessionID
@@ -805,8 +900,16 @@ final class DockModel: ObservableObject {
             inFlightBotActivities.values.first { $0.botChatSessionID == eventSessionID }?.activityID
         }
         let sendGeneration = sessionResumeGeneration
-        if queued == nil { draft = ""; attachedContexts = []; replyQuote = nil }
-        let transcriptText = attachedPDF.map { "[PDF: \($0.lastPathComponent)]\n\(text)" } ?? text
+        if queued == nil {
+            draft = ""
+            pendingImages = []
+            pendingPDFURL = nil
+            attachedContexts = []
+            replyQuote = nil
+            clearAttachmentErrors()
+        }
+        let visibleText = isAttachmentOnly ? "" : text
+        let transcriptText = attachedPDF.map { "[PDF: \($0.lastPathComponent)]" + (visibleText.isEmpty ? "" : "\n\(visibleText)") } ?? visibleText
         messages.append(ChatMessage(role: .user, text: transcriptText, images: attachedImages.map(\.image)))
         submittedMessageIDForPin = messages.last?.id
         status = .working
@@ -876,7 +979,6 @@ final class DockModel: ObservableObject {
                             (result["message"] as? String) ?? "Hermes could not attach the PDF."
                         )
                     }
-                    if queued == nil { pendingPDFURL = nil }
                 }
 
                 guard self.sessionResumeGeneration == sendGeneration,
@@ -900,9 +1002,6 @@ final class DockModel: ObservableObject {
                 onSubmission?(nil)
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == promptSessionID else { return }
-                pendingImages.removeAll { attachedImage in
-                    attachedImages.contains { $0.id == attachedImage.id }
-                }
                 if acknowledgment["voice_stopped"] as? Bool == true { finishVoiceStopSubmission() }
                 DebugLog.write("model: prompt submitted")
             } catch {
@@ -912,9 +1011,6 @@ final class DockModel: ObservableObject {
                       sessionBeforeSend == nil || self.sessionID == sessionBeforeSend else { return }
                 DebugLog.write("model: send failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
                 cleanupImageAttachments(attachedImages)
-                pendingImages.removeAll { pendingImage in
-                    attachedImages.contains { $0.id == pendingImage.id }
-                }
                 let transportFailure: Bool
                 if let gatewayError = error as? HermesGateway.GatewayError {
                     switch gatewayError {
@@ -943,7 +1039,7 @@ final class DockModel: ObservableObject {
         }
     }
 
-    /// Mid-turn input, as Hermes desktop handles it: plain text redirects the
+    /// Mid-turn input: plain text redirects the
     /// live turn (`session.redirect`) and lands in the transcript at once as an
     /// ordinary user message. Anything a redirect can't carry (attachments,
     /// slash commands, a turn parked on an approval) or a redirect Hermes
@@ -951,18 +1047,14 @@ final class DockModel: ObservableObject {
     func steerDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let sessionID, !sessionID.isEmpty else { return }
-        guard !text.isEmpty, status == .working, ComposerSlashCommand(text) == nil else {
+        guard !isRedirectInFlight,
+              pendingImages.isEmpty, pendingPDFURL == nil, attachedContexts.isEmpty, replyQuote == nil,
+              !text.isEmpty, status == .working, ComposerSlashCommand(text) == nil else {
             queueDraft()
             return
         }
-        // Hermes only redirects text-only payloads: steer the words now and
-        // park the attachments (with no text of their own) for the next turn.
-        if !pendingImages.isEmpty || pendingPDFURL != nil, let queueSessionID = queuedPromptSessionID {
-            queuedPrompts.append(QueuedPrompt(sessionID: queueSessionID, text: "", images: pendingImages, pdfURL: pendingPDFURL))
-            pendingImages = []
-            pendingPDFURL = nil
-        }
         draft = ""
+        clearAttachmentErrors()
         redirectTurn(with: text, sessionID: sessionID)
     }
 
@@ -972,6 +1064,7 @@ final class DockModel: ObservableObject {
         let submittedText = ComposerMentionPresentation.annotatedPrompt(text, profileIDs: composerMentionProfiles)
         let steeringGeneration = sessionResumeGeneration
         let queueSessionID = queuedPromptSessionID ?? sessionID
+        redirectingPrompts[queueSessionID] = RedirectingPrompt(runtimeSessionID: sessionID)
         // Redirect cancels the model request, so its completion can race the
         // RPC response: record the correction first, below what already
         // streamed, and let the resumed output continue in a fresh row under it.
@@ -995,14 +1088,28 @@ final class DockModel: ObservableObject {
                 HermesFeatureIDs.ID.sessionRedirect.rawValue,
                 params: ["session_id": sessionID, "text": submittedText]
             )
+            let redirectStatus = (result?["status"] as? String)?.lowercased()
+            var redirect = self.redirectingPrompts[queueSessionID] ?? RedirectingPrompt(runtimeSessionID: sessionID)
+            if redirectStatus == "queued", redirect.completedTurns < 2, !redirect.wasInterrupted {
+                redirect.isQueuedByHermes = true
+                self.redirectingPrompts[queueSessionID] = redirect
+            } else {
+                self.redirectingPrompts.removeValue(forKey: queueSessionID)
+            }
             guard self.sessionResumeGeneration == steeringGeneration,
                   self.sessionID == sessionID else { return }
-            switch (result?["status"] as? String)?.lowercased() {
+            switch redirectStatus {
             case "redirected":
                 DebugLog.write("model: turn redirected")
+                if !redirect.wasInterrupted { drainQueuedPromptIfIdle() }
             case "queued":
                 // Build window or compaction: Hermes runs it as the next turn.
                 // The row stays where it was typed so the transcript keeps time order.
+                if status == .idle, redirect.completedTurns < 2, !redirect.wasInterrupted {
+                    status = .working
+                    isSending = true
+                }
+                if !redirect.wasInterrupted { drainQueuedPromptIfIdle() }
                 break
             default:
                 // Refused (turn ended first) or failed: keep the words as the next turn.
@@ -1010,21 +1117,63 @@ final class DockModel: ObservableObject {
                     $0.id == correction.id
                         || ($0.id == resumedRowID && $0.id != streamingMessageID && $0.text.isEmpty && $0.activity.isEmpty)
                 }
-                queuedPrompts.append(QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil))
-                drainQueuedPromptIfIdle()
+                let index = queuedPrompts.firstIndex { $0.sessionID == queueSessionID } ?? queuedPrompts.endIndex
+                queuedPrompts.insert(QueuedPrompt(sessionID: queueSessionID, text: text, images: [], pdfURL: nil), at: index)
+                if !redirect.wasInterrupted { drainQueuedPromptIfIdle() }
             }
         }
+    }
+
+    private var isRedirectInFlight: Bool {
+        queuedPromptSessionID.map { redirectingPrompts[$0] != nil } == true
+    }
+
+    /// Queue prompts a redirect can carry: text only, no slash command (desktop `isSteerableEntry`).
+    func canSteerQueuedPrompt(_ prompt: QueuedPrompt) -> Bool {
+        let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return status == .working && sessionID != nil && !isRedirectInFlight
+            && prompt.id != editingQueuedPromptID && !text.isEmpty
+            && prompt.images.isEmpty && prompt.pdfURL == nil && prompt.contexts.isEmpty
+            && prompt.replyQuote == nil && ComposerSlashCommand(text) == nil
+    }
+
+    /// Delivers a queued prompt into the live turn. A refused redirect re-queues it.
+    func steerQueuedPrompt(_ id: UUID) {
+        guard let index = queuedPrompts.firstIndex(where: { $0.id == id }),
+              canSteerQueuedPrompt(queuedPrompts[index]), let sessionID else { return }
+        let text = queuedPrompts.remove(at: index).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        redirectTurn(with: text, sessionID: sessionID)
+    }
+
+    private var sendQueuedPromptAfterInterrupt = false
+
+    /// Prompts a steer can't carry (attachments, slash commands) jump the queue
+    /// and stop the turn; the settled turn sends them (desktop `sendQueuedNow`).
+    func canSendQueuedPromptNow(_ prompt: QueuedPrompt) -> Bool {
+        status == .working && sessionID != nil && interruptState != .requesting
+            && prompt.id != editingQueuedPromptID && !canSteerQueuedPrompt(prompt)
+    }
+
+    func sendQueuedPromptNow(_ id: UUID) {
+        guard let index = queuedPrompts.firstIndex(where: { $0.id == id }),
+              canSendQueuedPromptNow(queuedPrompts[index]) else { return }
+        queuedPrompts.insert(queuedPrompts.remove(at: index), at: 0)
+        sendQueuedPromptAfterInterrupt = stop() != nil
     }
 
     /// Parks the whole composer payload until the active turn settles.
     func queueDraft() {
         guard let sessionID = queuedPromptSessionID else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil else { return }
-        queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL))
+        guard !text.isEmpty || !pendingImages.isEmpty || pendingPDFURL != nil || !attachedContexts.isEmpty else { return }
+        queuedPrompts.append(QueuedPrompt(sessionID: sessionID, text: text, images: pendingImages, pdfURL: pendingPDFURL,
+                                         contexts: attachedContexts, replyQuote: replyQuote))
         draft = ""
         pendingImages = []
         pendingPDFURL = nil
+        attachedContexts = []
+        replyQuote = nil
+        clearAttachmentErrors()
         drainQueuedPromptIfIdle()
     }
 
@@ -1045,15 +1194,35 @@ final class DockModel: ObservableObject {
         guard !isSending, status == .idle, !isRestoringSession, !isUpdatingSessionModel,
               !nativeVoiceCapture.isAwaitingPlaybackDrain,
               sessionID != nil, let sessionID = queuedPromptSessionID,
+              redirectingPrompts[sessionID] == nil,
               let index = queuedPrompts.firstIndex(where: { $0.sessionID == sessionID }) else { return }
         let next = queuedPrompts.remove(at: index)
         guard next.id == editingQueuedPromptID else { return send(next) }
         editingQueuedPromptID = nil
-        let text = next.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        moveIntoComposer(next)
+    }
+
+    private func moveIntoComposer(_ prompt: QueuedPrompt) {
+        let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let current = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = [current, text].filter { !$0.isEmpty }.joined(separator: "\n")
-        pendingImages.append(contentsOf: next.images)
-        if pendingPDFURL == nil { pendingPDFURL = next.pdfURL }
+        pendingImages.append(contentsOf: prompt.images)
+        if pendingPDFURL == nil { pendingPDFURL = prompt.pdfURL }
+        attachedContexts.append(contentsOf: prompt.contexts)
+        if replyQuote == nil { replyQuote = prompt.replyQuote }
+    }
+
+    /// Prompts with attachments are edited in the composer (like Codex): they
+    /// leave the queue until re-submitted. Text-only prompts edit inline.
+    func editQueuedPrompt(_ id: UUID) {
+        guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
+        let prompt = queuedPrompts[index]
+        guard !prompt.images.isEmpty || prompt.pdfURL != nil || !prompt.contexts.isEmpty else {
+            editingQueuedPromptID = id
+            return
+        }
+        queuedPrompts.remove(at: index)
+        moveIntoComposer(prompt)
     }
 
     private var composerMentionProfiles: [String] = []
@@ -1095,19 +1264,41 @@ final class DockModel: ObservableObject {
         slashCommandDispositions[command] != nil || ComposerCompletion.terminalOnlyCommands.contains(command)
     }
 
-    func composerCompletions(for trigger: ComposerCompletionTrigger, bots: [ComposerCompletionItem]) async -> ComposerCompletion.Result {
+    /// Slash dispositions per bot profile: each bot enables its own commands.
+    private var profileSlashDispositions: [String: [String: String]] = [:]
+
+    private func slashDispositions(forProfile profile: String) async -> [String: String] {
+        if let cached = profileSlashDispositions[profile] { return cached }
+        guard let catalog = try? await sessionRPCClient.request(HermesFeatureIDs.ID.commandsCatalog.rawValue, params: ["profile": profile]) else { return [:] }
+        let commands = catalog["commands"] as? [String: [String: Any]] ?? [:]
+        let result = commands.compactMapValues { $0["desktop"] as? String }
+            .reduce(into: [String: String]()) { $0[$1.key.lowercased()] = $1.value }
+        profileSlashDispositions[profile] = result
+        return result
+    }
+
+    /// `profile` scopes completions to another bot (the forward box); the open
+    /// session belongs to a different profile, so it is left out of the params.
+    func composerCompletions(for trigger: ComposerCompletionTrigger, bots: [ComposerCompletionItem], profile: String? = nil) async -> ComposerCompletion.Result {
         do {
             try await sessionRPCClient.connect()
             var params: [String: Any] = [:]
-            if let sessionID {
+            if let profile {
+                params["profile"] = profile
+            } else if let sessionID {
                 params["session_id"] = sessionID
             } else if let newSessionProjectPath, !newSessionProjectPath.isEmpty {
                 params["cwd"] = newSessionProjectPath
             }
             switch trigger {
             case .slash(let text):
-                await loadSlashCatalogIfNeeded()
                 params["text"] = text
+                if let profile {
+                    let dispositions = await slashDispositions(forProfile: profile)
+                    let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
+                    return ComposerCompletion.slashResult(from: payload, hidden: { dispositions[$0] != nil || ComposerCompletion.terminalOnlyCommands.contains($0) })
+                }
+                await loadSlashCatalogIfNeeded()
                 let payload = try await sessionRPCClient.request(HermesFeatureIDs.ID.completeSlash.rawValue, params: params)
                 return ComposerCompletion.slashResult(from: payload, hidden: isSlashCommandHidden)
             case .skill(let token):
@@ -1380,7 +1571,7 @@ final class DockModel: ObservableObject {
     }
 
     @discardableResult
-    private func stageImage(_ nsImage: NSImage) -> Bool {
+    func stageImage(_ nsImage: NSImage) -> Bool {
         guard let tiff = nsImage.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else {
@@ -1550,6 +1741,15 @@ final class DockModel: ObservableObject {
         defer { deletingSessionID = nil }
         do {
             try await sessionRPCClient.connect()
+            // Hermes refuses to delete a session still loaded in the gateway, even one
+            // we aren't viewing. Close idle live copies first; busy ones still fail loudly.
+            let live = try? await sessionRPCClient.request(HermesFeatureIDs.ID.sessionActiveList.rawValue, params: [:])
+            for row in (live?["sessions"] as? [[String: Any]]) ?? []
+            where row["session_key"] as? String == session.id && (row["status"] as? String ?? "idle") == "idle" {
+                if let liveID = row["session_id"] as? String {
+                    _ = try? await sessionRPCClient.request(HermesFeatureIDs.ID.sessionClose.rawValue, params: ["session_id": liveID])
+                }
+            }
             var params: [String: Any] = ["session_id": session.id]
             if let profileID = session.profileID ?? profileScopeID { params["profile"] = profileID }
             _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.sessionDelete.rawValue, params: params)
@@ -1815,12 +2015,26 @@ final class DockModel: ObservableObject {
         // Hermes has no message anchor: it keeps the first `count` visible
         // rows. Count them locally, with older paged history loaded first.
         await loadTranscriptHistory(through: nil)
-        let visible = messages.filter { ($0.role == .user || $0.role == .hermes) && $0.hasBodyText }
-        guard let position = visible.firstIndex(where: { $0.id == message.id }) else { return }
+        // Count only what Hermes counts: persisted user/assistant rows. Local
+        // error cards, feed lines and system-role rows are never copied, and
+        // one kanban wake row expands into several local notices.
+        var rowCount = 0
+        var position: Int?
+        var previousWasKanban = false
+        for candidate in messages where (candidate.role == .user || candidate.role == .hermes)
+            && (candidate.hasBodyText || !candidate.images.isEmpty) && !candidate.isError {
+            if let event = candidate.systemEvent, event.isFeed || event.label == "System" { continue }
+            let continuesKanbanRow = candidate.kanbanNotice != nil && previousWasKanban
+            previousWasKanban = candidate.kanbanNotice != nil
+            if !continuesKanbanRow { rowCount += 1 }
+            if candidate.id == message.id { position = rowCount - 1; break }
+        }
+        guard let position else { return }
+        let count = await storedBranchCount(through: message) ?? position + 1
         do {
             var params: [String: Any] = [
                 "session_id": sessionID,
-                "count": position + 1
+                "count": count
             ]
             if let profileID = sessionProfileID ?? profileScopeID, !profileID.isEmpty {
                 params["profile"] = profileID
@@ -1847,6 +2061,35 @@ final class DockModel: ObservableObject {
         } catch {
             DebugLog.write("model: message branch failed: \(Self.safeUserDiagnostic(error.localizedDescription))")
         }
+    }
+
+    /// Hermes' `session.branch` keeps the first `count` stored user/assistant
+    /// rows with text, including rows the transcript hides (scaffolding,
+    /// compaction summaries), so the displayed position undercounts. Count the
+    /// stored rows instead; nil falls back to the displayed position.
+    private func storedBranchCount(through message: ChatMessage) async -> Int? {
+        guard let target = storedMessageReferences[message.id]?.rowID, let storageID = sessionStorageID else { return nil }
+        var cursor = TranscriptHistoryCursor(storageSessionID: storageID, profileID: sessionProfileID ?? profileScopeID)
+        var rows: [[String: Any]] = []
+        do {
+            while cursor.hasMore {
+                guard let path = TranscriptHistoryPaging.pagePath(
+                    sessionID: storageID, profileID: cursor.profileID,
+                    limit: TranscriptHistoryPaging.maximumPageRowLimit, offset: cursor.nextOffset
+                ), let page = TranscriptHistoryPaging.page(from: try await sessionRPCClient.fetchHTTP(path)) else { return nil }
+                rows = TranscriptHistoryPaging.advance(&cursor, with: page, limit: TranscriptHistoryPaging.maximumPageRowLimit) + rows
+            }
+        } catch { return nil }
+        var count = 0
+        for row in rows {
+            guard let role = row["role"] as? String, role == "user" || role == "assistant" else { continue }
+            let content = row["content"]
+            let text = (content as? String) ?? ((content as? [[String: Any]])?.compactMap { ($0["text"] as? String) ?? ($0["content"] as? String) }.joined() ?? "")
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            count += 1
+            if TranscriptHistoryPaging.rowID(row) == target { return count }
+        }
+        return nil
     }
 
     @discardableResult
@@ -2414,6 +2657,15 @@ final class DockModel: ObservableObject {
     /// Generic `delegate_task` workers are never relabelled as the Bot.
     func sendDirectBotRequest(profileID: String, displayName: String, text: String, chatSessionID: String? = nil, quote: ReplyQuote? = nil) {
         let request = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // First message of a new chat: create the session, then relay.
+        if sessionID == nil, !request.isEmpty, !isSending, !isRestoringSession,
+           newSessionCreationAuthorized, !isCreatingSession {
+            Task {
+                guard (try? await createAuthorizedSession(source: "herm")) != nil else { return }
+                sendDirectBotRequest(profileID: profileID, displayName: displayName, text: text, chatSessionID: chatSessionID, quote: quote)
+            }
+            return
+        }
         guard !request.isEmpty,
               !isSending,
               !isUpdatingSessionModel,
@@ -2527,10 +2779,17 @@ final class DockModel: ObservableObject {
         for sessionID in sessionIDs.compactMap({ $0 }).filter({ !$0.isEmpty }) {
             guard let records = botActivityBySessionID[sessionID] else { continue }
             for record in records {
-                guard seenActivityIDs.insert(record.id).inserted,
-                      record.state == .completed,
-                      let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines),
-                      !result.isEmpty else { continue }
+                guard seenActivityIDs.insert(record.id).inserted else { continue }
+                let result = record.result?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                // The request bubble belongs to this session even while the bot
+                // is still working, has no inline reply, or failed.
+                if result.isEmpty || record.state != .completed {
+                    if record.summary != "Bot response",
+                       !messages.contains(where: { $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary) }) {
+                        messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt, botProfileID: record.botID, botDisplayName: record.botName))
+                    }
+                    continue
+                }
                 let alreadyPresent = messages.contains { $0.text == result && $0.botProfileID == record.botID }
                 guard !alreadyPresent else { continue }
                 // Kanban notices replay as notice cards, not as a bot request.
@@ -2544,7 +2803,8 @@ final class DockModel: ObservableObject {
                 }
                 // "Bot response" marks a bot message nobody asked for (a
                 // delivery); show the message without inventing a user bubble.
-                if record.summary != "Bot response" {
+                if record.summary != "Bot response",
+                   !messages.contains(where: { $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary) }) {
                     messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt, botProfileID: record.botID, botDisplayName: record.botName))
                 }
                 messages.append(ChatMessage(role: .hermes, text: result, timestamp: record.updatedAt, botProfileID: record.botID, botDisplayName: record.botName))
@@ -2816,6 +3076,21 @@ final class DockModel: ObservableObject {
     func receiveGatewayEvent(_ type: String, params: [String: Any]) {
         guard acceptGatewayEvent(type: type, params: params) else { return }
         let noticePayload = params["payload"] as? [String: Any] ?? [:]
+        if type == "message.complete" || type == "error", let owner = (params["session_id"] as? String) ?? (noticePayload["session_id"] as? String) {
+            for (key, pending) in redirectingPrompts where key == rowSessionID(owner) || pending.runtimeSessionID == owner {
+                var redirect = pending
+                redirect.completedTurns += 1
+                if interruptState == .requesting, currentSessionIDs.contains(owner) {
+                    redirect.wasInterrupted = true
+                }
+                // Hermes owns one follow-up after the original turn.
+                if redirect.isQueuedByHermes, redirect.completedTurns >= 2 || redirect.wasInterrupted {
+                    redirectingPrompts.removeValue(forKey: key)
+                } else {
+                    redirectingPrompts[key] = redirect
+                }
+            }
+        }
         let failed = type == "error" || type == "message.error" || (type == "message.complete" && (noticePayload["error"] as? String)?.isEmpty == false)
         if type == "message.start", let owner = params["session_id"] as? String {
             let reference = interruptionNotice(.information, owner: owner)
@@ -3404,6 +3679,18 @@ final class DockModel: ObservableObject {
         requestComposerFocus()
     }
 
+    /// Points Hermes' browser tools at a CDP endpoint (same as `/browser connect`); nil disconnects.
+    /// Hermes keeps it process-wide until the gateway restarts.
+    func setHermesBrowser(cdpURL: String?) async throws {
+        var params: [String: Any] = ["action": cdpURL == nil ? "disconnect" : "connect"]
+        if let cdpURL { params["url"] = cdpURL }
+        let result = try await sessionRPCClient.request(HermesFeatureIDs.ID.browserManage.rawValue, params: params)
+        if cdpURL != nil, result["connected"] as? Bool != true {
+            let detail = (result["messages"] as? [String])?.last ?? "Hermes could not connect to the browser."
+            throw NSError(domain: "Herm.AgentBrowser", code: 1, userInfo: [NSLocalizedDescriptionKey: detail])
+        }
+    }
+
     func removeAttachedContext(_ context: ChatContext) {
         attachedContexts.removeAll { $0.id == context.id }
     }
@@ -3649,7 +3936,7 @@ final class DockModel: ObservableObject {
         if voiceState == .thinking {
             guard let spoken = transcript?.trimmingCharacters(in: .whitespacesAndNewlines), !spoken.isEmpty,
                   !isVoicePromptActive, !(overPlayback && VoicePrompts.isEcho(spoken, of: lastVoiceSpeech)) else { return }
-            if isSending, status == .working {
+            if isSending, status == .working, !hasQueuedOrRedirectingPrompt {
                 redirectTurn(with: spoken, sessionID: sessionID)
             } else {
                 queuedPrompts.append(QueuedPrompt(sessionID: queuedPromptSessionID ?? sessionID, text: spoken, images: [], pdfURL: nil))
@@ -4499,7 +4786,10 @@ final class DockModel: ObservableObject {
             }
             if let sessionStorageID { cacheAgentState(for: sessionStorageID); Task { await agentStateWriter.flush() } }
             // A stopped turn keeps its queue; Enter on an empty composer sends it.
-            if !wasInterrupting { drainQueuedPromptIfIdle() }
+            if !wasInterrupting || sendQueuedPromptAfterInterrupt {
+                sendQueuedPromptAfterInterrupt = false
+                drainQueuedPromptIfIdle()
+            }
         case "approval.request":
             let approval = ApprovalPresentation.from(payload: payload)
             setInFlightBotActivityWaiting(for: eventSessionID)

@@ -82,7 +82,7 @@ struct StreamingPerformanceTests {
         #expect(model.messages.last?.text == "Also update the docs")
     }
 
-    @Test func attachmentsDuringATurnQueueAndCanBeRemoved() {
+    @Test func attachmentsDuringATurnStayWithTheirQueuedTextAndCanBeRemoved() {
         let model = DockModel(initialSessionID: "queue-image-session")
         let imageURL = FileManager.default.temporaryDirectory.appendingPathComponent("queue-image-\(UUID().uuidString).png")
         model.pendingImages = [ImageAttachment(image: NSImage(size: NSSize(width: 2, height: 2)), fileURL: imageURL)]
@@ -94,8 +94,9 @@ struct StreamingPerformanceTests {
 
         #expect(model.draft.isEmpty)
         #expect(model.pendingImages.isEmpty)
-        #expect(model.messages.last?.text == "Use this image", "Text redirects immediately while the image waits for the next turn")
+        #expect(!model.messages.contains { $0.text == "Use this image" })
         #expect(model.queuedPrompts.count == 1)
+        #expect(model.queuedPrompts.first?.text == "Use this image")
         #expect(model.queuedPrompts.first?.images.count == 1)
 
         model.removeQueuedPrompt(model.queuedPrompts[0].id)

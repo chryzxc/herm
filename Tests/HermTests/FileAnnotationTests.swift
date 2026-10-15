@@ -63,6 +63,23 @@ struct FileAnnotationTests {
         #expect(notes.map(\.resolved) == [true, false, false])
         #expect(center.review("/p.md").baseline == "Use **SQLite**. Keep me.")
         // Persisted: a fresh center reads the same review back.
+        center.flushSaves()
         #expect(FilePreviewCenter(fileURL: store).review("/p.md") == center.review("/p.md"))
+    }
+
+    @MainActor @Test func backgroundSavesRetainTheLastOrderedSnapshot() {
+        let store = FileManager.default.temporaryDirectory.appendingPathComponent("reviews-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: store) }
+        let center = FilePreviewCenter(fileURL: store)
+        var note = FileAnnotation(note: "first")
+        center.add(note, to: "/p.md")
+        for index in 0..<40 {
+            note.note = "edit \(index)"
+            center.update(note, in: "/p.md")
+        }
+        center.markSent("/p.md", baseline: "Last review")
+        center.flushSaves()
+        #expect(FilePreviewCenter(fileURL: store).review("/p.md") == center.review("/p.md"))
+        #expect(center.review("/p.md").annotations.first?.note == "edit 39")
     }
 }

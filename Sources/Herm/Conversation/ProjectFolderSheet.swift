@@ -1,90 +1,93 @@
 import AppKit
 import SwiftUI
 
-/// Modal for the Projects header: create a project from a folder, or add a
-/// source folder to an existing project. Folders are picked with NSOpenPanel.
+/// Modal for the Projects header: create a project from a source folder,
+/// picked with NSOpenPanel or dropped onto the folder card.
 struct ProjectFolderSheet: View {
-    enum Mode: String, CaseIterable, Identifiable {
-        case newProject = "New project"
-        case addFolder = "Add folder"
-        var id: String { rawValue }
-    }
-
-    let projects: [ProjectSummary]
     let onCreate: (String, String) async -> Bool
-    let onAddFolder: (ProjectSummary, String) async -> Bool
+    var failureReason: () -> String? = { nil }
     @Environment(\.dismiss) private var dismiss
-    @State private var mode: Mode = .newProject
     @State private var name = ""
     @State private var folder: URL?
-    @State private var targetID: String?
     @State private var isWorking = false
-    @State private var failed = false
+    @State private var isDropTargeted = false
+    @State private var failure: String?
 
-    private var target: ProjectSummary? { projects.first { $0.id == targetID } ?? projects.first }
     private var canSubmit: Bool {
-        guard folder != nil, !isWorking else { return false }
-        return mode == .newProject ? !name.trimmingCharacters(in: .whitespaces).isEmpty : target != nil
+        folder != nil && !isWorking && !name.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Projects").font(.headline)
-            if !projects.isEmpty {
-                DockSegmentedPicker(selection: $mode, options: Mode.allCases.map { ($0, $0.rawValue) })
-            }
-            if mode == .newProject {
-                DockTextField("Project name", text: $name).textFieldStyle(.roundedBorder)
-            } else {
-                DockMenuPicker("Project", title: target.map { URL(fileURLWithPath: $0.name).lastPathComponent } ?? "Choose…", selection: Binding(get: { target?.id ?? "" }, set: { targetID = $0 })) {
-                    ForEach(projects) { DockMenuOption(URL(fileURLWithPath: $0.name).lastPathComponent, value: $0.id) }
+        DockModal(icon: .folderPlus, title: "New Project", subtitle: "Choose a source folder and name your project.", width: 440) {
+            labeledField("Name") { DockTextField("Project name", text: $name).textFieldStyle(.dockGlass) }
+            labeledField("Source folder") { folderCard }
+            if let failure { ModalNote(text: failure, icon: .warning, tone: .dockDestructive) }
+        } footer: {
+            modalActions(primaryTitle: "Create", pendingTitle: "Creating…", isDisabled: !canSubmit, isPending: isWorking, onCancel: { dismiss() }, onPrimary: submit)
+        }
+    }
+
+    private var folderCard: some View {
+        Group {
+            if let folder {
+                HStack(spacing: 10) {
+                    Image(systemName: "folder.fill").font(.title2).foregroundStyle(Color.dockAccent)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(folder.lastPathComponent).font(.callout.weight(.medium)).foregroundStyle(Color.dockPrimaryText)
+                        Text((folder.path as NSString).abbreviatingWithTildeInPath)
+                            .font(.caption).foregroundStyle(Color.dockSecondaryText).lineLimit(1).truncationMode(.middle)
+                    }
+                    Spacer(minLength: 8)
+                    Button("Change…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
                 }
-            }
-            HStack {
-                Text(folder?.path ?? "No folder selected")
-                    .lineLimit(1).truncationMode(.middle)
-                    .foregroundStyle(folder == nil ? .secondary : .primary)
-                Spacer()
-                Button("Choose folder…", action: chooseFolder)
-            }
-            if failed { Text("Hermes could not save the change. Try again.").foregroundStyle(.red).font(.caption) }
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(mode == .newProject ? "Create" : "Add") { submit() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canSubmit)
+            } else {
+                VStack(spacing: 6) {
+                    Image(systemName: "arrow.down.to.line").font(.title2).foregroundStyle(isDropTargeted ? Color.dockAccent : Color.dockMetadataText)
+                    Text("Drop a folder here").font(.callout.weight(.medium)).foregroundStyle(Color.dockPrimaryText)
+                    Button("Choose…", action: chooseFolder).buttonStyle(.dockSecondary).controlSize(.small)
+                }
+                .frame(maxWidth: .infinity)
             }
         }
-        .padding(20)
-        .frame(width: 420)
+        .padding(14)
+        .frame(minHeight: folder == nil ? 110 : 60)
+        .background(isDropTargeted ? Color.dockAccentMuted : Color.dockSurface4, in: DockThemeShape(cornerRadius: 10))
+        .overlay(
+            DockThemeShape(cornerRadius: 10)
+                .stroke(isDropTargeted ? Color.dockAccent : Color.dockBorder, style: StrokeStyle(lineWidth: 1, dash: folder == nil ? [5, 4] : []))
+        )
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first(where: { $0.isFileURL && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }) else { return false }
+            setFolder(url)
+            return true
+        } isTargeted: { isDropTargeted = $0 }
+    }
+
+    private func setFolder(_ url: URL) {
+        folder = url.standardizedFileURL
+        failure = nil
+        if name.isEmpty { name = url.lastPathComponent }
     }
 
     private func chooseFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Choose a folder"
+        panel.title = "Choose a source folder"
         panel.prompt = "Choose"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         guard panel.runAboveHerm() == .OK, let url = panel.url else { return }
-        folder = url.standardizedFileURL
-        if name.isEmpty { name = url.lastPathComponent }
+        setFolder(url)
     }
 
     private func submit() {
         guard let folder else { return }
         isWorking = true
-        failed = false
+        failure = nil
         Task { @MainActor in
-            let ok: Bool
-            if mode == .newProject {
-                ok = await onCreate(name.trimmingCharacters(in: .whitespaces), folder.path)
-            } else if let target {
-                ok = await onAddFolder(target, folder.path)
-            } else { ok = false }
+            let ok = await onCreate(name.trimmingCharacters(in: .whitespaces), folder.path)
             isWorking = false
-            if ok { dismiss() } else { failed = true }
+            if ok { dismiss() } else { failure = failureReason() ?? "Hermes could not save the change. Try again." }
         }
     }
 }

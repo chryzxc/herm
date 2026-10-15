@@ -1,7 +1,7 @@
 import Foundation
 
 /// One review note on a previewed file. A nil quote is a general note.
-struct FileAnnotation: Identifiable, Codable, Equatable {
+struct FileAnnotation: Identifiable, Codable, Equatable, Sendable {
     var id = UUID()
     var quote: String?
     /// UTF-16 offset of the quote in the rendered document when it was made;
@@ -15,7 +15,7 @@ struct FileAnnotation: Identifiable, Codable, Equatable {
     var resolved = false
 }
 
-struct FileReview: Codable, Equatable {
+struct FileReview: Codable, Equatable, Sendable {
     var annotations: [FileAnnotation] = []
     /// File contents at the last send, so the pane can show what changed.
     var baseline: String?
@@ -35,6 +35,7 @@ final class FilePreviewCenter: ObservableObject {
     }
 
     private let fileURL: URL
+    private let saveQueue = DispatchQueue(label: "app.herm.Herm.file-reviews-save", qos: .utility)
 
     init(fileURL: URL? = nil) {
         let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -91,10 +92,16 @@ final class FilePreviewCenter: ObservableObject {
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(reviews) else { return }
-        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: fileURL, options: .atomic)
+        let snapshot = reviews
+        saveQueue.async { [fileURL] in
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? data.write(to: fileURL, options: .atomic)
+        }
     }
+
+    /// Drain ordered saves before termination or reading the durable snapshot.
+    func flushSaves() { saveQueue.sync {} }
 }
 
 enum FileAnnotationText {
@@ -136,7 +143,7 @@ enum FileAnnotationText {
         return lines.joined(separator: "\n")
     }
 
-    struct DiffLine: Equatable {
+    struct DiffLine: Equatable, Sendable {
         let sign: Character
         let text: String
     }

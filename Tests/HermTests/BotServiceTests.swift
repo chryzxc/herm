@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Herm
 
@@ -127,7 +128,7 @@ struct BotServiceTests {
 
         await model.refreshNow()
 
-        #expect(client.methods == ["profiles.list"])
+        #expect(client.methods == ["profiles.list", "session.active_list"])
         #expect(!client.methods.contains("image.generate"))
         #expect(!client.methods.contains("profiles.set_asset"))
     }
@@ -477,12 +478,15 @@ struct BotServiceTests {
         #expect(BotRosterMetadata(model: "openai / gpt-5", lastActive: "2 min ago").values.count == 2)
     }
 
-    @Test func knownBotsHaveDistinctRoleAvatarSymbols() {
-        #expect(BotAvatarPresentation.symbol(for: "nexus") == .compassTool)
-        #expect(BotAvatarPresentation.symbol(for: "cypher") == .shield)
-        #expect(BotAvatarPresentation.symbol(for: "atlas") == .globe)
-        #expect(BotAvatarPresentation.symbol(for: "scout") == .binoculars)
-        #expect(BotAvatarPresentation.symbol(for: "unknown") == .userCircle)
+    /// Saved Herm faces are drawn live; another Bot's face or other art stays an image.
+    @MainActor @Test func savedHermFaceIsRecognizedOnlyForItsOwnBot() throws {
+        let renderer = ImageRenderer(content: BotFaceMark(id: "nexus", size: 160))
+        renderer.scale = 1
+        let tiff = try #require(renderer.nsImage?.tiffRepresentation)
+        let png = try #require(NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]))
+        #expect(BotAvatarView.matchesHermFace(png, id: "nexus"))
+        #expect(!BotAvatarView.matchesHermFace(png, id: "cypher"))
+        #expect(!BotAvatarView.matchesHermFace(Data("not an image".utf8), id: "nexus"))
     }
 }
 

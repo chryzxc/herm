@@ -810,6 +810,8 @@ struct QueuedPrompt: Identifiable {
     var text: String
     let images: [ImageAttachment]
     let pdfURL: URL?
+    var contexts: [ChatContext] = []
+    var replyQuote: ReplyQuote? = nil
 }
 
 struct ImageAttachment: Identifiable {

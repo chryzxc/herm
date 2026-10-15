@@ -208,6 +208,21 @@ final class ConversationScrollMetricsTests: XCTestCase {
         XCTAssertTrue(ConversationScrollMetrics.isAtBottom(bottomMaxY: 780, viewportHeight: 720))
     }
 
+    func testSmallUpwardScrollDoesNotRepinAfterSettling() {
+        XCTAssertFalse(ConversationScrollMetrics.isAtBottom(
+            topMinY: -120,
+            bottomMaxY: 732,
+            viewportHeight: 720,
+            tolerance: ConversationScrollMetrics.pastEndTolerance
+        ))
+        XCTAssertTrue(ConversationScrollMetrics.isAtBottom(
+            topMinY: -132,
+            bottomMaxY: 720,
+            viewportHeight: 720,
+            tolerance: ConversationScrollMetrics.pastEndTolerance
+        ))
+    }
+
     func testPastEndBlankTailIsNotAtBottom() {
         XCTAssertFalse(ConversationScrollMetrics.isAtBottom(bottomMaxY: 600, viewportHeight: 720))
     }

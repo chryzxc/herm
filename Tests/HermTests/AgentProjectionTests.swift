@@ -258,7 +258,7 @@ struct AgentProjectionTests {
     @Test func exactKanbanIDsAreExtractedFromToolEvidenceOnly() {
         #expect(DockModel.kanbanTaskIDs(in: "hermes kanban show t_33604ca9 --json") == ["t_33604ca9"])
         #expect(DockModel.kanbanTaskIDs(in: "unrelated prose has no durable card") == [])
-        #expect(DockModel.kanbanTaskIDs(in: "worktree t_3d7e8b34-plan-climaterx-staff") == ["t_3d7e8b34"])
+        #expect(DockModel.kanbanTaskIDs(in: "worktree t_3d7e8b34-plan-sample-task") == ["t_3d7e8b34"])
     }
 
     @Test func activeSessionRetainsKanbanReferenceAfterTerminalToolActivity() {

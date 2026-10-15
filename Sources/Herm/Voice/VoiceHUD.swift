@@ -391,7 +391,7 @@ struct VoiceHUDDeck: View {
 
 private struct BrowserCard: View {
     let browser: BrowserSession
-    @State private var image: NSImage?
+    @State private var image: CGImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -402,7 +402,7 @@ private struct BrowserCard: View {
             .buttonStyle(.dockHover)
             .help(browser.url ?? "")
             if let image {
-                Image(nsImage: image)
+                Image(decorative: image, scale: 2)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
                     .frame(height: 130)
@@ -440,8 +440,12 @@ private struct BrowserCard: View {
         }
         .hudCard()
         .task(id: browser.screenshot) {
-            guard let path = browser.screenshot else { return image = nil }
-            image = NSImage(contentsOfFile: (path as NSString).expandingTildeInPath)
+            image = nil
+            guard let path = browser.screenshot else { return }
+            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            let thumbnail = await AttachmentThumbnailLoader.shared.image(at: url)
+            guard !Task.isCancelled else { return }
+            image = thumbnail
         }
     }
 }
@@ -530,7 +534,6 @@ private struct TerminalCard: View {
 
 private struct MediaCard: View {
     let media: GeneratedMedia
-    @State private var image: NSImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -539,8 +542,8 @@ private struct MediaCard: View {
             }
             .buttonStyle(.dockHover)
             Group {
-                if let image {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
+                if let url = media.fileURL {
+                    AttachmentThumbnailView(url: url)
                 } else if let url = URL(string: media.source), media.source.hasPrefix("http") {
                     AsyncImage(url: url) { $0.resizable().aspectRatio(contentMode: .fit) } placeholder: { ProgressView() }
                 }
@@ -551,7 +554,6 @@ private struct MediaCard: View {
             .onDrag { media.fileURL.map { NSItemProvider(object: $0 as NSURL) } ?? NSItemProvider(object: media.source as NSString) }
         }
         .hudCard(tint: .dockSuccess)
-        .task(id: media.source) { image = media.fileURL.flatMap { NSImage(contentsOf: $0) } }
     }
 }
 

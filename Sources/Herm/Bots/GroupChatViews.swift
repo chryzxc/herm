@@ -121,7 +121,7 @@ private struct GroupChatSidebarRow: View {
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .contextMenu { actions }
+        .dockContextMenu { actions }
         .alert("Rename group", isPresented: $isRenaming) {
             DockTextField("Name", text: $renameText)
             Button("Cancel", role: .cancel) {}
@@ -218,49 +218,47 @@ struct NewGroupChatSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(mode == .create ? "New Group Chat" : "Share a Bot").font(.title3.weight(.semibold))
+        DockModal(
+            icon: .users,
+            title: mode == .create ? "New Group Chat" : "Share a Bot",
+            subtitle: mode == .create ? "Bring several Bots into one conversation." : "Answer another Mac's request with one of your Bots.",
+            width: 440
+        ) {
             if store.isRoomLinkEnabled {
                 DockSegmentedPicker(selection: $mode, options: [(Mode.create, "Create a group"), (Mode.share, "Join from another Mac")])
             }
             if mode == .create { createForm } else { ShareBotForm(store: store, bots: bots) }
-            if let message = store.errorMessage {
-                Text(message).font(.caption).foregroundStyle(Color.dockDestructive)
-            }
-            HStack {
+            if let message = store.errorMessage { ModalNote(text: message, icon: .warning, tone: .dockDestructive) }
+        } footer: {
+            if mode == .create {
+                modalActions(primaryTitle: "Create", pendingTitle: "Creating…", isDisabled: !canCreate, isPending: isCreating, onCancel: { dismiss() }, onPrimary: create)
+            } else {
                 Spacer()
-                Button(mode == .create ? "Cancel" : "Done") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
-                if mode == .create {
-                    Button("Create") {
-                        isCreating = true
-                        Task {
-                            if let created = await store.create(
-                                name: name.trimmingCharacters(in: .whitespaces), bots: chosen,
-                                remote: remote.compactMap(\.invite), roomID: roomID
-                            ) {
-                                onCreated(created)
-                                dismiss()
-                            }
-                            isCreating = false
-                        }
-                    }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canCreate)
-                }
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).buttonStyle(DockModalButtonStyle(isPrimary: true))
             }
         }
-        .padding(20)
-        .frame(width: 420)
+    }
+
+    private func create() {
+        isCreating = true
+        Task {
+            if let created = await store.create(
+                name: name.trimmingCharacters(in: .whitespaces), bots: chosen,
+                remote: remote.compactMap(\.invite), roomID: roomID
+            ) {
+                onCreated(created)
+                dismiss()
+            }
+            isCreating = false
+        }
     }
 
     private var createForm: some View {
         VStack(alignment: .leading, spacing: 14) {
-            DockTextField("Name", text: $name)
-                .textFieldStyle(.roundedBorder)
+            labeledField("Name") { DockTextField("Group name", text: $name).textFieldStyle(.dockGlass) }
             Text("Members (\(GroupChatStore.memberLimits.lowerBound)–\(GroupChatStore.memberLimits.upperBound))")
-                .font(.caption)
-                .foregroundStyle(Color.dockMetadataText)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(bots) { bot in
@@ -292,7 +290,7 @@ struct NewGroupChatSheet: View {
                                                                memberID: seat.wrappedValue.id, handle: handle))
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                DockTextField("Handle, e.g. scout", text: seat.handle).textFieldStyle(.roundedBorder)
+                DockTextField("Handle, e.g. scout", text: seat.handle).textFieldStyle(.dockGlass)
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(request, forType: .string)
@@ -301,7 +299,7 @@ struct NewGroupChatSheet: View {
                 Button { remote.removeAll { $0.id == seat.wrappedValue.id } } label: { DockIcon(.x) }
                     .buttonStyle(.dockHover)
             }
-            DockTextField("Paste the invite from the other Mac", text: seat.reply).textFieldStyle(.roundedBorder)
+            DockTextField("Paste the invite from the other Mac", text: seat.reply).textFieldStyle(.dockGlass)
             if !seat.wrappedValue.reply.isEmpty, seat.wrappedValue.invite == nil {
                 Text("That invite isn't for this seat.").font(.caption).foregroundStyle(Color.dockWarning)
             } else if let invite = seat.wrappedValue.invite {
@@ -331,7 +329,7 @@ private struct ShareBotForm: View {
                 .font(.caption)
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
-            DockTextField("Request code", text: $requestCode).textFieldStyle(.roundedBorder)
+            DockTextField("Request code", text: $requestCode).textFieldStyle(.dockGlass)
             DockMenuPicker("Bot", title: bots.first { $0.id == botID }?.name ?? "Choose…", selection: $botID) {
                 DockMenuOption("Choose…", value: String?.none)
                 ForEach(bots) { DockMenuOption($0.name, value: Optional($0.id)) }
@@ -433,7 +431,7 @@ struct GroupChatView: View {
             ForEach(store.retries[roomID] ?? [], id: \.self) { taskID in
                 banner(icon: .warning, text: "A member's turn was interrupted and its result is unknown. Retrying may repeat work it already did.") {
                     Button("Retry") { Task { await store.retry(taskID, in: roomID) } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.dockPrimary)
                 }
             }
             if store.blockedRooms.contains(roomID), (store.retries[roomID] ?? []).isEmpty {
@@ -759,7 +757,7 @@ struct GroupChatView: View {
             Spacer()
             Button("Deny") { Task { await store.respond(to: approval, in: roomID, approve: false) } }
             Button("Allow once") { Task { await store.respond(to: approval, in: roomID, approve: true) } }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.dockPrimary)
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 10).fill(Color.dockSurface2))

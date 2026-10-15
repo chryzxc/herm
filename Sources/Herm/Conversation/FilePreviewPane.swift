@@ -42,6 +42,12 @@ struct FilePreviewPane: View {
     @State private var anchor: AnnotationAnchor?
     @State private var showsNotes = false
     @State private var showsChanges = false
+    @State private var changes: [FileAnnotationText.DiffLine] = []
+
+    private struct ReviewDiffInput: Equatable, Sendable {
+        let baseline: String
+        let current: String
+    }
 
     private var kind: FilePreviewKind? { FilePreviewKind(url: url) }
     private var path: String { url.path }
@@ -53,9 +59,9 @@ struct FilePreviewPane: View {
         return nil
     }
     private var canAnnotate: Bool { kind != .image && text != nil }
-    private var changes: [FileAnnotationText.DiffLine] {
-        guard let baseline = review.baseline, let text, baseline != text else { return [] }
-        return FileAnnotationText.lineDiff(old: baseline, new: text)
+    private var reviewDiffInput: ReviewDiffInput? {
+        guard showsNotes, let baseline = review.baseline, let text, baseline != text else { return nil }
+        return ReviewDiffInput(baseline: baseline, current: text)
     }
 
     var body: some View {
@@ -84,6 +90,15 @@ struct FilePreviewPane: View {
         .background(Color.dockCanvas)
         .animation(.dockEase(duration: 0.15), value: composing?.quote == nil && composing != nil)
         .task(id: url) { await watch() }
+        .task(id: reviewDiffInput) {
+            changes = []
+            guard let input = reviewDiffInput else { return }
+            let result = await Task.detached(priority: .utility) {
+                FileAnnotationText.lineDiff(old: input.baseline, new: input.current)
+            }.value
+            guard !Task.isCancelled else { return }
+            changes = result
+        }
     }
 
     // MARK: Header
@@ -501,10 +516,15 @@ struct FilePreviewPane: View {
         guard kind != .image else { return }
         let url = url
         while !Task.isCancelled {
-            let date = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            let date = await Task.detached(priority: .utility) {
+                (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+            }.value
+            guard !Task.isCancelled else { return }
             if content == nil || date != modifiedAt {
                 modifiedAt = date
-                content = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
+                let loaded = await Task.detached { ArtifactTextPreview.Content.load(url) }.value
+                guard !Task.isCancelled else { return }
+                content = loaded
                 if let text { center.reconcile(path, contents: text) }
             }
             try? await Task.sleep(for: .seconds(1))

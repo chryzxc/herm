@@ -1050,7 +1050,16 @@ enum NativeMarkdownAttributedTextBuilder {
                 iconString.addAttributes([.paragraphStyle: style, fileIconKey: true], range: NSRange(location: 0, length: iconString.length))
                 result.append(iconString)
             }
+            let start = result.length
             result.append(NSAttributedString(string: text, attributes: attributes))
+            guard run.link == nil, !intent.contains(.code) else { continue }
+            for range in SlashCommandTokens.ranges(in: text) {
+                result.addAttributes([
+                    .font: NSFont.monospacedSystemFont(ofSize: baseFont.pointSize - 1, weight: .semibold),
+                    .foregroundColor: palette.accent,
+                    .backgroundColor: palette.accent.withAlphaComponent(0.16)
+                ], range: NSRange(location: start + range.location, length: range.length))
+            }
         }
         return BotMentions.pilled(result)
     }
@@ -1062,6 +1071,8 @@ enum NativeMarkdownAttributedTextBuilder {
         palette: NativeMarkdownPalette
     ) -> NSAttributedString {
         let block = NSTextBlock()
+        // Without an explicit width the block shrinks to one character.
+        block.setValue(100, type: .percentageValueType, for: .width)
         block.backgroundColor = palette.surface
         block.setBorderColor(palette.border)
         block.setWidth(0.5, type: .absoluteValueType, for: .border)
@@ -1174,6 +1185,11 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         invalidateIntrinsicContentSize()
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
+    }
+
+    override func clicked(onLink link: Any, at charIndex: Int) {
+        guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)) else { return }
+        InAppBrowser.open(url)
     }
 
     /// NSTextView's own link cursor is lost when hosted in SwiftUI, so the

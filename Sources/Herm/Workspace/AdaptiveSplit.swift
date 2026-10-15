@@ -9,6 +9,8 @@ struct AdaptiveSplit<Primary: View, Secondary: View>: View {
     var primaryMinWidth: CGFloat = 0
     var secondaryMinWidth: CGFloat = 0
     var alwaysSplitWhenWide = false
+    /// Wide layouts only: the sidebar toggle hid the primary column.
+    var hidesPrimary = false
     let showsSecondary: Bool
     var onBack: (() -> Void)?
     @ViewBuilder let primary: Primary
@@ -16,12 +18,18 @@ struct AdaptiveSplit<Primary: View, Secondary: View>: View {
 
     var body: some View {
         GeometryReader { geo in
-            if geo.size.width >= breakpoint {
+            if geo.size.width >= breakpoint, hidesPrimary {
+                secondary.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if geo.size.width >= breakpoint {
+                // HSplitView hosts each pane in its own AppKit view, which re-adds the
+                // window's titlebar safe area. Herm lays out its own title row, so drop it.
                 HSplitView {
                     primary.frame(minWidth: primaryMinWidth, maxHeight: .infinity)
+                        .ignoresSafeArea(.container, edges: .top)
                     if showsSecondary || alwaysSplitWhenWide {
                         secondary.frame(minWidth: secondaryMinWidth, maxHeight: .infinity)
                             .overlay(alignment: .leading) { Color.dockBorder.frame(width: DockLayout.hairline) }
+                            .ignoresSafeArea(.container, edges: .top)
                     }
                 }
             } else if showsSecondary {

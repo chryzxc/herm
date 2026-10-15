@@ -60,11 +60,10 @@ struct ConversationMessageRow: View, Equatable {
     let isPinAvailable: Bool
     let isPinned: Bool
     let onPin: () -> Void
-    let onForward: ((BotSummary, String, @escaping (String?) -> Void) -> Void)?
+    let forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)?
     @State private var sendTarget: BotSummary?
-    @State private var sendNote = ""
-    @State private var sendError: String?
-    @State private var isForwarding = false
+    @State private var isHovering = false
+
     let loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)?
     init(
         message: ChatMessage,
@@ -89,7 +88,7 @@ struct ConversationMessageRow: View, Equatable {
         isPinAvailable: Bool = false,
         isPinned: Bool = false,
         onPin: @escaping () -> Void = {},
-        onForward: ((BotSummary, String, @escaping (String?) -> Void) -> Void)? = nil,
+        forwardContent: ((BotSummary, @escaping () -> Void) -> AnyView)? = nil,
         loadKanbanDetail: ((KanbanNotice) async -> KanbanTaskDetail?)? = nil
     ) {
         self.message = message
@@ -114,7 +113,7 @@ struct ConversationMessageRow: View, Equatable {
         self.isPinAvailable = isPinAvailable
         self.isPinned = isPinned
         self.onPin = onPin
-        self.onForward = onForward
+        self.forwardContent = forwardContent
         self.loadKanbanDetail = loadKanbanDetail
     }
 
@@ -194,7 +193,6 @@ struct ConversationMessageRow: View, Equatable {
                         .fixedSize()
                     }
                     if !userText.isEmpty {
-                        let command = Self.slashCommand(in: userText)
                         let mention = ComposerMentionPresentation.directBotRequest(in: userText, profileIDs: Array(botsByID.keys))
                         let mentionedBotID = message.botProfileID ?? mention?.profileID
                         let mentionPrefix = "@" + (message.botDisplayName ?? mentionedBotID ?? "") + " "
@@ -203,22 +201,12 @@ struct ConversationMessageRow: View, Equatable {
                             : userText
                         VStack(alignment: .leading, spacing: 8) {
                             if let quote = replySplit?.quote { ReplyQuoteChip(quote: quote, showsAuthor: false) }
-                            if let command {
-                                Text(command.name)
-                                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color.dockAccent)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Capsule().fill(Color.dockAccent.opacity(0.16)))
-                            }
-                            if command?.rest.isEmpty != true {
-                                if let mentionedBotID {
-                                    InlineBotMentionText(text: mention?.text ?? mentionBody, botID: mentionedBotID,
-                                                         displayName: message.botDisplayName, botsByID: botsByID,
-                                                         avatarImages: avatarImages, themeRevision: themeRevision)
-                                } else {
-                                    messageMarkdownView(command?.rest ?? userText, hugsContent: true)
-                                }
+                            if let mentionedBotID {
+                                InlineBotMentionText(text: mention?.text ?? mentionBody, botID: mentionedBotID,
+                                                     displayName: message.botDisplayName, botsByID: botsByID,
+                                                     avatarImages: avatarImages, themeRevision: themeRevision)
+                            } else {
+                                messageMarkdownView(userText, hugsContent: true)
                             }
                         }
                             .fixedSize(horizontal: false, vertical: true)
@@ -242,15 +230,19 @@ struct ConversationMessageRow: View, Equatable {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(Color.dockAccent)
                         }
-                        actionButton(.copy, action: onCopy)
-                        if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
                         Text(message.timeLabel)
                             .font(DockTypography.machineMetadata)
                             .foregroundStyle(Color.dockMetadataText)
+                            .opacity(isHovering ? 1 : 0)
+                        HStack(spacing: 0) {
+                            actionButton(.copy, action: onCopy)
+                            if showsPinAction { actionButton(.pin, action: onPin, isAvailable: isPinAvailable) }
+                        }
                     }
                     .padding(.horizontal, 4)
                     .padding(.top, 2)
                 }
+                .onHover { isHovering = $0 }
                 .frame(maxWidth: metrics.userMessageWidthFraction * metrics.readingWidth, alignment: .trailing)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
@@ -265,24 +257,7 @@ struct ConversationMessageRow: View, Equatable {
                                     size: 24
                                 )
                             } else {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: BotAvatarPresentation.palette(for: botProfileID),
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                    Circle()
-                                        .stroke(.white.opacity(0.20), lineWidth: 0.6)
-                                        .frame(width: 15, height: 15)
-                                    DockIcon(BotAvatarPresentation.symbol(for: botProfileID))
-                                        .font(.system(size: 8, weight: .semibold))
-                                        .foregroundStyle(.white.opacity(0.96))
-                                }
-                                .frame(width: 24, height: 24)
-                                .clipShape(RoundedRectangle(cornerRadius: 24 * 0.28, style: .continuous))
+                                BotFaceMark(id: botProfileID, size: 24, animated: true)
                             }
                             Text(bot?.name ?? message.botDisplayName ?? botProfileID)
                                 .font(.system(size: 11, weight: .medium))
@@ -347,6 +322,7 @@ struct ConversationMessageRow: View, Equatable {
                         messageMetadata
                     }
                 }
+                .onHover { isHovering = $0 }
             }
         }
         .padding(.horizontal, metrics.contentInset)
@@ -419,16 +395,6 @@ struct ConversationMessageRow: View, Equatable {
         }
     }
 
-    @ViewBuilder
-    /// "/cp-build do x" → ("/cp-build", "do x"). Paths like "/usr/bin" are not commands.
-    static func slashCommand(in text: String) -> (name: String, rest: String)? {
-        guard text.hasPrefix("/") else { return nil }
-        let name = text.prefix { !$0.isWhitespace }
-        guard name.count > 1, !name.dropFirst().contains("/") else { return nil }
-        let rest = text.dropFirst(name.count).trimmingCharacters(in: .whitespacesAndNewlines)
-        return (String(name), rest)
-    }
-
     private func messageMarkdownView(_ markdown: String, hugsContent: Bool = false) -> some View {
         // Trailing blank lines would render as empty paragraphs and open a gap
         // above the action row.
@@ -470,10 +436,10 @@ struct ConversationMessageRow: View, Equatable {
     private var sendToBotMenu: some View {
         let targets = botsByID.values
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        if let onForward, message.hasBodyText, message.systemEvent == nil, !message.isError {
+        if let forwardContent, message.hasBodyText, message.systemEvent == nil, !message.isError {
             Menu {
                 ForEach(targets) { bot in
-                    Button(bot.name) { sendNote = ""; sendError = nil; sendTarget = bot }
+                    Button(bot.name) { sendTarget = bot }
                 }
             } label: {
                 DockIcon(.paperPlaneTilt, size: 12, color: .dockSecondaryText)
@@ -484,7 +450,7 @@ struct ConversationMessageRow: View, Equatable {
             .frame(width: 28, height: 28)
             .contentShape(Rectangle())
             .popover(item: $sendTarget, arrowEdge: .bottom) { bot in
-                forwardPopover(bot, onForward: onForward)
+                forwardContent(bot) { sendTarget = nil }
             }
             .help(targets.isEmpty ? "No bots available" : "Forward to bot")
             .accessibilityLabel("Forward to bot")
@@ -492,52 +458,8 @@ struct ConversationMessageRow: View, Equatable {
         }
     }
 
-    /// The forwarded message rides along as an attachment-style quote; the
-    /// optional note is the user's own text above it.
-    private func forwardPopover(_ bot: BotSummary, onForward: @escaping (BotSummary, String, @escaping (String?) -> Void) -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Forward to \(bot.name) in a new session")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.dockSecondaryText)
-            Text(message.text)
-                .font(.system(size: 12))
-                .foregroundStyle(Color.dockSecondaryText)
-                .lineLimit(5)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorderLight, lineWidth: 1))
-            TextField("Add a message (optional)", text: $sendNote, axis: .vertical)
-                .textFieldStyle(.plain)
-                .lineLimit(1...4)
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 8).stroke(Color.dockBorderStrong, lineWidth: 1))
-            if let sendError {
-                Text(sendError).font(.system(size: 11)).foregroundStyle(Color.red)
-            }
-            HStack {
-                Spacer()
-                Button("Cancel") { sendTarget = nil }
-                Button(isForwarding ? "Sending…" : "Forward") {
-                    let note = sendNote.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let body = "Forwarded message:\n\(message.text)"
-                    isForwarding = true
-                    sendError = nil
-                    onForward(bot, note.isEmpty ? body : "\(note)\n\n\(body)") { error in
-                        isForwarding = false
-                        if let error { sendError = error } else { sendTarget = nil }
-                    }
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(isForwarding)
-            }
-        }
-        .padding(12)
-        .frame(width: 320)
-    }
-
     private var messageMetadata: some View {
         HStack(spacing: 6) {
-            Text(message.timeLabel)
             if let durationLabel = message.durationLabel {
                 HStack(spacing: 4) {
                     DockIcon(.timer, size: 12, color: .dockMetadataText)
@@ -551,6 +473,8 @@ struct ConversationMessageRow: View, Equatable {
             if let modelName = message.modelName {
                 Text("· \(modelName)")
             }
+            Text("· \(message.timeLabel)")
+                .opacity(isHovering || message.isError ? 1 : 0)
         }
         .font(DockTypography.machineMetadata)
         .foregroundStyle(Color.dockMetadataText)
@@ -800,7 +724,7 @@ struct BotChip: View {
                 BotAvatarView(bot: bot, imageData: avatarImages[bot.id], size: 16)
                 Text(bot.name)
             } else {
-                DockIcon(BotAvatarPresentation.symbol(for: id), size: 14, color: .dockSecondaryText)
+                BotFaceMark(id: id, size: 16, animated: true)
                 Text(displayName ?? id)
             }
         }
@@ -886,12 +810,18 @@ struct KanbanNoticeCard: View {
                             .help(run.error ?? run.summary ?? "")
                         }
                     }
-                    if let text = card.flatMap(notice.fullSummary(in:)) ?? notice.detail {
-                        Text(text)
-                            .font(DockTypography.body)
-                            .foregroundStyle(Color.dockSecondaryText)
+                    if let card {
+                        let step = [card.status, card.currentStepKey, card.assignee.map { "@\($0)" }]
+                            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                        Text(step)
+                            .font(DockTypography.machineMetadata)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                    // Created/picked-up/unblocked carry no summary; show the task body instead.
+                    if let text = card.flatMap(notice.fullSummary(in:)) ?? notice.detail ?? card?.body {
+                        MarkdownMessageView(markdown: text.trimmingCharacters(in: .whitespacesAndNewlines))
+                            .equatable()
                             .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
                     }
                 }
                 .padding(.leading, 10)

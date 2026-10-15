@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Herm
 
@@ -66,5 +67,11 @@ struct ComposerCompletionTests {
     @Test func bareSlashRefsBecomeTypedRefs() {
         #expect(ComposerCompletion.pathifyingBareRefs("read @src/app.ts and @docs/") == "read @file:src/app.ts and @folder:docs/")
         #expect(ComposerCompletion.pathifyingBareRefs("ask @coder, @file:a/b, a@b/c") == "ask @coder, @file:a/b, a@b/c")
+    }
+
+    @Test func slashTokensSkipPathsAndProse() {
+        let text = "/work tidy /clean then see /usr/bin, a/b, /a.txt and /model."
+        let ns = text as NSString
+        #expect(SlashCommandTokens.ranges(in: text).map(ns.substring) == ["/work", "/clean", "/model"])
     }
 }

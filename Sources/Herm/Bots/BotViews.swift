@@ -786,7 +786,7 @@ private struct BotRoutineRow: View, Equatable {
         .background(isHovering ? Color.dockSurface4 : Color.clear)
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
-        .contextMenu {
+        .dockContextMenu {
             Button("Remove", icon: .trash, role: .destructive, action: onRemove)
                 .disabled(isRemoving)
         }
@@ -848,7 +848,7 @@ struct MissionControlBotRow: View, Equatable {
         .focused($isFocused)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens the canonical Bot chat")
-        .contextMenu {
+        .dockContextMenu {
             Button("Open Chat") { onSelect() }
             if let onOpenRecentSession {
                 Button("Open Recent Session", action: onOpenRecentSession)

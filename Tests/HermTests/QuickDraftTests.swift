@@ -365,7 +365,7 @@ struct QuickDraftTests {
       sessionAgentStateFileURL: root.appendingPathComponent("agents.json"),
       defaults: UserDefaults(suiteName: UUID().uuidString)!, initialSessionID: "workspace",
       botActivityFileURL: root.appendingPathComponent("bots.json"), rpcClient: CaptureRPC())
-    let view = EdgeQuickMessageView(model: model, state: state, close: {}, openDock: {})
+    let view = EdgeQuickMessageView(model: model, control: ControlCenterModel(), state: state, close: {}, openDock: {})
       .frame(width: 352, height: 272).background(Color.dockCanvas)
     let host = NSHostingView(rootView: view)
     host.frame = NSRect(x: 0, y: 0, width: 352, height: 272)

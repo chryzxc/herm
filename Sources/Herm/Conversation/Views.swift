@@ -302,6 +302,7 @@ struct DockPopover: View {
     @StateObject private var agentUpdateService = HermesUpdateService()
     @StateObject private var developerWorkflow = DeveloperWorkflowModel.shared
     @StateObject private var pullRequestCenter = PullRequestCenterModel()
+    @StateObject private var issueCenter = IssueCenterModel()
     @StateObject private var pullRequestChatLinks = PullRequestChatLinkStore()
     @State private var chatContextRouter = ChatContextRouter()
     @StateObject private var repositoryPreferences = CommandCenterPreferencesStore.shared
@@ -491,6 +492,24 @@ struct DockPopover: View {
         .onChange(of: isWorkspaceVisible) { _, visible in
             handleWorkspaceVisibilityChange(visible)
         }
+        // Hermes' browser tools drive Herm's agent browser: start it once Hermes is up, and
+        // bring the Browser tab forward whenever Hermes starts using it.
+        .onChange(of: model.isHermesConnected, initial: true) { _, connected in
+            let agent = AgentBrowser.shared
+            agent.model = model
+            guard connected else { return }
+            if agent.isActive { agent.reconnectHermes() } else { agent.start() }
+        }
+        .onChange(of: model.activeBrowserCall != nil) { _, browsing in
+            if browsing { NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { _ in
+            InAppBrowser.handled = true
+            inspectorScope = .session
+            if isFullscreen { isMissionInspectorVisible = true }
+            else if isNarrowLayout { isNarrowControlVisible = true }
+            else { isWorkspaceManuallyExpanded = true }
+        }
         .onChange(of: botMode.selectedProfileID) { _, profileID in
             handleProfileScopeChange(profileID)
         }
@@ -572,7 +591,7 @@ struct DockPopover: View {
             // Replaces the shell instead of overlaying it: the AppKit split
             // panes draw above SwiftUI overlays, so side panels showed through.
             if isVoiceImmersive && sessionWorkspaceMode == .voice {
-                immersiveVoiceStage.transition(.opacity.combined(with: .scale(scale: 1.02)))
+                immersiveVoiceStage.padding(.top, titlebarInset).transition(.opacity.combined(with: .scale(scale: 1.02)))
             } else {
                 layoutContent
             }
@@ -600,7 +619,6 @@ struct DockPopover: View {
                 fullscreenGlobalTab = .quota
                 fullscreenSurface = .global
             }
-            .padding(.top, usesWindowChrome ? 38 : 0) // titlebar height; the surface itself runs under it
             .background { DockWindowBackground() }
             .clipShape(DockPanelSurfaceShape(
                 isEdgeAttached: !usesWindowChrome && panelPresentation.isEdgeAttached,
@@ -614,10 +632,6 @@ struct DockPopover: View {
                     edgeSide: panelPresentation.edgeSide
                 )
                     .stroke(Color.dockBorderStrong, lineWidth: panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline)
-            }
-            .overlay(alignment: .top) {
-                // The content fills the titlebar, so AppKit's own double-click-to-zoom never sees it.
-                if usesWindowChrome { TitlebarDoubleClickArea().frame(height: 38) }
             }
             .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
             .dockThemedRoot()
@@ -691,7 +705,7 @@ struct DockPopover: View {
             HStack(spacing: 0) {
                 missionControlRail
                 if isGlobalSurfaceActive {
-                    fullscreenGlobalSurface
+                    globalSurfaceInTitleRow
                 } else {
                     HStack(spacing: 2) {
                         if !isNarrowControlVisible {
@@ -706,8 +720,26 @@ struct DockPopover: View {
                                 .transition(.move(edge: .trailing).combined(with: .opacity))
                         }
                     }
+                    .underTitlebar(titlebarInset)
                 }
             }
+        }
+    }
+
+    /// The window's content runs under its transparent titlebar. Columns
+    /// below the traffic lights inset by this; the chat and inspector fill it.
+    private var titlebarInset: CGFloat { usesWindowChrome ? DockWindowChrome.titleRowHeight : 0 }
+
+    /// Pages put their DockPageHeader in the title row; group chats keep the plain inset.
+    @ViewBuilder
+    private var globalSurfaceInTitleRow: some View {
+        if usesWindowChrome, !showsChatsPanel {
+            fullscreenGlobalSurface.environment(\.dockTitleRow, DockTitleRow(
+                height: DockWindowChrome.titleRowHeight,
+                leadingClearance: DockWindowChrome.trafficLightClearance
+            ))
+        } else {
+            fullscreenGlobalSurface.underTitlebar(titlebarInset)
         }
     }
 
@@ -723,8 +755,11 @@ struct DockPopover: View {
     private var desktopWorkspaceShell: some View {
         HStack(spacing: 0) {
             missionControlRail
-            Color.dockBorder.frame(width: DockLayout.hairline)
-            if showsChatsPanel {
+            // Starts below the title row so it doesn't cut through the traffic lights;
+            // the gap above it is title row, not see-through window.
+            Color.dockBorder.frame(width: DockLayout.hairline).padding(.top, titlebarInset)
+                .background(Color.dockSidebar)
+            if showsChatsPanel, !hidesChatList {
                 FullscreenPanelSplitView(
                     leading: missionControlQueue,
                     trailing: desktopTrailingWorkspace,
@@ -736,6 +771,12 @@ struct DockPopover: View {
                 desktopTrailingWorkspace
             }
         }
+    }
+
+    @AppStorage("herm.chatListCollapsed") private var isChatListCollapsed = false
+    /// Only the windowed chat has a toggle to bring the list back, so only it collapses.
+    private var hidesChatList: Bool {
+        isChatListCollapsed && usesWindowChrome && fullscreenSurface == .conversation && !isNarrowLayout
     }
 
     /// The session lists belong to Chats: a conversation or group chat is open.
@@ -787,6 +828,9 @@ struct DockPopover: View {
             onFullscreenToggle: toggleFullscreen,
             onOpenWindow: onOpenWindow
         )
+        .underTitlebar(titlebarInset, separator: false)
+        // The title strip above the rail is part of the sidebar, not the window canvas.
+        .background(DockThemePalette(theme: dockThemeStore.selectedThemeID).sidebarBackground)
     }
 
     /// The outer split must leave room for the conversation's minimum plus
@@ -799,22 +843,27 @@ struct DockPopover: View {
 
     private var desktopTrailingWorkspace: AnyView {
         if isGlobalSurfaceActive {
-            AnyView(fullscreenGlobalSurface)
-        } else if isInspectorVisibleForDesktopWorkspace {
-            // The nested split keeps the conversation and inspector resizable
-            // without disturbing the outer, persistent navigation split.
-            AnyView(
+            return AnyView(globalSurfaceInTitleRow)
+        } else {
+            // The split stays mounted while the inspector is collapsed (the
+            // trailing pane is only hidden) so tabs, open files and terminals
+            // keep their state across collapse/expand.
+            let isVisible = isInspectorVisibleForDesktopWorkspace
+            return AnyView(
                 GeometryReader { geometry in
                     let minimumWidth = sessionWorkspaceMode == .explorer
                         ? ExplorerWorkspaceMetrics.minimumNavigatorWidth + 1 + ExplorerWorkspaceMetrics.minimumEditorWidth
                         : DesktopWorkspaceFractions.minimumConversationWidth + 1 + 360
-                    if geometry.size.width < minimumWidth {
+                    if isVisible, geometry.size.width < minimumWidth {
                         VStack(spacing: 0) {
-                            HStack {
-                                DockIconButton(icon: .caretLeft, label: "Back to conversation", style: DockThemePalette(theme: dockThemeStore.selectedThemeID), action: toggleInspectorPanel)
-                                Spacer()
+                            // The session tab strip already carries the toggle.
+                            if !inspectorHasOwnToggle {
+                                HStack {
+                                    Spacer()
+                                    DockSidebarToggle(isCollapsed: false, edge: .trailing, action: toggleInspectorPanel)
+                                }
+                                .padding(.horizontal, 8)
                             }
-                            .padding(.horizontal, 8)
                             contextPanel
                         }
                     } else {
@@ -830,13 +879,12 @@ struct DockPopover: View {
                             minimumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumNavigatorWidth : DesktopWorkspaceFractions.minimumConversationWidth,
                             maximumLeadingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.maximumNavigatorWidth : nil,
                             minimumTrailingWidth: sessionWorkspaceMode == .explorer ? ExplorerWorkspaceMetrics.minimumEditorWidth : 360,
-                            leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil
+                            leadingWidth: sessionWorkspaceMode == .explorer ? $explorerNavigatorWidth : nil,
+                            isTrailingCollapsed: !isVisible
                         )
                     }
                 }
             )
-        } else {
-            AnyView(conversationColumn)
         }
     }
 
@@ -1090,6 +1138,10 @@ struct DockPopover: View {
 
     private func handleModelStatusChange(_ status: HermesStatus) {
         synchronizeWorkspace(status: status)
+        // Picks up worktrees/branches the agent created during the turn.
+        if status == .idle, activeSessionRepositoryPath != nil {
+            Task { await refreshSessionWorkflow() }
+        }
         guard sessionWorkspaceMode == .voice,
               status == .idle,
               !model.voiceState.isNativeConversationActive else { return }
@@ -1261,7 +1313,8 @@ struct DockPopover: View {
             onFullscreenToggle: toggleFullscreen,
             onSelectProfile: { botMode.selectProfile($0) },
             onOpenWindow: onOpenWindow,
-            isDockedWindow: usesWindowChrome
+            isDockedWindow: usesWindowChrome,
+            isSidebarCollapsed: $isChatListCollapsed
         )
     }
 
@@ -1313,6 +1366,7 @@ struct DockPopover: View {
             if fullscreenSurface == .pullRequests || fullscreenSurface == .issues {
                 PullRequestWorkspace(
                     center: pullRequestCenter,
+                    issueCenter: issueCenter,
                     projects: controlCenter.projects,
                     onOpenChat: openPullRequestChat,
                     onOpenIssueChat: openIssueChat,
@@ -1435,6 +1489,27 @@ struct DockPopover: View {
                     contextPanelHeader
                 }
 
+                // Narrow layout swaps the chat out for the inspector, so offer the way back.
+                if isNarrowLayout {
+                    HStack {
+                        Button {
+                            withAnimation(.dockEase(duration: 0.2)) { isNarrowControlVisible = false }
+                        } label: {
+                            Label("Back to chat", systemImage: "chevron.left")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.dockSecondaryText)
+                                .padding(.horizontal, 8)
+                                .frame(height: 28)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .accessibilityLabel("Back to chat")
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.top, 8)
+                }
+
                 Group {
                     switch inspectorScope {
                     case .global:
@@ -1462,9 +1537,13 @@ struct DockPopover: View {
                              botMode: botMode,
                              control: controlCenter,
                              workflow: developerWorkflow,
-                             sessionRepositoryPath: activeSessionRepositoryPath,
+                             sessionRepositoryPath: activeSessionRepositoryScope?.repositoryPath ?? activeSessionRepositoryPath,
                              sessionProjectIsBound: activeSessionRepositoryPath != nil,
-                             showsHeader: false
+                             sessionRootPath: activeSessionRepositoryPath,
+                             onSelectWorktree: selectWorktree,
+                             showsHeader: false,
+                             onToggle: toggleInspectorPanel,
+                             headerHeight: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight
                          )
                     case .artifacts:
                         ArtifactsInspectorView(model: model, presentation: .inspector)
@@ -1487,7 +1566,7 @@ struct DockPopover: View {
             guard let repositoryPath else { return }
             if let liveSessionRepositoryPath { cachedSessionRepositoryPath = liveSessionRepositoryPath }
             await developerWorkflow.setActiveRepository(
-                path: repositoryPath,
+                path: activeWorktreePath ?? repositoryPath,
                 preferences: repositoryPreferences,
                 control: controlCenter
             )
@@ -1592,7 +1671,22 @@ struct DockPopover: View {
     private var activeSessionRepositoryScope: SessionRepositoryScope? {
         guard let sessionID = model.sessionID,
               let path = activeSessionRepositoryPath else { return nil }
-        return SessionRepositoryScope(sessionID: sessionID, repositoryPath: path)
+        return SessionRepositoryScope(sessionID: sessionID, repositoryPath: activeWorktreePath ?? path)
+    }
+
+    /// The worktree the session is viewing; may live outside the bound folder.
+    /// A removed worktree falls back to the bound folder.
+    private var activeWorktreePath: String? {
+        guard let path = workspaceStore.worktreePath(forSessionID: model.sessionID),
+              path != activeSessionRepositoryPath,
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        return path
+    }
+
+    /// View-only: the agent keeps its own cwd.
+    private func selectWorktree(_ path: String) {
+        guard let sessionID = model.sessionID else { return }
+        workspaceStore.setWorktreePath(path == activeSessionRepositoryPath ? nil : path, forSessionID: sessionID, title: model.currentSessionTitle ?? "Untitled task")
     }
 
     /// Updates the cached project name from the live computed value.
@@ -1678,9 +1772,13 @@ struct DockPopover: View {
         return GeometryReader { geometry in
             let showsInspector = geometry.size.width >= 440
             HStack(spacing: 4) {
+                // Leading like a native toolbar title; actions sit at the trailing edge.
+                if hidesChatList {
+                    DockSidebarToggle(isCollapsed: $isChatListCollapsed)
+                        .padding(.leading, DockWindowChrome.sidebarToggleLeading - 12)
+                }
                 sessionIdentity(style: style)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .layoutPriority(0)
+                Spacer(minLength: 12)
 
                 if sessionWorkspaceMode == .chat, !model.messageNavigatorItems.isEmpty {
                     // Pinned messages open from the "…" menu; the popover anchors here.
@@ -1702,6 +1800,8 @@ struct DockPopover: View {
                         .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
                 }
 
+                sessionModeSwitcher(style: style)
+
                 DockIconButton(
                     icon: sessionWorkspaceMode == .voice ? .chatCircleText : .waveform,
                     label: sessionWorkspaceMode == .voice ? "Return to chat" : "Voice conversation",
@@ -1711,22 +1811,18 @@ struct DockPopover: View {
                 sessionViewMenu(includesInspector: !showsInspector, style: style)
                     .fixedSize()
 
-                if showsInspector {
-                    DockIconButton(
-                        icon: .sidebarSimple,
-                        label: inspectorPanelIsVisible ? "Hide inspector" : "Show inspector",
-                        isProminent: inspectorPanelIsVisible,
-                        style: style,
-                        action: toggleInspectorPanel
-                    )
+                if showsInspector && !inspectorHasOwnToggle {
+                    DockSidebarToggle(isCollapsed: !inspectorPanelIsVisible, edge: .trailing, action: toggleInspectorPanel)
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
             .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .frame(height: conversationMetrics.headerHeight)
-        .background(Color.dockCanvas)
-        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+        .frame(height: usesWindowChrome ? DockWindowChrome.titleRowHeight : conversationMetrics.headerHeight)
+        .background { if usesWindowChrome { TitlebarDoubleClickArea() } }
+        .background(usesWindowChrome ? Color.dockSidebar : Color.dockCanvas)
+        .overlay(alignment: .bottom) { if usesWindowChrome { DockWindowChrome.titleRowSeparator } }
     }
 
     private func sessionIdentity(style: DockThemePalette) -> some View {
@@ -1760,6 +1856,35 @@ struct DockPopover: View {
         }
     }
 
+    /// Icon segments for the session's work views. Talk keeps its own toggle beside it;
+    /// Explorer and Source Control live in the inspector's tabs.
+    private func sessionModeSwitcher(style: DockThemePalette) -> some View {
+        HStack(spacing: 2) {
+            ForEach([SessionWorkspaceMode.chat, .pullRequests]) { mode in
+                let isSelected = mode == sessionWorkspaceMode
+                Button { selectSessionMode(mode) } label: {
+                    DockIcon(mode.icon, size: DockLayout.toolbarIconSize, color: isSelected ? style.primaryText : style.secondaryText)
+                        .frame(width: DockLayout.iconControlSize, height: DockLayout.iconControlSize - 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 3, style: .continuous)
+                                .fill(isSelected ? style.selectedFill : .clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockPress)
+                .help("\(mode.label) — \(mode.help)")
+                .accessibilityLabel(mode.label)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
+                .fill(style.surface4.opacity(0.5))
+        )
+        .animation(reduceMotion ? nil : .dockEase(duration: 0.16), value: sessionWorkspaceMode)
+    }
+
     private func sessionViewMenu(includesInspector: Bool, style: DockThemePalette) -> some View {
         DockMenu {
             if let session = currentSession {
@@ -1788,23 +1913,12 @@ struct DockPopover: View {
                     Button("Pinned messages", icon: .pushPin) { isShowingMessagePins.toggle() }
                 }
             }
-            DockMenu("View") {
-                ForEach(SessionWorkspaceMode.allCases) { mode in
-                    Button { selectSessionMode(mode) } label: {
-                        if mode == sessionWorkspaceMode {
-                            Label(mode.label, icon: .check)
-                        } else {
-                            Text(mode.label)
-                        }
-                    }
-                }
-            }
             if includesInspector {
                 Divider()
                 Button(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector", action: toggleInspectorPanel)
             }
         } label: {
-            DockIcon(.dotsThree, size: 14, color: isSessionMenuHovering ? style.primaryText : style.secondaryText)
+            DockIcon(.dotsThree, size: DockLayout.toolbarIconSize, color: isSessionMenuHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous)
@@ -1883,6 +1997,12 @@ struct DockPopover: View {
             selectedChangeDiff = diff
             isLoadingChangeDiff = false
         }
+    }
+
+    /// The session inspector's tab strip carries its own collapse toggle.
+    private var inspectorHasOwnToggle: Bool {
+        inspectorPanelIsVisible && !isNarrowLayout && filePreview.url == nil
+            && !sessionWorkspaceMode.usesContextPreview && inspectorScope == .session
     }
 
     private var inspectorPanelIsVisible: Bool {
@@ -2652,6 +2772,11 @@ struct DockPopover: View {
                                     // A short transcript cannot be scrolled toward
                                     // its edge, so settle also fills the buffer.
                                     loadEarlierMessagesIfNeeded(geometry)
+                                },
+                                onScrollAwayFromBottom: {
+                                    guard isConversationAtBottom else { return }
+                                    isConversationAtBottom = false
+                                    streamingTailScroll.cancel()
                                 }
                             )
                         }
@@ -3004,7 +3129,8 @@ struct DockPopover: View {
             && ConversationScrollMetrics.isAtBottom(
                 topMinY: bounds.topMinY,
                 bottomMaxY: bounds.bottomMaxY,
-                viewportHeight: viewportHeight
+                viewportHeight: viewportHeight,
+                tolerance: wasAtBottom ? ConversationScrollMetrics.atBottomTolerance : ConversationScrollMetrics.pastEndTolerance
             )
         if atBottom != isConversationAtBottom {
             isConversationAtBottom = atBottom
@@ -3070,22 +3196,25 @@ struct DockPopover: View {
     }
 
     private func scrollConversationToBottom(_ proxy: ScrollViewProxy, animated: Bool = false) {
+        let owningSessionID = model.sessionID
         Task { @MainActor in
             // Let the inserted row participate in layout before targeting the
             // stable footer. This is the only programmatic scroll target in
             // the restored SwiftUI presentation.
             await Task.yield()
-            if animated {
+            guard owningSessionID == model.sessionID, isConversationAtBottom else { return }
+            if animated && !reduceMotion {
                 withAnimation(.dockEase(duration: 0.22)) {
                     proxy.scrollTo("conversation-bottom", anchor: .bottom)
                 }
+                return
             } else {
                 proxy.scrollTo("conversation-bottom", anchor: .bottom)
             }
             // Lazily measured rows (feed/kanban lines, tall cards) settle one
             // layout pass later; re-target so the tail is not left mid-way.
             await Task.yield()
-            guard isConversationAtBottom else { return }
+            guard owningSessionID == model.sessionID, isConversationAtBottom else { return }
             proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
     }
@@ -3117,10 +3246,6 @@ struct DockPopover: View {
         }
     }
 
-    private func forwardToBot(_ bot: BotSummary, _ text: String, _ completion: @escaping (String?) -> Void) {
-        model.sendQuickMessage(text, profileID: bot.id, completion: completion)
-    }
-
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
         let isStreaming = message.id == model.streamingMessageIDForPresentation
@@ -3129,7 +3254,9 @@ struct DockPopover: View {
             TurnActivityView(
                 activity: activity,
                 runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,
-                duration: message.responseDuration
+                duration: message.responseDuration,
+                bot: isStreaming ? (message.botProfileID ?? model.activeBotProfileID).flatMap { botMode.botsByID[$0] } : nil,
+                botAvatar: (message.botProfileID ?? model.activeBotProfileID).flatMap { botMode.avatarImages[$0] }
             )
             .padding(.horizontal, conversationMetrics.contentInset + 4)
             .padding(.top, 8)
@@ -3172,7 +3299,9 @@ struct DockPopover: View {
                 onPin: {
                     messageActionState.run(message.id, action: .pin) { await model.toggleMessagePinned(message) }
                 },
-                onForward: forwardToBot,
+                forwardContent: { bot, dismiss in
+                    AnyView(ForwardToBotPopover(model: model, botMode: botMode, bot: bot, messageText: message.text, dismiss: dismiss))
+                },
                 loadKanbanDetail: { notice in await controlCenter.sessionKanbanTaskDetail(notice.taskSummary) }
             )
             .equatable()
@@ -3242,7 +3371,7 @@ struct DockPopover: View {
                 DockCalloutActions {
                     if choices.contains(ApprovalChoice.once) {
                         Button { model.respondToApproval(ApprovalChoice.once) } label: {
-                            DockActionLabel(title: "Allow once", pendingTitle: "Allowing…", isPending: isPending, tint: .dockOnAccentText)
+                            DockActionLabel(title: "Allow once", pendingTitle: "Allowing…", isPending: isPending, tint: .dockPrimaryText)
                                 .frame(minHeight: DockControlMetrics.hitTarget)
                         }
                         .buttonStyle(DockPrimaryButtonStyle())
@@ -3345,7 +3474,7 @@ struct DockPopover: View {
                                                      displayText: selection.joined(separator: ", "))
                     } label: {
                         DockActionLabel(title: clarificationSelection.isEmpty ? "Send selection" : "Send \(clarificationSelection.count) selected",
-                                        pendingTitle: "Sending…", isPending: isPending, tint: .dockOnAccentText)
+                                        pendingTitle: "Sending…", isPending: isPending, tint: .dockPrimaryText)
                             .frame(minHeight: DockControlMetrics.hitTarget)
                     }
                     .buttonStyle(DockPrimaryButtonStyle())
@@ -3399,7 +3528,7 @@ struct DockPopover: View {
 
                 DockCalloutActions {
                     Button(action: submit) {
-                        DockActionLabel(title: prompt.asksForLogin ? "Send login" : "Send", pendingTitle: "Sending…", isPending: isPending, tint: .dockOnAccentText)
+                        DockActionLabel(title: prompt.asksForLogin ? "Send login" : "Send", pendingTitle: "Sending…", isPending: isPending, tint: .dockPrimaryText)
                             .frame(minHeight: DockControlMetrics.hitTarget)
                     }
                     .buttonStyle(DockPrimaryButtonStyle())
@@ -3605,36 +3734,36 @@ struct MissionControlRail: View {
 
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
-        VStack(spacing: 14) {
-            VStack(spacing: 2) {
+        VStack(spacing: 4) {
+            VStack(spacing: 4) {
                 destination("Chats", icon: .chatsCircle, isSelected: isChatsActive, style: style, action: onOpenChats)
             }
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 if showsKanban { globalDestination(.kanban, style: style) }
                 if showsPullRequests { destination("Pull requests", icon: .gitPullRequest, isSelected: navigationState.selection.selection == .pullRequests, style: style, action: onOpenPullRequests) }
                 if showsIssues { destination("Issues", icon: .record, isSelected: isIssuesActive, style: style, action: onOpenIssues) }
             }
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 if showsCalendar { globalDestination(.calendar, style: style) }
                 globalDestination(.automations, style: style)
             }
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 destination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style, action: onOpenArtifacts)
                 if showsOffice { globalDestination(.officePreview, style: style) }
             }
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 destination("Bots", icon: .robot, isSelected: navigationState.selection.selection == .bots, style: style, action: onOpenBots)
                 globalDestination(.usage, style: style)
             }
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 globalDestination(.quota, style: style)
                 globalDestination(.core, style: style)
             }
             Spacer(minLength: 0)
             // Global window chrome: applies to the whole workspace, not one chat.
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 if let onOpenWindow {
-                    destination(isDockedWindow ? "Back to floating panel" : "Open as window", icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style, action: onOpenWindow)
+                    destination(isDockedWindow ? "Switch to floating" : "Switch to window", icon: isDockedWindow ? .pictureInPicture : .appWindow, isSelected: false, style: style, action: onOpenWindow)
                 }
             }
         }
@@ -3643,7 +3772,7 @@ struct MissionControlRail: View {
         .padding(.bottom, 8)
         .frame(width: 52)
         .frame(maxHeight: .infinity)
-        .background(style.background)
+        .background(style.sidebarBackground)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes navigation")
     }
@@ -3713,6 +3842,7 @@ struct MissionControlQueue: View {
     let onSelectProfile: (String) -> Void
     let onOpenWindow: (() -> Void)?
     let isDockedWindow: Bool
+    @Binding var isSidebarCollapsed: Bool
     @State private var isProfileSelectorPresented = false
     @State private var isProfileHovering = false
     @State private var creatingProjectPath: String?
@@ -3751,7 +3881,8 @@ struct MissionControlQueue: View {
         onFullscreenToggle: @escaping () -> Void,
         onSelectProfile: @escaping (String) -> Void,
         onOpenWindow: (() -> Void)? = nil,
-        isDockedWindow: Bool = false
+        isDockedWindow: Bool = false,
+        isSidebarCollapsed: Binding<Bool> = .constant(false)
     ) {
         self.model = model
         self.botMode = botMode
@@ -3784,6 +3915,7 @@ struct MissionControlQueue: View {
         self.onSelectProfile = onSelectProfile
         self.onOpenWindow = onOpenWindow
         self.isDockedWindow = isDockedWindow
+        self._isSidebarCollapsed = isSidebarCollapsed
     }
 
     private var readyTasks: [WorkspaceTask] {
@@ -3860,7 +3992,7 @@ struct MissionControlQueue: View {
     var body: some View {
         let style = DockThemePalette(theme: dockThemeStore.selectedThemeID)
         listPanel(style: style)
-        .background(style.background)
+        .background(style.sidebarBackground)
         // This queue can move between AppKit split-view hosts as the center
         // destination changes. Loading the index is an initial-popover task,
         // not a navigation side effect; otherwise selecting a project or
@@ -3906,6 +4038,17 @@ struct MissionControlQueue: View {
     /// Secondary panel: identity, new conversation, and the session lists.
     private func listPanel(style: DockThemePalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            // In the window the title row above stays empty for the traffic lights.
+            if isDockedWindow {
+                HStack(spacing: 0) {
+                    DockSidebarToggle(isCollapsed: $isSidebarCollapsed)
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, DockWindowChrome.sidebarToggleLeading)
+                .frame(height: DockWindowChrome.titleRowHeight)
+                .background { TitlebarDoubleClickArea() }
+                .background(style.sidebarBackground)
+            }
             // Header: identity plus the primary action. Window chrome lives in the footer.
             HStack(spacing: 2) {
                 profileHeader(style: style)
@@ -3930,7 +4073,6 @@ struct MissionControlQueue: View {
             }
             .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
             .zIndex(1)
-            .overlay(alignment: .bottom) { style.divider.frame(height: 0.5) }
 
             ScrollView {
                 globalRailBar(style: style)
@@ -3938,7 +4080,7 @@ struct MissionControlQueue: View {
                     .padding(.vertical, 8)
             }
         }
-        .background(style.background)
+        .background(style.sidebarBackground)
         .frame(maxWidth: .infinity)
     }
 
@@ -4058,7 +4200,7 @@ struct MissionControlQueue: View {
             }
             if done > 0 {
                 HStack(spacing: 3) {
-                    DockActivityIndicator(state: .done, size: 12)
+                    DockActivityIndicator(state: .done, size: 12, unreadDot: true)
                     if bots.count > 1 { Text("\(done)").font(.system(size: 10, weight: .bold)) }
                 }
                 .foregroundStyle(DockActivityState.done.color)
@@ -4221,15 +4363,19 @@ struct MissionControlQueue: View {
         }
         .sheet(isPresented: $isShowingProjectSheet) {
             ProjectFolderSheet(
-                projects: controlCenter.projects.filter(\.isRenderableProject),
                 // The rail hides sessionless projects, so a new project opens
                 // straight into its first chat instead of vanishing.
                 onCreate: { name, folder in
-                    let created = await controlCenter.createProject(name: name, folder: folder)
+                    // Hermes rejects a second project for the same folder; open a chat in the existing one instead.
+                    var created = controlCenter.projects.contains { $0.name == folder }
+                    if !created {
+                        created = await controlCenter.createProject(name: name, folder: folder)
+                        if !created, controlCenter.lastError?.contains("already belongs to project") == true { created = true }
+                    }
                     if created { startNewChat(inProject: folder) }
                     return created
                 },
-                onAddFolder: { await controlCenter.addProjectFolder($0, folder: $1) }
+                failureReason: { controlCenter.lastError }
             )
         }
     }
@@ -4284,7 +4430,7 @@ struct MissionControlQueue: View {
                     .font(.system(size: 9, weight: .bold))
             }
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(style.accent)
+            .foregroundStyle(style.secondaryText)
             .frame(minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -4819,7 +4965,7 @@ private struct MissionControlProjectList: View {
                 HStack(spacing: 7) {
                     DockIcon(isCollapsed ? .caretRight : .caretDown, size: 11, color: style.metadataText)
                         .frame(width: 12)
-                    DockIcon(.folder, size: 15, color: isActiveProject ? style.accent : style.secondaryText)
+                    DockIcon(.folder, size: 15, color: isActiveProject ? style.primaryText : style.metadataText)
                         .frame(width: 16)
                     Text(group.title)
                         .font(style.labelFont)
@@ -4827,11 +4973,6 @@ private struct MissionControlProjectList: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .layoutPriority(1)
-                    if group.hasGit {
-                        DockIcon(.gitBranch, size: 11, color: style.metadataText)
-                            .help("Git repository")
-                            .accessibilityLabel("Git repository")
-                    }
                     Spacer(minLength: 0)
                 }
                 .padding(.leading, 8)
@@ -4848,12 +4989,9 @@ private struct MissionControlProjectList: View {
             ZStack(alignment: .trailing) {
                 if sessionCount > 0 {
                     Text(compactCount(sessionCount))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.subheadline.monospacedDigit())
                         .foregroundStyle(style.metadataText)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(style.metadataText.opacity(0.14)))
-                        .padding(.trailing, 10)
+                        .padding(.trailing, 14)
                         .opacity(showsActions ? 0 : 1)
                 }
                 if let projectPath = group.projectPath, !projectPath.isEmpty {
@@ -4881,23 +5019,12 @@ private struct MissionControlProjectList: View {
                                 : (hoveredNewChatProjectID == group.id ? nil : hoveredNewChatProjectID)
                         }
 
-                        Button {
-                            let menu = NSMenu()
-                            menu.addClosureItem("Reveal in Finder") {
-                                ExternalOpen.reveal([URL(fileURLWithPath: projectPath)])
-                            }
-                            if let projectID = group.projectID {
-                                menu.addClosureItem("Add Source Folder…") { chooseSourceFolder(projectID: projectID) }
-                                menu.addItem(.separator())
-                                menu.addClosureItem("Archive Project") { onArchiveProject(projectID) }
-                            }
-                            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-                        } label: {
-                            DockIcon(.dotsThree, size: 15, weight: .fill, color: style.secondaryText)
+                        DockMenu { projectActions(group, projectPath: projectPath) } label: {
+                            Ph.dotsThree.image(size: 15, color: NSColor(style.secondaryText))
                                 .frame(width: 32, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.dockHover)
+                        .fixedSize()
                         .help("More options for \(group.title)")
                         .accessibilityLabel("More options for \(group.title)")
                     }
@@ -4913,6 +5040,9 @@ private struct MissionControlProjectList: View {
                 : (hoveredProjectRowID == group.id ? nil : hoveredProjectRowID)
         }
         .background(Color.clear)
+        .dockContextMenu {
+            if let projectPath = group.projectPath, !projectPath.isEmpty { projectActions(group, projectPath: projectPath) }
+        }
         if !isCollapsed {
             if group.sessions.isEmpty {
                 projectStatusRow(sessionCount == 0 ? "No conversations yet" : "Loading linked sessions…", leading: 0)
@@ -4929,10 +5059,10 @@ private struct MissionControlProjectList: View {
                             Text(disclosureState.showsAllSessions(projectID: group.id)
                                  ? "Show recent"
                                  : "Show \(group.sessions.count - sessionLimit) more")
-                            DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.accent)
+                            DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.metadataText)
                         }
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(style.accent)
+                        .foregroundStyle(style.secondaryText)
                         .frame(minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                     }
@@ -4973,6 +5103,18 @@ private struct MissionControlProjectList: View {
             onRequestDelete: onRequestDelete
         )
         .equatable()
+    }
+
+    @ViewBuilder
+    private func projectActions(_ group: MissionControlConversationGroup, projectPath: String) -> some View {
+        Button("Reveal in Finder", icon: .folderOpen) {
+            ExternalOpen.reveal([URL(fileURLWithPath: projectPath)])
+        }
+        if let projectID = group.projectID {
+            Button("Add Source Folder…", icon: .folderPlus) { chooseSourceFolder(projectID: projectID) }
+            Divider()
+            Button("Archive Project", icon: .archive) { onArchiveProject(projectID) }
+        }
     }
 
     private func chooseSourceFolder(projectID: String) {
@@ -5211,7 +5353,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         .disabled(isDeleting)
         .opacity(isDeleting ? 0.5 : 1)
         .onHover { isHovered = $0 }
-        .contextMenu { contextActions }
+        .dockContextMenu { contextActions }
         .onChange(of: isEditingTitle) { _, editing in
             if editing {
                 titleDraft = session.displayTitle
@@ -5272,18 +5414,12 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
 
     /// Wired repo shown as a pill ahead of the last-message preview.
     private func repositoryPill(_ name: String) -> some View {
-        HStack(spacing: 3) {
-            DockIcon(.gitBranch, size: 10, color: style.accent)
-            Text(name)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(style.secondaryText)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 1)
-        .background(Capsule().fill(style.surface4.opacity(0.8)))
-        .fixedSize()
-        .help(name)
+        Text(name + " ·")
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(style.secondaryText)
+            .lineLimit(1)
+            .fixedSize()
+            .help(name)
     }
 
     private var rowFill: Color {
@@ -5329,6 +5465,8 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             }
         }
         .frame(width: 14, height: 14)
+        // Shapes and spinners have no text baseline; center on the title's x-height so every state lines up.
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4.5 }
     }
 
     private var actionSurface: some View {
@@ -5373,7 +5511,7 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
         }
         .disabled(isUpdatingVisibility || isDeleting)
         if !projectTargets.isEmpty {
-            DockMenu("Add to project") {
+            DockMenu("Add to project", icon: .folderPlus) {
                 ForEach(projectTargets) { target in
                     Button(target.title) { onAddToProject(session, target) }
                 }
@@ -5503,6 +5641,9 @@ private func splitPaneHost() -> NSHostingView<AnyView> {
     // The split view places panes by frame; don't publish SwiftUI's
     // intrinsic/min/max size as constraints for the outer layout to solve.
     host.sizingOptions = []
+    // Panes draw their own title row; inheriting the window's titlebar safe
+    // area would push every pane down a second 52pt.
+    host.safeAreaRegions = []
     return host
 }
 
@@ -5532,6 +5673,8 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
     let maximumLeadingWidth: CGFloat?
     let minimumTrailingWidth: CGFloat
     let leadingWidth: Binding<CGFloat>?
+    /// Hides the trailing pane without tearing it down, so its state survives.
+    let isTrailingCollapsed: Bool
 
     init(
         leading: Leading,
@@ -5541,8 +5684,10 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
         minimumLeadingWidth: CGFloat = 220,
         maximumLeadingWidth: CGFloat? = nil,
         minimumTrailingWidth: CGFloat = 360,
-        leadingWidth: Binding<CGFloat>? = nil
+        leadingWidth: Binding<CGFloat>? = nil,
+        isTrailingCollapsed: Bool = false
     ) {
+        self.isTrailingCollapsed = isTrailingCollapsed
         self.leading = leading
         self.trailing = trailing
         self.leadingFraction = leadingFraction
@@ -5595,6 +5740,7 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
         )
         context.coordinator.leadingWidth = leadingWidth
         if let splitView = splitView as? FractionPreservingSplitView {
+            splitView.setTrailingCollapsed(isTrailingCollapsed)
             splitView.fraction = leadingFraction
             splitView.minimumLeadingWidth = minimumLeadingWidth
             splitView.maximumLeadingWidth = maximumLeadingWidth
@@ -5673,7 +5819,8 @@ private struct FullscreenPanelSplitView<Leading: View, Trailing: View>: NSViewRe
 
         func splitViewDidResizeSubviews(_ notification: Notification) {
             guard let leadingWidth else { return }
-            guard let splitView = notification.object as? NSSplitView else { return }
+            guard let splitView = notification.object as? NSSplitView,
+                  (splitView as? FractionPreservingSplitView)?.isTrailingCollapsed != true else { return }
             leadingWidth.wrappedValue = splitView.subviews.first?.frame.width ?? leadingWidth.wrappedValue
         }
     }
@@ -5699,14 +5846,37 @@ final class FractionPreservingSplitView: NSSplitView {
     private var userAdjusted = false
     private var lastAppliedWidth: CGFloat = 0
 
+    /// The trailing pane stays in the hierarchy (so its SwiftUI state lives on)
+    /// but is squeezed to zero width instead of being hidden, which AppKit
+    /// does not reliably hand back to the leading pane.
+    private(set) var isTrailingCollapsed = false
+
     var minimumLeadingPosition: CGFloat {
+        if isTrailingCollapsed { return collapsedLeadingPosition }
         // Preserve readable navigation when the workspace cannot fit both minimums.
-        min(minimumLeadingWidth, max(0, bounds.width - dividerThickness))
+        return min(minimumLeadingWidth, max(0, bounds.width - dividerThickness))
     }
 
     var maximumLeadingPosition: CGFloat {
+        if isTrailingCollapsed { return collapsedLeadingPosition }
         let availableMaximum = max(minimumLeadingPosition, bounds.width - dividerThickness - minimumTrailingWidth)
         return min(maximumLeadingWidth ?? availableMaximum, availableMaximum)
+    }
+
+    private var collapsedLeadingPosition: CGFloat { max(0, bounds.width - dividerThickness) }
+
+    func setTrailingCollapsed(_ collapsed: Bool) {
+        guard collapsed != isTrailingCollapsed, let trailing = arrangedSubviews.last else { return }
+        isTrailingCollapsed = collapsed
+        trailing.wantsLayer = true
+        trailing.layer?.masksToBounds = true
+        // Re-derive the divider from the stored fraction when the pane returns.
+        lastAppliedWidth = 0
+        needsLayout = true
+        DispatchQueue.main.async { [weak self] in
+            self?.layoutSubtreeIfNeeded()
+            self?.arrangedSubviews.last?.needsLayout = true
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -5740,15 +5910,20 @@ enum ConversationScrollMetrics {
     static let atBottomTolerance: CGFloat = 96
     static let pastEndTolerance: CGFloat = 1
 
-    static func isAtBottom(bottomMaxY: CGFloat, viewportHeight: CGFloat) -> Bool {
+    static func isAtBottom(
+        bottomMaxY: CGFloat,
+        viewportHeight: CGFloat,
+        tolerance: CGFloat = atBottomTolerance
+    ) -> Bool {
         bottomMaxY >= viewportHeight - pastEndTolerance
-            && bottomMaxY <= viewportHeight + atBottomTolerance
+            && bottomMaxY <= viewportHeight + tolerance
     }
 
     static func isAtBottom(
         topMinY: CGFloat,
         bottomMaxY: CGFloat,
-        viewportHeight: CGFloat
+        viewportHeight: CGFloat,
+        tolerance: CGFloat = atBottomTolerance
     ) -> Bool {
         // A transcript that fits without scrolling has one legal origin: zero.
         // It is therefore both at the top and at the bottom; treating it as
@@ -5757,7 +5932,7 @@ enum ConversationScrollMetrics {
            bottomMaxY <= viewportHeight + pastEndTolerance {
             return true
         }
-        return isAtBottom(bottomMaxY: bottomMaxY, viewportHeight: viewportHeight)
+        return isAtBottom(bottomMaxY: bottomMaxY, viewportHeight: viewportHeight, tolerance: tolerance)
     }
 
     /// The content is visibly above the viewport bottom despite having already
@@ -5916,8 +6091,34 @@ private struct WorkingTitleShimmer: ViewModifier {
     }
 }
 
+/// Geometry of the window's unified title row (see DockWindowController).
+enum DockWindowChrome {
+    static let titleRowHeight: CGFloat = 52
+    /// Space the session list keeps clear of the traffic lights, measured from its leading edge beside the 52pt rail.
+    static let trafficLightClearance: CGFloat = 28
+    /// Leading inset of the sidebar toggle in every title row, so it never moves as panes collapse.
+    static let sidebarToggleLeading: CGFloat = trafficLightClearance + 4
+    /// Hairline under the title row, drawn by each column so it runs the full window width.
+    static var titleRowSeparator: some View { Color.dockBorderLight.frame(height: DockLayout.hairline) }
+}
+
+private extension View {
+    /// Clears the titlebar strip; the strip itself drags and zooms the window.
+    /// The sidebar passes `separator: false` so its strip flows into the list like a native sidebar.
+    func underTitlebar(_ inset: CGFloat, separator: Bool = true) -> some View {
+        padding(.top, inset)
+            .overlay(alignment: .top) {
+                if inset > 0 {
+                    TitlebarDoubleClickArea().frame(height: inset)
+                        .background(Color.dockSidebar)
+                        .overlay(alignment: .bottom) { if separator { DockWindowChrome.titleRowSeparator } }
+                }
+            }
+    }
+}
+
 /// Transparent titlebar strip: double-click follows the system title-bar preference (zoom by default), single-click drags it.
-private struct TitlebarDoubleClickArea: NSViewRepresentable {
+struct TitlebarDoubleClickArea: NSViewRepresentable {
     final class Strip: NSView {
         override var mouseDownCanMoveWindow: Bool { true }
         override func mouseDown(with event: NSEvent) {

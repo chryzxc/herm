@@ -670,6 +670,11 @@ final class NativeMarkdownTextView: NSTextView {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+  override func clicked(onLink link: Any, at charIndex: Int) {
+    guard let url = (link as? URL) ?? (link as? String).flatMap(URL.init(string:)) else { return }
+    MainActor.assumeIsolated { InAppBrowser.open(url) }
+  }
+
   override var intrinsicContentSize: NSSize {
     guard let textContainer, let layoutManager else { return NSSize(width: NSView.noIntrinsicMetric, height: 0) }
     layoutManager.ensureLayout(for: textContainer)
@@ -722,6 +727,7 @@ struct ConversationScrollGeometry: Equatable {
 @MainActor
 final class ConversationScrollController {
     weak var clipView: NSClipView?
+    private(set) var isAdjustingScroll = false
 
     var geometry: ConversationScrollGeometry? {
         guard let clipView, let documentView = clipView.documentView else { return nil }
@@ -749,6 +755,8 @@ final class ConversationScrollController {
 
     private func applyShift(_ delta: CGFloat) -> CGFloat {
         guard abs(delta) > 0.5, let clipView, let documentView = clipView.documentView else { return delta }
+        isAdjustingScroll = true
+        defer { isAdjustingScroll = false }
         let sign: CGFloat = documentView.isFlipped ? 1 : -1
         let current = clipView.bounds.origin.y
         let maxY = max(0, documentView.bounds.height - clipView.bounds.height)
@@ -767,9 +775,11 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
     var controller: ConversationScrollController
     var onScroll: (ConversationScrollGeometry, _ deltaTop: CGFloat) -> Void
     var onScrollSettled: (ConversationScrollGeometry) -> Void
+    var onScrollAwayFromBottom: () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(controller: controller, onScroll: onScroll, onScrollSettled: onScrollSettled)
+        Coordinator(controller: controller, onScroll: onScroll, onScrollSettled: onScrollSettled,
+                    onScrollAwayFromBottom: onScrollAwayFromBottom)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -782,6 +792,7 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.onScroll = onScroll
         coordinator.onScrollSettled = onScrollSettled
+        coordinator.onScrollAwayFromBottom = onScrollAwayFromBottom
         guard coordinator.clipView == nil else { return }
         DispatchQueue.main.async {
             coordinator.attachIfNeeded(from: nsView)
@@ -799,6 +810,7 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         let controller: ConversationScrollController
         var onScroll: (ConversationScrollGeometry, CGFloat) -> Void
         var onScrollSettled: (ConversationScrollGeometry) -> Void
+        var onScrollAwayFromBottom: () -> Void
         weak var clipView: NSClipView?
         nonisolated(unsafe) private var observer: NSObjectProtocol?
         private var lastBoundsChange: UInt64 = 0
@@ -808,11 +820,13 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
         init(
             controller: ConversationScrollController,
             onScroll: @escaping (ConversationScrollGeometry, CGFloat) -> Void,
-            onScrollSettled: @escaping (ConversationScrollGeometry) -> Void
+            onScrollSettled: @escaping (ConversationScrollGeometry) -> Void,
+            onScrollAwayFromBottom: @escaping () -> Void = {}
         ) {
             self.controller = controller
             self.onScroll = onScroll
             self.onScrollSettled = onScrollSettled
+            self.onScrollAwayFromBottom = onScrollAwayFromBottom
         }
 
         func attachIfNeeded(from view: NSView) {
@@ -854,6 +868,11 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
             if let geometry = controller.geometry {
                 let delta = geometry.visibleTop - (lastVisibleTop ?? geometry.visibleTop)
                 lastVisibleTop = geometry.visibleTop
+                // Yield to the reader before a queued tail scroll can fire;
+                // history-anchor corrections must keep the follow state.
+                if delta < -0.5, geometry.distanceToBottom > 1, !controller.isAdjustingScroll {
+                    onScrollAwayFromBottom()
+                }
                 onScroll(geometry, delta)
             }
             scheduleSettle()
@@ -892,6 +911,140 @@ struct ConversationScrollEventObserver: NSViewRepresentable {
     }
 }
 
+/// Running-turn emblem. The centre is the working Bot's avatar (or the live
+/// step's glyph tracing itself), ringed by two counter-rotating arcs in the
+/// phase colour, a breathing halo, and the turn's recent tools riding an orbit.
+/// Every loop is a rotation/scale/opacity transform on a few small layers, so
+/// it composites without per-frame layout; Reduce Motion freezes it.
+struct SignalTrace: View {
+    enum Phase {
+        case thinking, tool, compacting
+
+        init(activity: [ActiveToolCall]) {
+            switch activity.last(where: { !$0.isComplete })?.name {
+            case ActiveToolCall.thinkingName?, nil: self = .thinking
+            case ActiveToolCall.compactionName?: self = .compacting
+            default: self = .tool
+            }
+        }
+
+        /// One theme-accent colour for every phase, so the emblem never flips
+        /// between blue and grey as the live step changes.
+        var color: Color { .dockAccent }
+    }
+
+    let phase: Phase
+    let activity: [ActiveToolCall]
+    var bot: BotSummary? = nil
+    var botAvatar: Data? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var breathe = false
+
+    static let size: CGFloat = 28
+
+    private var liveStep: ActiveToolCall? { activity.last(where: { !$0.isComplete }) }
+    private var liveGlyph: Ph { Self.glyph(for: liveStep, phase: phase) }
+
+    /// A soft tinted disc with the live step's icon gently breathing in it.
+    var body: some View {
+        let color = phase.color
+        ZStack {
+            Circle()
+                .fill(color.opacity(breathe ? 0.18 : 0.08))
+                .scaleEffect(breathe ? 1 : 0.88)
+            if let bot {
+                BotAvatarView(bot: bot, imageData: botAvatar, size: 18)
+                    .clipShape(Circle())
+                    .overlay(alignment: .bottomTrailing) {
+                        PhosphorShape(icon: liveGlyph)
+                            .fill(color)
+                            .frame(width: 7, height: 7)
+                            .padding(1.5)
+                            .background(Circle().fill(Color.dockCanvas))
+                            .offset(x: 4, y: 4)
+                            .id(liveGlyph)
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    }
+            } else {
+                // Keyed by glyph so each new step starts its own trace loop.
+                TracingGlyph(icon: liveGlyph, color: color)
+                    .id(liveGlyph)
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+        }
+        .frame(width: Self.size, height: Self.size)
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8), value: liveGlyph)
+        .animation(.easeInOut(duration: 0.3), value: phase)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { breathe = true }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private static func glyph(for step: ActiveToolCall?, phase: Phase) -> Ph {
+        switch phase {
+        case .thinking: return .brain
+        case .compacting: return .arrowsInSimple
+        case .tool: return step.map { TurnActivityView.icon(for: $0.name) } ?? .wrench
+        }
+    }
+}
+
+/// A step glyph whose outline traces itself on a loop over a faint fill.
+private struct TracingGlyph: View {
+    let icon: Ph
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var trace: CGFloat = 0
+    @State private var breathe = false
+
+    var body: some View {
+        ZStack {
+            PhosphorShape(icon: icon).fill(color.opacity(reduceMotion ? 1 : 0.35))
+            // Phosphor glyphs are filled outlines, so a stroke draws both edges; keep it hairline.
+            PhosphorShape(icon: icon)
+                .trim(from: 0, to: reduceMotion ? 0 : trace)
+                .stroke(color.opacity(0.7), style: StrokeStyle(lineWidth: 0.35, lineCap: .round, lineJoin: .round))
+        }
+        .frame(width: 13, height: 13)
+        .scaleEffect(breathe ? 1.06 : 0.94)
+        .opacity(breathe ? 1 : 0.7)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: false)) { trace = 1 }
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { breathe = true }
+        }
+    }
+}
+
+/// One soft highlight sweeping across text; a single masked offset animation.
+private struct RunningShimmer: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sweep = false
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content
+                .overlay {
+                    GeometryReader { proxy in
+                        LinearGradient(colors: [.clear, Color.dockPrimaryText.opacity(0.55), .clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: proxy.size.width * 0.45)
+                            .offset(x: sweep ? proxy.size.width : -proxy.size.width * 0.45)
+                    }
+                    .mask(content)
+                    .allowsHitTesting(false)
+                }
+                .onAppear {
+                    withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) { sweep = true }
+                }
+        }
+    }
+}
+
 /// The tool calls behind one response, shown above its bubble. While the
 /// response streams the list stays open and grows per call; once complete it
 /// collapses to a "Worked for …" summary the reader can expand.
@@ -900,23 +1053,40 @@ struct TurnActivityView: View {
   /// Turn start while streaming; nil once the response is complete.
   let runningSince: Date?
   let duration: TimeInterval?
+  var bot: BotSummary? = nil
+  var botAvatar: Data? = nil
   @State private var isExpanded = false
   @State private var expandedThoughtIDs: Set<String> = []
   @State private var expandedDiffIDs: Set<String> = []
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(alignment: .leading, spacing: 2) {
       if let runningSince {
-        steps
-        HStack(spacing: 6) {
-          ProgressView().controlSize(.mini)
-          TimelineView(.periodic(from: .now, by: 1)) { context in
-            Text("Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))")
+        // Rows and the loader below share one slow curve so the loader glides as rows arrive.
+        steps.animation(stepMotion, value: stepSignature)
+        let phase = SignalTrace.Phase(activity: activity)
+        HStack(spacing: 10) {
+          SignalTrace(phase: phase, activity: activity, bot: bot, botAvatar: botAvatar)
+          VStack(alignment: .leading, spacing: 2) {
+            // Live tool steps have their own row above; live compaction is named here instead.
+            if bot != nil || phase == .compacting {
+              Text([bot?.name, phase == .compacting ? "Compacting context" : nil].compactMap { $0 }.joined(separator: " · "))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1)
+            }
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+              Text("Running for about \(Self.roughDuration(context.date.timeIntervalSince(runningSince)))")
+                .font(.system(size: bot == nil && phase != .compacting ? 12 : 11))
+                .foregroundStyle(Color.dockMetadataText)
+                .modifier(RunningShimmer())
+            }
           }
         }
-        .font(.system(size: 12))
-        .foregroundStyle(Color.dockMetadataText)
-        .padding(.vertical, 4)
+        .animation(stepMotion, value: stepSignature)
+        .padding(.vertical, 6)
+        .task(id: activity.map(\.id)) { await revealSteps() }
       } else {
         Button {
           withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() }
@@ -949,17 +1119,38 @@ struct TurnActivityView: View {
     return duration.map { "Worked for \(Self.roughDuration($0)) · \(count)" } ?? "Worked · \(count)"
   }
 
+  /// Rows revealed so far while running. A new row is held back briefly, then
+  /// revealed on a slow curve so the loader lingers and glides down to make room.
+  @State private var revealedStepIDs: Set<String>?
+  private var stepMotion: Animation? { reduceMotion ? nil : .easeInOut(duration: 1.1) }
+  private var stepSignature: [String] { visibleSteps.map { "\($0.id)\($0.isComplete)" } }
+  private var visibleSteps: [ActiveToolCall] {
+    guard runningSince != nil, let revealedStepIDs else { return activity }
+    return activity.filter { revealedStepIDs.contains($0.id) }
+  }
+
+  private func revealSteps() async {
+    let ids = Set(activity.map(\.id))
+    guard runningSince != nil, !reduceMotion, revealedStepIDs != nil else { revealedStepIDs = ids; return }
+    try? await Task.sleep(for: .milliseconds(500))
+    guard !Task.isCancelled else { return }
+    withAnimation(stepMotion) { revealedStepIDs = ids }
+  }
+
   private var steps: some View {
     VStack(alignment: .leading, spacing: 6) {
-      ForEach(activity) { call in
+      ForEach(visibleSteps) { call in
         if call.name == ActiveToolCall.thinkingName {
           thoughtRow(call)
         } else if call.name == ActiveToolCall.compactionName {
-          CompactionStepRow(call: call)
+          if call.isComplete { CompactionStepRow(call: call) }
         } else {
           toolRow(call)
         }
       }
+      // New rows fade in after the loader has started gliding down to make room.
+      // The row fades in once the loader is mostly out of its way.
+      .transition(.opacity.animation(.easeOut(duration: 0.5).delay(0.6)))
     }
     .padding(.vertical, 4)
   }

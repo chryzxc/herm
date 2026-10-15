@@ -183,7 +183,7 @@ struct MissionControlSidebarSnapshotTests {
         #expect(build() == build())
     }
 
-    @Test func emptyProjectsAreHiddenAndProjectsFollowLatestActivity() {
+    @Test func emptyProjectsStayVisibleAndProjectsFollowLatestActivity() {
         let now = Date()
         let snapshot = MissionControlSidebarSnapshot(inputs: inputs(
             sessions: [
@@ -197,6 +197,6 @@ struct MissionControlSidebarSnapshotTests {
             ]
         ))
 
-        #expect(snapshot.linkedProjectGroups.map(\.title) == ["beta", "alpha"])
+        #expect(snapshot.linkedProjectGroups.map(\.title) == ["beta", "alpha", "empty"])
     }
 }
