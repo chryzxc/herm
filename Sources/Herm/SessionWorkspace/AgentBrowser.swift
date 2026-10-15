@@ -36,6 +36,9 @@ final class AgentBrowser: ObservableObject {
     weak var model: DockModel?
     /// Frames bypass SwiftUI: the canvas draws them directly at screencast rate.
     var onFrame: ((NSImage, CGSize) -> Void)?
+    /// Canvases on screen. The screencast only runs while someone is watching, so a
+    /// hidden Browser tab costs nothing; Hermes' own CDP use is unaffected.
+    var viewers = 0 { didSet { if (viewers > 0) != (oldValue > 0) { scheduleViewport() } } }
 
     var activePage: Page? { pages.first { $0.id == activeTargetID } }
     var isOn: Bool { state != .off }
@@ -263,8 +266,9 @@ final class AgentBrowser: ObservableObject {
             "mobile": presetWidth > 0 && presetWidth < 800,
         ], session: sid)
         cdp.fire("Page.stopScreencast", session: sid)
+        guard viewers > 0 else { return }
         cdp.fire("Page.startScreencast", [
-            "format": "jpeg", "quality": 80,
+            "format": "jpeg", "quality": 80, "everyNthFrame": 2,  // ~30fps is plenty to watch
             "maxWidth": Int(width * backingScale), "maxHeight": Int(height * backingScale),
         ], session: sid)
     }
@@ -527,10 +531,19 @@ final class AgentBrowserCanvas: NSView {
     }
     private var image: NSImage?
     private var cssSize = CGSize(width: 1280, height: 800)
+    private var isViewing = false
     private var pressedButtons = 0
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        let viewing = window != nil
+        guard viewing != isViewing else { return }
+        isViewing = viewing
+        browser?.viewers += viewing ? 1 : -1
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
