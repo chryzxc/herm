@@ -576,6 +576,19 @@ struct DockNotificationTests {
         #expect(model.sessions.first?.lastUpdatedAt == Date(timeIntervalSince1970: 200))
     }
 
+    @Test func sessionIndexParsesISO8601TimestampsAcrossRefreshes() async {
+        let client = SessionProjectionTestRPCClient(results: [
+            "session.list": ["1970-01-01T00:03:20Z", "1970-01-01T01:05:00+01:00"].map { timestamp in
+                .success(["sessions": [["id": "session-1", "last_activity_at": timestamp]]])
+            }
+        ])
+        let model = DockModel(rpcClient: client)
+        for seconds in [200.0, 300.0] {
+            await model.loadSessions()?.value
+            #expect(model.sessions.first?.lastUpdatedAt == Date(timeIntervalSince1970: seconds))
+        }
+    }
+
     @Test func delayedSessionIndexDoesNotOverwriteNewerLiveActivityTime() async {
         let initialSession: [String: Any] = [
             "id": "session-1",

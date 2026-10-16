@@ -182,6 +182,11 @@ final class EdgeDockController: NSObject {
         model.$isHermesConnected.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] in self?.controlCenter.workingSetWatch.connectionChanged($0) }.store(in: &subscriptions)
         selectWorkingSetWatch()
+        state.$side.removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] side in
+                guard let self else { return }
+                EdgeIslandTheme.apply(side: side, store: .shared, defaults: self.defaults)
+            }.store(in: &subscriptions)
         Publishers.CombineLatest3(state.interruptions.$pendingDigest, state.$composing, model.$isHermesConnected)
             .receive(on: RunLoop.main)
             .sink { [weak self] pending, composing, connected in
@@ -251,6 +256,16 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.ensureNotchVisible() }
             .store(in: &subscriptions)
+        // Settings writes the side directly; follow it like a context-menu move.
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .compactMap { [weak self] _ in self.flatMap { EdgeDockSide(rawValue: $0.defaults.string(forKey: "hermes.notch.side") ?? "") } }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] side in
+                guard let self, side != self.state.side else { return }
+                self.state.side = side
+                self.position(animated: true)
+            }
+            .store(in: &subscriptions)
         controlCenter.bind(to: model)
         ensureNotchVisible()
     }
@@ -267,6 +282,8 @@ final class EdgeDockController: NSObject {
         } ?? NSScreen.main ?? NSScreen.screens.first
         guard let screen else { return nil }
         displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        let notch = EdgeNotchMetrics.notchSize(for: screen)
+        if state.notchSize != notch { state.notchSize = notch }
         return EdgeDockPlacement(side: state.side, fraction: fraction,
                                  screenFrame: screen.frame, visibleFrame: screen.visibleFrame)
     }
@@ -957,11 +974,13 @@ final class EdgeDockController: NSObject {
 
     private func position(animated: Bool) {
         guard let placement else { return }
-        (panel.contentView as? EdgeDockHostingView<EdgeNotchView>)?.bottomHoverExclusion = state.petReserve
-        let target = placement.frame(width: state.expanded ? EdgeNotchState.expandedSize.width : state.railWidth,
-                                     height: state.panelHeight).integral
-        petWindow?.update(home: NSPoint(x: state.side == .right ? target.maxX - 44 : target.minX, y: target.minY),
-                          screen: placement.visibleFrame, visible: !workspacePresented, side: state.side)
+        (panel.contentView as? EdgeDockHostingView<EdgeNotchView>)?.bottomHoverExclusion = state.side == .top ? 0 : state.petReserve
+        let target = placement.frame(width: state.panelSize.width, height: state.panelSize.height).integral
+        // On top the pet docks just right of the collapsed island, under the menu bar.
+        let home = state.side == .top
+            ? NSPoint(x: placement.screenFrame.midX + state.collapsedSize.width / 2 + 4, y: placement.screenFrame.maxY - state.notchSize.height - 44)
+            : NSPoint(x: state.side == .right ? target.maxX - 44 : target.minX, y: target.minY)
+        petWindow?.update(home: home, screen: placement.visibleFrame, visible: !workspacePresented, side: state.side)
         fitTask?.cancel(); fitTask = nil
         guard !panel.frame.equalTo(target) else { return }
         // SwiftUI owns the morph: the transparent window grows at once to cover
@@ -1449,6 +1468,8 @@ final class EdgeNotchState: ObservableObject {
     @Published var kanbanUnavailable = false
     /// Fixed so refreshes and task arrivals never resize the preview.
     static let expandedSize = CGSize(width: 368, height: 360)
+    /// The island opens landscape: wide and short, like an expanded Dynamic Island.
+    static let islandSize = CGSize(width: 560, height: 300)
     var railActivity: EdgeNotchActivity {
         var result = activity
         result.sessionNeedsAttention = tasks.contains { $0.kanbanTask == nil && $0.phase == .attention && $0.isStatusCurrent }
@@ -1478,6 +1499,24 @@ final class EdgeNotchState: ObservableObject {
     var railHeight: CGFloat { expanded ? 136 : collapsedRailHeight }
     var collapsedRailHeight: CGFloat { max(96, CGFloat(railActivity.markCount) * 30 + 56) }
     var panelHeight: CGFloat { (expanded ? Self.expandedSize.height : railHeight) + petReserve }
+    /// The camera housing the top island wraps (drawn when the screen has none).
+    @Published var notchSize = CGSize(width: EdgeNotchMetrics.fallbackWidth, height: 32)
+    /// Each top-island ear grows with the stacked marks so the island stays centered.
+    var islandEar: CGFloat { max(36, CGFloat(railActivity.markCount) * 30 + 12) }
+    /// The shell at rest: the rail bar on an edge, the pill around the notch on top.
+    var collapsedSize: CGSize {
+        side == .top ? CGSize(width: notchSize.width + islandEar * 2, height: notchSize.height)
+            : CGSize(width: railWidth, height: collapsedRailHeight)
+    }
+    var openSize: CGSize {
+        side == .top ? CGSize(width: Self.islandSize.width, height: Self.islandSize.height + notchSize.height)
+            : Self.expandedSize
+    }
+    /// The window: the pet hangs below an edge rail but beside the top island.
+    var panelSize: CGSize {
+        side == .top ? (expanded ? openSize : collapsedSize)
+            : CGSize(width: expanded ? Self.expandedSize.width : railWidth, height: panelHeight)
+    }
 }
 
 struct EdgeNotchView: View {
@@ -1499,6 +1538,7 @@ struct EdgeNotchView: View {
     /// spring starts after the window has grown; changes applied inside the
     /// window-resize layout pass are not animated.
     @State private var open = false
+    private var morph: Animation? { reduceMotion ? nil : state.side == .top ? EdgeDockMotion.islandMorph : EdgeDockMotion.morph }
     let openDock: () -> Void
     var onOpenTask: (EdgeNotchTask) -> Void = { _ in }
     var onDrag: (Bool) -> Void = { _ in }
@@ -1514,10 +1554,19 @@ struct EdgeNotchView: View {
                     // Keep the preview close to it so its content does not float
                     // in the middle of the expanded notch.
                     preview.frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.horizontal, 8).padding(.vertical, 26)
+                        .padding(.horizontal, state.side == .top ? 34 : 8)
+                        .padding(.top, state.side == .top ? 8 : 26)
+                        .padding(.bottom, state.side == .top ? 16 : 26)
                         .transition(reduceMotion ? .opacity : .asymmetric(
                             insertion: .islandContent(side: state.side).animation(.easeOut(duration: 0.24).delay(0.1)),
                             removal: .opacity.animation(.easeIn(duration: 0.1))))
+                } else if state.side == .top {
+                    EdgeIslandRail(activity: state.railActivity, notchWidth: state.notchSize.width, ear: state.islandEar,
+                                   height: state.notchSize.height, action: openDock)
+                        .contextMenu { railMenu }
+                        .accessibilityLabel("\(state.name), \(state.railActivity.title). Open Herm")
+                        .accessibilityHint("Drag to a screen edge to dock it there")
+                        .transition(.opacity.animation(.easeOut(duration: 0.16)))
                 } else {
                     rail.transition(.opacity.animation(.easeOut(duration: 0.16)))
                 }
@@ -1525,17 +1574,19 @@ struct EdgeNotchView: View {
             // Sized from state only, never the window: the window grows ahead of
             // the shape (non-animated), and tying the shape to it made the
             // preview pop to full size instead of growing with the spring.
-            .frame(width: open ? EdgeNotchState.expandedSize.width : state.railWidth,
-                   height: open ? EdgeNotchState.expandedSize.height : state.collapsedRailHeight,
-                   alignment: state.side == .right ? .trailing : .leading)
+            .frame(width: open ? state.openSize.width : state.collapsedSize.width,
+                   height: open ? state.openSize.height : state.collapsedSize.height,
+                   alignment: state.side.alignment)
             // The content is revealed through the growing shell rather than
             // appearing at full size beside it.
             .mask { shell(EdgeNotchShape(side: state.side).fill(.black)) }
             // One persistent shell: the rail bar itself stretches into the preview
             // panel and back, so the two states read as a single growing notch.
             .background {
+                // The top island wears the black Island skin and drops the outline
+                // so it blends with the camera housing.
                 shell(DockWindowBackground().clipShape(EdgeNotchShape(side: state.side))
-                    .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: 1) })
+                    .overlay { EdgeNotchShape(side: state.side).stroke(Color.dockBorderStrong, lineWidth: state.side == .top ? 0 : 1) })
             }
             // Attach drag gesture to parent so it works in both collapsed and expanded states
             .simultaneousGesture(DragGesture(minimumDistance: 6)
@@ -1543,21 +1594,21 @@ struct EdgeNotchView: View {
                 .onEnded { _ in onDrag(true) })
                 if state.hasPet && !state.externalPet {
                     HermesNotchPetButton(pet: controlCenter.pet, mirrored: state.side == .left)
-                        .frame(maxWidth: .infinity, alignment: state.side == .right ? .trailing : .leading)
-                } else if state.hasPet {
+                        .frame(maxWidth: .infinity, alignment: state.side == .left ? .leading : .trailing)
+                } else if state.hasPet && state.side != .top {
                     Color.clear.frame(height: max(44, state.petReserve - 4)).allowsHitTesting(false)
                 }
             }
-            .frame(width: geometry.size.width, height: geometry.size.height, alignment: state.side == .right ? .trailing : .leading)
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: state.side.alignment)
         }
         .clipped()
         // Rail growth (more stacked marks) uses the same spring as the open/close morph.
-        .animation(reduceMotion ? nil : EdgeDockMotion.morph, value: state.collapsedRailHeight)
+        .animation(morph, value: state.collapsedSize)
         .onAppear { open = state.expanded }
         .onChange(of: state.expanded) { _, expanded in
             DispatchQueue.main.async {
                 guard state.expanded == expanded else { return }
-                withAnimation(reduceMotion ? nil : EdgeDockMotion.morph) { open = expanded }
+                withAnimation(!expanded && state.side == .top && !reduceMotion ? EdgeDockMotion.islandCollapse : morph) { open = expanded }
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state.isQuiet)
@@ -1570,8 +1621,8 @@ struct EdgeNotchView: View {
     private func shell(_ surface: some View) -> some View {
         GeometryReader { shell in
             surface
-                .frame(width: open ? shell.size.width : min(shell.size.width, state.barWidth), height: shell.size.height)
-                .frame(maxWidth: .infinity, alignment: state.side == .right ? .trailing : .leading)
+                .frame(width: open || state.side == .top ? shell.size.width : min(shell.size.width, state.barWidth), height: shell.size.height)
+                .frame(maxWidth: .infinity, alignment: state.side.alignment)
         }
         .animation(reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.68), value: state.barWidth)
     }
@@ -1583,19 +1634,24 @@ struct EdgeNotchView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
-        .contextMenu {
-            if state.hasPet { Button("Attach pet to notch", action: onCallPetHome).disabled(state.petAttached) }
-            Button("Move to left edge") { onSideChange(.left) }
-            Button("Move to right edge") { onSideChange(.right) }
-            Divider()
-            Button("Quit Herm") { NSApp.terminate(nil) }
-        }
+        .contextMenu { railMenu }
         .accessibilityLabel("\(state.name), \(state.railActivity.title). Open Herm")
         .accessibilityHint("Drag to move along either screen edge")
     }
 
+    @ViewBuilder private var railMenu: some View {
+        if state.hasPet { Button("Attach pet to notch", action: onCallPetHome).disabled(state.petAttached) }
+        Button("Move to left edge") { onSideChange(.left) }.disabled(state.side == .left)
+        Button("Move to right edge") { onSideChange(.right) }.disabled(state.side == .right)
+        Button("Move to top") { onSideChange(.top) }.disabled(state.side == .top)
+        Divider()
+        Button("Quit Herm") { NSApp.terminate(nil) }
+    }
+
+    private var isIsland: Bool { state.side == .top }
+
     private var preview: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: isIsland ? 6 : 0) {
             HStack(spacing: 4) {
                 HStack(spacing: 2) {
                     tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
@@ -1608,7 +1664,7 @@ struct EdgeNotchView: View {
                     }
                 }
                 .padding(2)
-                .background(Capsule().fill(Color.dockSurface4.opacity(0.6)))
+                .background(DockThemeShape(cornerRadius: 14).fill(Color.dockSurface4.opacity(0.6)))
                 if !state.displaysQuota, !state.preferences.workingSets.isEmpty {
                     Menu {
                         Button("All activity") { state.preferences.watchWorkingSet(nil) }
@@ -1622,7 +1678,12 @@ struct EdgeNotchView: View {
                     }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("Activity scope")
                 }
-                Spacer()
+                if isIsland {
+                    // Leave the camera housing clear; the controls sit in the ears either side.
+                    Spacer(minLength: state.notchSize.width + 12)
+                } else {
+                    Spacer()
+                }
                 if state.displaysQuota {
                     EdgeQuotaToolbar(control: controlCenter)
                 } else {
@@ -1632,9 +1693,9 @@ struct EdgeNotchView: View {
                     }
                 }
             }
-            .frame(height: 40)
-            .padding(.horizontal, 6)
-            Divider().overlay(Color.dockBorderLight)
+            .frame(height: isIsland ? max(state.notchSize.height, 34) : 40)
+            .padding(.horizontal, isIsland ? 0 : 6)
+            if !isIsland { Divider().overlay(Color.dockBorderLight) }
             if !state.botBanner.isEmpty {
                 BotActivityBanner(events: state.botBanner)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1705,7 +1766,8 @@ struct EdgeNotchView: View {
                                     guard !state.quickSending else { return }
                                     let session = task.session ?? (task.isCurrent ? quickMessageModel?.workflowSession : nil)
                                     if let session { onQuickMessageFocus(true); state.steeringTarget = session }
-                                }, beginEditing: { onQuickMessageFocus(true) }, openDock: openDock, openTask: onOpenTask)
+                                }, beginEditing: { onQuickMessageFocus(true) }, compactFooter: isIsland,
+                                openDock: openDock, openTask: onOpenTask)
             }
         }
     }
@@ -1786,9 +1848,9 @@ struct EdgeNotchView: View {
                 .foregroundStyle(isSelected ? Color.dockAccent : Color.dockSecondaryText)
                 .padding(.horizontal, 8)
                 .frame(height: 24)
-                .background(Capsule().fill(isSelected ? Color.dockAccentMuted : .clear))
-                .overlay(Capsule().strokeBorder(isSelected ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1))
-                .contentShape(Capsule())
+                .background(DockThemeShape(cornerRadius: 12).fill(isSelected ? Color.dockAccentMuted : .clear))
+                .overlay(DockThemeShape(cornerRadius: 12).stroke(isSelected ? Color.dockAccent.opacity(0.45) : .clear, lineWidth: 1))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -1816,7 +1878,7 @@ private struct EdgePetRail: View {
                 EdgeNotchStatusIndicator(activity: activity, style: displayStyle)
                     .frame(width: width, height: height)
                     // The shell fill lives in EdgeNotchView so it can grow into the preview.
-                    .overlay { EdgeNotchShape(side: side).stroke(Color.accentColor, lineWidth: 2).opacity(flash ? 1 : glow * 0.8) }
+                    .overlay { EdgeNotchShape(side: side).stroke(DockThemePalette(theme: DockThemeRuntime.current).accent, lineWidth: 2).opacity(flash ? 1 : glow * 0.8) }
                     .animation(reduceMotion ? nil : .interactiveSpring(response: 0.28, dampingFraction: 0.68), value: width)
                 if side == .left { Spacer(minLength: 0) }
             }
@@ -1837,7 +1899,7 @@ private struct IslandContentModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(shown ? 1 : 0.94, anchor: side == .right ? .trailing : .leading)
+            .scaleEffect(shown ? 1 : 0.94, anchor: side.anchor)
             .opacity(shown ? 1 : 0)
     }
 }
@@ -1853,6 +1915,12 @@ struct EdgeNotchShape: Shape {
     var side: EdgeDockSide = .right
 
     func path(in rect: CGRect) -> Path {
+        if side == .top {
+            // The right-edge outline turned so its screen edge faces up.
+            let turned = CGRect(x: 0, y: 0, width: rect.height, height: rect.width)
+            return EdgeNotchShape(side: .right).path(in: turned)
+                .applying(CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: rect.minX, ty: rect.minY + rect.height))
+        }
         let shoulder: CGFloat = min(18, rect.width / 4)
         let radius: CGFloat = min(26, rect.width / 2)
         var path = Path()
@@ -1868,7 +1936,7 @@ struct EdgeNotchShape: Shape {
         path.addLine(to: CGPoint(x: rect.maxX - shoulder, y: rect.maxY - shoulder))
         path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY),
                           control: CGPoint(x: rect.maxX, y: rect.maxY - shoulder))
-        path.closeSubpath()
+        // Left open: fills close implicitly, but strokes skip the screen-edge side.
         if side == .left {
             return path.applying(CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: rect.minX + rect.maxX, ty: 0))
         }

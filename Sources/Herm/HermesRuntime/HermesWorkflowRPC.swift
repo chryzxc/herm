@@ -7,6 +7,77 @@ struct WorkflowIntegrationItem: Identifiable, Equatable {
   var enabled = false
   var requiredKeys: [String] = []
 }
+struct WorkflowPlugin: Identifiable, Equatable {
+  /// Canonical registry key; toggles address this, removal addresses `name`.
+  let id: String
+  let name: String
+  let detail: String
+  let enabled: Bool
+  let removable: Bool
+  /// The package also ships a Hermes Desktop UI half, which Herm cannot host.
+  let desktopHalf: Bool
+  var settings: [WorkflowPluginSetting] = []
+}
+struct WorkflowPluginSetting: Identifiable, Equatable {
+  let id: String
+  let label: String
+  let detail: String
+  /// string, number, boolean, enum or secret.
+  let kind: String
+  let value: String
+  let choices: [String]
+  /// Secret fields name an env var instead of carrying a value.
+  let env: String?
+  let hasValue: Bool
+}
+struct WorkflowPluginCatalogEntry: Identifiable, Equatable {
+  let id: String
+  let title: String
+  let detail: String
+  let installed: Bool
+  var category = "general"
+  var official = false
+  var maintainer = ""
+  var version = ""
+  var repo: URL?
+  var docs: URL?
+  /// `owner/name` when the repo lives on GitHub, the key for star counts.
+  var githubSlug: String? {
+    guard let repo, repo.host == "github.com" else { return nil }
+    let parts = repo.path.split(separator: "/").prefix(2)
+    guard parts.count == 2 else { return nil }
+    return parts.joined(separator: "/").replacingOccurrences(of: ".git", with: "")
+  }
+}
+struct WorkflowToolset: Identifiable, Equatable {
+  let id: String
+  let label: String
+  let detail: String
+  let enabled: Bool
+  let configured: Bool
+  let tools: [String]
+}
+struct WorkflowConnectorAccount: Identifiable, Equatable {
+  let id: String
+  let label: String
+  let status: String
+}
+struct WorkflowConnector: Identifiable, Equatable {
+  let id: String
+  let name: String
+  let detail: String
+  /// False when connector policy blocks it.
+  let allowed: Bool
+  let connected: Bool
+  let status: String?
+  let accounts: [WorkflowConnectorAccount]
+}
+struct WorkflowConnectorOperation: Equatable {
+  let id: String
+  let url: URL?
+  let settled: Bool
+  let connected: Bool
+}
 struct WorkflowSkillRemoval {
   let name: String
   let pid: Int
@@ -231,6 +302,235 @@ final class HermesWorkflowRPC {
   }
   func cancelOAuth(_ name: String, flow: String) async throws {
     try acknowledged(try await request(.mcpOAuthCancel, ["name": name, "session_id": flow]))
+  }
+  func plugins() async throws -> [WorkflowPlugin] {
+    let result = try await request(.pluginsManage, ["action": "list"])
+    guard let rows = result["plugins"] as? [[String: Any]] else {
+      throw HermesGateway.GatewayError.malformedResponse
+    }
+    return try rows.map {
+      guard let name = $0["name"] as? String, let key = $0["key"] as? String, !key.isEmpty,
+        let status = $0["status"] as? String
+      else { throw HermesGateway.GatewayError.malformedResponse }
+      return WorkflowPlugin(
+        id: key, name: name, detail: String(($0["description"] as? String ?? "").prefix(300)),
+        enabled: status == "enabled", removable: $0["source"] as? String != "bundled",
+        desktopHalf: $0["has_desktop_half"] as? Bool == true,
+        settings: ($0["settings_schema"] as? [[String: Any]] ?? []).compactMap(Self.pluginSetting))
+    }
+  }
+  static func pluginSetting(_ row: [String: Any]) -> WorkflowPluginSetting? {
+    guard let key = row["key"] as? String, let kind = row["type"] as? String else { return nil }
+    let value: String
+    switch row["value"] {
+    case let flag as Bool: value = flag ? "true" : "false"
+    case let number as NSNumber: value = number.stringValue
+    case let text as String: value = text
+    default: value = ""
+    }
+    return WorkflowPluginSetting(
+      id: key, label: row["label"] as? String ?? key, detail: row["description"] as? String ?? "",
+      kind: kind, value: value, choices: row["choices"] as? [String] ?? [],
+      env: row["env"] as? String, hasValue: row["has_value"] as? Bool == true)
+  }
+  /// Typed values for `plugins.manage settings`; secrets go through `/api/env` instead.
+  static func pluginSettingValues(_ settings: [WorkflowPluginSetting], drafts: [String: String])
+    -> [String: Any]
+  {
+    var values: [String: Any] = [:]
+    for setting in settings where setting.kind != "secret" {
+      guard let draft = drafts[setting.id], draft != setting.value else { continue }
+      switch setting.kind {
+      case "boolean": values[setting.id] = draft == "true"
+      case "number": values[setting.id] = Int(draft).map { $0 as Any } ?? Double(draft) ?? draft
+      default: values[setting.id] = draft
+      }
+    }
+    return values
+  }
+  func savePluginSettings(_ key: String, values: [String: Any]) async throws {
+    try acknowledged(
+      try await request(.pluginsManage, ["action": "settings", "key": key, "values": values]))
+  }
+  func setPluginSecret(env: String, value: String) async throws {
+    try acknowledged(
+      try await client.sendHTTP("PUT", path: "/api/env", body: scoped(["key": env, "value": value])))
+  }
+  /// The curated catalog, minus entries Herm cannot run: other OSes, and Hermes Desktop-only
+  /// packages (category `desktop` with no agent tools, hooks or middleware).
+  func pluginCatalog() async throws -> [WorkflowPluginCatalogEntry] {
+    let result = try await client.fetchHTTP("/api/dashboard/plugins/catalog")
+    guard let rows = result["entries"] as? [[String: Any]] else {
+      throw HermesGateway.GatewayError.malformedResponse
+    }
+    return rows.compactMap { row in
+      guard let name = row["name"] as? String, !name.isEmpty else { return nil }
+      let platforms = row["platforms"] as? [String] ?? []
+      guard platforms.isEmpty || platforms.contains("macos") else { return nil }
+      let caps = row["capabilities"] as? [String: Any] ?? [:]
+      let agentHalf = ["provides_tools", "provides_hooks", "provides_middleware"].contains {
+        !(caps[$0] as? [Any] ?? []).isEmpty
+      }
+      guard row["category"] as? String != "desktop" || agentHalf else { return nil }
+      return WorkflowPluginCatalogEntry(
+        id: name, title: (row["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? name,
+        detail: String((row["description"] as? String ?? "").prefix(300)),
+        installed: row["installed"] as? Bool == true,
+        category: (row["category"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "general",
+        official: row["tier"] as? String == "official",
+        maintainer: row["maintainer"] as? String ?? "", version: row["version"] as? String ?? "",
+        repo: (row["repo"] as? String).flatMap(URL.init(string:)),
+        docs: (row["docs_url"] as? String).flatMap(URL.init(string:)))
+    }
+  }
+  /// GitHub stars for catalog repos, batched 100 aliases per GraphQL query. Hermes' catalog has no
+  /// popularity data, so this reads GitHub directly with the launch token; no token, no stars.
+  static func githubStars(_ slugs: [String]) async -> [String: Int] {
+    guard let token = await GitHubCodeHostService.localGitHubToken(), !token.isEmpty else { return [:] }
+    var stars: [String: Int] = [:]
+    let unique = Array(Set(slugs)).sorted()
+    for start in stride(from: 0, to: unique.count, by: 100) {
+      let chunk = Array(unique[start..<min(start + 100, unique.count)])
+      let fields = chunk.enumerated().compactMap { index, slug -> String? in
+        let parts = slug.split(separator: "/")
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        guard parts.count == 2, parts.allSatisfy({ $0.unicodeScalars.allSatisfy(safe.contains) }) else { return nil }
+        return "r\(index): repository(owner: \"\(parts[0])\", name: \"\(parts[1])\") { stargazerCount }"
+      }
+      var request = URLRequest(url: URL(string: "https://api.github.com/graphql")!)
+      request.httpMethod = "POST"
+      request.timeoutInterval = GitHubCodeHostService.requestTimeout
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+      request.httpBody = try? JSONSerialization.data(withJSONObject: ["query": "{ \(fields.joined(separator: " ")) }"])
+      // Missing repos come back as null aliases plus an `errors` list; keep whatever resolved.
+      guard let (data, _) = try? await URLSession.shared.data(for: request),
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let rows = json["data"] as? [String: Any]
+      else { continue }
+      for (index, slug) in chunk.enumerated() {
+        if let count = (rows["r\(index)"] as? [String: Any])?["stargazerCount"] as? Int { stars[slug] = count }
+      }
+    }
+    return stars
+  }
+  /// Toolsets Hermes Desktop also hides: platform adapters and internals with no user switch.
+  static let hiddenToolsets: Set<String> = ["discord", "discord_admin", "yuanbao", "context_engine", "moa"]
+  func toolsets() async throws -> [WorkflowToolset] {
+    let result = try await client.fetchHTTP("/api/tools/toolsets" + query([:]))
+    guard let rows = result["items"] as? [[String: Any]] else {
+      throw HermesGateway.GatewayError.malformedResponse
+    }
+    return rows.compactMap { row in
+      guard let name = row["name"] as? String, !name.isEmpty, !Self.hiddenToolsets.contains(name) else {
+        return nil
+      }
+      return WorkflowToolset(
+        id: name, label: (row["label"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? name,
+        detail: row["description"] as? String ?? "", enabled: row["enabled"] as? Bool == true,
+        configured: row["configured"] as? Bool != false, tools: row["tools"] as? [String] ?? [])
+    }
+  }
+  func setToolset(_ name: String, enabled: Bool) async throws {
+    let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+    let result = try await client.sendHTTP(
+      "PUT", path: "/api/tools/toolsets/\(encoded)" + query([:]), body: ["enabled": enabled])
+    try acknowledged(result)
+    guard result["enabled"] as? Bool == enabled else { throw HermesGateway.GatewayError.malformedResponse }
+  }
+  func installPlugin(catalogName: String) async throws {
+    try acknowledged(
+      try await request(.pluginsManage, ["action": "install", "catalog_name": catalogName, "enable": true]))
+  }
+  /// Returns true when Hermes says the change needs a gateway restart to take effect.
+  func togglePlugin(_ key: String, enabled: Bool) async throws -> Bool {
+    let result = try await request(.pluginsManage, ["action": "toggle", "key": key, "enable": enabled])
+    try acknowledged(result)
+    return result["restart_required"] as? Bool == true
+  }
+  func removePlugin(_ name: String) async throws {
+    try acknowledged(try await request(.pluginsManage, ["action": "remove", "name": name]))
+  }
+  private static let accountOwner = ["type": "account"]
+  func connectors() async throws -> [WorkflowConnector] {
+    let result = try await request(.connectorsList, ["owner": Self.accountOwner])
+    guard result["available"] as? Bool == true else {
+      throw QuickDraftError.message("Connectors are unavailable. Sign in with `hermes login` to use them.")
+    }
+    guard let rows = result["connectors"] as? [[String: Any]] else {
+      throw HermesGateway.GatewayError.malformedResponse
+    }
+    // Names and accounts are presentation extras; the list alone is enough to connect.
+    let catalog = (try? await request(.connectorsCatalog, [:]))?["connectors"] as? [[String: Any]] ?? []
+    let accounts = (try? await request(.connectorsAccounts, [:]))?["accounts"] as? [[String: Any]] ?? []
+    return try rows.map { row in
+      guard let slug = row["connector"] as? String, !slug.isEmpty else {
+        throw HermesGateway.GatewayError.malformedResponse
+      }
+      let entry = catalog.first { $0["slug"] as? String == slug }
+      return WorkflowConnector(
+        id: slug, name: entry?["name"] as? String ?? slug,
+        detail: String((entry?["description"] as? String ?? "").prefix(300)),
+        allowed: row["enabled"] as? Bool ?? true, connected: row["connected"] as? Bool == true,
+        status: row["connection_status"] as? String,
+        accounts: accounts.compactMap {
+          guard $0["connector"] as? String == slug, let id = $0["connection_id"] as? String else { return nil }
+          return WorkflowConnectorAccount(
+            id: id, label: $0["alias"] as? String ?? $0["label"] as? String ?? id,
+            status: $0["status"] as? String ?? "")
+        })
+    }
+  }
+  func connectConnector(_ slug: String, reconnect: Bool) async throws -> WorkflowConnectorOperation {
+    try Self.connectorOperation(
+      try await request(
+        .connectorsConnect,
+        ["owner": Self.accountOwner, "connectors": [slug], "reconnect": reconnect]))
+  }
+  func connectorOperation(_ id: String) async throws -> WorkflowConnectorOperation {
+    try Self.connectorOperation(
+      try await request(.connectorsOperationStatus, ["owner": Self.accountOwner, "op_id": id]))
+  }
+  static func connectorOperation(_ result: [String: Any]) throws -> WorkflowConnectorOperation {
+    guard let id = result["op_id"] as? String, !id.isEmpty,
+      let targets = result["targets"] as? [[String: Any]]
+    else { throw HermesGateway.GatewayError.malformedResponse }
+    let url = targets.lazy.compactMap { ($0["connect_url"] as? String).flatMap(URL.init(string:)) }
+      .first { $0.scheme == "https" && $0.host != nil }
+    let states = targets.compactMap { $0["state"] as? String }
+    return WorkflowConnectorOperation(
+      id: id, url: url, settled: result["settled"] as? Bool == true,
+      connected: !states.isEmpty && states.allSatisfy { $0 == "connected" })
+  }
+  func removeConnectorAccount(_ connectionID: String) async throws {
+    let result = try await request(.connectorsAccountsRemove, ["connection_id": connectionID])
+    guard result["connection_id"] as? String == connectionID else {
+      throw HermesGateway.GatewayError.malformedResponse
+    }
+  }
+  /// Hermes connector aliases: lowercase letters, digits and dashes, starting alphanumeric.
+  static func validConnectorAlias(_ alias: String) -> Bool {
+    alias.range(of: "^[a-z0-9][a-z0-9-]{0,31}$", options: .regularExpression) != nil
+  }
+  func renameConnectorAccount(_ connectionID: String, alias: String) async throws {
+    guard Self.validConnectorAlias(alias) else {
+      throw QuickDraftError.message("Use up to 32 lowercase letters, digits or dashes, starting with a letter or digit.")
+    }
+    let result = try await request(
+      .connectorsAccountsRename, ["connection_id": connectionID, "alias": alias])
+    guard result["connection_id"] as? String == connectionID else {
+      throw HermesGateway.GatewayError.malformedResponse
+    }
+  }
+  /// Writes the member policy layer, guarded by its revision like Hermes Desktop.
+  func setConnectorAllowed(_ slug: String, enabled: Bool) async throws {
+    let policy = try await request(.connectorsPolicyGet, [:])
+    let layers = policy["layers"] as? [[String: Any]] ?? []
+    guard let revision = layers.first(where: { $0["kind"] as? String == "member" })?["revision"] as? String
+    else { throw QuickDraftError.message("Connector rules are read-only for this account.") }
+    let result = try await request(
+      .connectorsPolicySet,
+      ["change": ["type": "connector", "connector": slug, "enabled": enabled], "expected_revision": revision])
+    guard result["revision"] is String else { throw HermesGateway.GatewayError.malformedResponse }
   }
   func setRoutinePaused(_ id: String, paused: Bool) async throws {
     let result = try await request(

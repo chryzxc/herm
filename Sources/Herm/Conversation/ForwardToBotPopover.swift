@@ -96,9 +96,9 @@ struct ForwardToBotPopover: View {
         let body = "Forwarded message:\n\(messageText)"
         isForwarding = true
         error = nil
-        // A leading slash command runs on the bot's new session; the forwarded
-        // message is only attached to plain text.
-        let text = typed.hasPrefix("/") || typed.isEmpty ? (typed.isEmpty ? body : typed) : "\(typed)\n\n\(body)"
+        // A leading slash command runs on the bot's new session with the
+        // forwarded message as the tail of its argument.
+        let text = typed.isEmpty ? body : "\(typed)\n\n\(body)"
         model.forwardMessage(text, toProfile: bot.id) { failure, result in
             isForwarding = false
             if let failure { error = failure } else if let result { output = result } else { dismiss(); environmentDismiss() }

@@ -109,6 +109,37 @@ struct PlanArtifactServiceTests {
         #expect(!FileManager.default.fileExists(atPath: outside.appendingPathComponent("plan.md").path))
     }
 
+    @Test func rejectsCommentReadsThroughSymlinks() throws {
+        for linkDirectory in [false, true] {
+            let fixture = try Fixture()
+            try fixture.write("plan.md", contents: "# Plan\n")
+            let outside = fixture.root.appendingPathComponent("private-reviews", isDirectory: true)
+            try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+            let privateReview = outside.appendingPathComponent("plan.md")
+            try "## Comment \(UUID().uuidString)\n\nPrivate review\n".write(to: privateReview, atomically: true, encoding: .utf8)
+            let reviews = fixture.plans.appendingPathComponent("reviews", isDirectory: true)
+            if linkDirectory {
+                try FileManager.default.createSymbolicLink(at: reviews, withDestinationURL: outside)
+            } else {
+                try FileManager.default.createDirectory(at: reviews, withIntermediateDirectories: true)
+                try FileManager.default.createSymbolicLink(at: reviews.appendingPathComponent("plan.md"), withDestinationURL: privateReview)
+            }
+            let service = PlanArtifactService(projectRoot: fixture.root)
+            let document = try service.load(relativePath: "plan.md")
+            #expect(throws: PlanArtifactError.outsidePlansDirectory) { try service.comments(for: document) }
+        }
+    }
+
+    @Test func absentReviewsAreEmptyAndNonRegularReviewsAreRejected() throws {
+        let fixture = try Fixture()
+        try fixture.write("plan.md", contents: "# Plan\n")
+        let service = PlanArtifactService(projectRoot: fixture.root)
+        let document = try service.load(relativePath: "plan.md")
+        #expect(try service.comments(for: document).isEmpty)
+        try FileManager.default.createDirectory(at: fixture.plans.appendingPathComponent("reviews/plan.md"), withIntermediateDirectories: true)
+        #expect(throws: PlanArtifactError.unsupportedFile) { try service.comments(for: document) }
+    }
+
     private final class Fixture {
         let root: URL
         let plans: URL

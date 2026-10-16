@@ -248,19 +248,20 @@ struct DockNavRow: View {
 
     var body: some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius)
+        let inverted = isSelected && style.theme.style.selection == .invert
         Button(action: action) {
             HStack(spacing: 10) {
-                DockIcon(icon, size: 15, color: isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
+                DockIcon(icon, size: 15, color: inverted ? style.background : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 18)
                 Text(title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .regular, design: DockThemeStyle.current.fontDesign))
-                    .foregroundStyle(isSelected || isHovering ? style.primaryText : style.secondaryText)
+                    .foregroundStyle(inverted ? style.background : isSelected || isHovering ? style.primaryText : style.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if showsUpdateBadge {
                     Text("Update")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(style.warning)
+                        .foregroundStyle(inverted ? style.background : style.warning)
                         .padding(.horizontal, 6)
                         .frame(height: 18)
                         .background(Capsule().fill(style.warning.opacity(0.16)))
@@ -269,12 +270,8 @@ struct DockNavRow: View {
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-            .background(shape.fill(isSelected ? style.selectedFill : isHovering ? style.surface4.opacity(0.6) : .clear))
-            .overlay(alignment: .leading) {
-                if isSelected {
-                    Capsule().fill(style.accent).frame(width: 3, height: 14)
-                }
-            }
+            .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)
+            .background(shape.fill(!isSelected && isHovering ? style.surface4.opacity(0.6) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -297,10 +294,12 @@ struct DockRailButton: View {
 
     var body: some View {
         let shape = DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius)
+        let inverted = isSelected && style.theme.style.selection == .invert
         Button(action: action) {
-            DockIcon(icon, size: 17, color: isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
+            DockIcon(icon, size: 17, color: inverted ? style.background : isSelected ? style.accent : isHovering ? style.primaryText : style.secondaryText)
                 .frame(width: 38, height: 38)
-                .background(shape.fill(isSelected ? style.selectedFill : isHovering ? style.accent.opacity(0.14) : .clear))
+                .dockSelectionBackground(shape, active: isSelected, fill: style.selectedFill, theme: style.theme)
+                .background(shape.fill(!isSelected && isHovering ? style.accent.opacity(0.14) : .clear))
                 .overlay(alignment: .topTrailing) {
                     if showsUpdateBadge {
                         Circle().fill(style.warning).frame(width: 7, height: 7).padding(7)

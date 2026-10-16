@@ -77,7 +77,7 @@ struct EdgeRoutinePreview: View {
             {
               preferences.toggleRoutinePin(reference.id)
             }.buttonStyle(.dockHover)
-            Button("Repair skills or MCP…") {
+            Button("Integrations…") {
               control.integrationDestination = IntegrationDestination(
                 profileID: reference.profileID)
               openAutomation()

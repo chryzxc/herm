@@ -132,6 +132,8 @@ enum HermesFeatureIDs {
         case configGet = "config.get"
         case configSet = "config.set"
         case modelOptions = "model.options"
+        case modelSaveKey = "model.save_key"
+        case modelDisconnect = "model.disconnect"
         case shellExec = "shell.exec"
         case imageAttachBytes = "image.attach_bytes"
         case fileAttach = "file.attach"
@@ -150,6 +152,16 @@ enum HermesFeatureIDs {
         case rollbackDiff = "rollback.diff"
         case rollbackRestore = "rollback.restore"
         case skillsManage = "skills.manage"
+        case pluginsManage = "plugins.manage"
+        case connectorsList = "connectors.list"
+        case connectorsCatalog = "connectors.catalog"
+        case connectorsConnect = "connectors.connect"
+        case connectorsOperationStatus = "connectors.operation.status"
+        case connectorsAccounts = "connectors.accounts"
+        case connectorsAccountsRemove = "connectors.accounts.remove"
+        case connectorsAccountsRename = "connectors.accounts.rename"
+        case connectorsPolicyGet = "connectors.policy.get"
+        case connectorsPolicySet = "connectors.policy.set"
         case mcpCatalog = "mcp.catalog"
         case mcpServersList = "mcp.servers.list"
         case mcpServersAdd = "mcp.servers.add"
@@ -181,7 +193,7 @@ enum HermesFeatureIDs {
         "config.set", "model.options", "shell.exec", "image.attach_bytes", "image.detach", "pdf.attach",
         "profiles.list", "profiles.describe", "profiles.create", "profiles.configure", "profiles.set_asset", "profiles.get_asset", "image.generate", "insights.get", "rollback.list", "rollback.diff", "rollback.restore", "file.attach", "gateway.capabilities",
         "projects.create", "projects.archive", "projects.delete", "projects.set_active", "projects.add_folder",
-        "skills.manage", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage"
+        "skills.manage", "plugins.manage", "connectors.list", "connectors.catalog", "connectors.connect", "connectors.operation.status", "connectors.accounts", "connectors.accounts.remove", "connectors.accounts.rename", "connectors.policy.get", "connectors.policy.set", "mcp.catalog", "mcp.servers.list", "mcp.servers.add", "mcp.servers.set_api_key", "mcp.servers.test", "mcp.servers.remove", "mcp.servers.oauth.start", "mcp.servers.oauth.poll", "mcp.servers.oauth.cancel", "subagent.list", "subagent.steer", "learning.detail", "learning.edit", "learning.delete", "browser.manage"
     ]
     static let all = ID.allCases.map(\.rawValue)
     static let capabilityIDs = ID.allCases.filter { !transportIDs.contains($0.rawValue) }.map(\.rawValue)

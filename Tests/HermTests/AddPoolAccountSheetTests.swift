@@ -9,5 +9,8 @@ struct AddPoolAccountSheetTests {
         #expect(AddPoolAccountSheet.command(provider: "", label: "", apiKey: nil) == nil)
         #expect(AddPoolAccountSheet.command(provider: "a b", label: "", apiKey: nil) == nil)
         #expect(AddPoolAccountSheet.command(provider: "x", label: "", apiKey: "") == nil)
+        // Key-only providers must never start a keyless add; it would hang on a hidden prompt.
+        #expect(AddPoolAccountSheet.command(provider: "deepseek", label: "", apiKey: nil) == nil)
+        #expect(AddPoolAccountSheet.command(provider: "openrouter", label: "", apiKey: nil) == "hermes auth add openrouter --type oauth")
     }
 }

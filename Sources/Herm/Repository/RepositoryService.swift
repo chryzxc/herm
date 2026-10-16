@@ -53,6 +53,20 @@ struct RepositoryDiff: Equatable {
     let isStaged: Bool
 }
 
+enum RepositorySourceControlAction {
+    case stage([RepositoryFileChange])
+    case unstage([RepositoryFileChange])
+    case commit(String)
+}
+
+struct RepositoryCommit: Identifiable, Equatable {
+    let id: String
+    let subject: String
+    let author: String
+    let date: Date
+    let references: String
+}
+
 struct RepositoryAttachmentChanges: Identifiable {
     let repositoryPath: String
     let files: [RepositoryFileChange]
@@ -360,6 +374,27 @@ enum RepositoryService {
             .filter { !$0.isEmpty }
     }
 
+    /// Bound local Git processes so a large project list cannot occupy every worker.
+    static func githubRemotes(
+        paths: [String],
+        resolve: @escaping @Sendable (String) async -> GitHubRepositoryReference? = { await githubRemote(path: $0) }
+    ) async -> [(String, GitHubRepositoryReference)] {
+        await withTaskGroup(of: (String, GitHubRepositoryReference?).self) { group in
+            var remaining = paths.makeIterator()
+            for _ in 0..<4 {
+                guard !Task.isCancelled, let path = remaining.next() else { break }
+                group.addTask { (path, await resolve(path)) }
+            }
+            var unique: [String: (String, GitHubRepositoryReference)] = [:]
+            while let (path, remote) = await group.next() {
+                guard !Task.isCancelled else { group.cancelAll(); break }
+                if let remote, unique[remote.id] == nil { unique[remote.id] = (path, remote) }
+                if let path = remaining.next() { group.addTask { (path, await resolve(path)) } }
+            }
+            return Array(unique.values)
+        }
+    }
+
     static func githubRemote(path: String) async -> GitHubRepositoryReference? {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         let result = await runGit(path: normalizedPath, arguments: ["remote", "get-url", "origin"])
@@ -379,11 +414,62 @@ enum RepositoryService {
 
     static func changeSnapshot(path: String) async -> RepositoryChangeSnapshot {
         let normalizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
-        let status = await runGit(path: normalizedPath, arguments: ["status", "--porcelain=v1", "-z"])
+        let status = await runGit(path: normalizedPath, arguments: ["status", "--porcelain=v1", "--untracked-files=all", "-z"], trimOutput: false)
         let branch = await runGit(path: normalizedPath, arguments: ["branch", "--show-current"])
         let head = await runGit(path: normalizedPath, arguments: ["rev-parse", "--short", "HEAD"])
         let files = status.exitCode == 0 ? parsePorcelainV1(status.output) : []
         return RepositoryChangeSnapshot(repositoryID: RepositorySnapshot.stableID(path: normalizedPath), headRevision: head.exitCode == 0 ? head.output : nil, branch: branch.output.isEmpty ? "detached HEAD" : branch.output, files: files, refreshedAt: .now)
+    }
+
+    static func applySourceControl(_ action: RepositorySourceControlAction, path: String) async -> String? {
+        let arguments: [String]
+        switch action {
+        case .stage(let files), .unstage(let files):
+            let paths = Array(Set(files.flatMap { [$0.path] + ($0.renameSource.map { [$0] } ?? []) })).sorted()
+            guard !paths.isEmpty, paths.allSatisfy(isSafeRelativePath) else { return "No valid files selected." }
+            // Literal pathspecs prevent filenames containing glob syntax from selecting other files.
+            let literals = paths.map { ":(literal)" + $0 }
+            if case .stage = action {
+                arguments = ["add", "--"] + literals
+            } else {
+                let head = await runGit(path: path, arguments: ["rev-parse", "--verify", "HEAD"])
+                // An unborn branch has no HEAD to restore from. Only remove index entries.
+                arguments = head.exitCode == 0
+                    ? ["reset", "--quiet", "HEAD", "--"] + literals
+                    : ["rm", "--cached", "-r", "--force", "--"] + literals
+            }
+        case .commit(let message):
+            guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !message.contains("\0") else {
+                return "Enter a commit message."
+            }
+            let staged = await runGit(path: path, arguments: ["diff", "--cached", "--quiet", "--exit-code"])
+            guard staged.exitCode == 1 else { return "Stage changes before committing." }
+            let conflicts = await runGit(path: path, arguments: ["ls-files", "--unmerged", "-z"])
+            guard conflicts.exitCode == 0, conflicts.output.isEmpty else { return "Resolve conflicts before committing." }
+            arguments = ["commit", "-m", message]
+        }
+        let result = await runGit(path: path, arguments: arguments)
+        // Git/hooks can print source and private paths. Keep failures actionable without echoing their output.
+        return result.exitCode == 0 ? nil : "Git could not complete this action. Check repository permissions, index locks, identity, or commit hooks in Terminal, then retry."
+    }
+
+    static func recentCommits(path: String) async -> [RepositoryCommit]? {
+        let result = await runGit(path: path, arguments: ["log", "-50", "--format=%H%x00%s%x00%an%x00%at%x00%D%x00", "HEAD"], trimOutput: false)
+        guard result.exitCode == 0 else {
+            let branch = await runGit(path: path, arguments: ["symbolic-ref", "--quiet", "HEAD"])
+            let ref = branch.exitCode == 0 ? await runGit(path: path, arguments: ["show-ref", "--verify", "--quiet", branch.output]) : (output: "", exitCode: Int32(2))
+            return ref.exitCode == 1 ? [] : nil
+        }
+        return parseCommits(result.output)
+    }
+
+    static func parseCommits(_ output: String) -> [RepositoryCommit] {
+        let fields = output.components(separatedBy: "\0")
+        return stride(from: 0, to: max(0, fields.count - 4), by: 5).compactMap { index in
+            let hash = fields[index].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard hash.count >= 40, hash.allSatisfy(\.isHexDigit), let timestamp = TimeInterval(fields[index + 3]) else { return nil }
+            return RepositoryCommit(id: hash, subject: fields[index + 1], author: fields[index + 2], date: Date(timeIntervalSince1970: timestamp), references: fields[index + 4])
+        }
     }
 
     static func explorerEntries(for files: [RepositoryFileChange]) -> [RepositoryExplorerEntry] {
@@ -698,17 +784,17 @@ enum RepositoryService {
             let indexCode = chars[0]
             let worktreeCode = chars[1]
             let path = String(row.dropFirst(3))
-            let isRename = indexCode == "R" || indexCode == "C"
+            let isRename = indexCode == "R" || indexCode == "C" || worktreeCode == "R" || worktreeCode == "C"
             let renameSource = isRename && index + 1 < records.count ? records[index + 1] : nil
             let staged = indexCode != " " && indexCode != "?"
             let worktree = worktreeCode != " " && worktreeCode != "?"
             if indexCode == "?" && worktreeCode == "?" {
                 result.append(RepositoryFileChange(path: path, status: .untracked, isStaged: false, renameSource: nil))
-            } else if indexCode == "U" || worktreeCode == "U" || (indexCode == "A" && worktreeCode == "A") {
-                result.append(RepositoryFileChange(path: path, status: .conflicted, isStaged: staged, renameSource: renameSource))
+            } else if indexCode == "U" || worktreeCode == "U" || (indexCode == "A" && worktreeCode == "A") || (indexCode == "D" && worktreeCode == "D") {
+                result.append(RepositoryFileChange(path: path, status: .conflicted, isStaged: false, renameSource: renameSource))
             } else {
                 if staged { result.append(RepositoryFileChange(path: path, status: status(for: indexCode), isStaged: true, renameSource: renameSource)) }
-                if worktree { result.append(RepositoryFileChange(path: path, status: status(for: worktreeCode), isStaged: false, renameSource: nil)) }
+                if worktree { result.append(RepositoryFileChange(path: path, status: status(for: worktreeCode), isStaged: false, renameSource: worktreeCode == "R" || worktreeCode == "C" ? renameSource : nil)) }
             }
             index += isRename ? 2 : 1
         }
@@ -879,7 +965,8 @@ enum RepositoryService {
     }
 
     private static func runGit(path: String, arguments: [String], trimOutput: Bool = true) async -> (output: String, exitCode: Int32) {
-        await Task.detached(priority: .utility) {
+        guard !Task.isCancelled else { return ("", 1) }
+        return await Task.detached(priority: .utility) {
             let process = Process()
             let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: "/usr/bin/env")

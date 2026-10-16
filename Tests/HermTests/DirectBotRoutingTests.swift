@@ -73,6 +73,28 @@ struct DirectBotRoutingTests {
         #expect(model.messages.last?.botProfileID == "sentry")
     }
 
+    @Test func botRequestDuringBusyTurnRelaysWithoutIdlingThatTurn() async throws {
+        let rpc = DirectBotRoutingRPCClient()
+        let model = DockModel(
+            sessionAgentStateFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("direct-bot-routing-\(UUID().uuidString).json"),
+            initialSessionID: "ordinary-session",
+            botActivityFileURL: FileManager.default.temporaryDirectory.appendingPathComponent("direct-bot-activity-\(UUID().uuidString).json"),
+            rpcClient: rpc
+        )
+        model.status = .working
+        model.isSending = true
+
+        model.sendDirectBotRequest(profileID: "default", displayName: "Nexus", text: "start task 4")
+        for _ in 0..<50 where model.messages.count < 2 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(rpc.requests.contains(where: { $0.method == "bot_relay.deliver" }))
+        #expect(model.messages.last?.text == "The audit is complete.")
+        #expect(model.status == .working)
+        #expect(model.isSending)
+    }
+
     @Test func unrelatedGatewayEventDoesNotBindUnresolvedBotActivity() async throws {
         let rpc = DirectBotRoutingRPCClient()
         let model = DockModel(

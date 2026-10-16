@@ -89,8 +89,16 @@ struct EdgeNotchRenderSnapshotTests {
             model: nil, isActive: false, chat: nil, avatarURL: nil, preview: nil,
             lastActive: nil, isHidden: false, hasAvatar: false, isDefault: false)]
         let tasks = state.tasks
-        for name in ["tasks", "tasks-empty", "kanban-unavailable", "quick-message", "quick-reply"] {
+        for name in ["tasks", "tasks-many", "tasks-empty", "kanban-unavailable", "quick-message", "quick-reply"] {
             state.tasks = tasks
+            if name == "tasks-many" {
+                state.tasks = EdgeNotchTask.merged(tasks + (0..<200).map { index in
+                    EdgeNotchTask(id: "attention-\(index)", title: "Review background task \(index)", phase: .attention,
+                        statusLabel: "Needs your attention", detail: "Review the result before continuing.",
+                        updatedAt: .now.addingTimeInterval(Double(-index * 60)), isCurrent: false,
+                        isStatusCurrent: true, session: nil)
+                })
+            }
             state.selectQuickTarget(nil)
             if name.contains("empty") || name.contains("unavailable") { state.tasks = [] }
             state.kanbanUnavailable = name.contains("unavailable")

@@ -71,6 +71,7 @@ struct SessionPullRequestsSurface: View {
             guard let repositoryPath, !repositoryPath.isEmpty else { return }
             await center.refreshScoped(repositoryPath: repositoryPath)
         }
+        .onDisappear { center.cancelLoads() }
         .onChange(of: center.filter) { _, _ in center.repairSelection() }
         .onChange(of: center.query) { _, _ in center.repairSelection() }
     }

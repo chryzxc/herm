@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Shared, popover-native source-control browser used by both global Changes
+/// Shared, popover-native source-control browser used by both global Source Control
 /// and the session inspector. The repository remains the source of truth; this
-/// view only projects its current Git state and displays read-only diffs.
+/// view renders Git state, explicit index/commit actions, and read-only diffs.
 struct RepositoryChangesBrowser: View {
     @ObservedObject var model: DockModel
     @ObservedObject var workflow: DeveloperWorkflowModel
@@ -17,7 +17,14 @@ struct RepositoryChangesBrowser: View {
     @State private var diffs: [String: RepositoryDiff] = [:]
     @State private var expandedFileIDs: Set<String> = []
     @State private var loadingFileIDs: Set<String> = []
-    @State private var error: String?
+    @State private var commitMessages: [String: String] = [:]
+    @State private var isCommitsExpanded = true
+    @State private var expandedCommitIDs: Set<String> = []
+    @State private var diffGeneration = UUID()
+    @State private var isCommitPopoverPresented = false
+
+    private var style: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
+    private var actionsDisabled: Bool { workflow.isRefreshing || workflow.isMutatingSourceControl || projectPath != workflow.repository.path }
     @State private var isStagedExpanded = true
     @State private var isChangesExpanded = true
 
@@ -37,13 +44,6 @@ struct RepositoryChangesBrowser: View {
 
     private func browser(_ changes: RepositoryChangeSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let error {
-                Text(error)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.dockWarning)
-                    .padding(.bottom, 8)
-            }
-
             sourceControlHeader(changes)
 
             if !isInspector, case .available = workflow.githubIntegrationState {
@@ -56,27 +56,24 @@ struct RepositoryChangesBrowser: View {
                 let stagedFiles = changes.files.filter(\.isStaged)
                 let worktreeFiles = changes.files.filter { !$0.isStaged }
 
-                if !stagedFiles.isEmpty {
-                    changeGroup(
-                        title: "Staged",
-                        files: stagedFiles,
-                        isExpanded: $isStagedExpanded
-                    )
-                }
-
-                if !worktreeFiles.isEmpty {
-                    changeGroup(
-                        title: "Changes",
-                        files: worktreeFiles,
-                        isExpanded: $isChangesExpanded
-                    )
-                }
+                changeGroup(title: "Staged Changes", files: stagedFiles, isExpanded: $isStagedExpanded, staged: true)
+                changeGroup(title: "Changes", files: worktreeFiles, isExpanded: $isChangesExpanded, staged: false)
             }
+            commitsSection
+        }
+        .onChange(of: workflow.repository.path) { _, _ in
+            diffs = [:]
+            expandedFileIDs = []
+            loadingFileIDs = []
+            expandedCommitIDs = []
+            diffGeneration = UUID()
         }
         .onChange(of: changes) { _, newChanges in
             // Cached diffs go stale with the working tree; refetch the open ones.
             let liveIDs = Set(newChanges.files.map(\.id))
             diffs = [:]
+            loadingFileIDs = []
+            diffGeneration = UUID()
             expandedFileIDs.formIntersection(liveIDs)
             for file in newChanges.files where expandedFileIDs.contains(file.id) { loadDiff(for: file) }
         }
@@ -85,33 +82,121 @@ struct RepositoryChangesBrowser: View {
     private func changeGroup(
         title: String,
         files: [RepositoryFileChange],
-        isExpanded: Binding<Bool>
+        isExpanded: Binding<Bool>,
+        staged: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                isExpanded.wrappedValue.toggle()
-            } label: {
-                HStack(spacing: 7) {
-                    DockIcon(isExpanded.wrappedValue ? .caretDown : .caretRight)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color.dockSecondaryText)
-                        .frame(width: 12)
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockSecondaryText)
-                    Spacer(minLength: 8)
-                    Text("\(files.count)")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(title == "Staged" ? Color.dockAccent : Color.dockMetadataText)
+            DockSectionHeader(title: title, count: files.count, isExpanded: isExpanded, style: style) {
+                if staged {
+                    DockIconButton(icon: .check, label: "Commit staged changes", isBusy: workflow.isMutatingSourceControl, size: 24, style: style) {
+                        isCommitPopoverPresented = true
+                    }
+                    .disabled(actionsDisabled || files.isEmpty || workflow.changes?.conflictedCount ?? 0 > 0)
+                    .popover(isPresented: $isCommitPopoverPresented, arrowEdge: .bottom) { commitPopover }
                 }
-                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-                .contentShape(Rectangle())
+                DockIconButton(icon: staged ? .minus : .plus, label: staged ? "Unstage all changes" : "Stage all changes", size: 24, style: style) {
+                    perform(staged ? .unstage(files) : .stage(files))
+                }
+                .disabled(actionsDisabled || files.isEmpty)
             }
-            .buttonStyle(.dockHover)
-            .help(isExpanded.wrappedValue ? "Collapse \(title.lowercased())" : "Expand \(title.lowercased())")
-
             if isExpanded.wrappedValue {
-                ForEach(files) { file in fileRow(file) }
+                if files.isEmpty {
+                    Text(staged ? "No staged changes" : "No unstaged changes")
+                        .font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                }
+                LazyVStack(spacing: 0) {
+                    ForEach(files) { file in fileRow(file) }
+                }
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var commitPopover: some View {
+        let path = workflow.repository.path
+        let message = Binding(get: { commitMessages[path, default: ""] }, set: { commitMessages[path] = $0 })
+        let isEmpty = message.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Commit \(workflow.changes?.stagedCount ?? 0) staged to \(workflow.repository.branch)")
+                .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+            TextField("Message", text: message, axis: .vertical)
+                .textFieldStyle(.dockGlass)
+                .font(.system(size: 12))
+                .lineLimit(2...6)
+                .accessibilityLabel("Commit message")
+            Button {
+                isCommitPopoverPresented = false
+                perform(.commit(message.wrappedValue))
+            } label: {
+                DockActionLabel(title: "Commit", pendingTitle: "Committing…", isPending: workflow.isMutatingSourceControl)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.dockPrimary)
+            .keyboardShortcut(.return, modifiers: .command)
+            .disabled(actionsDisabled || isEmpty)
+        }
+        .padding(12)
+        .frame(width: 300)
+    }
+
+    private var commitsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DockSectionHeader(title: "Commits", count: workflow.commits.count, isExpanded: $isCommitsExpanded, style: style)
+            if isCommitsExpanded {
+                if let error = workflow.commitsError {
+                    Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning).padding(8)
+                } else if workflow.commits.isEmpty {
+                    Text(workflow.isRefreshing ? "Loading commits…" : "No commits on this branch yet")
+                        .font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).padding(8)
+                }
+                if let ahead = workflow.repository.aheadCount, let behind = workflow.repository.behindCount {
+                    Text(ahead == 0 && behind == 0 ? "Up to date with upstream · last fetched state" : "\(ahead) ahead · \(behind) behind upstream · last fetched state")
+                        .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).padding(8)
+                }
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(workflow.commits) { commit in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Button {
+                                if !expandedCommitIDs.insert(commit.id).inserted { expandedCommitIDs.remove(commit.id) }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    DockIcon(.gitCommit, size: 14, color: .dockMetadataText)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(commit.subject).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                                        Text("\(commit.author) · \(commit.date.formatted(.relative(presentation: .named)))")
+                                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Text(String(commit.id.prefix(7))).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                }
+                                .padding(.vertical, 4)
+                                .frame(minHeight: 36).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.dockHover)
+                            .help(commit.subject)
+                            .accessibilityLabel("\(commit.subject), by \(commit.author). \(expandedCommitIDs.contains(commit.id) ? "Collapse" : "Expand") commit details")
+                            if expandedCommitIDs.contains(commit.id) {
+                                Text(commit.subject).font(.system(size: 12)).textSelection(.enabled)
+                                HStack {
+                                    Text(commit.author)
+                                    Text(commit.date, style: .date)
+                                    Text(commit.date, style: .time)
+                                    Spacer(minLength: 0)
+                                    DockCopyButton(commit.id, label: "Copy commit hash", accessibilityLabel: "Copy commit hash")
+                                }
+                                .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                                if !commit.references.isEmpty {
+                                    Text(commit.references).font(.system(size: 11)).foregroundStyle(Color.dockAccent).textSelection(.enabled)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 8).padding(.bottom, expandedCommitIDs.contains(commit.id) ? 8 : 0)
+                    }
+                }
+                if workflow.commits.count == 50 {
+                    Text("Showing the latest 50 commits").font(.system(size: 11)).foregroundStyle(Color.dockMetadataText).padding(8)
+                }
             }
         }
         .padding(.top, 12)
@@ -182,21 +267,18 @@ struct RepositoryChangesBrowser: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
-                sourceControlIcon(.arrowsClockwise, help: "Refresh source control") {
+                DockIconButton(icon: .arrowsClockwise, label: "Refresh source control", isBusy: workflow.isRefreshing, style: style) {
                     Task { await onRefresh() }
                 }
+                .disabled(workflow.isMutatingSourceControl)
             }
 
-            HStack(spacing: 7) {
-                Text("\(changes.changedFiles) files")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.dockMetadataText)
-                if changes.stagedCount > 0 {
-                    Text("· \(changes.stagedCount) staged")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.dockAccent)
-                }
-                Spacer(minLength: 0)
+            if let notice = workflow.sourceControlError ?? (changes.conflictedCount > 0 ? "Resolve conflicts, then stage the resolved files." : nil) {
+                Text(notice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
+                    .lineLimit(2)
+                    .help(notice)
             }
 
             if !isInspector { githubConnectionRow }
@@ -367,38 +449,34 @@ struct RepositoryChangesBrowser: View {
         .help(help)
     }
 
-    @ViewBuilder
     private func fileRow(_ file: RepositoryFileChange) -> some View {
-        if let onSelectFile {
-            Button {
-                onSelectFile(file)
-            } label: {
-                fileRowLabel(file, showsSelection: selectedFilePath == file.id)
-            }
-            .buttonStyle(.dockHover)
-            .padding(.vertical, 8)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
-        } else {
-            let isExpanded = expandedFileIDs.contains(file.id)
-            VStack(alignment: .leading, spacing: 0) {
+        let isExpanded = expandedFileIDs.contains(file.id)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 2) {
                 Button {
-                    toggle(file)
+                    if let onSelectFile { onSelectFile(file) } else { toggle(file) }
                 } label: {
-                    HStack(spacing: 6) {
-                        DockIcon(isExpanded ? .caretDown : .caretRight)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color.dockMetadataText)
-                            .frame(width: 12)
-                        fileRowLabel(file, showsSelection: false)
-                    }
+                    fileRowLabel(file, showsSelection: selectedFilePath == file.id || isExpanded)
                 }
                 .buttonStyle(.dockHover)
-                .help(isExpanded ? "Hide diff" : "Show diff")
-
-                if isExpanded { diffCard(for: file) }
+                .help("\(file.path) · \(fileStatusDescription(for: file)) · Show diff")
+                .accessibilityLabel("\(file.path), \(fileStatusDescription(for: file)). Show diff")
+                Button {
+                    perform(file.isStaged ? .unstage([file]) : .stage([file]))
+                } label: {
+                    DockIcon(file.isStaged ? .minus : .plus, size: 14, color: .dockSecondaryText)
+                        .frame(width: 28, height: 30)
+                }
+                .buttonStyle(.dockPress)
+                .help("\(file.isStaged ? "Unstage" : "Stage") \(file.path)")
+                .accessibilityLabel("\(file.isStaged ? "Unstage" : "Stage") \(file.path)")
+                .disabled(actionsDisabled)
+                Text(statusLetter(for: file))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(statusColor(for: file)).frame(width: 18)
+                    .help(fileStatusDescription(for: file))
             }
-            .padding(.vertical, 4)
-            .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+            if onSelectFile == nil && isExpanded { diffCard(for: file) }
         }
     }
 
@@ -462,49 +540,36 @@ struct RepositoryChangesBrowser: View {
     }
 
     private func fileRowLabel(_ file: RepositoryFileChange, showsSelection: Bool) -> some View {
-        HStack(spacing: 8) {
-            Text(statusLetter(for: file))
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(statusColor(for: file))
-                .frame(width: 18, height: 18)
-                .background(statusColor(for: file).opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .help(fileStatusDescription(for: file))
-                .accessibilityLabel(fileStatusDescription(for: file))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(fileName(for: file))
-                    .lineLimit(1)
-                    .foregroundStyle(Color.dockPrimaryText)
-                if !fileDirectory(for: file).isEmpty {
-                    Text(fileDirectory(for: file))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.dockMetadataText)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
+        HStack(spacing: 6) {
+            if let icon = ArtifactFileIcon.image(for: fileName(for: file)) {
+                Image(nsImage: icon).resizable().scaledToFit().frame(width: 16, height: 16)
+            } else {
+                DockIcon(.fileText, size: 16, color: .dockSecondaryText)
             }
-            Spacer(minLength: 6)
-            if let diff = diffs[file.id] {
-                let lines = Self.displayLines(diff.text)
-                let additions = lines.filter { $0.kind == .addition }.count
-                let deletions = lines.filter { $0.kind == .deletion }.count
-                HStack(spacing: 5) {
-                    if additions > 0 { Text("+\(additions)").foregroundStyle(Color.dockSuccess) }
-                    if deletions > 0 { Text("−\(deletions)").foregroundStyle(Color.dockDestructive) }
-                }
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .fixedSize()
+            Text(fileName(for: file))
+                .font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText)
+                .lineLimit(1).truncationMode(.middle).layoutPriority(1)
+            if !fileDirectory(for: file).isEmpty {
+                Text(fileDirectory(for: file))
+                    .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1).truncationMode(.head)
             }
+            Spacer(minLength: 0)
         }
-        .font(.system(size: 12, weight: .medium))
-        .padding(.horizontal, showsSelection ? 8 : 0)
-        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-        .background {
-            if showsSelection {
-                RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(Color.dockAccent.opacity(0.13))
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous))
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+        .background(showsSelection ? Color.dockAccent.opacity(0.13) : .clear, in: DockThemeShape(cornerRadius: DockControlMetrics.cornerRadius))
         .contentShape(Rectangle())
+    }
+
+    private func perform(_ action: RepositorySourceControlAction) {
+        let path = workflow.repository.path
+        Task {
+            let succeeded = await workflow.applySourceControl(action, path: path, refresh: onRefresh)
+            if succeeded, case .commit(let submittedMessage) = action, commitMessages[path] == submittedMessage {
+                commitMessages[path] = ""
+            }
+        }
     }
 
     private func fileName(for file: RepositoryFileChange) -> String {
@@ -544,7 +609,8 @@ struct RepositoryChangesBrowser: View {
     private func statusColor(for file: RepositoryFileChange) -> Color {
         if file.status == .conflicted { return .dockDestructive }
         if file.isStaged { return .dockAccent }
-        if file.status == .untracked { return .dockSecondaryText }
+        if file.status == .untracked || file.status == .added { return .dockSuccess }
+        if file.status == .deleted { return .dockDestructive }
         return .dockWarning
     }
 
@@ -557,8 +623,11 @@ struct RepositoryChangesBrowser: View {
 
     private func loadDiff(for file: RepositoryFileChange) {
         guard loadingFileIDs.insert(file.id).inserted else { return }
+        let path = workflow.repository.path
+        let token = diffGeneration
         Task {
-            let diff = await RepositoryService.diff(path: workflow.repository.path, file: file)
+            let diff = await RepositoryService.diff(path: path, file: file)
+            guard path == workflow.repository.path, token == diffGeneration else { return }
             loadingFileIDs.remove(file.id)
             diffs[file.id] = diff
         }

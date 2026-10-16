@@ -231,7 +231,7 @@ and `DockComponentStyles.swift`.
 | HUD panel | `.dockHUDPanel()` | Panels floating over the office scene |
 | List row | `.dockListRow(isHighlighted:)` | Dense divider-led operational rows |
 | Inspector group | `.dockCard(padding:)` | Grouped detail inside an inspector |
-| Buttons | `.dockPress`, `.dockPrimary`, `DockActionLabel` | Compact controls, the one primary action, pending state |
+| Buttons | `.dockPress`, `.dockSecondary`, `.dockPrimary`, `DockActionLabel` | Compact controls, the one primary action, pending state |
 | Inputs | `.dockGlass`, `.dockSwitch`, `DockTabBar` / `DockTabButton` | Text fields, toggles, local scopes (never native `.segmented`) |
 
 **Signage card anatomy.** Row 1 has the status dot, a one-line 12pt semibold
@@ -300,8 +300,14 @@ will appear or what to do next.
 
 **Buttons and inputs.**
 
-- Use `.dockPress` for compact controls and `.dockPrimary` for the one primary
-  action in a local section.
+- Use `.dockPress` for compact controls, `.dockSecondary` for outlined actions,
+  and `.dockPrimary` for the one primary action in a local section. Hosting roots
+  default to `.dockHover` for unstyled actions; native bordered styles are not used.
+- Action labels use `DockTypography.control` (12pt medium) and themed text. Primary
+  actions use `dockPrimaryText` over the canvas (neutral glass in Glass) with a 14% accent tint,
+  increasing to 24% on hover and 30% while pressed, with an accent contour.
+  All shared action styles show hover/press feedback and suppress hover emphasis
+  when disabled. Keep theme geometry, material, and reduced-motion behavior.
 - Keep icon controls visually compact but give them a 44pt minimum hit target.
   The exception is `DockIconButton` inside a header bar or section header:
   its hit area is its 28pt or 24pt frame, and neighbouring actions keep at
@@ -315,7 +321,53 @@ will appear or what to do next.
   `DockActionLabel` rather than replacing nearby content or allowing duplicate
   submission.
 
+### Tooltips
+
+SwiftUI controls use the shared `.help` / `.dockHoverTip` renderer. After a
+450ms hover, show one non-activating, mouse-transparent child panel above the
+host content; never draw a tooltip inside a row or scroll container. Nested
+controls show the smaller control's help. Empty help shows nothing. Use 12pt
+control text, a fully opaque native window with a solid themed canvas, and a
+hairline border. Wrap long text at 320pt with at most 12 lines. Prefer the
+requested edge with a 6pt gap, flip
+at the display edge, and try the other sides if clamping would cover the hovered
+control. Keep a visible gap beside the control and stay inside the display bounds.
+Dismiss on pointer exit, click, typing, scrolling, host movement/resizing/hiding,
+or source removal.
+Informational tooltip windows never prevent normal notch/workspace dismissal.
+
 ### Themes
+
+**The skeleton is clean; skins dress it.** Layout and component structure are
+the same under every skin and follow the Clean reference: a native unified
+title row (52pt, traffic lights centered, sidebar header and centered chat
+title in that row), sentence-case section labels with counts as plain gray
+text, no pills or icons that only decorate, quiet gray "show more" links, no
+divider under title rows, and accent color reserved for links, focus, and live
+status. A skin may change color, shape, outline, shadow, texture, type design,
+and selection treatment through `DockThemeStyle` and the palette; it may not
+add, remove, or reorder structure. The **Clean** skin is that skeleton with no
+dressing: borderless soft-gray cards on white, tinted sidebar, neutral user
+bubbles.
+
+**Skin identities.** Each skin has a short material signature in the gallery.
+Glass is frosted crystal; System is native graphite; Clean is porcelain.
+Classic Hermes pairs midnight ink with brass; Ares uses oxblood and bronze;
+Monochrome is a graphite ledger; Cool Blue is a steel blueprint; Warm Light
+is cream stationery. Cartoon uses inked stickers; Terminal uses phosphor
+scanlines; Brutalist uses a dotted print grid; Origami uses folded ivory;
+Dusk uses plum and lavender; Retro uses silver desktop bevels. E-Ink is
+high-contrast print; Swiss is an open red-accent editorial layout; Clay is
+soft terracotta; Pixel is an indigo arcade; Notebook is ruled cream paper;
+HUD uses cyan crosshairs. These are centralized skin treatments, the
+exception to the default flat chrome rules: patterns stay faint and static,
+surface shadows stay local, and semantic status hues retain their meaning.
+
+Navigation and tabs honor the skin's selection treatment (inverted ink,
+underline, marker, bar, or tonal fill). Composers use the skin's panel radius,
+outline and material details without changing their footprint. Patterned skins
+use distinct static scanline, dot, rule, grid or crosshair backdrops; Clean,
+System, Glass, E-Ink and Swiss keep their canvas clear. No decorative loops.
 
 **Adding a theme (standard).** A theme is one `DockThemeID` case in
 `DockTheme.swift`. The `title`, `detail`, `appearance`, `style`, `hermesSkinID`
@@ -635,6 +687,41 @@ with a result the user has not opened. The list has no cap; the body scrolls.
   an in-flight send. Known uploads are retained for safe retry or scoped image
   cleanup. Only acknowledged sends or confirmed discard clean up owned files.
 
+**Keyboard preview and saved actions.** Hover keeps the preview passive. The notch shortcut
+enters an interactive preview, preserving a scoped row selection through updates. Arrow keys
+move among rows; Return inspects the selected row and never answers a decision. Typing fields
+and menus retain their own navigation. Escape leaves a comparison first, then detail/composition,
+then the preview. Outside clicks save the quick draft and dismiss without activating another app.
+Dismissal returns focus only when Herm still owns focus; it never overrides a later app switch.
+
+More exposes four editable starter actions and custom instructions. An action only prepares a
+quick draft; Send remains explicit. Unbound actions retain the captured recipient and material.
+A bound action that changes destination requires confirmation and preserves the original draft;
+the new draft contains instructions alone. Actions and working-set checkpoint notes belong in a
+separate versioned WorkflowContent store, using atomic writes and restrictive file permissions.
+Corrupt content remains intact and disables saving rather than being overwritten.
+
+**Working-set checkpoints and watching.** A checkpoint records a user note, a member destination
+and, when present, the exact quick draft ID. Opening the editor and autosaving note edits retain
+the existing draft association. Save checkpoint explicitly associates a matching current draft,
+only while capture/submission is inactive. Restore affects notch context only. Missing drafts
+never substitute another draft with the same recipient; the note survives and the destination
+opens as an empty draft. Checkpoint clearing and set removal use confirmation. Choosing Watch
+filters ordinary activity to concrete sessions in one saved set without changing the recipient
+or workspace. Decisions and blocking failures remain global. Activity scope stays visible in the
+fixed header. Watch metadata reads are scoped to each profile, bounded to two concurrent reads,
+and triggered by selection, opening, refresh, reconnect or existing events, with no new timer.
+Saved session metadata does not prove current execution state. Unknown or disconnected state
+is marked stale; references absent from the bounded recent inventory remain repairable.
+
+**Result comparison.** An explicit successful update retains the previous read in memory.
+Compare shows added/removed text and output references from these two reads. It does not claim
+an exact historical turn match when reply identity is absent, or unchanged file contents from
+an unchanged path. Failed updates retain the displayed result and its recovery action. At most
+two bounded reads belong to the open result; closing it clears comparison history. Longer text
+uses separate snapshots rather than an expensive line diff. Comparison never changes source
+pins, drafts, or workspace selection.
+
 **Routine recovery.** Activity includes failed execution, blocked configuration, delivery errors,
 and explicitly pinned routines. Routine detail replaces the body, names its owner profile,
 and separates execution from delivery. View report reads its captured report session. Pause,
@@ -645,6 +732,28 @@ Skills & MCP repair opens the existing workspace modal with the captured profile
 operations keep Hermes' installation checks; credentials use secure fields and never enter
 preview/draft persistence. OAuth polling and skill-removal outcome checks run only during
 an explicit action. A live MCP reload warns that it affects all connected runtime sessions.
+The Capabilities page (rail and compact sidebar) covers what Hermes Desktop's Capabilities
+route does in Herm's own idiom: `DockTabBar` tabs with counts (Skills / Tools / Connectors /
+Plugins / MCP), a profile menu, and a filterable list (`dockListRow`, status dot, `dockSwitch`)
+beside a `dockCard` inspector (SKILL.md preview, toolset tools, connector accounts, plugin
+settings). Skills, Plugins and MCP add an Installed / Discover scope (Skills Hub search, the
+plugin catalog, unadded and custom MCP servers) instead of an embedded hub page. Only theme
+tokens are used, so every skin restyles it. Tools reads `GET /api/tools/toolsets` and toggles via
+`PUT /api/tools/toolsets/{name}`, hiding the same internal toolsets Desktop hides. Plugin
+Discover groups the whole catalog by its `category` (chips narrow to one) and ranks each group
+by GitHub stars or A–Z; Hermes has no popularity data, so stars come from one batched GitHub
+GraphQL read using the launch `GH_TOKEN`/`GITHUB_TOKEN` and are simply absent without one. Load
+errors show only on their own tab.
+The same Integrations modal lists Hermes plugins (`plugins.manage`: enable, disable, remove
+user installs) and hosted connectors (`connectors.*`, account owner: connect via the browser
+link Hermes mints, disconnect per account). Plugins that ship a Hermes Desktop UI half say so;
+Herm cannot host that panel, but the plugin's agent tools still load. Plugin settings save
+plain fields through `plugins.manage settings` and secret fields through `PUT /api/env`;
+secrets are never read back, only shown as saved. The catalog installer (from
+`/api/dashboard/plugins/catalog`) hides non-macOS entries and Desktop-only packages (category
+`desktop` with no tools, hooks or middleware). Connector rules toggle a connector through
+the member policy layer, guarded by its revision; without a member layer they are read-only.
+Accounts can be renamed to a Hermes alias (`[a-z0-9][a-z0-9-]{0,31}`).
 
 **Destinations and Recall.** Named working sets store profile/session/project references, not
 transcripts or runtime aliases. Choosing a destination never navigates the workspace. Missing
@@ -655,11 +764,14 @@ exact-message jump claim. Insert preserves the quick draft recipient and adds it
 
 **Session capacity.** A user-selected session may expose configured model choices and Stop
 this turn after an owned resume. Changes require acknowledged session scope and idle state.
-Account quota appears only with a stable, unambiguous provider/account match. Multiple account
-pools and unavailable mappings remain aggregate advisories. Read time and missing upstream
-freshness are explicit. Reported remaining allowance of 20% or less adds a nonblocking quick
-Send advisory; it does not switch models or predict completion. Capacity reads occur when the
-user opens the relevant composer/detail, without another idle polling loop.
+Quota figures come exclusively from `ControlCenterModel.providerQuotas`, the same inventory
+as the Quota page and chat composer. Session model responses supply model choices and provider
+identity, never a second quota reading. Compact summaries use the page's limiting window.
+Provider/account selection is an aggregate advisory, not a claim about the session's active
+credential. The provider reading time is explicit. Remaining allowance of 20% or less adds a
+nonblocking quick Send advisory; it does not switch models or predict completion.
+Capacity reads occur when the user opens the relevant composer/detail, without another idle
+polling loop.
 
 **Source and coding review.** Result Peek has Sources and Coding review disclosures. Links
 actually present in the saved excerpt are candidates, pinned only explicitly. User-added URLs,
@@ -725,9 +837,9 @@ names appear; full results and decisions stay in the workspace.
 segmented toggle and the refresh control (a small spinner while reading). The
 tab shares the ControlCenterModel provider inventory with the workspace. It
 reads quota only on explicit selection or refresh. It presents every connected
-provider with at most two windows each: the 5-hour window (`Session`, shown as
-`5h`) and the weekly window (`7d`). Otherwise it falls back to the provider's
-first two windows under their own names. Meters and rings show remaining
+provider with its reported allowance windows: the 5-hour window (`Session`, shown as
+`5h`) and weekly window (`7d`) appear first, followed by other reported windows
+under their own names. Balance providers show balance and runway when available. Meters and rings show remaining
 capacity (`remainingPercent`) in the Quota page's health hues, so both
 surfaces read the same way; missing values stay unavailable. Cached quota stays visible during refresh and
 after failed reads, with stale status shown instead of clearing the last
@@ -987,7 +1099,7 @@ Older Hermes runtimes must show support as unavailable, never local-only pins.
 
 Settings groups destinations by purpose:
 
-- **App:** General, Appearance, Notifications.
+- **App:** General, Gateway, Appearance, Notifications.
 - **Agent:** Models & tools, Chat, Memory & Context, Voice, Advanced.
 - **Tools & access:** Files & terminal, Browser, Privacy & safety, Integrations.
 - **Activity & maintenance:** Active session, Project checks, Diagnostics, Updates.
@@ -1019,15 +1131,32 @@ opens at the top when the category changes.
   transport, then read status again. Restart requires a verified launchd service
   because unmanaged CLI restarts may run in the foreground. Unknown CLI output
   and failed reads show unavailable, never an inferred running state.
-- **Skins gallery.** Compact tiles: swatches, Herm skin name, and one line
-  for the mode plus "Active in Hermes" when it applies. The selected tile gets
-  an accent stroke and checkmark; the description is a tooltip. Selecting a
+- **Gateway connection.** Gateway configures Herm's machine-level backend:
+  Local, Remote URL, SSH, or Hermes Cloud. Use the existing preference controls
+  and keep test progress and errors in a fixed slot beneath the actions. Remote
+  URLs preserve proxy path prefixes and require HTTPS outside loopback. Tokens and native OAuth credentials use
+  Keychain; browser sessions use Herm's dedicated WebKit store. Native OAuth
+  uses PKCE and a loopback callback when advertised, with the gateway's browser
+  sign-in for password providers and older runtimes. Cloud uses portal sign-in,
+  organization selection, agent discovery, and a separate per-agent session.
+  SSH reuses Desktop's ownership-checked lifecycle for Linux, macOS, and Windows.
+  Test both HTTP and WebSocket access without changing the active backend.
+  Save applies after restart; Save and restart Herm requires confirmation
+  because draft text and the current session view are cleared. Startup remote
+  environment overrides are read-only. General's messaging service and local
+  repository/terminal maintenance continue to target this Mac.
+- **Skins gallery.** Compact tiles show a miniature material/type/selection
+  specimen, the Herm skin name, a short material signature, and one line for
+  the mode plus "Active in Hermes" when it applies. Specimens use the target
+  palette and geometry independently of the active skin; they contain no
+  invented activity or metrics. The selected tile gets an accent stroke and
+  checkmark in a fixed slot; the description is a tooltip. Selecting a
   tile changes Herm presentation only and never invokes Hermes skin commands.
   Unmapped skins and installed companions are quiet lists below the grid.
 - **Color and copy.** The Quota rule applies: healthy and ready states stay
   neutral, and warning or destructive hues mark only states that need action.
   Row labels and buttons use sentence case, not monospaced capitals. At most
-  one filled `.dockPrimary` button per card, used for the committing action
+  one accent-tinted `.dockPrimary` button per card, used for the committing action
   (for example Update Hermes).
 - **Badges** are reserved for actionable state: the update indicator on Updates,
   the setup-needed count on Integrations, and the open-attention count on
@@ -1219,7 +1348,9 @@ at every width. Controls retain 44pt targets and resizing does not animate.
 The transcript mounts a bounded window of messages and pages earlier or later
 history automatically as the reader scrolls within one viewport of either edge;
 there are no show-more buttons, and the reader's position is held while a page
-mounts. Assistant responses are open document content; user prompts use
+mounts. Scrolling upward immediately suspends streaming follow until the reader
+returns to the bottom. Jump to latest animates only when Reduce Motion is off.
+Assistant responses are open document content; user prompts use
 restrained right-aligned navy bubbles with a tighter sender-side corner, and a
 steering prompt's status sits in sentence case beside its timestamp. Fenced
 code blocks carry a quiet header with the lowercase language and a Copy action.
@@ -1300,6 +1431,25 @@ events, and main-agent tool activity.
 - Change Review reads Git state only. It renders repository-relative paths and
   bounded diffs after explicit disclosure. Agent attribution requires an exact
   Hermes-reported written-file match; otherwise the change is unattributed.
+
+#### Source control in the session inspector
+
+- The Changes tab is a compact source control surface for the selected worktree.
+  It has a branch header, commit message input, Commit staged changes action,
+  collapsible Staged Changes and Changes groups, and recent Commits on that branch.
+- File rows are single-line, 30pt rows with a file icon, name, secondary directory,
+  stage/unstage action, and textual Git status. Selecting a row opens its bounded,
+  read-only diff. Group actions stage or unstage the displayed files.
+- Staging and unstaging update only the Git index. Commit includes staged changes
+  only, requires a message, and is disabled for unresolved conflicts. Pending
+  actions disable duplicate mutations. Errors occupy the existing helper slot;
+  failed commits retain the message. Each worktree keeps its own in-memory draft.
+- Commits shows the latest 50 commits reachable from the selected worktree's HEAD.
+  Disclosure reveals author, date, local references, and Copy commit hash. Upstream
+  counts describe the last fetched local state, never live remote synchronization.
+  Repository switches and refreshes update this history; no automatic fetch occurs.
+- These explicit local Git actions belong to Source Control. Change Review and
+  diff previews remain read-only.
 
 #### Terminal and external workflow states
 

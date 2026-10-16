@@ -5,17 +5,26 @@ import SwiftUI
 /// account, a new provider id starts its own pool.
 struct AddPoolAccountSheet: View {
     @ObservedObject var control: ControlCenterModel
+    var initialProvider = ""
+    var onAdded: (() -> Void)?
     @StateObject private var login = ProviderLoginModel()
     @State private var provider = ""
     @State private var label = ""
     @State private var apiKey = ""
     @State private var useAPIKey = false
-    @State private var callbackCode = ""
     @State private var showsLogin = false
-    @State private var showsOutput = false
     @Environment(\.dismiss) private var dismiss
 
-    private static let commonProviders = ["openai-codex", "anthropic", "openrouter", "nous", "deepseek"]
+    private static let commonProviders = ["openai-codex", "anthropic", "nous", "openrouter", "xai-oauth", "deepseek"]
+
+    /// Providers `hermes auth add` can sign in through a browser. Every other
+    /// provider only takes an API key, and without `--api-key` Hermes would
+    /// wait on a hidden `Paste your API key:` prompt.
+    nonisolated static let browserSignInProviders: Set<String> = ["openai-codex", "anthropic", "nous", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"]
+
+    private var providerID: String { provider.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var keyOnly: Bool { !providerID.isEmpty && !Self.browserSignInProviders.contains(providerID) }
+    private var usesKey: Bool { keyOnly || useAPIKey }
 
     private var suggestions: [String] {
         let pooled = control.providerQuotas.compactMap { $0.hermesCredential?.provider }
@@ -23,7 +32,7 @@ struct AddPoolAccountSheet: View {
     }
 
     private var command: String? {
-        Self.command(provider: provider, label: label, apiKey: useAPIKey ? apiKey : nil)
+        Self.command(provider: provider, label: label, apiKey: usesKey ? apiKey : nil)
     }
 
     /// Hermes ids and labels are single words; whitespace would split the argv.
@@ -37,6 +46,10 @@ struct AddPoolAccountSheet: View {
             let key = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty, !key.contains(where: \.isWhitespace) else { return nil }
             words += ["--type", "api-key", "--api-key", key]
+        } else {
+            guard browserSignInProviders.contains(id) else { return nil }
+            // OpenRouter defaults to an API key; its browser login must be asked for.
+            if id == "openrouter" { words += ["--type", "oauth"] }
         }
         return words.joined(separator: " ")
     }
@@ -46,12 +59,19 @@ struct AddPoolAccountSheet: View {
     var body: some View {
         DockModal(
             icon: .plus,
-            title: "Add pool account",
+            title: accountAdded ? "Account added" : "Add pool account",
             subtitle: "Connect another account to a Hermes provider pool."
         ) {
             Group {
                 if showsLogin {
-                    loginContent
+                    ProviderSignInFlow(
+                        login: login,
+                        providerName: providerID,
+                        mark: ProviderMark(hermesProvider: providerID),
+                        accountLabel: label.trimmingCharacters(in: .whitespacesAndNewlines),
+                        usesBrowser: !usesKey,
+                        onRetry: usesKey ? { showsLogin = false } : { start() }
+                    )
                 } else {
                     ScrollView { accountForm }
                 }
@@ -67,28 +87,36 @@ struct AddPoolAccountSheet: View {
                 Button("Cancel Sign-In") { login.cancel() }
                     .buttonStyle(.dockSecondary)
             } else if accountAdded && showsLogin {
+                Button("Add Another") {
+                    label = ""
+                    showsLogin = false
+                }
+                .buttonStyle(.dockSecondary)
                 Button("Done") { dismiss() }
                     .buttonStyle(.dockPrimary)
                     .keyboardShortcut(.defaultAction)
             } else if !showsLogin {
-                Button("Add Account") {
-                    if let command {
-                        callbackCode = ""
-                        showsOutput = false
-                        showsLogin = true
-                        login.start(command: command)
-                    }
-                }
-                .buttonStyle(.dockPrimary)
-                .keyboardShortcut(.defaultAction)
-                .disabled(command == nil)
+                Button(usesKey ? "Add Account" : "Sign In") { start() }
+                    .buttonStyle(.dockPrimary)
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(command == nil)
             }
         }
+        .onAppear { if provider.isEmpty { provider = initialProvider } }
         .onChange(of: login.exitStatus) {
             apiKey = ""
-            if login.exitStatus == 0 { control.refreshProviderQuota() }
+            if login.exitStatus == 0 {
+                control.refreshProviderQuota()
+                onAdded?()
+            }
         }
         .onDisappear { login.cancel() }
+    }
+
+    private func start() {
+        guard let command else { return }
+        showsLogin = true
+        login.start(command: command)
     }
 
     private var accountForm: some View {
@@ -99,18 +127,20 @@ struct AddPoolAccountSheet: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 126), spacing: 6)], spacing: 6) {
                     ForEach(suggestions, id: \.self) { id in
                         Button { provider = id } label: {
-                            Text(id)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity)
+                            HStack(spacing: 6) {
+                                ProviderMarkBadge(mark: ProviderMark(hermesProvider: id), size: 16)
+                                Text(id).lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.dockSecondary)
                         .controlSize(.small)
                         .help(id)
                         .overlay {
                             DockThemeShape(cornerRadius: DockLayout.controlRadius)
-                                .stroke(provider == id ? Color.dockAccent : .clear, lineWidth: DockLayout.hairline)
+                                .stroke(providerID == id ? Color.dockAccent : .clear, lineWidth: DockLayout.hairline)
                         }
-                        .accessibilityAddTraits(provider == id ? .isSelected : [])
+                        .accessibilityAddTraits(providerID == id ? .isSelected : [])
                     }
                 }
             }
@@ -118,90 +148,22 @@ struct AddPoolAccountSheet: View {
                 DockTextField("work", text: $label)
                     .textFieldStyle(.dockGlass)
             }
-            Toggle("Use an API key instead of browser sign-in", isOn: $useAPIKey)
-                .toggleStyle(.checkbox)
-                .font(.system(size: 12))
-            if useAPIKey {
+            if keyOnly {
+                ModalNote(text: "\(providerID) signs in with an API key.", icon: .key)
+            } else if !providerID.isEmpty {
+                Toggle("Use an API key instead of browser sign-in", isOn: $useAPIKey)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+            }
+            if usesKey {
                 labeledField("API key") {
                     SecureField("Paste the API key", text: $apiKey)
                         .textFieldStyle(.dockGlass)
+                        .onSubmit { start() }
                 }
                 // shortcut: key rides on argv until Hermes supports non-TTY key input.
-                ModalNote(text: "Stored by Hermes, not by Herm.", icon: .lockSimple)
+                ModalNote(text: "Stored by Hermes in its credential pool, not by Herm.", icon: .lockSimple)
             }
         }
-    }
-
-    private var loginContent: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                ProviderMarkBadge(mark: ProviderMark(hermesProvider: provider), size: 28)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(provider.trimmingCharacters(in: .whitespacesAndNewlines))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.dockPrimaryText)
-                    if !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(label)
-                            .lineLimit(1)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockSecondaryText)
-                    }
-                }
-                Spacer()
-            }
-            if accountAdded {
-                ModalNote(text: "Account added. Quota refresh requested.", icon: .checkCircle, tone: .dockSuccess)
-                if !login.outputLines.isEmpty {
-                    DisclosureGroup("Sign-in details", isExpanded: $showsOutput) { loginOutput }
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-            } else {
-                if login.isRunning {
-                    HStack(spacing: 7) {
-                        ProgressView().controlSize(.small)
-                        Text(useAPIKey ? "Adding account…" : "Complete sign-in using the instructions below.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.dockSecondaryText)
-                    }
-                } else if let failure = login.failureText {
-                    ModalNote(text: failure, icon: .warning, tone: .dockWarning)
-                } else if let status = login.exitStatus {
-                    ModalNote(text: "Account was not added (exit status \(status)). Review the details or go back to try again.", icon: .warning, tone: .dockWarning)
-                }
-                if !login.outputLines.isEmpty { loginOutput }
-                if login.isRunning && !useAPIKey {
-                    labeledField("Authorization code", hint: "Only if Hermes asks for one") {
-                        HStack(spacing: 8) {
-                            DockTextField("Paste the code", text: $callbackCode)
-                                .textFieldStyle(.dockGlass)
-                                .onSubmit { submitCode() }
-                            Button("Submit") { submitCode() }
-                                .buttonStyle(.dockSecondary)
-                                .disabled(callbackCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var loginOutput: some View {
-        ScrollView {
-            Text(login.outputLines.joined(separator: "\n"))
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(Color.dockSecondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
-        }
-        .frame(maxWidth: .infinity, maxHeight: 180, alignment: .topLeading)
-    }
-
-    private func submitCode() {
-        let trimmed = callbackCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        login.sendInput(trimmed)
-        callbackCode = ""
     }
 }

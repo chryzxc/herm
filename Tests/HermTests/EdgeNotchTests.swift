@@ -183,6 +183,29 @@ struct EdgeNotchTests {
         #expect(right.frame(width: 720, height: 600).maxX == screen.maxX)
     }
 
+    @Test func draggingToTopCenterDocksTheIsland() {
+        let screen = NSRect(x: 0, y: 0, width: 1600, height: 1000)
+        let visible = NSRect(x: 0, y: 0, width: 1600, height: 968)
+        let top = EdgeDockPlacement.dragged(to: NSPoint(x: 820, y: 990), screenFrame: screen, visibleFrame: visible)
+        #expect(top.side == .top)
+        let frame = top.frame(width: 400, height: 32)
+        #expect(frame.midX == screen.midX)
+        #expect(frame.maxY == screen.maxY)
+        #expect(top.workspaceInsets.top == 40)
+        // The top corners away from the camera still dock to the side.
+        #expect(EdgeDockPlacement.dragged(to: NSPoint(x: 1550, y: 990), screenFrame: screen, visibleFrame: visible).side == .right)
+    }
+
+    @MainActor @Test func topIslandWrapsTheNotchAndOpensBelowIt() {
+        let state = EdgeNotchState()
+        state.side = .top
+        state.notchSize = CGSize(width: 200, height: 32)
+        #expect(state.collapsedSize == CGSize(width: 200 + 42 * 2, height: 32))
+        #expect(state.panelSize == state.collapsedSize)
+        state.expanded = true
+        #expect(state.panelSize == CGSize(width: EdgeNotchState.islandSize.width, height: EdgeNotchState.islandSize.height + 32))
+    }
+
     @MainActor @Test func quietNotchDoesNotExposePassiveLabelsOrLargeRail() {
         let state = EdgeNotchState()
         #expect(state.isQuiet)
@@ -246,6 +269,11 @@ struct EdgeNotchTests {
         #expect(ProviderMark(providerID: "openrouter", displayName: "OpenRouter") == .openRouter)
         #expect(ProviderMark(providerID: "antigravity", displayName: "Antigravity") == .antigravity)
         #expect(ProviderMark(providerID: "mistral", displayName: "Mistral") == .monogram("M"))
+        #expect(ProviderMark(hermesProvider: "nvidia") == .icon("nvidia-color"))
+        #expect(ProviderMark(hermesProvider: "copilot-acp") == .icon("githubcopilot"))
+        #expect(ProviderMark(hermesProvider: "moa") == .monogram("M"))
+        #expect(ProviderMark.image(named: "nvidia-color")?.isTemplate == false)
+        #expect(ProviderMark.image(named: "ollama")?.isTemplate == true)
     }
 
     @MainActor @Test func dragCancelsPendingExpansionDuringHover() {

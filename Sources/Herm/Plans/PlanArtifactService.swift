@@ -59,6 +59,7 @@ struct PlanArtifactService {
     func comments(for document: PlanArtifactDocument) throws -> [PlanReviewComment] {
         let reviewURL = try reviewURL(for: document.relativePath, create: false)
         guard fileManager.fileExists(atPath: reviewURL.path) else { return [] }
+        guard isRegularOrSafeSymlink(reviewURL) else { throw PlanArtifactError.unsupportedFile }
         let text = try String(contentsOf: reviewURL, encoding: .utf8)
         return parseComments(text, planPath: document.relativePath, fallbackSHA: document.sha256 ?? "")
     }
@@ -94,7 +95,7 @@ struct PlanArtifactService {
     @discardableResult
     func saveRevision(_ draft: PlanRevisionDraft) throws -> URL {
         guard !draft.parentPlan.isEmpty, !draft.parentSHA256.isEmpty else { throw PlanArtifactError.writeFailed("Missing parent provenance") }
-        let target = try validatedWriteURL(try safeURL(for: draft.relativePath, allowReviews: false))
+        let target = try validatedLocalURL(try safeURL(for: draft.relativePath, allowReviews: false))
         guard target.pathExtension.lowercased() == "md" else { throw PlanArtifactError.unsupportedFile }
         guard !fileManager.fileExists(atPath: target.path) else { throw PlanArtifactError.writeFailed("Revision already exists") }
         do {
@@ -131,12 +132,12 @@ struct PlanArtifactService {
         guard (try? safeURL(for: planPath, allowReviews: false)) != nil else { throw PlanArtifactError.invalidPath }
         let digest = planPath.replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: ".md", with: "")
         let review = plansRoot.appendingPathComponent("reviews/\(digest).md").standardizedFileURL
-        let resolvedReview = create ? try validatedWriteURL(review) : review
+        let resolvedReview = try validatedLocalURL(review)
         if create { try fileManager.createDirectory(at: resolvedReview.deletingLastPathComponent(), withIntermediateDirectories: true) }
         return resolvedReview
     }
 
-    private func validatedWriteURL(_ url: URL) throws -> URL {
+    private func validatedLocalURL(_ url: URL) throws -> URL {
         guard fileManager.fileExists(atPath: plansRoot.path) else {
             throw PlanArtifactError.missingPlansDirectory
         }

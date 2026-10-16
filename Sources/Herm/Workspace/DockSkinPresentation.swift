@@ -18,7 +18,7 @@ struct DockSkinPresentation: Equatable {
     static var current: Self { DockThemeRuntime.current.presentation }
 
 
-    var composerRadius: CGFloat { switch composer { case .desktop: 14; case .line: 0; case .floating: DockLayout.paneRadius + 4 } }
+    var composerRadius: CGFloat { composer == .line ? 0 : DockLayout.paneRadius }
     var composerShadow: CGFloat { composer == .floating ? 6 : 0 }
     var composerControlFill: Color { composer == .floating ? .dockControlSurface : .clear }
 
@@ -57,4 +57,3 @@ extension DockThemeID {
         }
     }
 }
-

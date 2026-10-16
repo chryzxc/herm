@@ -577,6 +577,26 @@ struct StreamingPerformanceTests {
         #expect(streaming.chunks.isEmpty)
     }
 
+    @Test func longUnfinishedInlineSpansSplitAtTheLastSafeWhitespace() throws {
+        for opening in ["`", "``", "[", "*", "_"] {
+            let prefix = "Safe **bold** and `code` words. "
+            let source = prefix + opening + String(repeating: "unfinished words ", count: 700)
+            let boundary = try #require(StreamingChunkPolicy.promotionBoundary(in: source))
+            #expect(String(source[..<boundary]) == prefix)
+        }
+    }
+
+    @Test func closedAndEscapedInlineSpansRetainWhitespaceBoundaries() throws {
+        for prefix in ["`closed code` ", "[closed link](url) ", "\\*escaped ", "\\ whitespace ", "👩🏽‍💻 café "] {
+            let source = prefix + "`" + String(repeating: "unfinished words ", count: 700)
+            let boundary = try #require(StreamingChunkPolicy.promotionBoundary(in: source))
+            #expect(String(source[..<boundary]) == prefix)
+        }
+        let source = "`" + String(repeating: "unfinished words ", count: 1_000)
+        let boundary = try #require(StreamingChunkPolicy.promotionBoundary(in: source))
+        #expect(source[..<boundary].utf8.count == StreamingChunkPolicy.maxMutableTailBytes)
+    }
+
     @Test func chunkPromotionUsesStrictMutableTailThreshold() {
         let exact = String(repeating: "a", count: StreamingChunkPolicy.maxMutableTailBytes)
         #expect(StreamingChunkPolicy.promotionBoundary(in: exact) == nil)

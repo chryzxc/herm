@@ -58,7 +58,7 @@ struct SessionInspector: View {
             case .files: "Explorer"
             case .terminal: "Terminal"
             case .activity: "Activity"
-            case .changes: "Changes"
+            case .changes: "Source Control"
             case .browser: "Browser"
             }
         }

@@ -2,22 +2,69 @@ import AppKit
 import SwiftUI
 
 enum DockThemeID: String, CaseIterable, Identifiable, Codable {
-    case glass, clean, nativeMacOS, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud
+    case glass, clean, nativeMacOS, hermesClassic, ares, mono, slate, warmLight, cartoon, terminal, brutalist, origami, dusk, retro, eInk, swiss, clay, pixel, notebook, hud, island
     var id: String { rawValue }
     var hermesSkinID: String? {
-        switch self { case .nativeMacOS: nil; case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel, .notebook, .hud: nil }
+        switch self { case .nativeMacOS: nil; case .hermesClassic: "default"; case .ares: "ares"; case .mono: "mono"; case .slate: "slate"; case .warmLight: "warm-lightmode"; case .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .glass, .clean, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island: nil }
     }
     var title: String {
-        switch self { case .nativeMacOS: "System"; case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .clean: "Clean"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD" }
+        switch self { case .nativeMacOS: "System"; case .hermesClassic: "Classic Hermes"; case .ares: "Ares"; case .mono: "Monochrome"; case .slate: "Cool Blue"; case .warmLight: "Warm Light"; case .cartoon: "Cartoon"; case .terminal: "Terminal"; case .brutalist: "Brutalist"; case .origami: "Origami"; case .retro: "Retro"; case .dusk: "Dusk"; case .glass: "Glass"; case .clean: "Clean"; case .eInk: "E-Ink"; case .swiss: "Swiss"; case .clay: "Clay"; case .pixel: "Pixel"; case .notebook: "Notebook"; case .hud: "HUD"; case .island: "Island" }
+    }
+    var signature: String {
+        switch self {
+        case .glass: "Frosted crystal"
+        case .clean: "Quiet porcelain"
+        case .nativeMacOS: "Native graphite"
+        case .hermesClassic: "Midnight & brass"
+        case .ares: "Oxblood & bronze"
+        case .mono: "Graphite ledger"
+        case .slate: "Steel blueprint"
+        case .warmLight: "Cream stationery"
+        case .cartoon: "Ink & stickers"
+        case .terminal: "Green phosphor"
+        case .brutalist: "Bold print studio"
+        case .origami: "Folded ivory"
+        case .dusk: "Plum & lavender"
+        case .retro: "Silver desktop"
+        case .eInk: "Paper & ink"
+        case .swiss: "Red editorial"
+        case .clay: "Soft terracotta"
+        case .pixel: "Indigo arcade"
+        case .notebook: "Pencil & paper"
+        case .hud: "Cyan instruments"
+        case .island: "Pure black"
+        }
     }
     var detail: String {
-        switch self { case .nativeMacOS: "System menu blur with neutral surfaces and macOS accent colors."; case .hermesClassic: "Serif type, gold accent bars, and a soft gold glow on calm midnight surfaces."; case .ares: "Sharp command-center panels with crimson gradient actions, bronze hard shadows, and bar selection."; case .mono: "Grayscale ledger lines with inverted selection and no color distraction."; case .slate: "Blueprint grid, tight corners, and cool blue bar selection."; case .warmLight: "Embossed warm paper cards with serif type and soft raised shadows."; case .cartoon: "Chunky ink outlines, sticker shadows, rounded type, and bright comic colors."; case .terminal: "Phosphor green on black with scanline rules, glow, monospaced type, and square corners."; case .brutalist: "Graph-paper grid, heavy black borders, hard offset shadows, and loud color."; case .origami: "Folded corners, layered paper shadows, bar selection, and indigo ink accents."; case .retro: "Raised and sunken bevels on square gray panels, navy selection, and a classic desktop feel."; case .dusk: "Near-black surfaces with glowing pastel accents, deep shadows, and generous corners."; case .glass: "Liquid Glass panels, buttons, and tabs that refract soft colored light behind them."; case .clean: "Borderless soft-gray cards on white, gray selection, and color saved for avatars and links."; case .eInk: "Pure black and white with inverted selection, and no motion."; case .swiss: "Boxless typographic layout on a modular grid with a single red accent and underline selection."; case .clay: "Soft inflated controls with molded light and shadow, rounded type, and warm pastels."; case .pixel: "Stepped pixel corners, a pixel grid, chunky outlines, hard shadows, and arcade neon on deep indigo."; case .notebook: "Hand-drawn pencil outlines, ruled paper, tape-corner cards, and highlighter selection."; case .hud: "Chamfered panels with glowing corner brackets, a faint grid, and cyan telemetry accents." }
+        switch self {
+        case .glass: "Frosted panels, pill controls, and a polished glass rim. Follows macOS appearance."
+        case .clean: "Porcelain surfaces, soft gray selection, and borderless cards. Follows macOS appearance."
+        case .nativeMacOS: "Native menu blur, graphite chrome, and familiar blue selection. Follows macOS appearance."
+        case .hermesClassic: "Midnight ink, brass accents, serif lettering, and fine gold selection bars."
+        case .ares: "Oxblood panels, bronze contours, crisp corners, and hard offset shadows."
+        case .mono: "Graphite surfaces, monospaced lettering, and inverted silver selection."
+        case .slate: "Steel-blue panels, a fine blueprint grid, and precise blue selection bars."
+        case .warmLight: "Cream paper, brown ink, serif lettering, and gently pressed surfaces."
+        case .cartoon: "Cream canvas, white stickers, chunky ink outlines, and springy rounded controls."
+        case .terminal: "Green phosphor, fine scanlines, monospaced lettering, and inverted selection."
+        case .brutalist: "White stock, a dotted print grid, cobalt actions, and heavy black offset outlines."
+        case .origami: "Ivory paper, indigo ink, clipped folds, and softly layered panels."
+        case .dusk: "Plum-black surfaces, lavender accents, soft depth, and generous corners."
+        case .retro: "Silver panels, navy selection, and raised and sunken desktop bevels. No motion."
+        case .eInk: "Crisp paper, black rules, square controls, and inverted selection. No motion."
+        case .swiss: "Open typographic layout, a clear canvas, red underlines, and a single-rule composer."
+        case .clay: "Terracotta accents, warm porcelain, rounded lettering, and softly molded controls."
+        case .pixel: "Indigo panels, magenta accents, stepped corners, and pixel-grid shadows. No motion."
+        case .notebook: "Ruled cream paper, blue ink, pencil outlines, and yellow highlighter selection."
+        case .hud: "Cyan instruments, crosshair grid, chamfered panels, and fine corner brackets."
+        case .island: "Pure black surfaces and white type that blend with the camera notch. Used by the top island."
+        }
     }
     var appearance: DockThemeAppearance {
         switch self {
         case .nativeMacOS, .glass, .clean, .swiss: .system
         case .warmLight, .cartoon, .brutalist, .origami, .eInk, .clay, .notebook, .retro: .light
-        case .hermesClassic, .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud: .dark
+        case .hermesClassic, .ares, .mono, .slate, .terminal, .dusk, .pixel, .hud, .island: .dark
         }
     }
     var usesNativeMaterial: Bool { self == .nativeMacOS || style.material == .glass }
@@ -25,25 +72,26 @@ enum DockThemeID: String, CaseIterable, Identifiable, Codable {
     static var hermOnly: [DockThemeID] { allCases.filter { $0.hermesSkinID == nil } }
     var style: DockThemeStyle {
         switch self {
-        case .hermesClassic: DockThemeStyle(controlRadius: 6, paneRadius: 8, outlineWidth: 1, fontDesign: .serif, selection: .bar, glow: 5, pressScale: 0.98)
-        case .warmLight: DockThemeStyle(controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, fontDesign: .serif, selection: .fill, cardShadow: 12, emboss: 4, pressScale: 0.98)
-        case .ares: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1.5, stickerShadow: 3, selection: .bar, accentGradient: true, pressScale: 0.97)
-        case .mono: DockThemeStyle(controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .invert, backdrop: .ruled, pressScale: 1)
-        case .clay: DockThemeStyle(controlRadius: 16, paneRadius: 22, outlineWidth: 0, fontDesign: .rounded, cardShadow: 18, accentGradient: true, emboss: 10, pressScale: 0.94)
-        case .pixel: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 3, stickerShadow: 4, geometry: .pixel, fontDesign: .monospaced, selection: .invert, animates: false, backdrop: .grid, pressScale: 1)
-        case .notebook: DockThemeStyle(controlRadius: 6, paneRadius: 8, outlineWidth: 1.5, geometry: .sketch, fontDesign: .serif, selection: .highlight, backdrop: .ruled, pressScale: 0.97)
-        case .hud: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1, geometry: .chamfered, fontDesign: .monospaced, selection: .bar, glow: 12, backdrop: .grid, pressScale: 0.98)
-        case .cartoon: DockThemeStyle(controlRadius: 14, paneRadius: 18, outlineWidth: 2.5, stickerShadow: 4, fontDesign: .rounded, pressScale: 0.92)
-        case .retro: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .invert, animates: false, bevel: true, pressScale: 1)
-        case .terminal: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 1, fontDesign: .monospaced, selection: .invert, glow: 10, backdrop: .ruled, pressScale: 1)
-        case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .grid, pressScale: 1)
-        case .dusk: DockThemeStyle(controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 14, cardShadow: 16, accentGradient: true, pressScale: 0.98)
-        case .origami: DockThemeStyle(controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, selection: .bar, cardShadow: 10, pressScale: 0.98)
-        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 14, accentGradient: true, pressScale: 0.97, neutralUserBubble: true)
-        case .eInk: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 1, selection: .invert, animates: false, pressScale: 1)
-        case .swiss: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open, backdrop: .grid, pressScale: 1)
+        case .hermesClassic: DockThemeStyle(controlRadius: 6, paneRadius: 8, outlineWidth: 1, fontDesign: .serif, selection: .bar, glow: 3, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
+        case .warmLight: DockThemeStyle(controlRadius: 12, paneRadius: 16, outlineWidth: 0.5, fontDesign: .serif, selection: .fill, cardShadow: 6, emboss: 3, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+        case .ares: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1.5, stickerShadow: 3, selection: .bar, accentGradient: true, pressScale: 0.97, cardFill: 1, tintedSidebar: true)
+        case .mono: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 0.5, fontDesign: .monospaced, selection: .invert, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+        case .clay: DockThemeStyle(controlRadius: 16, paneRadius: 22, outlineWidth: 0, fontDesign: .rounded, cardShadow: 8, accentGradient: true, emboss: 7, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+        case .pixel: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 3, stickerShadow: 4, geometry: .pixel, fontDesign: .monospaced, selection: .invert, animates: false, backdrop: .grid, pressScale: 1, cardFill: 1, tintedSidebar: true)
+        case .notebook: DockThemeStyle(controlRadius: 6, paneRadius: 8, outlineWidth: 1.5, geometry: .sketch, fontDesign: .serif, selection: .highlight, backdrop: .ruled, pressScale: 0.97, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+        case .hud: DockThemeStyle(controlRadius: 2, paneRadius: 4, outlineWidth: 1, geometry: .chamfered, fontDesign: .monospaced, selection: .bar, glow: 5, backdrop: .crosshairs, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
+        case .cartoon: DockThemeStyle(controlRadius: 14, paneRadius: 18, outlineWidth: 2.5, stickerShadow: 4, fontDesign: .rounded, pressScale: 0.94, cardFill: 1, tintedSidebar: true)
+        case .retro: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .invert, animates: false, bevel: true, pressScale: 1, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+        case .terminal: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 1, fontDesign: .monospaced, selection: .invert, glow: 3, backdrop: .scanlines, pressScale: 1, cardFill: 0.85, tintedSidebar: true)
+        case .brutalist: DockThemeStyle(controlRadius: 2, paneRadius: 2, outlineWidth: 3, stickerShadow: 5, selection: .invert, backdrop: .dots, pressScale: 1, cardFill: 1, tintedSidebar: true)
+        case .dusk: DockThemeStyle(controlRadius: 12, paneRadius: 20, outlineWidth: 0.5, glow: 5, cardShadow: 10, accentGradient: true, pressScale: 0.98, cardFill: 1, tintedSidebar: true)
+        case .origami: DockThemeStyle(controlRadius: 3, paneRadius: 4, outlineWidth: 1, geometry: .folded, selection: .bar, cardShadow: 6, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
+        case .glass: DockThemeStyle(controlRadius: 14, paneRadius: 20, outlineWidth: 0.5, material: .glass, cardShadow: 8, accentGradient: true, pressScale: 0.97, neutralUserBubble: true, tintedSidebar: true)
+        case .eInk: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 1, selection: .invert, animates: false, pressScale: 1, cardFill: 1, neutralUserBubble: true)
+        case .swiss: DockThemeStyle(controlRadius: 0, paneRadius: 0, outlineWidth: 0, selection: .underline, chrome: .open, pressScale: 1, neutralUserBubble: true)
         case .clean: DockThemeStyle(controlRadius: 10, paneRadius: 18, outlineWidth: 0, pressScale: 0.98, cardFill: 1, neutralUserBubble: true, tintedSidebar: true)
-        case .slate: DockThemeStyle(controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .bar, backdrop: .grid, pressScale: 0.98)
+        case .slate: DockThemeStyle(controlRadius: 4, paneRadius: 6, outlineWidth: 1, selection: .bar, backdrop: .grid, pressScale: 0.98, cardFill: 0.8, tintedSidebar: true)
+        case .island: DockThemeStyle(controlRadius: 14, paneRadius: 22, outlineWidth: 0, pressScale: 0.97, cardFill: 1, neutralUserBubble: true)
         case .nativeMacOS: DockThemeStyle()
         }
     }
@@ -64,7 +112,7 @@ enum DockThemeMaterial: Equatable { case solid, glass }
 /// How a selected or hovered tab/row is marked.
 enum DockThemeSelection: Equatable { case fill, invert, underline, highlight, bar }
 /// Faint pattern drawn on the window canvas.
-enum DockThemeBackdrop: Equatable { case none, ruled, grid }
+enum DockThemeBackdrop: Equatable { case none, ruled, grid, dots, scanlines, crosshairs }
 /// `.open` drops card fills and strokes so structure comes from type and spacing.
 enum DockThemeChrome: Equatable { case boxed, open }
 
@@ -174,13 +222,13 @@ struct DockThemePalette {
     fileprivate typealias Roles = (bg: String, surface: String, surface2: String, surface4: String, primary: String, secondary: String, metadata: String, accent: String, selected: String, divider: String, success: String, warning: String, destructive: String)
     fileprivate static func roles(_ theme: DockThemeID, dark isDark: Bool) -> Roles {
         switch theme {
-        case .nativeMacOS: return isDark ? ("#000615", "#2A3247", "#171C2B", "#3A4359", "#D2D7E0", "#BCC2CF", "#959CAC", "#0A84FF", "#1F3D6B", "#3C4459", "#30D158", "#FF9F0A", "#FF453A") : ("#F2F2F7", "#FFFFFF", "#E5E5EA", "#D1D1D6", "#1C1C1E", "#4D4D52", "#646469", "#007AFF", "#D9E9FF", "#8E8E93", "#248A3D", "#C93400", "#D70015")
+        case .nativeMacOS: return isDark ? ("#15171C", "#282B32", "#1C1E24", "#373B44", "#D2D7E0", "#BCC2CF", "#959CAC", "#0A84FF", "#1F3D6B", "#3C4459", "#30D158", "#FF9F0A", "#FF453A") : ("#F2F2F7", "#FFFFFF", "#E5E5EA", "#D1D1D6", "#1C1C1E", "#4D4D52", "#646469", "#007AFF", "#D9E9FF", "#8E8E93", "#248A3D", "#C93400", "#D70015")
         case .hermesClassic: return isDark ? ("#1A1A2E", "#211F35", "#171728", "#333355", "#D3CCB4", "#BBB8AC", "#988964", "#E5B23E", "#3A3A55", "#544F67", "#8FBC8F", "#E3C04F", "#FF6B6B") : ("#F7F3E8", "#F1E8D3", "#FBF9F2", "#E9DFC6", "#3E321F", "#61523A", "#756549", "#B8860B", "#E8DCC2", "#D7C9A9", "#2E7D32", "#B45309", "#B4232F")
-        case .ares: return isDark ? ("#2A1212", "#321719", "#241010", "#5C221D", "#CCC2AF", "#C7B4A5", "#AC7C78", "#DD4A3A", "#692620", "#6E584B", "#7BC96F", "#C7A96B", "#EF5350") : ("#F8EEE8", "#F1DDD3", "#FCF7F4", "#E8C6B8", "#3B201B", "#60433C", "#7E5850", "#DD4A3A", "#F0D1C7", "#DAB2A2", "#4CAF50", "#C7A96B", "#EF5350")
+        case .ares: return isDark ? ("#1D1115", "#2B191E", "#160E12", "#48252B", "#CCC2AF", "#C7B4A5", "#AC7C78", "#DD4A3A", "#692620", "#6E584B", "#7BC96F", "#C7A96B", "#EF5350") : ("#F8EEE8", "#F1DDD3", "#FCF7F4", "#E8C6B8", "#3B201B", "#60433C", "#7E5850", "#DD4A3A", "#F0D1C7", "#DAB2A2", "#4CAF50", "#C7A96B", "#EF5350")
         case .mono: return isDark ? ("#1F1F1F", "#282828", "#181818", "#464646", "#C8C8C8", "#C8C8C8", "#909090", "#AAAAAA", "#505050", "#5E5E5E", "#B5B5B5", "#AAAAAA", "#D0D0D0") : ("#F5F5F5", "#EDEDED", "#FAFAFA", "#E2E2E2", "#202020", "#565656", "#696969", "#555555", "#E0E0E0", "#C7C7C7", "#5F5F5F", "#777777", "#8A8A8A")
         case .slate: return isDark ? ("#151C2F", "#1C2740", "#111827", "#324867", "#BEC6CE", "#BEC6CE", "#8891A0", "#7EB8F6", "#3A5375", "#545E6B", "#63D0A6", "#E6A855", "#F7A072") : ("#EFF4FA", "#E4ECF6", "#F7FAFD", "#D4E1F0", "#17243A", "#46576B", "#5B6A7F", "#2563C7", "#D3E0F4", "#B7C8DD", "#238B67", "#A86916", "#C94C4C")
         case .warmLight: return ("#F5F0E8", "#EEE5D5", "#FBF7EF", "#E8DCC8", "#2C1810", "#664F3D", "#745D45", "#8B4513", "#E8DAD0", "#D2BE9D", "#2E7D32", "#E65100", "#C62828")
-        case .cartoon: return ("#FFF6DC", "#FFFFFF", "#FFEFC4", "#FFE7A3", "#1E1A16", "#4A4038", "#786859", "#F0481F", "#BFE4FF", "#1E1A16", "#168F55", "#B86E00", "#E5383B")
+        case .cartoon: return ("#FFF6DC", "#FFFFFF", "#FFEFC4", "#FFE7A3", "#1E1A16", "#4A4038", "#786859", "#F0481F", "#FFD3C2", "#1E1A16", "#168F55", "#B86E00", "#E5383B")
         case .retro: return ("#C0C0C0", "#D4D0C8", "#CBC7BF", "#DEDBD3", "#000000", "#2B2B2B", "#454545", "#000080", "#B4B8D8", "#7F7F7F", "#005A00", "#7A4A00", "#A00000")
         case .terminal: return ("#0F1511", "#18211B", "#131A15", "#253329", "#C9DBCD", "#B4CCBB", "#8AA894", "#4ADE80", "#1F4A2B", "#3D5C46", "#4ADE80", "#F2C94C", "#FF6B6B")
         case .brutalist: return ("#FFFFFF", "#FFFFFF", "#F2F2F2", "#FFE500", "#000000", "#222222", "#555555", "#0047FF", "#FFE500", "#000000", "#00A152", "#B86A00", "#FF1F1F")
@@ -189,9 +237,10 @@ struct DockThemePalette {
         case .pixel: return ("#1A1033", "#261A4A", "#20143F", "#3A2A6B", "#D6D0EE", "#C2BBE2", "#8F85B9", "#FF4FA3", "#4B2F8A", "#5A46A0", "#3DDC97", "#FFD23F", "#FF5C6C")
         case .notebook: return ("#FBF6E9", "#FFFDF5", "#F5EFDC", "#E9E0C6", "#2B2A33", "#55525E", "#6C6879", "#2F4FA8", "#FFF0A8", "#77747F", "#3F8F5B", "#A86F00", "#C8362E")
         case .hud: return ("#060B14", "#0C1626", "#09111E", "#12263D", "#A9DCEB", "#83B8CA", "#5C8796", "#19D3F3", "#0F3A52", "#1F5C75", "#3DEB9A", "#FFB020", "#FF4D5E")
-        case .dusk: return ("#0B0B0E", "#131318", "#0F0F13", "#1E1E26", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740", "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B")
-        case .glass: return isDark ? ("#121214", "#1D1D20", "#161618", "#2B2B2F", "#D8D8DC", "#B4B4BA", "#88888F", "#0A84FF", "#303035", "#3A3A3F", "#30D158", "#FF9F0A", "#FF453A") : ("#F4F4F5", "#FFFFFF", "#F8F8F9", "#E6E6E9", "#18181B", "#52525B", "#6B6B73", "#007AFF", "#E2E2E6", "#D4D4D8", "#248A3D", "#C93400", "#D70015")
-        case .clean: return isDark ? ("#141414", "#1E1E1E", "#191919", "#2A2A2A", "#D6D6D6", "#B0B0B0", "#8C8C8C", "#5A9BFF", "#2C2C2C", "#303030", "#4CC27A", "#E5A640", "#FF6B6B") : ("#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#2672E8", "#EBEBEB", "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A")
+        case .island: return ("#000000", "#141414", "#0A0A0A", "#262626", "#D9D9DC", "#B3B3B8", "#8A8A90", "#F5F5F7", "#2C2C2E", "#2A2A2C", "#30D158", "#FF9F0A", "#FF453A")
+        case .dusk: return ("#111019", "#1D1928", "#15121E", "#2A2436", "#D2D2D8", "#A5A7B3", "#8A8C9A", "#9B8CF0", "#2A2740", "#2E2E38", "#6EDDB0", "#F5B965", "#FF6B6B")
+        case .glass: return isDark ? ("#11151C", "#1C232D", "#151B23", "#293340", "#D8D8DC", "#B4B4BA", "#8B8B94", "#8FD3E8", "#303035", "#3A3A3F", "#30D158", "#FF9F0A", "#FF453A") : ("#F4F4F5", "#FFFFFF", "#F8F8F9", "#E6E6E9", "#18181B", "#52525B", "#6B6B73", "#1F7A92", "#E2E2E6", "#D4D4D8", "#248A3D", "#C93400", "#D70015")
+        case .clean: return isDark ? ("#141414", "#1E1E1E", "#191919", "#2A2A2A", "#D6D6D6", "#B0B0B0", "#8C8C8C", "#C7C7CC", "#2C2C2C", "#303030", "#4CC27A", "#E5A640", "#FF6B6B") : ("#FFFFFF", "#F5F5F5", "#F7F7F7", "#ECECEC", "#111111", "#5C5C5C", "#6B6B6B", "#3A3A3C", "#EBEBEB", "#DEDEDE", "#2F8F4E", "#B26A00", "#D93A3A")
         case .eInk: return ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#EDEDED", "#000000", "#2B2B2B", "#555555", "#000000", "#D9D9D9", "#000000", "#1A1A1A", "#333333", "#000000")
         case .swiss: return isDark ? ("#0A0A0A", "#0A0A0A", "#0A0A0A", "#1C1C1C", "#D4D4D4", "#B0B0B0", "#7A7A7A", "#FF3B30", "#2A1412", "#2E2E2E", "#9A9A9A", "#B0B0B0", "#FF3B30") : ("#FFFFFF", "#FFFFFF", "#FFFFFF", "#F0F0F0", "#0A0A0A", "#4A4A4A", "#747474", "#E30613", "#FBE4E5", "#D9D9D9", "#555555", "#777777", "#E30613")
         }

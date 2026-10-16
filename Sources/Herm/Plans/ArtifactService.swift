@@ -19,11 +19,16 @@ struct ArtifactService {
     private static let strongKey = regex(#"^(?:artifact_(?:file|image|path|url)|files?_(?:created|modified|written)|generated_(?:file|image|path|url)|media_tag|output_(?:file|path|url)|result_(?:file|path|url)|saved_to|screenshot_path)$"#)
     private static let producerKey = regex(#"^(?:artifact(?:s|_(?:file|image|path|url))?|attachment(?:s|_(?:file|image|path|url))?|download(?:s|_(?:file|path|url))?|(?:audio|image|video)(?:_(?:file|path|url))?|file_path|local_path|media(?:_(?:file|path|url))?|path)$"#)
 
+    nonisolated static func extractInBackground(session: HermesSession, messages: sending [[String: Any]]) async -> [ArtifactRecord] {
+        extract(session: session, messages: messages)
+    }
+
     static func extract(session: HermesSession, messages: [[String: Any]]) -> [ArtifactRecord] {
         let fallback = session.lastUpdatedAt ?? session.startedAt ?? .now
         var found: [String: ArtifactRecord] = [:]
 
         for message in messages {
+            guard !Task.isCancelled else { return [] }
             let role = (message["role"] as? String ?? "").lowercased()
             let date = (message["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0 < 10_000_000_000 ? $0 : $0 / 1000) } ?? fallback
             // First mention wins, like Desktop.

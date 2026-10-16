@@ -56,6 +56,24 @@ struct BrowserAnnotation: Decodable {
         return "(() => {\n\(finder)\n\(load("BrowserAnnotate"))\n})();"
     }()
 
+    /// Herm's current palette as the annotate UI's CSS custom properties (a JSON object literal).
+    @MainActor static var themeJSON: String {
+        let palette = DockThemePalette(theme: DockThemeRuntime.current)
+        func hex(_ color: Color) -> String {
+            var value = "#888888"
+            NSApp.effectiveAppearance.performAsCurrentDrawingAppearance {
+                guard let c = NSColor(color).usingColorSpace(.sRGB) else { return }
+                value = String(format: "#%02X%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255),
+                               Int(c.blueComponent * 255), Int(c.alphaComponent * 255))
+            }
+            return value
+        }
+        let tokens = ["accent": palette.accent, "on-accent": palette.onAccent, "surface": palette.surface,
+                      "field": palette.background, "text": palette.primaryText, "muted": palette.secondaryText,
+                      "border": palette.divider]
+        return "{" + tokens.map { "\"\($0.key)\":\"\(hex($0.value))\"" }.joined(separator: ",") + "}"
+    }
+
     /// Page-world hook for the WebKit tab; agent mode reads the console over CDP instead.
     static let consoleHook = """
     (() => {
@@ -116,6 +134,7 @@ struct SessionBrowserView: View {
     @StateObject private var browser = BrowserController()
     @ObservedObject private var agent = AgentBrowser.shared
     @State private var field = ""
+    @FocusState private var isEditingAddress: Bool
 
     private var showsAgent: Bool { isPrimary && agent.isActive }
     private var viewport: BrowserViewport { BrowserViewport(rawValue: viewportRaw) ?? .fit }
@@ -123,11 +142,40 @@ struct SessionBrowserView: View {
     private var consoleErrors: [String] { showsAgent ? agent.consoleErrors : browser.consoleErrors }
     private var annotating: Bool { showsAgent ? agent.annotating : browser.annotating }
 
+    /// The Browser tab fell back to WebKit: say so, since Hermes' browser tools are off too.
+    private func offlineNotice(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            DockStatusDot(tone: .attention, size: 7)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Agent browser offline")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.dockPrimaryText)
+                Text("Hermes can't browse. \(message)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(message)
+            }
+            Spacer(minLength: 4)
+            Button("Retry") { agent.start() }
+                .buttonStyle(DockSecondaryButtonStyle())
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.dockWarning.opacity(0.08))
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+        .accessibilityElement(children: .combine)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
                 .padding(8)
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+
+            if isPrimary, case .failed(let message) = agent.state { offlineNotice(message) }
 
             if showsAgent {
                 AgentBrowserPane(browser: agent, model: model)
@@ -147,7 +195,7 @@ struct SessionBrowserView: View {
             guard isPrimary else { return }
             agent.model = model
             agent.presetWidth = viewportRaw
-            if agent.state == .off { agent.start() }
+            if !agent.isActive { agent.start() }  // opening the tab retries a failed browser
             if let url = InAppBrowser.take() { open(url) }
             else if !address.isEmpty, model.activeBrowserCall == nil,
                     showsAgent ? (agent.activePage?.url ?? "about:blank") == "about:blank" : browser.web.url == nil {
@@ -160,12 +208,12 @@ struct SessionBrowserView: View {
         }
         .onReceive(browser.$currentURL) { url in
             guard let url, !showsAgent else { return }
-            field = url
+            if !isEditingAddress { field = url }
             if isPrimary { address = url }
         }
         .onReceive(agent.$pages) { _ in
             guard showsAgent, let url = agent.activePage?.url else { return }
-            field = url
+            if !isEditingAddress { field = url }  // never clobber what you're typing
             if url != "about:blank" { address = url }
         }
         .onChange(of: viewportRaw) { _, raw in if isPrimary { agent.presetWidth = raw } }
@@ -192,7 +240,8 @@ struct SessionBrowserView: View {
             TextField(showsAgent ? "Agent browser address" : "Search or enter address", text: $field)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 80)
-                .onSubmit { go(field) }
+                .focused($isEditingAddress)
+                .onSubmit { go(field); isEditingAddress = false }
             DockIconButton(icon: .cursorClick, label: annotating ? "Stop Annotating (Esc)" : "Annotate: click an element to comment on it",
                            isProminent: annotating, style: palette) {
                 if showsAgent { agent.annotating.toggle() } else { browser.annotating.toggle() }
@@ -208,10 +257,6 @@ struct SessionBrowserView: View {
                 sendConsole()
             }
             .disabled(consoleErrors.isEmpty)
-            if isPrimary, case .failed(let message) = agent.state {
-                Button("Retry Agent Browser", icon: .robot) { agent.start() }
-                    .help(message)
-            }
             DockMenuSection("Viewport") {
                 ForEach(BrowserViewport.allCases) { option in
                     Button { viewportRaw = option.rawValue } label: {
@@ -296,6 +341,8 @@ private final class BrowserController: NSObject, ObservableObject, WKNavigationD
 
     override init() {
         let configuration = WKWebViewConfiguration()
+        // WKWebView's default UA has no Safari token, so sites like Google serve their no-JS page.
+        configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"  // ponytail: fixed version, bump if sites start sniffing it
         web = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         let content = configuration.userContentController
@@ -366,7 +413,7 @@ private final class BrowserController: NSObject, ObservableObject, WKNavigationD
     }
 
     private func applyAnnotating() {
-        evaluate("window.__hermAnnotate?.setEnabled(\(annotating))")
+        evaluate("window.__hermAnnotate?.setEnabled(\(annotating), \(BrowserAnnotation.themeJSON))")
     }
 
     private func evaluate(_ script: String) {

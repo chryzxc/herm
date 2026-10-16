@@ -737,7 +737,7 @@ struct AutomationWorkspaceView: View {
         Button(CommandCenterPreferencesStore.shared.routinePins.contains(reference.id) ? "Unpin from notch" : "Pin to notch") {
             CommandCenterPreferencesStore.shared.toggleRoutinePin(reference.id)
         }
-        Button("Repair skills or MCP…") { control.integrationDestination = IntegrationDestination(profileID: reference.profileID) }
+        Button("Integrations…") { control.integrationDestination = IntegrationDestination(profileID: reference.profileID) }
         if control.capabilityAvailable("cron.runNow") {
             Button("Run now", icon: .play) {
                 runRequest = job

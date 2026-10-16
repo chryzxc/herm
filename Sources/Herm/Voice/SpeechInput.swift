@@ -10,6 +10,10 @@ final class SpeechInput: ObservableObject {
     @Published var transcript = ""
     @Published var errorMessage: String?
     @Published var completedTranscript: String?
+    /// Dictation fills the composer instead of submitting: no completedTranscript is published.
+    let isDictation: Bool
+
+    init(isDictation: Bool = false) { self.isDictation = isDictation }
     /// Smoothed microphone loudness in the 0...1 range for the voice orb.
     @Published private(set) var audioLevel: CGFloat = 0
 
@@ -205,7 +209,7 @@ final class SpeechInput: ObservableObject {
                     isUnavailable = true
                     stop()
                 } else if result?.isFinal == true {
-                    completedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !isDictation { completedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines) }
                     stop()
                 }
             }
@@ -230,6 +234,7 @@ final class SpeechInput: ObservableObject {
 
     private func scheduleAutomaticSubmit(after transcript: String) {
         silenceTask?.cancel()
+        guard !isDictation else { return }
         silenceTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1.2))
             guard !Task.isCancelled,

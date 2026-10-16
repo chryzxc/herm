@@ -120,6 +120,74 @@ struct WorkflowRoadmapTests {
     #expect(client.calls[0].1["profile"] as? String == "research")
     #expect(client.calls[0].1["session_id"] as? String == "owner")
   }
+  @Test func connectorOperationOpensOnlyHTTPSLinksAndRequiresEveryTargetConnected() throws {
+    let pending = try HermesWorkflowRPC.connectorOperation([
+      "op_id": "op", "settled": false,
+      "targets": [["state": "initiated", "connect_url": "http://insecure.test"]],
+    ])
+    #expect(pending.url == nil && !pending.settled && !pending.connected)
+    let done = try HermesWorkflowRPC.connectorOperation([
+      "op_id": "op", "settled": true,
+      "targets": [
+        ["state": "connected", "connect_url": "https://portal.test/a"], ["state": "failed"],
+      ],
+    ])
+    #expect(done.url?.host == "portal.test" && done.settled && !done.connected)
+    #expect(throws: (any Error).self) { try HermesWorkflowRPC.connectorOperation(["targets": []]) }
+  }
+
+  @Test func toolsetsHideInternalsAndToggleWithinProfile() async throws {
+    let client = WorkflowFixture()
+    client.replies["GET"] = [
+      "items": [
+        ["name": "web", "label": "Web", "description": "Search", "enabled": true, "configured": false, "tools": ["web_search"]],
+        ["name": "moa", "label": "MoA", "enabled": false],
+      ]
+    ]
+    let rpc = HermesWorkflowRPC(client: client, profileID: "coding")
+    let toolsets = try await rpc.toolsets()
+    #expect(toolsets.map(\.id) == ["web"])
+    #expect(toolsets.first?.configured == false && toolsets.first?.tools == ["web_search"])
+    #expect(client.calls.first?.0 == "GET /api/tools/toolsets?profile=coding")
+    client.replies["PUT"] = ["ok": true, "name": "web", "enabled": false]
+    try await rpc.setToolset("web", enabled: false)
+    #expect(client.calls.last?.0 == "PUT /api/tools/toolsets/web?profile=coding")
+    client.replies["PUT"] = ["ok": true, "name": "web", "enabled": true]
+    await refusing { try await rpc.setToolset("web", enabled: false) }
+  }
+
+  @Test func pluginCatalogKeepsCategoryTierAndGitHubSlug() async throws {
+    let client = WorkflowFixture()
+    client.replies["GET"] = [
+      "entries": [
+        ["name": "mem", "category": "memory", "tier": "official", "repo": "https://github.com/acme/mem.git"],
+        ["name": "web", "repo": "https://gitlab.com/acme/web"],
+        ["name": "panel", "category": "desktop"],
+      ]
+    ]
+    let catalog = try await HermesWorkflowRPC(client: client, profileID: nil).pluginCatalog()
+    #expect(catalog.map(\.id) == ["mem", "web"])
+    #expect(catalog[0].category == "memory" && catalog[0].official && catalog[0].githubSlug == "acme/mem")
+    #expect(catalog[1].category == "general" && !catalog[1].official && catalog[1].githubSlug == nil)
+  }
+
+  @Test func pluginSettingsSendOnlyChangedTypedValuesAndNeverSecrets() throws {
+    let settings = [
+      ["key": "on", "type": "boolean", "value": false],
+      ["key": "n", "type": "number", "value": 3],
+      ["key": "r", "type": "number", "value": 1],
+      ["key": "s", "type": "string", "value": "same"],
+      ["key": "k", "type": "secret", "env": "API_KEY", "has_value": true],
+    ].compactMap(HermesWorkflowRPC.pluginSetting)
+    #expect(settings[0].value == "false" && settings[4].env == "API_KEY" && settings[4].hasValue)
+    let values = HermesWorkflowRPC.pluginSettingValues(
+      settings, drafts: ["on": "true", "n": "4", "r": "0.5", "s": "same", "k": "secret"])
+    #expect(values["on"] as? Bool == true && values["n"] as? Int == 4)
+    #expect(values["r"] as? Double == 0.5 && values["s"] == nil && values["k"] == nil)
+    #expect(HermesWorkflowRPC.validConnectorAlias("work-2"))
+    #expect(!HermesWorkflowRPC.validConnectorAlias("-work") && !HermesWorkflowRPC.validConnectorAlias("Work"))
+  }
+
   @Test func sessionCapacityIgnoresSeparateRPCQuota() throws {
     let account: [String: Any] = [
       "id": "account-a", "state": "limited",

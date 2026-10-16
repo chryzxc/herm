@@ -99,6 +99,10 @@ final class DeveloperWorkflowModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var error: String?
     @Published private(set) var branches: [String] = []
+    @Published private(set) var commits: [RepositoryCommit] = []
+    @Published private(set) var commitsError: String?
+    @Published private(set) var isMutatingSourceControl = false
+    @Published private(set) var sourceControlError: String?
     private var activePath: String?
     private var generation = UUID()
     private var debounceTasks: [String: Task<Void, Never>] = [:]
@@ -128,6 +132,9 @@ final class DeveloperWorkflowModel: ObservableObject {
             return
         }
         activePath = path
+        commits = []
+        commitsError = nil
+        sourceControlError = nil
         generation = UUID()
         review = nil
         reviewedFileIDs = []
@@ -151,8 +158,13 @@ final class DeveloperWorkflowModel: ObservableObject {
         async let branches = RepositoryService.branches(path: path)
         async let fingerprint = RepositoryService.fingerprint(path: path)
         async let githubRemote = RepositoryService.githubRemote(path: path)
+        async let recentCommits = RepositoryService.recentCommits(path: path)
         let (resolvedSnapshot, resolvedChanges, resolvedWorktrees, resolvedBranches, resolvedFingerprint, resolvedGitHubRemote) = await (snapshot, changes, worktrees, branches, fingerprint, githubRemote)
         guard token == generation, path == activePath else { return }
+        let resolvedCommits = await recentCommits
+        guard token == generation, path == activePath else { return }
+        if let resolvedCommits { commits = resolvedCommits }
+        commitsError = resolvedCommits == nil ? "Could not refresh commits. Refresh to try again." : nil
         let githubRepositoryChanged = githubRepository != resolvedGitHubRemote
         repository = resolvedSnapshot; repositoryFingerprint = resolvedFingerprint; githubRepository = resolvedGitHubRemote; self.changes = resolvedChanges; self.worktrees = resolvedWorktrees; self.branches = resolvedBranches
         if githubRepositoryChanged {
@@ -173,7 +185,7 @@ final class DeveloperWorkflowModel: ObservableObject {
         // small refresh icon in the header. Keep the explicit refresh button,
         // but make the first load automatic and surface auth/network errors in
         // the same view.
-        if resolvedGitHubRemote != nil {
+        if resolvedGitHubRemote != nil && !isMutatingSourceControl {
             await refreshGitHub()
         }
     }
@@ -398,7 +410,7 @@ final class DeveloperWorkflowModel: ObservableObject {
     }
 
     func switchBranch(_ branch: String, preferences: CommandCenterPreferencesStore, control: ControlCenterModel) async -> Bool {
-        guard let path = activePath, repository.isGitRepository else { return false }
+        guard let path = activePath, repository.isGitRepository, !isMutatingSourceControl else { return false }
         isRefreshing = true
         defer { isRefreshing = false }
         let result = await RepositoryService.switchBranch(path: path, branch: branch)
@@ -408,6 +420,18 @@ final class DeveloperWorkflowModel: ObservableObject {
         }
         await refresh(preferences: preferences, control: control)
         return true
+    }
+
+    func applySourceControl(_ action: RepositorySourceControlAction, path: String, refresh: () async -> Void) async -> Bool {
+        guard !isMutatingSourceControl, !isRefreshing, activePath == path, repository.path == path, repository.isGitRepository else { return false }
+        isMutatingSourceControl = true
+        sourceControlError = nil
+        defer { isMutatingSourceControl = false }
+        let failure = await RepositoryService.applySourceControl(action, path: path)
+        guard activePath == path else { return failure == nil }
+        sourceControlError = failure
+        await refresh()
+        return failure == nil
     }
 
     func runReview(preferences: CommandCenterPreferencesStore) async {

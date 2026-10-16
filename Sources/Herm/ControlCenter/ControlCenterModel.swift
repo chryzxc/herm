@@ -999,6 +999,7 @@ final class ControlCenterModel: ObservableObject {
     /// Every quota service the Dock reads, by stable reader id.
     private static let quotaReaders: [(id: String, read: @Sendable () async throws -> [String: Any])] = [
         ("codex-hermes", CodexQuotaService.readHermes),
+        ("hermes-pool", HermesPoolQuotaService.read),
         ("opencode", OpenCodeQuotaService.read),
         ("glm", GLMQuotaService.read),
         ("deepseek", DeepSeekQuotaService.read),
@@ -1094,10 +1095,10 @@ final class ControlCenterModel: ObservableObject {
         }
     }
 
-    /// Codex through Hermes may report several pooled accounts at once.
+    /// Hermes pools (Codex and the rest) report several accounts at once.
     private static func providerQuotaSnapshots(readerID: String, raw: [String: Any]?) -> [ProviderQuotaSnapshot] {
         guard let raw else { return [] }
-        if readerID == "codex-hermes", let accounts = raw["_accounts"] as? [[String: Any]] {
+        if let accounts = raw["_accounts"] as? [[String: Any]] {
             return accounts.compactMap(parseProviderQuota)
         }
         return parseProviderQuota(raw).map { [$0] } ?? []

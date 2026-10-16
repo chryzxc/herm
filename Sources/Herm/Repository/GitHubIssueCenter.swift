@@ -152,13 +152,16 @@ struct GitHubIssueCenterAPI: Sendable {
     }
 
     private func request(path: String, query: [String: String] = [:]) async throws -> Any {
+        try Task.checkCancellation()
         var components = URLComponents(string: "https://api.github.com\(path)")!
         components.queryItems = query.map(URLQueryItem.init)
         var request = URLRequest(url: components.url!); request.timeoutInterval = GitHubCodeHostService.requestTimeout
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token = await GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        try Task.checkCancellation()
         let (data, response) = try await transport.data(for: request)
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }
         return try JSONSerialization.jsonObject(with: data)
     }
@@ -241,28 +244,24 @@ final class IssueCenterModel: ObservableObject {
     }
 
     func refresh(projects: [ProjectSummary]) async {
-        guard !isRefreshing else { return }
+        guard !Task.isCancelled, !isRefreshing else { return }
         let token = UUID(); generation = token; isRefreshing = true; errorMessage = nil
+        defer { if token == generation { isRefreshing = false } }
         let paths = Array(Set(projects.filter(\.isRenderableProject).map(\.name))).filter { !$0.isEmpty }
         async let viewerLookup = api.viewer()
-        let remotes = await withTaskGroup(of: (String, GitHubRepositoryReference?).self, returning: [String: String].self) { group in
-            for path in paths { group.addTask { (path, await self.repositoryRemote(path)) } }
-            var output: [String: String] = [:]
-            for await (path, remote) in group { if let remote { output[remote.id] = path } }
-            return output
-        }
+        let resolved = await RepositoryService.githubRemotes(paths: paths, resolve: repositoryRemote)
+        let remotes = Dictionary(uniqueKeysWithValues: resolved.map { ($0.1.id, $0.0) })
         let viewerResult = await viewerLookup
-        guard token == generation else { return }
+        guard token == generation, !Task.isCancelled else { return }
         guard case .success(let viewer) = viewerResult else {
             viewerLogin = nil
             errorMessage = hasLoaded ? "Using last known GitHub issues. Refresh to retry." : "GitHub issues are unavailable. Check your sign-in or try again."
-            isRefreshing = false
             repairSelection()
             return
         }
         viewerLogin = viewer
         let result = await api.searchIssues(viewerLogin: viewer, localPaths: remotes)
-        guard token == generation else { return }
+        guard token == generation, !Task.isCancelled else { return }
         switch result {
         case .success(let issues):
             records = issues.sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
@@ -272,11 +271,17 @@ final class IssueCenterModel: ObservableObject {
             errorMessage = nil
         case .failure: errorMessage = hasLoaded ? "Using last known GitHub issues. Refresh to retry." : "GitHub issues are unavailable. Check your sign-in or try again."
         }
-        isRefreshing = false; repairSelection()
+        repairSelection()
+    }
+
+    func cancelLoads() {
+        generation = UUID()
+        if isRefreshing { isRefreshing = false }
+        if loadingDetailID != nil { loadingDetailID = nil }
     }
 
     func loadSelectedDetail() async {
-        guard !isRefreshing, let issue = selected, detailByID[issue.id] == nil else { return }
+        guard !Task.isCancelled, !isRefreshing, let issue = selected, detailByID[issue.id] == nil else { return }
         let token = generation
         loadingDetailID = issue.id
         detailErrorMessage = nil
@@ -574,6 +579,7 @@ struct IssueWorkspace: View {
     var listHeader: AnyView?
     @State private var collapsedRepositories: Set<String> = []
     @State private var showsDetail = false
+    @State private var refreshID = 0
 
     var body: some View {
         AdaptiveSplit(primaryMinWidth: 340, secondaryMinWidth: 480, alwaysSplitWhenWide: true, hidesPrimary: hidesList, showsSecondary: showsDetail, onBack: { showsDetail = false }) {
@@ -582,7 +588,10 @@ struct IssueWorkspace: View {
             IssueDetailView(center: center, onOpenChat: onOpenChat)
         }
         .background(Color.dockCanvas)
-        .task { if !center.hasLoaded, !center.isRefreshing { await center.refresh(projects: projects) } }
+        .task(id: refreshID) {
+            if refreshID > 0 || !center.hasLoaded { await center.refresh(projects: projects) }
+        }
+        .onDisappear { center.cancelLoads() }
         .onChange(of: center.filter) { _, _ in center.repairSelection() }
         .onChange(of: center.query) { _, _ in center.repairSelection() }
         .onChange(of: center.repositoryScope) { _, _ in center.repairSelection() }
@@ -714,6 +723,6 @@ struct IssueWorkspace: View {
     }
 
     private func refresh() {
-        Task { await center.refresh(projects: projects) }
+        refreshID += 1
     }
 }

@@ -1,13 +1,42 @@
 import AppKit
+import SwiftUI
 
 enum EdgeDockLayout {
     // Clear the 18pt shoulder and 26pt inner corner at the narrow side inset.
     static let workspaceHorizontalInset: CGFloat = 4
     static let workspaceVerticalInset: CGFloat = 44
+
+    /// The top drop-down's shoulders only flare at the menu bar, so its sides just
+    /// clear the 18pt shoulder and its top clears the menu bar it hangs over.
+    static let islandSideInset: CGFloat = 22
+
+    static func insets(for side: EdgeDockSide, menuBarHeight: CGFloat = 0) -> EdgeInsets {
+        side == .top
+            ? EdgeInsets(top: menuBarHeight + 8, leading: islandSideInset, bottom: 6, trailing: islandSideInset)
+            : EdgeInsets(top: workspaceVerticalInset, leading: workspaceHorizontalInset,
+                         bottom: workspaceVerticalInset, trailing: workspaceHorizontalInset)
+    }
 }
 
 enum EdgeDockSide: String, Codable {
-    case left, right
+    case left, right, top
+
+    /// Where content hugs the anchored screen edge.
+    var alignment: Alignment {
+        switch self {
+        case .left: .leading
+        case .right: .trailing
+        case .top: .top
+        }
+    }
+
+    var anchor: UnitPoint {
+        switch self {
+        case .left: .leading
+        case .right: .trailing
+        case .top: .top
+        }
+    }
 }
 
 /// Dock-owned placement only; screen coordinates use AppKit's bottom-left origin.
@@ -17,8 +46,17 @@ struct EdgeDockPlacement: Equatable {
     var screenFrame: NSRect
     var visibleFrame: NSRect
 
+    var workspaceInsets: EdgeInsets {
+        EdgeDockLayout.insets(for: side, menuBarHeight: screenFrame.maxY - visibleFrame.maxY)
+    }
+
     func frame(width: CGFloat, height: CGFloat) -> NSRect {
         let width = min(width, screenFrame.width)
+        if side == .top {
+            // The island hangs from the physical top edge, over the menu bar.
+            let height = min(height, screenFrame.height)
+            return NSRect(x: screenFrame.midX - width / 2, y: screenFrame.maxY - height, width: width, height: height)
+        }
         let height = min(height, visibleFrame.height)
         let center = visibleFrame.minY + visibleFrame.height * min(1, max(0, fraction))
         let y = min(max(center - height / 2, visibleFrame.minY), visibleFrame.maxY - height)
@@ -27,8 +65,24 @@ struct EdgeDockPlacement: Equatable {
     }
 
     static func dragged(to point: NSPoint, screenFrame: NSRect, visibleFrame: NSRect) -> Self {
-        Self(side: point.x < screenFrame.midX ? .left : .right,
-             fraction: min(1, max(0, (point.y - visibleFrame.minY) / max(1, visibleFrame.height))),
-             screenFrame: screenFrame, visibleFrame: visibleFrame)
+        let fraction = min(1, max(0, (point.y - visibleFrame.minY) / max(1, visibleFrame.height)))
+        if point.y >= visibleFrame.maxY - 24, abs(point.x - screenFrame.midX) < screenFrame.width / 4 {
+            return Self(side: .top, fraction: fraction, screenFrame: screenFrame, visibleFrame: visibleFrame)
+        }
+        return Self(side: point.x < screenFrame.midX ? .left : .right, fraction: fraction,
+                    screenFrame: screenFrame, visibleFrame: visibleFrame)
+    }
+}
+
+/// The camera housing the top island wraps; screens without one get a drawn pill of the same shape.
+enum EdgeNotchMetrics {
+    static let fallbackWidth: CGFloat = 190
+
+    static func notchSize(for screen: NSScreen) -> CGSize {
+        let top = screen.safeAreaInsets.top
+        if top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
+            return CGSize(width: max(0, screen.frame.width - left.width - right.width), height: top)
+        }
+        return CGSize(width: fallbackWidth, height: max(24, screen.frame.maxY - screen.visibleFrame.maxY))
     }
 }

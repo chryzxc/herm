@@ -66,6 +66,10 @@ enum AttachmentPopoverPresentation {
         return draft.isEmpty ? value : "\(draft)\n\(value)"
     }
 
+    static func insertingPath(_ url: URL, into draft: String) -> String {
+        insertingSnippet(url.path, into: draft)
+    }
+
     static func insertingSnippet(_ snippet: String, into draft: String) -> String {
         draft.isEmpty ? snippet : "\(draft)\n\(snippet)"
     }
@@ -148,7 +152,7 @@ struct AttachmentPopover: View {
     }
 
     private func actionRow(_ action: AttachmentPopoverAction) -> some View {
-        let unavailable = action == .folder || (action == .pasteImage && !pasteImageAvailable)
+        let unavailable = (action == .pasteImage && !pasteImageAvailable)
         return Button {
             onSelect(action)
         } label: {
@@ -157,11 +161,6 @@ struct AttachmentPopover: View {
                     .frame(width: 16)
                 Text(action.title)
                 Spacer()
-                if action == .folder {
-                    Text("Unavailable")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.dockMetadataText)
-                }
             }
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(unavailable ? Color.dockMetadataText : Color.dockPrimaryText)
@@ -170,7 +169,7 @@ struct AttachmentPopover: View {
         }
         .buttonStyle(.dockHover)
         .disabled(unavailable)
-        .help(unavailable ? "Folder attachments are not supported by Hermes" : action.title)
+        .help(action == .folder ? "Insert a folder path into the message" : action.title)
         .accessibilityLabel(unavailable ? "\(action.title), unavailable" : action.title)
     }
 

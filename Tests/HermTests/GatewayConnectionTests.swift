@@ -15,9 +15,22 @@ struct GatewayConnectionTests {
         let base = try GatewayConnectionSettings.normalizedURL("  https://EXAMPLE.com/hermes///  ")
         #expect(base.absoluteString == "https://example.com/hermes")
         #expect(try GatewayConnectionSettings.endpoint(base, "/api/status?profile=iris").absoluteString == "https://example.com/hermes/api/status?profile=iris")
-        #expect(try GatewayConnectionSettings.normalizedURL("myhost:9119").absoluteString == "http://myhost:9119")
+        #expect(try GatewayConnectionSettings.normalizedURL("myhost:9119").absoluteString == "https://myhost:9119")
         for text in ["", "file:///tmp/token", "ftp://example.com", "https://user:password@example.com", "https://example.com?token=secret", "https://example.com#secret", "http://example.com:0", "http://example.com:70000"] {
             #expect(throws: (any Error).self) { try GatewayConnectionSettings.normalizedURL(text) }
+        }
+    }
+
+    @Test func requiresEncryptionOutsideLoopback() throws {
+        for host in ["127.0.0.1", "localhost", "[::1]"] {
+            #expect(try GatewayConnectionSettings.normalizedURL("http://\(host):9119/proxy").scheme == "http")
+            #expect(try GatewayConnectionSettings.normalizedURL("\(host):9119").scheme == "http")
+        }
+        for host in ["example.com", "192.168.1.20", "localhost.evil.test", "127.0.0.1.evil.test", "[::]", "0.0.0.0"] {
+            let url = URL(string: "http://\(host):9119")!
+            #expect(throws: (any Error).self) { try GatewayConnectionSettings.normalizedURL(url.absoluteString) }
+            #expect(throws: (any Error).self) { try HermesGateway.webSocketRequest(baseURL: url, credential: "secret") }
+            #expect(throws: (any Error).self) { try GatewayConnectionSettings.endpoint(url, "/auth/native/token") }
         }
     }
 
@@ -118,6 +131,28 @@ struct GatewayConnectionTests {
         for path in ["/callback?code=wrong&state=forged", "/callback?state=expected", "/callback?code=wrong&state=expected&error=denied", "/elsewhere?code=wrong&state=expected"] {
             #expect(throws: (any Error).self) { try GatewayNativeAuthentication.callbackCode(path, state: "expected") }
         }
+    }
+
+    @Test func rejectedCallbacksDoNotExhaustTheListener() async throws {
+        let callback = GatewayOAuthCallback(state: "expected-state")
+        let base = try await callback.start()
+        defer { callback.stop() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 2
+        configuration.timeoutIntervalForResource = 3
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        for index in 0..<12 {
+            var parts = URLComponents(url: base, resolvingAgainstBaseURL: false)!
+            parts.queryItems = [URLQueryItem(name: "state", value: "forged-\(index)"), URLQueryItem(name: "code", value: "wrong")]
+            // Rejected requests close without a response, but must release their slot.
+            _ = try? await session.data(from: parts.url!)
+        }
+        var parts = URLComponents(url: base, resolvingAgainstBaseURL: false)!
+        parts.queryItems = [URLQueryItem(name: "state", value: "expected-state"), URLQueryItem(name: "code", value: "valid-code")]
+        let (_, response) = try await session.data(from: parts.url!)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        #expect(try await callback.code() == "valid-code")
     }
 
     @Test func sharesRefreshRotationAndFencesSignOut() async throws {

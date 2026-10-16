@@ -3,10 +3,10 @@ import Foundation
 /// Mutation boundary used by the detail model. Reads remain owned by the API
 /// client; this narrow seam lets confirmation behavior be tested without a
 /// live GitHub request.
-@MainActor
+// Isolate mutation requirements, not the conforming API and all of its read/parsing work.
 protocol PullRequestMutationExecuting {
-    func postComment(_ body: String, on record: PullRequestRecord) async -> PullRequestComment?
-    func updateStatus(_ status: PullRequestStatus, for record: PullRequestRecord) async -> PullRequestRecord?
+    @MainActor func postComment(_ body: String, on record: PullRequestRecord) async -> PullRequestComment?
+    @MainActor func updateStatus(_ status: PullRequestStatus, for record: PullRequestRecord) async -> PullRequestRecord?
 }
 
 /// GitHub transport and response normalization for the pull-request workspace.
@@ -28,8 +28,12 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         do {
             async let authored = search("is:pr is:open author:\(viewerLogin)", localPaths: localPaths)
             async let reviewing = search("is:pr is:open review-requested:\(viewerLogin)", localPaths: localPaths)
+            // Recently merged is best-effort: a failure here must not hide open PRs.
+            let since = Date.now.addingTimeInterval(-14 * 86_400).formatted(.iso8601.year().month().day())
+            async let merged = try? search("is:pr is:merged involves:\(viewerLogin) merged:>=\(since)", localPaths: localPaths)
             var unique: [String: PullRequestRecord] = [:]
             let (authoredRows, reviewingRows) = try await (authored, reviewing)
+            for record in await merged ?? [] { unique[record.id] = record }
             for record in authoredRows { unique[record.id] = record }
             // Search omits requested_reviewers; membership in this result is authoritative.
             for var record in reviewingRows {
@@ -142,13 +146,13 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         }
     }
 
-    func postComment(_ body: String, on record: PullRequestRecord) async -> PullRequestComment? {
+    nonisolated func postComment(_ body: String, on record: PullRequestRecord) async -> PullRequestComment? {
         guard let payload = try? await request(path: record.repository.apiRepositoryPath + "/issues/\(record.number)/comments", method: "POST", body: ["body": body]) as? [String: Any] else { return nil }
         let user = payload["user"] as? [String: Any]
         return PullRequestComment(id: String(describing: payload["id"] ?? UUID().uuidString), body: payload["body"] as? String ?? body, author: user?["login"] as? String ?? "You", authorAvatarURL: (user?["avatar_url"] as? String).flatMap(URL.init), createdAt: date(payload["created_at"]), webURL: (payload["html_url"] as? String).flatMap(URL.init))
     }
 
-    func updateStatus(_ status: PullRequestStatus, for record: PullRequestRecord) async -> PullRequestRecord? {
+    nonisolated func updateStatus(_ status: PullRequestStatus, for record: PullRequestRecord) async -> PullRequestRecord? {
         let path: String; let method: String; let body: [String: Any]?
         switch status {
         case .draft: return record.isDraft ? record : nil
@@ -160,12 +164,15 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     }
 
     private func request(path: String, query: [String: String] = [:], method: String = "GET", body: [String: Any]? = nil) async throws -> Any {
+        try Task.checkCancellation()
         var components = URLComponents(string: "https://api.github.com\(path)")!; components.queryItems = query.map(URLQueryItem.init)
         var request = URLRequest(url: components.url!); request.timeoutInterval = GitHubCodeHostService.requestTimeout; request.httpMethod = method
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept"); request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token = await GitHubCodeHostService.localGitHubToken() { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        try Task.checkCancellation()
         if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body) }
         let (data, response) = try await transport.data(for: request)
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }
         return try JSONSerialization.jsonObject(with: data)
     }
@@ -173,7 +180,7 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
     private func parseSearchItem(_ row: [String: Any], localPaths: [String: String]) -> PullRequestRecord? {
         guard let number = row["number"] as? Int, let title = row["title"] as? String, let repository = repositoryReference(from: row) else { return nil }
         let user = row["user"] as? [String: Any]
-        return PullRequestRecord(repository: repository, localPath: localPaths[repository.id] ?? "", number: number, title: title, body: row["body"] as? String ?? "", author: user?["login"] as? String ?? "Unknown", authorAvatarURL: (user?["avatar_url"] as? String).flatMap(URL.init), headBranch: "unknown", baseBranch: "unknown", updatedAt: date(row["updated_at"]), isDraft: row["draft"] as? Bool ?? false, webURL: (row["html_url"] as? String).flatMap(URL.init), requestedReviewers: [], comments: row["comments"] as? Int ?? 0, additions: nil, deletions: nil, changedFiles: nil, checks: [], reviews: [])
+        return PullRequestRecord(repository: repository, localPath: localPaths[repository.id] ?? "", number: number, title: title, body: row["body"] as? String ?? "", author: user?["login"] as? String ?? "Unknown", authorAvatarURL: (user?["avatar_url"] as? String).flatMap(URL.init), headBranch: "unknown", baseBranch: "unknown", updatedAt: date(row["updated_at"]), isDraft: row["draft"] as? Bool ?? false, webURL: (row["html_url"] as? String).flatMap(URL.init), requestedReviewers: [], comments: row["comments"] as? Int ?? 0, additions: nil, deletions: nil, changedFiles: nil, checks: [], reviews: [], mergedAt: date((row["pull_request"] as? [String: Any])?["merged_at"]))
     }
 
     private func repositoryReference(from row: [String: Any]) -> GitHubRepositoryReference? {
@@ -194,7 +201,7 @@ struct PullRequestCenterAPI: Sendable, PullRequestMutationExecuting {
         let user = row["user"] as? [String: Any]
         let checks = (row["checks"] as? [[String: Any]] ?? []).compactMap { check -> GitHubCheckSummary? in guard let name = check["name"] as? String else { return nil }; return GitHubCheckSummary(id: String(describing: check["id"] ?? name), name: name, status: check["status"] as? String ?? "unknown", conclusion: check["conclusion"] as? String, detailsURL: (check["details_url"] as? String).flatMap(URL.init)) }
         let reviews = (row["reviews"] as? [[String: Any]] ?? []).compactMap { review -> GitHubReviewSummary? in guard let state = review["state"] as? String else { return nil }; let author = ((review["user"] as? [String: Any])?["login"] as? String) ?? "Unknown"; return GitHubReviewSummary(id: String(describing: review["id"] ?? author), author: author, state: state, submittedAt: nil, webURL: nil) }
-        return PullRequestRecord(repository: repository, localPath: localPath, number: number, title: title, body: row["body"] as? String ?? "", author: user?["login"] as? String ?? "Unknown", authorAvatarURL: (user?["avatar_url"] as? String).flatMap(URL.init), headBranch: ((row["head"] as? [String: Any])?["ref"] as? String) ?? "unknown", baseBranch: ((row["base"] as? [String: Any])?["ref"] as? String) ?? "unknown", updatedAt: date(row["updated_at"]), isDraft: row["draft"] as? Bool ?? false, webURL: (row["html_url"] as? String).flatMap(URL.init), requestedReviewers: (row["requested_reviewers"] as? [[String: Any]] ?? []).compactMap { $0["login"] as? String }, comments: row["comments"] as? Int ?? 0, additions: row["additions"] as? Int, deletions: row["deletions"] as? Int, changedFiles: row["changed_files"] as? Int, checks: checks, reviews: reviews)
+        return PullRequestRecord(repository: repository, localPath: localPath, number: number, title: title, body: row["body"] as? String ?? "", author: user?["login"] as? String ?? "Unknown", authorAvatarURL: (user?["avatar_url"] as? String).flatMap(URL.init), headBranch: ((row["head"] as? [String: Any])?["ref"] as? String) ?? "unknown", baseBranch: ((row["base"] as? [String: Any])?["ref"] as? String) ?? "unknown", updatedAt: date(row["updated_at"]), isDraft: row["draft"] as? Bool ?? false, webURL: (row["html_url"] as? String).flatMap(URL.init), requestedReviewers: (row["requested_reviewers"] as? [[String: Any]] ?? []).compactMap { $0["login"] as? String }, comments: row["comments"] as? Int ?? 0, additions: row["additions"] as? Int, deletions: row["deletions"] as? Int, changedFiles: row["changed_files"] as? Int, checks: checks, reviews: reviews, mergedAt: date(row["merged_at"]))
     }
 
     private func date(_ value: Any?) -> Date? {

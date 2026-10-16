@@ -363,7 +363,9 @@ struct QuotaWorkspaceView: View {
             peakStatusLine(snapshot.provider, now: now)
 
             if snapshot.windows.isEmpty {
-                Text("No quota windows were reported.")
+                Text(snapshot.hermesCredential != nil && snapshot.provider.hasPrefix("hermes-pool-")
+                     ? "Hermes rotates through this account. Its provider reports no usage windows."
+                     : "No quota windows were reported.")
                     .font(DockTypography.body)
                     .foregroundStyle(Color.dockSecondaryText)
             } else {
@@ -396,7 +398,7 @@ struct QuotaWorkspaceView: View {
                 dragHandle(snapshot)
             }
 
-            ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName), size: 26)
+            ProviderMarkBadge(mark: Self.mark(for: snapshot), size: 26)
 
             VStack(alignment: .leading, spacing: 2) {
                 if renamingProviderID == snapshot.provider {
@@ -455,6 +457,14 @@ struct QuotaWorkspaceView: View {
         }
     }
 
+    /// Pooled accounts outside the quota catalog take their Hermes provider's mark.
+    static func mark(for snapshot: ProviderQuotaSnapshot) -> ProviderMark {
+        if snapshot.provider.hasPrefix("hermes-pool-"), let credential = snapshot.hermesCredential {
+            return ProviderMark(hermesProvider: credential.provider)
+        }
+        return ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName)
+    }
+
     private func metadataLine(_ snapshot: ProviderQuotaSnapshot) -> String? {
         var parts: [String] = []
         if control.getProviderNickname(for: snapshot.provider) != nil,
@@ -482,7 +492,7 @@ struct QuotaWorkspaceView: View {
                 return NSItemProvider(object: snapshot.provider as NSString)
             } preview: {
                 HStack(spacing: 8) {
-                    ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName), size: 20)
+                    ProviderMarkBadge(mark: Self.mark(for: snapshot), size: 20)
                     Text(snapshot.displayName)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockPrimaryText)

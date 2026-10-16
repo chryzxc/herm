@@ -167,10 +167,11 @@ struct EdgeTaskPreview: View {
     var recall: (() -> Void)? = nil
     var steer: ((EdgeNotchTask) -> Void)? = nil
     var beginEditing: () -> Void = {}
+    /// The top island's icon-only action strip in place of the labelled footer.
+    var compactFooter = false
     let openDock: () -> Void
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     let openTask: (EdgeNotchTask) -> Void
-    @State private var hoveredID: String?
     @FocusState private var focusedTask: EdgePreviewItemID?
     private var keyboardItems: [EdgePreviewItemID] {
         tasks.map { $0.previewIdentity(currentProfileID: quickModel?.sessionProfileID) }
@@ -232,8 +233,12 @@ struct EdgeTaskPreview: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider().overlay(Color.dockBorderLight)
-            footer
+            if compactFooter {
+                islandFooter
+            } else {
+                Divider().overlay(Color.dockBorderLight)
+                footer
+            }
         }
         .foregroundStyle(Color.dockPrimaryText)
         .padding(.horizontal, 6)
@@ -248,7 +253,8 @@ struct EdgeTaskPreview: View {
     @ViewBuilder
     private func section(_ title: String, _ items: [EdgeNotchTask], bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
         if !items.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            // The outer lazy stack only defers sections, not their rows.
+            LazyVStack(alignment: .leading, spacing: 6) {
                 DockSectionLabel(title: title, count: items.count)
                 ForEach(items, id: \.presentationID) { card($0, bots: bots, now: now) }
             }
@@ -256,40 +262,40 @@ struct EdgeTaskPreview: View {
     }
 
     private func card(_ task: EdgeNotchTask, bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
-        let isHovered = hoveredID == task.presentationID
         let isReplying = quickState?.composing == true && quickState?.quickReplyTask?.presentationID == task.presentationID
-        return VStack(spacing: 0) {
-            HStack(alignment: .top, spacing: 0) {
-                taskButton(task, bots: bots, now: now)
-                if task.routine == nil, task.kanbanTask == nil, task.phase != .attention, let reply, task.session != nil || task.isCurrent {
-                    replyToggle(task, isReplying: isReplying, visible: isHovered || isReplying || task.isCurrent || quickState?.previewInteraction.mode == .keyboard, reply: reply)
-                        .padding(.top, 5)
-                        .padding(.trailing, 4)
+        return EdgeTaskHoverContent { isHovered in
+            VStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 0) {
+                    taskButton(task, bots: bots, now: now)
+                    if task.routine == nil, task.kanbanTask == nil, task.phase != .attention, let reply, task.session != nil || task.isCurrent {
+                        replyToggle(task, isReplying: isReplying, visible: isHovered || isReplying || task.isCurrent || quickState?.previewInteraction.mode == .keyboard, reply: reply)
+                            .padding(.top, 5)
+                            .padding(.trailing, 4)
+                    }
+                }
+                if task.phase == .attention, !task.choices.isEmpty, let answer {
+                    choiceButtons(task, answer: answer)
+                }
+                if isReplying, let quickState, let quickModel, let quotaControl {
+                    EdgeQuickMessageView(model: quickModel, control: quotaControl, state: quickState, inline: true,
+                                         close: closeReply, openDock: openDock)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
+                        .id("reply-\(task.presentationID)")
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            if task.phase == .attention, !task.choices.isEmpty, let answer {
-                choiceButtons(task, answer: answer)
+            .contextMenu {
+                if task.phase == .working, let steer {
+                    Button("Steer a live subagent…") { steer(task) }
+                }
             }
-            if isReplying, let quickState, let quickModel, let quotaControl {
-                EdgeQuickMessageView(model: quickModel, control: quotaControl, state: quickState, inline: true,
-                                     close: closeReply, openDock: openDock)
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 8)
-                    .id("reply-\(task.presentationID)")
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            .background(
+                RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
+                    .fill(isHovered || isReplying ? Color.dockSurface4.opacity(0.6) : task.isCurrent ? Color.dockSurface4.opacity(0.35) : .clear)
+            )
+            .animation(.dockEase(duration: 0.16), value: isReplying)
         }
-        .contextMenu {
-            if task.phase == .working, let steer {
-                Button("Steer a live subagent…") { steer(task) }
-            }
-        }
-        .background(
-            RoundedRectangle(cornerRadius: DockControlMetrics.cornerRadius, style: .continuous)
-                .fill(isHovered || isReplying ? Color.dockSurface4.opacity(0.6) : task.isCurrent ? Color.dockSurface4.opacity(0.35) : .clear)
-        )
-        .onHover { hoveredID = $0 ? task.presentationID : (hoveredID == task.presentationID ? nil : hoveredID) }
-        .animation(.dockEase(duration: 0.16), value: isReplying)
     }
 
     /// Detail text with the file icon before any word that names a file ("Reading App.vue").
@@ -530,27 +536,69 @@ struct EdgeTaskPreview: View {
             : "Running sessions, Kanban cards and unopened results appear here."
     }
 
+    /// Round icon buttons in a centered capsule, the island's answer to the side panel's footer row.
+    private var islandFooter: some View {
+        HStack(spacing: 2) {
+            if let quickMessage { islandAction("Quick message", icon: .chats, action: quickMessage) }
+            secondaryActions
+        }
+        .padding(3)
+        .background(Capsule().fill(Color.dockSurface4.opacity(0.6)))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+    }
+
+    /// The side panel leads with a composer-style entry, then the shared icon actions.
     private var footer: some View {
         HStack(spacing: 4) {
             if let quickMessage {
-                EdgePreviewFooterButton(title: "Quick message", icon: .chats, action: quickMessage)
-            }
-            if let recall { EdgePreviewFooterButton(title: "Search", icon: .magnifyingGlass, action: recall) }
-            if let quickState {
-                Menu {
-                    Button("Saved actions") { beginEditing(); quickState.showingActions = true }
-                    Button("Working sets") { beginEditing(); quickState.showingWorkingSets = true }
-                    if quickState.preferences.watchedWorkingSetID != nil {
-                        Button("Show all activity") { quickState.preferences.watchWorkingSet(nil) }
+                Button(action: quickMessage) {
+                    HStack(spacing: 8) {
+                        DockIcon(.chats, size: 13, color: .dockSecondaryText)
+                        Text("Quick message…").font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
                     }
-                } label: { DockIcon(.dotsThree, size: 13, color: .dockSecondaryText) }
-                .menuStyle(.borderlessButton).fixedSize().accessibilityLabel("More preview actions")
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .background(Capsule().fill(Color.dockSurface4.opacity(0.6)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.dockHover)
+                .accessibilityLabel("Quick message")
+            } else {
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
-            EdgePreviewFooterButton(title: "Open Herm", icon: .sidebarSimple,
-                                    shortcutHelp: workspaceShortcut.title, action: openDock)
+            secondaryActions
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+    }
+
+    @ViewBuilder private var secondaryActions: some View {
+        if let recall { islandAction("Search", icon: .magnifyingGlass, action: recall) }
+        islandAction("Open Herm (\(workspaceShortcut.title))", icon: .arrowsOutSimple, action: openDock)
+    }
+
+    private func islandAction(_ title: String, icon: Ph, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            DockIcon(icon, size: 14, color: .dockSecondaryText)
+                .frame(width: 34, height: 30)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.dockHover)
+        .help(title)
+        .accessibilityLabel(title)
+    }
+}
+
+/// Keep pointer movement local to a row instead of invalidating the whole list.
+private struct EdgeTaskHoverContent<Content: View>: View {
+    @State private var isHovered = false
+    @ViewBuilder let content: (Bool) -> Content
+
+    var body: some View {
+        content(isHovered)
+            .onHover { isHovered = $0 }
     }
 }
 

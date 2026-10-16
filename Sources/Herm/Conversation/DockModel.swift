@@ -210,6 +210,9 @@ final class DockModel: ObservableObject {
     @Published private(set) var sessionProjectionState: HermesProjectionState<[HermesSession]> = .empty
     @Published var isShowingSessions = false
     @Published var isLoadingSessions = false
+    /// Background polls stay unpublished: flipping `isLoadingSessions` rebuilt
+    /// the whole sidebar rail twice per poll and stuttered its scrolling.
+    private var isPollingSessions = false
     /// A live event can arrive while the initial session index is loading.
     /// Retain one follow-up refresh so the navigation list cannot get stuck on
     /// the snapshot that predated that event.
@@ -1681,15 +1684,15 @@ final class DockModel: ObservableObject {
             sessionProjectionState = .empty
             return nil
         }
-        guard !isLoadingSessions else { return nil }
-        isLoadingSessions = true
+        guard !isLoadingSessions, !(quiet && isPollingSessions) else { return nil }
+        if quiet { isPollingSessions = true } else { isLoadingSessions = true }
         sessionLoadGeneration &+= 1
         let generation = sessionLoadGeneration
         let previousProjectionState = sessionProjectionState
         if !quiet { sessionProjectionState = Self.refreshingProjectionState(sessionProjectionState) }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { isLoadingSessions = false }
+            defer { if quiet { isPollingSessions = false } else { isLoadingSessions = false } }
             do {
                 try await sessionRPCClient.connect()
                 var params: [String: Any] = ["limit": 50]
@@ -2667,7 +2670,6 @@ final class DockModel: ObservableObject {
             return
         }
         guard !request.isEmpty,
-              !isSending,
               !isUpdatingSessionModel,
               !isRestoringSession,
               pendingImages.isEmpty,
@@ -2692,8 +2694,13 @@ final class DockModel: ObservableObject {
         draft = ""
         replyQuote = nil
         messages.append(ChatMessage(role: .user, text: transcriptText, botProfileID: profileID, botDisplayName: displayName))
-        status = .working
-        isSending = true
+        // A running foreground turn keeps owning status/isSending; the relay
+        // is tracked by its activity and must not mark that turn idle.
+        let ownsTurn = !isSending && status != .working
+        if ownsTurn {
+            status = .working
+            isSending = true
+        }
         Task {
             do {
                 try await sessionRPCClient.connect()
@@ -2717,15 +2724,19 @@ final class DockModel: ObservableObject {
                     // Without Hermes' explicit session correlation, retain
                     // this activity as unresolved rather than guessing or
                     // resubmitting through a canonical Bot Chat.
-                    status = .idle
-                    isSending = false
+                    if ownsTurn {
+                        status = .idle
+                        isSending = false
+                    }
                     return
                 }
                 messages.append(ChatMessage(role: .hermes, text: reply, botProfileID: profileID, botDisplayName: displayName))
                 updateBotActivity(id: activity.id, state: .completed, result: reply)
                 inFlightBotActivities.removeValue(forKey: activity.id)
-                status = .idle
-                isSending = false
+                if ownsTurn {
+                    status = .idle
+                    isSending = false
+                }
             } catch {
                 guard self.sessionResumeGeneration == sendGeneration,
                       self.sessionID == currentSessionID else { return }
@@ -2733,8 +2744,10 @@ final class DockModel: ObservableObject {
                 messages.append(ChatMessage(role: .hermes, text: message, isError: true, botProfileID: profileID, botDisplayName: displayName))
                 updateBotActivity(id: activity.id, state: .failed, result: message)
                 inFlightBotActivities.removeValue(forKey: activity.id)
-                status = .idle
-                isSending = false
+                if ownsTurn {
+                    status = .idle
+                    isSending = false
+                }
             }
         }
     }
@@ -6961,12 +6974,14 @@ final class DockModel: ObservableObject {
         )
     }
 
+    private static let sessionDateFormatter = ISO8601DateFormatter()
+
     private static func dateValue(_ value: Any?) -> Date? {
         if let value, !(value is Bool), let number = value as? NSNumber {
             return Date(timeIntervalSince1970: number.doubleValue)
         }
         if let string = value as? String {
-            return ISO8601DateFormatter().date(from: string)
+            return sessionDateFormatter.date(from: string)
         }
         return nil
     }

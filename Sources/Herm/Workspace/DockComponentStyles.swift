@@ -82,7 +82,6 @@ enum DockThemeShapeRole {
     case pane
 
     var foldSize: CGFloat {
-        guard DockThemeStyle.current.geometry == .folded else { return 0 }
         return self == .control ? 6 : 10
     }
     /// Corner cut for chamfered panels.
@@ -97,15 +96,16 @@ enum DockThemeShapeRole {
 struct DockThemeShape: Shape {
     let cornerRadius: CGFloat
     var role: DockThemeShapeRole = .control
+    var geometry: DockThemeGeometry = DockThemeStyle.current.geometry
 
     func path(in rect: CGRect) -> Path {
-        switch DockThemeStyle.current.geometry {
+        switch geometry {
         case .pixel: return pixelPath(in: rect)
         case .sketch: return sketchPath(in: rect)
         case .chamfered: return chamferPath(in: rect)
         case .rounded, .folded: break
         }
-        let fold = min(role.foldSize, min(rect.width, rect.height) * 0.38)
+        let fold = geometry == .folded ? min(role.foldSize, min(rect.width, rect.height) * 0.38) : 0
         guard fold > 0 else {
             return RoundedRectangle(cornerRadius: max(0, cornerRadius), style: .continuous).path(in: rect)
         }
@@ -196,23 +196,53 @@ private struct DockCornerBrackets: Shape {
     }
 }
 
-/// Faint ruled lines or grid on the window canvas.
-private struct DockBackdrop: View {
+/// Static material patterns shared by the workspace and skin specimens.
+struct DockBackdrop: View {
+    var style: DockThemeStyle = .current
+    var accent: Color = .dockAccent
+
     var body: some View {
-        let kind = DockThemeStyle.current.backdrop
+        let kind = style.backdrop
         if kind != .none {
             Canvas { context, size in
-                let step: CGFloat = kind == .ruled ? 28 : 32
-                var path = Path()
-                var y = step
-                while y < size.height { path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: size.width, y: y)); y += step }
-                if kind == .grid {
-                    var x = step
-                    while x < size.width { path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: size.height)); x += step }
+                let step: CGFloat = switch kind {
+                case .none, .grid: style.geometry == .pixel ? 16 : 32
+                case .ruled: 28
+                case .dots: 16
+                case .scanlines: 4
+                case .crosshairs: 40
                 }
-                context.stroke(path, with: .color(Color.dockAccent.opacity(kind == .ruled ? 0.12 : 0.07)), lineWidth: 0.5)
+                var path = Path()
+                if kind == .dots || kind == .crosshairs {
+                    for y in stride(from: step / 2, to: size.height, by: step) {
+                        for x in stride(from: step / 2, to: size.width, by: step) {
+                            if kind == .dots {
+                                path.addEllipse(in: CGRect(x: x, y: y, width: 1, height: 1))
+                            } else {
+                                path.move(to: CGPoint(x: x - 3, y: y))
+                                path.addLine(to: CGPoint(x: x + 3, y: y))
+                                path.move(to: CGPoint(x: x, y: y - 3))
+                                path.addLine(to: CGPoint(x: x, y: y + 3))
+                            }
+                        }
+                    }
+                } else {
+                    for y in stride(from: step, to: size.height, by: step) {
+                        path.move(to: CGPoint(x: 0, y: y))
+                        path.addLine(to: CGPoint(x: size.width, y: y))
+                    }
+                    if kind == .grid {
+                        for x in stride(from: step, to: size.width, by: step) {
+                            path.move(to: CGPoint(x: x, y: 0))
+                            path.addLine(to: CGPoint(x: x, y: size.height))
+                        }
+                    }
+                }
+                let opacity: Double = kind == .scanlines ? 0.045 : kind == .crosshairs ? 0.18 : 0.09
+                context.stroke(path, with: .color(accent.opacity(opacity)), lineWidth: kind == .dots ? 1 : 0.5)
             }
             .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 }
@@ -268,14 +298,15 @@ extension View {
     /// Marks an active/hovered tab, row, or control per the theme's selection
     /// style: tinted fill, inverted ink, or an accent underline. `allowsInvert`
     /// is false for containers whose children set their own text colors.
-    func dockSelectionBackground<S: Shape>(_ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true) -> some View {
-        let mode = DockThemeStyle.current.selection
+    func dockSelectionBackground<S: Shape>(_ shape: S, active: Bool, fill: Color, allowsInvert: Bool = true, theme: DockThemeID = DockThemeRuntime.current) -> some View {
+        let mode = theme.style.selection
+        let palette = DockThemePalette(theme: theme)
         return background {
             switch mode {
             case .underline:
                 Color.clear
             case .invert where allowsInvert:
-                shape.fill(active ? Color.dockPrimaryText : .clear)
+                shape.fill(active ? palette.primaryText : .clear)
             case .highlight:
                 // A marker swipe behind the label, set slightly off-level.
                 if active {
@@ -290,20 +321,20 @@ extension View {
             }
         }
         .overlay(alignment: .bottom) {
-            if mode == .underline && active { Color.dockAccent.frame(height: 2) }
+            if mode == .underline && active { palette.accent.frame(height: 2) }
         }
         .overlay(alignment: .leading) {
-            if mode == .bar && active { Color.dockAccent.frame(width: 2) }
+            if mode == .bar && active { palette.accent.frame(width: 2).padding(.vertical, 6) }
         }
     }
 
     /// Clay look: paired light and dark soft shadows behind the shape. Pressing
     /// flattens them so the control reads as pushed in.
-    func dockEmboss<S: Shape>(_ shape: S, pressed: Bool = false) -> some View {
-        let depth = DockThemeStyle.current.emboss * (pressed ? 0.3 : 1)
+    func dockEmboss<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current) -> some View {
+        let depth = theme.style.emboss * (pressed ? 0.3 : 1)
         return background {
             if depth > 0 {
-                shape.fill(Color.dockCanvas)
+                shape.fill(DockThemePalette(theme: theme).background)
                     .shadow(color: .white.opacity(0.85), radius: depth, x: -depth / 2, y: -depth / 2)
                     .shadow(color: .black.opacity(0.16), radius: depth, x: depth / 2, y: depth / 2)
             }
@@ -311,14 +342,14 @@ extension View {
     }
 
     /// Retro look: two-pixel light/dark edges. `pressed` (also used for inset fields) swaps them.
-    func dockBevel(pressed: Bool = false) -> some View { overlay(DockBevel(pressed: pressed)) }
+    func dockBevel(pressed: Bool = false, enabled: Bool = DockThemeStyle.current.bevel) -> some View { overlay(DockBevel(pressed: pressed, enabled: enabled)) }
 
     /// Corner brackets (HUD) or a strip of tape (Notebook) on cards.
-    func dockCardMarks() -> some View {
-        let geometry = DockThemeStyle.current.geometry
+    func dockCardMarks(theme: DockThemeID = DockThemeRuntime.current) -> some View {
+        let geometry = theme.style.geometry
         return overlay {
             if geometry == .chamfered {
-                DockCornerBrackets().stroke(Color.dockAccent, lineWidth: 1.5).allowsHitTesting(false)
+                DockCornerBrackets().stroke(DockThemePalette(theme: theme).accent, lineWidth: 1.5).allowsHitTesting(false)
             }
         }
         .overlay(alignment: .top) {
@@ -336,13 +367,13 @@ extension View {
     /// view. Themes without a sticker shadow draw nothing. An opaque canvas
     /// copy sits between the ink and the view so translucent fills don't
     /// blend with the shadow into a muddy tone.
-    func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false) -> some View {
-        let offset = DockThemeStyle.current.stickerShadow * (pressed ? 0.35 : 1)
+    func dockStickerShadow<S: Shape>(_ shape: S, pressed: Bool = false, theme: DockThemeID = DockThemeRuntime.current) -> some View {
+        let offset = theme.style.stickerShadow * (pressed ? 0.35 : 1)
         return background {
             if offset > 0 {
                 ZStack {
-                    shape.fill(Color.dockBorderStrong).offset(x: offset, y: offset)
-                    shape.fill(Color.dockCanvas)
+                    shape.fill(DockThemePalette(theme: theme).divider).offset(x: offset, y: offset)
+                    shape.fill(DockThemePalette(theme: theme).background)
                 }
             }
         }
@@ -350,13 +381,13 @@ extension View {
 
     /// A quiet crease on larger Origami surfaces. It uses existing semantic
     /// colors and does not add content, state, or a new elevation level.
-    func dockFoldCrease() -> some View {
+    func dockFoldCrease(theme: DockThemeID = DockThemeRuntime.current) -> some View {
         overlay {
-            if DockThemeStyle.current.geometry == .folded {
+            if theme.style.geometry == .folded {
                 let crease = DockFoldCrease(size: DockThemeShapeRole.pane.foldSize)
                 crease
-                    .fill(Color.dockCanvas.opacity(0.72))
-                    .overlay(crease.stroke(Color.dockBorder.opacity(0.75), lineWidth: DockLayout.hairline))
+                    .fill(DockThemePalette(theme: theme).background.opacity(0.72))
+                    .overlay(crease.stroke(DockThemePalette(theme: theme).divider.opacity(0.75), lineWidth: DockLayout.hairline))
                     .allowsHitTesting(false)
             }
         }
@@ -1277,9 +1308,10 @@ private struct DockPinnedColorScheme: ViewModifier {
 
 struct DockBevel: View {
     let pressed: Bool
+    var enabled: Bool = DockThemeStyle.current.bevel
 
     var body: some View {
-        if DockThemeStyle.current.bevel {
+        if enabled {
             Canvas { context, size in
                 let w = size.width, h = size.height
                 let light = Color.white, dark = Color.black.opacity(0.55)

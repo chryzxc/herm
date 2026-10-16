@@ -11,18 +11,19 @@ final class ProviderLoginModel: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var exitStatus: Int32?
     @Published private(set) var failureText: String?
+    /// Output after the last newline: a stdin prompt such as `Authorization code: `.
+    @Published private(set) var partialLine = ""
     var onFinished: (() -> Void)?
 
     private var process: Process?
     private var inputPipe: Pipe?
-    private var pendingPartialLine = ""
 
     func start(command: String) {
         guard !isRunning else { return }
         outputLines = []
         exitStatus = nil
         failureText = nil
-        pendingPartialLine = ""
+        partialLine = ""
 
         let arguments = command.split(separator: " ").map(String.init)
         let searchDirectories = Self.defaultSearchDirectories()
@@ -78,6 +79,11 @@ final class ProviderLoginModel: ObservableObject {
         let line = text.hasSuffix("\n") ? text : text + "\n"
         guard let data = line.data(using: .utf8) else { return }
         handle.write(data)
+        // The prompt is answered; keep it in the log without the reply.
+        if !partialLine.isEmpty {
+            outputLines = Self.cappedLines(outputLines, newLines: [partialLine])
+            partialLine = ""
+        }
     }
 
     func cancel() {
@@ -85,10 +91,10 @@ final class ProviderLoginModel: ObservableObject {
     }
 
     private func accumulate(_ text: String) {
-        let combined = pendingPartialLine + text
+        let combined = partialLine + text
         var lines = combined.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        pendingPartialLine = lines.removeLast()
-        outputLines = Self.cappedLines(outputLines, newLines: lines)
+        partialLine = HermesRuntimeInspector.stripANSI(lines.removeLast())
+        if !lines.isEmpty { outputLines = Self.cappedLines(outputLines, newLines: lines) }
     }
 
     private func finish(terminationStatus: Int32) {
@@ -96,9 +102,9 @@ final class ProviderLoginModel: ObservableObject {
         isRunning = false
         exitStatus = terminationStatus
         inputPipe = nil
-        if !pendingPartialLine.isEmpty {
-            outputLines = Self.cappedLines(outputLines, newLines: [pendingPartialLine])
-            pendingPartialLine = ""
+        if !partialLine.isEmpty {
+            outputLines = Self.cappedLines(outputLines, newLines: [partialLine])
+            partialLine = ""
         }
         onFinished?()
     }
@@ -149,6 +155,9 @@ final class ProviderLoginModel: ObservableObject {
     static func childEnvironment(searchDirectories: [String]) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = searchDirectories.joined(separator: ":") + ":" + (environment["PATH"] ?? "")
+        // A pipe makes Python block-buffer stdout, which would hold back the
+        // sign-in URL and code until the command exits.
+        environment["PYTHONUNBUFFERED"] = "1"
         return environment
     }
 }
@@ -161,7 +170,7 @@ struct ProviderConnectSheet: View {
     @StateObject private var login = ProviderLoginModel()
     @State private var apiKeyInput = ""
     @State private var hasStoredKey = false
-    @State private var callbackCodeInput = ""
+    @State private var testStartedAt: Date?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -196,7 +205,11 @@ struct ProviderConnectSheet: View {
                 if login.isRunning {
                     Button("Cancel Sign-In") { login.cancel() }
                         .buttonStyle(.dockSecondary)
-                } else {
+                } else if login.exitStatus == 0 {
+                    Button("Done") { dismiss() }
+                        .buttonStyle(.dockPrimary)
+                        .keyboardShortcut(.defaultAction)
+                } else if login.exitStatus == nil && login.failureText == nil {
                     Button("Log In") { login.start(command: command) }
                         .buttonStyle(.dockPrimary)
                     .keyboardShortcut(.defaultAction)
@@ -215,6 +228,7 @@ struct ProviderConnectSheet: View {
         guard !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         control.saveProviderAPIKey(apiKeyInput, for: descriptor)
         apiKeyInput = ""
+        testStartedAt = .now
         refreshStoredKeyState()
     }
 
@@ -222,11 +236,17 @@ struct ProviderConnectSheet: View {
         hasStoredKey = descriptor.storageKey.map { ProviderKeyStore().contains($0) } ?? false
     }
 
-    private func submitCallbackCode() {
-        let trimmed = callbackCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        login.sendInput(trimmed)
-        callbackCodeInput = ""
+    /// The quota read that follows Save & Test: nil while it is still running.
+    private var testResult: (ok: Bool, text: String)? {
+        guard let started = testStartedAt?.addingTimeInterval(-1) else { return nil }
+        if let snapshot = control.providerQuotas.first(where: { $0.provider == descriptor.id }), snapshot.updatedAt >= started {
+            let first = snapshot.windows.first.map { " · \($0.label): \($0.remainingDisplay ?? $0.remainingPercent.map { "\(Int($0))% left" } ?? "reported")" }
+            return (true, "Connected\(first ?? "")")
+        }
+        if control.refreshState(for: "provider.quota")?.isRefreshing != true {
+            return (false, control.providerQuotaDiagnostics[descriptor.id] ?? "The key was saved, but quota couldn't be read with it.")
+        }
+        return nil
     }
 
     private func apiKeySection(_ instruction: String) -> some View {
@@ -238,7 +258,16 @@ struct ProviderConnectSheet: View {
                     .onSubmit { saveAPIKey() }
             }
             VStack(alignment: .leading, spacing: 6) {
-                if hasStoredKey {
+                if testStartedAt != nil {
+                    if let result = testResult {
+                        ModalNote(text: result.text, icon: result.ok ? .checkCircle : .warning, tone: result.ok ? .dockSuccess : .dockWarning)
+                    } else {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            ModalNote(text: "Testing the key…")
+                        }
+                    }
+                } else if hasStoredKey {
                     ModalNote(text: "A key is already stored for this provider.", icon: .checkCircle, tone: .dockSuccess)
                 }
                 ModalNote(text: "Stored in ~/.config/herm/providers.json with owner-only permissions. Never displayed or logged, and used only to read quota.", icon: .lockSimple)
@@ -246,78 +275,42 @@ struct ProviderConnectSheet: View {
         }
     }
 
+    @ViewBuilder
     private func loginSection(_ command: String, _ instruction: String) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            instructionText(instruction)
-            labeledField("Command") {
-                HStack(spacing: 8) {
-                    Text(command)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(Color.dockPrimaryText)
-                        .textSelection(.enabled)
-                    Spacer(minLength: 8)
-                    DockCopyButton(
-                        command,
-                        accessibilityLabel: "Copy command",
-                        presentation: .icon
-                    )
-                    .buttonStyle(.dockPress)
-                }
-                .padding(.horizontal, 10)
-                .frame(minHeight: DockLayout.controlHeight)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .fill(Color.dockControlSurface)
-                        .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
-                )
-            }
-            if login.isRunning {
-                labeledField("Authorization code", hint: "Shown in the browser after you sign in") {
+        if login.isRunning || login.exitStatus != nil || login.failureText != nil {
+            ProviderSignInFlow(
+                login: login,
+                providerName: descriptor.displayName,
+                mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName),
+                successDetail: "Signed in. Quota is refreshing.",
+                onRetry: { login.start(command: command) }
+            )
+            .frame(height: 300, alignment: .topLeading)
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                instructionText(instruction)
+                labeledField("Command") {
                     HStack(spacing: 8) {
-                        DockTextField("Paste the code", text: $callbackCodeInput)
-                            .textFieldStyle(.dockGlass)
-                            .onSubmit { submitCallbackCode() }
-                        Button("Submit") { submitCallbackCode() }
-                            .buttonStyle(.dockSecondary)
-                            .disabled(callbackCodeInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Text(command)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .textSelection(.enabled)
+                        Spacer(minLength: 8)
+                        DockCopyButton(
+                            command,
+                            accessibilityLabel: "Copy command",
+                            presentation: .icon
+                        )
+                        .buttonStyle(.dockPress)
                     }
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: DockLayout.controlHeight)
+                    .background(
+                        RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                            .fill(Color.dockControlSurface)
+                            .stroke(Color.dockBorder, lineWidth: DockLayout.hairline)
+                    )
                 }
-                HStack(spacing: 7) {
-                    ProgressView().controlSize(.small)
-                    Text("Waiting for \(descriptor.displayName) sign-in…")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-            }
-            if let status = login.exitStatus, !login.isRunning {
-                ModalNote(
-                    text: status == 0 ? "The login command finished. Quota was refreshed." : "The login command exited with status \(status). Check the output below.",
-                    icon: status == 0 ? .checkCircle : .warning,
-                    tone: status == 0 ? .dockSuccess : .dockWarning
-                )
-            }
-            if let failure = login.failureText {
-                ModalNote(text: failure, icon: .warning, tone: .dockWarning)
-            }
-            if !login.outputLines.isEmpty {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(login.outputLines.enumerated()), id: \.offset) { _, line in
-                            Text(line)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(Color.dockMetadataText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                        }
-                    }
-                    .padding(10)
-                }
-                .frame(maxHeight: 160)
-                .background(
-                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
-                        .fill(Color.dockSurface.opacity(0.4))
-                        .stroke(Color.dockBorderLight, lineWidth: DockLayout.hairline)
-                )
             }
         }
     }

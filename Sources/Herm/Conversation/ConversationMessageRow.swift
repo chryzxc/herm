@@ -15,7 +15,7 @@ enum ConversationMessageActionKind: String, CaseIterable, Identifiable {
         switch self {
         case .copy: .copy
         case .readAloud: .speakerHigh
-        case .branch: .gitBranch
+        case .branch: .shuffleAngular
         case .refresh: .arrowClockwise
         case .reply: .arrowBendUpLeft
         case .pin: .pushPin
@@ -473,7 +473,8 @@ struct ConversationMessageRow: View, Equatable {
             if let modelName = message.modelName {
                 Text("· \(modelName)")
             }
-            Text("· \(message.timeLabel)")
+            Text(message.durationLabel != nil || message.tokenCount != nil || message.modelName != nil
+                ? "· \(message.timeLabel)" : message.timeLabel)
                 .opacity(isHovering || message.isError ? 1 : 0)
         }
         .font(DockTypography.machineMetadata)

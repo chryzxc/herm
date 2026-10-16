@@ -1122,7 +1122,7 @@ struct TurnActivityView: View {
   /// Rows revealed so far while running. A new row is held back briefly, then
   /// revealed on a slow curve so the loader lingers and glides down to make room.
   @State private var revealedStepIDs: Set<String>?
-  private var stepMotion: Animation? { reduceMotion ? nil : .easeInOut(duration: 1.1) }
+  private var stepMotion: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.6) }
   private var stepSignature: [String] { visibleSteps.map { "\($0.id)\($0.isComplete)" } }
   private var visibleSteps: [ActiveToolCall] {
     guard runningSince != nil, let revealedStepIDs else { return activity }
@@ -1132,7 +1132,7 @@ struct TurnActivityView: View {
   private func revealSteps() async {
     let ids = Set(activity.map(\.id))
     guard runningSince != nil, !reduceMotion, revealedStepIDs != nil else { revealedStepIDs = ids; return }
-    try? await Task.sleep(for: .milliseconds(500))
+    try? await Task.sleep(for: .milliseconds(250))
     guard !Task.isCancelled else { return }
     withAnimation(stepMotion) { revealedStepIDs = ids }
   }
@@ -1150,7 +1150,7 @@ struct TurnActivityView: View {
       }
       // New rows fade in after the loader has started gliding down to make room.
       // The row fades in once the loader is mostly out of its way.
-      .transition(.opacity.animation(.easeOut(duration: 0.5).delay(0.6)))
+      .transition(.opacity.animation(.easeOut(duration: 0.3).delay(0.3)))
     }
     .padding(.vertical, 4)
   }
@@ -1246,7 +1246,27 @@ struct TurnActivityView: View {
         .lineLimit(1).truncationMode(.tail)
       if !call.isComplete { ProgressView().controlSize(.mini) }
     }
-    .help(call.result ?? call.input)
+    .help(Self.tooltip(for: call))
+  }
+
+  /// Readable hover text: the tool's context, then its unwrapped output, capped so it stays a tooltip.
+  static func tooltip(for call: ActiveToolCall) -> String {
+    var output = call.result ?? ""
+    if let data = output.data(using: .utf8),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      if let error = json["error"] as? String, !error.isEmpty {
+        output = "Error: \(error)"
+      } else if let text = json["output"] as? String {
+        output = text
+      }
+    }
+    output = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    let lines = output.split(separator: "\n", omittingEmptySubsequences: false)
+    if lines.count > 12 { output = lines.prefix(12).joined(separator: "\n") + "\n…" }
+    if output.count > 800 { output = String(output.prefix(800)) + "…" }
+    let head = call.context.isEmpty ? AgentActivityPresentation.toolActivityTitle(name: call.name, context: call.context) : call.context
+    let body = output.isEmpty ? call.input : output
+    return body.isEmpty ? head : "\(head)\n\n\(body)"
   }
 
   /// Tools whose context is one file path, so the row can show its type icon.

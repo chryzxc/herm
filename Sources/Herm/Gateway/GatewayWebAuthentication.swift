@@ -160,7 +160,9 @@ enum GatewayHTTP {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw HermesGateway.GatewayError.malformedResponse }
         if signIn { await GatewayWebAuthentication.shared.capture(response) }
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        let parsed = try? JSONSerialization.jsonObject(with: data)
+        // A few dashboard routes (e.g. `/api/tools/toolsets`) answer with a bare array; callers read it under `items`.
+        guard let json = parsed as? [String: Any] ?? (parsed as? [Any]).map({ ["items": $0] }) else {
             if !(200..<300).contains(response.statusCode) { throw HermesGateway.GatewayError.httpError(response.statusCode) }
             throw HermesGateway.GatewayError.malformedResponse
         }

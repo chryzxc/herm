@@ -81,7 +81,8 @@ struct DockActivityIndicator: View {
     /// Drawn arc rather than ProgressView, which ignores tint and washes out on avatars.
     private func spinner(_ color: Color) -> some View {
         let line = max(1.8, size * 0.16)
-        return TimelineView(.animation(paused: reduceMotion)) { timeline in
+        // 30fps is smooth for a 12pt spinner; display rate redrew every spinning row each frame.
+        return TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { timeline in
             let turn = reduceMotion ? 0 : timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
             Circle().stroke(color.opacity(0.25), lineWidth: line)
                 .overlay {

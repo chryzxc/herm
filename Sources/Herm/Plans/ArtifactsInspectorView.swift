@@ -62,6 +62,8 @@ struct ArtifactsInspectorView: View {
     @State private var imagePage = 1
     @State private var filePage = 1
     @State private var isLoading = false
+    @State private var refreshID = 0
+    @State private var refreshGeneration = UUID()
     @State private var errorMessage: String?
     @State private var failedSessionCount = 0
     @State private var selectedArtifactID: String?
@@ -140,7 +142,7 @@ struct ArtifactsInspectorView: View {
                 inspectorBody
             }
         }
-        .task(id: sessionRefreshKey) { await refresh() }
+        .task(id: "\(sessionRefreshKey):\(refreshID)") { await refresh() }
         .onChange(of: query) { resetPages() }
         .onChange(of: filter) { resetPages() }
         .onChange(of: visibleRecords.map(\.id)) { _, _ in reconcileSelection() }
@@ -171,7 +173,7 @@ struct ArtifactsInspectorView: View {
                         .foregroundStyle(Color.dockSecondaryText)
                 }
                 Spacer(minLength: 8)
-                Button { Task { await refresh() } } label: {
+                Button { refreshID += 1 } label: {
                     DockIcon(isLoading ? .hourglass : .arrowsClockwise)
                         .font(.system(size: 11, weight: .semibold))
                 }
@@ -203,7 +205,7 @@ struct ArtifactsInspectorView: View {
             DockPageHeader(
                 title: "Artifacts",
                 subtitle: pageSummaryText,
-                onRefresh: { Task { await refresh() } },
+                onRefresh: { refreshID += 1 },
                 isRefreshing: isLoading
             )
             pageToolbar
@@ -263,7 +265,7 @@ struct ArtifactsInspectorView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 8)
-            Button("Retry") { Task { await refresh() } }
+            Button("Retry") { refreshID += 1 }
                 .buttonStyle(.dockHover)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
@@ -278,7 +280,7 @@ struct ArtifactsInspectorView: View {
     private var pageContent: some View {
         if let errorMessage, records.isEmpty {
             pageState(title: "Artifacts unavailable", detail: errorMessage, icon: .warning, actionTitle: "Retry") {
-                Task { await refresh() }
+                refreshID += 1
             }
         } else if records.isEmpty && isLoading {
             pageState(title: "Indexing artifacts", detail: "Reading generated outputs from recent Hermes sessions…", icon: .hourglass, actionTitle: nil, action: nil)
@@ -1032,26 +1034,27 @@ struct ArtifactsInspectorView: View {
 
 
     private func refresh() async {
-        guard !isLoading else { return }
+        guard !Task.isCancelled else { return }
+        let generation = UUID()
+        refreshGeneration = generation
         isLoading = true
+        defer { if refreshGeneration == generation { isLoading = false } }
         errorMessage = nil
         let previous = records
         let sessions = Array(model.sessions.prefix(50))
-        // Requests interleave on the main actor while each awaits the network.
-        let tasks = sessions.map { session in
-            (session.id, Task { @MainActor in
-                ArtifactService.extract(session: session, messages: try await model.artifactMessages(for: session))
-            })
+        let results = await ArtifactIndexLoader.load(sessions: sessions) { session in
+            try await model.artifactMessages(for: session)
         }
+        guard !Task.isCancelled, refreshGeneration == generation else { return }
         var next: [ArtifactRecord] = []
         var failedSessionIDs = Set<String>()
         var lastFailure: String?
-        for (sessionID, task) in tasks {
-            switch await task.result {
-            case .success(let found): next.append(contentsOf: found)
-            case .failure(let error):
-                failedSessionIDs.insert(sessionID)
-                lastFailure = error.localizedDescription
+        for result in results {
+            if let error = result.error {
+                failedSessionIDs.insert(result.sessionID)
+                lastFailure = error
+            } else {
+                next.append(contentsOf: result.records)
             }
         }
         // Keep the prior artifacts for sessions that could not be read this
@@ -1067,7 +1070,6 @@ struct ArtifactsInspectorView: View {
         }
         resetPages()
         reconcileSelection()
-        isLoading = false
     }
 }
 

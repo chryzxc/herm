@@ -11,6 +11,8 @@ final class DockPanelPresentation: ObservableObject {
     @Published var kanbanRequest = 0
     @Published var isEdgeAttached = false
     @Published var edgeSide: EdgeDockSide = .right
+    /// Clearance inside the edge silhouette; the top drop-down clears the menu bar and its shoulders.
+    @Published var edgeInsets = EdgeDockLayout.insets(for: .right)
     @Published var compactHeight: CGFloat = 720
     @Published var compactWidth: CGFloat = .greatestFiniteMagnitude
     @Published var availableWidth: CGFloat = .greatestFiniteMagnitude
@@ -378,7 +380,7 @@ struct DockPopover: View {
 
         var help: String {
             switch self {
-            case .chat: "Conversation transcript and composer"
+            case .chat: "Text conversation"
             case .voice: "Voice conversation"
             case .explorer: "Browse this session's project files"
             case .sourceControl: "Review this session's repository changes"
@@ -460,6 +462,8 @@ struct DockPopover: View {
     var body: some View {
         observerLayerFour(observerLayerThree(observerLayerTwo(observerLayerOne(rootPopoverContent))))
             .environment(\.chatContextRouter, chatContextRouter)
+            // SwiftUI Text links would otherwise open in the default browser.
+            .environment(\.openURL, OpenURLAction { InAppBrowser.open($0); return .handled })
     }
 
     private func observerLayerOne<V: View>(_ view: V) -> some View {
@@ -567,6 +571,9 @@ struct DockPopover: View {
         }
         .onChange(of: activeSessionRepositoryIdentity) { _, _ in
             clearSessionSurfaceSelections()
+            if activeSessionRepositoryScope == nil, sessionWorkspaceMode == .pullRequests {
+                selectSessionMode(.chat)
+            }
         }
     }
 
@@ -598,8 +605,9 @@ struct DockPopover: View {
         }
             .animation(.dockEase(duration: 0.3), value: isVoiceImmersive)
             .frame(width: isFullscreen ? nil : min(popupWidth, panelPresentation.compactWidth), height: isFullscreen ? nil : panelPresentation.compactHeight)
-            .padding(.horizontal, panelPresentation.isEdgeAttached && !usesWindowChrome ? (isFullscreen ? 0 : EdgeDockLayout.workspaceHorizontalInset) : 0)
-            .padding(.vertical, panelPresentation.isEdgeAttached && !usesWindowChrome ? (isFullscreen ? 20 : EdgeDockLayout.workspaceVerticalInset) : 0)
+            .padding(panelPresentation.isEdgeAttached && !usesWindowChrome
+                     ? (isFullscreen ? EdgeInsets(top: 20, leading: 0, bottom: 20, trailing: 0) : panelPresentation.edgeInsets)
+                     : EdgeInsets())
             .onChange(of: panelPresentation.availableWidth) { _, _ in synchronizePanelLayout() }
             .onChange(of: isGlobalSurfaceActive) { _, _ in synchronizePanelLayout() }
             .onChange(of: panelPresentation.isFullscreen, initial: true) { _, fullscreen in
@@ -763,7 +771,7 @@ struct DockPopover: View {
                 FullscreenPanelSplitView(
                     leading: missionControlQueue,
                     trailing: desktopTrailingWorkspace,
-                    leadingFraction: DesktopWorkspaceFractions.queue,
+                    leadingFraction: usesWindowChrome ? DesktopWorkspaceFractions.windowQueue : DesktopWorkspaceFractions.queue,
                     minimumLeadingWidth: 300,
                     minimumTrailingWidth: desktopTrailingMinimumWidth
                 )
@@ -796,6 +804,7 @@ struct DockPopover: View {
             isIssuesActive: fullscreenSurface == .issues,
             onOpenChats: {
                 missionControlNavigation.clearSelection()
+                if sessionWorkspaceMode == .voice { selectSessionMode(.chat) }
                 fullscreenSurface = .conversation
                 inspectorScope = .session
                 // Narrow layout shows the inspector instead of the chat; Chats brings the chat back.
@@ -1802,12 +1811,6 @@ struct DockPopover: View {
 
                 sessionModeSwitcher(style: style)
 
-                DockIconButton(
-                    icon: sessionWorkspaceMode == .voice ? .chatCircleText : .waveform,
-                    label: sessionWorkspaceMode == .voice ? "Return to chat" : "Voice conversation",
-                    style: style
-                ) { selectSessionMode(sessionWorkspaceMode == .voice ? .chat : .voice) }
-
                 sessionViewMenu(includesInspector: !showsInspector, style: style)
                     .fixedSize()
 
@@ -1860,7 +1863,7 @@ struct DockPopover: View {
     /// Explorer and Source Control live in the inspector's tabs.
     private func sessionModeSwitcher(style: DockThemePalette) -> some View {
         HStack(spacing: 2) {
-            ForEach([SessionWorkspaceMode.chat, .pullRequests]) { mode in
+            ForEach(activeSessionRepositoryScope == nil ? [SessionWorkspaceMode.chat, .voice] : [.chat, .voice, .pullRequests]) { mode in
                 let isSelected = mode == sessionWorkspaceMode
                 Button { selectSessionMode(mode) } label: {
                     DockIcon(mode.icon, size: DockLayout.toolbarIconSize, color: isSelected ? style.primaryText : style.secondaryText)
@@ -1872,7 +1875,7 @@ struct DockPopover: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.dockPress)
-                .help("\(mode.label) — \(mode.help)")
+                .help(mode.help)
                 .accessibilityLabel(mode.label)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
@@ -1903,7 +1906,8 @@ struct DockPopover: View {
                         }
                     }
                 }
-                Divider()
+                // No trailing rule when nothing follows (voice mode, inspector shown).
+                if sessionWorkspaceMode == .chat || includesInspector { Divider() }
             }
             if sessionWorkspaceMode == .chat {
                 Button(isShowingMessageSearch ? "Close message search" : "Find in conversation", icon: .magnifyingGlass) {
@@ -1914,7 +1918,7 @@ struct DockPopover: View {
                 }
             }
             if includesInspector {
-                Divider()
+                if sessionWorkspaceMode == .chat { Divider() }
                 Button(inspectorPanelIsVisible ? "Hide inspector" : "Show inspector", action: toggleInspectorPanel)
             }
         } label: {
@@ -3746,6 +3750,7 @@ struct MissionControlRail: View {
             VStack(spacing: 4) {
                 if showsCalendar { globalDestination(.calendar, style: style) }
                 globalDestination(.automations, style: style)
+                globalDestination(.capabilities, style: style)
             }
             VStack(spacing: 4) {
                 destination("Artifacts", icon: .fileMagnifyingGlass, isSelected: navigationState.selection.selection == .artifacts, style: style, action: onOpenArtifacts)
@@ -3753,6 +3758,7 @@ struct MissionControlRail: View {
             }
             VStack(spacing: 4) {
                 destination("Bots", icon: .robot, isSelected: navigationState.selection.selection == .bots, style: style, action: onOpenBots)
+                globalDestination(.messaging, style: style)
                 globalDestination(.usage, style: style)
             }
             VStack(spacing: 4) {
@@ -4074,7 +4080,7 @@ struct MissionControlQueue: View {
             .animation(.easeInOut(duration: 0.25), value: botMode.activityBanner)
             .zIndex(1)
 
-            ScrollView {
+            HoverPausingScrollView {
                 globalRailBar(style: style)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 8)
@@ -5337,7 +5343,8 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
             RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous).fill(rowFill)
         )
         .contentShape(RoundedRectangle(cornerRadius: style.cornerRadius, style: .continuous))
-        .dockHoverable().onTapGesture { if !isEditingTitle { onSelect(session) } }
+        // rowFill already tracks hover; a second hover tracker doubled the work per row while scrolling.
+        .onTapGesture { if !isEditingTitle { onSelect(session) } }
         .focusable(!isEditingTitle)
         .focusEffectDisabled()
         .focused($rowFocused)
@@ -5414,12 +5421,19 @@ private struct MissionControlSidebarSessionRow: View, Equatable {
 
     /// Wired repo shown as a pill ahead of the last-message preview.
     private func repositoryPill(_ name: String) -> some View {
-        Text(name + " ·")
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(style.secondaryText)
-            .lineLimit(1)
-            .fixedSize()
-            .help(name)
+        HStack(spacing: 4) {
+            DockIcon(.folder, size: 11)
+            Text(name)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(style.accent)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1)
+        .background(Capsule().fill(style.accent.opacity(0.14)))
+        .fixedSize()
+        .accessibilityLabel("Project: \(name)")
+        .help("Wired to \(name)")
     }
 
     private var rowFill: Color {
@@ -5653,6 +5667,7 @@ private func splitPaneHost() -> NSHostingView<AnyView> {
 /// conversation column is intentionally the largest share.
 private enum DesktopWorkspaceFractions {
     static let queue: CGFloat = 0.34
+    static let windowQueue: CGFloat = 0.24
     static let conversation: CGFloat = 0.51
     static let inspector: CGFloat = 0.27
     static let minimumConversationWidth: CGFloat = 520
@@ -6060,6 +6075,26 @@ private struct SessionPickerRow: View {
     }
 }
 
+
+/// Rows sliding under a still pointer otherwise flip hover on every row they
+/// pass, each building and tearing down its action buttons. Like Finder, hover
+/// pauses while the list scrolls. `content` is stored, not a closure, so the
+/// scroll-phase flip does not rebuild the rail.
+private struct HoverPausingScrollView<Content: View>: View {
+    let content: Content
+    @State private var isScrolling = false
+
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        if #available(macOS 15, *) {
+            ScrollView { content.allowsHitTesting(!isScrolling) }
+                .onScrollPhaseChange { _, phase in isScrolling = phase.isScrolling }
+        } else {
+            ScrollView { content }
+        }
+    }
+}
 
 /// Sweeps an accent highlight across a working session's title. Static under
 /// Reduce Motion; only working rows pay for the timeline.

@@ -336,6 +336,20 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 guard let self, self.isWorkspaceVisible else { return }
                 self.resizePanel(to: self.desiredWidth, animated: false)
             }.store(in: &cancellables)
+        // A notch move (settings, rail menu or drag) re-docks an open workspace at
+        // once. Hop a turn so the notch controller has applied the new side first.
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .compactMap { _ in UserDefaults.standard.string(forKey: "hermes.notch.side") }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, self.isWorkspaceVisible, !self.isFullscreen,
+                          let side = self.placement()?.side, side != self.panelPresentation.edgeSide else { return }
+                    self.resizePanel(to: self.desiredWidth, animated: false)
+                    EdgeDockMotion.reveal(self.workspaceHost, side: side, fromShortcut: false)
+                }
+            }.store(in: &cancellables)
     }
 
     private func configureStatusItem() {
@@ -695,16 +709,16 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     private func resizePanel(to width: CGFloat, animated: Bool = true) -> CGFloat {
         desiredWidth = width
         guard !isFullscreen, let placement = placement() else { return width }
-        let horizontalInset = EdgeDockLayout.workspaceHorizontalInset
-        let verticalInset = EdgeDockLayout.workspaceVerticalInset
-        let availableWidth = max(0, placement.screenFrame.width - Metrics.screenInset - horizontalInset * 2)
+        let insets = placement.workspaceInsets
+        let availableWidth = max(0, placement.screenFrame.width - Metrics.screenInset - insets.leading - insets.trailing)
         let fittedWidth = min(width, availableWidth)
         let height = min(Metrics.height, placement.visibleFrame.height)
         panelPresentation.edgeSide = placement.side
+        panelPresentation.edgeInsets = insets
         panelPresentation.availableWidth = availableWidth
         panelPresentation.compactWidth = fittedWidth
-        panelPresentation.compactHeight = max(0, height - verticalInset * 2)
-        let frame = placement.frame(width: fittedWidth + horizontalInset * 2, height: height)
+        panelPresentation.compactHeight = max(0, height - insets.top - insets.bottom)
+        let frame = placement.frame(width: fittedWidth + insets.leading + insets.trailing, height: height)
 
         // Session selection may re-evaluate the layout. Setting an identical
         // frame through the animator still visibly relayouts the host tree.
@@ -732,7 +746,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     /// resizing the live panel. SwiftUI uses this only for layout decisions.
     private func availableWorkspaceWidth() -> CGFloat {
         guard let placement = placement() else { return .greatestFiniteMagnitude }
-        return max(0, placement.screenFrame.width - Metrics.screenInset - EdgeDockLayout.workspaceHorizontalInset * 2)
+        let insets = placement.workspaceInsets
+        return max(0, placement.screenFrame.width - Metrics.screenInset - insets.leading - insets.trailing)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

@@ -62,6 +62,12 @@ struct GitHubPageLoadingTests {
         ])
     }
 
+    // Constructing the API without an actor hop guards against protocol-wide UI isolation.
+    @Test func pullRequestReadTransportDoesNotRequireTheUIActor() async throws {
+        let api = PullRequestCenterAPI(transport: try pullRequestTransport())
+        #expect(await api.viewer() == "ada")
+    }
+
     @MainActor @Test func pullRequestListFinishesWithoutFetchingEveryDetail() async throws {
         let transport = try pullRequestTransport()
         let center = PullRequestCenterModel(api: PullRequestCenterAPI(transport: transport))

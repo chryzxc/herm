@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 @testable import Herm
 
@@ -12,6 +13,20 @@ struct DockThemeStoreTests {
         #expect(first.selectedThemeID == .glass)
         first.selectedThemeID = .retro
         #expect(DockThemeStore(defaults: defaults).selectedThemeID == .retro)
+    }
+
+    @Test func topIslandSwapsToIslandSkinAndRestoresOnSide() {
+        let suiteName = "DockThemeStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = DockThemeStore(defaults: defaults)
+        store.selectedThemeID = .retro
+        EdgeIslandTheme.apply(side: .top, store: store, defaults: defaults)
+        #expect(store.selectedThemeID == .island)
+        EdgeIslandTheme.apply(side: .top, store: store, defaults: defaults)
+        EdgeIslandTheme.apply(side: .right, store: store, defaults: defaults)
+        #expect(store.selectedThemeID == .retro)
+        #expect(defaults.string(forKey: EdgeIslandTheme.previousThemeKey) == nil)
     }
 
     @Test func invalidAndLegacyValuesFallBackSafely() {
@@ -65,7 +80,7 @@ struct DockThemeStoreTests {
         #expect(DockThemeID.warmLight.appearance == .light)
         #expect(DockThemeID.slate.appearance == .dark)
         #expect(DockThemeID.allCases.allSatisfy { !$0.detail.isEmpty })
-        #expect(DockThemeID.hermOnly == [.glass, .clean, .nativeMacOS, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud])
+        #expect(DockThemeID.hermOnly == [.glass, .clean, .nativeMacOS, .cartoon, .terminal, .brutalist, .origami, .dusk, .retro, .eInk, .swiss, .clay, .pixel, .notebook, .hud, .island])
         #expect(DockThemeID.hermesClassic.style.fontDesign == .serif && DockThemeID.ares.style.controlRadius < DockThemeID.slate.style.controlRadius)
         #expect(DockThemeID.terminal.style.glow > 0 && DockThemeID.terminal.style.selection == .invert)
         #expect(DockThemeID.dusk.style.accentGradient && DockThemeID.warmLight.style.cardShadow > 0)
@@ -111,7 +126,7 @@ struct DockThemeStoreTests {
         #expect(desktopFont == originalFont)
         #expect(desktopFont?.isFixedPitch == false)
         #expect(DockSkinPresentation.current.composerShadow == 0)
-        #expect(DockSkinPresentation.current.composerRadius == 14)
+        #expect(DockSkinPresentation.current.composerRadius == 0)
         #expect(apply(.nativeMacOS) == originalFont)
         #expect(DockSkinPresentation.current == DockSkinPresentation())
     }
@@ -183,6 +198,7 @@ struct DockThemeStoreTests {
         for t in DockThemeID.allCases {
             let s = t.style
             if t.title.isEmpty || t.detail.isEmpty { problems.append("\(t): missing title/detail") }
+            if t.signature.isEmpty { problems.append("\(t): missing material signature") }
             if DockThemeID.allCases.filter({ $0.title == t.title }).count > 1 { problems.append("\(t): duplicate title") }
             if t.usesNativeMaterial && t.appearance != .system { problems.append("\(t): native material must follow the system appearance") }
             if s.material == .glass && !t.usesNativeMaterial { problems.append("\(t): glass material requires native material") }
@@ -190,5 +206,20 @@ struct DockThemeStoreTests {
             if s.controlRadius < 0 || s.paneRadius < 0 || s.outlineWidth < 0 { problems.append("\(t): negative geometry") }
         }
         #expect(problems.isEmpty, Comment(rawValue: problems.joined(separator: "\n")))
+    }
+
+    @Test func explicitSpecimenGeometryDoesNotFollowTheActiveSkin() {
+        let savedTheme = DockThemeRuntime.current
+        defer { DockThemeRuntime.current = savedTheme }
+        let rect = CGRect(x: 0, y: 0, width: 120, height: 60)
+        for theme in DockThemeID.allCases {
+            let shape = DockThemeShape(cornerRadius: theme.style.paneRadius, role: .pane, geometry: theme.style.geometry)
+            DockThemeRuntime.current = .notebook
+            let lightPath = shape.path(in: rect)
+            DockThemeRuntime.current = .terminal
+            #expect(lightPath == shape.path(in: rect), "\(theme) specimen changed with the active skin")
+            #expect(!lightPath.isEmpty)
+            #expect(lightPath.contains(CGPoint(x: 60, y: 30)))
+        }
     }
 }

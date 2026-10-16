@@ -493,6 +493,7 @@ final class BotModeModel: ObservableObject {
     /// bot attribution with an O(1) integer instead of dictionary contents.
     private(set) var rosterRevision = 0
     @Published private(set) var isRefreshing = false
+    private var isPolling = false
     @Published private(set) var isCreatingBot = false
     @Published var searchText = ""
     @Published var botCreationError: String?
@@ -597,9 +598,11 @@ final class BotModeModel: ObservableObject {
     /// capability. `force` follows that model so a user-opened page verifies
     /// the contract even when the batch probe starved.
     func refreshNow(force: Bool = false) async {
-        guard let service, !isRefreshing else { return }
+        guard let service, !isRefreshing, !isPolling else { return }
         guard force || capabilityAvailable else { return }
-        isRefreshing = true
+        // Background polls stay unpublished so the sidebar rail does not
+        // rebuild twice every 10s; only explicit refreshes show a spinner.
+        if force { isRefreshing = true } else { isPolling = true }
         let refreshed = await service.list()
         if refreshed.availability == .ready { capabilityAvailable = true }
         // Unchanged rosters must not republish: every observer (the rail,
@@ -610,7 +613,7 @@ final class BotModeModel: ObservableObject {
             if !events.isEmpty { announce(events) }
         }
         resolveSelectedProfile()
-        isRefreshing = false
+        if force { isRefreshing = false } else { isPolling = false }
         await loadAvatars()
     }
 

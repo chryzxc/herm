@@ -42,6 +42,7 @@ struct WorkspaceActivitySidebar: View {
     var showsHeader = true
     var showsModePicker = true
     @State private var selectedMode: ControlTab = .kanban
+    @State private var capabilitySection: WorkflowIntegrationView.Section = .skills
     @State private var isShowingCommandPalette = false
     @State private var searchQuery = ""
     @State private var selectedModelID = ""
@@ -141,6 +142,7 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(ChatQuotaSettingsKey.dropBanner) private var showsQuotaDropBanner = true
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     @AppStorage(DoubleTapShortcut.notchKey) private var notchShortcut = DoubleTapShortcut.option
+    @AppStorage("hermes.notch.side") private var notchSide: EdgeDockSide = .right
     @ObservedObject var agentUpdateService: HermesUpdateService
 
     init(
@@ -199,6 +201,19 @@ struct WorkspaceActivitySidebar: View {
                 AutomationWorkspaceView(control: control)
             } else if selectedMode == .calendar {
                 calendarContent
+            } else if selectedMode == .capabilities {
+                VStack(alignment: .leading, spacing: 0) {
+                    pageHeader
+                    // ponytail: launch profile only; bots open their own profile from the bot editor.
+                    WorkflowIntegrationView(
+                        destination: IntegrationDestination(profileID: nil), client: model.controlRPCClient,
+                        pageSection: $capabilitySection)
+                }
+            } else if selectedMode == .messaging {
+                VStack(alignment: .leading, spacing: 0) {
+                    pageHeader
+                    MessagingWorkspaceView(botMode: botMode, client: model.controlRPCClient)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     pageHeader
@@ -216,7 +231,7 @@ struct WorkspaceActivitySidebar: View {
                             case .quota: quotaContent
                             case .usage: UsageWorkspaceView(control: control)
                             // Rendered outside this ScrollView so the calendar can stay pinned.
-                            case .calendar: EmptyView()
+                            case .calendar, .capabilities, .messaging: EmptyView()
                             }
                         }
                         .frame(maxWidth: readingWidthModes.contains(selectedMode) ? 1280 : .infinity, alignment: .topLeading)
@@ -401,7 +416,7 @@ struct WorkspaceActivitySidebar: View {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .gateway, .appearance, .notifications, .runtime, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
+        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
             return nil
         }
     }
@@ -1022,7 +1037,7 @@ struct WorkspaceActivitySidebar: View {
     /// Compact mode mirrors the fullscreen rail's daily operator destinations.
     /// Repository and setup surfaces remain available from More.
     private var compactRailLeading: [ControlTab] {
-        [.kanban, .calendar, .automations].filter { $0 != .kanban || showsKanbanInSidebar }.filter { $0 != .calendar || showsCalendarInSidebar }
+        [.kanban, .calendar, .automations, .capabilities].filter { $0 != .kanban || showsKanbanInSidebar }.filter { $0 != .calendar || showsCalendarInSidebar }
     }
 
     private var compactRailTrailing: [ControlTab] {
@@ -1461,7 +1476,7 @@ struct WorkspaceActivitySidebar: View {
                         Text("\(notice.changedFiles) changed file\(notice.changedFiles == 1 ? "" : "s") · \(HumanDateFormatting.dateAndTime(notice.createdAt))")
                             .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
                         HStack(spacing: 10) {
-                            Button("OPEN CHANGES") { select(.changes) }
+                            Button("OPEN SOURCE CONTROL") { select(.changes) }
                             Button("REVIEW WITH HERMES") {
                                 let prompt = "Review repository \(notice.displayName) without editing files. Herm detected \(notice.changedFiles) changed files. Report risks, missing tests, and verification scope without quoting suspected credential values."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
@@ -2543,7 +2558,7 @@ struct WorkspaceActivitySidebar: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(workflow.repository.changedFiles == 0 ? Color.dockSuccess : Color.dockWarning)
                 HStack(spacing: 10) {
-                    Button("OPEN CHANGES") { select(.changes) }
+                    Button("OPEN SOURCE CONTROL") { select(.changes) }
                     Button(commandCenterPreferences.isWatchingRepository(workflow.repository.repositoryID) ? "STOP WATCHING" : "WATCH REPOSITORY") {
                         workflow.toggleWatching(preferences: commandCenterPreferences, control: control)
                     }
@@ -4403,6 +4418,10 @@ struct WorkspaceActivitySidebar: View {
                 runtimeSettingsSection
             }
 
+            if selectedSettingsCategory == .providers {
+                ProvidersSettingsView(model: model, control: control)
+            }
+
             HermesConfigCategoryView(editor: control.configEditor, category: selectedSettingsCategory)
 
             if selectedSettingsCategory == .diagnostics, let insights = control.insightsSummary {
@@ -5139,6 +5158,9 @@ struct WorkspaceActivitySidebar: View {
 
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if notchSide == .top {
+                SettingsInlineNotice(text: "The top island notch uses the Island skin. Switch the notch position to Side to choose another skin.", tint: Color.dockAccent)
+            }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
                 let skins = control.appearanceProjection?.skins ?? []
                 let hermOptions = DockThemeID.hermOnly.map { DockAppearanceOption(themeID: $0, hermesSkin: nil) }
@@ -5146,6 +5168,8 @@ struct WorkspaceActivitySidebar: View {
                     themeOption(option)
                 }
             }
+            .disabled(notchSide == .top)
+            .opacity(notchSide == .top ? 0.5 : 1)
             if !control.appearanceProjectionAvailable {
                 SettingsInlineNotice(text: "Hermes skin status unavailable. Refresh Settings to retry.", tint: Color.dockWarning)
             } else if let projection = control.appearanceProjection {
@@ -5178,24 +5202,22 @@ struct WorkspaceActivitySidebar: View {
             withAnimation(.dockEase(duration: 0.16)) { dockThemeStore.selectedThemeID = theme }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 3) {
-                    ForEach(Array(DockThemePalette(theme: theme).swatches.enumerated()), id: \.offset) { _, color in
-                        Circle()
-                            .fill(color)
-                            .overlay(Circle().stroke(Color.dockBorderLight, lineWidth: 0.5))
-                            .frame(width: 10, height: 10)
-                    }
-                    Spacer(minLength: 0)
-                    if selected {
-                        DockIcon(.check)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color.dockAccent)
-                    }
-                }
+                DockSkinSpecimen(theme: theme)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(theme.title)
-                        .font(.system(size: 13, weight: selected ? .semibold : .medium))
-                        .foregroundStyle(Color.dockPrimaryText)
+                    HStack(spacing: 4) {
+                        Text(theme.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        DockIcon(.check)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.dockAccent)
+                            .opacity(selected ? 1 : 0)
+                    }
+                    Text(theme.signature)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
                         .lineLimit(1)
                     HStack(spacing: 4) {
                         Text(modeLabel)
@@ -5223,7 +5245,7 @@ struct WorkspaceActivitySidebar: View {
         }
         .buttonStyle(.dockHover)
         .help(theme.detail)
-        .accessibilityLabel("\(theme.title), \(modeLabel)\(option.isHermesActive ? ", active in Hermes" : "")")
+        .accessibilityLabel("\(theme.title), \(theme.signature), \(modeLabel)\(option.isHermesActive ? ", active in Hermes" : "")")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -5618,7 +5640,7 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
     var categories: [SettingsCategory] {
         switch self {
         case .app: [.general, .gateway, .appearance, .notifications]
-        case .agent: [.runtime, .chat, .memory, .voice, .advanced]
+        case .agent: [.runtime, .providers, .chat, .memory, .voice, .advanced]
         case .tools: [.workspace, .browser, .safety, .integrations]
         case .activity: [.session, .project, .diagnostics, .updates]
         }
@@ -5631,6 +5653,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case appearance
     case notifications
     case runtime
+    case providers
     case chat
     case workspace
     case safety
@@ -5654,6 +5677,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .notifications: "Notifications"
         case .updates: "Updates"
         case .runtime: "Models & tools"
+        case .providers: "Providers"
         case .chat: "Chat"
         case .workspace: "Files & terminal"
         case .safety: "Privacy & safety"
@@ -5676,6 +5700,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .notifications: "Completion alerts and repository changes"
         case .updates: "Herm and Hermes versions and updates"
         case .runtime: "Models, dispatch, and tools"
+        case .providers: "Accounts, API keys, and sign-in"
         case .chat: "Personality, timezone, and attachments"
         case .workspace: "Working directory, shell, and file access"
         case .safety: "Approvals, privacy, and checkpoints"
@@ -5698,6 +5723,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .notifications: .bell
         case .updates: .arrowsClockwise
         case .runtime: .gearSix
+        case .providers: .key
         case .chat: .chatText
         case .workspace: .folder
         case .safety: .shieldWarning

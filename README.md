@@ -122,6 +122,13 @@ Choose **Quick message** in either Tasks view to start a new session without ope
 
 Choose a finished session row to peek at its **Latest completed reply** inside the notch. Copy an excerpt, open or reveal generated files, reply to that session, or open it in the workspace. Reading leaves the selected workspace chat alone. A deliberate selection marks the matching completion reviewed after its content loads; hovering does not. New results offer **Update** while the displayed excerpt remains stable.
 
+The notch shortcut opens keyboard interaction: arrows select a session and Return inspects it;
+Escape backs out and then dismisses. **More → Saved actions** prepares editable starter or custom
+instructions without sending. **Working sets → Checkpoint** saves a note and exact quick-draft
+reference for later resumption. **Watch activity** focuses ordinary session activity on one set;
+blocking decisions and failures remain visible globally. Result Peek's **Compare with previous
+read** compares two deliberately loaded snapshots, including changed output references.
+
 The quick composer accepts dropped files and links, pasted text and images, and an explicitly chosen project for a new session. Its **To** picker captures the profile and session before sending. **Drafts** restores unsent content after a restart; missing or changed files remain visible. Images, one PDF up to 25 MB, and generic files use Hermes' attachment methods when supported. Interrupted or uncertain submissions require reviewing the destination session before resending.
 
 Choose **Quiet** in the Tasks header for 30 minutes, 60 minutes, or until you end it. Completions, ordinary quota changes, and informational updates enter a digest. Approvals, questions, and failures that stop work can still interrupt. The same policy controls notch announcements, pet announcement reactions, and opted-in system notifications. **Review digest** returns to the recorded sources; it stores references rather than response bodies.
@@ -132,6 +139,8 @@ Quick approval and clarification answers stay tied to their original request, se
 The composer’s **@** picker shows each bot’s description beside its handle when available. Hover or click the context gauge to see usage, the estimated category breakdown, and the runtime’s compaction threshold with remaining tokens in a popover, without a separate hover tooltip. Older runtimes show when the threshold is unavailable.
 
 The status colors match the rest of the app: blue means active, green means healthy or done, amber means a warning or that Hermes needs you, and red means a failure.
+
+Global hover tooltips show one floating, fully opaque, theme-aware panel beside the hovered control and above workspace content and scroll containers. Long help wraps, stays within the display, and never takes keyboard focus.
 
 ### How to use it
 
@@ -153,23 +162,31 @@ Choose **Dots**, **Vertical line**, or **Ring** in **Settings → Appearance →
 ## Features
 
 Workspace page headers use consistent text titles and subtitles, with refresh
-and other actions on the right.
+and other actions on the right. Buttons share 12pt themed labels, hover and
+pressed feedback, and disabled states. Primary actions use a quiet accent tint;
+secondary actions use the shared outlined or compact treatment.
 
-The default **System** appearance follows the system Light/Dark setting
-and uses the real macOS popover material, graphite surfaces, and system accent
-colors. The other Herm themes keep their authored opaque palettes.
+The default **Glass** appearance follows macOS Light/Dark with frosted panels
+and cool crystal surfaces. **System** keeps native popover blur and graphite
+chrome; **Clean** uses quiet porcelain surfaces.
 
-Choose **Retro** in **Settings → Appearance** for square gray panels with
-raised and sunken bevels. Skins share a
-centralized component styling contract alongside palette and geometry, keeping
-the sidebar, navigation, and workspace layout intact.
+Choose from the skin gallery in **Settings → Appearance**. Every tile previews
+its own typography, material, geometry, and selection treatment. The 20 skins
+range from Classic Hermes' midnight brass and Ares' oxblood panels to folded
+Origami, ruled Notebook, molded Clay, and silver-beveled Retro. Terminal has
+phosphor scanlines, Pixel has stepped arcade outlines, and HUD has cyan
+crosshairs. Navigation and composers follow the selected skin while keeping
+the workspace layout and controls in place. E-Ink, Pixel, and Retro remain
+motion-free; other skins respect Reduce Motion.
 
 ### 💬 Conversations
 
 Discord sessions show a compact tinted pill with the Discord icon beside the preview. Other session sources omit the origin pill.
 
 - **Streaming chat** with Markdown (including tables with optional outer pipes), images, tool output, and inline clarification requests.
+- **Transcript scrolling** yields immediately when you scroll upward during a reply and resumes following at the bottom. Jump to latest respects Reduce Motion.
 - **Steering during a turn**: guidance you type while Hermes is working is added to the running turn at the next tool boundary.
+- **Queued messages**: new submissions wait behind earlier messages, including a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
 - **Attachments**: files, pasted images, URLs, prompt snippets, several images at once, or a single PDF up to 25 MB.
 - **Message actions**: branch from a message, copy it, have it read aloud, or refresh it from Hermes.
 - **Pinned conversations** use Hermes' own pin, so pins are shared with Hermes Agent Desktop and `hermes sessions pin`.
@@ -209,17 +226,19 @@ Each operation remains unavailable when its installed-runtime contract cannot be
 ### 🔀 Pull requests
 
 - Open pull requests for the session's repository, with check status, review state, blockers, and deep links.
+- The session header shows Pull Requests only when the session is connected to a project or repository.
+- The Pull requests page loads its list first, then fetches branch, check, and review details as rows come into view.
 - Create draft pull requests and edit a pull request's title or body, with a confirmation step.
 - **Not supported:** merging, commenting, force-pushing, and dispatching workflows.
 
 ### 🐛 GitHub issues
 
-- A separate **Issues** destination in the navigation rail for browsing the repository's GitHub issues without leaving Herm.
+- A separate **Issues** destination in the navigation rail for browsing the repository's GitHub issues without leaving Herm. Authored and assigned issues load in parallel, and returning to the page retains the loaded list; Refresh fetches current data.
 
 ### 🛠️ Developer tools
 
 - **Explorer**: a repository browser with blame information.
-- **Source Control / Changes**: staged, unstaged, and untracked files with diffs, plus a local check on added lines that flags conflict markers, likely credentials, and debug statements. Credential values are never shown.
+- **Source Control / Changes**: compact Staged Changes and Changes lists with per-file and group stage/unstage actions, read-only diffs, and a commit message field (⌘Return commits staged changes only). A collapsible Commits section shows the latest 50 commits on the selected worktree’s branch, with author, date, references, and copyable hashes. Local review also checks added lines for conflict markers, likely credentials, and debug statements; credential values are never shown.
 - **Terminal**: a native terminal in the session's project folder, with history, Tab completion, and optional repository checks.
 - **Repository review**: reviews the whole repository locally and tells you what it didn't cover. Optional repository watching never starts Hermes work on its own.
 - **Verification Center**: the project's manifests, package managers, verification commands, and the latest results from Hermes.
@@ -232,6 +251,18 @@ Each operation remains unavailable when its installed-runtime contract cannot be
 - Send draft notes as one **revision request to the session the preview came from**, rather than manually copying excerpts into a different conversation.
 - Inspect changes against the file contents saved when notes were sent. A removed quote can be marked addressed; that is a matching heuristic, not proof that the requested revision is correct.
 - Use **Preview diff** on chat file attachments with local Git changes to inspect staged and working-tree changes separately, or the added contents of a new file.
+
+### 🌐 Built-in browser
+
+The session inspector's **Browser** tab is a real Chromium browser that you and Hermes share, so you can watch it work.
+
+- **Hermes browses here.** Herm starts a background Chrome (or Brave, Edge or Chromium) and connects Hermes' browser tools to it. When Hermes uses the browser, the tab comes forward and a status pill shows its current step.
+- **Take over and hand back.** **Take over** pauses Hermes so you can handle a login or captcha yourself. **Hand back to Hermes** then tells it to continue from that page. While Hermes is working, your clicks and typing are ignored so they can't interfere with it.
+- **Page dialogs** (alerts, confirmations, prompts, "Leave this page?") appear as a card in the panel, so a page can't stay frozen waiting for an answer. If Hermes answers a dialog itself, the card closes.
+- **Annotate** (cursor icon): click any element, describe the change, and Herm sends the element's selector, styles, HTML and a screenshot to the chat. The popup uses your Herm theme.
+- **Links in chat** open in this tab instead of your default browser. The tab belongs to the session it was opened in.
+- **Offline notice.** If the agent browser can't start or keeps closing, a notice says Hermes can't browse, and the tab falls back to a regular web view. Use **Retry**, reopen the tab, or reconnect Hermes to try again.
+- **Sharing the browser with other tools.** The agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. To make the Chrome DevTools MCP use it instead of opening its own Chrome, add `--browserUrl=http://127.0.0.1:9333` to that server's args in `~/.hermes/config.yaml`.
 
 ### 📁 Projects and session continuity
 
@@ -255,6 +286,7 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 - Reads and edits the **real Hermes board**: create, complete, block or unblock, archive, comment on, schedule, assign, promote, and reclaim tasks.
 - Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
 - Filters for status, assignee, "mine", and session are passed to Hermes.
+- While open, the board refreshes every five seconds with live work and every fifteen seconds otherwise. Board and filter changes made during a refresh load the latest selection automatically.
 
 ### 🏢 Office Preview
 
@@ -270,16 +302,21 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 - **Artifacts**: images, files, and links produced in recent sessions.
 - **Core**: token usage, context breakdown, rollback checkpoints, skills, MCP servers, plugins, and Hermes health.
 
-Settings groups navigation into **App**, **Agent**, **Tools & access**, and **Activity & maintenance**. Find startup and keyboard shortcuts in **General**; themes, sidebar visibility, notch display, and the companion in **Appearance**; alerts in **Notifications**; and app/agent updates in **Updates**. **Files & terminal** brings the working directory, execution backend, and shell settings together. Each page includes a short description, and compact windows use the same grouped category menu.
+Settings groups navigation into **App**, **Agent**, **Tools & access**, and **Activity & maintenance**. Find startup and keyboard shortcuts in **General**; backend connections in **Gateway**; themes, sidebar visibility, notch display, and the companion in **Appearance**; alerts in **Notifications**; and app/agent updates in **Updates**. **Files & terminal** brings the working directory, execution backend, and shell settings together. Each page includes a short description, and compact windows use the same grouped category menu.
 
 Settings shows each configured MCP server once, with its connection details and status when Hermes provides them. Dropdown settings align with the right edge of their preference rows.
 
 **Settings → General → Hermes gateway** shows whether the default-profile messaging gateway is running. Status refreshes every 15 seconds while visible, with a manual refresh button. **Restart gateway** runs Hermes' restart command after confirmation and checks status again. This requires a Hermes launchd service; manually launched gateways remain managed in Terminal. Restarting may briefly interrupt messaging channels and scheduled work.
 
+**Settings → Gateway** offers Local, Remote URL/token or sign-in, SSH, and Hermes Cloud connections. Remote URLs support path prefixes and require HTTPS, except for localhost, 127.0.0.1, and [::1]. Scheme-less remote addresses default to HTTPS; loopback addresses default to HTTP. Use SSH for remote gateways without HTTPS. Native OAuth uses your browser with PKCE when supported, and password or legacy sign-in uses the gateway's page. Cloud sign-in discovers your organizations and agents. SSH launches and tunnels an owned Hermes backend on Linux, macOS, or Windows; it requires working key-based SSH, a current remote Hermes install, and Node.js 20+ on this Mac (Hermes' bundled Node is detected automatically). **Test connection** checks HTTP and WebSocket access. Save for the next restart, or confirm **Save and restart Herm**. Saved connections can be selected, renamed, or removed. Session tokens and native OAuth credentials stay in Keychain; browser sessions use Herm's separate WebKit store. `HERMES_DESKTOP_REMOTE_URL` and `HERMES_DESKTOP_REMOTE_TOKEN` override saved settings at launch. Repository tools, local terminals, agent updates, and the messaging gateway controls in General continue to operate on this Mac.
+
+The SSH helper is bundled from Hermes Desktop's MIT-licensed, Electron-free lifecycle. To update it from an installed Hermes checkout, run `node Scripts/build-hermes-ssh-bridge.mjs /path/to/hermes-agent` with that checkout's existing build dependencies installed. Herm ships the generated helper and its license in its SwiftPM resource bundle.
+
 ### ⏱️ Automations and quota
 
 - **Automations**: view, create, run, and remove Hermes cron jobs, and see their run history.
-- **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity.
+- The Quota page, chat composer, quick-message advisory, and notch share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. Session model responses do not supply a separate quota reading.
+- **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity. Its toolbar highlights Add account, groups automatic refresh and peak-hour sync, and keeps the last update time above the controls. Controls stack in narrow windows. The Add account dialog keeps provider names readable, shows readable sign-in instructions in a stable layout, and offers Done after Hermes confirms success.
 - **Hermes updates**: runs `hermes update` only after you confirm. Settings shows the current activity and elapsed time; expand Output to inspect the streamed log. It never updates automatically.
 
 ## Requirements
@@ -287,6 +324,7 @@ Settings shows each configured MCP server once, with its connection details and 
 - macOS 14 or later (built and tested on Apple Silicon)
 - Swift 6 toolchain (Xcode 16 or later)
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) installed, with the `hermes` executable on your `PATH`
+- Optional: Google Chrome, Brave, Edge or Chromium, for the built-in agent browser
 - Optional: the [GitHub CLI](https://cli.github.com/), signed in, for pull requests and issues
 
 ## Getting started
@@ -319,7 +357,7 @@ Scripts/run-debug-app.sh
                                     └── Hermes CLI (kanban, cron, update), when supported
 ```
 
-- **Local connection.** When Herm starts, it launches a Hermes backend that only listens on your machine and connects to it over an authenticated WebSocket using the Hermes gateway JSON-RPC protocol.
+- **Backend connection.** Local mode launches Hermes on loopback and connects over an authenticated WebSocket. Gateway settings can instead select a remote or Cloud backend, or an SSH tunnel. HTTP and WebSocket requests use the same chosen backend and authentication.
 - **Hermes stays in charge.** Sessions, models, skills, profiles, MCP servers, and cron jobs are owned by Hermes. Herm keeps local UI state such as preferences, queued drafts, and file-review notes; it does not maintain a second agent session database.
 - **Features turn off safely.** Herm checks each optional feature against the installed Hermes version when it runs. If a check fails, that feature stays unavailable. Herm never guesses support from a version number.
 
@@ -327,7 +365,7 @@ For more detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Privacy
 
-- The Hermes gateway only accepts connections from your machine and requires authentication.
+- The private Local gateway only accepts connections from your machine and requires authentication. Remote and Cloud modes send agent requests to the configured backend; SSH forwards them through the selected host.
 - Hermes owns agent configuration and memory. Herm keeps local UI state, including queued drafts and file-review notes.
 - **No telemetry.**
 - Provider keys for OpenCode Go and GLM are saved in a local config file that only your user account can read. Antigravity quota is read from its local language server without credentials.
@@ -357,9 +395,16 @@ make check    # everything CI runs
 CI runs on every pull request and on every push to `main`.
 
 Local attachment previews decode off the UI thread and reuse bounded thumbnails;
-attachment uploads also prepare file data in the background. See the
+attachment uploads also prepare file data in the background. Explorer syntax
+scanning, review diffs and saves, and notch delivery-file polling also run in the
+background; terminal output renders directly without rebuilding SwiftUI chrome
+for every chunk. See the
 [performance audit](docs/performance-audit.md) for the measured fixes, regression
-coverage, and remaining interactive profiling work.
+coverage, and remaining interactive profiling work. The
+[October 15 follow-up](docs/performance-followup-2026-10-15.md) removes repeated
+Markdown prefix scans during streaming and reuses session timestamp formatters.
+The [navigation loading audit](docs/navigation-loading-audit.md) covers canceled
+PR/Issue loads, background PR parsing, and bounded Artifacts and repository loading.
 
 | Document | Purpose |
 |---|---|
@@ -391,7 +436,7 @@ Any provider Hermes supports. The quota view also tracks Codex, OpenCode Go, GLM
 Herm doesn't have every Hermes feature yet, and each feature is added only once Hermes provides a stable interface for it. Please open an issue if there's something you'd like to see.
 
 **Is my data sent anywhere?**
-Herm has no telemetry and connects to a local Hermes gateway. Hermes can still send your prompts, attachments, and audio to configured providers, and quota checks can contact provider services. See [Privacy](#privacy).
+Herm has no telemetry. It connects to a local Hermes gateway by default; Gateway settings can select a remote, SSH, or Cloud backend. Hermes can send your prompts, attachments, and audio to configured providers, and quota checks can contact provider services. See [Privacy](#privacy).
 
 **Does it cost anything?**
 Herm is free. You use your own Hermes install and provider accounts.

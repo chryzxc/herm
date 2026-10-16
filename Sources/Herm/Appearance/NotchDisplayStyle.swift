@@ -27,9 +27,17 @@ enum NotchDisplayStyle: String, CaseIterable, Identifiable {
 
 struct NotchDisplaySettings: View {
     @AppStorage(NotchDisplayStyle.defaultsKey) private var style: NotchDisplayStyle = .dots
+    @AppStorage("hermes.notch.side") private var side: EdgeDockSide = .right
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            SettingsPreferenceRow(title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera. The top island always uses the black Island skin so it blends with the camera notch; your skin returns when you switch back to Side.") {
+                Picker("Notch position", selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right })) {
+                    Text("Side").tag(false)
+                    Text("Top island").tag(true)
+                }
+                .pickerStyle(.segmented).labelsHidden().fixedSize()
+            }
             SettingsPreferenceRow(title: "Notch status display", detail: "Choose how activity appears on the screen edge.") { EmptyView() }
             HStack(spacing: 12) {
                 ForEach(NotchDisplayStyle.allCases) { option in
@@ -62,6 +70,8 @@ struct NotchDisplaySettings: View {
 struct EdgeNotchStatusIndicator: View {
     let activity: EdgeNotchActivity
     var style: NotchDisplayStyle = .dots
+    /// Marks stack down an edge rail and across the top island.
+    var axis: Axis = .vertical
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Mark { case working, done, blocked, offline, idle }
@@ -84,7 +94,8 @@ struct EdgeNotchStatusIndicator: View {
     var body: some View {
         TimelineView(.animation(paused: !animates)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            VStack(spacing: 10) {
+            let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+            layout {
                 mark(primary, t)
                 ForEach(Array(badges.enumerated()), id: \.offset) { mark($0.element, t) }
             }

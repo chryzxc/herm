@@ -20,7 +20,8 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
 
     static func normalizedURL(_ text: String) throws -> URL {
         var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.contains("://") { text = "http://" + text }
+        let hasScheme = text.contains("://")
+        if !hasScheme { text = "https://" + text }
         guard var parts = URLComponents(string: text),
               ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
               let host = parts.host, !host.isEmpty,
@@ -30,12 +31,16 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
         }
         parts.scheme = parts.scheme?.lowercased()
         parts.host = host.lowercased()
+        let isLoopback = ["localhost", "127.0.0.1", "[::1]"].contains(host.lowercased())
+        if !hasScheme && isLoopback { parts.scheme = "http" }
+        guard parts.scheme == "https" || isLoopback else { throw GatewayConnectionError.insecureURL }
         while parts.percentEncodedPath.hasSuffix("/") { parts.percentEncodedPath.removeLast() }
         guard let url = parts.url else { throw GatewayConnectionError.invalidURL }
         return url
     }
 
     static func endpoint(_ base: URL, _ path: String) throws -> URL {
+        let base = try normalizedURL(base.absoluteString)
         guard path.hasPrefix("/"), !path.hasPrefix("//"),
               let url = URL(string: base.absoluteString + path), url.host == base.host else {
             throw GatewayConnectionError.invalidURL
@@ -67,10 +72,11 @@ struct GatewayConnectionSettings: Codable, Equatable, Identifiable {
 }
 
 enum GatewayConnectionError: LocalizedError {
-    case invalidURL, invalidSSH, missingToken, storage(Int32), unavailable(String)
+    case invalidURL, insecureURL, invalidSSH, missingToken, storage(Int32), unavailable(String)
     var errorDescription: String? {
         switch self {
         case .invalidURL: "Enter an HTTP or HTTPS gateway URL without credentials, query parameters, or a fragment."
+        case .insecureURL: "Remote gateways require HTTPS to protect credentials. Use HTTPS or an SSH connection; HTTP is allowed only on localhost, 127.0.0.1, or [::1]."
         case .invalidSSH: "Enter a valid SSH host, user, port, and profile. Use key-based SSH authentication."
         case .missingToken: "Enter a session token, or choose Sign in for a hosted gateway."
         case .storage(let status): "Could not access the gateway token in Keychain (\(status))."

@@ -247,8 +247,8 @@ private struct PetWindowContent: View {
                 guard held else { wobble = false; return }
                 withAnimation(.easeInOut(duration: 0.18).repeatForever(autoreverses: true)) { wobble = true }
             }
-            .overlay { if motion.nearNotch { Circle().strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [4, 3])).padding(2) } }
-            .overlay { Circle().stroke(Color.accentColor, lineWidth: 2).scaleEffect(0.8 + ring * 0.7).opacity(ring == 0 ? 0 : 0.8 * (1 - ring)).padding(4).allowsHitTesting(false) }
+            .overlay { if motion.nearNotch { Circle().strokeBorder(DockThemePalette(theme: DockThemeRuntime.current).accent, style: StrokeStyle(lineWidth: 2, dash: [4, 3])).padding(2) } }
+            .overlay { Circle().stroke(DockThemePalette(theme: DockThemeRuntime.current).accent, lineWidth: 2).scaleEffect(0.8 + ring * 0.7).opacity(ring == 0 ? 0 : 0.8 * (1 - ring)).padding(4).allowsHitTesting(false) }
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: motion.nearNotch)
             .onChange(of: motion.pulse) {
                 ring = 0.001

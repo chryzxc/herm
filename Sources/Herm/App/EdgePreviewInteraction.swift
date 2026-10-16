@@ -44,6 +44,8 @@ struct EdgeTaskKeyboardControl: ViewModifier {
   func body(content: Content) -> some View {
     content
       .focusable()
+      // The rounded overlay below is the selection cue; the system ring draws a square blue box.
+      .focusEffectDisabled()
       .focused($selection, equals: identity)
       .onKeyPress(.upArrow, phases: [.down, .repeat]) { key in
         guard key.modifiers.isEmpty else { return .ignored }

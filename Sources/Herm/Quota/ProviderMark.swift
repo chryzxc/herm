@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Vector provider marks for compact quota surfaces. Paths come from the
@@ -6,6 +7,9 @@ import SwiftUI
 /// take the theme's foreground color instead of shipping fixed-color bitmaps.
 enum ProviderMark: Equatable {
     case claude, openAI, openCode, zai, antigravity, deepSeek, kimi, openRouter
+    /// A bundled LobeHub SVG in Resources/ProviderIcons; `-color` names keep
+    /// their brand colors, the rest are monochrome and follow the theme.
+    case icon(String)
     case monogram(String)
 
     /// Maps a quota provider identifier, including dynamic account suffixes
@@ -39,8 +43,52 @@ extension ProviderMark {
         case _ where id.hasPrefix("deepseek"): self = .deepSeek
         case _ where id.hasPrefix("kimi") || id.hasPrefix("moonshot"): self = .kimi
         case _ where id.hasPrefix("openrouter"): self = .openRouter
-        default: self = .monogram(String(id.prefix(1)).uppercased())
+        default:
+            let icon = Self.bundledIcons.first { prefixes, _ in prefixes.contains { id.hasPrefix($0) } }?.icon
+            self = icon.map(Self.icon) ?? .monogram(String(id.prefix(1)).uppercased())
         }
+    }
+
+    /// Hermes provider slug prefixes → bundled icon. Providers without one
+    /// (Mixture of Agents, GMI…) keep the letter tile.
+    private static let bundledIcons: [(prefixes: [String], icon: String)] = [
+        (["nous"], "nousresearch"),
+        (["fireworks"], "fireworks-color"),
+        (["novita"], "novita-color"),
+        (["lmstudio"], "lmstudio"),
+        (["alibaba", "qwen", "dashscope"], "qwen-color"),
+        (["xai", "grok"], "xai"),
+        (["xiaomi"], "xiaomimimo"),
+        (["tencent"], "tencent-color"),
+        (["nvidia"], "nvidia-color"),
+        (["copilot", "github"], "githubcopilot"),
+        (["huggingface"], "huggingface-color"),
+        (["gemini", "google"], "gemini"),
+        (["vertex"], "vertexai-color"),
+        (["stepfun"], "stepfun-color"),
+        (["minimax"], "minimax-color"),
+        (["ollama"], "ollama"),
+        (["arcee"], "arcee-color"),
+        (["kilocode"], "kilocode"),
+        (["bedrock", "aws"], "bedrock-color"),
+        (["azure"], "azureai-color"),
+        (["ai-gateway", "vercel"], "vercel"),
+    ]
+
+    private static let bundle: Bundle = Bundle.main.resourceURL.flatMap {
+        Bundle(url: $0.appendingPathComponent("Herm_Herm.bundle"))
+    } ?? Bundle.module
+
+    // NSCache is thread-safe; images are read-only once cached.
+    nonisolated(unsafe) private static let cache = NSCache<NSString, NSImage>()
+
+    static func image(named name: String) -> NSImage? {
+        if let cached = cache.object(forKey: name as NSString) { return cached }
+        guard let url = bundle.url(forResource: name, withExtension: "svg", subdirectory: "ProviderIcons"),
+              let image = NSImage(contentsOf: url) else { return nil }
+        image.isTemplate = !name.hasSuffix("-color")
+        cache.setObject(image, forKey: name as NSString)
+        return image
     }
 }
 
@@ -50,14 +98,23 @@ struct ProviderMarkBadge: View {
     var size: CGFloat = 20
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+        DockThemeShape(cornerRadius: size * 0.28)
             .fill(Color.dockSurface4)
             .overlay {
                 switch mark {
+                case .icon(let name):
+                    if let image = ProviderMark.image(named: name) {
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .padding(size * 0.18)
+                    } else {
+                        monogram(String(name.prefix(1)).uppercased())
+                    }
                 case .monogram(let letter):
-                    Text(letter)
-                        .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.dockSecondaryText)
+                    monogram(letter)
                 case .claude:
                     ProviderMarkShape(path: ProviderMarkShape.claude)
                         // Claude's coral reads on both light and dark canvases.
@@ -96,6 +153,12 @@ struct ProviderMarkBadge: View {
             }
             .frame(width: size, height: size)
             .accessibilityHidden(true)
+    }
+
+    private func monogram(_ letter: String) -> some View {
+        Text(letter)
+            .font(.system(size: size * 0.5, weight: .bold, design: .rounded))
+            .foregroundStyle(Color.dockSecondaryText)
     }
 }
 

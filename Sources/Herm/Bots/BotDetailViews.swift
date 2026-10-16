@@ -84,7 +84,7 @@ struct BotProfileEditorSheet: View {
                 modalSection("MODELS") { modelCard }
                 modalSection("PERSONA") { soulRow }
                 modalSection("CAPABILITIES") {
-                    Button("Manage skills & MCP…") { showsIntegrationSetup = true }.buttonStyle(.dockSecondary)
+                    Button("Manage integrations…") { showsIntegrationSetup = true }.buttonStyle(.dockSecondary)
                     VStack(alignment: .leading, spacing: 10) {
                         DisclosureGroup(isExpanded: $showsSkills) {
                             toggleSection(items: skillBinding)

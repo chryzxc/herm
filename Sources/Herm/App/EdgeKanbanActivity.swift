@@ -49,7 +49,9 @@ struct EdgeKanbanActivity {
         for (identity, task) in previous ?? [:] {
             let change = changes[identity]
             guard let phase = Self.phase(task.status), change != nil || phase != .finished else { continue }
-            let context = [change?.detail, task.boardSlug, task.assignee].compactMap { $0 }.filter { !$0.isEmpty }
+            // The default board is implied; only name boards the user created.
+            let board = task.boardSlug == "default" ? nil : task.boardSlug
+            let context = [change?.detail, board, task.assignee].compactMap { $0 }.filter { !$0.isEmpty }
             result.append(EdgeNotchTask(id: Self.rowID(identity), title: task.title, phase: phase,
                 statusLabel: Self.label(task.status), detail: context.joined(separator: " · "),
                 updatedAt: change?.observedAt ?? task.latestEventAt ?? task.startedAt,

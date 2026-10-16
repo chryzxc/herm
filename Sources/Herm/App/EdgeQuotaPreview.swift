@@ -48,7 +48,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
                     DockIcon(symbol?(option) ?? .circle, size: 13,
                              color: selection == option ? .dockAccent : .dockSecondaryText)
                         .frame(width: 26, height: 22)
-                        .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .background(DockThemeShape(cornerRadius: 5)
                             .fill(selection == option ? Color.dockAccentMuted : .clear))
                         .contentShape(Rectangle())
                 }
@@ -59,7 +59,7 @@ struct EdgePreviewModeToggle<Option: Hashable>: View {
             }
         }
         .padding(2)
-        .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 1, style: .continuous).fill(Color.dockSurface4))
+        .background(DockThemeShape(cornerRadius: DockLayout.controlRadius - 1).fill(Color.dockSurface4))
     }
 }
 
@@ -107,6 +107,10 @@ struct EdgeQuotaPreview: View {
     @AppStorage(EdgeQuotaLayout.storageKey) private var layout: EdgeQuotaLayout = .list
 
     private var refreshing: Bool { control.refreshState(for: "provider.quota")?.isRefreshing == true }
+    /// Pooled accounts with no usage windows stay on the Quota page; the notch is for capacity.
+    private var quotas: [ProviderQuotaSnapshot] {
+        control.providerQuotas.filter { !$0.provider.hasPrefix("hermes-pool-") }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -115,7 +119,7 @@ struct EdgeQuotaPreview: View {
                     EdgeQuotaChangeCard(change: change)
                         .id(change.current.updatedAt)
                         .frame(maxHeight: .infinity, alignment: .top)
-                } else if control.providerQuotas.isEmpty {
+                } else if quotas.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(refreshing ? "Loading quota…" : "Quota unavailable")
                             .font(.system(size: 12, weight: .semibold))
@@ -145,7 +149,7 @@ struct EdgeQuotaPreview: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
-            if let updatedAt = control.providerQuotas.map(\.updatedAt).max() {
+            if let updatedAt = quotas.map(\.updatedAt).max() {
                 TimelineView(.periodic(from: .now, by: 60)) { timeline in
                     Text(refreshing ? "Refreshing…" :
                          control.refreshState(for: "provider.quota")?.isStale == true ? "Stale data" :
@@ -165,7 +169,7 @@ struct EdgeQuotaPreview: View {
 
     private var list: some View {
         VStack(spacing: 0) {
-            ForEach(Array(control.providerQuotas.enumerated()), id: \.element.provider) { index, snapshot in
+            ForEach(Array(quotas.enumerated()), id: \.element.provider) { index, snapshot in
                 if index > 0 { Divider().overlay(Color.dockBorderLight).padding(.leading, 28) }
                 HStack(alignment: .top, spacing: 8) {
                     ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName))
@@ -240,7 +244,7 @@ struct EdgeQuotaPreview: View {
 
     private var grid: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-            ForEach(control.providerQuotas, id: \.provider) { snapshot in
+            ForEach(quotas, id: \.provider) { snapshot in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
                         ProviderMarkBadge(mark: ProviderMark(providerID: snapshot.provider, displayName: snapshot.displayName), size: 18)

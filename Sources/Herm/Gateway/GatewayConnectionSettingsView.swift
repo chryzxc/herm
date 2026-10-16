@@ -115,7 +115,7 @@ struct GatewayConnectionSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             field("Remote URL", text: $model.draft.remoteURL, prompt: "https://host.example/hermes")
                 .disabled(store.environmentOverride)
-            Text("Dashboard base URL; path prefixes are supported. Use HTTPS for an encrypted connection.")
+            Text("Dashboard base URL; path prefixes are supported. Remote gateways require HTTPS; HTTP is allowed only on loopback. SSH connections use an encrypted tunnel.")
                 .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
             SettingsPreferenceRow(title: "Authentication", detail: "") {
                 DockMenuPicker(title: model.draft.authentication == .token ? "Session token" : "Sign in", selection: $model.draft.authentication) {

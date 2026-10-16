@@ -25,6 +25,9 @@ struct ChatComposerView: View {
     @State private var showingAttachmentPopover = false
     @State private var showingFilePicker = false
     @State private var showingImagePicker = false
+    @State private var showingFolderPicker = false
+    /// Separate from voice mode's `speechInput`: dictation only fills the draft.
+    @StateObject private var dictation = SpeechInput(isDictation: true)
     @StateObject private var completions = ComposerCompletionController()
     @FocusState private var isComposerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -47,6 +50,15 @@ struct ChatComposerView: View {
                     model.reportAttachmentError(message)
                 }
             }
+            .fileImporter(isPresented: $showingFolderPicker, allowedContentTypes: [.folder]) { result in
+                if case .success(let url) = result {
+                    composer.text = AttachmentPopoverPresentation.insertingPath(url, into: composer.text)
+                    isComposerFocused = true
+                } else if case .failure(let error) = result,
+                          let message = AttachmentPopoverPresentation.importerErrorMessage(error) {
+                    model.reportAttachmentError(message)
+                }
+            }
             .onChange(of: model.composerFocusRequest) { _, _ in
                 isComposerFocused = true
             }
@@ -58,6 +70,14 @@ struct ChatComposerView: View {
             .onChange(of: speechInput.isRecording) { _, isRecording in
                 isComposerPulsing = isRecording
             }
+            .onChange(of: dictation.isRecording) { _, isRecording in
+                // Dictation ends by mic tap, final result, or error; keep what was heard.
+                let spoken = dictation.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !isRecording, !spoken.isEmpty else { return }
+                composer.text += (composer.text.isEmpty || composer.text.hasSuffix(" ") || composer.text.hasSuffix("\n") ? "" : " ") + spoken
+                isComposerFocused = true
+            }
+            .onDisappear { dictation.stop() }
             .onAppear {
                 DebugLog.write("composer: appeared")
                 completions.configure(
@@ -241,6 +261,8 @@ struct ChatComposerView: View {
             // complete input surface as a final paint boundary.
             .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
 
+            if let controlCenter { RunningProcessesStrip(control: controlCenter) }
+
             // Image Attachment Previews (if any images are pending)
             if !model.pendingImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -321,17 +343,22 @@ struct ChatComposerView: View {
                 .padding(.vertical, 5)
                 .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
             }
-            if let pdfError = model.pendingPDFError {
-                Text(pdfError)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let attachmentError = model.pendingAttachmentError {
-                Text(attachmentError)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockWarning)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach([model.pendingPDFError, model.pendingAttachmentError].compactMap { $0 }, id: \.self) { error in
+                HStack(spacing: 6) {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockWarning)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button { model.clearAttachmentErrors() } label: {
+                        DockIcon(.x)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.dockHover)
+                    .help("Remove attachment")
+                }
             }
 
             // Integrated Bottom Toolbar Row
@@ -377,6 +404,24 @@ struct ChatComposerView: View {
                     SessionContextRing(model: model)
 
                     composerReasoningPicker
+
+                    if !speechInput.isRecording {
+                        Button { dictation.toggle() } label: {
+                            DockIcon(dictation.isRecording ? .stop : .microphone, size: 14,
+                                     color: dictation.isRecording ? Color.dockDestructive : Color.dockSecondaryText)
+                                .frame(width: 28, height: 28)
+                                .background(
+                                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                        .fill(dictation.isRecording ? Color.dockDestructive.opacity(0.14) : DockSkinPresentation.current.composerControlFill)
+                                )
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .disabled(model.isRestoringSession || dictation.isStarting)
+                        .help(dictation.isRecording ? "Stop dictation" : "Dictate")
+                        .accessibilityLabel(dictation.isRecording ? "Stop dictation" : "Dictate")
+                    }
 
                     if showsInterruptControl {
                         Button(action: { onStop() }) {
@@ -463,7 +508,7 @@ struct ChatComposerView: View {
             .padding(.top, 0)
 
             // Voice Recording & Steering Status Messages
-            if let error = speechInput.errorMessage {
+            if let error = speechInput.errorMessage ?? dictation.errorMessage {
                 Text(error)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.dockWarning)
@@ -504,9 +549,15 @@ struct ChatComposerView: View {
                                 speechInput.isRecording
                                     ? Color.dockDestructive.opacity(isComposerPulsing ? 0.65 : 0.28)
                                     : (isComposerFocused ? Color.dockAccent.opacity(0.42) : Color.dockBorder),
-                                lineWidth: DockLayout.hairline
+                                lineWidth: isComposerFocused || speechInput.isRecording ? max(1, DockLayout.outline) : DockLayout.outline
                             )
+                            .opacity(DockLayout.outline > 0 || isComposerFocused || speechInput.isRecording ? 1 : 0)
                         }
+                        .dockStickerShadow(shape)
+                        .dockFoldCrease()
+                        .dockEmboss(shape)
+                        .dockBevel(pressed: true)
+                        .dockCardMarks()
                         .shadow(color: Color.black.opacity(0.10), radius: skin.composerShadow, y: skin.composerShadow == 0 ? 0 : 2)
                 }
             }
@@ -586,9 +637,10 @@ struct ChatComposerView: View {
         // single leading roster mention is delivered through bot_relay.deliver
         // into that Bot's Bot Chat. Attachments and in-flight turns keep the
         // ordinary path until Hermes exposes a profile-scoped attachment API.
-        if model.status != .working,
-           !model.isSending,
-           !model.hasQueuedOrRedirectingPrompt,
+        // A busy foreground turn doesn't block it: relay runs in the Bot's own
+        // chat, while steering would hand the mention to an agent without
+        // message_agent.
+        if !model.hasQueuedOrRedirectingPrompt,
            model.attachedContexts.isEmpty,
            ComposerMentionPresentation.canDirectRouteBot(
                hasImages: !model.pendingImages.isEmpty,
@@ -622,7 +674,9 @@ struct ChatComposerView: View {
         case .pasteImage:
             _ = model.pasteImageFromPasteboard()
             isComposerFocused = true
-        case .folder, .url, .promptSnippets:
+        case .folder:
+            showingFolderPicker = true
+        case .url, .promptSnippets:
             break
         }
     }
@@ -1189,4 +1243,51 @@ private final class ComposerInputTextView: NSTextView {
 private extension String {
     var markdownBullets: String { replacingOccurrences(of: "(?m)^• ", with: "- ", options: .regularExpression) }
     var displayBullets: String { replacingOccurrences(of: "(?m)^- ", with: "• ", options: .regularExpression) }
+}
+
+/// Hermes background terminal processes for the current session, with a stop button each.
+private struct RunningProcessesStrip: View {
+    @ObservedObject var control: ControlCenterModel
+    @State private var isExpanded = false
+    @State private var pending: ProcessSummary?
+
+    var body: some View {
+        if !control.processes.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Button { withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() } } label: {
+                    HStack(spacing: 6) {
+                        DockIcon(.terminal, size: 12, color: Color.dockSecondaryText)
+                        Text("\(control.processes.count) background process\(control.processes.count == 1 ? "" : "es") running")
+                            .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+                        DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.dockHover)
+                if isExpanded {
+                    ForEach(control.processes) { process in
+                        HStack(spacing: 8) {
+                            Text(process.name).lineLimit(1).truncationMode(.middle)
+                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dockPrimaryText)
+                                .help(process.detail ?? process.name)
+                            Spacer(minLength: 0)
+                            Button("Stop") { pending = process }
+                                .buttonStyle(.dockHover).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
+                        }
+                        .padding(.leading, 18)
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+            .confirmationDialog("Stop Hermes Process?", isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } })) {
+                if let process = pending {
+                    Button("Stop \(process.name)", role: .destructive) {
+                        Task { _ = await control.killProcess(process); pending = nil }
+                    }
+                }
+                Button("Cancel", role: .cancel) { pending = nil }
+            }
+        }
+    }
 }

@@ -30,12 +30,24 @@ final class AgentBrowser: ObservableObject {
     @Published private(set) var pages: [Page] = []
     @Published private(set) var activeTargetID: String?
     @Published private(set) var consoleErrors: [String] = []
+    /// A page's alert/confirm/prompt/beforeunload; the page is frozen until it's answered.
+    @Published private(set) var dialog: Dialog?
+    /// You took the page over from Hermes; the pane offers to hand it back.
+    @Published var userHasControl = false
+    /// Hermes is mid-step: your input would race its clicks, so the canvas drops it.
+    var inputLocked = false
+
+    struct Dialog: Equatable {
+        let type: String, message: String, defaultPrompt: String
+    }
     @Published var annotating = false { didSet { if annotating != oldValue { applyAnnotating() } } }
     /// 0 fits the panel; otherwise the emulated CSS width.
     @Published var presetWidth = 0 { didSet { if presetWidth != oldValue { scheduleViewport() } } }
     weak var model: DockModel?
     /// Frames bypass SwiftUI: the canvas draws them directly at screencast rate.
     var onFrame: ((NSImage, CGSize) -> Void)?
+    /// A remounted canvas paints this at once; a static page sends no new screencast frame.
+    private(set) var lastFrame: (image: NSImage, css: CGSize)?
     /// Canvases on screen. The screencast only runs while someone is watching, so a
     /// hidden Browser tab costs nothing; Hermes' own CDP use is unaffected.
     var viewers = 0 { didSet { if (viewers > 0) != (oldValue > 0) { scheduleViewport() } } }
@@ -80,7 +92,7 @@ final class AgentBrowser: ObservableObject {
                 let endpoint = try await launch()
                 let cdp = CDPConnection(url: endpoint.ws)
                 cdp.onEvent = { [weak self] method, params, session in self?.handle(method, params, session) }
-                cdp.onClose = { [weak self] in self?.fail("The browser closed.") }
+                cdp.onClose = { [weak self] in self?.relaunch() }
                 self.cdp = cdp
                 _ = try await cdp.send("Target.setDiscoverTargets", ["discover": true])
                 let infos = try await cdp.send("Target.getTargets")["targetInfos"] as? [[String: Any]] ?? []
@@ -109,6 +121,21 @@ final class AgentBrowser: ObservableObject {
         state = .off
     }
 
+    private var relaunches: [Date] = []
+
+    /// Chrome went away underneath us (Hermes' browser cleanup closes the browser it's
+    /// connected to, or it crashed): bring it back on the same page. Gives up after
+    /// three quick deaths so a browser that can't stay up doesn't loop.
+    private func relaunch() {
+        relaunches = relaunches.filter { $0.timeIntervalSinceNow > -60 } + [Date()]
+        guard relaunches.count <= 3 else { return fail("The browser keeps closing.") }
+        let url = activePage.flatMap { URL(string: $0.url) }.flatMap { $0.scheme == "about" ? nil : $0 }
+        teardown()
+        state = .off
+        start()
+        if let url { navigate(url) }
+    }
+
     private func fail(_ message: String) {
         guard state != .off else { return }
         teardown()
@@ -124,6 +151,7 @@ final class AgentBrowser: ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { cdp.close() }
         }
         cdp = nil
+        lastFrame = nil
         process?.terminate()
         process = nil
         sessionID = nil
@@ -132,10 +160,12 @@ final class AgentBrowser: ObservableObject {
         activeTargetID = nil
         pages = []
         consoleErrors = []
+        dialog = nil
         annotating = false
     }
 
     private struct Endpoint { let port: Int; let ws: URL }
+    static let preferredPort = 9333
 
     private func launch() async throws -> Endpoint {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -149,10 +179,13 @@ final class AgentBrowser: ObservableObject {
         guard let executable = Self.chromiumExecutable() else {
             throw Self.error("No Chromium-family browser found. Install Google Chrome, Brave, Edge or Chromium.")
         }
+        // A fixed port lets other CDP clients (e.g. chrome-devtools-mcp --browserUrl) share
+        // this browser; fall back to any free port when something else holds it.
+        let busy = (try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(Self.preferredPort)/json/version")!)) != nil
         let process = Process()
         process.executableURL = executable
         process.arguments = [
-            "--headless=new", "--remote-debugging-port=0", "--user-data-dir=\(profile.path)",
+            "--headless=new", "--remote-debugging-port=\(busy ? 0 : Self.preferredPort)", "--user-data-dir=\(profile.path)",
             "--no-first-run", "--no-default-browser-check", "--window-size=1280,800",
             // Headless Chrome announces itself (HeadlessChrome UA, navigator.webdriver), and sites
             // like Google answer with a degraded no-JS page. Look like the regular browser.
@@ -223,6 +256,7 @@ final class AgentBrowser: ObservableObject {
         sessionID = sid
         activeTargetID = targetID
         consoleErrors = []
+        dialog = nil
         annotateContextID = nil
         _ = try await cdp.send("Page.enable", session: sid)
         _ = try await cdp.send("Runtime.addBinding", ["name": "hermAnnotate", "executionContextName": Self.world], session: sid)
@@ -304,11 +338,18 @@ final class AgentBrowser: ObservableObject {
             let meta = params["metadata"] as? [String: Any]
             let css = CGSize(width: meta?["deviceWidth"] as? Double ?? image.size.width,
                              height: meta?["deviceHeight"] as? Double ?? image.size.height)
+            lastFrame = (image, css)
             onFrame?(image, css)
         case "Page.frameNavigated":
             guard let frame = params["frame"] as? [String: Any], frame["parentId"] == nil else { return }
             mainFrameID = frame["id"] as? String
             consoleErrors = []
+        case "Page.javascriptDialogOpening":
+            dialog = Dialog(type: params["type"] as? String ?? "alert", message: params["message"] as? String ?? "",
+                            defaultPrompt: params["defaultPrompt"] as? String ?? "")
+        case "Page.javascriptDialogClosed":
+            // Also fires when Hermes answers it with its own dialog tool.
+            dialog = nil
         case "Runtime.executionContextCreated":
             guard let context = params["context"] as? [String: Any], context["name"] as? String == Self.world,
                   (context["auxData"] as? [String: Any])?["frameId"] as? String == mainFrameID,
@@ -344,7 +385,7 @@ final class AgentBrowser: ObservableObject {
     // MARK: Annotate
 
     private func applyAnnotating() {
-        evaluate("window.__hermAnnotate?.setEnabled(\(annotating))")
+        evaluate("window.__hermAnnotate?.setEnabled(\(annotating), \(BrowserAnnotation.themeJSON))")
     }
 
     private func receive(_ json: String) {
@@ -391,6 +432,29 @@ final class AgentBrowser: ObservableObject {
     func navigate(_ url: URL) {
         if state == .running { fire("Page.navigate", ["url": url.absoluteString]) } else { pendingURL = url }
     }
+    func answerDialog(accept: Bool, text: String? = nil) {
+        var params: [String: Any] = ["accept": accept]
+        if let text { params["promptText"] = text }
+        fire("Page.handleJavaScriptDialog", params)
+        dialog = nil
+    }
+
+    /// Interrupts Hermes so you can finish a step (a login, a captcha) yourself.
+    func takeOver() {
+        _ = model?.stop()
+        userHasControl = true
+        inputLocked = false
+    }
+
+    /// Resumes Hermes' turn from the page you left it on.
+    func handBack() {
+        userHasControl = false
+        guard let model, let sessionID = model.sessionID else { return }
+        let page = activePage.map { " The browser is now on \($0.url)." } ?? ""
+        model.send(QueuedPrompt(sessionID: sessionID, text: "I've finished that step in the browser myself.\(page) Continue where you left off.",
+                                images: [], pdfURL: nil))
+    }
+
     func goBack() { fire("Runtime.evaluate", ["expression": "history.back()"]) }
     func goForward() { fire("Runtime.evaluate", ["expression": "history.forward()"]) }
     func reload() { fire("Page.reload") }
@@ -522,6 +586,7 @@ final class CDPConnection {
 final class AgentBrowserCanvas: NSView {
     var browser: AgentBrowser? {
         didSet {
+            if let frame = browser?.lastFrame { image = frame.image; cssSize = frame.css; needsDisplay = true }
             browser?.onFrame = { [weak self] image, css in
                 self?.image = image
                 self?.cssSize = css
@@ -588,6 +653,7 @@ final class AgentBrowserCanvas: NSView {
     }
 
     private func press(_ event: NSEvent, _ type: String, button: String, bit: Int) {
+        guard browser?.inputLocked != true else { return }
         if type == "mousePressed" { window?.makeFirstResponder(self); pressedButtons |= bit } else { pressedButtons &= ~bit }
         browser?.mouse(type, at: cssPoint(event), button: button, buttons: pressedButtons,
                        clicks: event.clickCount, modifiers: Self.modifiers(event.modifierFlags))
@@ -602,11 +668,13 @@ final class AgentBrowserCanvas: NSView {
     override func mouseMoved(with event: NSEvent) { move(event, button: "none") }
 
     private func move(_ event: NSEvent, button: String) {
+        guard browser?.inputLocked != true else { return }
         browser?.mouse("mouseMoved", at: cssPoint(event), button: button, buttons: pressedButtons,
                        modifiers: Self.modifiers(event.modifierFlags))
     }
 
     override func scrollWheel(with event: NSEvent) {
+        guard browser?.inputLocked != true else { return }
         let factor: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 40
         browser?.mouse("mouseWheel", at: cssPoint(event), modifiers: Self.modifiers(event.modifierFlags),
                        delta: CGPoint(x: -event.scrollingDeltaX * factor, y: -event.scrollingDeltaY * factor))
@@ -621,6 +689,7 @@ final class AgentBrowserCanvas: NSView {
     ]
 
     override func keyDown(with event: NSEvent) {
+        guard browser?.inputLocked != true else { return }
         let modifiers = Self.modifiers(event.modifierFlags)
         if event.modifierFlags.contains(.command) {
             switch event.charactersIgnoringModifiers?.lowercased() {
@@ -686,10 +755,50 @@ struct AgentBrowserPane: View {
             if step != nil { DockShimmerTrack(tone: .working).transition(.opacity) }
         }
         .overlay(alignment: .bottom) {
-            if let step { activityPill(step).padding(12).transition(.move(edge: .bottom).combined(with: .opacity)) }
+            Group {
+                if browser.userHasControl { controlPill } else if let step { activityPill(step) }
+            }
+            .padding(12)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+        .overlay {
+            if let dialog = browser.dialog {
+                AgentDialogCard(dialog: dialog) { browser.answerDialog(accept: $0, text: $1) }
+                    .padding(16)
+                    .transition(.scale(scale: 0.97).combined(with: .opacity))
+            }
         }
         .animation(.dockEase(duration: 0.2), value: step != nil)
+        .animation(.dockEase(duration: 0.2), value: browser.userHasControl)
+        .animation(.dockEase(duration: 0.16), value: browser.dialog)
         .background(Color.dockCanvas)
+        .onChange(of: step != nil, initial: true) { _, browsing in
+            // A step still finishing after Take over keeps your control; a new one is Hermes driving again.
+            if browsing, browser.userHasControl, model.interruptState != .requesting { browser.userHasControl = false }
+            browser.inputLocked = browsing && !browser.userHasControl
+        }
+    }
+
+    private var palette: DockThemePalette { DockThemePalette(theme: DockThemeRuntime.current) }
+
+    /// Shown after Take over until you hand the page back to Hermes.
+    private var controlPill: some View {
+        HStack(spacing: 8) {
+            DockIcon(.handPointing, size: 12, color: Color.dockAccent)
+            Text("You're in control")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+                .fixedSize()
+            Button("Hand back to Hermes") { browser.handBack() }
+                .buttonStyle(DockPrimaryButtonStyle())
+                .controlSize(.small)
+            DockIconButton(icon: .x, label: "Dismiss", size: 22, style: palette) { browser.userHasControl = false }
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .dockHUDPanel()
+        .accessibilityElement(children: .contain)
     }
 
     private var step: (icon: Ph, title: String, detail: String?)? {
@@ -714,8 +823,11 @@ struct AgentBrowserPane: View {
             }
             .contentTransition(.opacity)
             .animation(.dockEase(duration: 0.18), value: step.title)
-            DockIconButton(icon: .stop, label: "Stop Hermes", size: 22,
-                           style: DockThemePalette(theme: DockThemeRuntime.current)) { model.stop() }
+            Button("Take over") { browser.takeOver() }
+                .buttonStyle(DockSecondaryButtonStyle())
+                .controlSize(.small)
+                .help("Pause Hermes and use the page yourself")
+            DockIconButton(icon: .stop, label: "Stop Hermes", size: 22, style: palette) { model.stop() }
         }
         .padding(.leading, 12)
         .padding(.trailing, 4)
@@ -723,6 +835,61 @@ struct AgentBrowserPane: View {
         .dockHUDPanel()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Hermes is browsing: \(step.title)")
+    }
+}
+
+/// A page's JavaScript dialog, answered from the panel (headless Chrome has no UI for it).
+private struct AgentDialogCard: View {
+    let dialog: AgentBrowser.Dialog
+    let answer: (Bool, String?) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    private var title: String {
+        dialog.type == "beforeunload" ? "Leave this page?" : "This page says"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.dockPrimaryText)
+            if !dialog.message.isEmpty {
+                ScrollView {
+                    Text(dialog.message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 160)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            if dialog.type == "prompt" {
+                TextField("", text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focused)
+                    .onSubmit { answer(true, text) }
+            }
+            HStack(spacing: 8) {
+                Spacer()
+                if dialog.type != "alert" {
+                    Button(dialog.type == "beforeunload" ? "Stay" : "Cancel") { answer(false, nil) }
+                        .buttonStyle(DockSecondaryButtonStyle())
+                        .keyboardShortcut(.cancelAction)
+                }
+                Button(dialog.type == "beforeunload" ? "Leave" : "OK") { answer(true, dialog.type == "prompt" ? text : nil) }
+                    .buttonStyle(DockPrimaryButtonStyle())
+                    .keyboardShortcut(.defaultAction)
+            }
+            .controlSize(.small)
+        }
+        .padding(14)
+        .frame(maxWidth: 340)
+        .dockHUDPanel()
+        .onAppear { text = dialog.defaultPrompt; focused = dialog.type == "prompt" }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(title): \(dialog.message)")
     }
 }
 

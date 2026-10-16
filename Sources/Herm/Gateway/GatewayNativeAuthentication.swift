@@ -120,7 +120,7 @@ final class GatewayNativeAuthentication {
 }
 
 @MainActor
-private final class GatewayOAuthCallback {
+final class GatewayOAuthCallback {
     private let state: String
     private var listener: NWListener?
     private var ready: CheckedContinuation<URL, Error>?
@@ -166,8 +166,15 @@ private final class GatewayOAuthCallback {
     }
 
     private func accept(_ connection: NWConnection) {
-        guard connections.count < 8 else { connection.cancel(); return }
+        guard result == nil, connections.count < 8 else { connection.cancel(); return }
         connections.append(connection)
+        connection.stateUpdateHandler = { [weak self, weak connection] state in
+            guard let connection else { return }
+            if case .failed = state { connection.cancel() }
+            if case .cancelled = state {
+                Task { @MainActor in self?.connections.removeAll { $0 === connection } }
+            }
+        }
         connection.start(queue: .main)
         receive(connection, buffer: Data())
     }

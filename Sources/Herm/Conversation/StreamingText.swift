@@ -93,7 +93,7 @@ enum StreamingChunkPolicy {
                 fence = opening
             } else if line.trimmingCharacters(in: .whitespaces).isEmpty,
                       bytes >= targetStableChunkBytes,
-                      !hasUnclosedInlineConstruct(in: tail[..<end]) {
+                      !inlineBoundaries(in: tail[..<end]).isUnclosed {
                 return end
             }
             start = end
@@ -107,30 +107,29 @@ enum StreamingChunkPolicy {
         // sequence in the middle.
         let safePrefix = String(decoding: tail.utf8.prefix(target), as: UTF8.self)
         let targetIndex = tail.index(tail.startIndex, offsetBy: safePrefix.count)
-        var candidate = tail[..<targetIndex].lastIndex(where: { $0.isWhitespace })
-        while let whitespace = candidate {
-            let boundary = tail.index(after: whitespace)
-            if !hasUnclosedInlineConstruct(in: tail[..<boundary]) {
-                return boundary
-            }
-            candidate = tail[..<whitespace].lastIndex(where: { $0.isWhitespace })
-        }
-        return targetIndex
+        // Find the last safe whitespace in one pass. Rechecking every prefix
+        // is quadratic for a long unfinished code span, link, or emphasis.
+        return inlineBoundaries(in: tail[..<targetIndex]).lastSafeWhitespace ?? targetIndex
     }
 
     /// A promoted section is parsed independently. Do not cut through the
     /// common inline constructs whose delimiter may be completed in a later
     /// delta; keeping the construct in the mutable tail preserves its rich
     /// presentation without reparsing stable text.
-    private static func hasUnclosedInlineConstruct(in source: Substring) -> Bool {
+    private static func inlineBoundaries(in source: Substring) -> (isUnclosed: Bool, lastSafeWhitespace: String.Index?) {
         var codeDelimiter: Int?
         var bracketDepth = 0
         var parenthesisDepth = 0
         var emphasisDepth = 0
         var index = source.startIndex
         var escaped = false
+        var lastSafeWhitespace: String.Index?
         while index < source.endIndex {
             let character = source[index]
+            if character.isWhitespace, codeDelimiter == nil, bracketDepth == 0,
+               parenthesisDepth == 0, emphasisDepth == 0 {
+                lastSafeWhitespace = source.index(after: index)
+            }
             if escaped {
                 escaped = false
                 index = source.index(after: index)
@@ -168,7 +167,7 @@ enum StreamingChunkPolicy {
             }
             index = source.index(after: index)
         }
-        return codeDelimiter != nil || bracketDepth > 0 || parenthesisDepth > 0 || emphasisDepth > 0
+        return (codeDelimiter != nil || bracketDepth > 0 || parenthesisDepth > 0 || emphasisDepth > 0, lastSafeWhitespace)
     }
 }
 

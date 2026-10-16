@@ -85,26 +85,35 @@ enum CodexQuotaService {
     /// `providers.openai-codex` login is only used when Hermes has no pool
     /// for Codex yet (older Hermes), since the pool otherwise already holds it.
     private static func loadAllHermesAuth() -> [HermesAccount] {
+        hermesAuthStore().map(hermesAccounts(fromAuthStore:)) ?? []
+    }
+
+    /// `$HERMES_HOME/auth.json`, or nil when Hermes has not stored a login yet.
+    static func hermesAuthStore() -> [String: Any]? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let root = ProcessInfo.processInfo.environment["HERMES_HOME"].map {
             URL(fileURLWithPath: $0, isDirectory: true)
         } ?? home.appendingPathComponent(".hermes", isDirectory: true)
         let file = root.appendingPathComponent("auth.json")
-        guard let data = try? Data(contentsOf: file),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-        return hermesAccounts(fromAuthStore: json)
+        guard let data = try? Data(contentsOf: file) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    /// Entries of one provider's pool in Hermes' order (`priority`, then
+    /// file order), numbered 1-based the way `hermes auth list` shows them.
+    static func orderedPoolEntries(_ entries: [[String: Any]]) -> [(position: Int, entry: [String: Any])] {
+        entries.enumerated().sorted {
+            let lhs = ($0.element["priority"] as? Int) ?? Int.max
+            let rhs = ($1.element["priority"] as? Int) ?? Int.max
+            return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
+        }
+        .enumerated().map { ($0.offset + 1, $0.element.element) }
     }
 
     private static func hermesAccounts(fromAuthStore json: [String: Any]) -> [HermesAccount] {
         if let pool = json["credential_pool"] as? [String: Any],
            let entries = pool["openai-codex"] as? [[String: Any]] {
-            let ordered = entries.enumerated().sorted {
-                let lhs = ($0.element["priority"] as? Int) ?? Int.max
-                let rhs = ($1.element["priority"] as? Int) ?? Int.max
-                return lhs == rhs ? $0.offset < $1.offset : lhs < rhs
-            }
-            return ordered.enumerated().compactMap { position, item -> HermesAccount? in
-                let entry = item.element
+            return orderedPoolEntries(entries).compactMap { position, entry -> HermesAccount? in
                 guard let id = entry["id"] as? String, !id.isEmpty,
                       let access = entry["access_token"] as? String, !access.isEmpty else { return nil }
                 return HermesAccount(
@@ -113,7 +122,7 @@ enum CodexQuotaService {
                         provider: "openai-codex",
                         id: id,
                         label: (entry["label"] as? String) ?? id,
-                        position: position + 1
+                        position: position
                     )
                 )
             }
@@ -148,6 +157,36 @@ enum CodexQuotaService {
         }
         var result: [String: Any] = ["updated_at": QuotaJSON.iso8601String(from: .now), "windows": windows]
         if let plan = object["plan_type"] as? String { result["safe_detail"] = "Plan: \(plan)" }; return result
+    }
+}
+
+/// Every Hermes credential pool other than Codex (which has its own usage
+/// reader). Hermes exposes no usage for these, so each pooled account is a
+/// card without windows that still carries its `hermes_credential`, which is
+/// what Make primary / Remove act on.
+enum HermesPoolQuotaService {
+    static func read() async throws -> [String: Any] {
+        ["_accounts": snapshots(fromAuthStore: CodexQuotaService.hermesAuthStore() ?? [:], now: .now)]
+    }
+
+    static func snapshots(fromAuthStore json: [String: Any], now: Date) -> [[String: Any]] {
+        guard let pool = json["credential_pool"] as? [String: Any] else { return [] }
+        return pool.keys.sorted().filter { $0 != "openai-codex" }.flatMap { provider -> [[String: Any]] in
+            let entries = pool[provider] as? [[String: Any]] ?? []
+            return CodexQuotaService.orderedPoolEntries(entries).compactMap { position, entry in
+                guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
+                let label = (entry["label"] as? String) ?? id
+                let kind = (entry["auth_type"] as? String) == "api_key" ? "API key" : "Signed in"
+                return [
+                    "provider": "hermes-pool-\(provider)-\(id)",
+                    "display_name": "\(provider) (Account \(position))",
+                    "updated_at": QuotaJSON.iso8601String(from: now),
+                    "windows": [[String: Any]](),
+                    "safe_detail": "\(kind) · usage not tracked",
+                    "hermes_credential": ["provider": provider, "id": id, "label": label, "position": position] as [String: Any]
+                ]
+            }
+        }
     }
 }
 
