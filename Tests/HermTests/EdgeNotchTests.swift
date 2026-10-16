@@ -196,11 +196,27 @@ struct EdgeNotchTests {
         #expect(EdgeDockPlacement.dragged(to: NSPoint(x: 1550, y: 990), screenFrame: screen, visibleFrame: visible).side == .right)
     }
 
+    @MainActor @Test func announcementGlimpsesOnlyTheUpdatedRow() {
+        let state = EdgeNotchState()
+        state.tasks = ["a", "b", "c"].map {
+            EdgeNotchTask(id: $0, title: $0, phase: .working, statusLabel: "", detail: nil, updatedAt: nil,
+                          isCurrent: false, isStatusCurrent: true, session: nil)
+        }
+        state.showingAnnouncement = true
+        state.announcesTasks = true
+        state.glimpseIDs = ["b"]
+        #expect(state.glimpsing)
+        #expect(state.glimpseTasks.map(\.id) == ["b"])
+        #expect(state.openSize.height < EdgeNotchState.expandedSize.height)
+        state.showingAnnouncement = false
+        #expect(state.openSize == EdgeNotchState.expandedSize)
+    }
+
     @MainActor @Test func topIslandWrapsTheNotchAndOpensBelowIt() {
         let state = EdgeNotchState()
         state.side = .top
         state.notchSize = CGSize(width: 200, height: 32)
-        #expect(state.collapsedSize == CGSize(width: 200 + 42 * 2, height: 32))
+        #expect(state.collapsedSize == CGSize(width: 200 + 50 * 2, height: 32))
         #expect(state.panelSize == state.collapsedSize)
         state.expanded = true
         #expect(state.panelSize == CGSize(width: EdgeNotchState.islandSize.width, height: EdgeNotchState.islandSize.height + 32))

@@ -932,12 +932,9 @@ struct DockPopover: View {
     }
 
     private var popupWidth: CGFloat {
-        if !isNarrowLayout { return showsDesktopContextPanel || isGlobalSurfaceActive ? 1_200 : 820 }
+        // Collapsing the inspector widens the conversation instead of shrinking the window.
+        if !isNarrowLayout { return 1_200 }
         return 500
-    }
-
-    private var showsDesktopContextPanel: Bool {
-        !isNarrowLayout && isWorkspaceVisibleForLayout
     }
 
     /// The status-bar item can live on a different display from `NSScreen.main`.

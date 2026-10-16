@@ -72,6 +72,9 @@ struct EdgeNotchStatusIndicator: View {
     var style: NotchDisplayStyle = .dots
     /// Marks stack down an edge rail and across the top island.
     var axis: Axis = .vertical
+    /// The top island splits the marks: primary in one ear, extras in the other.
+    enum Part { case all, primary, badges }
+    var part: Part = .all
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Mark { case working, done, blocked, offline, idle }
@@ -96,8 +99,10 @@ struct EdgeNotchStatusIndicator: View {
             let t = timeline.date.timeIntervalSinceReferenceDate
             let layout = axis == .vertical ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
             layout {
-                mark(primary, t)
-                ForEach(Array(badges.enumerated()), id: \.offset) { mark($0.element, t) }
+                if part != .badges { mark(primary, t) }
+                if part != .primary {
+                    ForEach(Array(badges.enumerated()), id: \.offset) { mark($0.element, t) }
+                }
             }
         }
         .accessibilityHidden(true)

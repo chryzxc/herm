@@ -173,6 +173,10 @@ final class EdgeDockController: NSObject {
             .sink { [weak self] _ in self?.routineUpdates(); self?.rebuildTasks() }.store(in: &subscriptions)
         state.preferences.objectWillChange.receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.rebuildTasks() }.store(in: &subscriptions)
+        state.$showingAnnouncement.combineLatest(state.$glimpseHeight).removeDuplicates { $0 == $1 }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in if self?.state.expanded == true { self?.position(animated: true) } }
+            .store(in: &subscriptions)
         state.$side.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] side in
                 guard let self else { return }
@@ -779,12 +783,14 @@ final class EdgeDockController: NSObject {
             if !state.showingAnnouncement {
                 state.announcesTasks = false
                 state.announcesQuota = false
+                state.glimpseIDs = []
             }
             state.showingAnnouncement = true
             if quota {
                 state.announcesQuota = true
             } else {
                 state.announcesTasks = true
+                if let notice { state.glimpseIDs.append(notice.sourceID) }
             }
         }
         state.expanded = true
@@ -1358,6 +1364,20 @@ final class EdgeNotchState: ObservableObject {
     /// A task update and a quota drop announced together share one status view.
     var displaysStatus: Bool { showingAnnouncement && announcesTasks && announcedQuotaChange != nil }
     var displaysQuota: Bool { showingAnnouncement ? announcesQuota && !announcesTasks : showsQuota }
+    /// Rows the current announcement is about; an update opens as a glimpse of just these.
+    @Published var glimpseIDs: [String] = []
+    /// The glimpse's measured content height, which sizes the shell around it.
+    @Published var glimpseHeight: CGFloat = 64
+    var glimpseTasks: [EdgeNotchTask] {
+        guard announcesTasks else { return [] }
+        let ids = Set(glimpseIDs)
+        let hits = tasks.filter { ids.contains($0.id) || ids.contains($0.kanbanTask?.id ?? "") || ids.contains($0.routine?.job.id ?? "") }
+        return Array((hits.isEmpty ? tasks.filter(\.isCurrent) : hits).prefix(3))
+    }
+    var glimpsing: Bool {
+        showingAnnouncement && !showingDigest && !composing && !isReadingDetail
+            && (!glimpseTasks.isEmpty || announcedQuotaChange != nil)
+    }
     @Published var detail = "Open your conversation"
     /// Sessions in progress or finished with a result not yet opened,
     /// including the current session when it has live activity.
@@ -1395,24 +1415,30 @@ final class EdgeNotchState: ObservableObject {
     /// The collapsed rail grows with the number of stacked marks (24pt each, 6pt apart, room for the shoulders).
     var railHeight: CGFloat { expanded ? 136 : collapsedRailHeight }
     var collapsedRailHeight: CGFloat { max(96, CGFloat(railActivity.markCount) * 30 + 56) }
-    var panelHeight: CGFloat { (expanded ? Self.expandedSize.height : railHeight) + petReserve }
+    var panelHeight: CGFloat { (expanded ? openSize.height : railHeight) + petReserve }
     /// The camera housing the top island wraps (drawn when the screen has none).
     @Published var notchSize = CGSize(width: EdgeNotchMetrics.fallbackWidth, height: 32)
-    /// Each top-island ear grows with the stacked marks so the island stays centered.
-    var islandEar: CGFloat { max(36, CGFloat(railActivity.markCount) * 30 + 12) }
+    /// The right ear holds the primary mark, the left the extras; both match the
+    /// wider one so the island stays centered on the camera.
+    var islandEar: CGFloat { CGFloat(max(1, railActivity.markCount - 1)) * 30 + 20 }
     /// The shell at rest: the rail bar on an edge, the pill around the notch on top.
     var collapsedSize: CGSize {
         side == .top ? CGSize(width: notchSize.width + islandEar * 2, height: notchSize.height)
             : CGSize(width: railWidth, height: collapsedRailHeight)
     }
     var openSize: CGSize {
-        side == .top ? CGSize(width: Self.islandSize.width, height: Self.islandSize.height + notchSize.height)
+        if glimpsing {
+            // Matches the preview padding below: 8 + 16 under the notch, 26 + 26 on an edge.
+            return side == .top ? CGSize(width: 460, height: notchSize.height + glimpseHeight + 24)
+                : CGSize(width: Self.expandedSize.width, height: glimpseHeight + 52)
+        }
+        return side == .top ? CGSize(width: Self.islandSize.width, height: Self.islandSize.height + notchSize.height)
             : Self.expandedSize
     }
     /// The window: the pet hangs below an edge rail but beside the top island.
     var panelSize: CGSize {
         side == .top ? (expanded ? openSize : collapsedSize)
-            : CGSize(width: expanded ? Self.expandedSize.width : railWidth, height: panelHeight)
+            : CGSize(width: expanded ? openSize.width : railWidth, height: panelHeight)
     }
 }
 
@@ -1501,6 +1527,7 @@ struct EdgeNotchView: View {
         .clipped()
         // Rail growth (more stacked marks) uses the same spring as the open/close morph.
         .animation(morph, value: state.collapsedSize)
+        .animation(morph, value: state.openSize)
         .onAppear { open = state.expanded }
         .onChange(of: state.expanded) { _, expanded in
             DispatchQueue.main.async {
@@ -1549,43 +1576,46 @@ struct EdgeNotchView: View {
 
     private var preview: some View {
         VStack(spacing: isIsland ? 6 : 0) {
-            HStack(spacing: 4) {
-                HStack(spacing: 2) {
-                    tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
-                        state.clearPreviewDetails()
-                        onQuickMessageFocus(false); state.showingAnnouncement = false; state.showsQuota = false
+            // A glimpse is just the update: no tabs or toolbar until the user hovers.
+            if !state.glimpsing {
+                HStack(spacing: 4) {
+                    HStack(spacing: 2) {
+                        tabButton("Tasks", isSelected: !state.displaysQuota && !state.displaysStatus) {
+                            state.clearPreviewDetails()
+                            onQuickMessageFocus(false); state.showingAnnouncement = false; state.showsQuota = false
+                        }
+                        tabButton("Quota", isSelected: state.displaysQuota) {
+                            state.clearPreviewDetails()
+                            onQuickMessageFocus(false); state.showingAnnouncement = false; state.showsQuota = true; onQuotaRequested()
+                        }
                     }
-                    tabButton("Quota", isSelected: state.displaysQuota) {
-                        state.clearPreviewDetails()
-                        onQuickMessageFocus(false); state.showingAnnouncement = false; state.showsQuota = true; onQuotaRequested()
+                    .padding(2)
+                    .background(DockThemeShape(cornerRadius: 14).fill(Color.dockSurface4.opacity(0.6)))
+                    if isIsland {
+                        // Leave the camera housing clear; the controls sit in the ears either side.
+                        Spacer(minLength: state.notchSize.width + 12)
+                    } else {
+                        Spacer()
+                    }
+                    if state.displaysQuota {
+                        EdgeQuotaToolbar(control: controlCenter)
+                    } else {
+                        HStack(spacing: 8) {
+                            EdgeQuietMenu(coordinator: state.interruptions) { onQuickMessageFocus(false); state.showingDigest = true }
+                            taskToolbar
+                        }
                     }
                 }
-                .padding(2)
-                .background(DockThemeShape(cornerRadius: 14).fill(Color.dockSurface4.opacity(0.6)))
-                if isIsland {
-                    // Leave the camera housing clear; the controls sit in the ears either side.
-                    Spacer(minLength: state.notchSize.width + 12)
-                } else {
-                    Spacer()
+                .frame(height: isIsland ? max(state.notchSize.height, 34) : 40)
+                .padding(.horizontal, isIsland ? 0 : 6)
+                if !isIsland { Divider().overlay(Color.dockBorderLight) }
+                if !state.botBanner.isEmpty {
+                    BotActivityBanner(events: state.botBanner)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 6)
+                        .transition(.opacity)
                 }
-                if state.displaysQuota {
-                    EdgeQuotaToolbar(control: controlCenter)
-                } else {
-                    HStack(spacing: 8) {
-                        EdgeQuietMenu(coordinator: state.interruptions) { onQuickMessageFocus(false); state.showingDigest = true }
-                        taskToolbar
-                    }
-                }
-            }
-            .frame(height: isIsland ? max(state.notchSize.height, 34) : 40)
-            .padding(.horizontal, isIsland ? 0 : 6)
-            if !isIsland { Divider().overlay(Color.dockBorderLight) }
-            if !state.botBanner.isEmpty {
-                BotActivityBanner(events: state.botBanner)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 6)
-                    .transition(.opacity)
             }
             if let target = state.steeringTarget, let model = quickMessageModel {
                 EdgeSubagentSteering(origin: target, service: HermesWorkflowRPC(client: model.quickWorkflowClient, profileID: target.profileID),
@@ -1615,12 +1645,12 @@ struct EdgeNotchView: View {
             } else if state.composing, state.quickTarget == nil || state.quickReplyTask == nil, let quickMessageModel {
                 EdgeQuickMessageView(model: quickMessageModel, control: controlCenter, state: state,
                                      close: { onQuickMessageFocus(false) }, openDock: openDock)
-            } else if state.displaysQuota {
+            } else if state.displaysQuota, !state.glimpsing {
                 EdgeQuotaPreview(control: controlCenter, openQuota: onOpenQuota, change: state.announcedQuotaChange,
                     sessionActions: state.captureRecord().destination.session.map { session in { state.capacityTarget = session } })
             } else {
-                EdgeTaskPreview(tasks: state.previewTasks, isOffline: state.activity.status == .offline,
-                                quotaChange: state.displaysStatus ? state.announcedQuotaChange : nil,
+                EdgeTaskPreview(tasks: state.glimpsing ? state.glimpseTasks : state.previewTasks, isOffline: state.activity.status == .offline,
+                                quotaChange: state.displaysStatus || state.glimpsing ? state.announcedQuotaChange : nil,
                                 kanbanUnavailable: state.kanbanUnavailable,
                                 bots: state.bots, avatarImages: state.avatarImages,
                                 quickMessage: quickMessageModel == nil ? nil : {
@@ -1642,7 +1672,7 @@ struct EdgeNotchView: View {
                                     guard !state.quickSending else { return }
                                     let session = task.session ?? (task.isCurrent ? quickMessageModel?.workflowSession : nil)
                                     if let session { onQuickMessageFocus(true); state.steeringTarget = session }
-                                }, beginEditing: { onQuickMessageFocus(true) }, compactFooter: isIsland,
+                                }, beginEditing: { onQuickMessageFocus(true) }, compactFooter: isIsland, glimpse: state.glimpsing,
                                 openDock: openDock, openTask: onOpenTask)
             }
         }

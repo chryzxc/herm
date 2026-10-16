@@ -169,6 +169,8 @@ struct EdgeTaskPreview: View {
     var beginEditing: () -> Void = {}
     /// The top island's icon-only action strip in place of the labelled footer.
     var compactFooter = false
+    /// An announcement: only the updated rows (and quota change), measured to size the shell.
+    var glimpse = false
     let openDock: () -> Void
     @AppStorage(DoubleTapShortcut.workspaceKey) private var workspaceShortcut = DoubleTapShortcut.command
     let openTask: (EdgeNotchTask) -> Void
@@ -194,7 +196,8 @@ struct EdgeTaskPreview: View {
         // One pass per render; grouping keeps the pre-sorted order.
         let groups = Dictionary(grouping: tasks, by: \.section)
         let botLookup = KanbanBoardPresentation.makeSnapshot(tasks: [], bots: bots)
-        return VStack(spacing: 0) {
+        if glimpse { return AnyView(glimpseBody(bots: botLookup)) }
+        return AnyView(VStack(spacing: 0) {
             Group {
                 if tasks.isEmpty && quotaChange == nil {
                     emptyState
@@ -202,7 +205,8 @@ struct EdgeTaskPreview: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             TimelineView(.periodic(from: .now, by: 60)) { timeline in
-                                LazyVStack(alignment: .leading, spacing: 12) {
+                                // Eager stacks: lazy rows re-estimate heights while scrolling and the list jumps.
+                                VStack(alignment: .leading, spacing: 12) {
                                     ForEach(EdgeNotchTask.Section.allCases, id: \.self) { section in
                                         self.section(section.title, groups[section] ?? [], bots: botLookup, now: timeline.date)
                                     }
@@ -247,14 +251,29 @@ struct EdgeTaskPreview: View {
         .onChange(of: keyboardItems) { old, _ in reconcileKeyboard(previous: old) }
         .onChange(of: quickState?.previewInteraction.mode) { _, mode in
             if mode == .keyboard { reconcileKeyboard(previous: keyboardItems) }
+        })
+    }
+
+    private func glimpseBody(bots: KanbanBoardPresentation.Snapshot) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(tasks, id: \.presentationID) { card($0, bots: bots, now: .now) }
+            if let quotaChange {
+                EdgeQuotaChangeCard(change: quotaChange, compact: true).padding(.horizontal, 10)
+            }
         }
+        .foregroundStyle(Color.dockPrimaryText)
+        .padding(.horizontal, 6)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            if abs((quickState?.glimpseHeight ?? 0) - height) > 0.5 { quickState?.glimpseHeight = height }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
     private func section(_ title: String, _ items: [EdgeNotchTask], bots: KanbanBoardPresentation.Snapshot, now: Date) -> some View {
         if !items.isEmpty {
-            // The outer lazy stack only defers sections, not their rows.
-            LazyVStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
                 DockSectionLabel(title: title, count: items.count)
                 ForEach(items, id: \.presentationID) { card($0, bots: bots, now: now) }
             }

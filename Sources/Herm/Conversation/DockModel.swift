@@ -1202,17 +1202,11 @@ final class DockModel: ObservableObject {
         if replyQuote == nil { replyQuote = prompt.replyQuote }
     }
 
-    /// Prompts with attachments are edited in the composer (like Codex): they
-    /// leave the queue until re-submitted. Text-only prompts edit inline.
+    /// Queued prompts are edited in the composer (like Codex): text and
+    /// attachments leave the queue until re-submitted.
     func editQueuedPrompt(_ id: UUID) {
         guard let index = queuedPrompts.firstIndex(where: { $0.id == id }) else { return }
-        let prompt = queuedPrompts[index]
-        guard !prompt.images.isEmpty || prompt.pdfURL != nil || !prompt.contexts.isEmpty else {
-            editingQueuedPromptID = id
-            return
-        }
-        queuedPrompts.remove(at: index)
-        moveIntoComposer(prompt)
+        moveIntoComposer(queuedPrompts.remove(at: index))
     }
 
     private var composerMentionProfiles: [String] = []

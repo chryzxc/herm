@@ -31,14 +31,11 @@ struct EdgeIslandRail: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 0) {
-                // Same 20pt disc as the status mark in the opposite ear.
-                DockIcon(activity.symbol, size: 11, color: .dockSecondaryText)
-                    .frame(width: 20, height: 20)
-                    .background(Circle().fill(Color.dockSecondaryText.opacity(0.16)))
-                    .overlay(Circle().strokeBorder(Color.dockSecondaryText.opacity(0.35), lineWidth: 1))
+                // Extras (finished/blocked) left, the primary status right.
+                EdgeNotchStatusIndicator(activity: activity, style: displayStyle, axis: .horizontal, part: .badges)
                     .frame(width: ear, height: height)
                 Color.clear.frame(width: notchWidth, height: height)
-                EdgeNotchStatusIndicator(activity: activity, style: displayStyle, axis: .horizontal)
+                EdgeNotchStatusIndicator(activity: activity, style: displayStyle, axis: .horizontal, part: .primary)
                     .frame(width: ear, height: height)
             }
             .contentShape(Rectangle())
