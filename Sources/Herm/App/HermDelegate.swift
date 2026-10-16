@@ -255,7 +255,6 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     func applicationWillTerminate(_ notification: Notification) {
         edgeDock?.shutdown()
         QuickDraftStore.shared.flush()
-        WorkflowContentStore.shared.flush()
         FilePreviewCenter.shared.flushSaves()
         // This is deliberately explicit: a menu-bar app can terminate without
         // releasing its delegate/model graph, so deinit is not a process-life

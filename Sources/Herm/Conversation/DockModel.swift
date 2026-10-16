@@ -394,19 +394,6 @@ final class DockModel: ObservableObject {
     private func rowSessionID(_ id: String) -> String {
         quickSessionOwners[id]?.sessionID ?? (id == sessionID ? (sessionStorageID ?? id) : id)
     }
-    /// Resolve only captured owners or a profile explicitly supplied by the event.
-    func knownEventOrigin(_ params: [String: Any]) -> QuickDestination? {
-        let payload = params["payload"] as? [String: Any] ?? [:]
-        guard let raw = params["session_id"] as? String ?? payload["session_id"] as? String else { return nil }
-        let profile = params["profile"] as? String ?? payload["profile"] as? String
-        if let owner = quickSessionOwners[raw], profile == nil || profile == owner.profileID { return owner }
-        if currentSessionIDs.contains(raw), let stable = navigationSessionID,
-           profile == nil || profile == sessionProfileID {
-            return QuickDestination(profileID: sessionProfileID, sessionID: stable, title: "Current conversation")
-        }
-        guard let profile else { return nil }
-        return QuickDestination(profileID: profile == "default" ? nil : profile, sessionID: raw, title: raw)
-    }
     /// The durable identifier selected by the user for session-scoped durable
     /// projections. Gateway resume may return a transient alias for streaming,
     /// which must not replace the Kanban attribution boundary.

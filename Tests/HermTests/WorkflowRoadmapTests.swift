@@ -452,13 +452,11 @@ struct WorkflowRoadmapTests {
     let destination = QuickDestination(
       profileID: "research", sessionID: "owner", runtimeID: "ephemeral", title: "Research",
       projectPath: "/tmp/worktree")
-    preferences.saveWorkingSet(name: "Research", destination: destination)
     preferences.pinSource(
       origin: destination, url: "https://example.com/paper", label: "Primary source")
     preferences.pinSource(origin: destination, url: "file:///tmp/private")
     let restored = CommandCenterPreferencesStore(defaults: defaults)
-    #expect(restored.workingSets.first?.destinations.first?.runtimeID == nil)
-    #expect(restored.workingSets.first?.destinations.first?.profileID == "research")
+    #expect(restored.sourcePins.first?.origin.runtimeID == nil)
     #expect(
       restored.sourcePins.count == 1 && restored.sourcePins.first?.origin.sessionID == "owner")
   }
@@ -495,15 +493,6 @@ struct WorkflowRoadmapTests {
     state.clearPreviewDetails()
     #expect(!state.isReadingDetail)
     #expect(state.quickDraft.contains("Existing correction"))
-  }
-  @Test func savedSessionDestinationKeepsItsExplicitProject() {
-    let state = EdgeNotchState()
-    let destination = QuickDestination(
-      profileID: "research", sessionID: "owner", title: "Research",
-      projectPath: "/tmp/explicit-project")
-    state.useSavedDestination(destination)
-    #expect(state.captureRecord().destination.projectPath == "/tmp/explicit-project")
-    #expect(state.captureRecord().destination.sessionID == "owner")
   }
   @Test func sourceShelfOnlyOffersActualHTTPLinks() {
     let links = ResultSourceLinks.candidates(
@@ -653,10 +642,6 @@ struct WorkflowRoadmapTests {
           EdgeRoutinePreview(
             reference: RoutineReference(profileID: "research", job: job, run: nil),
             control: control, preferences: preferences, back: {}, openAutomation: {}))
-      ),
-      (
-        "working-sets",
-        AnyView(EdgeWorkingSetsView(state: state, model: model, back: {}, openWorkspace: {}))
       ),
     ]
     for (name, view) in views {

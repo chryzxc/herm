@@ -186,14 +186,6 @@ struct EdgeQuickMessageView: View {
     private var captureActions: some View {
         HStack(spacing: 8) {
             Menu("To") {
-                ForEach(state.preferences.workingSets) { set in
-                    Menu(set.name) {
-                        ForEach(Array(set.destinations.enumerated()), id: \.offset) { _, destination in
-                            let unavailable = state.destinationUnavailable(destination, sessions: model.sessions, profileID: model.profileScopeID)
-                            Button("\(destination.profileID ?? "Launch profile") · \(destination.title)\(unavailable ? " · unavailable" : "")") { state.useSavedDestination(destination) }.disabled(unavailable)
-                        }
-                    }
-                }
                 Button("New session in \(model.agentDisplayName)") { state.switchQuickProfile(model.profileScopeID); state.composing = true }
                 ForEach(state.bots) { bot in
                     Button("New session · \(bot.name)") { state.switchQuickProfile(bot.id); state.composing = true }
@@ -215,12 +207,9 @@ struct EdgeQuickMessageView: View {
                 }
             }.disabled(state.quickSending || state.quickPreparing > 0 || state.recoverableDrafts.isEmpty)
             Menu("More") {
-                Button("Actions…") { state.showingActions = true }
-                    .disabled(state.quickNeedsReview)
                 if let session = state.captureRecord().destination.session {
                     Button("Capacity & session actions…") { state.capacityTarget = session }
                 }
-                Button("Saved working sets…") { state.showingWorkingSets = true }
                 Button("Search conversations…") { state.recallProfileID = state.quickProfileID; state.showingRecall = true }
                 Button("Choose project for new session…") {
                     let picker = NSOpenPanel(); picker.canChooseFiles = false; picker.canChooseDirectories = true

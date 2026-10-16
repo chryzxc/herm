@@ -1,11 +1,5 @@
 import Foundation
 
-struct WorkingSet: Codable, Identifiable, Equatable {
-  var id = UUID()
-  var name: String
-  var destinations: [QuickDestination]
-}
-
 struct PinnedSource: Codable, Identifiable, Equatable {
   var id = UUID()
   let origin: QuickDestination

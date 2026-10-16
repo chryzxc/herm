@@ -56,7 +56,7 @@ final class EdgeDockController: NSObject {
 
     init(model: DockModel, controlCenter: ControlCenterModel, defaults: UserDefaults = .standard, interruptions: HermInterruptionCoordinator? = nil, openQuota: @escaping () -> Void, openKanban: @escaping (KanbanTaskSummary) -> Void, openDock: @escaping () -> Void) {
         self.model = model
-        state = EdgeNotchState(store: .shared, interruptions: interruptions, content: .shared)
+        state = EdgeNotchState(store: .shared, interruptions: interruptions)
         self.controlCenter = controlCenter
         self.openQuota = openQuota
         self.openKanban = openKanban
@@ -172,16 +172,7 @@ final class EdgeDockController: NSObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.routineUpdates(); self?.rebuildTasks() }.store(in: &subscriptions)
         state.preferences.objectWillChange.receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.selectWorkingSetWatch(); self?.rebuildTasks() }.store(in: &subscriptions)
-        controlCenter.workingSetWatch.objectWillChange.receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                self.state.watchedSessions = self.controlCenter.workingSetWatch.records.compactMapValues { $0.session }
-                self.rebuildTasks()
-            }.store(in: &subscriptions)
-        model.$isHermesConnected.removeDuplicates().receive(on: RunLoop.main)
-            .sink { [weak self] in self?.controlCenter.workingSetWatch.connectionChanged($0) }.store(in: &subscriptions)
-        selectWorkingSetWatch()
+            .sink { [weak self] _ in self?.rebuildTasks() }.store(in: &subscriptions)
         state.$side.removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] side in
                 guard let self else { return }
@@ -368,7 +359,6 @@ final class EdgeDockController: NSObject {
             return
         }
         guard let session = task.session else { return openWorkspace() }
-        controlCenter.workingSetWatch.review(session)
         if task.isFailure { state.interruptions.clearFailure(owner: session.id, profileID: session.profileID) }
         model.resumeSession(session)
         openDock()
@@ -429,19 +419,7 @@ final class EdgeDockController: NSObject {
                 if let question = task.deliveryQuestion { task.answerState = state.deliveryAnswers[question] }
                 return task
             }
-        if controlCenter.workingSetWatch.selectedSet != nil {
-            let members = Set(controlCenter.workingSetWatch.records.keys)
-            tasks = tasks.filter { task in
-                if task.phase == .attention || task.deliveryQuestion != nil || task.routine != nil { return true }
-                let key = ProfileScopedID(profileID: task.isCurrent ? model.sessionProfileID : task.session?.profileID, resourceID: task.id)
-                return members.contains(key)
-            }
-            for row in controlCenter.workingSetWatch.rows {
-                guard !tasks.contains(where: { $0.previewIdentity(currentProfileID: model.sessionProfileID) == row.previewIdentity(currentProfileID: model.sessionProfileID) }) else { continue }
-                tasks.append(row)
-            }
-        }
-        // Decisions remain global even when their session is outside the current inventory or watched set.
+        // Decisions remain global even when their session is outside the current inventory.
         for request in latestAttention.values {
             guard let target = request.responseTarget,
                   !tasks.contains(where: { $0.attentionRequest == target }) else { continue }
@@ -546,13 +524,8 @@ final class EdgeDockController: NSObject {
     }
 
     private func refreshSelectedTasks() {
-        controlCenter.workingSetWatch.refresh()
         pollKanban()
         model.loadSessions()
-    }
-    private func selectWorkingSetWatch() {
-        let preferences = state.preferences
-        controlCenter.workingSetWatch.select(preferences.workingSets.first { $0.id == preferences.watchedWorkingSetID })
     }
 
     /// Idle polls are throttled to once a minute: each aggregate read pulls and
@@ -929,7 +902,6 @@ final class EdgeDockController: NSObject {
 
     private func setExpanded(_ expanded: Bool) {
         guard !workspacePresented else { return }
-        if expanded, !state.expanded { controlCenter.workingSetWatch.refresh() }
         collapseTask?.cancel()
         if !expanded {
             state.previewInteraction.mode = .passive
@@ -1114,37 +1086,15 @@ enum EdgeQuotaBands {
 final class EdgeNotchState: ObservableObject {
     @Published var previewInteraction = EdgePreviewInteraction()
     @Published var showingResultComparison = false
-    var isReadingDetail: Bool { resultTarget != nil || routineTarget != nil || capacityTarget != nil || steeringTarget != nil || showingRecall || showingWorkingSets || showingActions || checkpointSetID != nil }
+    var isReadingDetail: Bool { resultTarget != nil || routineTarget != nil || capacityTarget != nil || steeringTarget != nil || showingRecall }
     func clearPreviewDetails() {
         showingResultComparison = false
         resultTarget = nil; routineTarget = nil; capacityTarget = nil; steeringTarget = nil
-        showingRecall = false; showingWorkingSets = false; showingDigest = false
-        showingActions = false
-        checkpointSetID = nil
+        showingRecall = false; showingDigest = false
     }
     @Published var capacitySnapshots: [String: SessionCapacitySnapshot] = [:]
-    @Published var watchedSessions: [ProfileScopedID: HermesSession] = [:]
-    func destinationUnavailable(_ destination: QuickDestination, sessions: [HermesSession], profileID: String?) -> Bool {
-        if let id = destination.sessionID, !sessions.contains(where: { $0.id == id && $0.profileID == destination.profileID }),
-           watchedSessions[ProfileScopedID(profileID: destination.profileID, resourceID: id)] == nil { return true }
-        if let path = destination.projectPath, !FileManager.default.fileExists(atPath: path) { return true }
-        if let profile = destination.profileID, profile != profileID, !bots.contains(where: { $0.id == profile }) { return true }
-        return false
-    }
     @Published var steeringTarget: HermesSession?
     @Published var capacityTarget: HermesSession?
-    @Published var showingWorkingSets = false
-    func useSavedDestination(_ destination: QuickDestination) {
-        guard !quickSending, quickPreparing == 0 else { return }
-        if let session = destination.session {
-            selectQuickTarget(session)
-            quickProjectPath = destination.projectPath
-            var record = captureRecord(); record.destination.projectPath = destination.projectPath
-            draftStore.save(record)
-        }
-        else { switchQuickProfile(destination.profileID); setQuickProject(destination.projectPath) }
-        showingWorkingSets = false; composing = true
-    }
     func insertRecall(_ hit: RecallHit) {
         guard !quickSending, !quickNeedsReview else { quickResult = "Review the interrupted draft before inserting material."; return }
         quickDraft += (quickDraft.isEmpty ? "" : "\n\n") + hit.snippet
@@ -1184,10 +1134,6 @@ final class EdgeNotchState: ObservableObject {
         }
     }
     @Published var composing = false
-    @Published var showingActions = false
-    @Published var checkpointSetID: UUID?
-    let workflowContent: WorkflowContentStore
-    private var contentSubscription: AnyCancellable?
     @Published var quickTarget: HermesSession?
     @Published var quickReplyTask: EdgeNotchTask?
     @Published var quickCreatedSession: HermesSession?
@@ -1202,12 +1148,10 @@ final class EdgeNotchState: ObservableObject {
     @Published private(set) var quickNeedsReview = false
     @Published private(set) var quickProjectPath: String?
 
-    init(store: QuickDraftStore? = nil, interruptions: HermInterruptionCoordinator? = nil, content: WorkflowContentStore? = nil, preferences: CommandCenterPreferencesStore? = nil) {
+    init(store: QuickDraftStore? = nil, interruptions: HermInterruptionCoordinator? = nil, preferences: CommandCenterPreferencesStore? = nil) {
         self.preferences = preferences ?? .shared
         draftStore = store ?? QuickDraftStore()
-        workflowContent = content ?? WorkflowContentStore()
         self.interruptions = interruptions ?? HermInterruptionCoordinator()
-        contentSubscription = workflowContent.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         draftSubscription = draftStore.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         interruptionSubscription = self.interruptions.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         preferenceSubscription = self.preferences.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
@@ -1224,53 +1168,6 @@ final class EdgeNotchState: ObservableObject {
         record.text = quickDraft; record.files = quickFiles; record.sources = quickSources
         quickRecordID = record.id
         return record
-    }
-
-    /// Preparing an action never submits, uploads, or borrows the workspace composer.
-    @discardableResult
-    func applyQuickAction(_ action: SavedQuickAction, confirmDestinationChange: Bool = false) -> Bool {
-        guard showingActions, !quickSending, quickPreparing == 0, !quickNeedsReview else { return false }
-        let current = captureRecord()
-        if let destination = action.destination, destination.key != current.destination.key {
-            guard confirmDestinationChange else { return false }
-            saveQuickDraft(); draftStore.flush()
-            guard draftStore.error == nil else { return false }
-            applyingDraft = true
-            quickRecordID = UUID()
-            quickProfileID = destination.profileID; quickTarget = destination.session
-            quickProjectPath = destination.projectPath; quickCreatedSession = nil; quickReplyTask = nil
-            quickFiles = []; quickSources = []; quickNeedsReview = false
-            quickDraft = action.instructions
-            applyingDraft = false
-        } else {
-            quickDraft = action.instructions + (quickDraft.isEmpty ? "" : "\n\n" + quickDraft)
-        }
-        saveQuickDraft(); draftStore.flush()
-        quickResult = draftStore.error
-        showingActions = false; composing = true
-        return true
-    }
-
-    @discardableResult
-    func restoreCheckpoint(_ checkpoint: WorkingSetCheckpoint, from set: WorkingSet) -> Bool {
-        guard !quickSending, quickPreparing == 0, checkpoint.workingSetID == set.id,
-              let destination = set.destinations.first(where: { $0.key == checkpoint.destinationKey }) else { return false }
-        saveQuickDraft(); draftStore.flush()
-        guard draftStore.error == nil else { return false }
-        if let draftID = checkpoint.draftID,
-           let draft = draftStore.records.first(where: { $0.id == draftID && $0.destination.key == destination.key }) {
-            restoreQuickDraft(draft)
-        } else {
-            applyingDraft = true
-            quickRecordID = UUID(); quickProfileID = destination.profileID
-            quickTarget = destination.session; quickReplyTask = nil; quickCreatedSession = nil
-            quickProjectPath = destination.projectPath; quickDraft = ""; quickFiles = []; quickSources = []
-            quickNeedsReview = false
-            applyingDraft = false
-            quickResult = checkpoint.draftID == nil ? nil : "Saved draft unavailable. The note and destination remain."
-        }
-        checkpointSetID = nil; showingWorkingSets = false; composing = true
-        return true
     }
 
     private func saveQuickDraft() {
@@ -1665,19 +1562,6 @@ struct EdgeNotchView: View {
                 }
                 .padding(2)
                 .background(DockThemeShape(cornerRadius: 14).fill(Color.dockSurface4.opacity(0.6)))
-                if !state.displaysQuota, !state.preferences.workingSets.isEmpty {
-                    Menu {
-                        Button("All activity") { state.preferences.watchWorkingSet(nil) }
-                        ForEach(state.preferences.workingSets) { set in
-                            Button("Watch \(set.name)") { state.preferences.watchWorkingSet(set.id) }
-                                .disabled(set.destinations.allSatisfy { $0.sessionID == nil })
-                        }
-                    } label: {
-                        Text(state.preferences.workingSets.first { $0.id == state.preferences.watchedWorkingSetID }?.name ?? "All")
-                            .font(.system(size: 12)).lineLimit(1).frame(maxWidth: 80)
-                    }.menuStyle(.borderlessButton).fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel("Activity scope")
-                }
                 if isIsland {
                     // Leave the camera housing clear; the controls sit in the ears either side.
                     Spacer(minLength: state.notchSize.width + 12)
@@ -1717,20 +1601,12 @@ struct EdgeNotchView: View {
                     back: { state.showingRecall = false; onQuickMessageFocus(false) },
                     open: { session in model.resumeSession(session); openDock() },
                     insert: { hit in state.insertRecall(hit) })
-            } else if state.showingWorkingSets, let model = quickMessageModel {
-                EdgeWorkingSetsView(state: state, model: model, back: { state.showingWorkingSets = false }, openWorkspace: openDock)
             } else if let routine = state.routineTarget {
                 EdgeRoutinePreview(reference: controlCenter.routineReferences.first { $0.id == routine.id } ?? routine, control: controlCenter, preferences: state.preferences,
                     back: { state.routineTarget = nil }, openAutomation: {
                         controlCenter.requestAutomation(routine)
                         state.routineTarget = nil; openDock()
                     }).id(routine.id)
-            } else if let setID = state.checkpointSetID, let quickMessageModel {
-                EdgeCheckpointView(setID: setID, state: state, model: quickMessageModel,
-                    back: { state.checkpointSetID = nil; state.showingWorkingSets = true }, activate: { onQuickMessageFocus(true) })
-            } else if state.showingActions, let quickMessageModel {
-                EdgeQuickActionsView(state: state, model: quickMessageModel,
-                    back: { state.showingActions = false }, activate: { onQuickMessageFocus(true) })
             } else if state.showingDigest {
                 EdgeDigestView(coordinator: state.interruptions, back: { state.showingDigest = false },
                     open: onOpenDigest, openActivity: openDock)
@@ -1789,7 +1665,6 @@ struct EdgeNotchView: View {
                                },
                                reviewed: {
                                    quickMessageModel.markQuickResultReviewed(target.session)
-                                   controlCenter.workingSetWatch.review(target.session)
                                    if let id = state.digestResultID { state.interruptions.review(id); state.digestResultID = nil }
                                },
                                refresh: {

@@ -120,22 +120,6 @@ final class HermesWorkflowRPC {
   private func acknowledged(_ result: [String: Any]) throws {
     guard result["ok"] as? Bool == true else { throw HermesGateway.GatewayError.malformedResponse }
   }
-  func storedSessionMetadata(limit: Int = 200) async throws -> [HermesSession] {
-    let result = try await request(.sessionList, ["limit": max(1, min(limit, 200))])
-    if let returned = result["profile"] as? String, returned != (profileID ?? "default") {
-      throw HermesGateway.GatewayError.malformedResponse
-    }
-    guard let rows = result["sessions"] as? [[String: Any]] else {
-      throw HermesGateway.GatewayError.malformedResponse
-    }
-    return try rows.map { row in
-      guard let id = row["id"] as? String, !id.isEmpty else { throw HermesGateway.GatewayError.malformedResponse }
-      return HermesSession(id: id, profileID: profileID, title: row["title"] as? String ?? "",
-        preview: String((row["preview"] as? String ?? "").prefix(180)),
-        startedAt: (row["started_at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue) },
-        messageCount: row["message_count"] as? Int ?? 0, source: row["source"] as? String ?? "herm")
-    }
-  }
   func skills(query: String? = nil) async throws -> [WorkflowIntegrationItem] {
     if query == nil {
       let profileID = profileID ?? "default"

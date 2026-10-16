@@ -5,7 +5,6 @@ import Combine
 final class ControlCenterModel: ObservableObject {
     var interruptionCoordinator: HermInterruptionCoordinator? { dockModel?.interruptionCoordinator }
     let pet = HermesPetModel()
-    let workingSetWatch = WorkingSetWatchProjection()
     @Published var integrationDestination: IntegrationDestination?
     @Published var requestedRepositoryReview: QuickDestination?
     @Published var requestedAutomationDidNavigate = false
@@ -608,7 +607,6 @@ final class ControlCenterModel: ObservableObject {
     func bind(to model: DockModel) {
         pet.bind(to: model)
         if dockModel !== model {
-            workingSetWatch.invalidate()
             refreshGeneration &+= 1
             clientBindingGeneration &+= 1
             refreshTask?.cancel()
@@ -731,18 +729,13 @@ final class ControlCenterModel: ObservableObject {
             }
         }
         dockModel = model
-        workingSetWatch.read = { [weak model] profile in
-            guard let model else { throw CancellationError() }
-            return try await HermesWorkflowRPC(client: model.controlRPCClient, profileID: profile).storedSessionMetadata()
-        }
         rpc = HermesControlRPC(client: model.controlRPCClient)
         cli = HermesCLIAdapter(rpc: HermesControlRPC(client: model.controlRPCClient))
         remindersAdapter = AppleRemindersAdapter(client: model.controlRPCClient)
         focus(sessionID: model.sessionID)
         if eventSubscription == nil {
-            eventSubscription = model.eventRouter.subscribe { [weak self, weak model] type, params in
+            eventSubscription = model.eventRouter.subscribe { [weak self] type, params in
                 self?.ingestEvent(type, params: params)
-                self?.workingSetWatch.ingest(type, params: params, origin: model?.knownEventOrigin(params))
             }
         }
         rebuildAttention()
