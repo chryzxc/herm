@@ -1,0 +1,1259 @@
+import AppKit
+import ServiceManagement
+import SwiftUI
+import Foundation
+import UniformTypeIdentifiers
+
+extension WorkspaceActivitySidebar {
+    var coreContent: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            if selectedSettingsCategory == .general {
+                generalPreferencesSection
+            }
+            if selectedSettingsCategory == .gateway {
+                GatewayConnectionSettingsView(onRestart: onRestartDock)
+            }
+            if selectedSettingsCategory == .notifications {
+                notificationPreferencesSection
+            }
+            if selectedSettingsCategory == .appearance {
+                SettingsSection(title: "Theme", subtitle: "Colors and skins", tint: .dockAccent) {
+                    appearanceSection
+                }
+                sidebarPreferencesSection
+                chatQuotaPreferencesSection
+                SettingsSection(title: "Notch", subtitle: "Activity indicator", tint: .dockAccent) {
+                    NotchDisplaySettings()
+                }
+                SettingsSection(title: "Hermes companion", subtitle: "", tint: .dockAccent) {
+                    HermesPetSettingsView(pet: control.pet)
+                }
+            }
+            if selectedSettingsCategory == .voice {
+                SettingsSection(title: "Turn detection", subtitle: "When to reply", tint: .dockAccent) {
+                    TurnModelSettingsView(store: .shared)
+                }
+            }
+            if selectedSettingsCategory == .updates {
+                settingsDisclosure(title: "Herm update", subtitle: "Herm \(appUpdater.currentVersion ?? "dev build")", icon: .arrowsClockwise, isExpanded: $isAppUpdateExpanded) {
+                    appUpdateSection
+                }
+                settingsDisclosure(title: "Agent update", subtitle: "Version and updates", icon: .arrowsClockwise, isExpanded: $isAgentUpdateExpanded) {
+                    agentUpdateSection
+                }
+            }
+
+            if selectedSettingsCategory == .runtime {
+                runtimeSettingsSection
+            }
+
+            if selectedSettingsCategory == .providers {
+                ProvidersSettingsView(model: model, control: control)
+            }
+
+            HermesConfigCategoryView(editor: control.configEditor, category: selectedSettingsCategory)
+
+            if selectedSettingsCategory == .diagnostics, let insights = control.insightsSummary {
+                settingsDisclosure(title: "Usage insights", subtitle: "Last \(insights.days) days", icon: .chartBar, isExpanded: $isInsightsExpanded) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        diagnosticRow(label: "Sessions", value: "\(insights.sessions)", color: Color.dockMetadataText)
+                        diagnosticRow(label: "Messages", value: "\(insights.messages)", color: .dockMetadataText)
+                    }
+                }
+            }
+
+            if selectedSettingsCategory == .runtime {
+                SettingsSection(title: "Dispatch", subtitle: "Pause or resume new work", tint: .dockAccent) {
+                    emergencyStopSection
+                }
+            }
+
+            if selectedSettingsCategory == .integrations, !unavailableSetupCapabilities.isEmpty {
+                settingsDisclosure(title: "Setup needed", subtitle: "\(unavailableSetupCapabilities.count) integrations need attention", icon: .warning, isExpanded: $isSetupExpanded, tint: .dockWarning) {
+                    ForEach(unavailableSetupCapabilities) { capability in
+                        providerSetupCard(capability)
+                    }
+                }
+            }
+
+            if selectedSettingsCategory == .integrations {
+            settingsDisclosure(title: "Capabilities", subtitle: "Permission and integration readiness", icon: .shieldCheck, isExpanded: $isCapabilitiesExpanded) {
+                projectionRefreshNotice("core")
+                capabilityInventorySummary
+                if capabilityInventorySnapshot.states.isEmpty {
+                    emptyState(
+                        icon: .arrowsClockwise,
+                        title: "Settings capabilities not yet available",
+                        detail: "Refresh Settings or reconnect Hermes to request capability facts."
+                    )
+                } else {
+                    ForEach(CapabilityCategory.allCases, id: \.self) { category in
+                        let states = capabilityStates(for: category)
+                        if !states.isEmpty {
+                            settingsCategoryDisclosure(title: category.rawValue.uppercased(), count: states.count, readyCount: states.filter { $0.probeState == .verified }.count, isExpanded: capabilityCategoryExpansionBinding(for: category)) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(states) { capability in
+                                        capabilityStatusRow(capability)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            }
+            if selectedSettingsCategory == .project {
+            if control.projectFacts != nil || control.verification != nil {
+                settingsDisclosure(title: "Verification", subtitle: "Project facts and delivery evidence", icon: .sealCheck, isExpanded: $isVerificationExpanded) {
+                    if let facts = control.projectFacts {
+                    diagnosticRow(label: "Project", value: facts.manifests.joined(separator: ", ").isEmpty ? "Code workspace" : facts.manifests.joined(separator: ", "), color: Color.dockMetadataText)
+                    if !facts.packageManagers.isEmpty { diagnosticRow(label: "Tools", value: facts.packageManagers.joined(separator: ", "), color: Color.dockMetadataText) }
+                    if !facts.contextFiles.isEmpty { diagnosticRow(label: "Context", value: facts.contextFiles.joined(separator: ", "), color: Color.dockMetadataText) }
+                    ForEach(VerificationRecipeBuilder.make(facts: facts, repository: workflow.repository)) { recipe in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(recipe.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+                                Text(recipe.command).font(.system(size: 11)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                            }
+                            Spacer()
+                            DockCopyButton(
+                                recipe.command,
+                                accessibilityLabel: "Copy \(recipe.title.lowercased()) command",
+                                presentation: .text,
+                                color: .dockAccent
+                            )
+                            .buttonStyle(.dockHover)
+                            .font(.system(size: 10, weight: .semibold))
+                            Button("Ask Hermes") {
+                                let repoPath = control.developmentContext?.path ?? "the selected repository"
+                                let prompt = "Run this exact verification command in " + repoPath + ": " + recipe.command + ". Do not edit files. Report the result and exit code."
+                                Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
+                            }
+                            .buttonStyle(.dockHover)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color.dockAccent)
+                        }
+                    }
+                }
+                    if let verification = control.verification {
+                    let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
+                    let stateColor: Color = verification.state == .passed ? .dockSecondaryText : (verification.state == .failed ? .dockDestructive : .dockWarning)
+                    diagnosticRow(label: "Delivery", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .dockSecondaryText : .dockWarning)
+                    diagnosticRow(label: "Status", value: verification.state.rawValue.uppercased(), color: stateColor)
+                    if let evidence = verification.evidence {
+                        if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "Evidence", value: command, color: Color.dockMetadataText) }
+                        if let scope = evidence.scope { diagnosticRow(label: "Scope", value: scope.uppercased(), color: scope == "targeted" ? Color.dockWarning : Color.dockMetadataText) }
+                        if let exitCode = evidence.exitCode { diagnosticRow(label: "Exit", value: String(exitCode), color: exitCode == 0 ? Color.dockSecondaryText : Color.dockDestructive) }
+                        if let adapter = evidence.adapter { diagnosticRow(label: "Adapter", value: adapter, color: Color.dockMetadataText) }
+                        if let capturedAt = evidence.capturedAt { diagnosticRow(label: "Captured", value: ISO8601DateFormatter().string(from: capturedAt), color: Color.dockMetadataText) }
+                        if let repository = evidence.repositoryIdentity { diagnosticRow(label: "Repository", value: repository, color: Color.dockMetadataText) }
+                        if let commit = evidence.commitFingerprint { diagnosticRow(label: "Commit", value: commit, color: Color.dockMetadataText) }
+                        if let target = evidence.targetFingerprint { diagnosticRow(label: "Target", value: target, color: Color.dockMetadataText) }
+                        if let diff = evidence.diffFingerprint { diagnosticRow(label: "Diff", value: diff, color: Color.dockMetadataText) }
+                        if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "Rules", value: rules, color: Color.dockMetadataText) }
+                        if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "Stale", value: staleReason, color: Color.dockWarning) }
+                    }
+                    }
+                }
+            }
+            }
+            let canSteerSession = model.status == .working && model.sessionID != nil
+            if selectedSettingsCategory == .session, control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.restoreCheckpoints.isEmpty || control.isLoadingCheckpoints {
+                settingsDisclosure(title: "Session cockpit", subtitle: "Context, usage, and active-turn controls", icon: .pulse, isExpanded: $isSessionCockpitExpanded) {
+                    if let usage = control.sessionUsage {
+                    diagnosticRow(label: "Tokens", value: "\(usage.totalTokens) total  ·  \(usage.inputTokens) in  ·  \(usage.outputTokens) out", color: Color.dockMetadataText)
+                    if let model = usage.model { diagnosticRow(label: "Model", value: model, color: Color.dockMetadataText) }
+                }
+                if let context = control.sessionContext {
+                    if let percent = context.contextPercent {
+                        diagnosticRow(label: "Context", value: String(format: "%.1f%%", percent), color: percent >= 90 ? Color.dockDestructive : percent >= 80 ? Color.dockWarning : Color.dockSecondaryText)
+                    }
+                    if !context.categories.isEmpty {
+                        ForEach(context.categories.prefix(6)) { category in
+                            diagnosticRow(label: category.label.uppercased(), value: "\(category.tokens) tokens", color: Color.dockMetadataText)
+                        }
+                    }
+                }
+                let pressure = SessionContextPressure.make(percent: control.sessionContext?.contextPercent)
+                if pressure != .unavailable {
+                    let color: Color = pressure == .critical ? .dockDestructive : pressure == .warning ? .dockWarning : .dockSecondaryText
+                    diagnosticRow(label: "Context pressure", value: pressure.rawValue.uppercased(), color: color)
+                    if pressure == .warning || pressure == .critical {
+                        Text("Create a handoff or branch before context pressure grows. Compression remains an explicit confirmed action.")
+                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                        HStack(spacing: 8) {
+                            DockTextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.dockGlass)
+                            Button("Handoff") { isShowingHandoffConfirmation = true }
+                                .buttonStyle(.dockHover).foregroundStyle(Color.dockAccent)
+                                .disabled(!control.capabilityAvailable("gateway"))
+                        }
+                    }
+                }
+                    if control.isLoadingCheckpoints {
+                        Text("Loading session checkpoints…")
+                            .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                    } else if !control.restoreCheckpoints.isEmpty {
+                        Text("CHECKPOINTS")
+                            .font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
+                        ForEach(control.restoreCheckpoints) { checkpoint in
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(checkpoint.message.isEmpty ? checkpoint.hash : checkpoint.message)
+                                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                                    Text(checkpoint.timestamp.isEmpty ? checkpoint.hash : checkpoint.timestamp)
+                                        .font(.system(size: 10)).foregroundStyle(Color.dockMetadataText).lineLimit(1)
+                                }
+                                Spacer()
+                                Button("Diff") { control.loadCheckpointDiff(checkpoint) }
+                                    .buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                                Button("Restore") { checkpointForRestore = checkpoint }
+                                    .buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
+                                    .disabled(model.status == .working || control.restoreCheckpointState.isPending)
+                            }
+                        }
+                        if let checkpointDiff = control.checkpointDiff, !checkpointDiff.isEmpty {
+                            Text(checkpointDiff)
+                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                                .lineLimit(12)
+                                .textSelection(.enabled)
+                        }
+                    }
+                    if canSteerSession, let sessionID = model.sessionID {
+                    Text("Hermes will apply this guidance after the next tool-result boundary without restarting the turn.")
+                        .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                    HStack(spacing: 8) {
+                    DockTextField("Steer the active turn…", text: $sessionSteerText)
+                        .textFieldStyle(.dockGlass)
+                    Button("Steer") {
+                        let text = sessionSteerText
+                        Task {
+                            guard let result = await control.steerActiveSession(text) else { return }
+                            if result.wasAccepted {
+                                sessionSteerText = ""
+                                sessionSteerFeedback = "GUIDANCE QUEUED"
+                            } else {
+                                sessionSteerFeedback = "GUIDANCE REJECTED — text retained"
+                            }
+                        }
+                    }
+                    .buttonStyle(.dockHover)
+                    .foregroundStyle(Color.dockAccent)
+                    .disabled(sessionSteerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || control.isActionPending(control.sessionSteerActionID(sessionID)))
+                    }
+                    if let sessionSteerFeedback {
+                        Text(sessionSteerFeedback)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(sessionSteerFeedback.contains("REJECTED") ? Color.dockWarning : Color.dockSecondaryText)
+                    }
+                    }
+                }
+            }
+            if selectedSettingsCategory == .session, let budget = control.promptBudget {
+                SettingsSection(title: "Prompt budget", subtitle: "Tokens sent with the next request", tint: .dockAccent) {
+                let percent = budget.percent ?? 0
+                let color: Color = percent >= 95 ? .dockDestructive : (percent >= 85 ? .dockWarning : .dockAccent)
+                diagnosticRow(label: "Tokens", value: "\(budget.totalTokens)" + (budget.tokenLimit.map { " / \($0)" } ?? ""), color: color)
+                if budget.percent != nil { diagnosticRow(label: "Used", value: String(format: "%.1f%%", percent), color: color) }
+                if let model = budget.model { diagnosticRow(label: "Model", value: model, color: Color.dockMetadataText) }
+                }
+            }
+            if selectedSettingsCategory == .session {
+            settingsDisclosure(title: "Session actions", subtitle: "Rename, redirect, branch, or pause the active session", icon: .lightning, isExpanded: $isSessionActionsExpanded) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        DockTextField("New session title", text: $sessionRenameText)
+                            .textFieldStyle(.dockGlass)
+                        Button("Rename") {
+                            Task { if await control.renameActiveSession(sessionRenameText) { sessionRenameText = "" } }
+                        }
+                        .buttonStyle(.dockHover)
+                        .foregroundStyle(Color.dockAccent)
+                        .disabled(sessionRenameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    HStack(spacing: 8) {
+                        DockTextField("Redirect the active turn…", text: $sessionRedirectText)
+                            .textFieldStyle(.dockGlass)
+                        Button("Redirect") {
+                            let text = sessionRedirectText
+                            Task {
+                                if let result = await control.redirectActiveSession(text), result.wasAccepted { sessionRedirectText = "" }
+                            }
+                        }
+                        .buttonStyle(.dockHover)
+                        .foregroundStyle(Color.dockAccent)
+                        .disabled(sessionRedirectText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    HStack(spacing: 8) {
+                        DockTextField("Optional branch name", text: $sessionBranchName)
+                            .textFieldStyle(.dockGlass)
+                        Button("Branch") { isShowingBranchConfirmation = true }
+                            .buttonStyle(.dockHover)
+                            .foregroundStyle(Color.dockAccent)
+                            .disabled(!control.capabilityAvailable("rpc-sessions"))
+                        DockTextField("Compression focus (optional)", text: $sessionCompressTopic)
+                            .textFieldStyle(.dockGlass)
+                        Button("Compress") { isShowingCompressConfirmation = true }
+                            .buttonStyle(.dockHover)
+                            .foregroundStyle(Color.dockAccent)
+                            .disabled(!control.capabilityAvailable("rpc-sessions"))
+                    }
+                    HStack(spacing: 8) {
+                        Button("Undo last turn") { isShowingUndoConfirmation = true }
+                            .buttonStyle(.dockHover)
+                            .foregroundStyle(Color.dockWarning)
+                        Button(control.delegationPaused ? "Resume delegation" : "Pause delegation") { isShowingDelegationConfirmation = true }
+                            .buttonStyle(.dockHover)
+                            .foregroundStyle(Color.dockWarning)
+                    }
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.dockAccent)
+            }
+            }
+            if selectedSettingsCategory == .session, !control.activeAgents.isEmpty || !control.processes.isEmpty {
+                SettingsSection(title: "Running work", subtitle: "Subagents and processes", tint: .dockAccent) {
+                ForEach(control.activeAgents) { agent in
+                    HStack {
+                        DockIcon(.users).foregroundStyle(Color.dockAccent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(agent.name).foregroundStyle(Color.dockPrimaryText)
+                            Text(agent.state.uppercased()).foregroundStyle(Color.dockMetadataText)
+                        }
+                        Spacer()
+                        if let native = model.activeSubagents.first(where: { $0.id == agent.id }), !model.isSyntheticSubagent(native.id) {
+                            Button("Interrupt") { pendingAgentID = native.id }
+                                .buttonStyle(.dockHover)
+                                .foregroundStyle(Color.dockWarning)
+                        }
+                    }
+                    .font(.system(size: 11))
+                }
+                ForEach(control.processes) { process in
+                    HStack {
+                        DockIcon(.gearSix).foregroundStyle(Color.dockSecondaryText)
+                        Text(process.name).foregroundStyle(Color.dockPrimaryText)
+                        Spacer()
+                        Button("Stop") { pendingProcess = process }
+                            .buttonStyle(.dockHover)
+                            .foregroundStyle(Color.dockWarning)
+                    }
+                    .font(.system(size: 11))
+                }
+                }
+            }
+            if selectedSettingsCategory == .diagnostics, !control.diagnostics.isEmpty {
+                settingsDisclosure(title: "Read-only diagnostics", subtitle: "Observed runtime detail", icon: .stethoscope, isExpanded: $isDiagnosticsExpanded) {
+                    ForEach(control.diagnostics) { diagnostic in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(diagnostic.isAvailable ? Color.dockSecondaryText : Color.dockWarning)
+                            .frame(width: 6, height: 6)
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(diagnostic.title)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.dockPrimaryText)
+                            Text(diagnostic.detail)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.dockMetadataText)
+                                .lineLimit(3)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    }
+                }
+            }
+            if selectedSettingsCategory == .diagnostics, !control.journeyNodes.isEmpty || control.sessionStoreStatus != nil || control.memoryHealthStatus != nil {
+                settingsDisclosure(title: "Learning & storage", subtitle: "Session store, memory, and journey state", icon: .hardDrive, isExpanded: $isLearningExpanded) {
+                    ForEach([control.sessionStoreStatus, control.memoryHealthStatus].compactMap { $0 }) { status in
+                    diagnosticRow(label: status.title.uppercased(), value: status.detail, color: status.isAvailable ? Color.dockSecondaryText : Color.dockWarning)
+                }
+                if !control.journeyNodes.isEmpty {
+                    Text("JOURNEY  ·  \(control.journeyNodes.count) NODES")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockMetadataText)
+                    ForEach(control.journeyNodes.prefix(8)) { node in
+                        HStack(spacing: 7) {
+                            Circle().fill(node.state == "active" ? Color.dockSecondaryText : Color.dockSecondaryText).frame(width: 5, height: 5)
+                            Text(node.label).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
+                            Spacer()
+                            Text([node.kind, node.useCount.map { "\($0)x" }].compactMap { $0 }.joined(separator: " · "))
+                                .font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)
+                        }
+                    }
+                    }
+                }
+            }
+            if selectedSettingsCategory == .session,
+               control.sessionUsage == nil,
+               control.sessionContext == nil,
+               control.restoreCheckpoints.isEmpty,
+               control.activeAgents.isEmpty,
+               control.processes.isEmpty,
+               model.sessionID == nil {
+                emptyState(icon: .pulse, title: "Session data unavailable", detail: "Open a Hermes session or refresh Settings to load session controls.")
+            }
+            if selectedSettingsCategory == .project,
+               control.projectFacts == nil,
+               control.verification == nil {
+                emptyState(icon: .sealCheck, title: "Project data unavailable", detail: "Select a repository and refresh Settings to load project facts and verification evidence.")
+            }
+            if selectedSettingsCategory == .diagnostics,
+               control.insightsSummary == nil,
+               control.diagnostics.isEmpty,
+               control.journeyNodes.isEmpty,
+               control.sessionStoreStatus == nil,
+               control.memoryHealthStatus == nil {
+                emptyState(icon: .stethoscope, title: "Diagnostics unavailable", detail: "Refresh Settings or reconnect Hermes to request read-only diagnostics.")
+            }
+        }
+        .task {
+            control.configEditor.onSaved = { model.refreshRuntimeConfiguration() }
+            model.refreshRuntimeConfiguration()
+            model.refreshRuntimeModelOptions()
+        }
+        .onChange(of: model.runtimeConfiguration) { _, configuration in
+            guard let configuration,
+                  let matching = model.runtimeModelOptions.first(where: { $0.model == configuration.model && $0.provider == configuration.provider }) else { return }
+            selectedModelID = matching.id
+        }
+        .onChange(of: model.runtimeModelOptions) { _, options in
+            guard let configuration = model.runtimeConfiguration else { return }
+            let matching = options.first { option in
+                option.model == configuration.model && option.provider == configuration.provider
+            }
+            guard let matching else { return }
+            selectedModelID = matching.id
+        }
+    }
+
+    var runtimeSettingsSection: some View {
+            settingsDisclosure(title: "Runtime configuration", subtitle: "Default model, tools, skills, and plugins", icon: .gearSix, isExpanded: $isRuntimeConfigurationExpanded) {
+            HStack {
+                settingsSubheading("Default model")
+                Spacer()
+                Button(action: { model.refreshRuntimeConfiguration() }) {
+                    if model.isLoadingRuntimeConfiguration {
+                        ProgressView().controlSize(.small).tint(Color.dockAccent)
+                    } else {
+                        DockIcon(.arrowsClockwise)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockAccent)
+                    }
+                }
+                .buttonStyle(.dockHover)
+                .disabled(model.isLoadingRuntimeConfiguration)
+            }
+
+            if model.isLoadingRuntimeConfiguration && model.runtimeConfiguration == nil {
+                HStack(spacing: 7) {
+                    ProgressView().controlSize(.small)
+                    Text("READING HERMES RUNTIME…").font(.system(size: 12)).tracking(0.6).foregroundStyle(Color.dockSecondaryText)
+                }
+            } else if let configuration = model.runtimeConfiguration {
+                diagnosticRow(label: "Model", value: configuration.model ?? "Not configured", color: configuration.model == nil ? Color.dockWarning : Color.dockSecondaryText)
+                diagnosticRow(label: "Provider", value: configuration.provider ?? "Not configured", color: configuration.provider == nil ? Color.dockWarning : Color.dockSecondaryText)
+                if model.runtimeModelOptions.isEmpty {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text("LOADING HERMES MODEL CATALOG…").font(.system(size: 12)).tracking(0.5).foregroundStyle(Color.dockSecondaryText)
+                    }
+                } else {
+                    DockMenu {
+                        ForEach(model.runtimeModelOptions) { option in
+                            Button {
+                                selectedModelID = option.id
+                            } label: {
+                                HStack {
+                                    Text(option.displayName)
+                                    if option.id == selectedModelID {
+                                        Ph.check.image()
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(selectedModelDisplayName)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            DockIcon(.caretUpDown)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.dockSecondaryText)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 36)
+                        .background(Color.dockControlSurface)
+                        .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorder, lineWidth: 0.5))
+                        .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
+                    }
+                    .buttonStyle(.dockHover)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .disabled(model.isLoadingRuntimeConfiguration)
+                    .onChange(of: selectedModelID) { _, id in
+                        guard let option = model.runtimeModelOptions.first(where: { $0.id == id }),
+                              option.model != configuration.model || option.provider != configuration.provider else { return }
+                        model.updateRuntimeModel(option)
+                    }
+                }
+                Text("Selection updates the saved default for new sessions. Use the session model picker in the chat header to override one conversation. During a running turn, Hermes applies changes to the next turn.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+                if let error = model.runtimeConfigurationError {
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockWarning)
+                }
+                if let path = configuration.configPath {
+                    Text(path)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Divider().overlay(Color.dockBorderLight)
+                settingsSubheading("EXECUTION")
+                if let turns = configuration.maxTurns {
+                    diagnosticRow(label: "Max turns", value: turns, color: Color.dockSecondaryText)
+                }
+                if let timeout = configuration.terminalTimeout {
+                    diagnosticRow(label: "Terminal timeout", value: "\(timeout)S", color: Color.dockSecondaryText)
+                }
+
+                Divider().overlay(Color.dockBorderLight)
+                settingsSubheading("INSTALLED SKILLS  ·  \(configuration.skills.count)")
+                configurationList(
+                    configuration.skills,
+                    empty: "No enabled skills reported by Hermes.",
+                    isExpanded: isShowingAllSkills,
+                    onToggle: { isShowingAllSkills.toggle() }
+                )
+
+                Divider().overlay(Color.dockBorderLight)
+                settingsSubheading("MCP SERVERS  ·  \(control.mcpInventoryAvailable ? control.mcpServers.count : configuration.mcpServers.count)")
+                if control.mcpInventoryAvailable {
+                    if control.mcpServers.isEmpty {
+                        Text("No MCP servers configured in Hermes.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockMetadataText)
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(control.mcpServers) { server in
+                                HStack(alignment: .top, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(server.name)
+                                            .font(.system(size: 12, weight: .semibold))
+                                            .foregroundStyle(Color.dockPrimaryText)
+                                        Text(server.tools == "all" ? server.transport : "\(server.transport)  ·  \(server.tools)")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockMetadataText)
+                                            .lineLimit(2)
+                                    }
+                                    Spacer(minLength: 0)
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text(server.isEnabled ? "Enabled" : "Disabled")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(Color.dockSecondaryText)
+                                        if control.capabilityAvailable("mcp.test") {
+                                            Button { control.testMCP(server) } label: {
+                                                DockActionLabel(
+                                                    title: "Test",
+                                                    pendingTitle: "Testing…",
+                                                    isPending: control.isActionPending(control.mcpTestActionID(server))
+                                                )
+                                            }
+                                                .buttonStyle(.dockHover)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundStyle(Color.dockAccent)
+                                                .disabled(control.isActionPending(control.mcpTestActionID(server)))
+                                        }
+                                    }
+                                }
+                                if let result = control.mcpTestResults[server.id] {
+                                    Text(result)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Color.dockMetadataText)
+                                        .lineLimit(2)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    configurationList(configuration.mcpServers, empty: "No MCP servers configured in Hermes.")
+                }
+                if model.sessionID != nil {
+                    Button { isShowingMCPReloadConfirmation = true } label: {
+                        DockActionLabel(
+                            title: "Reload MCP tools",
+                            pendingTitle: "Reloading…",
+                            isPending: control.isActionPending(control.reloadMCPActionID)
+                        )
+                    }
+                        .buttonStyle(.dockHover)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockAccent)
+                        .disabled(control.isActionPending(control.reloadMCPActionID))
+                }
+
+                Divider().overlay(Color.dockBorderLight)
+                settingsSubheading("COMMAND ALLOWLIST  ·  \(control.commandAllowlistEntries?.count ?? 0)")
+                if let entries = control.commandAllowlistEntries {
+                    if entries.isEmpty {
+                        Text("No always-allowed commands.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockMetadataText)
+                    } else {
+                        VStack(alignment: .leading, spacing: 5) {
+                            ForEach(entries, id: \.self) { pattern in
+                                Text(pattern)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Color.dockPrimaryText)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    Text("Edit in Safety → Command Allowlist.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .textSelection(.enabled)
+                } else {
+                    Text("Command allowlist is temporarily unavailable.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
+                }
+
+                if !configuration.plugins.isEmpty {
+                    Divider().overlay(Color.dockBorderLight)
+                    settingsSubheading("ENABLED PLUGINS  ·  \(configuration.plugins.count)")
+                    configurationList(configuration.plugins, empty: "")
+                }
+            } else {
+                emptyState(icon: .warning, title: "Runtime unavailable", detail: "Hermes configuration could not be read. Start Hermes, then refresh.")
+            }
+            }
+    }
+
+    var generalPreferencesSection: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            SettingsSection(title: "Restart", subtitle: "Herm and Hermes gateway", tint: .dockAccent) {
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Circle().fill(Color.dockSuccess).frame(width: 7, height: 7).accessibilityHidden(true)
+                            Text("Herm")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.dockPrimaryText)
+                            Spacer(minLength: 0)
+                            Button { isShowingDockRestartConfirmation = true } label: {
+                                Text("Restart Herm").frame(width: 140)
+                            }
+                            .buttonStyle(.dockPress)
+                            .font(.system(size: 12, weight: .medium))
+                            .disabled(agentUpdateService.isBusy)
+                        }
+                        Text("Relaunches the app and reloads the selected Codex account.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.dockSecondaryText)
+                    }
+                    Divider().overlay(Color.dockBorderLight)
+                    HermesGatewaySettingsView(service: control.gatewayService)
+                }
+            }
+            .confirmationDialog("Restart Herm?", isPresented: $isShowingDockRestartConfirmation) {
+                Button("Restart Herm", role: .destructive) { onRestartDock() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This closes the current Hermes backend and relaunches Herm. Unsaved draft text and the current session view will be cleared; the next chat will load the currently selected Codex account and global model.")
+            }
+            SettingsSection(title: "Startup", subtitle: "", tint: .dockAccent) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsPreferenceRow(title: "Open at login", detail: "Start Herm automatically when you sign in to this Mac.") {
+                        settingsSwitch(isOn: Binding(
+                            get: { opensAtLogin },
+                            set: { on in
+                                do { if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() } } catch {}
+                                opensAtLogin = SMAppService.mainApp.status == .enabled
+                            }
+                        ))
+                    }
+                }
+                .padding(.vertical, -8)
+                .onAppear { opensAtLogin = SMAppService.mainApp.status == .enabled }
+            }
+            SettingsSection(title: "Keyboard shortcuts", subtitle: "", tint: .dockAccent) {
+                VStack(alignment: .leading, spacing: 0) {
+                    SettingsPreferenceRow(title: "Open workspace", detail: "Open or hide the workspace from any app. It reopens compact or fullscreen, whichever you used last.") {
+                        shortcutPicker($workspaceShortcut, excluding: notchShortcut)
+                    }
+                    Divider().overlay(Color.dockBorderLight)
+                    SettingsPreferenceRow(title: "Notch quick view", detail: "Peek at tasks and quota in the notch from any app.") {
+                        shortcutPicker($notchShortcut, excluding: workspaceShortcut)
+                    }
+                }
+                .padding(.vertical, -8)
+            }
+        }
+    }
+
+    var notificationPreferencesSection: some View {
+        SettingsSection(title: "Notifications", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsPreferenceRow(title: "Completion alerts", detail: "Notify when Hermes finishes a request while Herm is hidden.") {
+                    settingsSwitch(isOn: Binding(
+                        get: { model.completionNotificationsEnabled },
+                        set: { model.setCompletionNotificationsEnabled($0) }
+                    ))
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Repository watch notifications", detail: "Notify when watched repository state changes.") {
+                    settingsSwitch(isOn: Binding(
+                        get: { commandCenterPreferences.repositoryNotificationsEnabled },
+                        set: { enabled in
+                            commandCenterPreferences.setRepositoryNotificationsEnabled(enabled)
+                            workflow.setRepositoryNotificationsEnabled(enabled)
+                        }
+                    ))
+                }
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    var sidebarPreferencesSection: some View {
+        SettingsSection(title: "Sidebar", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsPreferenceRow(title: "Show Kanban in sidebar", detail: "List the Kanban board in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsKanbanInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Pull requests in sidebar", detail: "List pull requests in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsPullRequestsInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Issues in sidebar", detail: "List GitHub issues in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsIssuesInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Office in sidebar", detail: "List the Office in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsOfficeInSidebar)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show Calendar in sidebar", detail: "List the work Calendar in the workspace side panel.") {
+                    settingsSwitch(isOn: $showsCalendarInSidebar)
+                }
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    var chatQuotaPreferencesSection: some View {
+        SettingsSection(title: "Quota in chat", subtitle: "", tint: .dockAccent) {
+            VStack(alignment: .leading, spacing: 0) {
+                SettingsPreferenceRow(title: "Show quota beside the composer", detail: "Show the provider closest to its limit next to the context ring.") {
+                    settingsSwitch(isOn: $showsQuotaChip)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Quota drop banner", detail: "Show a banner over the chat each time a provider drops another 10%.") {
+                    settingsSwitch(isOn: $showsQuotaDropBanner)
+                }
+            }
+            .padding(.vertical, -8)
+        }
+    }
+
+    /// Each modifier drives at most one shortcut, so the other's choice is hidden.
+    func shortcutPicker(_ selection: Binding<DoubleTapShortcut>, excluding other: DoubleTapShortcut) -> some View {
+        let label = { (option: DoubleTapShortcut) in option.keycap.map { "\(option.title)  \($0)" } ?? option.title }
+        return DockMenuPicker(title: label(selection.wrappedValue), selection: selection) {
+            ForEach(DoubleTapShortcut.allCases.filter { $0 == .off || $0 != other }) { option in
+                DockMenuOption(label(option), value: option)
+            }
+        }
+    }
+
+    func settingsSwitch(isOn: Binding<Bool>) -> some View {
+        Toggle("", isOn: isOn)
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .tint(Color.dockAccent)
+    }
+
+    var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if notchSide == .top {
+                SettingsInlineNotice(text: "The top island notch uses the Island skin. Switch the notch position to Side to choose another skin.", tint: Color.dockAccent)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
+                let skins = control.appearanceProjection?.skins ?? []
+                let hermOptions = DockThemeID.hermOnly.map { DockAppearanceOption(themeID: $0, hermesSkin: nil) }
+                ForEach(hermOptions + DockAppearanceCatalog.installedOptions(installedSkins: skins)) { option in
+                    themeOption(option)
+                }
+            }
+            .disabled(notchSide == .top)
+            .opacity(notchSide == .top ? 0.5 : 1)
+            if !control.appearanceProjectionAvailable {
+                SettingsInlineNotice(text: "Hermes skin status unavailable. Refresh Settings to retry.", tint: Color.dockWarning)
+            } else if let projection = control.appearanceProjection {
+                let unknownSkins = DockAppearanceCatalog.unknownSkins(projection.skins)
+                if !unknownSkins.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        settingsSubheading("Other Hermes skins")
+                        ForEach(unknownSkins, id: \.id) { skin in
+                            HStack(spacing: 8) {
+                                Circle().fill(skin.isActive ? Color.dockAccent : Color.dockMetadataText).frame(width: 6, height: 6)
+                                Text(skin.name).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                                Spacer()
+                                Text("No Herm palette")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.dockMetadataText)
+                            }
+                            .frame(minHeight: 36)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func themeOption(_ option: DockAppearanceOption) -> some View {
+        let theme = option.themeID
+        let selected = dockThemeStore.selectedThemeID == theme
+        let modeLabel = theme.appearance == .light ? "Light" : theme.appearance == .dark ? "Dark" : "System"
+        return Button {
+            withAnimation(.dockEase(duration: 0.16)) { dockThemeStore.selectedThemeID = theme }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                DockSkinSpecimen(theme: theme)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text(theme.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.dockPrimaryText)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        DockIcon(.check)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Color.dockAccent)
+                            .opacity(selected ? 1 : 0)
+                    }
+                    Text(theme.signature)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(modeLabel)
+                        if option.isHermesActive {
+                            Text("·")
+                            Text("Active in Hermes").foregroundStyle(Color.dockSecondaryText)
+                        }
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockMetadataText)
+                    .lineLimit(1)
+                }
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .fill(selected ? Color.dockSurface4 : Color.dockSurface2.opacity(0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                    .stroke(selected ? Color.dockAccent.opacity(0.6) : Color.dockBorderLight, lineWidth: selected ? 1 : 0.5)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.dockHover)
+        .help(theme.detail)
+        .accessibilityLabel("\(theme.title), \(theme.signature), \(modeLabel)\(option.isHermesActive ? ", active in Hermes" : "")")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    var emergencyStopSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                DockIcon(control.emergencyStopActive == true ? .pauseCircle : .playCircle)
+                    .foregroundStyle(control.emergencyStopActive == true ? Color.dockWarning : Color.dockSecondaryText)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(control.emergencyStopActive == true ? "New work paused" : control.emergencyStopActive == false ? "Dispatch resumed" : "Dispatch status unknown")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text(control.emergencyStopMessage ?? "Pause or resume records this Herm action; Hermes does not expose a stable ESTOP status contract.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    if control.emergencyStopActive == true {
+                        isShowingEmergencyResumeConfirmation = true
+                    } else {
+                        isShowingEmergencyStopConfirmation = true
+                    }
+                } label: {
+                    DockActionLabel(
+                        title: control.emergencyStopActive == true ? "Resume" : "Pause",
+                        pendingTitle: "Updating…",
+                        isPending: control.isActionPending(control.emergencyStopActionID),
+                        tint: control.emergencyStopActive == true ? .dockSecondaryText : .dockWarning
+                    )
+                }
+                .buttonStyle(.dockHover)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(control.emergencyStopActive == true ? Color.dockSecondaryText : Color.dockWarning)
+                .disabled(control.isActionPending(control.emergencyStopActionID))
+            }
+        }
+    }
+
+    var coreOverview: some View {
+        HStack(spacing: 0) {
+            coreSummaryMetric(
+                title: "READY",
+                value: capabilityInventorySnapshot.states.isEmpty ? "—" : "\(capabilityInventorySnapshot.verifiedCount)/\(capabilityInventorySnapshot.totalCount)",
+                color: capabilityInventorySnapshot.states.isEmpty ? .dockSecondaryText : .dockSuccess
+            )
+            coreSummaryMetric(
+                title: "SESSION",
+                value: model.sessionID == nil ? "None" : "Active",
+                color: model.sessionID == nil ? .dockSecondaryText : .dockAccent
+            )
+            coreSummaryMetric(
+                title: "NEEDS YOU",
+                value: "\(control.attention.filter { $0.state == .open }.count)",
+                color: control.attention.contains(where: { $0.state == .open }) ? .dockWarning : .dockSuccess
+            )
+        }
+        .padding(.vertical, 2)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
+    }
+
+    var settingsCommandBar: some View {
+        HStack(spacing: 12) {
+            Text("Control surface")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.dockMetadataText)
+                .tracking(0.7)
+            Spacer()
+            Toggle("Repository watch notifications", isOn: Binding(
+                get: { commandCenterPreferences.repositoryNotificationsEnabled },
+                set: { enabled in
+                    commandCenterPreferences.setRepositoryNotificationsEnabled(enabled)
+                    workflow.setRepositoryNotificationsEnabled(enabled)
+                }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .tint(Color.dockAccent)
+            Button { control.refresh(); Task { await control.configEditor.load() } } label: {
+                DockIcon(.arrowsClockwise)
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .buttonStyle(.dockHover)
+            .foregroundStyle(Color.dockAccent)
+            .accessibilityLabel("Refresh Settings")
+        }
+        .padding(.vertical, 2)
+    }
+
+    func coreSummaryMetric(title: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(Color.dockMetadataText)
+                .tracking(0.6)
+            Text(value)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 10)
+    }
+
+    func settingsDisclosure<Content: View>(
+        title: String,
+        subtitle: String,
+        icon: Ph,
+        isExpanded: Binding<Bool>,
+        tint: Color = .dockAccent,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        SettingsSection(title: title, subtitle: subtitle, tint: tint) {
+            content()
+        }
+    }
+
+    func settingsCategoryDisclosure<Content: View>(
+        title: String,
+        count: Int,
+        readyCount: Int,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.dockEase(duration: 0.18)) {
+                    isExpanded.wrappedValue.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.dockMetadataText)
+                    Spacer()
+                    Text("\(readyCount) ready")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(readyCount == count ? Color.dockMetadataText : Color.dockWarning)
+                    DockIcon(isExpanded.wrappedValue ? .caretUp : .caretDown)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color.dockSecondaryText)
+                        .frame(width: 18, height: 26)
+                }
+                .foregroundStyle(Color.dockPrimaryText)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.dockHover)
+            if isExpanded.wrappedValue {
+                content()
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
+            }
+        }
+    }
+
+    func capabilityCategoryExpansionBinding(for category: CapabilityCategory) -> Binding<Bool> {
+        Binding(
+            get: { expandedSettingsCapabilityCategories.contains(category) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedSettingsCapabilityCategories.insert(category)
+                } else {
+                    expandedSettingsCapabilityCategories.remove(category)
+                }
+            }
+        )
+    }
+
+    var quotaContent: some View {
+        QuotaWorkspaceView(control: control)
+    }
+
+    func sectionLabel(_ title: String) -> some View {
+        Text(title == title.uppercased() ? title.lowercased().capitalized : title)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(Color.dockSectionText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 16)
+            .padding(.bottom, 10)
+            .overlay(alignment: .bottom) {
+                Color.dockBorderLight.frame(height: 0.5)
+            }
+    }
+
+    /// In-card subheading. Groups inside a settings card separate with a
+    /// divider above; the label itself stays quiet.
+    func settingsSubheading(_ title: String) -> some View {
+        Text(title == title.uppercased() ? title.lowercased().capitalized : title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Color.dockSecondaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    func projectionRefreshNotice(_ projection: String) -> some View {
+        if let state = control.refreshState(for: projection) {
+            if state.isRefreshing {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(state.isStale ? "Refreshing — showing last successful data" : "Refreshing…")
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Color.dockMetadataText)
+            } else if let error = state.error {
+                Text(state.isStale ? "Showing last successful data. \(error)" : error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.dockWarning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    func agentRow(_ agent: HermesSubagent, expanded: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Circle()
+                .fill(nativeAgentColor(agent.status))
+                .frame(width: 7, height: 7)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(agent.goal)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.dockPrimaryText)
+                    .lineLimit(expanded ? 4 : 2)
+                if let role = agent.role {
+                    Text("ROLE  \(role.uppercased())\(agent.sourceSkill.map { "  ·  \($0)" } ?? "")")
+                        .font(.system(size: 12, weight: .semibold))
+                        .tracking(0.35)
+                        .foregroundStyle(Color.dockAccent)
+                }
+                Text("\(agent.status.uppercased())  ·  \(agent.toolCount) TOOLS\(agent.model.map { "  ·  \($0.uppercased())" } ?? "")")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(0.4)
+                    .foregroundStyle(nativeAgentColor(agent.status))
+                if expanded, let latest = agent.latestActivity {
+                    Text(latest)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.dockMetadataText)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+        .overlay(alignment: .bottom) { Color.dockBorderLight.opacity(0.7).frame(height: 0.5) }
+    }
+
+    func eventRow(_ event: AgentEvent) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text("•")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Color.dockAccent.opacity(0.75))
+                .frame(width: 13)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.type.uppercased()).font(.system(size: 12, weight: .semibold)).tracking(0.35).foregroundStyle(Color.dockSecondaryText)
+                Text(event.detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText).lineLimit(2)
+            }
+        }
+    }
+
+    func diagnosticRow(label: String, value: String, color: Color) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label == label.uppercased() ? label.prefix(1) + label.dropFirst().lowercased() : label)
+                .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+            Spacer(minLength: 12)
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 5, height: 5)
+                Text(value).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText).lineLimit(1).truncationMode(.middle)
+            }
+        }
+    }
+
+    var selectedModelDisplayName: String {
+        model.runtimeModelOptions.first(where: { $0.id == selectedModelID })?.displayName
+            ?? model.runtimeConfiguration.map { "\($0.provider ?? "provider")  /  \($0.model ?? "model")" }
+            ?? "Select Hermes model"
+    }
+
+    func configurationList(
+        _ values: [String],
+        empty: String,
+        isExpanded: Bool = false,
+        onToggle: (() -> Void)? = nil
+    ) -> some View {
+        let visibleValues = isExpanded ? values : Array(values.prefix(8))
+
+        return VStack(alignment: .leading, spacing: 6) {
+            if values.isEmpty {
+                Text(empty)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.dockMetadataText)
+            } else {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(minimum: 0), alignment: .leading),
+                        GridItem(.flexible(minimum: 0), alignment: .leading)
+                    ],
+                    alignment: .leading,
+                    spacing: 8
+                ) {
+                    ForEach(Array(visibleValues.enumerated()), id: \.offset) { _, value in
+                        HStack(spacing: 7) {
+                            Circle().fill(Color.dockAccent.opacity(0.65)).frame(width: 4, height: 4)
+                            Text(value)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.dockPrimaryText)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                if values.count > 8 {
+                    if let onToggle {
+                        Button(action: onToggle) {
+                            HStack(spacing: 4) {
+                                DockIcon(isExpanded ? .caretUp : .caretDown)
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text(isExpanded ? "SHOW FEWER" : "SHOW ALL \(values.count) SKILLS")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Color.dockAccent)
+                        }
+                        .buttonStyle(.dockHover)
+                        .accessibilityLabel(isExpanded ? "Show fewer skills" : "Show all \(values.count) skills")
+                    } else {
+                        Text("+ \(values.count - 8) MORE")
+                            .font(.system(size: 12, weight: .semibold))
+                            .tracking(0.65)
+                            .foregroundStyle(Color.dockMetadataText)
+                    }
+                }
+            }
+        }
+    }
+
+    func capabilityRow(icon: Ph, title: String, detail: String, state: String, color: Color) -> some View {
+        HStack(spacing: 8) {
+            DockIcon(icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 14)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+                Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockMetadataText)
+            }
+            Spacer(minLength: 3)
+            Text(state).font(.system(size: 12, weight: .semibold)).tracking(0.45).foregroundStyle(color)
+        }
+    }
+
+    var latestModelName: String? {
+        model.messages.reversed().compactMap(\.modelName).first
+    }
+
+    func emptyState(icon: Ph, title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            DockIcon(icon).foregroundStyle(Color.dockMetadataText)
+            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockPrimaryText)
+            Text(detail).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    func nativeAgentColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "running", "finalizing": .dockAccent
+        case "complete", "completed": .dockSuccess
+        case "blocked", "stalled", "error": .dockWarning
+        default: .dockSecondaryText
+        }
+    }
+
+    var statusColor: Color {
+        switch model.status {
+        case .idle: .dockSuccess
+        case .working: .dockAccent
+        case .needsApproval: .dockWarning
+        case .needsClarification: .dockWarning
+        case .offline: .dockDestructive
+        }
+    }
+}
