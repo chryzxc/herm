@@ -15,7 +15,7 @@ final class ComposerLayoutTests: XCTestCase {
     }
 
     func testIdleComposerHeightFitsCompactTarget() {
-        XCTAssertEqual(ComposerLayout.idleHeight, 100)
-        XCTAssertTrue((92...100).contains(Int(ComposerLayout.idleHeight)))
+        XCTAssertEqual(ComposerLayout.idleHeight, 88)
+        XCTAssertTrue((80...100).contains(Int(ComposerLayout.idleHeight)))
     }
 }

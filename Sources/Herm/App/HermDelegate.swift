@@ -134,6 +134,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
             placement: { [weak edge] in edge?.placement },
             onWillShow: { [weak edge] in edge?.prepareForWorkspace() },
             onHide: { [weak edge] in edge?.restoreNotch() })
+        dockPanel?.showIslandStatus(edge.state, openTask: { [weak edge] in edge?.openTask($0) })
         let window = DockWindowController(model: model, controlCenter: controlCenter)
         dockWindow = window
         dockPanel?.openWindow = { [weak window] in window?.open() }
@@ -702,6 +703,11 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         if isWorkspaceVisible {
             resizePanel(to: desiredWidth, animated: true)
         }
+    }
+
+    func showIslandStatus(_ state: EdgeNotchState, openTask: @escaping (EdgeNotchTask) -> Void) {
+        panelPresentation.islandStatus = state
+        panelPresentation.openIslandTask = openTask
     }
 
     @discardableResult

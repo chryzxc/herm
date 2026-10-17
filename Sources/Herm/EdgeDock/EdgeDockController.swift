@@ -13,7 +13,7 @@ final class EdgeDockController: NSObject {
     private let openQuota: () -> Void
     private let openKanban: (KanbanTaskSummary) -> Void
     private let openDock: () -> Void
-    private let state: EdgeNotchState
+    let state: EdgeNotchState
     private var petWindow: HermesPetWindow?
     private var subscriptions = Set<AnyCancellable>()
     private var interactionMonitors: [Any] = []
@@ -353,7 +353,7 @@ final class EdgeDockController: NSObject {
         openDock()
     }
 
-    private func openTask(_ task: EdgeNotchTask) {
+    func openTask(_ task: EdgeNotchTask) {
         guard !dragging, Date() >= suppressClickUntil else { return }
         if let routine = task.routine { state.routineTarget = routine; return }
         if let card = task.kanbanTask {
@@ -1676,6 +1676,8 @@ struct EdgeNotchView: View {
                                 openDock: openDock, openTask: onOpenTask)
             }
         }
+        // The header row normally fills the camera band; a glimpse hides it, so clear the camera itself.
+        .padding(.top, state.glimpsing && isIsland ? state.notchSize.height : 0)
     }
 
     private func resultPreview(_ target: EdgeResultTarget, model quickMessageModel: DockModel) -> some View {

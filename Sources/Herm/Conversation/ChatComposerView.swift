@@ -190,6 +190,9 @@ struct ChatComposerView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
+            PinnedWorkStrip(model: model)
+            if let controlCenter { RunningProcessesStrip(control: controlCenter, isTurnActive: isResponding) }
+
             if !queuedPrompts.isEmpty {
                 QueuedPromptList(model: model, prompts: queuedPrompts)
             }
@@ -260,8 +263,6 @@ struct ChatComposerView: View {
             // proposal while its intrinsic text height changes. Mask the
             // complete input surface as a final paint boundary.
             .clipShape(DockThemeShape(cornerRadius: DockSkinPresentation.current.composerRadius, role: .pane))
-
-            if let controlCenter { RunningProcessesStrip(control: controlCenter) }
 
             // Image Attachment Previews (if any images are pending)
             if !model.pendingImages.isEmpty {
@@ -374,7 +375,7 @@ struct ChatComposerView: View {
                                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                     .fill(DockSkinPresentation.current.composerControlFill)
                             )
-                            .frame(width: 44, height: 44)
+                            .frame(width: 32, height: 32)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.dockHover)
@@ -414,7 +415,7 @@ struct ChatComposerView: View {
                                     RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                                         .fill(dictation.isRecording ? Color.dockDestructive.opacity(0.14) : DockSkinPresentation.current.composerControlFill)
                                 )
-                                .frame(width: 44, height: 44)
+                                .frame(width: 32, height: 32)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.dockHover)
@@ -488,7 +489,7 @@ struct ChatComposerView: View {
                         }
                     }
                     .buttonStyle(.dockHover)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 32, height: 32)
                     .disabled(
                         model.isRestoringSession ||
                         model.isUpdatingSessionModel ||
@@ -532,7 +533,7 @@ struct ChatComposerView: View {
             .padding(.leading, 6)
             .padding(.trailing, 8)
             .padding(.top, 6)
-            .padding(.bottom, 0)
+            .padding(.bottom, 6)
             .background {
                 let skin = DockSkinPresentation.current
                 let shape = DockThemeShape(cornerRadius: skin.composerRadius, role: .pane)
@@ -588,7 +589,7 @@ struct ChatComposerView: View {
             RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                 .fill(DockSkinPresentation.current.composerControlFill)
         )
-        .frame(minHeight: 44, alignment: .center)
+        .frame(height: 32)
         .disabled(model.isUpdatingSessionModel)
         .help("Select model")
     }
@@ -621,7 +622,7 @@ struct ChatComposerView: View {
                 RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
                     .fill(DockSkinPresentation.current.composerControlFill)
             )
-            .frame(minHeight: 44)
+            .frame(height: 32)
             .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
@@ -1245,13 +1246,92 @@ private extension String {
     var displayBullets: String { replacingOccurrences(of: "(?m)^- ", with: "• ", options: .regularExpression) }
 }
 
+/// The AI's todo plan and running background tasks, pinned above the input.
+private struct PinnedWorkStrip: View {
+    @ObservedObject var model: DockModel
+    @State private var isExpanded = false
+
+    var body: some View {
+        let plan = model.todoPlan.flatMap { $0.sessionID == model.sessionID ? $0 : nil }
+            .flatMap { $0.done < $0.items.count || model.status == .working ? $0 : nil }
+        let tasks = model.currentSessionBackgroundTasks.filter { $0.status == .running }
+        if plan != nil || !tasks.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                if let plan {
+                    Button { withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() } } label: {
+                        HStack(spacing: 6) {
+                            ZStack {
+                                Circle().stroke(Color.dockAccent.opacity(0.2), lineWidth: 2.5)
+                                Circle()
+                                    .trim(from: 0, to: CGFloat(plan.done) / CGFloat(max(1, plan.items.count)))
+                                    .stroke(Color.dockAccent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                                    .rotationEffect(.degrees(-90))
+                                    .animation(.spring(response: 0.5), value: plan.done)
+                            }
+                            .frame(width: 14, height: 14)
+                            Text("\(plan.done)/\(plan.items.count)" + (plan.current.map { " · \($0.content)" } ?? ""))
+                                .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
+                            DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.dockHover)
+                    if isExpanded {
+                        ForEach(Array(plan.items.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text(Self.mark(item.status)).font(.system(size: 11, design: .monospaced))
+                                Text(item.content).font(.system(size: 11)).lineLimit(2)
+                            }
+                            .foregroundStyle(item.status == "in_progress" ? Color.dockPrimaryText : Color.dockSecondaryText)
+                            .padding(.leading, 18)
+                        }
+                    }
+                }
+                ForEach(tasks) { task in
+                    HStack(spacing: 6) {
+                        DockActivityIndicator(state: .running, size: 12)
+                        Text(task.prompt).lineLimit(1).truncationMode(.tail)
+                            .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
+                        Text("background").font(.system(size: 10, design: .monospaced)).foregroundStyle(Color.dockMetadataText)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private static func mark(_ status: String) -> String {
+        switch status {
+        case "completed": "✓"
+        case "cancelled": "✕"
+        case "in_progress": "▸"
+        default: "○"
+        }
+    }
+}
+
 /// Hermes background terminal processes for the current session, with a stop button each.
 private struct RunningProcessesStrip: View {
     @ObservedObject var control: ControlCenterModel
+    var isTurnActive = false
     @State private var isExpanded = false
     @State private var pending: ProcessSummary?
 
     var body: some View {
+        content
+            // Processes outlive the turn that started them, so poll while a turn runs or any are listed.
+            .task(id: isTurnActive || !control.processes.isEmpty) {
+                guard isTurnActive || !control.processes.isEmpty else { return }
+                while !Task.isCancelled {
+                    await control.pollProcesses()
+                    try? await Task.sleep(for: .seconds(5))
+                }
+            }
+    }
+
+    @ViewBuilder private var content: some View {
         if !control.processes.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 Button { withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() } } label: {
