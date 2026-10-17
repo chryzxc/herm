@@ -1,6 +1,6 @@
 # Herm — Repo Map
 
-updated: 2026-09-15 · head: ba3719e
+updated: 2026-10-17 · head: 938aeb6 (+ folder restructure)
 
 ## Entry points
 
@@ -11,14 +11,18 @@ updated: 2026-09-15 · head: ba3719e
 ## Modules
 
 - `HermesRuntime/` — the Hermes boundary: `HermesControlRPC` (WebSocket JSON-RPC), `HermesCLIAdapter` (quoted-word Hermes CLI commands via `shell.exec`), `HermesCapabilityService` (fail-closed capability probes), `HermesFeatureContract` (feature IDs). All transport/process-launch concerns live here.
-- `Conversation/` — `DockModel` (the central presentation state machine), transcript views, composer, session surfaces (Chat/Talk/Explorer/Source Control/Pull Requests), session lifecycle guards.
-- `ControlCenter/` — Today/Inbox/Activity/Core surfaces, `ControlCenterModel`, Mission Control, Changes (Git projection + pre-commit signals), Verification Center.
+- `Conversation/` — `DockModel` (central presentation state machine; stored state + init in `DockModel.swift`, behaviour in `DockModel+<Feature>.swift` extensions), `DockPopover` (+ extensions, same pattern), Mission Control rail/queue/session rows, transcript views, composer, session lifecycle guards.
+- `ControlCenter/` — `ControlCenterModel` (same extension split), `WorkspaceActivitySidebar` (+ extensions per panel), command-center models, control-tower presentation.
+- `Settings/` — shared settings components (`SettingsCategory`, `SettingsSection`, rows).
+- `Kanban/`, `Calendar/`, `Office/` — kanban board, work calendar, and the 3D office scene.
+- `EdgeDock/` — edge dock, notch/island previews, quick message, result peek.
+- `DesignSystem/` — theme, component styles, icons (`PhosphorIcons`), modal/menu/hover primitives.
 - `Bots/` — Bot roster page, avatar presentation (stable FNV-1a fallback identity), bot editor, bot chat routing.
-- `Repository/` — GitHub remote discovery, pull-request center, code-host models.
-- `SessionWorkspace/` — session-scoped file explorer, blame-aware editor, source-control projection.
+- `Repository/` — GitHub remote discovery, pull-request center, source control, code editor.
+- `SessionWorkspace/` — session-scoped file explorer, browser, terminal, activity overview.
 - `Gateway/` — gateway state, connection health, recovery guidance.
 - `Workspace/` — `WorkspaceStore`: persistent local state (preferences, filters, cached metadata). Never a second copy of Hermes-owned data.
-- `Quota/` — provider quota adapters (Codex/OpenCode Go/GLM/Claude/Antigravity).
+- `Quota/` — provider quota adapters (Codex/OpenCode Go/GLM/Claude/Antigravity) plus the quota/usage/provider-connect views.
 - `Voice/` — native voice gateway preference + labelled local fallback.
 - `Security/`, `Recovery/`, `Operations/`, `Automation/`, `Profiles/`, `Knowledge/`, `Appearance/`, `Extensions/`, `Agents/`, `Configuration/`, `RuntimeTools/`, `Plans/` — supporting subsystems for their named concerns.
 
@@ -51,5 +55,6 @@ No databases. `WorkspaceStore` persists preferences/display state; transcripts a
 ## Known sharp edges
 
 - `OfficePreviewSimulationTests.routesConnectEveryActivityThroughWalkableSpace` currently fails (52 issues) — pre-existing debt in the office walking-mesh simulation; unrelated to kanban/runtime surfaces.
-- `DockModel` is the largest presentation type; new behavior goes into extracted testable helpers, not view types.
+- `DockModel` is still the largest presentation type (split across extension files, but one type); new behavior goes into extracted testable helpers, not view types. Members are internal (not `private`) so extensions can span files.
+- `ComposerQueueOrderingTests` is timing-sensitive: fails under parallel load, passes alone (pre-existing).
 - The Hermes engine install is upstream-managed and read-only; extend only via the user-state layer (see `~/.hermes/HARNESS.md`).

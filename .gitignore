@@ -20,3 +20,12 @@ graphify-out/
 
 # Local git worktrees
 .worktrees/
+
+# Internal working notes and dev-only scripts (kept locally, not pushed)
+HERMES_COMMAND_CENTER_CONTRACTS.md
+docs/*-audit.md
+docs/performance-followup-*.md
+docs/notch-app-icon.md
+docs/workflow-execution-progress.md
+docs/architecture-restructure-plan.md
+Scripts/check-workflow-runtime.sh

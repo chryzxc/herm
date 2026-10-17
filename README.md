@@ -382,7 +382,7 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 - Deleting bot profiles and connecting to Hermes on another machine (group chats are already available when supported by Hermes)
 - Merging and commenting on pull requests, force-pushing, and dispatching workflows (left out on purpose for now)
 
-Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. See [HERMES_COMMAND_CENTER_CONTRACTS.md](HERMES_COMMAND_CENTER_CONTRACTS.md) for runtime contracts; the feature descriptions above reflect the current frontend.
+Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
 
 ## Development
 
@@ -398,13 +398,7 @@ Local attachment previews decode off the UI thread and reuse bounded thumbnails;
 attachment uploads also prepare file data in the background. Explorer syntax
 scanning, review diffs and saves, and notch delivery-file polling also run in the
 background; terminal output renders directly without rebuilding SwiftUI chrome
-for every chunk. See the
-[performance audit](docs/performance-audit.md) for the measured fixes, regression
-coverage, and remaining interactive profiling work. The
-[October 15 follow-up](docs/performance-followup-2026-10-15.md) removes repeated
-Markdown prefix scans during streaming and reuses session timestamp formatters.
-The [navigation loading audit](docs/navigation-loading-audit.md) covers canceled
-PR/Issue loads, background PR parsing, and bounded Artifacts and repository loading.
+for every chunk.
 
 | Document | Purpose |
 |---|---|
@@ -412,7 +406,6 @@ PR/Issue loads, background PR parsing, and bounded Artifacts and repository load
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the code is structured |
 | [STANDARDS.md](STANDARDS.md) | Coding standards |
 | [AGENTS.md](AGENTS.md) | Guidance for AI-assisted contributions |
-| [HERMES_COMMAND_CENTER_CONTRACTS.md](HERMES_COMMAND_CENTER_CONTRACTS.md) | Hermes support required before each remaining feature can be added |
 
 ## Contributing
 
