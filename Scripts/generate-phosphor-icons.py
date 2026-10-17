@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Vendor Phosphor icon paths into Sources/Herm/Workspace/PhosphorIcons.swift.
+"""Vendor Phosphor icon paths into Sources/Herm/DesignSystem/PhosphorIcons.swift.
 
 Phosphor is the app's only icon family. The official Swift package ships an
 asset catalog, which `swift build` cannot compile, so the SVG path data is
@@ -25,7 +25,7 @@ SWIFT_KEYWORDS = {"repeat", "import", "return", "switch", "case", "default", "cl
                   "if", "else", "for", "while", "do", "in", "is", "as", "try", "throw", "true", "false", "nil", "self",
                   "super", "init", "operator", "protocol", "extension", "static", "where", "break", "continue", "defer",
                   "guard", "inout", "internal", "private", "public", "subscript", "typealias", "Type", "Any"}
-OUTPUT = pathlib.Path(__file__).resolve().parent.parent / "Sources/Herm/Workspace/PhosphorIcons.swift"
+OUTPUT = pathlib.Path(__file__).resolve().parent.parent / "Sources/Herm/DesignSystem/PhosphorIcons.swift"
 
 
 def case_name(slug: str) -> str:
