@@ -101,6 +101,40 @@ struct WorkspaceStoreTests {
         #expect(store.resolvedProjectPath(forSessionID: nil, hermesProjectPath: "/tmp/hermes-project") == nil)
     }
 
+    @Test func attachmentBeforeTaskCreationSurvivesSessionSynchronizationAndReload() async throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+
+        store.attachProject(at: "/tmp/session-project", toSessionID: "session-1")
+        store.ensureTask(title: "Restored title", sessionID: "session-1")
+        var restored = WorkspaceStore(fileURL: fixture.fileURL)
+        for _ in 0..<100 where restored.task(forSessionID: "session-1")?.title != "Restored title" {
+            try await Task.sleep(for: .milliseconds(10))
+            restored = WorkspaceStore(fileURL: fixture.fileURL)
+        }
+
+        #expect(restored.tasks.count == 1)
+        #expect(restored.task(forSessionID: "session-1")?.title == "Restored title")
+        #expect(restored.projectPath(forSessionID: "session-1") == "/tmp/session-project")
+        #expect(restored.projectPath(forSessionID: "other-session") == nil)
+    }
+
+    @Test func createdSessionFolderResolvesBeforeProjectMembershipArrives() throws {
+        let fixture = try WorkspaceFixture()
+        defer { fixture.remove() }
+        let store = WorkspaceStore(fileURL: fixture.fileURL)
+        store.attachProject(at: "/tmp/unrelated")
+
+        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: nil, createdSessionProjectPath: "/tmp/created") == "/tmp/created")
+        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: "Project name", createdSessionProjectPath: "/tmp/created") == "/tmp/created")
+        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: "/tmp/reported", createdSessionProjectPath: "/tmp/created") == "/tmp/reported")
+        #expect(store.resolvedProjectPath(forSessionID: nil, hermesProjectPath: nil, createdSessionProjectPath: "/tmp/created") == nil)
+        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: nil, createdSessionProjectPath: "relative") == nil)
+        store.attachProject(at: "/tmp/attached", toSessionID: "new")
+        #expect(store.resolvedProjectPath(forSessionID: "new", hermesProjectPath: "/tmp/reported", createdSessionProjectPath: "/tmp/created") == "/tmp/attached")
+    }
+
     @Test func migratesLegacySessionTasksAndCreatesOneBackup() throws {
         let fixture = try WorkspaceFixture()
         defer { fixture.remove() }

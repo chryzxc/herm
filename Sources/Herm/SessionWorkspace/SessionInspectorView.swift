@@ -26,7 +26,10 @@ struct SessionInspector: View {
     @State private var isShowingNewTab = false
     /// Extra Terminal/Browser instances opened from +. They stay mounted while
     /// another tab is selected so their shells and pages keep running.
-    @State private var extras: [ExtraTab] = []
+    @State private var terminalExtras: [ExtraTab] = []
+    @ObservedObject private var browsers = SessionBrowserStore.shared
+    @ObservedObject private var filePreview = FilePreviewCenter.shared
+    @State private var attachmentDiffID = UUID()
     @State private var selectedExtraID: UUID?
     /// Narrow panel: unselected tabs shrink to icons and + stays pinned.
     @State private var isCompactStrip = false
@@ -38,11 +41,21 @@ struct SessionInspector: View {
     private let sessionTabFont = Font.system(size: 12, weight: .semibold)
 
     private struct ExtraTab: Identifiable {
-        let id = UUID()
+        let id: UUID
         let kind: Section
         let number: Int
         /// Extra browsers belong to the session they were opened in; terminals are shared.
         var sessionID: String?
+    }
+
+    private var browserWorkspace: SessionBrowserWorkspace? {
+        model.browserSessionKey.map { browsers.workspace(for: $0) }
+    }
+
+    private var extras: [ExtraTab] {
+        terminalExtras + (browserWorkspace?.extras.enumerated().map {
+            ExtraTab(id: $0.element.id, kind: .browser, number: $0.offset + 2, sessionID: model.navigationSessionID)
+        } ?? [])
     }
 
     private enum Section: String, CaseIterable, Identifiable {
@@ -79,7 +92,7 @@ struct SessionInspector: View {
                 inspectorHeader
             }
             sessionModePicker
-            if selectedSection == .changes, let onSelectWorktree, workflow.repository.isGitRepository, !workflow.worktrees.isEmpty {
+            if selectedSection == .changes, filePreview.attachmentDiff == nil, let onSelectWorktree, workflow.repository.isGitRepository, !workflow.worktrees.isEmpty {
                 WorktreePicker(
                     worktrees: workflow.worktrees,
                     mainPath: sessionRootPath,
@@ -88,7 +101,7 @@ struct SessionInspector: View {
                 .overlay(alignment: .bottom) { Color.dockBorderLight.frame(height: 0.5) }
             }
 
-            if let workflowError = workflow.error {
+            if let workflowError = workflow.error, filePreview.attachmentDiff == nil {
                 HStack(spacing: 8) {
                     DockIcon(.warning)
                         .foregroundStyle(Color.dockWarning)
@@ -122,20 +135,29 @@ struct SessionInspector: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
-        .onAppear { if InAppBrowser.pending != nil { reopen(.browser) } }
-        .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { _ in reopen(.browser) }
-        .onChange(of: model.navigationSessionID, initial: true) { _, _ in
-            if let extra = extras.first(where: { $0.id == selectedExtraID }), !isVisible(extra) { selectedExtraID = nil }
-            if !openSections.contains(selectedSection), let first = openSections.first { selectedSection = first }
+        .onReceive(filePreview.$attachmentDiff) { changes in
+            if changes != nil {
+                attachmentDiffID = UUID()
+                reopen(.changes)
+            }
         }
-        .onChange(of: hasSessionGitRepository) { _, hasRepository in
-            if !hasRepository, selectedSection == .changes { selectedSection = .activity }
+        .onReceive(browsers.$presentation) { key in
+            guard let key, key == model.browserSessionKey else { return }
+            reopen(.browser)
+            // Published emits before assignment; consume after the request is stored.
+            Task { @MainActor in
+                if browsers.presentation == key { browsers.presentation = nil }
+            }
+        }
+        .onChange(of: model.browserSessionKey, initial: true) { _, _ in
+            if let id = selectedExtraID, !extras.contains(where: { $0.id == id }) { selectedExtraID = nil }
+            if !openSections.contains(selectedSection), let first = openSections.first { selectedSection = first }
         }
     }
 
     @ViewBuilder
     private var baseContent: some View {
-        if selectedSection == .terminal || selectedSection == .files || selectedSection == .browser {
+        if selectedSection == .terminal || selectedSection == .files || selectedSection == .browser || (selectedSection == .changes && filePreview.attachmentDiff != nil) {
             inspectorContent
                 .padding(.horizontal, 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -152,7 +174,10 @@ struct SessionInspector: View {
     @ViewBuilder
     private func extraContent(_ extra: ExtraTab) -> some View {
         if extra.kind == .browser {
-            SessionBrowserView(model: model, isPrimary: false)
+            if let workspace = browserWorkspace, let browser = workspace.extras.first(where: { $0.id == extra.id }) {
+                SessionBrowserView(model: model, workspace: workspace, browser: browser)
+                    .id(browser.id)
+            }
         } else {
             SessionTerminalView(
                 projectPath: sessionRepositoryPath,
@@ -166,36 +191,34 @@ struct SessionInspector: View {
     /// Opens another Terminal/Browser; the first one reuses the built-in tab.
     private func openNew(_ kind: Section) {
         if !openSections.contains(kind) { return reopen(kind) }
-        let sessionID = kind == .browser ? model.navigationSessionID : nil
-        let extra = ExtraTab(kind: kind, number: extras.filter { $0.kind == kind && $0.sessionID == sessionID }.count + 2,
-                             sessionID: sessionID)
-        extras.append(extra)
-        selectedExtraID = extra.id
+        if kind == .browser {
+            selectedExtraID = browserWorkspace?.addTab().id
+        } else {
+            let extra = ExtraTab(id: UUID(), kind: kind, number: terminalExtras.count + 2, sessionID: nil)
+            terminalExtras.append(extra)
+            selectedExtraID = extra.id
+        }
     }
 
     private func closeExtra(_ extra: ExtraTab) {
-        extras.removeAll { $0.id == extra.id }
+        if extra.kind == .browser { browserWorkspace?.closeTab(extra.id) }
+        else { terminalExtras.removeAll { $0.id == extra.id } }
         if selectedExtraID == extra.id { selectedExtraID = nil }
     }
 
-    /// Changes only makes sense when the session's folder is a Git working tree.
-    private var hasSessionGitRepository: Bool {
-        guard let sessionRepositoryPath, !sessionRepositoryPath.isEmpty else { return false }
-        return workflow.repository.isGitRepository && workflow.repository.path == sessionRepositoryPath
-    }
-
+    // Keep Source Control reachable while its repository snapshot loads or refreshes.
     private var visibleSections: [Section] {
-        hasSessionGitRepository ? [.activity, .terminal, .files, .changes, .browser] : [.activity, .terminal, .files, .browser]
+        [.activity, .terminal, .files, .changes, .browser]
     }
 
     private var browserSessions: [String] { browserSessionsRaw.split(separator: "|").map(String.init) }
 
     private var isBrowserOpenHere: Bool {
-        model.navigationSessionID.map(browserSessions.contains) ?? false
+        model.browserSessionKey.map { browserSessions.contains($0.profileDirectory) } ?? false
     }
 
     private func setBrowserOpenHere(_ open: Bool) {
-        guard let id = model.navigationSessionID else { return }
+        guard let id = model.browserSessionKey?.profileDirectory else { return }
         var ids = browserSessions.filter { $0 != id }
         if open { ids.append(id) }
         browserSessionsRaw = ids.suffix(50).joined(separator: "|")  // ponytail: drops the oldest past 50 sessions
@@ -215,6 +238,7 @@ struct SessionInspector: View {
 
     private func close(_ section: Section) {
         guard openSections.count > 1 else { return }
+        if section == .changes { filePreview.attachmentDiff = nil }
         if section == .browser { setBrowserOpenHere(false) } else { closedRaw += "|" + section.rawValue }
         if selectedSection == section, let next = openSections.first(where: { $0 != section }) { selectedSection = next }
     }
@@ -424,13 +448,18 @@ struct SessionInspector: View {
                 onRefresh: { await workflow.refresh(preferences: preferences, control: control) }
             )
         case .changes:
-            RepositoryChangesBrowser(
-                model: model,
-                workflow: workflow,
-                projectPath: sessionRepositoryPath,
-                onRefresh: { await workflow.refresh(preferences: preferences, control: control) },
-                isInspector: true
-            )
+            if let changes = filePreview.attachmentDiff {
+                ChatAttachmentDiffPreview(changes: changes) { filePreview.attachmentDiff = nil }
+                    .id(attachmentDiffID)
+            } else {
+                RepositoryChangesBrowser(
+                    model: model,
+                    workflow: workflow,
+                    projectPath: sessionRepositoryPath,
+                    onRefresh: { await workflow.refresh(preferences: preferences, control: control) },
+                    isInspector: true
+                )
+            }
         case .terminal:
             SessionTerminalView(
                 projectPath: sessionRepositoryPath,
@@ -439,7 +468,10 @@ struct SessionInspector: View {
                 repositoryFingerprint: workflow.repositoryFingerprint
             )
         case .browser:
-            SessionBrowserView(model: model)
+            if let workspace = browserWorkspace {
+                SessionBrowserView(model: model, workspace: workspace)
+                    .id(workspace.primary.id)
+            }
         }
     }
 

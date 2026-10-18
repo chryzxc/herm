@@ -9,19 +9,15 @@ extension Notification.Name {
 /// to the system browser when no window hosts an inspector.
 @MainActor
 enum InAppBrowser {
-    static var pending: URL?
     /// Set synchronously by a host that received the open request.
     static var handled = false
 
     static func open(_ url: URL) {
         guard ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return ExternalOpen.open(url) }
-        pending = url
         handled = false
-        NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil)
-        if !handled { pending = nil; ExternalOpen.open(url) }
+        NotificationCenter.default.post(name: .hermOpenInBrowser, object: url)
+        if !handled { ExternalOpen.open(url) }
     }
-
-    static func take() -> URL? { defer { pending = nil }; return pending }
 }
 
 /// Responsive-mode widths for the page.
@@ -127,14 +123,24 @@ enum BrowserPageMessage {
 /// send-page and console errors.
 struct SessionBrowserView: View {
     @ObservedObject var model: DockModel
-    /// Only the built-in Browser tab restores the last URL, receives chat links and hosts agent mode.
-    var isPrimary = true
-    @AppStorage("sessionInspector.browserURL") private var address = ""
+    let workspace: SessionBrowserWorkspace
+    let isPrimary: Bool
     @AppStorage("sessionInspector.browserViewport") private var viewportRaw = 0
-    @StateObject private var browser = BrowserController()
-    @ObservedObject private var agent = AgentBrowser.shared
+    @ObservedObject private var browser: BrowserController
+    @ObservedObject private var agent: AgentBrowser
     @State private var field = ""
     @FocusState private var isEditingAddress: Bool
+
+    init(model: DockModel, workspace: SessionBrowserWorkspace, browser: BrowserController? = nil) {
+        self.model = model
+        self.workspace = workspace
+        isPrimary = browser == nil
+        let controller = browser ?? workspace.primary
+        self.browser = controller
+        agent = workspace.agent
+        _field = State(initialValue: browser == nil && workspace.agent.isActive
+            ? workspace.agent.activePage?.url ?? controller.address : controller.currentURL ?? controller.address)
+    }
 
     private var showsAgent: Bool { isPrimary && agent.isActive }
     private var viewport: BrowserViewport { BrowserViewport(rawValue: viewportRaw) ?? .fit }
@@ -192,35 +198,28 @@ struct SessionBrowserView: View {
         }
         .onAppear {
             browser.model = model
+            field = pageURL.isEmpty ? browser.address : pageURL
             guard isPrimary else { return }
             agent.model = model
             agent.presetWidth = viewportRaw
             if !agent.isActive { agent.start() }  // opening the tab retries a failed browser
-            if let url = InAppBrowser.take() { open(url) }
-            else if !address.isEmpty, model.activeBrowserCall == nil,
-                    showsAgent ? (agent.activePage?.url ?? "about:blank") == "about:blank" : browser.web.url == nil {
-                go(address)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { _ in
-            guard isPrimary else { return }
-            if let url = InAppBrowser.take() { open(url) }
+            if !showsAgent { browser.loadAddressIfNeeded() }
         }
         .onReceive(browser.$currentURL) { url in
             guard let url, !showsAgent else { return }
             if !isEditingAddress { field = url }
-            if isPrimary { address = url }
+            browser.address = url
         }
-        .onReceive(agent.$pages) { _ in
-            guard showsAgent, let url = agent.activePage?.url else { return }
+        .onChange(of: agent.activePage, initial: true) { _, page in
+            guard showsAgent, let url = page?.url else { return }
             if !isEditingAddress { field = url }  // never clobber what you're typing
-            if url != "about:blank" { address = url }
+            if url != "about:blank" { browser.address = url }
         }
         .onChange(of: viewportRaw) { _, raw in if isPrimary { agent.presetWidth = raw } }
         .onChange(of: showsAgent) { _, agentMode in
             field = agentMode ? agent.activePage?.url ?? "" : browser.currentURL ?? ""
             // Agent browser failed to start: carry on in WebKit.
-            if !agentMode, browser.web.url == nil, !address.isEmpty { go(address) }
+            if !agentMode { browser.loadAddressIfNeeded() }
         }
     }
 
@@ -238,7 +237,7 @@ struct SessionBrowserView: View {
                 if showsAgent { agent.reload() } else { browser.web.reload() }
             }
             TextField(showsAgent ? "Agent browser address" : "Search or enter address", text: $field)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.dockGlass)
                 .frame(minWidth: 80)
                 .focused($isEditingAddress)
                 .onSubmit { go(field); isEditingAddress = false }
@@ -291,6 +290,7 @@ struct SessionBrowserView: View {
         let url = pageURL
         guard !url.isEmpty else { return }
         let selection = showsAgent ? await agent.selection() : await browser.selection()
+        guard model.browserSessionKey == workspace.key else { return }
         var body = "Regarding the page \(url)" + (pageTitle.isEmpty ? "" : " (\"\(pageTitle)\")")
         if !selection.isEmpty { body += "\nSelected text:\n> " + selection.replacingOccurrences(of: "\n", with: "\n> ") }
         let title = pageTitle.isEmpty ? (URL(string: url)?.host() ?? url) : pageTitle
@@ -306,7 +306,8 @@ struct SessionBrowserView: View {
     }
 
     private func open(_ url: URL) {
-        if showsAgent { agent.navigate(url) } else { browser.web.load(URLRequest(url: url)) }
+        if isPrimary { workspace.open(url) } else { browser.open(url) }
+        field = url.absoluteString
     }
 
     private func go(_ text: String) {
@@ -330,8 +331,11 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
 }
 
 @MainActor
-private final class BrowserController: NSObject, ObservableObject, WKNavigationDelegate {
+final class BrowserController: NSObject, ObservableObject, Identifiable, WKNavigationDelegate {
+    let id = UUID()
+    let key: SessionBrowserKey
     let web: WKWebView
+    var address = ""
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var currentURL: String?
@@ -339,8 +343,10 @@ private final class BrowserController: NSObject, ObservableObject, WKNavigationD
     @Published var annotating = false { didSet { if annotating != oldValue { applyAnnotating() } } }
     weak var model: DockModel?
 
-    override init() {
+    init(key: SessionBrowserKey, dataStore: WKWebsiteDataStore) {
+        self.key = key
         let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = dataStore
         // WKWebView's default UA has no Safari token, so sites like Google serve their no-JS page.
         configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"  // ponytail: fixed version, bump if sites start sniffing it
         web = WKWebView(frame: .zero, configuration: configuration)
@@ -357,6 +363,16 @@ private final class BrowserController: NSObject, ObservableObject, WKNavigationD
         web.navigationDelegate = self
     }
 
+    func open(_ url: URL) {
+        address = url.absoluteString
+        web.load(URLRequest(url: url))
+    }
+
+    func loadAddressIfNeeded() {
+        guard !address.isEmpty, let url = URL(string: address), web.url == nil || currentURL != address else { return }
+        open(url)
+    }
+
     /// Responsive presets wider than the panel zoom out so the page lays out at that width.
     func zoom(toFit width: Int, in available: CGFloat) {
         web.pageZoom = width > 0 && available > 0 ? min(1, available / CGFloat(width)) : 1
@@ -369,6 +385,7 @@ private final class BrowserController: NSObject, ObservableObject, WKNavigationD
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
+        if let url = webView.url { address = url.absoluteString }
         currentURL = webView.url?.absoluteString
         applyAnnotating()
     }
@@ -387,7 +404,7 @@ private final class BrowserController: NSObject, ObservableObject, WKNavigationD
             Task {
                 let image = await snapshot(annotation.rect)
                 evaluate("window.__hermAnnotate?.done()")
-                if let model { BrowserAnnotation.deliver(annotation.context, image: image, to: model) }
+                if let model, model.browserSessionKey == key { BrowserAnnotation.deliver(annotation.context, image: image, to: model) }
             }
         case nil:
             break

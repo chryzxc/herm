@@ -180,7 +180,7 @@ struct SessionProjectRequiredState: View {
             }
             if let onSelectProject {
                 Button("Choose project folder", action: onSelectProject)
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockAccent)
             }

@@ -158,7 +158,7 @@ struct SessionBotActivityView: View {
                     }
                     if let bot = botMode.visibleBots.first(where: { $0.id == record.botID }) {
                         Button("OPEN IN BOT CHAT") { onOpenBotChat?(bot) }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color.dockAccent)
                     }

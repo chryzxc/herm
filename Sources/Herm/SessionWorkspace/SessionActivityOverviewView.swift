@@ -256,21 +256,13 @@ struct SessionActivityOverviewView: View {
         var id: Self { self }
     }
 
-    private enum AgentView: String, CaseIterable, Identifiable {
-        case list = "List"
-        case map = "Map"
-        var id: Self { self }
-    }
-
     @State private var agentScope = AgentScope.live
-    @State private var agentView = AgentView.list
     @State private var expandedAgentID: String?
     @State private var expandedTimelineIDs: Set<String> = []
     @State private var expandedWorkIDs: Set<String> = []
     private static let pageSize = 10
     @State private var timelineLimit = pageSize
     @State private var laneLimits: [SessionActivityOverviewPresentation.Lane: Int] = [:]
-    @State private var selectedAgentID: String?
     @State private var expandedCardIDs: Set<String> = []
     @State private var cardDetails: [String: KanbanTaskDetail] = [:]
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -403,20 +395,15 @@ struct SessionActivityOverviewView: View {
 
     private func agentsSection(_ snapshot: SessionActivityOverviewPresentation.Snapshot) -> some View {
         let visibleAgents = agentScope == .all ? snapshot.agents : snapshot.agents.filter(\.isLive)
-        let visibleIDs = Set(visibleAgents.map(\.id))
         return VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Agents", detail: "") {
                 DockMenu {
                     DockMenuChoices(selection: $agentScope) {
                         ForEach(AgentScope.allCases) { DockMenuOption($0.rawValue, value: $0) }
                     }
-                    Divider()
-                    ForEach(AgentView.allCases) { view in
-                        Button(view.rawValue) { agentView = view }
-                    }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(agentView.rawValue)
+                        Text(agentScope.rawValue)
                         DockIcon(.caretDown)
                             .font(.system(size: 9, weight: .semibold))
                     }
@@ -425,17 +412,9 @@ struct SessionActivityOverviewView: View {
                     .frame(minWidth: 58, minHeight: 32)
                     .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Agent view: \(agentView.rawValue)")
+                .accessibilityLabel("Agent scope: \(agentScope.rawValue)")
             }
-            if agentView == .map {
-                AgentHandoffMapView(
-                    model: model,
-                    selectedAgentID: $selectedAgentID,
-                    allowsContinuousAnimation: !reduceMotion,
-                    agents: model.agentPresentationSnapshot.displayedSubagents.filter { visibleIDs.contains($0.id) }
-                )
-                .frame(minHeight: 320, maxHeight: 460)
-            } else if visibleAgents.isEmpty {
+            if visibleAgents.isEmpty {
                 compactEmpty("No agents in this scope.")
             } else {
                 LazyVStack(spacing: 0) {
@@ -700,11 +679,11 @@ struct SessionActivityOverviewView: View {
                     Text(exhausted ? "Show less" : "Show \(min(Self.pageSize, total - limit)) more")
                     DockIcon(exhausted ? .caretUp : .caretDown)
                 }
-                .font(.system(size: 11, weight: .medium))
+                .font(DockTypography.control)
                 .foregroundStyle(Color.dockAccent)
                 .frame(minHeight: 44, alignment: .leading)
             }
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockLink)
         }
     }
 

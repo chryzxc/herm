@@ -8,7 +8,9 @@ import SwiftUI
 /// and take over with the mouse and keyboard.
 @MainActor
 final class AgentBrowser: ObservableObject {
-    static let shared = AgentBrowser()
+    let key: SessionBrowserKey
+    private static var connectionTask: Task<Void, Never>?
+    private static var preferredPortOwner: SessionBrowserKey?
     private static let world = "herm"
 
     enum State: Equatable { case off, starting, running, failed(String) }
@@ -57,13 +59,19 @@ final class AgentBrowser: ObservableObject {
     /// Starting or running: the Browser tab shows the agent view (a failure falls back to WebKit).
     var isActive: Bool { state == .starting || state == .running }
     /// Navigation requested before the browser finished starting.
-    private var pendingURL: URL?
+    private(set) var pendingURL: URL?
     private var cdpURL: String?
 
     /// A restarted Hermes gateway forgets the connection; point it back at this browser.
     func reconnectHermes() {
         guard state == .running, let cdpURL, let model else { return }
-        Task { try? await model.setHermesBrowser(cdpURL: cdpURL) }
+        let previous = Self.connectionTask
+        Self.connectionTask = Task { [weak self] in
+            await previous?.value
+            guard let self, model.browserSessionKey == key, state == .running, self.cdpURL == cdpURL else { return }
+            do { try await model.setHermesBrowser(cdpURL: cdpURL) }
+            catch { if model.browserSessionKey == key { fail(error.localizedDescription) } }
+        }
     }
 
     private var process: Process?
@@ -75,9 +83,10 @@ final class AgentBrowser: ObservableObject {
     private var backingScale: CGFloat = 2
     private var viewportTask: Task<Void, Never>?
 
-    private init() {
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { AgentBrowser.shared.process?.terminate() }
+    init(key: SessionBrowserKey) {
+        self.key = key
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.process?.terminate() }
         }
     }
 
@@ -88,7 +97,7 @@ final class AgentBrowser: ObservableObject {
         state = .starting
         Task {
             do {
-                guard let model else { throw Self.error("No Hermes session is available.") }
+                guard model != nil else { throw Self.error("No Hermes session is available.") }
                 let endpoint = try await launch()
                 let cdp = CDPConnection(url: endpoint.ws)
                 cdp.onEvent = { [weak self] method, params, session in self?.handle(method, params, session) }
@@ -105,8 +114,8 @@ final class AgentBrowser: ObservableObject {
                     try await attach(id)
                 }
                 cdpURL = "http://127.0.0.1:\(endpoint.port)"
-                try await model.setHermesBrowser(cdpURL: cdpURL)
                 state = .running
+                reconnectHermes()
                 if let url = pendingURL { pendingURL = nil; navigate(url) }
             } catch {
                 fail(error.localizedDescription)
@@ -116,7 +125,12 @@ final class AgentBrowser: ObservableObject {
 
     func stop() {
         let model = model
-        Task { try? await model?.setHermesBrowser(cdpURL: nil) }
+        let previous = Self.connectionTask
+        Self.connectionTask = Task {
+            await previous?.value
+            guard model?.browserSessionKey == key else { return }
+            try? await model?.setHermesBrowser(cdpURL: nil)
+        }
         teardown()
         state = .off
     }
@@ -170,7 +184,7 @@ final class AgentBrowser: ObservableObject {
     private func launch() async throws -> Endpoint {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support", isDirectory: true)
-        let profile = support.appendingPathComponent("Herm/AgentBrowser", isDirectory: true)
+        let profile = support.appendingPathComponent("Herm/AgentBrowser/\(key.profileDirectory)", isDirectory: true)
         try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
         let portFile = profile.appendingPathComponent("DevToolsActivePort")
         // A browser left running by an earlier Herm keeps the profile locked; reuse it.
@@ -181,7 +195,12 @@ final class AgentBrowser: ObservableObject {
         }
         // A fixed port lets other CDP clients (e.g. chrome-devtools-mcp --browserUrl) share
         // this browser; fall back to any free port when something else holds it.
-        let busy = (try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(Self.preferredPort)/json/version")!)) != nil
+        // Reserve before probing: two sessions can launch before either Chrome is listening.
+        if Self.preferredPortOwner == nil { Self.preferredPortOwner = key }
+        let busy: Bool
+        if Self.preferredPortOwner == key {
+            busy = (try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(Self.preferredPort)/json/version")!)) != nil
+        } else { busy = true }
         let process = Process()
         process.executableURL = executable
         process.arguments = [
@@ -271,6 +290,7 @@ final class AgentBrowser: ObservableObject {
         _ = try await cdp.send("Runtime.enable", session: sid)
         applyAnnotating()
         try await applyViewport()
+        if state == .running, let url = pendingURL { navigate(url) }
     }
 
     func resize(to size: CGSize, scale: CGFloat) {
@@ -396,7 +416,7 @@ final class AgentBrowser: ObservableObject {
             Task {
                 let image = await screenshot(annotation)
                 evaluate("window.__hermAnnotate?.done()")
-                if let model { BrowserAnnotation.deliver(annotation.context, image: image, to: model) }
+                if let model, model.browserSessionKey == key { BrowserAnnotation.deliver(annotation.context, image: image, to: model) }
             }
         case nil:
             break
@@ -430,7 +450,9 @@ final class AgentBrowser: ObservableObject {
     // MARK: Navigation and input
 
     func navigate(_ url: URL) {
-        if state == .running { fire("Page.navigate", ["url": url.absoluteString]) } else { pendingURL = url }
+        guard state == .running, sessionID != nil else { pendingURL = url; return }
+        pendingURL = nil
+        fire("Page.navigate", ["url": url.absoluteString])
     }
     func answerDialog(accept: Bool, text: String? = nil) {
         var params: [String: Any] = ["accept": accept]

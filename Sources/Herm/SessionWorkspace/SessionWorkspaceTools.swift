@@ -168,11 +168,11 @@ struct SessionTerminalView: View {
                 .help(directory)
             if case .failed(let error) = terminal.state {
                 Text(error).font(.system(size: 12)).foregroundStyle(Color.dockWarning)
-                Button("Retry") { terminal.start(directory: directory) }.buttonStyle(.dockHover)
+                Button("Retry") { terminal.start(directory: directory) }.buttonStyle(.dockCompact)
             }
             if terminal.state == .closed || terminal.state == .exited {
                 Button("Restart") { terminal.start(directory: directory) }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
             }
             Spacer(minLength: 8)
 
@@ -226,7 +226,7 @@ struct SessionTerminalView: View {
                     guard let repositoryID, let repositoryFingerprint else { return }
                     terminal.runVerification(recipe, repositoryID: repositoryID, repositoryFingerprint: repositoryFingerprint)
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .foregroundStyle(Color.dockAccent)
                 .accessibilityLabel("Rerun \(recipe.title)")
             }

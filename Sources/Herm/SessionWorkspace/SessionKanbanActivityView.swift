@@ -168,7 +168,7 @@ struct SessionKanbanActivityView: View {
                     Button("RETRY") {
                         if let sessionID { control.refreshSessionKanban(for: sessionID) }
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                 }
                 .font(.system(size: 10))
                 .foregroundStyle(Color.dockWarning)

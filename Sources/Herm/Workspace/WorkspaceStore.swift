@@ -187,6 +187,9 @@ final class WorkspaceStore: ObservableObject {
     }
 
     func attachProject(at path: String, toSessionID sessionID: String?) {
+        if let sessionID, task(forSessionID: sessionID) == nil {
+            ensureTask(title: "Untitled task", sessionID: sessionID)
+        }
         projectPath = path
         if let sessionID, let index = tasks.firstIndex(where: { $0.sessionID == sessionID }) {
             tasks[index].projectPath = path
@@ -211,15 +214,14 @@ final class WorkspaceStore: ObservableObject {
     /// selection to leak into unrelated conversations. Hermes project paths
     /// are accepted only when they are absolute; names such as "__no_project__"
     /// remain non-repository context.
-    func resolvedProjectPath(forSessionID sessionID: String?, hermesProjectPath: String?) -> String? {
+    func resolvedProjectPath(forSessionID sessionID: String?, hermesProjectPath: String?, createdSessionProjectPath: String? = nil) -> String? {
         if let sessionPath = projectPath(forSessionID: sessionID) {
             return sessionPath
         }
-        guard sessionID != nil,
-              let hermesProjectPath,
-              hermesProjectPath.hasPrefix("/"),
-              !hermesProjectPath.isEmpty else { return nil }
-        return hermesProjectPath
+        guard sessionID != nil else { return nil }
+        return [hermesProjectPath, createdSessionProjectPath]
+            .compactMap { $0 }
+            .first { $0.hasPrefix("/") }
     }
 
     /// A Hermes project groups multiple sessions around one checkout. Persist
