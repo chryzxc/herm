@@ -31,12 +31,16 @@ struct NotchDisplaySettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingsPreferenceRow(title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera. The top island always uses the black Island skin so it blends with the camera notch; your skin returns when you switch back to Side.") {
+            SettingsPreferenceRow(title: "Notch position", detail: "Dock on a screen edge, or as an island around the camera.") {
                 Picker("Notch position", selection: Binding(get: { side == .top }, set: { side = $0 ? .top : .right })) {
                     Text("Side").tag(false)
                     Text("Top island").tag(true)
                 }
                 .pickerStyle(.segmented).labelsHidden().fixedSize()
+            }
+            if side == .top {
+                DockCallout(tone: .info, icon: .info, title: "Top island uses the Island skin",
+                            message: "The top island notch style and the floating panel default to the Island skin to match the notch color. Your skin returns when you switch back to Side.") { EmptyView() }
             }
             SettingsPreferenceRow(title: "Notch status display", detail: "Choose how activity appears on the screen edge.") { EmptyView() }
             HStack(spacing: 12) {

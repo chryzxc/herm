@@ -31,7 +31,7 @@ extension WorkspaceActivitySidebar {
                         .controlSize(.small)
                 } else if appUpdater.canCheck && !isUnavailable {
                     Button("Check for updates") { appUpdater.checkForUpdates() }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockAccent)
                 }
@@ -58,7 +58,7 @@ extension WorkspaceActivitySidebar {
                     }
                 } else {
                     Button("Check for updates") { agentUpdateService.checkForUpdates() }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Color.dockAccent)
                         .disabled(!agentUpdateService.canCheck)
@@ -131,7 +131,7 @@ extension WorkspaceActivitySidebar {
                         .truncationMode(.middle)
                     if let page = latest.pageURL, let url = URL(string: page) {
                         Button("Release notes") { ExternalOpen.open(url) }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockLink)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Color.dockAccent)
                     }

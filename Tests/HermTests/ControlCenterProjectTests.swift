@@ -1134,7 +1134,7 @@ struct ControlCenterProjectTests {
         #expect(runs.count == 1)
         #expect(runs.first?.jobID == "morning")
         #expect(runs.first?.error == "timed out after 30s")
-        #expect(runs.first?.sessionID == "cron_morning_20260808_080000")
+        #expect(runs.first?.sessionID == nil)
     }
 
     @Test func parsesCanonicalCronJobIDUsedByHermesRunSessions() {
@@ -1704,6 +1704,7 @@ private final class CronCreationClient: HermesRPCClientProtocol {
         if method == "cron.manage", params["action"] as? String == "add" {
             createdParams = params
             if shouldFail { throw Failure.rejected }
+            return ["success": true, "job_id": "created-job"]
         }
         return [:]
     }

@@ -191,7 +191,7 @@ struct ProviderSignInFlow: View {
                 Spacer()
                 if usesBrowser && !prompt.needsInput && !showsReply {
                     Button("Have a code to paste?") { showsReply = true }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockLink)
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockAccent)
                 }

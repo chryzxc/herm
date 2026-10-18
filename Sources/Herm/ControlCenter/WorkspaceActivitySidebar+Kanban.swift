@@ -741,7 +741,7 @@ extension WorkspaceActivitySidebar {
                             Text(error).lineLimit(3)
                             Spacer()
                             Button("Retry") { control.loadKanbanTask(task) }
-                                .buttonStyle(.dockHover)
+                                .buttonStyle(.dockCompact)
                         }
                         .font(.system(size: 11))
                         .foregroundStyle(Color.dockWarning)

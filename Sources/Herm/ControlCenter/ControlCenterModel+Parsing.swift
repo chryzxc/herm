@@ -18,6 +18,7 @@ extension ControlCenterModel {
                 name: (row["name"] as? String) ?? id,
                 // Hermes reports interval jobs as {"kind", "minutes", "display"}.
                 schedule: (row["schedule"] as? String)
+                    ?? ((row["schedule"] as? [String: Any])?["expr"] as? String)
                     ?? ((row["schedule"] as? [String: Any])?["display"] as? String)
                     ?? (row["schedule_display"] as? String)
                     ?? "Scheduled",
@@ -66,7 +67,7 @@ extension ControlCenterModel {
     }
 
     static func parseCronReport(_ result: [String: Any], job: CronSummary, sessionID: String) -> CronReportDetail? {
-        let rows = result["messages"] as? [[String: Any]] ?? []
+        let rows = (result["data"] ?? result["messages"]) as? [[String: Any]] ?? []
         for row in rows.reversed() {
             let role = (row["role"] as? String)?.lowercased() ?? ""
             guard role == "assistant" || role == "hermes" else { continue }
@@ -1199,19 +1200,29 @@ extension ControlCenterModel {
                 source: source,
                 claimedAt: claimedAt,
                 error: nil,
-                sessionID: cronSessionID(jobID: jobID, claimedAt: claimedAt)
+                sessionID: nil
             ))
         }
         return runs
     }
 
-    static func cronSessionID(jobID: String?, claimedAt: String?) -> String? {
-        guard let jobID, let claimedAt, claimedAt.count >= 19 else { return nil }
-        let localTimestamp = String(claimedAt.prefix(19))
-        let date = localTimestamp.prefix(10).replacingOccurrences(of: "-", with: "")
-        let time = localTimestamp.dropFirst(11).prefix(8).replacingOccurrences(of: ":", with: "")
-        guard date.count == 8, time.count == 6 else { return nil }
-        return "cron_\(jobID)_\(date)_\(time)"
+    static func parseStructuredCronRuns(_ result: [String: Any], jobID: String) throws -> [CronRunSummary] {
+        guard let rows = result["runs"] as? [[String: Any]], rows.count <= 50 else { throw HermesGateway.GatewayError.malformedResponse }
+        var seen = Set<String>()
+        return try rows.map { row in
+            guard let id = row["id"] as? String, !id.isEmpty, seen.insert(id).inserted,
+                  let source = row["source"] as? String, ["cron", "cron_output"].contains(source),
+                  let started = row["started_at"] as? NSNumber, started.doubleValue.isFinite,
+                  id.hasPrefix(source == "cron" ? "cron_\(jobID)_" : "cron_output:\(jobID):") else { throw HermesGateway.GatewayError.malformedResponse }
+            let status: String
+            if let reported = row["status"] as? String { status = reported }
+            else if row["scheduler_owned"] as? Bool == true || (row["scheduler_owned"] == nil && row["is_active"] as? Bool == true) { status = "running" }
+            else { status = row["ended_at"] is NSNumber ? "finished" : "unknown" }
+            return CronRunSummary(id: id, status: status, jobID: jobID, source: source,
+                claimedAt: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: started.doubleValue)),
+                error: row["error"] as? String, sessionID: source == "cron" ? id : nil,
+                outputPreview: source == "cron_output" ? row["preview"] as? String : nil)
+        }
     }
 
     static func parseMCPServers(_ output: String) -> [MCPServerSummary] {

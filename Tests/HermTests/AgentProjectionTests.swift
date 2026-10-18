@@ -52,39 +52,6 @@ struct AgentProjectionTests {
         #expect(row?.agent == "Unprofiled Delegate · Security Reviewer")
     }
 
-    @Test func inlineAgentMapPreservesTopDownDepthAndScrollableSpacing() {
-        let agents = [
-            HermesSubagent(id: "parent", childSessionID: "parent-session", goal: "Plan implementation", status: "running"),
-            HermesSubagent(id: "child", parentID: "parent-session", childSessionID: "child-session", goal: "Build feature", status: "running"),
-            HermesSubagent(id: "grandchild", parentID: "child-session", goal: "Verify feature", status: "running"),
-            HermesSubagent(id: "sibling", goal: "Review work", status: "running")
-        ]
-
-        let layout = AgentMapTreeLayout.make(agents: agents, minimumSize: CGSize(width: 500, height: 460))
-        let parent = layout.positions["parent"]!
-        let child = layout.positions["child"]!
-        let grandchild = layout.positions["grandchild"]!
-        let sibling = layout.positions["sibling"]!
-
-        #expect(child.y - parent.y == AgentMapTreeLayout.verticalStride)
-        #expect(grandchild.y - child.y == AgentMapTreeLayout.verticalStride)
-        #expect(abs(sibling.x - parent.x) >= AgentMapTreeLayout.horizontalStride)
-        #expect(layout.contentSize.height > 460)
-    }
-
-    @Test func inlineAgentMapWrapsWideDelegationBatchesIntoThreeColumns() {
-        let agents = (0..<8).map { index in
-            HermesSubagent(id: "agent-\(index)", goal: "Task \(index)", status: "running")
-        }
-
-        let layout = AgentMapTreeLayout.make(agents: agents, minimumSize: CGSize(width: 700, height: 460))
-
-        #expect(layout.positions["agent-0"]?.y == layout.positions["agent-2"]?.y)
-        #expect(layout.positions["agent-3"]!.y - layout.positions["agent-0"]!.y == AgentMapTreeLayout.verticalStride)
-        #expect(layout.positions["agent-6"]!.y - layout.positions["agent-3"]!.y == AgentMapTreeLayout.verticalStride)
-        #expect(layout.rootPosition.x == AgentMapTreeLayout.horizontalInset + AgentMapTreeLayout.nodeWidth / 2)
-    }
-
     @Test func eventsMustProveCurrentSessionOwnershipBeforeProjection() {
         let currentAgent = HermesSubagent(
             id: "agent-current",

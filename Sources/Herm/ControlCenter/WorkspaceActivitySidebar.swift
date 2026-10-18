@@ -87,7 +87,6 @@ struct WorkspaceActivitySidebar: View {
     @State var isInsightsExpanded = false
     @State var isCapabilitiesExpanded = true
     @State var isSetupExpanded = true
-    @State var isVerificationExpanded = false
     @State var isSessionCockpitExpanded = false
     @State var isSessionActionsExpanded = false
     @State var isDiagnosticsExpanded = false
@@ -133,6 +132,13 @@ struct WorkspaceActivitySidebar: View {
     @State var isShowingProjectCreationConfirmation = false
     @State var projectsDisplayLimit = WorkspaceActivitySidebar.projectsPageSize
     @StateObject var commandCenterPreferences = CommandCenterPreferencesStore()
+    @AppStorage(DockPanel.hideFromScreenSharingKey) var hidesFromScreenSharing = false
+    @AppStorage(OnDeviceAssist.explainApprovalsKey) var explainsApprovalsOnDevice = false
+    @AppStorage(OnDeviceAssist.summarizeRepliesKey) var summarizesRepliesOnDevice = false
+    @AppStorage(OnDeviceAssist.nameSessionsKey) var namesSessionsOnDevice = true
+    @AppStorage(SessionSpotlightIndex.enabledKey) var showsSessionsInSpotlight = false
+    @AppStorage(ApprovalAuthGate.key) var requiresAuthForBroadApprovals = false
+    @AppStorage(HermDelegate.keepAwakeKey) var keepsAwakeWhileWorking = false
     @AppStorage(SidebarVisibilityKey.kanban) var showsKanbanInSidebar = true
     @AppStorage(SidebarVisibilityKey.pullRequests) var showsPullRequestsInSidebar = true
     @AppStorage(SidebarVisibilityKey.issues) var showsIssuesInSidebar = true
@@ -142,6 +148,7 @@ struct WorkspaceActivitySidebar: View {
     @AppStorage(ChatQuotaSettingsKey.dropBanner) var showsQuotaDropBanner = true
     @AppStorage(DoubleTapShortcut.workspaceKey) var workspaceShortcut = DoubleTapShortcut.command
     @AppStorage(DoubleTapShortcut.notchKey) var notchShortcut = DoubleTapShortcut.option
+    @AppStorage(QuickCaptureChord.key) var captureChord = QuickCaptureChord.optionSpace
     @AppStorage("hermes.notch.side") var notchSide: EdgeDockSide = .right
     @ObservedObject var agentUpdateService: HermesUpdateService
 
@@ -203,9 +210,7 @@ struct WorkspaceActivitySidebar: View {
             }
         }
         .sheet(item: $cronEditJob) { job in
-            CronEditEditor(job: job, isPending: control.isActionPending(control.cronActionID("edit", job: job))) { draft in
-                control.editCron(job, draft: draft)
-            }
+            CronEditEditor(job: job, control: control)
         }
         .sheet(item: $cronReportRequest) { request in
             CronReportDetailSheet(request: request, control: control)

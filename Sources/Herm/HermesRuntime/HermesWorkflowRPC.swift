@@ -538,14 +538,7 @@ final class HermesWorkflowRPC {
     }
   }
   func runRoutine(_ id: String) async throws {
-    var words = ["hermes"]
-    if let profileID { words += ["--profile", profileID] }
-    words += ["cron", "run", id]
-    let result = try await HermesControlRPC(client: client).runCommand(HermesCLICommand(words))
-    guard result["code"] as? Int == 0 else {
-      throw HermesCLIError.failed(
-        "Hermes did not confirm the new run. Refresh Automation before trying again.")
-    }
+    try await HermesControlRPC(client: client).triggerCron(jobID: id, profileID: profileID)
   }
   func steer(sessionID: String, subagentID: String, text: String) async throws
     -> WorkflowSteeringOutcome

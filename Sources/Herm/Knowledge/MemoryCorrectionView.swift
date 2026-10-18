@@ -11,19 +11,19 @@ struct MemoryCorrectionView: View {
   var body: some View {
     DisclosureGroup("Correct a memory entry") {
       VStack(alignment: .leading, spacing: 10) {
-        Button("Load memory entries") { Task { await load() } }.buttonStyle(.dockHover).disabled(
+        Button("Load memory entries") { Task { await load() } }.buttonStyle(.dockCompact).disabled(
           pending)
         ForEach(entries) { entry in
-          Button(entry.label) { Task { await inspect(entry) } }.buttonStyle(.dockHover).disabled(
+          Button(entry.label) { Task { await inspect(entry) } }.buttonStyle(.dockCompact).disabled(
             pending)
         }
         if let selected {
           Text(selected.label).font(.system(size: 12, weight: .semibold))
           TextEditor(text: $content).font(.system(size: 12)).frame(height: 120).disabled(pending)
           HStack {
-            Button("Save correction…") { confirmation = "Save" }.buttonStyle(.dockHover)
+            Button("Save correction…") { confirmation = "Save" }.buttonStyle(.dockCompact)
             Button("Delete entry…", role: .destructive) { confirmation = "Delete" }.buttonStyle(
-              .dockHover)
+              .dockCompact)
           }.disabled(pending)
         }
         if let status { Text(status).foregroundStyle(Color.dockSecondaryText) }

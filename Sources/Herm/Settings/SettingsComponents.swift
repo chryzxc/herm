@@ -17,7 +17,7 @@ enum SettingsCategoryGroup: String, CaseIterable, Identifiable {
         case .app: [.general, .gateway, .appearance, .notifications]
         case .agent: [.runtime, .providers, .chat, .memory, .voice, .advanced]
         case .tools: [.workspace, .browser, .safety, .integrations]
-        case .activity: [.session, .project, .diagnostics, .updates]
+        case .activity: [.session, .diagnostics, .updates]
         }
     }
 }
@@ -38,7 +38,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case advanced
     case integrations
     case session
-    case project
     case diagnostics
     case updates
 
@@ -62,7 +61,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .advanced: "Advanced"
         case .integrations: "Integrations"
         case .session: "Active session"
-        case .project: "Project checks"
         case .diagnostics: "Diagnostics"
         }
     }
@@ -85,7 +83,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .advanced: "Agent limits, subagents, and output limits"
         case .integrations: "Permissions and connected services"
         case .session: "Active session controls and context"
-        case .project: "Repository facts and verification"
         case .diagnostics: "Observed health and storage"
         }
     }
@@ -108,7 +105,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .advanced: .cpu
         case .integrations: .shieldCheck
         case .session: .pulse
-        case .project: .sealCheck
         case .diagnostics: .stethoscope
         }
     }

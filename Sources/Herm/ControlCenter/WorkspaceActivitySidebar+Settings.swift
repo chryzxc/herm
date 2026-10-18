@@ -102,61 +102,6 @@ extension WorkspaceActivitySidebar {
                 }
             }
             }
-            if selectedSettingsCategory == .project {
-            if control.projectFacts != nil || control.verification != nil {
-                settingsDisclosure(title: "Verification", subtitle: "Project facts and delivery evidence", icon: .sealCheck, isExpanded: $isVerificationExpanded) {
-                    if let facts = control.projectFacts {
-                    diagnosticRow(label: "Project", value: facts.manifests.joined(separator: ", ").isEmpty ? "Code workspace" : facts.manifests.joined(separator: ", "), color: Color.dockMetadataText)
-                    if !facts.packageManagers.isEmpty { diagnosticRow(label: "Tools", value: facts.packageManagers.joined(separator: ", "), color: Color.dockMetadataText) }
-                    if !facts.contextFiles.isEmpty { diagnosticRow(label: "Context", value: facts.contextFiles.joined(separator: ", "), color: Color.dockMetadataText) }
-                    ForEach(VerificationRecipeBuilder.make(facts: facts, repository: workflow.repository)) { recipe in
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(recipe.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
-                                Text(recipe.command).font(.system(size: 11)).foregroundStyle(Color.dockPrimaryText).lineLimit(1)
-                            }
-                            Spacer()
-                            DockCopyButton(
-                                recipe.command,
-                                accessibilityLabel: "Copy \(recipe.title.lowercased()) command",
-                                presentation: .text,
-                                color: .dockAccent
-                            )
-                            .buttonStyle(.dockHover)
-                            .font(.system(size: 10, weight: .semibold))
-                            Button("Ask Hermes") {
-                                let repoPath = control.developmentContext?.path ?? "the selected repository"
-                                let prompt = "Run this exact verification command in " + repoPath + ": " + recipe.command + ". Do not edit files. Report the result and exit code."
-                                Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
-                            }
-                            .buttonStyle(.dockHover)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.dockAccent)
-                        }
-                    }
-                }
-                    if let verification = control.verification {
-                    let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
-                    let stateColor: Color = verification.state == .passed ? .dockSecondaryText : (verification.state == .failed ? .dockDestructive : .dockWarning)
-                    diagnosticRow(label: "Delivery", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .dockSecondaryText : .dockWarning)
-                    diagnosticRow(label: "Status", value: verification.state.rawValue.uppercased(), color: stateColor)
-                    if let evidence = verification.evidence {
-                        if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "Evidence", value: command, color: Color.dockMetadataText) }
-                        if let scope = evidence.scope { diagnosticRow(label: "Scope", value: scope.uppercased(), color: scope == "targeted" ? Color.dockWarning : Color.dockMetadataText) }
-                        if let exitCode = evidence.exitCode { diagnosticRow(label: "Exit", value: String(exitCode), color: exitCode == 0 ? Color.dockSecondaryText : Color.dockDestructive) }
-                        if let adapter = evidence.adapter { diagnosticRow(label: "Adapter", value: adapter, color: Color.dockMetadataText) }
-                        if let capturedAt = evidence.capturedAt { diagnosticRow(label: "Captured", value: ISO8601DateFormatter().string(from: capturedAt), color: Color.dockMetadataText) }
-                        if let repository = evidence.repositoryIdentity { diagnosticRow(label: "Repository", value: repository, color: Color.dockMetadataText) }
-                        if let commit = evidence.commitFingerprint { diagnosticRow(label: "Commit", value: commit, color: Color.dockMetadataText) }
-                        if let target = evidence.targetFingerprint { diagnosticRow(label: "Target", value: target, color: Color.dockMetadataText) }
-                        if let diff = evidence.diffFingerprint { diagnosticRow(label: "Diff", value: diff, color: Color.dockMetadataText) }
-                        if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "Rules", value: rules, color: Color.dockMetadataText) }
-                        if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "Stale", value: staleReason, color: Color.dockWarning) }
-                    }
-                    }
-                }
-            }
-            }
             let canSteerSession = model.status == .working && model.sessionID != nil
             if selectedSettingsCategory == .session, control.sessionUsage != nil || control.sessionContext != nil || canSteerSession || !control.restoreCheckpoints.isEmpty || control.isLoadingCheckpoints {
                 settingsDisclosure(title: "Session cockpit", subtitle: "Context, usage, and active-turn controls", icon: .pulse, isExpanded: $isSessionCockpitExpanded) {
@@ -184,7 +129,7 @@ extension WorkspaceActivitySidebar {
                         HStack(spacing: 8) {
                             DockTextField("Handoff focus (optional)", text: $handoffFocus).textFieldStyle(.dockGlass)
                             Button("Handoff") { isShowingHandoffConfirmation = true }
-                                .buttonStyle(.dockHover).foregroundStyle(Color.dockAccent)
+                                .buttonStyle(.dockCompact).foregroundStyle(Color.dockAccent)
                                 .disabled(!control.capabilityAvailable("gateway"))
                         }
                     }
@@ -205,9 +150,9 @@ extension WorkspaceActivitySidebar {
                                 }
                                 Spacer()
                                 Button("Diff") { control.loadCheckpointDiff(checkpoint) }
-                                    .buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
-                                Button("Restore") { checkpointForRestore = checkpoint }
-                                    .buttonStyle(.dockHover).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
+                                    .buttonStyle(.dockCompact).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockAccent)
+                                Button("Restore", role: .destructive) { checkpointForRestore = checkpoint }
+                                    .buttonStyle(.dockCompact).font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.dockDestructive)
                                     .disabled(model.status == .working || control.restoreCheckpointState.isPending)
                             }
                         }
@@ -236,7 +181,7 @@ extension WorkspaceActivitySidebar {
                             }
                         }
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .foregroundStyle(Color.dockAccent)
                     .disabled(sessionSteerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                               || control.isActionPending(control.sessionSteerActionID(sessionID)))
@@ -267,7 +212,7 @@ extension WorkspaceActivitySidebar {
                         Button("Rename") {
                             Task { if await control.renameActiveSession(sessionRenameText) { sessionRenameText = "" } }
                         }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(sessionRenameText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -280,7 +225,7 @@ extension WorkspaceActivitySidebar {
                                 if let result = await control.redirectActiveSession(text), result.wasAccepted { sessionRedirectText = "" }
                             }
                         }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(sessionRedirectText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
@@ -288,22 +233,22 @@ extension WorkspaceActivitySidebar {
                         DockTextField("Optional branch name", text: $sessionBranchName)
                             .textFieldStyle(.dockGlass)
                         Button("Branch") { isShowingBranchConfirmation = true }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .foregroundStyle(Color.dockAccent)
                             .disabled(!control.capabilityAvailable("rpc-sessions"))
                         DockTextField("Compression focus (optional)", text: $sessionCompressTopic)
                             .textFieldStyle(.dockGlass)
                         Button("Compress") { isShowingCompressConfirmation = true }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .foregroundStyle(Color.dockAccent)
                             .disabled(!control.capabilityAvailable("rpc-sessions"))
                     }
                     HStack(spacing: 8) {
                         Button("Undo last turn") { isShowingUndoConfirmation = true }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .foregroundStyle(Color.dockWarning)
                         Button(control.delegationPaused ? "Resume delegation" : "Pause delegation") { isShowingDelegationConfirmation = true }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .foregroundStyle(Color.dockWarning)
                     }
                 }
@@ -323,7 +268,7 @@ extension WorkspaceActivitySidebar {
                         Spacer()
                         if let native = model.activeSubagents.first(where: { $0.id == agent.id }), !model.isSyntheticSubagent(native.id) {
                             Button("Interrupt") { pendingAgentID = native.id }
-                                .buttonStyle(.dockHover)
+                                .buttonStyle(.dockCompact)
                                 .foregroundStyle(Color.dockWarning)
                         }
                     }
@@ -335,7 +280,7 @@ extension WorkspaceActivitySidebar {
                         Text(process.name).foregroundStyle(Color.dockPrimaryText)
                         Spacer()
                         Button("Stop") { pendingProcess = process }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .foregroundStyle(Color.dockWarning)
                     }
                     .font(.system(size: 11))
@@ -393,11 +338,6 @@ extension WorkspaceActivitySidebar {
                control.processes.isEmpty,
                model.sessionID == nil {
                 emptyState(icon: .pulse, title: "Session data unavailable", detail: "Open a Hermes session or refresh Settings to load session controls.")
-            }
-            if selectedSettingsCategory == .project,
-               control.projectFacts == nil,
-               control.verification == nil {
-                emptyState(icon: .sealCheck, title: "Project data unavailable", detail: "Select a repository and refresh Settings to load project facts and verification evidence.")
             }
             if selectedSettingsCategory == .diagnostics,
                control.insightsSummary == nil,
@@ -568,7 +508,7 @@ extension WorkspaceActivitySidebar {
                                                     isPending: control.isActionPending(control.mcpTestActionID(server))
                                                 )
                                             }
-                                                .buttonStyle(.dockHover)
+                                                .buttonStyle(.dockCompact)
                                                 .font(.system(size: 12, weight: .semibold))
                                                 .foregroundStyle(Color.dockAccent)
                                                 .disabled(control.isActionPending(control.mcpTestActionID(server)))
@@ -595,7 +535,7 @@ extension WorkspaceActivitySidebar {
                             isPending: control.isActionPending(control.reloadMCPActionID)
                         )
                     }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                         .disabled(control.isActionPending(control.reloadMCPActionID))
@@ -695,6 +635,14 @@ extension WorkspaceActivitySidebar {
                     SettingsPreferenceRow(title: "Notch quick view", detail: "Peek at tasks and quota in the notch from any app.") {
                         shortcutPicker($notchShortcut, excluding: workspaceShortcut)
                     }
+                    Divider().overlay(Color.dockBorderLight)
+                    SettingsPreferenceRow(title: "Quick capture", detail: "Open a new message in the notch from any app. If nothing happens, another app is using the chord.") {
+                        Picker("Quick capture", selection: $captureChord) {
+                            ForEach(QuickCaptureChord.allCases) { Text($0.title).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
                 }
                 .padding(.vertical, -8)
             }
@@ -719,6 +667,40 @@ extension WorkspaceActivitySidebar {
                             workflow.setRepositoryNotificationsEnabled(enabled)
                         }
                     ))
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Hide notch from screen sharing", detail: "Keep the notch and floating panel out of screen shares and recordings.") {
+                    settingsSwitch(isOn: $hidesFromScreenSharing)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Explain approvals with Apple Intelligence", detail: OnDeviceAssist.isAvailable
+                    ? "Apple Intelligence is available on this Mac. When an approval arrives, its title and details go to Apple's on-device model, which adds a one-line explanation to the banner, labeled as Apple Intelligence. It runs locally and nothing is sent to Apple or Hermes."
+                    : "Unavailable. Needs macOS 26 or later on a Mac with Apple Intelligence turned on in System Settings.") {
+                    settingsSwitch(isOn: $explainsApprovalsOnDevice)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Summarize replies with Apple Intelligence", detail: OnDeviceAssist.isAvailable
+                    ? "Apple Intelligence is available on this Mac. Replies over 200 characters are summarized by Apple's on-device model into one line in the notch, labeled as Apple Intelligence. The reply itself is unchanged, and nothing is sent to Apple or Hermes."
+                    : "Unavailable. Needs macOS 26 or later on a Mac with Apple Intelligence turned on in System Settings.") {
+                    settingsSwitch(isOn: $summarizesRepliesOnDevice)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Name new sessions with Apple Intelligence", detail: OnDeviceAssist.isAvailable
+                    ? "Apple Intelligence is available on this Mac. After the first reply, a session Hermes left untitled gets a short title from Apple's on-device model, using only that first message and reply. The title is saved to Hermes so other apps show it too. Nothing is sent to Apple."
+                    : "Unavailable. Needs macOS 26 or later on a Mac with Apple Intelligence turned on in System Settings.") {
+                    settingsSwitch(isOn: $namesSessionsOnDevice)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Show sessions in Spotlight", detail: "Search session titles and short previews from Spotlight and open them in Herm. Titles and previews are stored in Spotlight's index on this Mac; turning this off removes them.") {
+                    settingsSwitch(isOn: $showsSessionsInSpotlight)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Require Touch ID for broad approvals", detail: "Ask for Touch ID or your password before \"for session\" or \"always allow\" approvals.") {
+                    settingsSwitch(isOn: $requiresAuthForBroadApprovals)
+                }
+                Divider().overlay(Color.dockBorderLight)
+                SettingsPreferenceRow(title: "Keep Mac awake while working", detail: "Prevent idle sleep during a running turn. Only affects this Mac.") {
+                    settingsSwitch(isOn: $keepsAwakeWhileWorking)
                 }
             }
             .padding(.vertical, -8)
@@ -788,7 +770,7 @@ extension WorkspaceActivitySidebar {
     var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             if notchSide == .top {
-                SettingsInlineNotice(text: "The top island notch uses the Island skin. Switch the notch position to Side to choose another skin.", tint: Color.dockAccent)
+                DockCallout(tone: .info, icon: .info, title: "The top island notch and floating panel use the Island skin. Switch the notch position to Side to choose another skin.") { EmptyView() }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], spacing: 8) {
                 let skins = control.appearanceProjection?.skins ?? []
@@ -907,7 +889,7 @@ extension WorkspaceActivitySidebar {
                         tint: control.emergencyStopActive == true ? .dockSecondaryText : .dockWarning
                     )
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(control.emergencyStopActive == true ? Color.dockSecondaryText : Color.dockWarning)
                 .disabled(control.isActionPending(control.emergencyStopActionID))
@@ -1201,7 +1183,7 @@ extension WorkspaceActivitySidebar {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Color.dockAccent)
                         }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockLink)
                         .accessibilityLabel(isExpanded ? "Show fewer skills" : "Show all \(values.count) skills")
                     } else {
                         Text("+ \(values.count - 8) MORE")

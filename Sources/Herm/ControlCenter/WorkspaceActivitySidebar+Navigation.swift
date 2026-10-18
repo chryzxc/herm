@@ -44,7 +44,6 @@ extension WorkspaceActivitySidebar {
                         Group {
                             switch selectedMode {
                             case .changes: changesContent
-                            case .verification: verificationContent
                             case .automations: automationsContent
                             case .projects: projectsContent
                             case .search: searchContent
@@ -232,7 +231,7 @@ extension WorkspaceActivitySidebar {
         case .session:
             let count = control.attention.filter { $0.state == .open }.count
             return count > 0 ? SettingsCategoryBadge(kind: .count(count), isWarning: true) : nil
-        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .project, .diagnostics:
+        case .general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .diagnostics:
             return nil
         }
     }
@@ -658,7 +657,7 @@ extension WorkspaceActivitySidebar {
     }
 
     var compactOverflowNavigation: [ControlTab] {
-        [.projects, .changes, .verification, .search]
+        [.projects, .changes, .search]
     }
 
     var isToolsModeSelected: Bool {
@@ -763,7 +762,6 @@ extension WorkspaceActivitySidebar {
         // direct refresh can retain the session filter set by Activity, then
         // make the global board look empty while active cards exist.
         if mode == .kanban { applyKanbanFilters() }
-        if mode == .verification { control.refreshVerification() }
         if mode == .changes { Task { await refreshRepository() } }
     }
 

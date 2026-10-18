@@ -29,7 +29,7 @@ extension ControlCenterModel {
     }
 
     func canTriggerRoutine(_ reference: RoutineReference) -> Bool {
-        capabilityAvailable("cron.runNow") && !unavailableRoutineActions.contains("run") && !reference.running && !routineActions.contains(reference.id) && !triggeredRoutineIDs.contains(reference.id)
+        (cronControlAvailable || capabilityAvailable("cron.runNow")) && !unavailableRoutineActions.contains("run") && !reference.running && !routineActions.contains(reference.id) && !triggeredRoutineIDs.contains(reference.id)
     }
 
     func routineNeedsReview(_ reference: RoutineReference) -> Bool { triggeredRoutineIDs.contains(reference.id) && !routineActions.contains(reference.id) }
@@ -51,10 +51,12 @@ extension ControlCenterModel {
     func recoverRoutine(_ reference: RoutineReference, run: Bool, paused: Bool = false) async {
         guard !routineActions.contains(reference.id), let service = routineService(profileID: reference.profileID) else { return }
         if run, !canTriggerRoutine(reference) { return }
+        let bindingGeneration = clientBindingGeneration
         routineActions.insert(reference.id); routineActionErrors[reference.id] = nil
-        defer { routineActions.remove(reference.id) }
+        defer { if clientBindingGeneration == bindingGeneration { routineActions.remove(reference.id) } }
         do {
             let jobs = try await service.routineJobs()
+            guard clientBindingGeneration == bindingGeneration else { return }
             guard let current = jobs.first(where: { $0.id == reference.job.id }), !run || !["running", "pending", "claimed"].contains(current.lastStatus ?? "") else { throw HermesGateway.GatewayError.malformedResponse }
             if run {
                 triggeredRoutineIDs.insert(reference.id)
@@ -63,9 +65,14 @@ extension ControlCenterModel {
             }
             else { try await service.setRoutinePaused(reference.job.id, paused: paused) }
             let fresh = try await service.routineJobs()
-            if reference.profileID == routineProfileID { cronJobs = fresh }
-            refreshCronRuns()
+            guard clientBindingGeneration == bindingGeneration else { return }
+            if reference.profileID == routineProfileID {
+                cronJobs = fresh
+                refreshCronRuns()
+                refreshCronRuns(jobID: reference.job.id)
+            }
         } catch {
+            guard clientBindingGeneration == bindingGeneration else { return }
             if BotService.isUnsupportedMethod(error) { unavailableRoutineActions.insert(run ? "run" : paused ? "pause" : "resume") }
             DebugLog.write("workflow: routine mutation failed or uncertain")
             routineActionErrors[reference.id] = run ? "The new run could not be confirmed. Review Automation before triggering again." : Self.safeUserDiagnostic(error.localizedDescription)
@@ -150,10 +157,10 @@ extension ControlCenterModel {
         }
     }
 
-    func cronRunsProjectionKey(jobID: String) -> String { "cron.history.\(jobID)" }
+    func cronRunsProjectionKey(jobID: String) -> String { "cron.history.\(routineProfileID ?? "")/\(jobID)" }
 
     func refreshCronRuns(jobID: String) {
-        guard let cli else { return }
+        guard let rpc else { return }
         let clientIdentity = dockModel.map { ObjectIdentifier($0.controlRPCClient) }
         let bindingGeneration = clientBindingGeneration
         let profile = routineProfileID
@@ -162,14 +169,9 @@ extension ControlCenterModel {
         beginProjectionRefresh(key)
         Task {
             do {
-                let result = try await cli.cronRuns(limit: 50, jobID: jobID, profileID: profile)
+                let runs = try await rpc.cronJobRuns(jobID: jobID, profileID: profile)
                 guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile else { return }
-                guard result.succeeded else {
-                    let message = Self.safeUserDiagnostic(result.stderr)
-                    recordProjectionFailure(key, error: message.isEmpty ? "Hermes automation history is temporarily unavailable." : message)
-                    return
-                }
-                cronRunsByJob[jobID] = Self.parseCronRuns(result.stdout)
+                cronRunsByJob[jobID] = runs
                 recordProjectionSuccess(key)
             } catch {
                 guard isCurrentClient(clientIdentity, bindingGeneration: bindingGeneration), routineProfileID == profile else { return }
@@ -184,7 +186,7 @@ extension ControlCenterModel {
         // Intentionally empty.
     }
 
-    func createCron(name: String, schedule: String, prompt: String) async -> Bool {
+    func createCron(name: String, schedule: String, prompt: String, configuration: CronConfigurationDraft? = nil) async -> Bool {
         guard cronControlAvailable else {
             lastError = "Automation control is unavailable through this Hermes gateway."
             return false
@@ -202,34 +204,55 @@ extension ControlCenterModel {
         }
         let actionID = "cron.create"
         guard beginAction(actionID) else { return false }
-        defer { finishAction(actionID) }
+        let profile = routineProfileID
+        let bindingGeneration = clientBindingGeneration
+        defer { if clientBindingGeneration == bindingGeneration { finishAction(actionID) } }
+        lastCreatedCronJobID = nil
+        lastError = nil
         do {
             guard let rpc else { return false }
-            _ = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, profileID: routineProfileID)
-            refresh()
+            if let configuration {
+                let created = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, configuration: configuration, profileID: profile)
+                if clientBindingGeneration == bindingGeneration, routineProfileID == profile {
+                    lastCreatedCronJobID = created.id
+                    cronJobs.removeAll { $0.id == created.id }
+                    cronJobs.append(created)
+                }
+            } else {
+                let result = try await rpc.createCron(name: cleanName, schedule: originalSchedule, prompt: cleanPrompt, profileID: profile)
+                if clientBindingGeneration == bindingGeneration, routineProfileID == profile { lastCreatedCronJobID = result["job_id"] as? String }
+            }
+            if clientBindingGeneration == bindingGeneration, routineProfileID == profile { refresh() }
             return true
         } catch {
-            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            if clientBindingGeneration == bindingGeneration { lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription)) }
             return false
         }
     }
 
     func removeCron(_ job: CronSummary) {
-        guard cronControlAvailable else {
+        guard cronControlAvailable, let rpc else {
             lastError = "Automation control is unavailable through this Hermes gateway."
             return
         }
+        let bindingGeneration = clientBindingGeneration
         let actionID = cronActionID("remove", job: job)
         guard beginAction(actionID) else { return }
         let profile = profileForRoutine(job)
+        let referenceID = RoutineReference(profileID: profile, job: job, run: nil).id
+        routineActionErrors[referenceID] = nil
         Task {
-            defer { finishAction(actionID) }
+            guard clientBindingGeneration == bindingGeneration else { return }
+            defer { if clientBindingGeneration == bindingGeneration { finishAction(actionID) } }
             do {
-                guard let rpc else { return }
                 _ = try await rpc.removeCron(jobID: job.id, profileID: profile)
+                guard clientBindingGeneration == bindingGeneration else { return }
                 refresh()
             } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                guard clientBindingGeneration == bindingGeneration else { return }
+                let message = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+                routineActionErrors[referenceID] = message
+                lastError = message
             }
         }
     }
@@ -275,39 +298,34 @@ extension ControlCenterModel {
         return CronReportRequest(profileID: profileForRoutine(job), job: job, sessionID: sessionID)
     }
 
-    func editCron(_ job: CronSummary, draft: CronEditDraft) {
-        guard let cli, capabilityAvailable("cron.edit") else {
-            lastError = "Automation editing is unavailable through the installed Hermes CLI."
-            return
-        }
-        let changes = draft.changes(comparedTo: job).filter { job.editableFields.contains($0.key) }
-        guard !changes.isEmpty else {
-            lastError = "Change at least one scheduled-job field before saving."
-            return
-        }
-        guard changes.values.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-            lastError = "Scheduled-job fields cannot be empty in Herm."
-            return
-        }
-        if let schedule = changes[.schedule], !CronSchedule.isValid(schedule) {
-            lastError = "Schedule must use five fields: minute, hour, day, month, and weekday."
-            return
+    func loadCronDetail(_ job: CronSummary) async throws -> CronSummary {
+        guard let rpc else { throw HermesGateway.GatewayError.disconnected }
+        return try await rpc.cronJob(job, profileID: profileForRoutine(job))
+    }
+
+    func editCron(_ job: CronSummary, draft: CronEditDraft) async -> Bool {
+        guard let rpc else { lastError = "Automation editing is unavailable through this Hermes gateway."; return false }
+        let changes = draft.changes(comparedTo: job)
+        guard !changes.isEmpty else { lastError = "Change at least one field before saving."; return false }
+        guard !draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              CronSchedule.isValid(draft.schedule),
+              changes[.prompt]?.trimmingCharacters(in: .whitespacesAndNewlines) != "" || job.details.noAgent == true || !job.details.skills.isEmpty,
+              !draft.configuration.delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            lastError = "Name, schedule, delivery, and agent request cannot be empty."
+            return false
         }
         let actionID = cronActionID("edit", job: job)
-        guard beginAction(actionID) else { return }
+        guard beginAction(actionID) else { return false }
+        defer { finishAction(actionID) }
         let profile = profileForRoutine(job)
-        Task {
-            defer { finishAction(actionID) }
-            do {
-                let result = try await cli.cronEdit(jobID: job.id, changes: changes, profileID: profile)
-                guard result.succeeded else {
-                    lastError = Self.safeUserDiagnostic(result.stderr).isEmpty ? "Hermes could not edit the scheduled job." : Self.safeUserDiagnostic(result.stderr)
-                    return
-                }
-                refresh()
-            } catch {
-                lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
-            }
+        let bindingGeneration = clientBindingGeneration
+        do {
+            try await rpc.updateCron(job, draft: draft, profileID: profile)
+            if clientBindingGeneration == bindingGeneration, routineProfileID == profile { refresh() }
+            return true
+        } catch {
+            lastError = HermesDiagnosticsService.safeSummary(Self.safeUserDiagnostic(error.localizedDescription))
+            return false
         }
     }
 }

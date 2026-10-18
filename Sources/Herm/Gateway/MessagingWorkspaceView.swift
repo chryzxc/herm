@@ -69,7 +69,7 @@ struct MessagingWorkspaceView: View {
             }
             if !botMode.bots.isEmpty {
                 Text("Applies to").font(.system(size: 12, weight: .medium)).foregroundStyle(Color.dockSecondaryText)
-                MessagingChipFlow(spacing: 6) {
+                DockChipFlow(spacing: 6) {
                     ForEach(botMode.bots) { bot in
                         chip(bot.name, selected: bot.id == profileID) { profileID = bot.id }
                     }
@@ -198,7 +198,7 @@ struct MessagingWorkspaceView: View {
                                 Text(pairing.qrPayload.isEmpty ? "Preparing QR code…" : "Waiting for confirmation in \(telegram ? "Telegram" : "WhatsApp")…")
                                     .font(.system(size: 12))
                             }
-                            if let link = pairing.deepLink { Link("Open in Telegram", destination: link).font(.system(size: 12)) }
+                            if let link = pairing.deepLink { Link("Open in Telegram", destination: link).buttonStyle(.dockLink) }
                             Button("Cancel") { model.cancelQR() }.buttonStyle(.dockSecondary).controlSize(.small)
                         }
                     }
@@ -235,8 +235,8 @@ struct MessagingWorkspaceView: View {
                 if !text.isEmpty { Text(text).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText) }
                 if let docs = platform.docsURL {
                     Link(destination: docs) {
-                        HStack(spacing: 4) { Text("Open setup guide").underline(); DockIcon(.arrowSquareOut, size: 11) }
-                    }.font(.system(size: 12, weight: .medium))
+                        HStack(spacing: 4) { Text("Open setup guide"); DockIcon(.arrowSquareOut, size: 12) }
+                    }.buttonStyle(.dockLink)
                 }
             }
         }
@@ -355,39 +355,6 @@ private struct MessagingPlatformIcon: View {
     }
 }
 
-/// Wraps chips onto as many rows as the width needs.
-private struct MessagingChipFlow: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let rows = arrange(width: proposal.width ?? .infinity, subviews)
-        return CGSize(width: proposal.width ?? rows.width, height: rows.height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for (index, origin) in arrange(width: bounds.width, subviews).origins.enumerated() {
-            subviews[index].place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
-        }
-    }
-
-    private func arrange(width: CGFloat, _ subviews: Subviews) -> (origins: [CGPoint], width: CGFloat, height: CGFloat) {
-        var origins: [CGPoint] = []
-        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
-            }
-            origins.append(CGPoint(x: x, y: y))
-            x += size.width + spacing
-            maxX = max(maxX, x - spacing)
-            rowHeight = max(rowHeight, size.height)
-        }
-        return (origins, maxX, y + rowHeight)
-    }
-}
 
 enum MessagingQRCode {
     static func image(_ payload: String) -> NSImage? {

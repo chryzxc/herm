@@ -35,7 +35,7 @@ extension WorkspaceActivitySidebar {
                         Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
                     }
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 switch workflow.baselineStatus {
@@ -50,7 +50,7 @@ extension WorkspaceActivitySidebar {
                 }
             } else {
                 Button("RUN LOCAL REVIEW") { Task { await workflow.runReview(preferences: commandCenterPreferences) } }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
             }
@@ -91,7 +91,7 @@ extension WorkspaceActivitySidebar {
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }
@@ -133,7 +133,7 @@ extension WorkspaceActivitySidebar {
                     diffAuditSummary(diff)
                 } else {
                     Button(isLoadingRepositoryDiff ? "LOADING DIFF…" : "LOAD DIFF") { loadRepositoryDiff(for: file) }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(isLoadingRepositoryDiff)
                 }
@@ -141,7 +141,7 @@ extension WorkspaceActivitySidebar {
 
                 if workflow.isReviewCovered(file) {
                     Button(workflow.isReviewed(file) ? "REVIEWED" : "MARK REVIEWED") { workflow.toggleReviewed(file) }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .foregroundStyle(workflow.isReviewed(file) ? Color.dockSuccess : Color.dockAccent)
                 }
                 Text(writers.isEmpty
@@ -209,57 +209,6 @@ extension WorkspaceActivitySidebar {
         .overlay(alignment: .top) { Color.dockBorderLight.frame(height: 0.5) }
     }
 
-    var verificationContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionLabel("VERIFICATION")
-            if let facts = control.projectFacts {
-                diagnosticRow(label: "MANIFESTS", value: facts.manifests.isEmpty ? "NONE REPORTED" : facts.manifests.joined(separator: " · "), color: Color.dockSecondaryText)
-                diagnosticRow(label: "PACKAGE MANAGERS", value: facts.packageManagers.isEmpty ? "NONE REPORTED" : facts.packageManagers.joined(separator: " · "), color: Color.dockSecondaryText)
-                let recipes = VerificationRecipeBuilder.make(facts: facts, repository: workflow.repository)
-                if !recipes.isEmpty {
-                    sectionLabel("VERIFIED RECIPES")
-                    ForEach(recipes) { recipe in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(recipe.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Color.dockSecondaryText)
-                            Text(recipe.command).font(.system(size: 12)).foregroundStyle(Color.dockPrimaryText).textSelection(.enabled)
-                            Button("RUN IN BACKGROUND") {
-                                guard let path = activeRepositoryPath else { return }
-                                let prompt = "Run this exact verification command in " + path + ": " + recipe.command + ". Do not edit files. Report the result, evidence scope, and exit code."
-                                Task { _ = await control.startBackgroundTask(prompt, kind: .verification) }
-                            }
-                            .buttonStyle(.dockHover).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockAccent)
-                        }
-                        .dockListRow()
-                    }
-                }
-            }
-                if let verification = control.verification {
-                let deliveryEvidence = VerificationEvidencePresentation.make(verification: verification, currentFingerprint: workflow.repository.headRevision, evidenceFingerprint: nil, currentRepositoryIdentity: workflow.repository.repositoryID, currentCommitFingerprint: workflow.repository.headRevision, openFailureCount: control.attention.filter { $0.state == .open && $0.kind == .failure }.count, repositoryDirty: workflow.repository.changedFiles > 0)
-                diagnosticRow(label: "DELIVERY", value: deliveryEvidence.title.uppercased(), color: deliveryEvidence.state == .current ? .dockSuccess : .dockWarning)
-                Text(deliveryEvidence.nextAction)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.dockMetadataText)
-                    .fixedSize(horizontal: false, vertical: true)
-                let color: Color = verification.state == .passed ? .dockSuccess : verification.state == .failed ? .dockDestructive : .dockWarning
-                diagnosticRow(label: "STATUS", value: verification.state.rawValue.uppercased(), color: color)
-                if let evidence = verification.evidence {
-                    diagnosticRow(label: "SCOPE", value: evidence.scope?.uppercased() ?? "UNKNOWN", color: evidence.scope?.lowercased() == "targeted" ? .dockWarning : .dockSecondaryText)
-                    if let command = evidence.canonicalCommand ?? evidence.command { diagnosticRow(label: "EVIDENCE", value: command, color: .dockMetadataText) }
-                    if let adapter = evidence.adapter { diagnosticRow(label: "ADAPTER", value: adapter, color: .dockMetadataText) }
-                    if let capturedAt = evidence.capturedAt { diagnosticRow(label: "CAPTURED", value: ISO8601DateFormatter().string(from: capturedAt), color: .dockMetadataText) }
-                    if let repository = evidence.repositoryIdentity { diagnosticRow(label: "REPOSITORY", value: repository, color: .dockMetadataText) }
-                    if let commit = evidence.commitFingerprint { diagnosticRow(label: "COMMIT", value: commit, color: .dockMetadataText) }
-                    if let target = evidence.targetFingerprint { diagnosticRow(label: "TARGET", value: target, color: .dockMetadataText) }
-                    if let diff = evidence.diffFingerprint { diagnosticRow(label: "DIFF", value: diff, color: .dockMetadataText) }
-                    if let rules = evidence.rulesScopeDetail { diagnosticRow(label: "RULES", value: rules, color: .dockMetadataText) }
-                    if let staleReason = deliveryEvidence.staleReason { diagnosticRow(label: "STALE", value: staleReason, color: .dockWarning) }
-                }
-            } else if control.projectFacts == nil {
-                emptyState(icon: .sealCheck, title: "Verification unavailable", detail: "Open a Hermes project session with a local folder, then refresh Settings to request verification facts.")
-            }
-        }
-    }
-
     var repositoriesContent: some View {
         let paths = Array(Set(store.tasks.compactMap(\.projectPath) + [store.projectPath].compactMap { $0 })).sorted()
         return VStack(alignment: .leading, spacing: 22) {
@@ -278,7 +227,7 @@ extension WorkspaceActivitySidebar {
                         Text(detail).lineLimit(1).foregroundStyle(Color.dockWarning)
                     }
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }
@@ -295,9 +244,8 @@ extension WorkspaceActivitySidebar {
                                 let prompt = "Review repository \(notice.displayName) without editing files. Herm detected \(notice.changedFiles) changed files. Report risks, missing tests, and verification scope without quoting suspected credential values."
                                 Task { _ = await control.startBackgroundTask(prompt, kind: .review) }
                             }
-                            Button("OPEN VERIFICATION") { select(.verification) }
                         }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.dockAccent)
                     }

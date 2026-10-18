@@ -426,7 +426,7 @@ struct WorkflowIntegrationView: View {
             Button("Installed") {
               query = ""
               Task { await model.refresh() }
-            }.buttonStyle(.dockHover)
+            }.buttonStyle(.dockCompact)
           }
         }.disabled(model.busy)
         group("Skills", count: model.skills.count) {
@@ -828,12 +828,12 @@ struct WorkflowIntegrationView: View {
             if let repo = plugin.repo {
               Button { ExternalOpen.open(repo) } label: {
                 Label { Text(plugin.githubSlug == nil ? "Source" : "GitHub") } icon: { DockIcon(.githubLogo, size: 12) }
-              }.buttonStyle(.dockHover)
+              }.buttonStyle(.dockLink)
             }
             if let docs = plugin.docs, docs != plugin.repo {
               Button { ExternalOpen.open(docs) } label: {
                 Label { Text("Docs") } icon: { DockIcon(.bookOpen, size: 12) }
-              }.buttonStyle(.dockHover)
+              }.buttonStyle(.dockLink)
             }
           }
         }
@@ -929,9 +929,9 @@ struct WorkflowIntegrationView: View {
           HStack {
             Button("Reload live sessions…") {
               request = ("Reload live sessions", WorkflowIntegrationItem(id: "Live runtime sessions", detail: ""))
-            }.buttonStyle(.dockHover).disabled(model.busy || model.unsupported.contains("Reload live sessions"))
+            }.buttonStyle(.dockCompact).disabled(model.busy || model.unsupported.contains("Reload live sessions"))
             if model.oauth != nil {
-              Button("Cancel authorization") { Task { await model.cancelOAuth() } }.buttonStyle(.dockHover)
+              Button("Cancel authorization") { Task { await model.cancelOAuth() } }.buttonStyle(.dockCompact)
             }
           }
         }
@@ -996,7 +996,7 @@ struct WorkflowIntegrationView: View {
               .onSubmit { saveAlias(account.id) }
             Button("Save") { saveAlias(account.id) }.buttonStyle(.dockSecondary).controlSize(.small)
               .disabled(model.busy || !HermesWorkflowRPC.validConnectorAlias(alias))
-            Button("Cancel") { renaming = nil }.buttonStyle(.dockHover)
+            Button("Cancel") { renaming = nil }.buttonStyle(.dockCompact)
           } else {
             Text(account.label).font(.system(size: 12))
             Text(account.status).font(.system(size: 11)).foregroundStyle(Color.dockMetadataText)

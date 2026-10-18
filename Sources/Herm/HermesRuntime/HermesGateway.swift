@@ -233,9 +233,13 @@ final class HermesGateway: NSObject {
     /// Authenticated JSON write to the local backend. A refusal's FastAPI
     /// `detail` is surfaced verbatim so the user sees why (e.g. open parents).
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any] {
+        try await sendHTTP(method, path: path, body: body, timeout: 15)
+    }
+
+    func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
         try await connect()
         guard let baseURL else { throw GatewayError.backendUnavailable }
-        let (status, json) = try await GatewayHTTP.request(GatewayConnectionSettings.endpoint(baseURL, path), method: method, token: usesBrowserSignIn ? nil : token, signIn: usesBrowserSignIn, authBase: baseURL, body: body)
+        let (status, json) = try await GatewayHTTP.request(GatewayConnectionSettings.endpoint(baseURL, path), method: method, token: usesBrowserSignIn ? nil : token, signIn: usesBrowserSignIn, authBase: baseURL, body: body, timeout: timeout)
         guard (200..<300).contains(status) else {
             if let detail = json["detail"] as? String, !detail.isEmpty {
                 throw GatewayError.httpRefused(status, detail)

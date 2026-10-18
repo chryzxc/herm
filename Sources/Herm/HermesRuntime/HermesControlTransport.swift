@@ -13,10 +13,14 @@ protocol HermesRPCClientProtocol: AnyObject {
     func request(_ method: String, params: [String: Any]) async throws -> [String: Any]
     func fetchHTTP(_ path: String) async throws -> [String: Any]
     func sendHTTP(_ method: String, path: String, body: [String: Any]) async throws -> [String: Any]
+    func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String: Any]
     func close()
 }
 
 extension HermesRPCClientProtocol {
+    func sendHTTP(_ method: String, path: String, body: [String: Any], timeout: TimeInterval) async throws -> [String: Any] {
+        try await sendHTTP(method, path: path, body: body)
+    }
     func fetchHTTP(_ path: String) async throws -> [String: Any] {
         throw NSError(
             domain: "HermesControl",
@@ -194,15 +198,96 @@ final class HermesControlRPC {
     func cron(action: String, jobID: String? = nil, profileID: String? = nil) async throws -> [String: Any] {
         var params: [String: Any] = ["action": action, "include_disabled": true]
         if let jobID { params["name"] = jobID }
-        return try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: Self.profileParams(params, profileID: profileID))
+        let result = try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: Self.profileParams(params, profileID: profileID))
+        if action == "list" {
+            guard result["success"] as? Bool != false, result["jobs"] is [[String: Any]] else {
+                throw QuickDraftError.message(result["error"] as? String ?? "Hermes did not return an automation inventory.")
+            }
+            if let profileID, result["scoped"] as? String != profileID { throw HermesGateway.GatewayError.malformedResponse }
+        }
+        return result
     }
     func createCron(name: String, schedule: String, prompt: String, profileID: String? = nil) async throws -> [String: Any] {
-        try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: Self.profileParams([
+        let result = try await client.request(HermesFeatureIDs.ID.cronManage.rawValue, params: Self.profileParams([
             "action": "add", "name": name, "schedule": schedule, "prompt": prompt
         ], profileID: profileID))
+        try Self.validateCronAcknowledgment(result)
+        guard result["job_id"] as? String != nil else { throw HermesGateway.GatewayError.malformedResponse }
+        return result
     }
     func removeCron(jobID: String, profileID: String? = nil) async throws -> [String: Any] {
-        try await cron(action: "remove", jobID: jobID, profileID: profileID)
+        let result = try await cron(action: "remove", jobID: jobID, profileID: profileID)
+        try Self.validateCronAcknowledgment(result)
+        guard (result["removed_job"] as? [String: Any])?["id"] as? String == jobID else {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        return result
+    }
+
+    private static func validateCronAcknowledgment(_ result: [String: Any]) throws {
+        guard result["success"] as? Bool == true else {
+            throw QuickDraftError.message(result["error"] as? String ?? "Hermes did not confirm the automation change.")
+        }
+    }
+
+    static func cronPath(jobID: String? = nil, suffix: String = "", profileID: String?) throws -> String {
+        var path = "/api/cron/jobs"
+        if let jobID {
+            let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+            guard !jobID.isEmpty, jobID != ".", jobID != "..", let encoded = jobID.addingPercentEncoding(withAllowedCharacters: allowed) else {
+                throw HermesGateway.GatewayError.malformedResponse
+            }
+            path += "/" + encoded
+        }
+        var components = URLComponents()
+        components.queryItems = profileID.map { [URLQueryItem(name: "profile", value: $0)] }
+        let query = components.percentEncodedQuery.map { "?" + $0.replacingOccurrences(of: "+", with: "%2B") } ?? ""
+        return path + suffix + query
+    }
+
+    func cronJob(_ job: CronSummary, profileID: String?) async throws -> CronSummary {
+        let row = try await client.fetchHTTP(Self.cronPath(jobID: job.id, profileID: profileID))
+        return try Self.parseCronJobDetail(row, expectedID: job.id, profileID: profileID)
+    }
+
+    private static func parseCronJobDetail(_ row: [String: Any], expectedID: String, profileID: String?) throws -> CronSummary {
+        guard var job = ControlCenterModel.parseCronJobs(["jobs": [row]]).first, job.id == expectedID,
+              row["id"] as? String == expectedID, row["prompt"] is String, row["schedule"] != nil else { throw HermesGateway.GatewayError.malformedResponse }
+        if let reportedProfile = row["profile"] as? String, let profileID, reportedProfile != profileID {
+            throw HermesGateway.GatewayError.malformedResponse
+        }
+        job.owner = CronOwner(profileID: profileID)
+        return job
+    }
+
+    func cronJobRuns(jobID: String, profileID: String?) async throws -> [CronRunSummary] {
+        let path = try Self.cronPath(jobID: jobID, suffix: "/runs", profileID: profileID) + (profileID == nil ? "?" : "&") + "limit=50"
+        return try ControlCenterModel.parseStructuredCronRuns(try await client.fetchHTTP(path), jobID: jobID)
+    }
+
+    func updateCron(_ job: CronSummary, draft: CronEditDraft, profileID: String?) async throws {
+        let changes = draft.changes(comparedTo: job)
+        var updates: [String: Any] = [:]
+        for (field, value) in changes {
+            if value.isEmpty && [.model, .provider, .workdir].contains(field) {
+                updates[field.rawValue] = NSNull()
+            } else { updates[field.rawValue] = value }
+        }
+        let result = try await client.sendHTTP("PUT", path: Self.cronPath(jobID: job.id, profileID: profileID), body: ["updates": updates])
+        _ = try Self.parseCronJobDetail(result, expectedID: job.id, profileID: profileID)
+    }
+
+    func createCron(name: String, schedule: String, prompt: String, configuration: CronConfigurationDraft, profileID: String?) async throws -> CronSummary {
+        var body = configuration.parameters
+        body["name"] = name; body["schedule"] = schedule; body["prompt"] = prompt
+        let result = try await client.sendHTTP("POST", path: Self.cronPath(profileID: profileID), body: body)
+        guard let id = result["id"] as? String else { throw HermesGateway.GatewayError.malformedResponse }
+        return try Self.parseCronJobDetail(result, expectedID: id, profileID: profileID)
+    }
+
+    func triggerCron(jobID: String, profileID: String?) async throws {
+        let result = try await client.sendHTTP("POST", path: Self.cronPath(jobID: jobID, suffix: "/trigger", profileID: profileID), body: [:], timeout: 24 * 60 * 60)
+        _ = try Self.parseCronJobDetail(result, expectedID: jobID, profileID: profileID)
     }
     func reloadMCP(sessionID: String) async throws -> [String: Any] {
         try await client.request(HermesFeatureIDs.ID.reloadMCP.rawValue, params: ["session_id": sessionID, "confirm": true])

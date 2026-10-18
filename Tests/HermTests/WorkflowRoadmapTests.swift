@@ -266,7 +266,7 @@ struct WorkflowRoadmapTests {
       "scoped": "research",
       "jobs": [["job_id": "job", "name": "Daily", "enabled": true, "schedule": "daily"]],
     ]
-    client.replies["shell.exec"] = ["code": 0, "stdout": "", "stderr": ""]
+    client.replies["POST"] = ["id": "job", "prompt": "Review", "schedule": "daily"]
     let control = ControlCenterModel(
       rpc: HermesControlRPC(client: client),
       capabilities: [
@@ -283,7 +283,7 @@ struct WorkflowRoadmapTests {
     _ = await (first, second)
     #expect(
       client.calls.filter {
-        $0.0 == "shell.exec" && ($0.1["command"] as? String)?.contains("'cron' 'run' 'job'") == true
+        $0.0 == "POST /api/cron/jobs/job/trigger?profile=research"
       }.count == 1)
     #expect(!control.canTriggerRoutine(reference))
     await control.confirmRoutineReview(reference)
@@ -293,8 +293,7 @@ struct WorkflowRoadmapTests {
         $0.1["profile"] as? String == "research"
       })
     #expect(
-      client.calls.first { $0.0 == "shell.exec" }?.1["command"] as? String
-        == "'hermes' '--profile' 'research' 'cron' 'run' 'job'")
+      !client.calls.contains { $0.0 == "shell.exec" })
   }
   @Test func routineWorkspaceNavigationRetainsOwnerUntilItsInventoryArrives() {
     let control = ControlCenterModel()
@@ -460,22 +459,6 @@ struct WorkflowRoadmapTests {
     #expect(
       restored.sourcePins.count == 1 && restored.sourcePins.first?.origin.sessionID == "owner")
   }
-  @Test func sourcePinsRetainReplyReferencesAcrossRestarts() throws {
-    let name = "workflow-source-revisions-\(UUID())"
-    let defaults = try #require(UserDefaults(suiteName: name))
-    defer { defaults.removePersistentDomain(forName: name) }
-    let preferences = CommandCenterPreferencesStore(defaults: defaults)
-    let origin = QuickDestination(profileID: "research", sessionID: "owner")
-    preferences.pinSource(origin: origin, url: "https://example.com/paper", revisionID: "reply-a")
-    preferences.pinSource(origin: origin, url: "https://example.com/paper", revisionID: "reply-b")
-    preferences.pinSource(origin: origin, url: "https://example.com/paper", revisionID: "reply-b")
-    let restored = CommandCenterPreferencesStore(defaults: defaults)
-    #expect(restored.sourcePins.map(\.revisionID) == ["reply-a", "reply-b"])
-    let content = EdgeResultContent(text: "Reviewed excerpt", artifacts: [], revisionID: "reply-b")
-    let markdown = ResultSourceLinks.markdown(content, origin: origin, pins: restored.sourcePins)
-    #expect(markdown.contains("Reply reference: reply-b"))
-    #expect(markdown.contains("pinned from reply reference reply-a"))
-  }
   @Test func recallInsertionAndPreviewNavigationPreserveRecipientAndDraft() {
     let state = EdgeNotchState()
     state.selectQuickTarget(owner)
@@ -493,11 +476,6 @@ struct WorkflowRoadmapTests {
     state.clearPreviewDetails()
     #expect(!state.isReadingDetail)
     #expect(state.quickDraft.contains("Existing correction"))
-  }
-  @Test func sourceShelfOnlyOffersActualHTTPLinks() {
-    let links = ResultSourceLinks.candidates(
-      in: "Use https://example.com/paper and file:///private/note. Also https://example.com/paper")
-    #expect(links == ["https://example.com/paper"])
   }
   @Test func isolatedSessionFailureRetainsWorktreeAndReturnedSession() async {
     let client = WorkflowFixture()

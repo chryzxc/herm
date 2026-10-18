@@ -222,7 +222,7 @@ extension WorkspaceActivitySidebar {
                 }
                 .disabled(isRefreshingRepository)
             }
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockCompact)
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(Color.dockAccent)
         }
@@ -258,7 +258,7 @@ extension WorkspaceActivitySidebar {
                         presentation: .text,
                         color: .dockAccent
                     )
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 12, weight: .semibold))
                 }
             }
@@ -297,7 +297,8 @@ extension WorkspaceActivitySidebar {
     var activeRepositoryPath: String? {
         store.resolvedProjectPath(
             forSessionID: model.sessionID,
-            hermesProjectPath: model.sessionID.flatMap { control.project(forSessionID: $0)?.name }
+            hermesProjectPath: model.sessionID.flatMap { control.project(forSessionID: $0)?.name },
+            createdSessionProjectPath: model.sessionID.flatMap { model.createdSessionProjectPaths[$0] }
         )
     }
 
@@ -447,7 +448,7 @@ extension WorkspaceActivitySidebar {
                         iconSize: 16,
                         color: .dockAccent
                     )
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 12, weight: .semibold))
                 }
             }

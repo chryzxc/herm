@@ -157,7 +157,7 @@ extension WorkspaceActivitySidebar {
             if let latestRun, let request = control.cronReportRequest(for: latestRun) {
                 Divider().overlay(Color.dockBorderLight)
                 Button("Open latest report") { cronReportRequest = request }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
             }
@@ -366,6 +366,10 @@ extension WorkspaceActivitySidebar {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 18)
+                .overlay(alignment: .trailing) {
+                    DockIcon(.caretRight, size: 12, color: .dockSecondaryText)
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)
@@ -569,7 +573,7 @@ extension WorkspaceActivitySidebar {
                             cronReportRequest = CronReportRequest(job: job, sessionID: sessionID)
                         }
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -587,7 +591,7 @@ extension WorkspaceActivitySidebar {
                         onClose()
                         model.requestComposerFocus()
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -689,8 +693,7 @@ extension WorkspaceActivitySidebar {
 
     var tabBadges: ControlTabBadgeState {
         ControlTabBadgeState.make(
-            changeCount: workflow.repository.conflictedFiles > 0 ? workflow.repository.conflictedFiles : workflow.repository.changedFiles,
-            verificationCount: control.verification?.state == .failed ? 1 : (control.verification?.evidence?.scope?.lowercased() == "targeted" ? 1 : 0)
+            changeCount: workflow.repository.conflictedFiles > 0 ? workflow.repository.conflictedFiles : workflow.repository.changedFiles
         )
     }
 

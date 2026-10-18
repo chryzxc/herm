@@ -1141,8 +1141,9 @@ struct CronJobDetails: Codable, Equatable {
     var repeats: String?
     var deliveryError: String?
     var pausedReason: String?
+    var noAgent: Bool?
 
-    init(model: String? = nil, provider: String? = nil, skills: [String] = [], toolsets: [String] = [], script: String? = nil, workdir: String? = nil, repeats: String? = nil, deliveryError: String? = nil, pausedReason: String? = nil) {
+    init(model: String? = nil, provider: String? = nil, skills: [String] = [], toolsets: [String] = [], script: String? = nil, workdir: String? = nil, repeats: String? = nil, deliveryError: String? = nil, pausedReason: String? = nil, noAgent: Bool? = nil) {
         self.model = model
         self.provider = provider
         self.skills = skills
@@ -1152,6 +1153,7 @@ struct CronJobDetails: Codable, Equatable {
         self.repeats = repeats
         self.deliveryError = deliveryError
         self.pausedReason = pausedReason
+        self.noAgent = noAgent
     }
 
     init(row: [String: Any]) {
@@ -1167,7 +1169,8 @@ struct CronJobDetails: Codable, Equatable {
             workdir: text("workdir"),
             repeats: text("repeat"),
             deliveryError: text("last_delivery_error") ?? text("last_fire_error"),
-            pausedReason: text("paused_reason")
+            pausedReason: text("paused_reason"),
+            noAgent: row["no_agent"] as? Bool
         )
     }
 }
@@ -1196,15 +1199,33 @@ enum CronEditField: String, CaseIterable, Hashable, Identifiable, Codable {
     var title: String { rawValue.uppercased() }
 }
 
+struct CronConfigurationDraft: Equatable {
+    var delivery = "local"
+    var workdir = ""
+    var model = ""
+    var provider = ""
+
+    var parameters: [String: Any] {
+        var result: [String: Any] = ["deliver": delivery.trimmingCharacters(in: .whitespacesAndNewlines)]
+        for (key, value) in [("workdir", workdir), ("model", model), ("provider", provider)] {
+            let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !clean.isEmpty { result[key] = clean }
+        }
+        return result
+    }
+}
+
 struct CronEditDraft: Equatable {
     var name: String
     var schedule: String
     var prompt: String
+    var configuration: CronConfigurationDraft
 
     init(job: CronSummary) {
         name = job.name
         schedule = job.schedule
         prompt = job.prompt ?? ""
+        configuration = CronConfigurationDraft(delivery: job.delivery ?? "local", workdir: job.details.workdir ?? "", model: job.details.model ?? "", provider: job.details.provider ?? "")
     }
 
     func changes(comparedTo job: CronSummary) -> [CronEditField: String] {
@@ -1212,6 +1233,11 @@ struct CronEditDraft: Equatable {
         if name != job.name { result[.name] = name }
         if schedule != job.schedule { result[.schedule] = schedule }
         if prompt != (job.prompt ?? "") { result[.prompt] = prompt }
+        if configuration.delivery != (job.delivery ?? "local") { result[.deliver] = configuration.delivery }
+        if configuration.workdir != (job.details.workdir ?? "") { result[.workdir] = configuration.workdir }
+        if configuration.model != (job.details.model ?? "") { result[.model] = configuration.model }
+        if configuration.provider != (job.details.provider ?? "") { result[.provider] = configuration.provider }
+        if result[.model] == "" { result[.provider] = "" }
         return result
     }
 }
@@ -1225,7 +1251,7 @@ enum CronSchedule {
     }
 }
 
-struct CronRunSummary: Identifiable, Equatable {
+struct CronRunSummary: Identifiable, Hashable {
     let id: String
     let status: String
     let jobID: String?
@@ -1233,8 +1259,9 @@ struct CronRunSummary: Identifiable, Equatable {
     let claimedAt: String?
     let error: String?
     let sessionID: String?
+    let outputPreview: String?
 
-    init(id: String, status: String, jobID: String?, source: String?, claimedAt: String?, error: String?, sessionID: String? = nil) {
+    init(id: String, status: String, jobID: String?, source: String?, claimedAt: String?, error: String?, sessionID: String? = nil, outputPreview: String? = nil) {
         self.id = id
         self.status = status
         self.jobID = jobID
@@ -1242,6 +1269,7 @@ struct CronRunSummary: Identifiable, Equatable {
         self.claimedAt = claimedAt
         self.error = error
         self.sessionID = sessionID
+        self.outputPreview = outputPreview
     }
 }
 
@@ -1520,7 +1548,6 @@ struct HermesCheckpointSummary: Identifiable, Equatable, Sendable {
 
 enum ControlTab: String, CaseIterable, Identifiable {
     case changes = "Source Control"
-    case verification = "Verification"
     case automations = "Automations"
     case projects = "Projects"
     case search = "Search"
@@ -1540,7 +1567,7 @@ enum ControlTab: String, CaseIterable, Identifiable {
     /// Keep the high-frequency global destinations directly visible; supporting
     /// operational views remain available through the scrollable More menu.
     static let globalNavigation: [ControlTab] = [.kanban, .projects, .capabilities, .messaging, .quota, .usage, .calendar]
-    static let sessionNavigation: [ControlTab] = [.changes, .verification]
+    static let sessionNavigation: [ControlTab] = [.changes]
     static let workspaceNavigation: [ControlTab] = [.projects]
     static let toolsNavigation: [ControlTab] = [.automations, .search, .officePreview, .core]
 
@@ -1572,7 +1599,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var icon: Ph {
         switch self {
         case .changes: .gitBranch
-        case .verification: .sealCheck
         case .automations: .clockCounterClockwise
         case .projects: .folder
         case .search: .magnifyingGlass
@@ -1600,7 +1626,6 @@ enum ControlTab: String, CaseIterable, Identifiable {
     var pageHeaderSubtitle: String {
         switch self {
         case .changes: "Review local changes safely"
-        case .verification: "Observed checks and delivery evidence"
         case .automations: "Recurring work, visible at a glance"
         case .projects: "Repositories and connected sessions"
         case .search: "Search across connected Hermes sources"
@@ -1618,16 +1643,14 @@ enum ControlTab: String, CaseIterable, Identifiable {
 
 struct ControlTabBadgeState: Equatable {
     let changeCount: Int
-    let verificationCount: Int
 
-    static func make(changeCount: Int = 0, verificationCount: Int = 0) -> ControlTabBadgeState {
-        ControlTabBadgeState(changeCount: max(0, changeCount), verificationCount: max(0, verificationCount))
+    static func make(changeCount: Int = 0) -> ControlTabBadgeState {
+        ControlTabBadgeState(changeCount: max(0, changeCount))
     }
 
     func count(for tab: ControlTab) -> Int {
         switch tab {
         case .changes: changeCount
-        case .verification: verificationCount
         case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities, .messaging: 0
         }
     }
@@ -1635,7 +1658,6 @@ struct ControlTabBadgeState: Equatable {
     func isUrgent(for tab: ControlTab) -> Bool {
         switch tab {
         case .changes: changeCount > 0
-        case .verification: verificationCount > 0
         case .automations, .projects, .search, .kanban, .officePreview, .core, .quota, .usage, .calendar, .capabilities, .messaging: false
         }
     }

@@ -20,6 +20,12 @@ extension ControlCenterModel {
             attention = []
             reminders = []
             cronJobs = []
+            routineProfileID = nil
+            routineActions = []
+            unavailableRoutineActions = []
+            routineActionErrors = [:]
+            triggeredRoutineIDs = []
+            triggeredRoutineRevisions = [:]
             cronRuns = []
             cronRunsByJob = [:]
             cronHistoryAvailable = false

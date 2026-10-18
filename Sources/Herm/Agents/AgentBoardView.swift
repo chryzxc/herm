@@ -13,7 +13,6 @@ struct AgentBoardView: View {
     @State private var expandedActivityID: String?
     @State private var expandedPipelineItemID: String?
     @State private var agentScope: AgentScope
-    @State private var showsAgentNodes = false
 
     private enum AgentScope: String, CaseIterable, Identifiable {
         case live = "Live"
@@ -131,24 +130,7 @@ struct AgentBoardView: View {
         if mapAgents.isEmpty {
             emptyState(title: "No active Hermes subagents", detail: "Delegate work from Hermes to see named agents and live activity here.")
         } else {
-            if showsAgentNodes {
-                AgentHandoffMapView(
-                    model: model,
-                    selectedAgentID: $expandedAgentID,
-                    allowsContinuousAnimation: !embedded,
-                    agents: mapAgents
-                )
-                    .frame(maxWidth: .infinity, minHeight: 460, alignment: .leading)
-            } else {
-                agentList
-            }
-            if showsAgentNodes, let selectedAgent = agents.first(where: { $0.id == expandedAgentID }) {
-                expandedActivity(for: selectedAgent)
-                    .padding(12)
-                    .background(Color.dockSurface4)
-                    .clipShape(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            agentList
         }
     }
 
@@ -163,13 +145,6 @@ struct AgentBoardView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Color.dockMetadataText)
                     .lineLimit(1)
-                Toggle(isOn: $showsAgentNodes) {
-                        Text(showsAgentNodes ? "Nodes" : "List")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.dockSecondaryText)
-                }
-                .toggleStyle(.switch)
-                .accessibilityLabel("Show agents as \(showsAgentNodes ? "nodes" : "list")")
             }
             HStack(spacing: 2) {
                 ForEach(AgentScope.allCases) { scope in

@@ -139,17 +139,17 @@ enum GatewayHTTP {
         configuration.httpShouldSetCookies = false
         return URLSession(configuration: configuration, delegate: GatewaySessionDelegate(), delegateQueue: nil)
     }()
-    static func request(_ url: URL, method: String = "GET", token: String? = nil, signIn: Bool = false, authBase: URL? = nil, body: [String: Any]? = nil) async throws -> (Int, [String: Any]) {
+    static func request(_ url: URL, method: String = "GET", token: String? = nil, signIn: Bool = false, authBase: URL? = nil, body: [String: Any]? = nil, timeout: TimeInterval = 15) async throws -> (Int, [String: Any]) {
         if signIn, let authBase, let access = try await GatewayNativeAuthentication.shared.accessToken(authBase) {
-            let response = try await request(url, method: method, token: access, body: body)
+            let response = try await request(url, method: method, token: access, body: body, timeout: timeout)
             if response.0 != 401 { return response }
             if let refreshed = try await GatewayNativeAuthentication.shared.accessToken(authBase, force: true), refreshed != access {
-                let retried = try await request(url, method: method, token: refreshed, body: body)
+                let retried = try await request(url, method: method, token: refreshed, body: body, timeout: timeout)
                 if retried.0 != 401 { return retried }
             }
             // The remaining path uses the independently held browser session.
         }
-        var request = URLRequest(url: url, timeoutInterval: 15)
+        var request = URLRequest(url: url, timeoutInterval: timeout)
         request.httpMethod = method
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if signIn { for (key, value) in await GatewayWebAuthentication.shared.headers(for: url) { request.setValue(value, forHTTPHeaderField: key) } }

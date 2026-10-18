@@ -16,7 +16,7 @@ extension WorkspaceActivitySidebar {
                     } label: {
                         DockIconLabel("PROJECTS", icon: .caretLeft)
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockAccent)
                     Spacer()
@@ -27,7 +27,7 @@ extension WorkspaceActivitySidebar {
                             DockIconLabel("NEW CHAT", icon: .notePencil)
                                 .font(.system(size: 10, weight: .semibold))
                         }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .foregroundStyle(Color.dockAccent)
                         .disabled(model.isRestoringSession || model.isCreatingSession)
                         .help("Start a new chat in this project")
@@ -148,7 +148,7 @@ extension WorkspaceActivitySidebar {
                             .font(.system(size: 10, weight: .semibold))
                             .tracking(0.4)
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .foregroundStyle(Color.dockAccent)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.top, 4)
@@ -168,7 +168,7 @@ extension WorkspaceActivitySidebar {
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(0.4)
         }
-        .buttonStyle(.dockHover)
+        .buttonStyle(.dockCompact)
         .foregroundStyle(Color.dockAccent)
         .help("Start a new chat in a directory")
     }
@@ -178,7 +178,7 @@ extension WorkspaceActivitySidebar {
             addProjectDirectoryButton
             if control.projectMutationsAvailable {
                 Button("CREATE PROJECT") { chooseProjectForCreation() }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockAccent)
                     .help("Create a Hermes project from a folder")
@@ -265,7 +265,7 @@ extension WorkspaceActivitySidebar {
                         .foregroundStyle(Color.dockDestructive)
                 }
             }
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockCompact)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .padding(.top, 4)
         }
@@ -344,7 +344,7 @@ extension WorkspaceActivitySidebar {
                     }
                     Button("REFRESH") { Task { await refreshRepository() } }
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             } else {
@@ -354,7 +354,7 @@ extension WorkspaceActivitySidebar {
                 Button("SELECT PROJECT FOLDER") {
                     showingRepositoryPicker = true
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
             }

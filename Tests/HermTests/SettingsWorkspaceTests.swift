@@ -6,7 +6,7 @@ import Testing
 struct SettingsWorkspaceTests {
     @Test("categories keep the documented order")
     func categoryOrder() {
-        #expect(SettingsCategory.allCases == [.general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .integrations, .session, .project, .diagnostics, .updates])
+        #expect(SettingsCategory.allCases == [.general, .gateway, .appearance, .notifications, .runtime, .providers, .chat, .workspace, .safety, .browser, .memory, .voice, .advanced, .integrations, .session, .diagnostics, .updates])
         let grouped = SettingsCategoryGroup.allCases.flatMap(\.categories)
         #expect(grouped.count == Set(grouped).count)
         #expect(Set(grouped) == Set(SettingsCategory.allCases))

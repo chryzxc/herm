@@ -21,6 +21,7 @@ final class ControlCenterModel: ObservableObject {
     let gatewayService = HermesGatewayLifecycleModel()
     @Published var attention: [AttentionItem] = []
     @Published var reminders: [ReminderSummary] = []
+    var lastCreatedCronJobID: String?
     @Published var cronJobs: [CronSummary] = []
     @Published var cronRuns: [CronRunSummary] = []
     @Published var cronHistoryAvailable = false

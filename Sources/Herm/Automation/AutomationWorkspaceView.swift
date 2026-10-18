@@ -25,6 +25,7 @@ struct AutomationWorkspaceRowPresentation: Equatable {
         case running
         case succeeded
         case failed
+        case unknown
 
         var title: String {
             switch self {
@@ -33,6 +34,7 @@ struct AutomationWorkspaceRowPresentation: Equatable {
             case .running: "Running"
             case .succeeded: "Succeeded"
             case .failed: "Failed"
+            case .unknown: "Outcome unavailable"
             }
         }
     }
@@ -40,22 +42,30 @@ struct AutomationWorkspaceRowPresentation: Equatable {
     let result: Result
     let detail: String?
 
-    static func make(job: CronSummary, latestRun: CronRunSummary?) -> Self {
+    @MainActor static func make(job: CronSummary, latestRun: CronRunSummary?) -> Self {
         guard job.enabled else { return Self(result: .paused, detail: job.lastRunAt) }
-        // Run history may be unavailable; the job's own last_status is still authoritative.
         if let latestRun {
-            return Self(result: result(for: latestRun), detail: latestRun.claimedAt)
+            let outcome = result(for: latestRun)
+            if outcome == .unknown, let status = job.lastStatus,
+               let jobDate = job.lastRunAt.flatMap(HumanDateFormatting.date),
+               let runDate = latestRun.claimedAt.flatMap(HumanDateFormatting.date), jobDate >= runDate {
+                return Self(result: result(status: status, error: job.lastError), detail: job.lastRunAt)
+            }
+            return Self(result: outcome, detail: latestRun.claimedAt)
         }
         if let status = job.lastStatus, job.lastRunAt != nil {
-            return Self(result: failed(status, error: job.lastError) ? .failed : .succeeded, detail: job.lastRunAt)
+            return Self(result: result(status: status, error: job.lastError), detail: job.lastRunAt)
         }
         return Self(result: .noRun, detail: nil)
     }
 
-    static func result(for run: CronRunSummary) -> Result {
-        if failed(run.status, error: run.error) { return .failed }
-        let status = run.status.lowercased()
-        return status.contains("run") || status.contains("claim") || status.contains("pending") ? .running : .succeeded
+    static func result(for run: CronRunSummary) -> Result { result(status: run.status, error: run.error) }
+
+    private static func result(status: String, error: String?) -> Result {
+        if failed(status, error: error) { return .failed }
+        let status = status.lowercased()
+        if ["running", "claimed", "pending"].contains(status) { return .running }
+        return ["completed", "success", "succeeded", "ok"].contains(status) ? .succeeded : .unknown
     }
 
     @MainActor static func isOverdue(_ job: CronSummary, now: Date = .now) -> Bool {
@@ -80,11 +90,12 @@ struct AutomationWorkspaceView: View {
     @State private var searchText = ""
     @State private var isShowingCreationSheet = false
     @State private var editingJob: CronSummary?
+    @State private var pauseRequest: CronSummary?
     @State private var removeRequest: CronSummary?
     @State private var runRequest: CronSummary?
     @State private var isShowingRemoveConfirmation = false
     @State private var isShowingRunConfirmation = false
-    @State private var pendingCreatedName: String?
+    @State private var pendingCreatedJobID: String?
 
     private var selectedJob: CronSummary? {
         control.cronJobs.first { $0.id == selectedJobID }
@@ -157,17 +168,23 @@ struct AutomationWorkspaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $isShowingCreationSheet) {
-            AutomationCreationSheet(control: control) { name in
-                pendingCreatedName = name
+            AutomationCreationSheet(control: control) { id in
+                pendingCreatedJobID = id
+                selectedJobID = id
                 refreshWorkspace()
             }
         }
         .sheet(item: $editingJob) { job in
-            CronEditEditor(
-                job: job,
-                isPending: control.isActionPending(control.cronActionID("edit", job: job)),
-                submit: { draft in control.editCron(job, draft: draft) }
-            )
+            CronEditEditor(job: job, control: control)
+        }
+        .confirmationDialog(pauseRequest?.enabled == true ? "Pause automation?" : "Resume automation?", isPresented: Binding(get: { pauseRequest != nil }, set: { if !$0 { pauseRequest = nil } })) {
+            if let job = pauseRequest {
+                Button(job.enabled ? "Pause" : "Resume") {
+                    let reference = RoutineReference(profileID: control.profileForRoutine(job), job: job, run: runs(for: job).first)
+                    Task { await control.recoverRoutine(reference, run: false, paused: job.enabled) }
+                }
+            }
+            Button("Cancel", role: .cancel) { pauseRequest = nil }
         }
         .confirmationDialog("Remove automation?", isPresented: $isShowingRemoveConfirmation) {
             if let removeRequest {
@@ -188,6 +205,13 @@ struct AutomationWorkspaceView: View {
             Text("This starts a new execution of \(runRequest?.name ?? "the routine") in profile \(runRequest.flatMap { control.profileForRoutine($0) } ?? "Launch profile"). It does not retry delivery or change the schedule.")
         }
         .onAppear { applyRequestedRoutineSelection(); reconcileSelection() }
+        .task(id: "\(control.routineProfileID ?? "")/\(selectedJobID ?? "")") {
+            guard let selectedJobID else { return }
+            while !Task.isCancelled {
+                control.refreshCronRuns(jobID: selectedJobID)
+                do { try await Task.sleep(for: .seconds(15)) } catch { return }
+            }
+        }
         .onChange(of: control.cronJobs) { _, _ in applyRequestedRoutineSelection() }
         .onChange(of: control.requestedAutomationDidNavigate) { _, _ in applyRequestedRoutineSelection() }
         .onChange(of: control.requestedAutomationJobID, initial: true) { _, id in
@@ -203,10 +227,10 @@ struct AutomationWorkspaceView: View {
         }
         .onChange(of: control.cronJobs) { _, _ in
             reconcileSelection()
-            if let pendingCreatedName,
-               let created = control.cronJobs.first(where: { $0.name == pendingCreatedName }) {
+            if let pendingCreatedJobID,
+               let created = control.cronJobs.first(where: { $0.id == pendingCreatedJobID }) {
                 selectedJobID = created.id
-                self.pendingCreatedName = nil
+                self.pendingCreatedJobID = nil
             }
         }
     }
@@ -215,6 +239,7 @@ struct AutomationWorkspaceView: View {
     private func runPanel(for job: CronSummary) -> some View {
         if let run = selectedRun(for: job) {
             AutomationRunDetailPanel(run: run, job: job, control: control, onClose: { isRunPanelOpen = false })
+                .id("\(control.clientBindingGeneration)/\(control.profileForRoutine(job) ?? "")/\(job.id)")
         } else {
             emptyRunPanel
         }
@@ -250,6 +275,13 @@ struct AutomationWorkspaceView: View {
 
             if control.cronJobs.isEmpty, control.refreshState(for: "cron.jobs")?.isRefreshing == true {
                 DockLoadingState(title: "Loading schedules…", detail: "Reading recurring jobs from Hermes.")
+            } else if control.cronJobs.isEmpty, let error = control.refreshState(for: "cron.jobs")?.error {
+                VStack(alignment: .leading, spacing: 12) {
+                    placeholder("Automations unavailable", detail: error)
+                    Button("Retry") { refreshWorkspace() }.buttonStyle(.dockSecondary).padding(.horizontal, 22)
+                }
+            } else if control.cronJobs.isEmpty, !control.cronControlAvailable {
+                placeholder("Automations unavailable", detail: "Connect to Hermes and refresh to load schedules and their available controls.")
             } else if control.cronJobs.isEmpty {
                 emptyWorkspace
             } else {
@@ -286,7 +318,7 @@ struct AutomationWorkspaceView: View {
     private var workspaceHeader: some View {
         DockPageHeader(
             title: "Automation",
-            subtitle: "Recurring work Hermes runs on your behalf",
+            subtitle: control.refreshState(for: "cron.jobs")?.error.map { "Schedules are not current · " + $0 } ?? "Recurring work Hermes runs on your behalf",
             onRefresh: refreshWorkspace,
             isRefreshing: isRefreshing,
             sidebarCollapsed: $isJobListCollapsed
@@ -416,6 +448,7 @@ struct AutomationWorkspaceView: View {
 
     private func jobHeader(_ job: CronSummary) -> some View {
         let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
+        let reference = RoutineReference(profileID: control.profileForRoutine(job), job: job, run: runs(for: job).first)
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 statePill(
@@ -430,28 +463,28 @@ struct AutomationWorkspaceView: View {
             }
             HStack(alignment: .center, spacing: 10) {
                 Text(job.name)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.dockPrimaryText)
                     .lineLimit(2)
                     .textSelection(.enabled)
                 Spacer(minLength: 8)
-                if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
+                if control.cronControlAvailable {
                     Button("Edit") { editingJob = job }
                         .buttonStyle(.dockSecondary)
                         .controlSize(.small)
                 }
-                if control.capabilityAvailable("cron.runNow") {
+                if control.cronControlAvailable || control.capabilityAvailable("cron.runNow") {
                     Button {
                         runRequest = job
                         isShowingRunConfirmation = true
                     } label: {
                         Label("Run now", icon: .play)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                             .padding(.horizontal, 10)
                             .frame(height: 26)
                     }
                     .buttonStyle(.dockPrimary)
-                    .disabled(control.isActionPending(control.cronActionID("run", job: job)))
+                    .disabled(!control.canTriggerRoutine(RoutineReference(profileID: control.profileForRoutine(job), job: job, run: runs(for: job).first)))
                 }
                 DockSidebarToggle(isCollapsed: !isRunPanelOpen, edge: .trailing, panel: "run panel") {
                     isRunPanelOpen.toggle()
@@ -468,6 +501,11 @@ struct AutomationWorkspaceView: View {
                     .accessibilityLabel("More actions for \(job.name)")
                 }
             }
+            Text(control.routineActionErrors[reference.id] ?? (control.routineActions.contains(reference.id) ? "Waiting for Hermes to confirm the operation…" : " "))
+                .font(.system(size: 12))
+                .foregroundStyle(control.routineActionErrors[reference.id] != nil ? Color.dockWarning : Color.dockMetadataText)
+                .lineLimit(2)
+                .frame(height: 32, alignment: .topLeading)
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
@@ -478,7 +516,10 @@ struct AutomationWorkspaceView: View {
         let overdue = AutomationWorkspaceRowPresentation.isOverdue(job)
         let result = presentation(for: job)
         let jobRuns = runs(for: job)
-        let failures = jobRuns.filter { AutomationWorkspaceRowPresentation.result(for: $0) == .failed }.count
+        let outcomes = jobRuns.map { AutomationWorkspaceRowPresentation.result(for: $0) }
+        let failures = outcomes.filter { $0 == .failed }.count
+        let successes = outcomes.filter { $0 == .succeeded }.count
+        let knownOutcomes = successes + failures
         return HStack(spacing: 10) {
             statTile(
                 "Next run",
@@ -494,8 +535,8 @@ struct AutomationWorkspaceView: View {
             )
             statTile(
                 "Success",
-                value: jobRuns.isEmpty ? "—" : "\(Int((Double(jobRuns.count - failures) / Double(jobRuns.count) * 100).rounded()))%",
-                detail: jobRuns.isEmpty ? "No runs loaded" : "last \(jobRuns.count) run\(jobRuns.count == 1 ? "" : "s")",
+                value: knownOutcomes == 0 ? "—" : "\(Int((Double(successes) / Double(knownOutcomes) * 100).rounded()))%",
+                detail: knownOutcomes == 0 ? "No confirmed outcomes" : "\(knownOutcomes) confirmed outcomes",
                 tint: failures > 0 ? Color.dockWarning : Color.dockPrimaryText
             )
         }
@@ -720,7 +761,7 @@ struct AutomationWorkspaceView: View {
     private func placeholder(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text(detail)
                 .font(.system(size: 12))
@@ -733,18 +774,27 @@ struct AutomationWorkspaceView: View {
 
     @ViewBuilder
     private func menuActions(for job: CronSummary) -> some View {
-        let reference = RoutineReference(profileID: control.routineProfileID, job: job, run: runs(for: job).first)
+        let reference = RoutineReference(profileID: control.profileForRoutine(job), job: job, run: runs(for: job).first)
         Button(CommandCenterPreferencesStore.shared.routinePins.contains(reference.id) ? "Unpin from notch" : "Pin to notch") {
             CommandCenterPreferencesStore.shared.toggleRoutinePin(reference.id)
         }
+        if control.cronControlAvailable {
+            Button(job.enabled ? "Pause…" : "Resume…") { pauseRequest = job }
+                .disabled(control.routineActions.contains(reference.id) || control.unavailableRoutineActions.contains(job.enabled ? "pause" : "resume"))
+        }
+        if control.routineNeedsReview(reference) {
+            Button("I reviewed the run; allow another") {
+                Task { await control.confirmRoutineReview(reference) }
+            }.disabled(control.routineActions.contains(reference.id))
+        }
         Button("Integrations…") { control.integrationDestination = IntegrationDestination(profileID: reference.profileID) }
-        if control.capabilityAvailable("cron.runNow") {
+        if control.cronControlAvailable || control.capabilityAvailable("cron.runNow") {
             Button("Run now", icon: .play) {
                 runRequest = job
                 isShowingRunConfirmation = true
-            }
+            }.disabled(!control.canTriggerRoutine(reference))
         }
-        if control.capabilityAvailable("cron.edit"), !job.editableFields.isEmpty {
+        if control.cronControlAvailable {
             Button("Edit", icon: .pencilSimple) { editingJob = job }
         }
         if control.cronControlAvailable {
@@ -766,13 +816,13 @@ struct AutomationWorkspaceView: View {
     private var emptyWorkspace: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("No automations")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.dockPrimaryText)
             Text("Create a schedule when Hermes should run work without you.")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockMetadataText)
             Button("New automation") { isShowingCreationSheet = true }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .foregroundStyle(Color.dockAccent)
                 .disabled(!control.cronControlAvailable)
         }
@@ -797,6 +847,7 @@ struct AutomationWorkspaceView: View {
         case .running: Color.dockAccent
         case .succeeded: Color.dockSuccess
         case .failed: Color.dockDestructive
+        case .unknown: Color.dockMetadataText
         }
     }
 }
@@ -826,7 +877,7 @@ private struct AutomationRunDetailPanel: View {
                             .foregroundStyle(Color.dockMetadataText)
                         Text(run.status.capitalized)
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(result == .failed ? Color.dockDestructive : (result == .running ? Color.dockAccent : Color.dockSuccess))
+                            .foregroundStyle(result == .failed ? Color.dockDestructive : (result == .running ? Color.dockAccent : (result == .succeeded ? Color.dockSuccess : Color.dockMetadataText)))
                     }
                     Text(run.claimedAt.map(HumanDateFormatting.dateAndTime) ?? "Unknown time")
                         .font(.system(size: 13, weight: .semibold))
@@ -836,7 +887,7 @@ private struct AutomationRunDetailPanel: View {
                 Spacer(minLength: 8)
                 if let report {
                     DockCopyButton(report.markdown, label: "Copy", accessibilityLabel: "Copy run output", iconSize: 13)
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                 }
                 if let onClose {
                     Button(action: onClose) {
@@ -872,7 +923,7 @@ private struct AutomationRunDetailPanel: View {
                     }
                     Color.dockBorderLight.frame(height: 0.5)
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("OUTPUT")
+                        Text(run.source == "cron_output" ? "OUTPUT PREVIEW" : "OUTPUT")
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                             .foregroundStyle(Color.dockMetadataText)
                         output
@@ -882,7 +933,7 @@ private struct AutomationRunDetailPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .task(id: run.id) { await load() }
+        .task(id: run) { await load() }
     }
 
     @ViewBuilder
@@ -898,7 +949,7 @@ private struct AutomationRunDetailPanel: View {
             MarkdownMessageView(markdown: report.markdown)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            Text(loadError ?? "Hermes did not record a session for this run.")
+            Text(loadError ?? run.outputPreview ?? (run.source == "cron_output" ? "Hermes recorded a script-only run without a stored preview." : "No transcript is linked to this execution record. Refresh run history to load Hermes-recorded sessions."))
                 .font(.system(size: 12))
                 .foregroundStyle(Color.dockMetadataText)
                 .fixedSize(horizontal: false, vertical: true)
@@ -909,17 +960,18 @@ private struct AutomationRunDetailPanel: View {
     private func load() async {
         report = nil
         loadError = nil
+        isLoading = false
         guard let request else { return }
         isLoading = true
+        defer { if !Task.isCancelled { isLoading = false } }
         do {
-            report = try await control.cronReport(for: request)
+            let report = try await control.cronReport(for: request)
+            guard !Task.isCancelled else { return }
+            self.report = report
         } catch {
-            // Script-only jobs never open an agent session, so the lookup 404s.
-            loadError = (error as NSError).code == 404 || error.localizedDescription.contains("404")
-                ? "This run did not record an agent session, so there is no transcript output. Script-only jobs report through their delivery target."
-                : error.localizedDescription
+            guard !Task.isCancelled else { return }
+            loadError = ControlCenterModel.safeUserDiagnostic(error.localizedDescription)
         }
-        isLoading = false
     }
 }
 
@@ -980,32 +1032,41 @@ private struct AutomationCreationSheet: View {
     @State private var name = ""
     @State private var schedule = ""
     @State private var prompt = ""
+    @State private var configuration = CronConfigurationDraft()
     @State private var error: String?
     @State private var isSubmitting = false
+    @State private var creationBindingGeneration: UInt64?
+    @State private var creationProfileID: String?
 
     private var valid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !schedule.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !configuration.delivery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
         DockModal(icon: .magicWand, title: "New Automation", subtitle: "Define when Hermes should run and what it should do.", width: 520) {
-            labeledField("Name") {
-                DockTextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
-            }
-            labeledField("Schedule", hint: "every 2h or 0 9 * * *") {
-                DockTextField("When should Hermes run this?", text: $schedule).textFieldStyle(.dockGlass)
-            }
-            if !schedule.isEmpty {
-                ModalNote(text: CronScheduleFormatting.humanReadable(schedule), icon: .clock)
-            }
-            labeledField("Request") {
-                DockTextField("What should Hermes do?", text: $prompt, axis: .vertical)
-                    .lineLimit(4...8)
-                    .textFieldStyle(.dockGlass)
-            }
-            if let error { ModalNote(text: error, icon: .warning, tone: .dockWarning) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    labeledField("Name") {
+                        DockTextField("Nightly review", text: $name).textFieldStyle(.dockGlass)
+                    }
+                    labeledField("Schedule", hint: "every 2h or 0 9 * * *") {
+                        DockTextField("When should Hermes run this?", text: $schedule).textFieldStyle(.dockGlass)
+                    }
+                    if !schedule.isEmpty {
+                        ModalNote(text: CronScheduleFormatting.humanReadable(schedule), icon: .clock)
+                    }
+                    labeledField("Request") {
+                        DockTextField("What should Hermes do?", text: $prompt, axis: .vertical)
+                            .lineLimit(4...8)
+                            .textFieldStyle(.dockGlass)
+                    }
+                    CronConfigurationFields(draft: $configuration)
+                    if let error { ModalNote(text: error, icon: .warning, tone: .dockWarning) }
+                }
+            }.frame(height: 400)
         } footer: {
             modalActions(
                 primaryTitle: "Create Automation",
@@ -1015,18 +1076,29 @@ private struct AutomationCreationSheet: View {
                 onCancel: { dismiss() }
             ) { submit() }
         }
+        .interactiveDismissDisabled(isSubmitting)
+        .onAppear {
+            creationBindingGeneration = control.clientBindingGeneration
+            creationProfileID = control.routineProfileID
+        }
     }
 
     private func submit() {
+        guard !isSubmitting else { return }
+        guard creationBindingGeneration == control.clientBindingGeneration, creationProfileID == control.routineProfileID else {
+            error = "The Hermes connection or profile changed. Close this form and create the automation in the intended profile."
+            return
+        }
         let submittedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         isSubmitting = true
         error = nil
         Task {
-            let succeeded = await control.createCron(name: submittedName, schedule: schedule, prompt: prompt)
+            let succeeded = await control.createCron(name: submittedName, schedule: schedule, prompt: prompt, configuration: configuration)
             await MainActor.run {
                 isSubmitting = false
                 if succeeded {
-                    onSuccess(submittedName)
+                    if creationBindingGeneration == control.clientBindingGeneration, creationProfileID == control.routineProfileID,
+                       let createdID = control.lastCreatedCronJobID { onSuccess(createdID) }
                     dismiss()
                 } else {
                     error = control.lastError ?? "Hermes could not create this automation."
