@@ -278,7 +278,7 @@ struct NewGroupChatSheet: View {
             if store.isRoomLinkEnabled, let installID = store.installID {
                 ForEach($remote) { $seat in remoteSeat($seat, installID: installID) }
                 Button { remote.append(RemoteDraft()) } label: { DockIconLabel("Add a bot from another Mac", icon: .plugsConnected) }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .disabled(memberCount >= GroupChatStore.memberLimits.upperBound)
             }
         }
@@ -594,7 +594,7 @@ struct GroupChatView: View {
                     }
                     if (store.earliestLoadedSeq[roomID] ?? 0) > 0 {
                         Button("Load earlier messages") { Task { await store.loadEarlier(roomID) } }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .font(.caption)
                             .foregroundStyle(Color.dockAccent)
                             .frame(maxWidth: .infinity)

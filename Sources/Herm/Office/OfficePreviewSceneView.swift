@@ -543,7 +543,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         view.addGestureRecognizer(magnify)
         context.coordinator.showsAgents = showsAgents
         context.coordinator.isDataCurrent = isDataCurrent
-        context.coordinator.install(in: view, agents: agents)
+        context.coordinator.install(in: view, agents: agents, reduceMotion: reduceMotion)
         return view
     }
 
@@ -615,6 +615,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private var lastDaylightCheck = Date.distantPast
         private let postProcess = OfficePostProcess()
         private var labelsNeedLayout = false
+        private var labelOrder: [String] = []
         private var limbEntities: [String: (leftLeg: Entity, rightLeg: Entity, leftArm: Entity, rightArm: Entity)] = [:]
         private var anchor: AnchorEntity?
         private var camera: PerspectiveCamera?
@@ -641,7 +642,9 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private var lastLeisureAction: [String: OfficeDesignNavigation.LeisureAction] = [:]
         /// Where each bot last stood, kept across view rebuilds so reopening
         /// the office resumes the simulation instead of resetting to desks.
-        private static var placements: [String: OfficePreviewLayout.Node] = [:]
+        private let placementStore: OfficePlacementStore
+        private var placements: [String: OfficePreviewLayout.Node] = [:]
+        private var lastPlacementSave = Date.distantPast
         /// The furnished room is static between visits. Keep the flattened
         /// geometry after closing Office so reopening does not build and batch
         /// thousands of props again on the main thread.
@@ -661,18 +664,23 @@ struct OfficePreviewSceneView: NSViewRepresentable {
         private var musicTime: Float = 0
         private var musicLevel: Float = 0
 
-        init(onSelectAgent: @escaping (String) -> Void) { self.onSelectAgent = onSelectAgent }
+        init(placementStore: OfficePlacementStore = OfficePlacementStore(), onSelectAgent: @escaping (String) -> Void) {
+            self.placementStore = placementStore
+            self.onSelectAgent = onSelectAgent
+        }
 
-        func install(in view: OfficePreviewARView, agents: [OfficePreviewAgentPresentation]) {
-            guard anchor == nil else { update(agents: agents, reduceMotion: true); return }
+        func install(in view: OfficePreviewARView, agents: [OfficePreviewAgentPresentation], reduceMotion: Bool = false) {
+            guard anchor == nil else { update(agents: agents, reduceMotion: reduceMotion); return }
             self.view = view
+            placements = placementStore.load()
             let room = AnchorEntity(world: .zero)
             anchor = room
             roomLayout.reconcile(ids: agents.map(\.id), mainAgentID: mainOfficeOwner(in: agents), reserveMainOffice: true)
             rebuildRoom()
             addCameraAndLight(to: room)
             view.scene.anchors.append(room)
-            update(agents: agents, reduceMotion: true)
+            update(agents: agents, reduceMotion: reduceMotion)
+            savePlacements()
             actionSubscription = view.scene.subscribe(to: SceneEvents.Update.self) { [weak self] event in
                 MainActor.assumeIsolated {
                     self?.advanceCamera(delta: event.deltaTime)
@@ -781,6 +789,11 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             guard agents != lastPresentations || reduceMotion != lastReduceMotion || isDataCurrent != lastDataCurrent else { return }
             lastDataCurrent = isDataCurrent
             lastPresentations = agents
+            labelOrder = agents.sorted {
+                let left = $0.taskData?.lane.rank ?? 99
+                let right = $1.taskData?.lane.rank ?? 99
+                return left == right ? $0.id < $1.id : left < right
+            }.map(\.id)
             let oldCapacity = roomLayout.capacity
             roomLayout.reconcile(ids: agents.map(\.id), mainAgentID: mainOfficeOwner(in: agents), reserveMainOffice: true)
             if oldCapacity != roomLayout.capacity {
@@ -793,7 +806,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             })
             interactionPlan = isDataCurrent ? .make(agents: agents, zoneCapacity: zoneCapacity) : OfficePreviewInteractionPlan()
             for id in Array(avatarRoots.keys) where desiredAgents[id] == nil {
-                if let node = currentNodes[id] { Self.placements[id] = node }
+                if let node = currentNodes[id] { placements[id] = node }
                 endConversation(id)
                 movementTasks.removeValue(forKey: id)?.cancel()
                 avatarRoots.removeValue(forKey: id)?.removeFromParent()
@@ -828,7 +841,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     // Resume where the bot was last seen. New idle bots start
                     // at a free activity across the office instead of a desk.
                     var start = restoredNode(for: agent, slot: slot)
-                    if start == nil, agent.canWander, !reduceMotion, let spot = leisureCandidates(for: agent, slot: slot, current: nil).first {
+                    if start == nil, agent.canWander, !reduceMotion, let spot = leisureCandidates(for: agent, slot: slot, current: nil).prefix(8).randomElement() {
                         leisureTargets[agent.id] = spot
                         start = spot
                     }
@@ -882,15 +895,21 @@ struct OfficePreviewSceneView: NSViewRepresentable {
 
         /// The last place a bot stood, if it is still a valid spot in this layout.
         private func restoredNode(for agent: OfficePreviewAgentPresentation, slot: Int) -> OfficePreviewLayout.Node? {
-            guard let saved = Self.placements[agent.id] else { return nil }
+            guard let saved = placements[agent.id],
+                  OfficePreviewLayout.locations.indices.contains(saved.index) else { return nil }
             let taken = Set(currentNodes.values.compactMap(\.leisureIndex))
             if let index = saved.leisureIndex {
                 guard agent.canWander, roomLayout.authored?.leisureSpots.indices.contains(index) == true, !taken.contains(index) else { return nil }
                 return OfficePreviewLayout.Node(slot: slot, index: 0, isStation: true, leisureIndex: index)
             }
-            if saved.isStation, saved.slot == slot { return saved }
+            if saved.isStation {
+                guard saved.slot == slot, saved.slot >= 0 else { return nil }
+                let point = roomLayout.position(saved)
+                guard !currentNodes.values.contains(where: { simd_distance(roomLayout.position($0), point) < 0.8 }) else { return nil }
+                return saved
+            }
             let point = roomLayout.position(saved)
-            guard roomLayout.isWalkable(point), !avatarRoots.values.contains(where: { simd_distance($0.position, point) < 0.8 }) else { return nil }
+            guard roomLayout.isWalkable(point), !avatarRoots.contains(where: { $0.key != agent.id && simd_distance($0.value.position, point) < 0.8 }) else { return nil }
             return OfficePreviewLayout.Node(slot: -1, index: 0, isStation: false, connectorPosition: point)
         }
 
@@ -1066,8 +1085,20 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             }
         }
 
+        private func savePlacements() {
+            for (id, node) in currentNodes {
+                if walkingNow.contains(id), let root = avatarRoots[id] {
+                    placements[id] = .init(slot: -1, index: 0, isStation: false, connectorPosition: root.position)
+                } else {
+                    placements[id] = node
+                }
+            }
+            placementStore.save(placements)
+            lastPlacementSave = Date()
+        }
+
         func stop() {
-            for (id, node) in currentNodes { Self.placements[id] = node }
+            savePlacements()
             movementTasks.values.forEach { $0.cancel() }
             movementTasks.removeAll()
             actionSubscription?.cancel()
@@ -1160,6 +1191,13 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                     var traveled: Float = 0
                     var held: Float = 0
                     var interrupted = false
+                    var remainingDistance: Float = 0
+                    var cursor = end
+                    for waypoint in remainingRoute {
+                        let point = self.roomLayout.position(waypoint)
+                        remainingDistance += simd_length(point - cursor)
+                        cursor = point
+                    }
                     while !Task.isCancelled && traveled < length {
                         let now = clock.now
                         let elapsed = lastTick.duration(to: now)
@@ -1170,13 +1208,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
                             continue
                         }
                         let dt = Float(min(0.05, Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18))
-                        var ahead = length - traveled
-                        var cursor = end
-                        for waypoint in remainingRoute {
-                            let point = self.roomLayout.position(waypoint)
-                            ahead += simd_length(point - cursor)
-                            cursor = point
-                        }
+                        let ahead = length - traveled + remainingDistance
                         var targetSpeed = min(isFinalStep ? 0.6 : cruise, sqrt(2 * 1.5 * max(0, ahead)) + 0.12)
                         // Personal space: slow and wait for a bot just ahead.
                         let here = start + direction * traveled
@@ -1321,6 +1353,7 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             let now = Date()
             guard now.timeIntervalSince(lastClockTick) >= 1 else { return }
             lastClockTick = now
+            if now.timeIntervalSince(lastPlacementSave) >= 10 { savePlacements() }
             var changed = false
             for label in labels.values where !label.isHidden { changed = label.refreshClock(now: now) || changed }
             if changed { layoutLabels() }
@@ -1786,15 +1819,10 @@ struct OfficePreviewSceneView: NSViewRepresentable {
             positionMusicControl()
             guard showsAgents else { labels.values.forEach { $0.setVisible(false) }; return }
             var occupied: [CGRect] = []
-            let ordered = desiredAgents.values.sorted {
-                let left = $0.taskData?.lane.rank ?? 99
-                let right = $1.taskData?.lane.rank ?? 99
-                return left == right ? $0.id < $1.id : left < right
-            }
             // Close views show full task bubbles; wider views show name pills.
             // Crowded bubbles step down to smaller tiers instead of overlapping.
             let preferred: OfficePreviewTaskBubble.Tier = cameraState.distance <= 24 ? .full : .compact
-            for id in ordered.map(\.id) {
+            for id in labelOrder {
                 let lift = (characterVisuals[id]?.position.y ?? 0) + 1.5
                 guard let label = labels[id], let root = avatarRoots[id],
                       let point = view.project(root.position + [0, lift, 0]),

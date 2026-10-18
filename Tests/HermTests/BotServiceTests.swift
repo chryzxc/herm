@@ -5,6 +5,43 @@ import Testing
 
 @MainActor
 struct BotServiceTests {
+    @Test func disabledPluginClearsRosterAndBlocksCreation() async {
+        let client = BotFixtureClient(result: ["profiles": [["name": "research"]]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        await model.refreshNow(force: true)
+        #expect(model.bots.count == 1)
+        client.stubNextResult = ["plugins": [["key": "hermes-bots", "status": "disabled"]]]
+        await model.refreshNow(force: true)
+        #expect(model.inventory.availability == .unsupported)
+        #expect(model.botsByID.isEmpty)
+        #expect(model.avatarImages.isEmpty)
+        #expect(!model.canCreateBots)
+        #expect(client.methods.last == "plugins.manage")
+        #expect(await model.createBot(name: "blocked", title: "", description: "") == false)
+        await model.refreshNow(force: true)
+        #expect(model.inventory.availability == .ready)
+    }
+
+    @Test func missingRosterDoesNotFetchLiveSessions() async {
+        let client = BotFixtureClient(result: [:])
+        let inventory = await BotService(client: client).list()
+        #expect(inventory.availability == .malformed)
+        #expect(client.methods == ["plugins.manage", "profiles.list"])
+    }
+
+    @Test func populatePreservesExistingAndCustomAvatarsEvenWhenAssetsCannotLoad() async {
+        let client = BotFixtureClient(result: ["profiles": [
+            ["name": "uploaded", "has_avatar": true],
+            ["name": "custom", "has_avatar": false, "ui_meta": ["hermes-bots": ["custom": true]]]
+        ]])
+        let model = BotModeModel()
+        model.bind(to: client, capabilityAvailable: true)
+        await model.refreshNow(force: true)
+        _ = await model.populateAvatars()
+        #expect(!client.methods.contains("profiles.set_asset"))
+    }
+
     @Test func parsesRuntimeConfigFallbackChain() {
         let runtime = BotService.parseRuntimeConfig([
             "model": ["default": "gpt-6.1-sol", "provider": "openai-codex", "context_length": 200000],
@@ -128,7 +165,7 @@ struct BotServiceTests {
 
         await model.refreshNow()
 
-        #expect(client.methods == ["profiles.list", "session.active_list"])
+        #expect(client.methods == ["plugins.manage", "profiles.list", "session.active_list"])
         #expect(!client.methods.contains("image.generate"))
         #expect(!client.methods.contains("profiles.set_asset"))
     }

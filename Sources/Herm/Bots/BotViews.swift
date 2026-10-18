@@ -300,7 +300,7 @@ struct BotRosterPage: View {
                     showsHiddenBots = false
                     activityFilter = .all
                 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .foregroundStyle(Color.dockAccent)
                 .fixedSize()
             }

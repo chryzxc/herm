@@ -91,14 +91,22 @@ struct OfficePreviewView: View {
         let panelHeight = max(0, size.height - 24 - 56)
         ZStack(alignment: .topLeading) {
             VStack(alignment: .leading, spacing: 8) {
-                OfficeCrewStatusBar(counts: statusCounts, onSelect: focusNext(in:))
-                if showsRoster && showsAgents && !compact {
+                ScrollView(.horizontal) {
+                    OfficeCrewStatusBar(counts: statusCounts, onSelect: focusNext(in:))
+                }
+                .scrollIndicators(.hidden)
+                .frame(height: 50)
+                .frame(maxWidth: max(0, size.width - (selection == nil ? 24 : 376)), alignment: .leading)
+                .opacity(compact && selection != nil ? 0 : 1)
+                .allowsHitTesting(!compact || selection == nil)
+                .accessibilityHidden(compact && selection != nil)
+                if showsRoster && showsAgents && !compact && (selection == nil || size.width >= 1000) {
                     OfficeRosterPanel(
                         agents: rosterAgents, isDataCurrent: isDataCurrent,
                         selectedID: selectedAgentID, onSelect: { focus($0) }
                     )
                     .frame(width: 244)
-                    .frame(maxHeight: max(0, panelHeight - 40), alignment: .top)
+                    .frame(maxHeight: max(0, panelHeight - 58), alignment: .top)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.move(edge: .leading).combined(with: .opacity))
                 }
@@ -118,7 +126,7 @@ struct OfficePreviewView: View {
 
             OfficeToolbar(
                 showsAgents: showsAgents, showsRoster: showsRoster,
-                canShowRoster: !compact,
+                canShowRoster: !compact && (selection == nil || size.width >= 1000), boardSelected: selection == .board,
                 onToggleAgents: { showsAgents.toggle() },
                 onToggleRoster: { withAnimation(hudAnimation) { showsRoster.toggle() } },
                 onShowBoard: { withAnimation(hudAnimation) { selection = selection == .board ? nil : .board } },
@@ -245,17 +253,17 @@ private struct OfficeCrewStatusBar: View {
                         HStack(spacing: 6) {
                             OfficeStatusDot(status: status)
                             Text(status.label)
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(DockTypography.control)
                                 .foregroundStyle(count > 0 ? Color.dockPrimaryText : Color.dockMetadataText)
                             Text("\(count)")
                                 .font(.system(size: 11, weight: .semibold).monospacedDigit())
                                 .foregroundStyle(count > 0 ? Color.dockSecondaryText : Color.dockMetadataText)
                         }
                         .padding(.horizontal, 9)
-                        .frame(height: 28)
+                        .frame(height: 44)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .disabled(count == 0)
                     .help(count > 0 ? "Focus the next \(status.label.lowercased()) bot" : "No \(status.label.lowercased()) bots")
                     .accessibilityLabel("\(status.label): \(count) bots")
@@ -345,6 +353,7 @@ private struct OfficeToolbar: View {
     let showsAgents: Bool
     let showsRoster: Bool
     let canShowRoster: Bool
+    let boardSelected: Bool
     let onToggleAgents: () -> Void
     let onToggleRoster: () -> Void
     let onShowBoard: () -> Void
@@ -359,7 +368,7 @@ private struct OfficeToolbar: View {
                     iconButton(.sidebarSimple, help: showsRoster ? "Hide crew roster" : "Show crew roster",
                                isOn: showsRoster, action: onToggleRoster)
                 }
-                iconButton(.kanban, help: "Kanban task board", isOn: false, action: onShowBoard)
+                iconButton(.kanban, help: "Kanban task board", isOn: boardSelected, action: onShowBoard)
                 separator
                 iconButton(.arrowCounterClockwise, help: "Reset camera", isOn: false, action: onResetCamera)
             }
@@ -377,7 +386,7 @@ private struct OfficeToolbar: View {
             DockIcon(symbol)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(isOn ? Color.dockAccent : Color.dockSecondaryText)
-                .frame(width: 32, height: 30)
+                .frame(width: 44, height: 44)
                 .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius).fill(isOn ? Color.dockAccentMuted : .clear))
                 .contentShape(Rectangle())
         }

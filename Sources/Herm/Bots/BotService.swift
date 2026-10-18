@@ -25,7 +25,16 @@ final class BotService {
     }
 
     func list() async -> BotInventory {
+        // Some runtimes expose Bots as a managed plugin; desktop-only toggles
+        // are not included in this gateway contract.
+        if let result = try? await client.request(HermesFeatureIDs.ID.pluginsManage.rawValue, params: ["action": "list"]),
+           let rows = result["plugins"] as? [[String: Any]],
+           let botPlugin = rows.first(where: { ($0["key"] as? String) == "hermes-bots" }),
+           botPlugin["status"] as? String != "enabled" {
+            return BotInventory(availability: .unsupported, bots: [], diagnostic: "The Hermes Bots plugin is not enabled.")
+        }
         let roster = await rosterList()
+        guard roster.availability == .ready else { return roster }
         let live = await liveBusy()
         guard !live.isEmpty else { return roster }
         return BotInventory(availability: roster.availability, bots: roster.bots.map { bot in
@@ -572,7 +581,7 @@ final class BotModeModel: ObservableObject {
         }
     }
 
-    var canCreateBots: Bool { capabilityAvailable }
+    var canCreateBots: Bool { capabilityAvailable && inventory.availability == .ready }
 
     func bind(to client: HermesRPCClientProtocol, capabilityAvailable: Bool) {
         service = BotService(client: client)
@@ -599,12 +608,23 @@ final class BotModeModel: ObservableObject {
     /// the contract even when the batch probe starved.
     func refreshNow(force: Bool = false) async {
         guard let service, !isRefreshing, !isPolling else { return }
-        guard force || capabilityAvailable else { return }
+        guard force || capabilityAvailable || inventory.availability == .ready else { return }
         // Background polls stay unpublished so the sidebar rail does not
         // rebuild twice every 10s; only explicit refreshes show a spinner.
         if force { isRefreshing = true } else { isPolling = true }
         let refreshed = await service.list()
-        if refreshed.availability == .ready { capabilityAvailable = true }
+        capabilityAvailable = refreshed.availability == .ready
+        if refreshed.availability != .ready {
+            avatarImages = [:]
+            routines = []
+            isImageGenerationAvailable = false
+            activityBanner = []
+            bannerTask?.cancel()
+        } else {
+            let avatarIDs = Set(refreshed.bots.filter(\.hasAvatar).map(\.id))
+            let retained = avatarImages.filter { avatarIDs.contains($0.key) }
+            if retained != avatarImages { avatarImages = retained }
+        }
         // Unchanged rosters must not republish: every observer (the rail,
         // activity rows) re-renders on it.
         if inventory != refreshed {
@@ -649,7 +669,7 @@ final class BotModeModel: ObservableObject {
     /// Returns true when Hermes accepted the new profile; the roster is
     /// refreshed from Hermes rather than optimistically patched.
     func createBot(name: String, title: String, description: String, cloneFrom: String? = nil, skipsSkills: Bool = false) async -> Bool {
-        guard capabilityAvailable, let service else {
+        guard canCreateBots, let service else {
             botCreationError = "Bot Mode requires a Hermes runtime with profile support."
             return false
         }
@@ -688,22 +708,22 @@ final class BotModeModel: ObservableObject {
     }
 
     func loadAvatars() async {
-        guard let service else { return }
+        guard inventory.availability == .ready, let service else { return }
         for bot in inventory.bots where bot.hasAvatar && avatarImages[bot.id] == nil {
-            if let data = await service.avatarImageData(profileID: bot.id) {
+            if let data = await service.avatarImageData(profileID: bot.id),
+               inventory.availability == .ready, botsByID[bot.id]?.hasAvatar == true {
                 avatarImages[bot.id] = data
             }
         }
     }
 
-    /// Saves a Hermes-style face (160px, like Hermes Desktop's) for every Bot with
-    /// no avatar or only Herm's old 256px placeholder. Returns a status message.
+    /// Fills missing avatars only; existing artwork always belongs to the user.
     func populateAvatars() async -> String {
-        guard let service else { return "Bot Mode is unavailable." }
+        guard capabilityAvailable, let service else { return "Bot Mode is unavailable." }
         for bot in inventory.bots where bot.hasAvatar && avatarImages[bot.id] == nil {
             if let data = await service.avatarImageData(profileID: bot.id) { avatarImages[bot.id] = data }
         }
-        let targets = inventory.bots.filter { !$0.hasAvatar || avatarImages[$0.id].map(Self.isLegacyPlaceholder) == true }
+        let targets = inventory.bots.filter { !$0.hasCustomAvatar && !$0.hasAvatar }
         if targets.isEmpty { return "Every Bot already has an avatar." }
         var saved = 0
         var failure: String?
@@ -727,50 +747,48 @@ final class BotModeModel: ObservableObject {
         return "Created \(saved) of \(targets.count) avatars." + (failure.map { " \($0)" } ?? "")
     }
 
-    /// Herm's first avatar fill saved a 256px rounded-square gradient (transparent corners).
-    /// ponytail: heuristic; an uploaded 256px PNG with transparent corners would match too.
-    private static func isLegacyPlaceholder(_ data: Data) -> Bool {
-        guard let rep = NSBitmapImageRep(data: data), rep.pixelsWide == 256, rep.pixelsHigh == 256 else { return false }
-        return (rep.colorAt(x: 0, y: 0)?.alphaComponent ?? 1) < 0.05
-    }
-
     func checkImageGeneration() async {
-        guard let service else { return }
+        guard capabilityAvailable, let service else { return }
         isImageGenerationAvailable = await service.isImageGenerationAvailable()
     }
 
     func generateAvatar(prompt: String) async throws -> String {
-        guard let service else {
+        guard capabilityAvailable, let service else {
             throw NSError(domain: "HermesBots", code: 0, userInfo: [NSLocalizedDescriptionKey: "Bot Mode is unavailable."])
         }
         return try await service.generateAvatarImage(prompt: prompt)
     }
 
     func setAvatar(profileID: String, dataURL: String) async throws {
-        guard let service else { return }
+        guard capabilityAvailable, let service else { return }
         try await service.setAvatar(profileID: profileID, dataURL: dataURL)
+        avatarImages[profileID] = nil
+        await refreshNow(force: true)
     }
 
     func clearAvatar(profileID: String) async throws {
-        guard let service else { return }
+        guard capabilityAvailable, let service else { return }
         try await service.clearAvatar(profileID: profileID)
+        avatarImages[profileID] = nil
+        await refreshNow(force: true)
     }
 
     func loadRoutines() async {
-        guard let service, !isLoadingRoutines else { return }
+        guard capabilityAvailable, let service, !isLoadingRoutines else { return }
         isLoadingRoutines = true
-        routines = await service.listRoutines()
+        let refreshed = await service.listRoutines()
+        if capabilityAvailable { routines = refreshed }
         isLoadingRoutines = false
     }
 
     func setHidden(_ hidden: Bool, for bot: BotSummary) async {
-        guard let service else { return }
+        guard capabilityAvailable, let service else { return }
         _ = try? await service.setRosterMeta(profileID: bot.id, title: bot.title, hidden: hidden)
         await refreshNow()
     }
 
     func duplicateBot(_ bot: BotSummary, newName: String) async -> Bool {
-        guard let service else { return false }
+        guard capabilityAvailable, let service else { return false }
         do {
             try await service.duplicate(profileID: bot.id, newName: newName, title: bot.title)
             await refreshNow()
@@ -782,7 +800,7 @@ final class BotModeModel: ObservableObject {
     }
 
     func createRoutine(for bot: BotSummary, title: String, schedule: String, prompt: String) async -> Bool {
-        guard let service else { return false }
+        guard capabilityAvailable, let service else { return false }
         do {
             try await service.createRoutine(profileID: bot.id, title: title, schedule: schedule, prompt: prompt)
             await loadRoutines()
@@ -795,7 +813,7 @@ final class BotModeModel: ObservableObject {
 
     @discardableResult
     func removeRoutine(_ routine: BotRoutine) async -> Bool {
-        guard let service, removingRoutineID == nil else { return false }
+        guard capabilityAvailable, let service, removingRoutineID == nil else { return false }
         removingRoutineID = routine.id
         routineRemovalError = nil
         defer { removingRoutineID = nil }
@@ -814,7 +832,7 @@ final class BotModeModel: ObservableObject {
     }
 
     func profileDetail(for bot: BotSummary) async -> BotProfileDetail? {
-        guard let service else { return nil }
+        guard capabilityAvailable, let service else { return nil }
         var detail = try? await service.profileDetail(profileID: bot.id)
         detail?.title = bot.title ?? ""
         return detail
@@ -826,7 +844,7 @@ final class BotModeModel: ObservableObject {
 
     /// `nil` on success, otherwise the user-facing reason.
     func setFallbacks(_ fallbacks: [BotRuntimeConfig.ModelRef], for bot: BotSummary) async -> String? {
-        guard let service else { return "Bot Mode is unavailable." }
+        guard capabilityAvailable, let service else { return "Bot Mode is unavailable." }
         do {
             try await service.setFallbacks(profileID: bot.id, fallbacks)
             return nil
@@ -836,13 +854,13 @@ final class BotModeModel: ObservableObject {
     }
 
     func modelOptions() async -> [(provider: String, models: [String])] {
-        guard let service else { return [] }
+        guard capabilityAvailable, let service else { return [] }
         return (try? await service.modelOptions()) ?? []
     }
 
     /// `failed` must never be presented to the user as a model confirmation.
     func applyProfileEdit(_ detail: BotProfileDetail, confirmExpensiveModel: Bool) async -> ProfileEditResult {
-        guard let service else { return .failed("Bot Mode is unavailable.") }
+        guard capabilityAvailable, let service else { return .failed("Bot Mode is unavailable.") }
         do {
             switch try await service.applyProfileEdit(
                 profileID: detail.id, title: detail.title, description: detail.description,

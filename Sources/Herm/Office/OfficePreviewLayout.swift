@@ -218,7 +218,7 @@ struct OfficePreviewLayout {
         return result
     }
 
-    struct Node: Hashable {
+    struct Node: Hashable, Codable {
         let slot: Int
         let index: Int
         let isStation: Bool

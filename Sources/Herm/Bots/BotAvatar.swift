@@ -29,13 +29,14 @@ struct BotAvatarView: View {
     let bot: BotSummary
     let imageData: Data?
     var size: CGFloat = 28
+    var animated = true
 
     var body: some View {
         ZStack {
-            if let imageData, !Self.isHermFace(imageData, id: bot.id), let image = Self.decoded(imageData) {
-                BotLiveImage(image: image, id: bot.id, size: size, busy: bot.isWorkingNow)
+            if let imageData, (bot.hasCustomAvatar || !Self.isHermFace(imageData, id: bot.id)), let image = Self.decoded(imageData) {
+                BotLiveImage(image: image, id: bot.id, size: size, busy: bot.isWorkingNow, animated: animated)
             } else {
-                BotFaceMark(id: bot.id, size: size, animated: true, busy: bot.isWorkingNow)
+                BotFaceMark(id: bot.id, size: size, animated: animated, busy: bot.isWorkingNow)
             }
         }
         .frame(width: size, height: size)
@@ -58,12 +59,12 @@ struct BotAvatarView: View {
         return image
     }
 
-    private static let hermFaces = NSCache<NSData, NSNumber>()
+    private static let hermFaces = NSCache<NSString, NSNumber>()
 
     /// "Populate avatars" saved frozen `BotFaceMark` PNGs to Hermes; draw those
     /// live instead. Anything else (uploads, generated art) stays an image.
     private static func isHermFace(_ data: Data, id: String) -> Bool {
-        let key = data as NSData
+        let key = (id + ":" + data.base64EncodedString()) as NSString
         if let cached = hermFaces.object(forKey: key) { return cached.boolValue }
         let match = matchesHermFace(data, id: id)
         hermFaces.setObject(NSNumber(value: match), forKey: key)
@@ -89,6 +90,85 @@ struct BotAvatarView: View {
             }
         }
         return misses <= 12
+    }
+}
+
+/// Gentle waiting motion and short reactions to canonical activity updates.
+struct BotWorkingPose {
+    var lift: CGFloat = 0
+    var reach: CGFloat = 0
+    var rotation: Double = 0
+    var scaleX: CGFloat = 1
+    var scaleY: CGFloat = 1
+
+    static let rest = BotWorkingPose()
+
+    static func at(_ elapsed: TimeInterval) -> BotWorkingPose {
+        let beat = max(0, elapsed).truncatingRemainder(dividingBy: 2.8)
+        let wave = pow(sin(min(beat / 1.2, 1) * .pi), 2)
+        return BotWorkingPose(lift: wave * 0.4, rotation: sin(beat * .pi * 2 / 1.2) * wave * 4,
+                              scaleX: 1 - wave * 0.025, scaleY: 1 + wave * 0.025)
+    }
+
+    /// A bounded one-shot: adjacent activity changes always choose a different gesture.
+    static func reaction(at elapsed: TimeInterval, variation: Int) -> BotWorkingPose {
+        guard elapsed >= 0, elapsed < 1.2 else { return .rest }
+        let p = elapsed / 1.2
+        let arc = pow(sin(p * .pi), 2)
+        let sway = sin(p * .pi * 2) * arc
+        switch variation % 3 {
+        case 0:
+            return BotWorkingPose(lift: arc, reach: -arc * 0.22, rotation: -18 * arc,
+                                  scaleX: 1 - arc * 0.07, scaleY: 1 + arc * 0.07)
+        case 1:
+            return BotWorkingPose(lift: arc * 0.6, reach: sway * 0.3, rotation: sway * 25,
+                                  scaleX: 1 + arc * 0.06, scaleY: 1 - arc * 0.06)
+        default:
+            return BotWorkingPose(lift: arc * 0.85, reach: arc * 0.22, rotation: 16 * arc,
+                                  scaleX: 1 - sway * 0.08, scaleY: 1 + sway * 0.08)
+        }
+    }
+}
+
+/// Animate the whole avatar so uploaded art and generated faces move alike.
+struct BotWorkingAvatarView: View {
+    let bot: BotSummary
+    let imageData: Data?
+    var size: CGFloat = 24
+    var activitySignature: [String] = []
+    var activityIcon: Ph = .brain
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var startedAt = Date()
+    @State private var reactionAt: Date?
+    @State private var variation = 0
+
+    var body: some View {
+        let moves = !reduceMotion && DockThemeStyle.current.animates
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !moves)) { context in
+            let age = reactionAt.map { context.date.timeIntervalSince($0) } ?? 1.2
+            let reacting = moves && age < 1.2
+            let pose = !moves ? .rest : reacting
+                ? BotWorkingPose.reaction(at: age, variation: variation)
+                : BotWorkingPose.at(context.date.timeIntervalSince(startedAt))
+            ZStack {
+                BotAvatarView(bot: bot, imageData: imageData, size: size, animated: false)
+                    .scaleEffect(x: pose.scaleX, y: pose.scaleY)
+                    .rotationEffect(.degrees(pose.rotation))
+                    .offset(x: size * pose.reach, y: -size * 0.18 * pose.lift)
+                // Echo the real activity glyph as the Bot reaches toward the rows above.
+                DockIcon(activityIcon, size: 10, color: .dockSecondaryText)
+                    .padding(2)
+                    .background(Circle().fill(Color.dockCanvas))
+                    .scaleEffect(reacting ? 0.7 + pose.lift * 0.3 : 0.7)
+                    .offset(x: 8 - pose.reach * size, y: -9 - pose.lift * 3)
+                    .opacity(reacting ? Double(pose.lift) : 0)
+            }
+        }
+        .onChange(of: activitySignature) { _, _ in
+            variation = (variation + 1) % 3
+            reactionAt = Date()
+            startedAt = Date().addingTimeInterval(1.2)
+        }
     }
 }
 
@@ -123,7 +203,7 @@ private struct BotMotion<Content: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if animated && !reduceMotion {
+        if animated && !reduceMotion && DockThemeStyle.current.animates {
             let phase = Double(BotAvatarPresentation.seed(for: id) % 1000) / 100
             TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
                 content(.at(context.date.timeIntervalSinceReferenceDate + phase, busy: busy))
@@ -141,9 +221,10 @@ private struct BotLiveImage: View {
     let id: String
     let size: CGFloat
     let busy: Bool
+    let animated: Bool
 
     var body: some View {
-        BotMotion(id: id, animated: true, busy: busy) { pose in
+        BotMotion(id: id, animated: animated, busy: busy) { pose in
             Image(nsImage: image)
                 .resizable()
                 .scaledToFill()
