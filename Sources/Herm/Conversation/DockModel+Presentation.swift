@@ -215,7 +215,7 @@ extension DockModel {
         [sessionID, sessionStorageID, kanbanAttributionSessionID, kanbanSessionID]
     }
 
-    /// Presentation-only union for the Agent map and pipeline. Hermes'
+    /// Presentation-only union for the agent list and pipeline. Hermes'
     /// `delegation.status.active` owns liveness; cached agents are retained as
     /// completed history so a finished delegation remains inspectable without
     /// falsely animating as current work.

@@ -135,16 +135,14 @@ extension DockPopover {
 
     var fullscreenGlobalSurface: some View {
         Group {
-            if fullscreenSurface == .pullRequests || fullscreenSurface == .issues {
-                PullRequestWorkspace(
-                    center: pullRequestCenter,
-                    issueCenter: issueCenter,
-                    projects: controlCenter.projects,
-                    onOpenChat: openPullRequestChat,
-                    onOpenIssueChat: openIssueChat,
-                    mode: fullscreenSurface == .issues ? .issues : .pullRequests
-                )
-                .id(fullscreenSurface == .issues ? "fullscreen-issues" : "fullscreen-pull-requests")
+            if fullscreenSurface == .pullRequests {
+                PullRequestWorkspace(center: pullRequestCenter, projects: controlCenter.projects, onOpenChat: openPullRequestChat)
+                    .environment(\.openGitHubItem, openGitHubReference)
+                    .id("fullscreen-pull-requests")
+            } else if fullscreenSurface == .issues {
+                IssueWorkspacePage(center: issueCenter, projects: controlCenter.projects, onOpenChat: openIssueChat)
+                    .environment(\.openGitHubItem, openGitHubReference)
+                    .id("fullscreen-issues")
             } else if fullscreenSurface == .artifacts {
                 ArtifactsInspectorView(model: model, presentation: .page) { session in
                     missionControlNavigation.openSession(session.id)
@@ -170,6 +168,16 @@ extension DockPopover {
             } else {
                 fullscreenGlobalControlSurface
             }
+        }
+    }
+
+    func openGitHubReference(_ reference: GitHubItemReference) {
+        if reference.kind == .pullRequest {
+            missionControlNavigation.selectPullRequests(); fullscreenSurface = .pullRequests
+            Task { await pullRequestCenter.open(reference) }
+        } else {
+            missionControlNavigation.selectIssues(); fullscreenSurface = .issues
+            Task { await issueCenter.open(reference) }
         }
     }
 
@@ -213,7 +221,7 @@ extension DockPopover {
                 model.resumeSession(linkedSession)
             } else {
                 pullRequestChatLinks.remove(pullRequestID: pullRequest.id)
-                await model.startNewChat(in: pullRequest.localPath)
+                if pullRequest.localPath.isEmpty { model.newChat() } else { await model.startNewChat(in: pullRequest.localPath) }
                 if let createdID = model.sessionID {
                     pullRequestChatLinks.save(sessionID: createdID, for: pullRequest.id)
                 }
@@ -432,7 +440,8 @@ extension DockPopover {
     var liveSessionRepositoryPath: String? {
         workspaceStore.resolvedProjectPath(
             forSessionID: model.sessionID,
-            hermesProjectPath: model.sessionID.flatMap { controlCenter.project(forSessionID: $0)?.name }
+            hermesProjectPath: model.sessionID.flatMap { controlCenter.project(forSessionID: $0)?.name },
+            createdSessionProjectPath: model.sessionID.flatMap { model.createdSessionProjectPaths[$0] }
         )
     }
 

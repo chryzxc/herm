@@ -38,6 +38,10 @@ struct SessionPickerRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
                 .padding(.leading, 10)
+                .padding(.trailing, 18)
+                .overlay(alignment: .trailing) {
+                    DockIcon(.caretRight, size: 12, color: style.secondaryText)
+                }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.dockHover)

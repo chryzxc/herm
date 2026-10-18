@@ -280,7 +280,7 @@ extension View {
     func dockThemedRoot() -> some View {
         foregroundStyle(Color.dockPrimaryText)
             .tint(Color.dockAccent)
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockCompact)
             .fontDesign(DockThemeStyle.current.fontDesign)
             // Native controls (placeholders, carets, menus) follow the colour
             // scheme, not our tokens; pin it so a light skin under dark macOS
@@ -462,7 +462,8 @@ struct DockPressButtonStyle: ButtonStyle {
             .font(DockTypography.control)
             .foregroundStyle(configuration.role == .destructive ? Color.dockDestructive : Color.dockPrimaryText)
             .padding(3)
-            .dockSelectionBackground(shape, active: isHovering && isEnabled, fill: Color.dockSurface4.opacity(0.7), allowsInvert: false)
+            .background(shape.fill(Color.dockControlSurface.opacity(isHovering && isEnabled ? 0.9 : 0.55)))
+            .overlay(shape.stroke(Color.dockBorder, lineWidth: DockLayout.hairline))
             .contentShape(shape)
             .scaleEffect(configuration.isPressed ? DockThemeStyle.current.pressScale : 1)
             .opacity(!isEnabled ? 0.42 : configuration.isPressed ? 0.86 : 1)
@@ -527,7 +528,7 @@ extension View {
 }
 
 /// The single accent-tinted action treatment from DESIGN.md. Use it only for the
-/// primary action in a section; secondary actions stay text-on-glass.
+/// primary action in a section; secondary actions keep a neutral outline.
 struct DockPrimaryButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlSize) private var controlSize
@@ -569,13 +570,14 @@ struct DockPrimaryButtonStyle: ButtonStyle {
 /// The outlined companion to the primary action (Cancel, Remove, Copy). A
 /// destructive role tints the label instead of filling the control.
 struct DockSecondaryButtonStyle: ButtonStyle {
+    var compact = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.controlSize) private var controlSize
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     func makeBody(configuration: Configuration) -> some View {
-        let isCompact = controlSize == .small || controlSize == .mini
+        let isCompact = compact || controlSize == .small || controlSize == .mini
         let shape = DockThemeShape(cornerRadius: DockLayout.controlRadius)
         configuration.label
             .font(DockTypography.control)
@@ -590,16 +592,11 @@ struct DockSecondaryButtonStyle: ButtonStyle {
             .background {
                 if DockThemeStyle.current.material == .glass {
                     Color.clear.dockLiquidGlass(shape, interactive: true)
-                } else if DockThemeStyle.current.chrome == .boxed {
-                    shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6)).stroke(Color.dockBorder, lineWidth: DockLayout.outline)
+                } else {
+                    shape.fill(configuration.isPressed ? Color.dockSurface6 : isHovering && isEnabled ? Color.dockSurface4 : Color.dockControlSurface.opacity(0.6))
                 }
             }
-            .overlay(alignment: .bottom) {
-                // Open chrome: text-only control that underlines on hover.
-                if DockThemeStyle.current.chrome == .open && isEnabled && (isHovering || configuration.isPressed) {
-                    Color.dockAccent.frame(height: 2)
-                }
-            }
+            .overlay(shape.stroke(Color.dockBorder, lineWidth: max(DockLayout.hairline, DockLayout.outline)))
             .dockStickerShadow(shape, pressed: configuration.isPressed)
             .dockEmboss(shape, pressed: configuration.isPressed)
             .dockBevel(pressed: configuration.isPressed)
@@ -1043,9 +1040,7 @@ struct DockExpandableText: View {
                 Button(isExpanded ? "Show less" : "Show more") {
                     withAnimation(.easeOut(duration: 0.15)) { isExpanded.toggle() }
                 }
-                .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.dockAccent)
+                .buttonStyle(.dockLink)
             }
         }
     }
@@ -1128,6 +1123,28 @@ extension ButtonStyle where Self == DockPrimaryButtonStyle {
 
 extension ButtonStyle where Self == DockSecondaryButtonStyle {
     static var dockSecondary: Self { Self() }
+    static var dockCompact: Self { Self(compact: true) }
+}
+
+/// Inline navigation and disclosure stay recognizable in monochrome themes too.
+struct DockLinkButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let tint = configuration.role == .destructive ? Color.dockDestructive : Color.dockAccent
+        configuration.label
+            .font(DockTypography.control)
+            .foregroundStyle(tint)
+            .underline(true, color: tint)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.7 : isHovering ? 0.85 : 1) : 0.42)
+            .onHover { isHovering = $0 }
+    }
+}
+
+extension ButtonStyle where Self == DockLinkButtonStyle {
+    static var dockLink: Self { Self() }
 }
 
 extension TextFieldStyle where Self == DockGlassTextFieldStyle {

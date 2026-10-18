@@ -223,12 +223,12 @@ struct TurnModelSettingsView: View {
                         .foregroundStyle(Color.dockMetadataText)
                         .frame(width: 32, alignment: .trailing)
                     Button("Cancel") { store.cancel() }
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockCompact)
                         .font(.system(size: 12, weight: .medium))
                 }
             case .installed:
                 Button("Remove") { store.remove() }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.dockAccent)
             }

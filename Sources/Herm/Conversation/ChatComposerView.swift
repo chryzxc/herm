@@ -288,6 +288,9 @@ struct ChatComposerView: View {
                             .padding(.horizontal, 6)
                             .padding(.vertical, 4)
                             .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockSurface))
+                            .contextMenu {
+                                Button("Add Text from Image to Message") { Task { await model.stageText(from: image) } }
+                            }
                         }
                     }
                 }
@@ -388,6 +391,24 @@ struct ChatComposerView: View {
                             onInsertURL: insertURL,
                             onSelectSnippet: insertSnippet
                         )
+                    }
+
+                    if #available(macOS 15.2, *), OnDeviceAssist.isAvailable {
+                        Button {
+                            NSApp.sendAction(#selector(NSResponder.showWritingTools(_:)), to: nil, from: nil)
+                        } label: {
+                            DockIcon(.magicWand, size: 14, color: Color.dockSecondaryText)
+                                .frame(width: 28, height: 28)
+                                .background(
+                                    RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous)
+                                        .fill(DockSkinPresentation.current.composerControlFill)
+                                )
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.dockHover)
+                        .help("Rewrite or proofread with Apple Intelligence")
+                        .accessibilityLabel("Writing Tools")
                     }
 
                     composerModelPicker
@@ -1066,6 +1087,11 @@ struct ComposerInputEditor: NSViewRepresentable {
         textView.insertionPointColor = NSColor(Color.dockAccent)
         textView.drawsBackground = false
         textView.isRichText = false
+        if #available(macOS 15.0, *) {
+            // Plain text only: Writing Tools must not insert formatting into a message.
+            textView.writingToolsBehavior = .complete
+            textView.allowedWritingToolsResultOptions = [.plainText]
+        }
         textView.allowsUndo = true
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = true
@@ -1249,7 +1275,6 @@ private extension String {
 /// The AI's todo plan and running background tasks, pinned above the input.
 private struct PinnedWorkStrip: View {
     @ObservedObject var model: DockModel
-    @State private var isExpanded = false
 
     var body: some View {
         let plan = model.todoPlan.flatMap { $0.sessionID == model.sessionID ? $0 : nil }
@@ -1258,35 +1283,8 @@ private struct PinnedWorkStrip: View {
         if plan != nil || !tasks.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 if let plan {
-                    Button { withAnimation(.dockEase(duration: 0.18)) { isExpanded.toggle() } } label: {
-                        HStack(spacing: 6) {
-                            ZStack {
-                                Circle().stroke(Color.dockAccent.opacity(0.2), lineWidth: 2.5)
-                                Circle()
-                                    .trim(from: 0, to: CGFloat(plan.done) / CGFloat(max(1, plan.items.count)))
-                                    .stroke(Color.dockAccent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                                    .rotationEffect(.degrees(-90))
-                                    .animation(.spring(response: 0.5), value: plan.done)
-                            }
-                            .frame(width: 14, height: 14)
-                            Text("\(plan.done)/\(plan.items.count)" + (plan.current.map { " · \($0.content)" } ?? ""))
-                                .font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText).lineLimit(1)
-                            DockIcon(isExpanded ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.dockHover)
-                    if isExpanded {
-                        ForEach(Array(plan.items.enumerated()), id: \.offset) { _, item in
-                            HStack(alignment: .top, spacing: 6) {
-                                Text(Self.mark(item.status)).font(.system(size: 11, design: .monospaced))
-                                Text(item.content).font(.system(size: 11)).lineLimit(2)
-                            }
-                            .foregroundStyle(item.status == "in_progress" ? Color.dockPrimaryText : Color.dockSecondaryText)
-                            .padding(.leading, 18)
-                        }
-                    }
+                    ComposerTodoPlanView(plan: plan, isWorking: model.status == .working)
+                        .id(plan.sessionID)
                 }
                 ForEach(tasks) { task in
                     HStack(spacing: 6) {
@@ -1299,15 +1297,6 @@ private struct PinnedWorkStrip: View {
                 }
             }
             .padding(.horizontal, 4)
-        }
-    }
-
-    private static func mark(_ status: String) -> String {
-        switch status {
-        case "completed": "✓"
-        case "cancelled": "✕"
-        case "in_progress": "▸"
-        default: "○"
         }
     }
 }
@@ -1353,7 +1342,7 @@ private struct RunningProcessesStrip: View {
                                 .help(process.detail ?? process.name)
                             Spacer(minLength: 0)
                             Button("Stop") { pending = process }
-                                .buttonStyle(.dockHover).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
+                                .buttonStyle(.dockCompact).font(.system(size: 11)).foregroundStyle(Color.dockWarning)
                         }
                         .padding(.leading, 18)
                     }

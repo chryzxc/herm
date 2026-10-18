@@ -75,7 +75,7 @@ extension DockPopover {
                         )
                         MarkdownMessageView(
                             markdown: cue ?? "",
-                            bodyFont: .system(size: immersive ? 17 : 14, weight: .medium)
+                            bodySize: immersive ? 17 : 14, bodyWeight: .medium
                         )
                             .equatable()
                             .lineLimit(3)

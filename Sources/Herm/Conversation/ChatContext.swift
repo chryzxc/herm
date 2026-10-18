@@ -37,6 +37,10 @@ struct ChatContext: Identifiable, Equatable {
             Pull request #\(pr.displayNumber), "\(pr.title)", in \(pr.repository.id).
             PR: \(pr.webURL?.absoluteString ?? "Unavailable")
             Branch: \(pr.headBranch) → \(pr.baseBranch)
+            Head: \(pr.headRevision ?? "unknown")
+            Readiness: \(pr.readinessLabel)
+            Description:
+            \(String(pr.body.prefix(12_000)))
             """,
             projectPath: pr.localPath.isEmpty ? nil : pr.localPath
         )
@@ -49,6 +53,8 @@ struct ChatContext: Identifiable, Equatable {
             body: """
             Issue #\(issue.number), "\(issue.title)", in \(issue.repository.id).
             Issue: \(issue.webURL?.absoluteString ?? "Unavailable")
+            Description:
+            \(String(issue.body.prefix(12_000)))
             """,
             projectPath: issue.localPath.isEmpty ? nil : issue.localPath
         )

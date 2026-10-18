@@ -359,7 +359,7 @@ struct VoiceRecentTranscript: View {
                             } else {
                                 MarkdownMessageView(
                                     markdown: message.text.trimmingCharacters(in: .whitespacesAndNewlines),
-                                    bodyFont: .system(size: 12)
+                                    bodySize: 12
                                 )
                                 .equatable()
                             }

@@ -81,6 +81,10 @@ struct MessagePinsView: View {
                                         .font(DockTypography.body).foregroundStyle(Color.dockSecondaryText).lineLimit(3)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.trailing, 18)
+                                .overlay(alignment: .trailing) {
+                                    DockIcon(.caretRight, size: 12, color: .dockSecondaryText)
+                                }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.dockHover)

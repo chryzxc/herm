@@ -347,6 +347,11 @@ extension DockModel {
         moveIntoComposer(next)
     }
 
+    /// Appends outside text (Services menu) to the composer without sending it.
+    func stageDraft(_ text: String) {
+        draft = [draft.trimmingCharacters(in: .whitespacesAndNewlines), text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
     func moveIntoComposer(_ prompt: QueuedPrompt) {
         let text = prompt.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let current = draft.trimmingCharacters(in: .whitespacesAndNewlines)

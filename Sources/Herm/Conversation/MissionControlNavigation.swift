@@ -10,6 +10,9 @@ final class DockPanelPresentation: ObservableObject {
     @Published var quotaRequest = 0
     @Published var kanbanRequest = 0
     @Published var isEdgeAttached = false
+    /// Drives the notch-style grow/shrink of the edge-attached panel: false is the collapsed notch shape.
+    @Published var isRevealed = true
+    var collapsedSize = CGSize(width: 66, height: 96)
     @Published var edgeSide: EdgeDockSide = .right
     /// Clearance inside the edge silhouette; the top drop-down clears the menu bar and its shoulders.
     @Published var edgeInsets = EdgeDockLayout.insets(for: .right)

@@ -35,19 +35,26 @@ extension DockPopover {
         .onChange(of: isWorkspaceVisible) { _, visible in
             handleWorkspaceVisibilityChange(visible)
         }
-        // Hermes' browser tools drive Herm's agent browser: start it once Hermes is up, and
-        // bring the Browser tab forward whenever Hermes starts using it.
+        // Retain each session's browser and connect Hermes to the selected one.
         .onChange(of: model.isHermesConnected, initial: true) { _, connected in
-            let agent = AgentBrowser.shared
-            agent.model = model
             guard connected else { return }
-            if agent.isActive { agent.reconnectHermes() } else { agent.start() }
+            SessionBrowserStore.shared.activate(model: model, reconnect: true)
+        }
+        .onChange(of: model.browserSessionKey) { _, _ in
+            guard model.isHermesConnected else { return }
+            SessionBrowserStore.shared.activate(model: model)
         }
         .onChange(of: model.activeBrowserCall != nil) { _, browsing in
             if browsing { NotificationCenter.default.post(name: .hermOpenInBrowser, object: nil) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { _ in
-            InAppBrowser.handled = true
+        .onReceive(NotificationCenter.default.publisher(for: .hermOpenInBrowser)) { notification in
+            if let url = notification.object as? URL {
+                guard !InAppBrowser.handled else { return }
+                InAppBrowser.handled = true
+                SessionBrowserStore.shared.present(url, model: model)
+            } else {
+                SessionBrowserStore.shared.present(nil, model: model)
+            }
             inspectorScope = .session
             if isFullscreen { isMissionInspectorVisible = true }
             else if isNarrowLayout { isNarrowControlVisible = true }
@@ -67,6 +74,12 @@ extension DockPopover {
     func observerLayerTwo<V: View>(_ view: V) -> some View {
         view
         .onChange(of: filePreview.url) { _, _ in showFilePreview() }
+        .onReceive(filePreview.$attachmentDiff) { changes in
+            guard changes != nil else { return }
+            inspectorScope = .session
+            sessionWorkspaceMode = .chat
+            ensureInspectorPanelVisible()
+        }
         .onChange(of: sessionWorkspaceMode) { previousMode, mode in
             handleSessionModeChange(previousMode: previousMode, mode: mode)
         }
@@ -91,6 +104,7 @@ extension DockPopover {
     func observerLayerThree<V: View>(_ view: V) -> some View {
         view
         .onChange(of: model.sessionID) { oldValue, newValue in
+            filePreview.attachmentDiff = nil
             handleSessionIDChange(oldValue: oldValue, newValue: newValue)
         }
         .onChange(of: model.sessionID) { _, _ in
@@ -190,6 +204,9 @@ extension DockPopover {
                 )
                     .stroke(Color.dockBorderStrong, lineWidth: panelPresentation.isEdgeAttached && !usesWindowChrome ? 1 : DockLayout.hairline)
             }
+            .modifier(EdgeSurfaceReveal(isActive: panelPresentation.isEdgeAttached && !usesWindowChrome && !isFullscreen,
+                                        side: panelPresentation.edgeSide, revealed: panelPresentation.isRevealed,
+                                        collapsed: panelPresentation.collapsedSize))
             .ignoresSafeArea(edges: usesWindowChrome ? .top : [])
             .dockThemedRoot()
             .preferredColorScheme(dockThemeStore.selectedThemeID.appearance == .light ? .light : dockThemeStore.selectedThemeID.appearance == .dark ? .dark : (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light))

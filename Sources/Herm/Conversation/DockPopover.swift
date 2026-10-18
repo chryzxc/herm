@@ -123,7 +123,7 @@ struct DockPopover: View {
     @StateObject var workspaceStore = WorkspaceStore()
     @StateObject var agentUpdateService = HermesUpdateService()
     @StateObject var developerWorkflow = DeveloperWorkflowModel.shared
-    @StateObject var pullRequestCenter = PullRequestCenterModel()
+    @StateObject var pullRequestCenter = PullRequestCenterModel(details: .shared)
     @StateObject var issueCenter = IssueCenterModel()
     @StateObject var pullRequestChatLinks = PullRequestChatLinkStore()
     @State var chatContextRouter = ChatContextRouter()
@@ -146,7 +146,7 @@ struct DockPopover: View {
     @State var selectedChangeDiff: RepositoryDiff?
     @State var isLoadingChangeDiff = false
     @State var sourceControlRequestID = UUID()
-    @StateObject var sessionPullRequestCenter = PullRequestCenterModel()
+    @StateObject var sessionPullRequestCenter = PullRequestCenterModel(details: .shared)
     // A restored/active conversation is the primary workspace at launch, so
     // the right pane should open on its session context rather than Today.
     @State var inspectorScope: InspectorScope = .session

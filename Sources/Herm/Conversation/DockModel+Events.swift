@@ -78,6 +78,7 @@ extension DockModel {
         if type == "message.complete" || type == "sessions.changed" {
             refreshSessionIndexAfterActivity()
         }
+        if type == "message.complete", !failed, let eventSessionID { nameSessionIfUntitled(eventSessionID) }
         if Self.isUnreadUpdateEvent(type) {
             markUnreadUpdate()
             if let eventSessionID {
@@ -767,7 +768,7 @@ extension DockModel {
             if isPresentingApproval {
                 playApprovalSound()
             }
-            notify(title: approval.title, body: approval.detail, identifier: "approval:\(sessionID ?? "hermes")")
+            notify(title: approval.title, body: approval.detail, identifier: "approval:\(sessionID ?? "hermes")", approvalRequestID: approval.requestID)
         case "clarification.request", "clarify.request":
             // Hermes adapters have emitted clarification fields both inside
             // `payload` and alongside it in the event params. Prefer the
@@ -795,7 +796,8 @@ extension DockModel {
             isSending = false
             status = .needsClarification
             conversationActivityPhase = .idle
-            notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")")
+            notify(title: "Hermes needs clarification", body: question, identifier: "clarification:\(sessionID ?? "hermes")",
+                   replyRequestID: clarification.batch.count > 1 || clarification.multiSelect ? nil : requestID)
         case "prompt.request":
             guard let prompt = ValuePrompt.from(payload: payload) else { break }
             valuePrompt = prompt

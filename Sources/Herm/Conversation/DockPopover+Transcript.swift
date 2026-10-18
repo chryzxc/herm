@@ -21,7 +21,7 @@ extension DockPopover {
                             // before it corrects those estimates.
                             VStack(spacing: 0) {
                                 if model.messages.isEmpty && model.status != .working {
-                                    StartupAssistantView()
+                                    StartupAssistantView { model.draft = $0 }
                                         .frame(maxWidth: .infinity)
                                         .frame(minHeight: max(300, viewport.size.height - 16))
                                 } else if model.messages.isEmpty {
@@ -600,13 +600,14 @@ extension DockPopover {
     func messageRow(_ message: ChatMessage) -> some View {
         let isStreaming = message.id == model.streamingMessageIDForPresentation
         let activity = isStreaming ? model.streamingTurnActivity : message.activity
+        let workingBotID = message.botProfileID ?? model.activeBotProfileID ?? model.sessionProfileID ?? botMode.selectedProfileID
         if message.role == .hermes, isStreaming || !activity.isEmpty {
             TurnActivityView(
                 activity: activity,
                 runningSince: isStreaming ? (model.streamingResponseStartedAt ?? message.timestamp) : nil,
                 duration: message.responseDuration,
-                bot: isStreaming ? (message.botProfileID ?? model.activeBotProfileID).flatMap { botMode.botsByID[$0] } : nil,
-                botAvatar: (message.botProfileID ?? model.activeBotProfileID).flatMap { botMode.avatarImages[$0] }
+                bot: isStreaming ? workingBotID.flatMap { botMode.botsByID[$0] } : nil,
+                botAvatar: workingBotID.flatMap { botMode.avatarImages[$0] }
             )
             .padding(.horizontal, conversationMetrics.contentInset + 4)
             .padding(.top, 8)
@@ -906,7 +907,7 @@ extension DockPopover {
         return Button(quickPrompt.label) {
             selectQuickPrompt(quickPrompt)
         }
-        .buttonStyle(.dockHover)
+        .buttonStyle(.dockCompact)
         .font(.system(size: 12, weight: .medium))
         .foregroundStyle(isAvailable ? Color.dockSecondaryText : Color.dockMetadataText)
         .padding(.horizontal, 9)

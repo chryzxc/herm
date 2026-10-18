@@ -112,6 +112,15 @@ extension DockModel {
         return true
     }
 
+    /// Reads the image's text on-device and stages it in the draft; the image itself stays attached.
+    func stageText(from attachment: ImageAttachment) async {
+        guard let text = await ImageTextRecognizer.text(in: attachment.image) else {
+            pendingAttachmentError = "No text was found in that image."
+            return
+        }
+        stageDraft(text)
+    }
+
     func cleanupImageAttachments(_ attachments: [ImageAttachment]) {
         attachments.forEach(cleanupImageAttachment)
     }

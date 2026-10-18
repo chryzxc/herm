@@ -93,7 +93,6 @@ struct ChatMediaAttachmentCard: View {
     var grouped = false
     @State private var status: String?
     @State private var changes: RepositoryAttachmentChanges?
-    @State private var preview: RepositoryAttachmentChanges?
 
     private var url: URL? { ArtifactOpener.url(path) }
     private var name: String { url?.lastPathComponent ?? path }
@@ -116,9 +115,6 @@ struct ChatMediaAttachmentCard: View {
             guard !Task.isCancelled else { return }
             changes = resolved
         }
-        .sheet(item: $preview) { changes in
-            ChatAttachmentDiffPreview(changes: changes)
-        }
     }
 
     @ViewBuilder
@@ -137,41 +133,49 @@ struct ChatMediaAttachmentCard: View {
     }
 
     private var card: some View {
-        HStack(spacing: 12) {
-            FileTypeIcon(fileName: name)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.dockPrimaryText)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let subtitle = status ?? (exists ? nil : "File not found") {
-                    Text(subtitle)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.dockSecondaryText)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                FileTypeIcon(fileName: name)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(changes?.files.first?.path ?? name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Color.dockPrimaryText)
                         .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 8)
-            if isLocal {
-                cardButton("Download", icon: .downloadSimple) {
-                    do {
-                        let saved = try ArtifactOpener.download(path)
-                        status = "Saved to Downloads"
-                        ExternalOpen.reveal([saved])
-                    } catch {
-                        status = "Download failed: \(error.localizedDescription)"
+                        .truncationMode(.middle)
+                    if let subtitle = status ?? (changes.map { "\($0.files.first?.status.rawValue.capitalized ?? "Changed") · Current Git changes" } ?? (exists ? nil : "File not found")) {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.dockSecondaryText)
+                            .lineLimit(1)
                     }
                 }
-                .disabled(!exists)
+                Spacer(minLength: 8)
             }
-            cardButton(changes == nil ? (isLocal ? "Open preview" : "Open") : "Preview diff", icon: nil) {
-                if let changes { preview = changes }
-                else if let url, FilePreviewKind(url: url) != nil {
-                    FilePreviewCenter.shared.url = url
-                } else { ArtifactOpener.open(path) }
+            HStack(spacing: 8) {
+                if isLocal {
+                    cardButton("Download", icon: .downloadSimple) {
+                        do {
+                            let saved = try ArtifactOpener.download(path)
+                            status = "Saved to Downloads"
+                            ExternalOpen.reveal([saved])
+                        } catch {
+                            status = "Download failed: \(error.localizedDescription)"
+                        }
+                    }
+                    .disabled(!exists)
+                }
+                cardButton(isLocal ? "Open preview" : "Open", icon: nil) {
+                    if let url, FilePreviewKind(url: url) != nil {
+                        FilePreviewCenter.shared.url = url
+                    } else { ArtifactOpener.open(path) }
+                }
+                    .disabled(!exists)
+                if let changes {
+                    cardButton("Open diff", icon: .gitBranch) {
+                        FilePreviewCenter.shared.openDiff(changes)
+                    }
+                }
             }
-                .disabled(!exists && changes == nil)
         }
         .padding(10)
         .background(Color.dockSurface2.opacity(grouped ? 0 : 0.55), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous))
@@ -192,34 +196,35 @@ struct ChatMediaAttachmentCard: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if let icon { DockIcon(icon, size: 11, color: Color.dockSecondaryText) }
-                Text(title).font(.system(size: 11, weight: .medium))
+                Text(title).font(.system(size: 12, weight: .medium))
             }
             .foregroundStyle(Color.dockSecondaryText)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius - 2, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.5))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.dockHover)
+        .buttonStyle(.dockCompact)
     }
 }
 
-private struct ChatAttachmentDiffPreview: View {
+struct ChatAttachmentDiffPreview: View {
     let changes: RepositoryAttachmentChanges
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
     @State private var diffs: [String: RepositoryDiff] = [:]
     @State private var isLoading = true
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Diff preview").font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.dockPrimaryText)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Current Git changes").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.dockPrimaryText)
+                    Text(URL(fileURLWithPath: changes.repositoryPath).lastPathComponent)
+                        .font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
+                        .lineLimit(1).truncationMode(.middle)
+                }
                 Spacer()
-                DockIconButton(icon: .x, label: "Close diff preview",
-                               style: DockThemePalette(theme: DockThemeRuntime.current)) { dismiss() }
+                Button("Back to source control", action: onClose)
+                    .buttonStyle(.dockCompact)
             }
-            .padding(16)
+            .padding(.vertical, 12)
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(changes.files) { file in
@@ -232,9 +237,11 @@ private struct ChatAttachmentDiffPreview: View {
                 }
             }
         }
-        .frame(minWidth: 560, idealWidth: 760, minHeight: 360, idealHeight: 560)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.dockCanvas)
-        .task {
+        .task(id: changes.id) {
+            diffs = [:]
+            isLoading = true
             for file in changes.files {
                 let diff = await RepositoryService.diff(path: changes.repositoryPath, file: file)
                 guard !Task.isCancelled else { return }

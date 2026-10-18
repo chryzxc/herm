@@ -3,6 +3,7 @@ import Combine
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
+import LocalAuthentication
 import UserNotifications
 
 extension DockModel {
@@ -22,6 +23,7 @@ extension DockModel {
                 }
             }
             do {
+                guard await ApprovalAuthGate.allows(choice) else { return }
                 var params: [String: Any] = ["session_id": sessionID, "choice": choice]
                 if let requestID { params["request_id"] = requestID }
                 _ = try await sessionRPCClient.request(HermesFeatureIDs.ID.approvalRespond.rawValue, params: params)
@@ -35,9 +37,11 @@ extension DockModel {
     }
 
     /// The notch's one-tap answer for any session's approval or single clarify question.
-    func answerAttention(_ request: AttentionRequest, choice: String) {
+    /// `freeText` lets a typed reply (notification quick-reply) answer a clarify question outside its listed choices.
+    func answerAttention(_ request: AttentionRequest, choice: String, freeText: Bool = false) {
         guard let attention = sessionAttention[request.sessionID], attention.responseTarget == request,
-              attention.choices.contains(choice), attentionAnswers[request]?.blocksSubmission != true else { return }
+              freeText ? attention.status == .needsClarification : attention.choices.contains(choice),
+              attentionAnswers[request]?.blocksSubmission != true else { return }
         if currentSessionIDs.contains(request.sessionID) {
             guard !isRespondingToApproval, !isRespondingToClarification else { return }
         }
@@ -45,6 +49,10 @@ extension DockModel {
         let responseGeneration = sessionResumeGeneration
         Task {
             do {
+                guard await ApprovalAuthGate.allows(choice) else {
+                    attentionAnswers[request] = .failed(choice, "Authentication was cancelled.")
+                    return
+                }
                 var params: [String: Any]
                 let method: String
                 if attention.status == .needsApproval {
@@ -333,5 +341,24 @@ extension DockModel {
             setInFlightBotActivityWorking(for: resolvedSessionID)
             setInFlightBotActivityWorking(for: sessionID)
         }
+    }
+}
+
+/// Opt-in biometric check before broad approvals ("for session" / "always"). One-time approvals and denials never prompt.
+enum ApprovalAuthGate {
+    static let key = "herm.requireAuthForBroadApprovals.v1"
+
+    static func requiresAuth(_ choice: String, defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: key) && [ApprovalChoice.always, ApprovalChoice.session].contains(choice)
+    }
+
+    @MainActor
+    static func allows(_ choice: String) async -> Bool {
+        guard requiresAuth(choice) else { return true }
+        let context = LAContext()
+        var policyError: NSError?
+        // No biometrics or password configured: fail closed rather than silently skipping the check.
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &policyError) else { return false }
+        return (try? await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Allow Hermes to run this without asking again")) == true
     }
 }

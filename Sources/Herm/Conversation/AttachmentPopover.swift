@@ -188,7 +188,7 @@ struct AttachmentPopover: View {
                     .font(.system(size: 11))
                     .onSubmit(insertURL)
                 Button("Insert", action: insertURL)
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 11, weight: .semibold))
                     .disabled(AttachmentPopoverPresentation.validatedURL(from: urlText) == nil)
             }

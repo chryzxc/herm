@@ -353,7 +353,7 @@ struct FilePreviewPane: View {
                             sectionLabel("SENT")
                             Spacer()
                             Button("Clear") { center.clearSent(path) }
-                                .buttonStyle(.dockHover)
+                                .buttonStyle(.dockCompact)
                                 .font(.system(size: 10))
                                 .foregroundStyle(Color.dockSecondaryText)
                                 .padding(.trailing, 8)
@@ -369,11 +369,11 @@ struct FilePreviewPane: View {
             Divider()
             Button(action: startGeneralNote) {
                 Label("Add general note", systemImage: "plus")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(DockTypography.control)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockCompact)
             .foregroundStyle(Color.dockSecondaryText)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

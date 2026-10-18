@@ -622,12 +622,12 @@ struct MissionControlQueue: View {
                     Text("Showing \(visible) of \(compactCount(total))")
                     Text(title)
                 }
-                .font(.system(size: 11, weight: .medium))
+                .font(DockTypography.control)
                 .foregroundStyle(Color.dockAccent)
                 .frame(minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockLink)
         }
     }
 
@@ -638,12 +638,12 @@ struct MissionControlQueue: View {
                 DockIcon(navigationState.showsAllConversations ? .caretUp : .caretDown)
                     .font(.system(size: 9, weight: .bold))
             }
-            .font(.system(size: 11, weight: .medium))
+            .font(DockTypography.control)
             .foregroundStyle(style.secondaryText)
             .frame(minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.dockHover)
+        .buttonStyle(.dockLink)
     }
 
     /// Recents follow the selected Bot: another Bot's chat (kept in the model

@@ -277,7 +277,7 @@ extension DockModel {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil))
     }
 
-    func notify(title: String, body: String, identifier: String) {
+    func notify(title: String, body: String, identifier: String, approvalRequestID: String? = nil, replyRequestID: String? = nil) {
         let kind: HermNotice.Kind = identifier.hasPrefix("completed:") ? .completion
             : identifier.hasPrefix("failure:") ? .failure : identifier.hasPrefix("approval:") ? .approval : .clarification
         let owner = identifier.split(separator: ":", maxSplits: 1).last.map(String.init)
@@ -288,7 +288,68 @@ extension DockModel {
         content.body = String(body.prefix(240))
         content.sound = .default
         content.userInfo = ["attention_id": identifier]
-        let request = UNNotificationRequest(identifier: "\(identifier)-\(UUID().uuidString)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
+        if kind == .approval, let approvalRequestID, !approvalRequestID.isEmpty {
+            content.categoryIdentifier = HermNotificationAction.approvalCategory
+            content.userInfo[HermNotificationAction.requestIDKey] = approvalRequestID
+        } else if kind == .clarification, let replyRequestID, !replyRequestID.isEmpty {
+            content.categoryIdentifier = HermNotificationAction.clarifyCategory
+            content.userInfo[HermNotificationAction.requestIDKey] = replyRequestID
+        }
+        // A stable ID lets the on-device explanation below replace this banner in place.
+        let requestIdentifier = "\(identifier)-\(approvalRequestID ?? UUID().uuidString)"
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: requestIdentifier, content: content, trigger: nil))
+        guard kind == .approval, approvalRequestID != nil, defaults.bool(forKey: OnDeviceAssist.explainApprovalsKey) else { return }
+        Task {
+            guard let explanation = await OnDeviceAssist.explainApproval(title: title, detail: body),
+                  let updated = content.mutableCopy() as? UNMutableNotificationContent else { return }
+            updated.subtitle = "\(OnDeviceAssist.attribution) · \(explanation)"
+            updated.sound = nil
+            try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: requestIdentifier, content: updated, trigger: nil))
+        }
+    }
+}
+
+/// Banner buttons for approvals. The request ID rides in `userInfo` so a stale banner can only answer the exact request it announced.
+enum HermNotificationAction {
+    static let approvalCategory = "herm.approval"
+    static let approve = "herm.approval.approve"
+    static let deny = "herm.approval.deny"
+    static let clarifyCategory = "herm.clarify"
+    static let reply = "herm.clarify.reply"
+    static let requestIDKey = "approval_request_id"
+
+    static var categories: Set<UNNotificationCategory> {
+        [UNNotificationCategory(identifier: approvalCategory, actions: [
+            UNNotificationAction(identifier: approve, title: "Approve once", options: []),
+            UNNotificationAction(identifier: deny, title: "Deny", options: [.destructive])
+        ], intentIdentifiers: []),
+         UNNotificationCategory(identifier: clarifyCategory, actions: [
+            UNTextInputNotificationAction(identifier: reply, title: "Reply", options: [],
+                                          textInputButtonTitle: "Send", textInputPlaceholder: "Your answer")
+        ], intentIdentifiers: [])]
+    }
+
+    static func choice(for actionIdentifier: String) -> String? {
+        switch actionIdentifier {
+        case approve: ApprovalChoice.once
+        case deny: ApprovalChoice.deny
+        default: nil
+        }
+    }
+}
+
+extension DockModel {
+    /// Answers the approval a banner announced; a no-op once that request is no longer pending.
+    func answerApproval(requestID: String, choice: String) {
+        guard let request = sessionAttention.values.compactMap(\.responseTarget).first(where: { $0.requestID == requestID }) else { return }
+        answerAttention(request, choice: choice)
+    }
+
+    /// Answers a single-question clarification from a banner reply; a no-op once that request is no longer pending.
+    func answerClarification(requestID: String, text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty,
+              let request = sessionAttention.values.compactMap(\.responseTarget).first(where: { $0.requestID == requestID }) else { return }
+        answerAttention(request, choice: text, freeText: true)
     }
 }

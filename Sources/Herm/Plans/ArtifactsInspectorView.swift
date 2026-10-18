@@ -266,7 +266,7 @@ struct ArtifactsInspectorView: View {
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 8)
             Button("Retry") { refreshID += 1 }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 .disabled(isLoading)
@@ -312,7 +312,7 @@ struct ArtifactsInspectorView: View {
                     VStack(spacing: 0) {
                         HStack {
                             Button { showsNarrowDetail = false } label: { DockIconLabel("BACK", icon: .caretLeft) }
-                                .buttonStyle(.dockHover)
+                                .buttonStyle(.dockCompact)
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Color.dockAccent)
                             Spacer()
@@ -532,10 +532,10 @@ struct ArtifactsInspectorView: View {
                                 .lineLimit(1)
                             DockIcon(.arrowRight, size: 10, color: .dockAccent)
                         }
-                        .font(DockTypography.metadata.weight(.medium))
+                        .font(DockTypography.control)
                         .foregroundStyle(Color.dockAccent)
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockLink)
                     .help("Open the session that produced this artifact")
                 } else {
                     DockIconLabel(record.sessionTitle, icon: .chatCircle)
@@ -908,7 +908,7 @@ struct ArtifactsInspectorView: View {
                 if let session = sourceSession(for: record) {
                     Button(session.displayTitle) { openSession(session) }
                         .font(.system(size: 10))
-                        .buttonStyle(.dockHover)
+                        .buttonStyle(.dockLink)
                         .foregroundStyle(Color.dockAccent)
                         .lineLimit(1)
                 } else {
@@ -940,7 +940,7 @@ struct ArtifactsInspectorView: View {
     private func artifactAction(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
             .font(.system(size: 10, weight: .semibold))
-            .buttonStyle(.dockHover)
+            .buttonStyle(.dockCompact)
             .foregroundStyle(Color.dockAccent)
     }
 
@@ -953,7 +953,7 @@ struct ArtifactsInspectorView: View {
             color: .dockAccent
         )
         .font(.system(size: 10, weight: .semibold))
-        .buttonStyle(.dockHover)
+        .buttonStyle(.dockCompact)
     }
 
     private func pagination(current: Int, total: Int, select: @escaping (Int) -> Void) -> some View {
@@ -970,7 +970,7 @@ struct ArtifactsInspectorView: View {
             }
             .disabled(current >= total)
         }
-        .buttonStyle(.dockHover)
+        .buttonStyle(.dockCompact)
         .foregroundStyle(Color.dockAccent)
         .frame(maxWidth: .infinity, alignment: .center)
         .accessibilityElement(children: .contain)

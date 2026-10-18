@@ -91,6 +91,14 @@ struct ModelPickerPreferences {
     var disabledIDs: Set<String> {
         Set(defaults.stringArray(forKey: Self.disabledKey) ?? [])
     }
+
+    func unselectAll(options: [HermesModelOption], activeID: String?) -> Set<String> {
+        let disabled = ModelPickerCatalog.reconciledDisabledIDs(
+            disabledIDs.union(options.map(\.id)), activeID: activeID
+        )
+        defaults.set(disabled.sorted(), forKey: Self.disabledKey)
+        return disabled
+    }
 }
 
 struct ModelPickerView: View {
@@ -263,6 +271,12 @@ private struct ModelPickerEditorView: View {
             .scrollContentBackground(.hidden)
             .frame(height: 360)
         } footer: {
+            Button("Unselect All") {
+                disabledIDs = ModelPickerPreferences().unselectAll(options: options, activeID: activeID)
+            }
+            .buttonStyle(.dockSecondary)
+            .disabled(!options.contains { $0.id != activeID && !disabledIDs.contains($0.id) })
+            .help("Hide all models except the active model.")
             Spacer()
             Button("Done") { dismiss() }
                 .buttonStyle(.dockPrimary)

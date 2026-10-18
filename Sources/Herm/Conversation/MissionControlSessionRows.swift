@@ -320,12 +320,12 @@ struct MissionControlProjectList: View {
                                  : "Show \(group.sessions.count - sessionLimit) more")
                             DockIcon(disclosureState.showsAllSessions(projectID: group.id) ? .caretUp : .caretDown, size: 10, color: style.metadataText)
                         }
-                        .font(.system(size: 11, weight: .medium))
+                        .font(DockTypography.control)
                         .foregroundStyle(style.secondaryText)
                         .frame(minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockLink)
                     .accessibilityLabel(disclosureState.showsAllSessions(projectID: group.id)
                                         ? "Show recent sessions for \(group.title)"
                                         : "Show \(group.sessions.count - sessionLimit) more sessions for \(group.title)")

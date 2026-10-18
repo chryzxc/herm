@@ -83,6 +83,32 @@ struct ModelPickerTests {
     }
 
     @Test
+    func unselectAllPersistsAcrossProvidersAndPreservesActiveModel() {
+        let suiteName = "ModelPickerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let preferences = ModelPickerPreferences(defaults: defaults)
+        let options = [
+            HermesModelOption(provider: "openai", model: "gpt-5"),
+            HermesModelOption(provider: "anthropic", model: "claude-sonnet")
+        ]
+        preferences.setEnabled(false, for: "other|hidden")
+        preferences.setEnabled(false, for: options[0].id)
+
+        let disabled = preferences.unselectAll(options: options, activeID: options[0].id)
+
+        #expect(disabled == ["other|hidden", options[1].id])
+        #expect(ModelPickerPreferences(defaults: defaults).disabledIDs == disabled)
+        #expect(ModelPickerCatalog(options: options).groups(disabledIDs: disabled, activeID: options[0].id)
+            .flatMap(\.models).map(\.id) == [options[0].id])
+
+        let allDisabled = preferences.unselectAll(options: options, activeID: nil)
+        #expect(allDisabled == ["other|hidden", options[0].id, options[1].id])
+        #expect(ModelPickerPreferences(defaults: defaults).disabledIDs == allDisabled)
+        #expect(ModelPickerCatalog(options: options).groups(disabledIDs: allDisabled, activeID: nil).isEmpty)
+    }
+
+    @Test
     func refreshStateDistinguishesPendingSuccessEmptyAndUnavailable() {
         #expect(ModelPickerRefreshState.pending.isPending)
         #expect(ModelPickerRefreshState.success.isAvailable)

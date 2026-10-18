@@ -138,6 +138,7 @@ final class DockModel: ObservableObject {
     @Published var isRestoringSession = false
     @Published var isCreatingSession = false
     @Published var currentSessionTitle: String?
+    var autoTitleAttempts: Set<String> = []
     var conversationActivityPhase: ConversationActivityPhase = .idle { didSet { if oldValue != conversationActivityPhase { scheduleActivityPresentation() } } }
     @Published var interruptState: InterruptState = .idle
     @Published var isShowingReasoning = false

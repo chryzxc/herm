@@ -27,7 +27,15 @@ struct FileReview: Codable, Equatable, Sendable {
 final class FilePreviewCenter: ObservableObject {
     static let shared = FilePreviewCenter()
 
-    @Published var url: URL?
+    @Published var url: URL? {
+        didSet { if url != nil { attachmentDiff = nil } }
+    }
+    @Published var attachmentDiff: RepositoryAttachmentChanges?
+
+    func openDiff(_ changes: RepositoryAttachmentChanges) {
+        url = nil
+        attachmentDiff = changes
+    }
     /// Session the preview was opened from; revision requests go back there.
     @Published var sessionID: String?
     @Published private(set) var reviews: [String: FileReview] {
