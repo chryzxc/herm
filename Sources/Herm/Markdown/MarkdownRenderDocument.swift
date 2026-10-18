@@ -93,26 +93,31 @@ struct NativeMarkdownDocumentHost: NSViewRepresentable, Equatable {
     let source: String
     let key: MarkdownRenderKey
     let streamingSections: [MarkdownRenderSection]?
+    var bodySize: CGFloat = 14
+    var bodyWeight: NSFont.Weight = .regular
 
-    init(source: String, key: MarkdownRenderKey, streamingSections: [MarkdownRenderSection]? = nil) {
+    init(source: String, key: MarkdownRenderKey, streamingSections: [MarkdownRenderSection]? = nil, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
         self.source = source
         self.key = key
         self.streamingSections = streamingSections
+        self.bodySize = bodySize; self.bodyWeight = bodyWeight
     }
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.source == rhs.source && lhs.key == rhs.key && lhs.streamingSections == rhs.streamingSections
+        lhs.source == rhs.source && lhs.key == rhs.key && lhs.streamingSections == rhs.streamingSections && lhs.bodySize == rhs.bodySize && lhs.bodyWeight == rhs.bodyWeight
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NativeMarkdownDocumentContainerView {
         let view = NativeMarkdownDocumentContainerView()
+        view.setBodyStyle(size: bodySize, weight: bodyWeight)
         context.coordinator.update(view, source: source, key: key, sections: streamingSections)
         return view
     }
 
     func updateNSView(_ nsView: NativeMarkdownDocumentContainerView, context: Context) {
+        nsView.setBodyStyle(size: bodySize, weight: bodyWeight)
         context.coordinator.update(nsView, source: source, key: key, sections: streamingSections)
     }
 
@@ -444,7 +449,7 @@ enum MarkdownRenderDocumentBuilder {
         return MarkdownRenderDocument(key: key, source: source, sections: sections)
     }
 
-    private static func headingLevel(_ line: String) -> Int? {
+    static func headingLevel(_ line: String) -> Int? {
         let count = line.prefix(while: { $0 == "#" }).count
         guard count > 0, count <= 6, line.dropFirst(count).first == " " else { return nil }
         return count
@@ -462,14 +467,14 @@ enum MarkdownRenderDocumentBuilder {
         }
     }
 
-    private static func unorderedListItem(_ line: String) -> (marker: String, content: String)? {
+    static func unorderedListItem(_ line: String) -> (marker: String, content: String)? {
         for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) {
             return (String(marker.first!), String(line.dropFirst(2)))
         }
         return nil
     }
 
-    private static func orderedListItem(_ line: String) -> (marker: String, content: String)? {
+    static func orderedListItem(_ line: String) -> (marker: String, content: String)? {
         guard let dot = line.firstIndex(of: "."), dot > line.startIndex,
               line[..<dot].allSatisfy(\.isNumber), line.index(after: dot) < line.endIndex,
               line[line.index(after: dot)] == " " else { return nil }
@@ -594,6 +599,13 @@ final class NativeMarkdownDocumentContainerView: NSView {
         }
     }
 
+    private var bodySize: CGFloat = 14
+    private var bodyWeight: NSFont.Weight = .regular
+    func setBodyStyle(size: CGFloat, weight: NSFont.Weight) {
+        guard bodySize != size || bodyWeight != weight else { return }
+        bodySize = size; bodyWeight = weight; reset()
+    }
+
     func apply(document: MarkdownRenderDocument) {
         source = document.source
         let themeRevision = DockThemeRuntime.revision
@@ -617,7 +629,7 @@ final class NativeMarkdownDocumentContainerView: NSView {
                 view = Self.makeView(for: section)
                 addSubview(view)
             }
-            Self.update(view, with: section)
+            Self.update(view, with: section, bodySize: bodySize, bodyWeight: bodyWeight)
             retained[section.id] = view
             next.append(Entry(
                 id: section.id,
@@ -700,14 +712,14 @@ final class NativeMarkdownDocumentContainerView: NSView {
         return view is NativeMarkdownTextSectionView
     }
 
-    private static func update(_ view: any NativeMarkdownMeasurableSection, with section: MarkdownRenderSection) {
+    private static func update(_ view: any NativeMarkdownMeasurableSection, with section: MarkdownRenderSection, bodySize: CGFloat, bodyWeight: NSFont.Weight) {
         switch view {
         case let codeView as NativeMarkdownCodeView:
             if case .code(let language) = section.kind {
                 codeView.update(code: section.source, language: language)
             }
         case let textView as NativeMarkdownTextSectionView:
-            textView.update(markdown: section.source, kind: section.kind)
+            textView.update(markdown: section.source, kind: section.kind, bodySize: bodySize, bodyWeight: bodyWeight)
         default:
             break
         }
@@ -724,7 +736,10 @@ struct NativeMarkdownPalette {
     let border: NSColor
     let surface: NSColor
 
-    init() {
+    let bodySize: CGFloat
+    let bodyWeight: NSFont.Weight
+    init(bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
+        self.bodySize = bodySize; self.bodyWeight = bodyWeight
         primary = NSColor(Color.dockMarkdownText)
         secondary = NSColor(Color.dockSecondaryText)
         metadata = NSColor(Color.dockMetadataText)
@@ -755,9 +770,11 @@ enum NativeMarkdownAttributedOutputCache {
         markdown: String,
         kind: MarkdownRenderSectionKind,
         themeRevision: Int,
+        bodySize: CGFloat = 14,
+        bodyWeight: NSFont.Weight = .regular,
         build: () -> NativeMarkdownAttributedTextBuilder.Output
     ) -> NativeMarkdownAttributedTextBuilder.Output {
-        let key = "\(themeRevision)|\(BotMentions.revision)|\(kind)|\(markdown)" as NSString
+        let key = "\(themeRevision)|\(bodySize)|\(bodyWeight.rawValue)|\(BotMentions.revision)|\(kind)|\(markdown)" as NSString
         if let entry = cache.object(forKey: key) { return entry.output }
         let output = build()
         cache.setObject(Entry(output), forKey: key, cost: max(1, markdown.utf8.count * 4))
@@ -775,7 +792,7 @@ enum NativeMarkdownAttributedTextBuilder {
         let quoteRanges: [NSRange]
     }
 
-    /// Marks inline file icons so text-offset consumers can strip them.
+    /// Marks inline icons so text-offset consumers can strip them.
     static let fileIconKey = NSAttributedString.Key("herm.fileIcon")
     static let bodySize: CGFloat = 14
     static let codeSize: CGFloat = 12.5
@@ -808,7 +825,7 @@ enum NativeMarkdownAttributedTextBuilder {
     }
 
     private static func ordinaryDocument(_ markdown: String, palette: NativeMarkdownPalette) -> Output {
-        let blocks = MarkdownMessageView.renderBlocks(for: markdown)
+        let blocks = MarkdownRenderDocumentBuilder.renderBlocks(for: markdown)
         let result = NSMutableAttributedString()
         var quoteRanges: [NSRange] = []
         for (index, block) in blocks.enumerated() {
@@ -820,23 +837,23 @@ enum NativeMarkdownAttributedTextBuilder {
                 result.append(inline(text, font: DockSkinPresentation.nativeFont(size: headingSize(level), weight: .semibold), color: palette.primary, palette: palette, style: style))
             case .paragraph(let text):
                 let style = paragraphStyle(spacingBefore: spacingBefore, lineSpacing: 3)
-                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: bodySize), color: palette.primary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: palette.bodySize, weight: palette.bodyWeight), color: palette.primary, palette: palette, style: style))
             case .listItem(let text, let marker):
                 let style = paragraphStyle(spacingBefore: spacingBefore, lineSpacing: 3)
                 style.headIndent = listIndent
                 style.tabStops = [NSTextTab(textAlignment: .left, location: listIndent)]
                 style.defaultTabInterval = listIndent
                 result.append(NSAttributedString(string: "\(marker)\t", attributes: [
-                    .font: DockSkinPresentation.nativeFont(size: bodySize, weight: .medium),
+                    .font: DockSkinPresentation.nativeFont(size: palette.bodySize, weight: .medium),
                     .foregroundColor: palette.accent,
                     .paragraphStyle: style
                 ]))
-                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: bodySize), color: palette.primary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: palette.bodySize, weight: palette.bodyWeight), color: palette.primary, palette: palette, style: style))
             case .quote(let text):
                 let style = paragraphStyle(spacingBefore: spacingBefore, lineSpacing: 3)
                 style.headIndent = quoteIndent
                 style.firstLineHeadIndent = quoteIndent
-                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: bodySize), color: palette.secondary, palette: palette, style: style))
+                result.append(inline(text, font: DockSkinPresentation.nativeFont(size: palette.bodySize, weight: palette.bodyWeight), color: palette.secondary, palette: palette, style: style))
                 quoteRanges.append(NSRange(location: start, length: result.length - start))
             case .code(let code, let language):
                 result.append(codeBlock(code, language: language, spacingBefore: spacingBefore, palette: palette))
@@ -1010,9 +1027,12 @@ enum NativeMarkdownAttributedTextBuilder {
         style: NSParagraphStyle
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
+        var previousLink: URL?
         for run in value.runs {
-            let text = String(value[run.range].characters)
+            let rawText = String(value[run.range].characters)
+            let text = run.link.map { MarkdownWebsiteIcon.label(rawText, for: $0) } ?? rawText
             guard !text.isEmpty else { continue }
+            defer { previousLink = run.link }
             let intent = run.inlinePresentationIntent ?? []
             var font = baseFont
             if intent.contains(.code) {
@@ -1040,14 +1060,25 @@ enum NativeMarkdownAttributedTextBuilder {
                 attributes[.foregroundColor] = palette.accent
                 attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
             }
-            if run.link != nil || intent.contains(.code),
+            var inlineAttachment: NSTextAttachment?
+            if let link = run.link, link != previousLink {
+                inlineAttachment = MarkdownWebsiteIcon.attachment(for: link, size: baseFont.pointSize - 1, color: palette.primary)
+            }
+            if inlineAttachment == nil, run.link.flatMap(MarkdownWebsiteIcon.host(for:)) == nil,
+               run.link != nil || intent.contains(.code),
                let icon = ArtifactFileIcon.inlineImage(forPath: text, size: baseFont.pointSize - 1) {
                 let attachment = NSTextAttachment()
                 attachment.image = icon
                 attachment.bounds = CGRect(x: 0, y: -2, width: icon.size.width, height: icon.size.height)
+                inlineAttachment = attachment
+            }
+            if let attachment = inlineAttachment {
                 let iconString = NSMutableAttributedString(attachment: attachment)
                 iconString.append(NSAttributedString(string: "\u{2009}"))
-                iconString.addAttributes([.paragraphStyle: style, fileIconKey: true], range: NSRange(location: 0, length: iconString.length))
+                var iconAttributes = attributes
+                iconAttributes[.underlineStyle] = nil
+                iconAttributes[fileIconKey] = true
+                iconString.addAttributes(iconAttributes, range: NSRange(location: 0, length: iconString.length))
                 result.append(iconString)
             }
             let start = result.length
@@ -1148,27 +1179,37 @@ final class NativeMarkdownTextSectionView: NSTextView, NativeMarkdownMeasurableS
         isAutomaticLinkDetectionEnabled = false
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
+        NotificationCenter.default.addObserver(self, selector: #selector(websiteIconLoaded), name: MarkdownWebsiteIcon.didLoad, object: nil)
+    }
+
+    @objc private func websiteIconLoaded() {
+        guard let textStorage else { return }
+        layoutManager?.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: textStorage.length))
+        needsDisplay = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    func update(markdown: String, kind: MarkdownRenderSectionKind) {
+    private var renderedBodySize: CGFloat?
+    private var renderedBodyWeight: NSFont.Weight?
+    func update(markdown: String, kind: MarkdownRenderSectionKind, bodySize: CGFloat = 14, bodyWeight: NSFont.Weight = .regular) {
         // A theme change keeps the same markdown but changes every color, so
         // the rendered theme revision is part of what makes the text current.
         let themeRevision = DockThemeRuntime.revision
         guard renderedMarkdown != markdown || renderedKind != kind || renderedThemeRevision != themeRevision
-                || renderedMentionRevision != BotMentions.revision else { return }
+                || renderedMentionRevision != BotMentions.revision || renderedBodySize != bodySize || renderedBodyWeight != bodyWeight else { return }
+        renderedBodySize = bodySize; renderedBodyWeight = bodyWeight
         renderedMentionRevision = BotMentions.revision
         renderedMarkdown = markdown
         renderedKind = kind
         renderedThemeRevision = themeRevision
-        let palette = NativeMarkdownPalette()
+        let palette = NativeMarkdownPalette(bodySize: bodySize, bodyWeight: bodyWeight)
         linkTextAttributes = [.foregroundColor: palette.accent, .underlineStyle: NSUnderlineStyle.single.rawValue]
         quoteBarColor = palette.border
         let output = NativeMarkdownAttributedOutputCache.output(
             markdown: markdown,
             kind: kind,
-            themeRevision: themeRevision
+            themeRevision: themeRevision, bodySize: bodySize, bodyWeight: bodyWeight
         ) {
             switch kind {
             case .code:

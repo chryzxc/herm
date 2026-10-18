@@ -3,6 +3,21 @@ import Testing
 @testable import Herm
 
 struct ChatMediaSegmentTests {
+    @Test @MainActor func openingAttachmentDiffReplacesFilePreviewAndKeepsItsOwnWorktree() {
+        let center = FilePreviewCenter(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        center.url = URL(fileURLWithPath: "/tmp/report.md")
+        let files = [
+            RepositoryFileChange(path: "src/main.swift", status: .modified, isStaged: true, renameSource: nil),
+            RepositoryFileChange(path: "src/main.swift", status: .deleted, isStaged: false, renameSource: nil),
+        ]
+        center.openDiff(RepositoryAttachmentChanges(repositoryPath: "/tmp/other-worktree", files: files))
+        #expect(center.url == nil)
+        #expect(center.attachmentDiff?.repositoryPath == "/tmp/other-worktree")
+        #expect(center.attachmentDiff?.files == files)
+        center.url = URL(fileURLWithPath: "/tmp/report.md")
+        #expect(center.attachmentDiff == nil)
+    }
+
     @Test func attachmentDiffUsesExactGitFileAndBothChangeScopes() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
