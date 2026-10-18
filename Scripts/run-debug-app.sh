@@ -10,6 +10,7 @@ APP_IDENTIFIER="app.herm.Herm"
 PROCESS_NAME="Herm"
 
 cd "$PROJECT_DIR"
+. "$PROJECT_DIR/Scripts/appintents.sh"
 
 # Keep debug builds independent from user-level Swift/Clang caches. This is
 # important in managed environments where ~/.cache may be read-only, and it
@@ -22,7 +23,7 @@ export CLANG_MODULE_CACHE_PATH="$DEBUG_CACHE_DIR/clang-module-cache"
 # graph (including generated sources and package metadata), unlike a shell
 # timestamp probe that can incorrectly reuse an old executable after edits.
 echo "[1/4] Building Herm..."
-swift build \
+swift_build_with_appintents \
     --disable-automatic-resolution \
     --disable-sandbox \
     --cache-path "$DEBUG_CACHE_DIR/swiftpm-cache" \
@@ -102,6 +103,7 @@ cp "$PROJECT_DIR/Sources/Herm/Resources/DockAppIcon.icns" "$APP_PATH/Contents/Re
 # Keep SwiftPM image resources inside the signed app so it remains self-contained.
 cp -R "$BUILD_DIR/Herm_Herm.bundle" "$APP_PATH/Contents/Resources/"
 cp -Rf "$BUILD_DIR/SwiftTerm_SwiftTerm.bundle" "$APP_PATH/Contents/Resources/"
+embed_appintents_metadata "$BUILD_DIR" "$APP_PATH/Contents/Resources"
 # `cp` can retain a restrictive mode from an older bundle. Launch Services
 # requires the bundle executable to be discoverable as a normal app binary.
 chmod 755 "$APP_PATH/Contents/MacOS/Herm"

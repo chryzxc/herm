@@ -1,4 +1,5 @@
 import AppKit
+import CoreSpotlight
 import Combine
 import SwiftUI
 import UserNotifications
@@ -106,6 +107,14 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     private var commandDoubleTapDetector = CommandDoubleTapDetector()
     private var optionDoubleTapDetector = CommandDoubleTapDetector()
     private var commandEventMonitors: [Any] = []
+    private var keepAwake: NSObjectProtocol?
+    private var keepAwakeObservers = Set<AnyCancellable>()
+    private var dockTileStatus: DockTileStatus?
+    private var quickCaptureHotKey: QuickCaptureHotKey?
+    private var spotlightIndex: SessionSpotlightIndex?
+    static let keepAwakeKey = "herm.keepAwakeWhileWorking.v1"
+    /// The running delegate, for App Intents, which have no other route to the models.
+    static private(set) weak var current: HermDelegate?
 
     override init() {
         // Must run before the models read defaults or state files.
@@ -114,6 +123,7 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         controlCenter = ControlCenterModel()
         super.init()
         model.interruptionCoordinator = interruptions
+        Self.current = self
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -153,11 +163,17 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         model.refreshRuntimeConfiguration()
         if HermesAppRuntime.supportsUserNotifications {
             UNUserNotificationCenter.current().delegate = self
+            UNUserNotificationCenter.current().setNotificationCategories(HermNotificationAction.categories)
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         } else {
             DebugLog.write("model: UserNotifications unavailable outside an app bundle")
         }
+        NSApp.servicesProvider = self
+        observeKeepAwake()
+        dockTileStatus = DockTileStatus(model: model)
         installCommandDoubleTapShortcut()
+        spotlightIndex = SessionSpotlightIndex(model: model)
+        quickCaptureHotKey = QuickCaptureHotKey { [weak self] in self?.edgeDock?.toggleQuickCapture() }
         writeStatusItemDiagnosticIfRequested()
         HermAppUpdater.shared.isBusy = { [model] in model.isSending || model.status == .working }
         HermAppUpdater.shared.start()
@@ -170,6 +186,47 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
                 self?.edgeDock?.toggleQuickPreview()
             }
         }
+    }
+
+    /// Opt-in: blocks idle system sleep (the display may still sleep) while a turn is running.
+    private func observeKeepAwake() {
+        Publishers.CombineLatest(model.$status, model.$isSending)
+            .map { status, sending in status == .working || sending }
+            .removeDuplicates()
+            .sink { [weak self] busy in self?.setKeepAwake(busy) }
+            .store(in: &keepAwakeObservers)
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.setKeepAwake(self.model.status == .working || self.model.isSending)
+            }
+            .store(in: &keepAwakeObservers)
+    }
+
+    private func setKeepAwake(_ busy: Bool) {
+        let enabled = UserDefaults.standard.bool(forKey: Self.keepAwakeKey)
+        if busy, enabled, keepAwake == nil {
+            keepAwake = ProcessInfo.processInfo.beginActivity(options: .idleSystemSleepDisabled, reason: "Hermes is working")
+        } else if (!busy || !enabled), let activity = keepAwake {
+            ProcessInfo.processInfo.endActivity(activity)
+            keepAwake = nil
+        }
+    }
+
+    /// Services menu entry "Send to Herm": drops the selected text into the composer and opens the panel.
+    @objc func sendToHerm(_ pasteboard: NSPasteboard, userData: String, error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        guard let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+            error.pointee = "No text was selected."
+            return
+        }
+        stageAndShow(text)
+    }
+
+    /// Puts outside text in the composer (when non-empty) and opens the panel.
+    func stageAndShow(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty { model.stageDraft(text) }
+        dockPanel?.showFromNotification()
     }
 
     private func writeStatusItemDiagnosticIfRequested() {
@@ -247,6 +304,16 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
         }
     }
 
+    /// A Spotlight result for a session opens the workspace on that session.
+    func application(_ application: NSApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+              let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return false }
+        let id = SessionSpotlightIndex.sessionID(from: identifier)
+        dockPanel?.switchToWindow()
+        if let session = model.sessions.first(where: { $0.id == id }) { model.resumeSession(session) }
+        return true
+    }
+
     /// Clicking the Dock icon (shown while the window is open) brings it back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         dockPanel?.switchToWindow()
@@ -264,8 +331,17 @@ final class HermDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCen
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let choice = HermNotificationAction.choice(for: response.actionIdentifier)
+        let requestID = response.notification.request.content.userInfo[HermNotificationAction.requestIDKey] as? String
+        let reply = (response as? UNTextInputNotificationResponse)?.userText
         await MainActor.run { [weak self] in
-            self?.dockPanel?.showFromNotification()
+            if let choice, let requestID {
+                self?.model.answerApproval(requestID: requestID, choice: choice)
+            } else if let requestID, let reply {
+                self?.model.answerClarification(requestID: requestID, text: reply)
+            } else {
+                self?.dockPanel?.showFromNotification()
+            }
         }
     }
 }
@@ -302,6 +378,8 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
     private var workspaceHost: NSView?
     private var isWorkspaceVisible = false
+    private var hideTask: DispatchWorkItem?
+    private var reducesMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     private let placement: () -> EdgeDockPlacement?
     private let onWillShow: () -> Void
     private let onHide: () -> Void
@@ -334,7 +412,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self, self.isWorkspaceVisible else { return }
-                self.resizePanel(to: self.desiredWidth, animated: false)
+                self.resizePanel(to: self.desiredWidth)
             }.store(in: &cancellables)
         // A notch move (settings, rail menu or drag) re-docks an open workspace at
         // once. Hop a turn so the notch controller has applied the new side first.
@@ -346,7 +424,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 DispatchQueue.main.async {
                     guard let self, self.isWorkspaceVisible, !self.isFullscreen,
                           let side = self.placement()?.side, side != self.panelPresentation.edgeSide else { return }
-                    self.resizePanel(to: self.desiredWidth, animated: false)
+                    self.resizePanel(to: self.desiredWidth)
                     EdgeDockMotion.reveal(self.workspaceHost, side: side, fromShortcut: false)
                 }
             }.store(in: &cancellables)
@@ -409,7 +487,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
                 // The split view changes pane count when the inspector toggles.
                 // Animating the window at the same time can leave an old
                 // divider drawn over the newly positioned conversation.
-                self?.resizePanel(to: width, animated: false) ?? width
+                self?.resizePanel(to: width) ?? width
             }, onClose: { [weak self] in
                 self?.hide()
             }, onFullscreenToggle: { [weak self] in
@@ -581,14 +659,17 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
             isFullscreen = false // the native window is the full-size surface
         }
         onWillShow()
+        hideTask?.cancel(); hideTask = nil
+        let wasVisible = panel.isVisible
         isWorkspaceVisible = true
         panel.onCancel = { [weak self] in self?.hide() }
         panelPresentation.isEdgeAttached = true
         panelPresentation.edgeSide = placement()?.side ?? .right
         // A minimized panel would restore with its stale frame.
         if panel.isMiniaturized { panel.deminiaturize(nil) }
-        // The compact workspace grows out of the notch's spot.
-        if !panel.isVisible { panel.setFrame(notchPanel.frame, display: false) }
+        if let status = panelPresentation.islandStatus { panelPresentation.collapsedSize = status.collapsedSize }
+        // Start from the collapsed notch shape; the morph below grows it.
+        if !wasVisible { panelPresentation.isRevealed = false }
         installPanelContentIfNeeded()
         // Fullscreen leaves the host sized to the whole screen; resync it so the
         // compact panel sticks to the notch's edge instead of rendering offset.
@@ -599,14 +680,22 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         if isFullscreen {
             enterFullscreen()
         } else {
-            resizePanel(to: desiredWidth, animated: true)
+            resizePanel(to: desiredWidth)
         }
         // `swift run` leaves Terminal as the active app. A status-bar panel can
         // become key visually without receiving keyboard input until its agent
         // application is explicitly activated.
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
-        EdgeDockMotion.reveal(workspaceHost, side: panelPresentation.edgeSide, fromShortcut: fromShortcut)
+        if !panelPresentation.isRevealed {
+            // Also reverse an unfinished close when reopening the still-visible panel.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isWorkspaceVisible else { return }
+                withAnimation(self.reducesMotion ? nil : EdgeDockMotion.panelMorph(side: self.panelPresentation.edgeSide, opening: true)) {
+                    self.panelPresentation.isRevealed = true
+                }
+            }
+        }
         model.markPopoverVisible()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -624,9 +713,18 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         isFullscreen = false
         if wasFullscreen { exitFullscreen() }
         isWorkspaceVisible = false
-        panel.orderOut(nil)
         model.markPopoverHidden()
         onHide()
+        guard !wasFullscreen, !reducesMotion else { return panel.orderOut(nil) }
+        withAnimation(EdgeDockMotion.panelMorph(side: panelPresentation.edgeSide, opening: false)) {
+            panelPresentation.isRevealed = false
+        }
+        let task = DispatchWorkItem { [weak self] in
+            self?.hideTask = nil
+            self?.panel.orderOut(nil)
+        }
+        hideTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + EdgeDockMotion.morphSettle, execute: task)
     }
 
     private func toggleFullscreen() {
@@ -701,7 +799,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         }
 
         if isWorkspaceVisible {
-            resizePanel(to: desiredWidth, animated: true)
+            resizePanel(to: desiredWidth)
         }
     }
 
@@ -711,7 +809,7 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
     }
 
     @discardableResult
-    private func resizePanel(to width: CGFloat, animated: Bool = true) -> CGFloat {
+    private func resizePanel(to width: CGFloat) -> CGFloat {
         desiredWidth = width
         guard !isFullscreen, let placement = placement() else { return width }
         let insets = placement.workspaceInsets
@@ -725,25 +823,12 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
         panelPresentation.compactHeight = max(0, height - insets.top - insets.bottom)
         let frame = placement.frame(width: fittedWidth + insets.leading + insets.trailing, height: height)
 
-        // Session selection may re-evaluate the layout. Setting an identical
-        // frame through the animator still visibly relayouts the host tree.
+        // Session selection may re-evaluate layout without changing its size.
         guard !panel.frame.equalTo(frame) else { return fittedWidth }
 
-        if animated, isWorkspaceVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = EdgeDockMotion.revealDuration
-                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
-                panel.animator().setFrame(frame, display: true)
-            } completionHandler: { [weak self] in
-                // Closing the native window right before this animation can
-                // interrupt it and strand the panel at an intermediate frame.
-                guard let self, self.isWorkspaceVisible, !self.isFullscreen,
-                      !self.panel.frame.equalTo(frame) else { return }
-                self.panel.setFrame(frame, display: true)
-            }
-        } else {
-            panel.setFrame(frame, display: true)
-        }
+        // SwiftUI owns the reveal; native frame animation races pane-count changes
+        // and can finish at an obsolete size after another layout request.
+        panel.setFrame(frame, display: true)
         return fittedWidth
     }
 
@@ -770,8 +855,23 @@ private final class DockPanelController: NSObject, NSWindowDelegate {
 
 @MainActor
 final class DockPanel: NSPanel {
+    static let hideFromScreenSharingKey = "herm.hideFromScreenSharing.v1"
     var acceptsWorkspaceFocus = true
     var onCancel: (() -> Void)?
+    private var privacyObserver: NSObjectProtocol?
+
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style, backing: backingStoreType, defer: flag)
+        applyScreenSharingPrivacy()
+        privacyObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyScreenSharingPrivacy() }
+        }
+    }
+
+    /// Keeps agent content out of screen shares and recordings; the stored flag is the only input.
+    private func applyScreenSharingPrivacy() {
+        sharingType = UserDefaults.standard.bool(forKey: Self.hideFromScreenSharingKey) ? .none : .readOnly
+    }
 
     override var canBecomeKey: Bool { acceptsWorkspaceFocus }
     override var canBecomeMain: Bool { acceptsWorkspaceFocus }

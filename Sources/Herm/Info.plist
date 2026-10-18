@@ -26,5 +26,23 @@
     <string>Herm controls the Spotify app from the office record player.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Herm uses Speech Recognition to turn your voice into a prompt.</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>Send to Herm</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>sendToHerm</string>
+            <key>NSPortName</key>
+            <string>Herm</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

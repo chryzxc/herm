@@ -13,8 +13,10 @@ APP_NAME="Herm"
 APP_DISPLAY="Herm"
 VERSION="${1:-}"
 
+. "$ROOT_DIR/Scripts/appintents.sh"
+
 echo "==> Building release (this may take a while)…"
-swift build -c release --package-path "$ROOT_DIR"
+swift_build_with_appintents -c release --package-path "$ROOT_DIR"
 BIN_DIR=$(swift build -c release --show-bin-path --package-path "$ROOT_DIR")
 APP_DIR="$BIN_DIR/${APP_NAME}.app"
 OUTPUT_DIR="$ROOT_DIR/dist"
@@ -31,6 +33,8 @@ cp "$ROOT_DIR/Sources/Herm/Resources/DockAppIcon.icns" "$APP_DIR/Contents/Resour
 # SwiftPM resource bundles must ship inside the app; otherwise Bundle.module
 # falls back to this build machine's path and traps on other Macs.
 cp -R "$BIN_DIR/Herm_Herm.bundle" "$BIN_DIR/SwiftTerm_SwiftTerm.bundle" "$APP_DIR/Contents/Resources/"
+
+embed_appintents_metadata "$BIN_DIR" "$APP_DIR/Contents/Resources"
 
 echo "==> Validating bundle metadata…"
 plutil -lint "$APP_DIR/Contents/Info.plist"
