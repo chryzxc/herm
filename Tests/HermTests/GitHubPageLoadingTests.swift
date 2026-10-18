@@ -48,7 +48,7 @@ struct GitHubPageLoadingTests {
             "/search/issues?is:pr is:open review-requested:ada": ["items": [searchRow]],
             "/repos/owner/repo/pulls/19": [
                 "number": 19, "title": "Improve loading", "user": ["login": "ada"],
-                "head": ["ref": "feature", "sha": "abc"], "base": ["ref": "main"],
+                "head": ["ref": "feature", "sha": "abc"], "base": ["ref": "main", "sha": "base"],
                 "changed_files": 1, "requested_reviewers": [["login": "ada"]]
             ],
             "/repos/owner/repo/commits/abc/check-runs": ["check_runs": [
@@ -94,7 +94,7 @@ struct GitHubPageLoadingTests {
         _ = await (row, selection)
         await center.loadSummary(for: record)
 
-        #expect(await transport.count("/repos/owner/repo/pulls/19") == 1)
+        #expect(await transport.count("/repos/owner/repo/pulls/19") == 2)
         #expect(await transport.count("/repos/owner/repo/commits/abc/check-runs") == 1)
         #expect(await transport.count("/repos/owner/repo/pulls/19/reviews") == 1)
         #expect(await transport.count("/repos/owner/repo/pulls/20") == 0)
@@ -103,10 +103,10 @@ struct GitHubPageLoadingTests {
         #expect(center.filesByID[record.id]?.count == 1)
 
         await center.refreshSelectedDetail()
-        #expect(await transport.count("/repos/owner/repo/pulls/19") == 2)
+        #expect(await transport.count("/repos/owner/repo/pulls/19") == 4)
         await center.refresh(projects: [])
         await center.loadSummary(for: record)
-        #expect(await transport.count("/repos/owner/repo/pulls/19") == 3)
+        #expect(await transport.count("/repos/owner/repo/pulls/19") == 5)
     }
 
     @MainActor @Test func issueSearchesOverlapAndRefreshUpdatesCachedDetail() async throws {
@@ -132,7 +132,7 @@ struct GitHubPageLoadingTests {
         await center.loadSelectedDetail()
         #expect(await transport.count("/repos/owner/repo/issues/19") == 1)
         await center.refresh(projects: [])
-        #expect(center.detailByID.isEmpty)
+        #expect(center.detailByID.count == 1) // Retain stale content until replacement succeeds.
         await center.loadSelectedDetail()
         #expect(await transport.count("/repos/owner/repo/issues/19") == 2)
     }

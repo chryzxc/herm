@@ -242,8 +242,8 @@ struct RepositoryChangesBrowser: View {
                         }
                         Spacer(minLength: 6)
                         if let url = pullRequest.webURL {
-                            Link("OPEN", destination: url)
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            Link("Open", destination: url)
+                                .buttonStyle(.dockLink)
                                 .foregroundStyle(Color.dockAccent)
                         }
                     }
@@ -344,7 +344,7 @@ struct RepositoryChangesBrowser: View {
                     Button("SIGN IN") {
                         workflow.authenticateGitHub()
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockAccent)
                 }
@@ -383,7 +383,7 @@ struct RepositoryChangesBrowser: View {
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(Color.dockMetadataText)
                     Link(github.id, destination: github.webURL)
-                        .font(.system(size: 11, weight: .medium))
+                        .buttonStyle(.dockLink)
                         .lineLimit(1)
                     Spacer()
                     sourceControlIcon(workflow.isRefreshingGitHub ? .dotsThree : .arrowsClockwise, help: "Refresh GitHub") {
@@ -394,7 +394,7 @@ struct RepositoryChangesBrowser: View {
                     Button("SIGN OUT") {
                         workflow.signOutGitHub()
                     }
-                    .buttonStyle(.dockHover)
+                    .buttonStyle(.dockCompact)
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.dockSecondaryText)
                 }
@@ -429,7 +429,7 @@ struct RepositoryChangesBrowser: View {
                 .foregroundStyle(Color.dockSecondaryText)
             Spacer(minLength: 8)
             Button(workflow.isAuthenticatingGitHub ? "Connecting…" : actionTitle, action: action)
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.dockAccent)
                 .disabled(workflow.isAuthenticatingGitHub)

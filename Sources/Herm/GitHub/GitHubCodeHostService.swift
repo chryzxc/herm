@@ -31,8 +31,10 @@ protocol GitHubCodeHostClient: Sendable {
 struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
     nonisolated static let requestTimeout: TimeInterval = 15
     private let session: URLSession
+    private let apiClient: GitHubClient
 
-    init(session: URLSession = .init(configuration: .ephemeral)) { self.session = session }
+    init(session: URLSession = .init(configuration: .ephemeral)) { self.session = session; self.apiClient = GitHubClient(transport: session) }
+    init(client: GitHubClient) { self.session = URLSession(configuration: .ephemeral); self.apiClient = client }
 
     /// Shared by the read-only pull-request center. Tokens are never stored
     /// by Dock; this only consults the launch environment or `gh` keychain.
@@ -172,33 +174,13 @@ struct GitHubCodeHostService: GitHubCodeHostClient, Sendable {
     }
 
     private func requestJSON(repository: GitHubRepositoryReference, suffix: String, method: String = "GET", query: [URLQueryItem] = [], body: [String: Any]? = nil) async throws -> Any {
-        guard var components = URLComponents(url: repository.webURL, resolvingAgainstBaseURL: false) else { throw GitHubCodeHostError.invalidEndpoint }
-        components.scheme = "https"
-        components.path = repository.apiRepositoryPath + suffix
-        components.queryItems = query
-        guard let url = components.url else { throw GitHubCodeHostError.invalidEndpoint }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = Self.requestTimeout
-        request.httpMethod = method
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        // Never persist credentials in the Dock. When supplied by the launch
-        // environment, use a short-lived token for private repositories and
-        // higher GitHub API limits. GH_TOKEN is the GitHub CLI convention;
-        // GITHUB_TOKEN supports CI and other launchers.
-        let token = await Self.localGitHubToken()
-        if let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: body, options: [])
-        }
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw GitHubCodeHostError.unavailable }
-        if let error = Self.error(forHTTPStatus: http.statusCode) { throw error }
-        guard (200..<300).contains(http.statusCode) else { throw GitHubCodeHostError.unavailable }
-        return try JSONSerialization.jsonObject(with: data)
+        var parameters: [String: String] = [:]
+        for item in query { parameters[item.name] = item.value }
+        do { return try await apiClient.request(repository.apiRepositoryPath + suffix, query: parameters, method: method, body: body) }
+        catch GitHubRequestError.unauthorized { throw GitHubCodeHostError.unauthorized }
+        catch GitHubRequestError.forbidden { throw GitHubCodeHostError.forbidden }
+        catch GitHubRequestError.notFound { throw GitHubCodeHostError.repositoryNotFound }
+        catch { throw GitHubCodeHostError.unavailable }
     }
 
     /// Only an HTTP 401 is proof that the credential itself needs attention.
