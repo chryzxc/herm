@@ -20,7 +20,7 @@ final class EdgeDockController: NSObject {
     private var previousApplication: NSRunningApplication?
     private var collapseTask: DispatchWorkItem?
     private var expandTask: DispatchWorkItem?
-    private var fitTask: DispatchWorkItem?
+    private lazy var frameTransition = EdgePanelFrameTransition(panel: panel)
     private var hovering = false
     private var dragging = false
     private var petDragging = false
@@ -284,6 +284,7 @@ final class EdgeDockController: NSObject {
     }
 
     func prepareForWorkspace() {
+        frameTransition.cancel()
         collapseTask?.cancel()
         expandTask?.cancel()
         state.composing = false
@@ -701,13 +702,32 @@ final class EdgeDockController: NSObject {
         } else if state.activity.working {
             state.detail = "Working on this session’s request"
         } else if let response = model.messages.last(where: { $0.role == .hermes }), !response.text.isEmpty {
-            state.detail = String(response.text.prefix(180))
-            if state.activity.quiet { state.updateTitle = "Latest update" }
+            let summary = replySummaries[response.id]
+            state.detail = summary ?? String(response.text.prefix(180))
+            summarizeIfEnabled(response)
+            if state.activity.quiet { state.updateTitle = summary == nil ? "Latest update" : "Latest update · \(OnDeviceAssist.attribution) summary" }
         } else {
             state.updateTitle = "No activity yet"
             state.detail = model.sessionID == nil ? "Choose a session to see its activity." : "Updates will appear as work begins in this session."
         }
         rebuildTasks()
+    }
+
+    /// On-device one-liners keyed by reply; computed once per reply, and the plain excerpt shows until one arrives.
+    private var replySummaries: [UUID: String] = [:]
+    private var summarizing: Set<UUID> = []
+
+    private func summarizeIfEnabled(_ reply: ChatMessage) {
+        guard UserDefaults.standard.bool(forKey: OnDeviceAssist.summarizeRepliesKey),
+              reply.text.count > 200, replySummaries[reply.id] == nil, summarizing.insert(reply.id).inserted else { return }
+        Task { [weak self] in
+            let summary = await OnDeviceAssist.summarizeReply(reply.text)
+            guard let self else { return }
+            self.summarizing.remove(reply.id)
+            guard let summary else { return }
+            self.replySummaries[reply.id] = summary
+            self.updateDetail()
+        }
     }
 
     private func routineUpdates() {
@@ -857,6 +877,21 @@ final class EdgeDockController: NSObject {
         panel.makeKeyAndOrderFront(nil)
     }
 
+    /// Opens the notch with a new-message composer focused, or closes it if it is already composing.
+    func toggleQuickCapture() {
+        guard !workspacePresented, !dragging, !petDragging else { return }
+        if state.composing { return escapePreview() }
+        previousApplication = NSWorkspace.shared.frontmostApplication
+        if previousApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier { previousApplication = nil }
+        expandTask?.cancel()
+        state.previewInteraction.mode = .keyboard
+        state.previewInteraction.reconcile(previous: [], current: state.tasks.map { $0.previewIdentity(currentProfileID: model.sessionProfileID) })
+        state.showingAnnouncement = false
+        setExpanded(true)
+        state.selectQuickTarget(nil)
+        setQuickMessageFocus(true)
+    }
+
     private func escapePreview() {
         guard NSApp.modalWindow == nil, panel.attachedSheet == nil, !panel.dockHasInteractiveChildWindow else { return }
         if state.showingResultComparison { state.showingResultComparison = false; return }
@@ -959,35 +994,7 @@ final class EdgeDockController: NSObject {
             ? NSPoint(x: placement.screenFrame.midX + state.collapsedSize.width / 2 + 4, y: placement.screenFrame.maxY - state.notchSize.height - 44)
             : NSPoint(x: state.side == .right ? target.maxX - 44 : target.minX, y: target.minY)
         petWindow?.update(home: home, screen: placement.visibleFrame, visible: !workspacePresented, side: state.side)
-        fitTask?.cancel(); fitTask = nil
-        guard !panel.frame.equalTo(target) else { return }
-        // SwiftUI owns the morph: the transparent window grows at once to cover
-        // both shapes and only shrinks to fit after the spring has settled, so
-        // AppKit never resizes (and relays out) the panel frame by frame.
-        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, panel.frame.intersects(target) else {
-            return panel.setFrame(target, display: true)
-        }
-        let cover = panel.frame.union(target)
-        if !panel.frame.equalTo(cover) { setPanelFrame(cover, after: 0) }
-        guard !cover.equalTo(target) else { return }
-        setPanelFrame(target, after: EdgeDockMotion.morphSettle)
-    }
-
-    /// Resizes go through the animator even when nearly instant: an immediate
-    /// setFrame while the notch view is mid-spring sends NSHostingView into an
-    /// endless update-constraints loop that AppKit aborts.
-    private func setPanelFrame(_ frame: NSRect, after delay: TimeInterval) {
-        let apply = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            if delay > 0 { self.fitTask = nil }
-            guard !self.panel.frame.equalTo(frame) else { return }
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = EdgeDockMotion.windowResize
-                self.panel.animator().setFrame(frame, display: true)
-            }
-        }
-        if delay > 0 { fitTask = apply }
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: apply)
+        frameTransition.position(to: target, animated: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
     static func frame(screenFrame: NSRect, visibleFrame: NSRect, expanded: Bool, railHeight: CGFloat = 136) -> NSRect {
@@ -1708,21 +1715,7 @@ struct EdgeNotchView: View {
                                    }
                                },
                                hasNewerResult: state.tasks.contains { $0.id == target.task.id && $0.session?.profileID == target.session.profileID && $0.phase == .finished && $0 != target.task },
-                               correct: { text, sources in
-                                   onResultReply(target)
-                                   guard state.quickTarget?.id == target.session.id, state.quickTarget?.profileID == target.session.profileID,
-                                         !state.quickSending, !state.quickNeedsReview, state.quickPreparing == 0 else { return }
-                                   state.quickDraft += (state.quickDraft.isEmpty ? "" : "\n\n") + text
-                                   sources.forEach { state.addQuickSource($0) }
-                               }, beginEditing: { onQuickMessageFocus(true) }, codingClient: quickMessageModel.controlRPCClient,
-                               openRepository: { path in
-                                   controlCenter.requestedRepositoryReview = QuickDestination(profileID: target.session.profileID, sessionID: target.session.id, title: target.session.displayTitle, projectPath: path)
-                                   quickMessageModel.resumeSession(target.session); state.resultTarget = nil; openDock()
-                               }, createdTask: { setup in
-                                   state.draftStore.save(setup.draft); state.draftStore.flush()
-                                   state.restoreQuickDraft(setup.draft); state.resultTarget = nil
-                                   state.quickResult = setup.error; onQuickMessageFocus(true)
-                               }, showingComparison: $state.showingResultComparison)
+                               showingComparison: $state.showingResultComparison)
                     .id(target.id)
     }
 

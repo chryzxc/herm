@@ -80,11 +80,11 @@ struct EdgeRecallView: View {
               Text(hit.session.displayTitle).font(.system(size: 12, weight: .semibold))
               Text(hit.snippet).font(.system(size: 12)).lineLimit(5)
               HStack {
-                Button("Open conversation") { open(hit.session) }.buttonStyle(.dockHover)
+                Button("Open conversation") { open(hit.session) }.buttonStyle(.dockCompact)
                 DockCopyButton(
                   hit.snippet, label: "Copy", accessibilityLabel: "Copy search snippet"
-                ).buttonStyle(.dockHover)
-                Button("Insert") { insert(hit) }.buttonStyle(.dockHover).accessibilityLabel(
+                ).buttonStyle(.dockCompact)
+                Button("Insert") { insert(hit) }.buttonStyle(.dockCompact).accessibilityLabel(
                   "Insert snippet into quick draft with source reference")
               }.font(.system(size: 11))
             }
@@ -93,7 +93,7 @@ struct EdgeRecallView: View {
       }
       Divider().overlay(Color.dockBorderLight)
       HStack {
-        Button("Back", action: back).buttonStyle(.dockHover)
+        Button("Back", action: back).buttonStyle(.dockCompact)
         Spacer()
         Text("Opens a conversation").foregroundStyle(Color.dockSecondaryText)
       }.font(.system(size: 11)).padding(10)

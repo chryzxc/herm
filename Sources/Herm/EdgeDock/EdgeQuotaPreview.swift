@@ -158,7 +158,7 @@ struct EdgeQuotaPreview: View {
                 }
             }
             Spacer(minLength: 0)
-            if let sessionActions { Button("Session…", action: sessionActions).buttonStyle(.dockHover).accessibilityLabel("Capacity and actions for the selected quick destination") }
+            if let sessionActions { Button("Session…", action: sessionActions).buttonStyle(.dockCompact).accessibilityLabel("Capacity and actions for the selected quick destination") }
             EdgePreviewFooterButton(title: "Open Quota", icon: .arrowRight, action: openQuota)
         }
         .lineLimit(1)

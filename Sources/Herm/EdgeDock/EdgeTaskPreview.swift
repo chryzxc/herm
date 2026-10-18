@@ -382,7 +382,7 @@ struct EdgeTaskPreview: View {
                         .lineLimit(3)
                     if case .failed = submission {
                         Button("Retry") { answer(task, submission.choice) }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .font(.system(size: 11, weight: .medium))
                             .disabled(!task.isStatusCurrent)
                             .accessibilityLabel("Retry answer to \(task.title)")
@@ -390,7 +390,7 @@ struct EdgeTaskPreview: View {
                     if case .uncertain = submission,
                        let request = task.attentionRequest, let quickModel {
                         Button("Check request") { quickModel.recheckAttention(request) }
-                            .buttonStyle(.dockHover)
+                            .buttonStyle(.dockCompact)
                             .font(.system(size: 11, weight: .medium))
                             .disabled(!task.isStatusCurrent)
                             .accessibilityLabel("Check whether request for \(task.title) is still pending")

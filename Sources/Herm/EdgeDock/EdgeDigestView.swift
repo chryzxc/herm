@@ -36,7 +36,7 @@ struct EdgeDigestView: View {
       HStack {
         Text("While quiet").font(.system(size: 12, weight: .semibold))
         Spacer()
-        Button("Back", action: back).buttonStyle(.dockHover)
+        Button("Back", action: back).buttonStyle(.dockCompact)
       }.padding(10).frame(height: 40)
       Divider().overlay(Color.dockBorderLight)
       ScrollView {
@@ -74,9 +74,9 @@ struct EdgeDigestView: View {
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
       Divider().overlay(Color.dockBorderLight)
       HStack {
-        Button("Clear…") { confirmsClear = true }.buttonStyle(.dockHover)
+        Button("Clear…") { confirmsClear = true }.buttonStyle(.dockCompact)
         Spacer()
-        Button("Open Herm", action: openActivity).buttonStyle(.dockHover)
+        Button("Open Herm", action: openActivity).buttonStyle(.dockCompact)
       }.font(.system(size: 12, weight: .medium)).padding(10)
     }
     .foregroundStyle(Color.dockPrimaryText)

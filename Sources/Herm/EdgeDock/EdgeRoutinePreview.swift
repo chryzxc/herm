@@ -17,7 +17,7 @@ struct EdgeRoutinePreview: View {
         HStack {
           Text(reference.job.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
           Spacer()
-          Button("Back", action: back).buttonStyle(.dockHover)
+          Button("Back", action: back).buttonStyle(.dockCompact)
         }.padding(.horizontal, 10).frame(width: geometry.size.width, height: 40)
         Divider().overlay(Color.dockBorderLight)
         ScrollView {
@@ -50,7 +50,7 @@ struct EdgeRoutinePreview: View {
               Button("View report") {
                 reportTask?.cancel()
                 reportTask = Task { await loadReport() }
-              }.buttonStyle(.dockHover)
+              }.buttonStyle(.dockCompact)
             }
             if let error = error ?? control.routineActionErrors[reference.id] {
               Text(error).foregroundStyle(Color.dockWarning)
@@ -65,10 +65,10 @@ struct EdgeRoutinePreview: View {
               )
               Button("Run now…") { confirming = "Start a new run" }.disabled(
                 !control.canTriggerRoutine(reference))
-            }.buttonStyle(.dockHover).disabled(control.routineActions.contains(reference.id))
+            }.buttonStyle(.dockCompact).disabled(control.routineActions.contains(reference.id))
             if control.routineNeedsReview(reference) {
               Button("I reviewed the run; allow another…") { confirming = "Record reviewed run" }
-                .buttonStyle(.dockHover)
+                .buttonStyle(.dockCompact)
             }
             Text("Run now starts a new execution. It does not retry delivery.").font(
               .system(size: 11)
@@ -76,19 +76,19 @@ struct EdgeRoutinePreview: View {
             Button(preferences.routinePins.contains(reference.id) ? "Unpin routine" : "Pin routine")
             {
               preferences.toggleRoutinePin(reference.id)
-            }.buttonStyle(.dockHover)
+            }.buttonStyle(.dockCompact)
             Button("Integrations…") {
               control.integrationDestination = IntegrationDestination(
                 profileID: reference.profileID)
               openAutomation()
-            }.buttonStyle(.dockHover)
+            }.buttonStyle(.dockCompact)
           }.font(.system(size: 12)).padding(10).frame(
             width: geometry.size.width, alignment: .leading)
         }.frame(width: geometry.size.width, height: max(0, geometry.size.height - 86))
         Divider().overlay(Color.dockBorderLight)
         HStack {
           Spacer()
-          Button("Open Automation", action: openAutomation).buttonStyle(.dockHover)
+          Button("Open Automation", action: openAutomation).buttonStyle(.dockCompact)
         }.font(.system(size: 12)).padding(.horizontal, 10).frame(
           width: geometry.size.width, height: 44)
       }

@@ -1,4 +1,5 @@
 import SwiftUI
+import Translation
 
 /// A captured destination, independent of whichever workspace is selected next.
 struct EdgeResultTarget: Identifiable {
@@ -61,15 +62,11 @@ struct EdgeResultPeek: View {
   var reviewed: () -> Void = {}
   var refresh: () -> Void = {}
   var hasNewerResult = false
-  var correct: ((String, [String]) -> Void)? = nil
-  var beginEditing: () -> Void = {}
-  var codingClient: HermesRPCClientProtocol? = nil
-  var openRepository: ((String) -> Void)? = nil
-  var createdTask: ((IsolatedTaskSetup) -> Void)? = nil
   @Binding var showingComparison: Bool
   @State private var content: EdgeResultContent?
   @State private var error: String?
   @State private var isLoading = true
+  @State private var translating = false
   @State private var revision = 0
   @State private var previousContent: EdgeResultContent?
   @State private var comparison: ResultTextComparison?
@@ -80,7 +77,10 @@ struct EdgeResultPeek: View {
         Button {
           if showingComparison { showingComparison = false } else { back() }
         } label: {
+          // A glyph-only label hits only its strokes; give it a full 28pt target.
           DockIcon(.caretLeft, size: 12, color: .dockSecondaryText)
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.dockHover)
         .accessibilityLabel(showingComparison ? "Back to current result" : "Back to tasks")
@@ -101,13 +101,17 @@ struct EdgeResultPeek: View {
           }
           Button("Compare with previous read") { showingComparison = true }
             .disabled(previousContent == nil || comparison == nil)
-        }.font(.system(size: 11)).menuStyle(.borderlessButton).fixedSize().disabled(isLoading)
+          if #available(macOS 15.0, *) {
+            Button("Translate reply") { translating = true }.disabled(content?.text.isEmpty ?? true)
+          }
+        }.modifier(ReplyTranslation(isPresented: $translating, text: content?.text ?? ""))
+          .font(.system(size: 11)).menuStyle(.borderlessButton).fixedSize().disabled(isLoading)
           .accessibilityLabel("Result actions")
         if let content, !content.text.isEmpty {
           DockCopyButton(
             content.text, label: "Copy", accessibilityLabel: "Copy excerpt", iconSize: 12
           )
-          .buttonStyle(.dockHover)
+          .buttonStyle(.dockCompact)
         }
       }
       .padding(10)
@@ -120,7 +124,8 @@ struct EdgeResultPeek: View {
               previous: previousContent, current: content, comparison: comparison)
           } else if let content {
             if !content.text.isEmpty {
-              Text(content.text).font(.system(size: 12)).textSelection(.enabled)
+              MarkdownMessageView(markdown: content.text, bodySize: 12)
+                .textSelection(.enabled)
             }
             if let error {
               Text("Update failed. Still showing the loaded excerpt.")
@@ -130,25 +135,10 @@ struct EdgeResultPeek: View {
             ForEach(content.artifacts) { artifact in
               artifactRow(artifact)
             }
-            if let correct {
-              EdgeResultSources(
-                content: content,
-                origin: QuickDestination(
-                  profileID: target.session.profileID,
-                  sessionID: target.session.id, title: target.session.displayTitle),
-                correct: correct, activate: beginEditing)
-            }
-            if let codingClient, let createdTask {
-              EdgeResultCoding(
-                origin: target.session, client: codingClient, activate: beginEditing,
-                opened: { path in
-                  if let openRepository { openRepository(path) } else { openSession() }
-                }, created: createdTask)
-            }
           } else if let error {
             Text("Couldn’t load the reply").font(.system(size: 12, weight: .semibold))
             Text(error).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
-            Button("Retry") { revision += 1 }.buttonStyle(.dockHover)
+            Button("Retry") { revision += 1 }.buttonStyle(.dockCompact)
           } else if !isLoading {
             Text("No saved reply yet").font(.system(size: 12, weight: .semibold))
             Text("Open the session to review its activity.").font(.system(size: 12))
@@ -161,9 +151,9 @@ struct EdgeResultPeek: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       Divider().overlay(Color.dockBorderLight)
       HStack {
-        Button("Reply", action: reply).buttonStyle(.dockHover)
+        Button("Reply", action: reply).buttonStyle(.dockCompact)
         Spacer()
-        Button("Open session", action: openSession).buttonStyle(.dockHover)
+        Button("Open session", action: openSession).buttonStyle(.dockCompact)
       }
       .font(.system(size: 12, weight: .medium))
       .padding(10)
@@ -215,11 +205,11 @@ struct EdgeResultPeek: View {
       Text(artifact.label).lineLimit(1).truncationMode(.middle)
       Spacer(minLength: 4)
       if !absolute {
-        Button("Open session", action: openSession).buttonStyle(.dockHover)
+        Button("Open session", action: openSession).buttonStyle(.dockCompact)
       } else if exists {
-        Button("Open") { ArtifactOpener.open(artifact.value) }.buttonStyle(.dockHover)
+        Button("Open") { ArtifactOpener.open(artifact.value) }.buttonStyle(.dockCompact)
         if url?.isFileURL == true {
-          Button("Reveal") { ArtifactOpener.reveal(artifact.value) }.buttonStyle(.dockHover)
+          Button("Reveal") { ArtifactOpener.reveal(artifact.value) }.buttonStyle(.dockCompact)
         }
       } else {
         Text("File not found").foregroundStyle(Color.dockSecondaryText)
@@ -229,5 +219,19 @@ struct EdgeResultPeek: View {
     .padding(8)
     .background(
       Color.dockSurface4.opacity(0.5), in: RoundedRectangle(cornerRadius: DockLayout.controlRadius))
+  }
+}
+
+/// Apple's on-device Translation sheet for a reply; a no-op before macOS 15.
+private struct ReplyTranslation: ViewModifier {
+  @Binding var isPresented: Bool
+  let text: String
+
+  func body(content: Content) -> some View {
+    if #available(macOS 15.0, *) {
+      content.translationPresentation(isPresented: $isPresented, text: text)
+    } else {
+      content
+    }
   }
 }

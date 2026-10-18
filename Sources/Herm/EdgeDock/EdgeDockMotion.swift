@@ -17,6 +17,11 @@ enum EdgeDockMotion {
     static let morphSettle: TimeInterval = 0.45
     static let windowResize: TimeInterval = 0.12
 
+    /// The panel grows and shrinks with the notch's own springs.
+    static func panelMorph(side: EdgeDockSide, opening: Bool) -> Animation {
+        opening ? (side == .top ? islandMorph : morph) : (side == .top ? islandCollapse : morph)
+    }
+
     static func reveal(_ view: NSView?, side: EdgeDockSide, fromShortcut: Bool) {
         guard let view else { return }
         view.wantsLayer = true
@@ -47,5 +52,28 @@ enum EdgeDockMotion {
     static func cancel(_ view: NSView?) {
         view?.layer?.removeAnimation(forKey: "dock.reveal.opacity")
         view?.layer?.removeAnimation(forKey: "dock.reveal.slide")
+    }
+}
+
+/// Reveals the panel through a notch-shaped mask that grows from the collapsed notch, like the quick preview.
+struct EdgeSurfaceReveal: ViewModifier {
+    let isActive: Bool
+    let side: EdgeDockSide
+    let revealed: Bool
+    let collapsed: CGSize
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if isActive {
+            content.mask {
+                GeometryReader { geometry in
+                    EdgeNotchShape(side: side).fill(.black)
+                        .frame(width: revealed ? geometry.size.width : min(collapsed.width, geometry.size.width),
+                               height: revealed ? geometry.size.height : min(collapsed.height, geometry.size.height))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: side.alignment)
+                }
+            }
+        } else {
+            content
+        }
     }
 }

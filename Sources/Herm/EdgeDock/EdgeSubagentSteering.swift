@@ -17,7 +17,7 @@ struct EdgeSubagentSteering: View {
       HStack {
         Text("Steer a live subagent").font(.system(size: 12, weight: .semibold))
         Spacer()
-        Button("Back", action: back).buttonStyle(.dockHover)
+        Button("Back", action: back).buttonStyle(.dockCompact)
       }.padding(10).frame(height: 40)
       Divider().overlay(Color.dockBorderLight)
       ScrollView {
@@ -30,12 +30,12 @@ struct EdgeSubagentSteering: View {
               selected = agent.id
             } label: {
               Text("\(selected == agent.id ? "✓ " : "")\(agent.goal)")
-            }.buttonStyle(.dockHover).disabled(!agent.accepting)
+            }.buttonStyle(.dockCompact).disabled(!agent.accepting)
           }
           if agents.isEmpty { Text("No live subagents are available through this runtime.") }
           DockTextField("Correction for the selected subagent", text: $text, axis: .vertical)
             .textFieldStyle(.dockGlass).lineLimit(2...4)
-          Button("Send steering") { Task { await send() } }.buttonStyle(.dockHover)
+          Button("Send steering") { Task { await send() } }.buttonStyle(.dockCompact)
             .disabled(
               pending || selected.isEmpty || queued.contains(selected)
                 || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -43,14 +43,14 @@ struct EdgeSubagentSteering: View {
           Text(
             "Queued steering is not confirmed delivery. Review the parent session for delivered or missed steering."
           ).font(.system(size: 11)).foregroundStyle(Color.dockSecondaryText)
-          Button("Refresh live agents") { revision += 1 }.buttonStyle(.dockHover).disabled(pending)
+          Button("Refresh live agents") { revision += 1 }.buttonStyle(.dockCompact).disabled(pending)
         }.font(.system(size: 12)).padding(10).frame(maxWidth: .infinity, alignment: .leading)
       }
       Divider().overlay(Color.dockBorderLight)
       HStack {
         if pending { ProgressView().controlSize(.mini) }
         Spacer()
-        Button("Open parent session", action: open).buttonStyle(.dockHover)
+        Button("Open parent session", action: open).buttonStyle(.dockCompact)
       }.font(.system(size: 12)).padding(10)
     }.foregroundStyle(Color.dockPrimaryText).task(id: revision) { await load() }
   }

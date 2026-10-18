@@ -49,7 +49,7 @@ struct EdgeSessionCapacity: View {
       HStack {
         Text(destination.displayTitle).font(.system(size: 12, weight: .semibold)).lineLimit(1)
         Spacer()
-        Button("Back", action: back).buttonStyle(.dockHover)
+        Button("Back", action: back).buttonStyle(.dockCompact)
       }.padding(10).frame(height: 40)
       Divider().overlay(Color.dockBorderLight)
       ScrollView {
@@ -69,14 +69,14 @@ struct EdgeSessionCapacity: View {
               Text("Provider quota unavailable. Open Quota to review connected providers.")
             }
             if snapshot.running {
-              Button("Stop this turn") { Task { await act(stop: true) } }.buttonStyle(.dockHover)
+              Button("Stop this turn") { Task { await act(stop: true) } }.buttonStyle(.dockCompact)
                 .disabled(pending)
             } else {
               Menu("Choose configured session model…") {
                 ForEach(snapshot.options) { option in
                   Button(option.displayName) { confirmedModel = option }
                 }
-              }.menuStyle(.borderlessButton).buttonStyle(.dockHover).disabled(pending)
+              }.menuStyle(.borderlessButton).buttonStyle(.dockCompact).disabled(pending)
             }
             if let id = snapshot.modelID {
               Text("Current: \(id.replacingOccurrences(of: "|", with: " / "))").font(
@@ -86,13 +86,13 @@ struct EdgeSessionCapacity: View {
             ProgressView().controlSize(.small)
           }
           if let error { Text(error).foregroundStyle(Color.dockWarning) }
-          Button("Refresh") { revision += 1 }.buttonStyle(.dockHover).disabled(pending)
+          Button("Refresh") { revision += 1 }.buttonStyle(.dockCompact).disabled(pending)
         }.font(.system(size: 12)).padding(10).frame(maxWidth: .infinity, alignment: .leading)
       }
       Divider().overlay(Color.dockBorderLight)
       HStack {
         Spacer()
-        Button("Open session", action: open).buttonStyle(.dockHover)
+        Button("Open session", action: open).buttonStyle(.dockCompact)
       }.font(.system(size: 12)).padding(10)
     }.foregroundStyle(Color.dockPrimaryText)
       .task(id: revision) { await load() }
