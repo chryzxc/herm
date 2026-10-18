@@ -7,6 +7,15 @@ truth for Herm UI behavior and styling.
 
 - Match the closest existing component before introducing a new visual
   treatment. Reuse shared `Dock*` components and color tokens.
+- Clickable text must be recognizable before hover: use `.dockCompact` for
+  small actions, `.dockSecondary` for standard actions, `.dockPrimary` for the
+  local primary action, and `.dockLink` for inline navigation or Show more.
+  Never style a standalone text action as `.plain`, `.borderless`, or
+  `.dockHover`. Reserve `.dockHover` for rows, tabs, icons, and disclosures
+  whose label already supplies a visible interaction cue. Linked metadata
+  pills must include a navigation icon and underline; static pills must not.
+  Check resting, disabled, keyboard-focus, and pending states in light, dark,
+  Glass, and monochrome themes. Hover feedback alone is insufficient.
 - Use 16pt semibold only for page headers. Use 12pt semibold titles and 12pt
   detail text for compact empty states, matching existing repository and
   session empty-state components. Dense metadata may use 11pt where an

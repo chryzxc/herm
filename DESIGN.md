@@ -207,7 +207,11 @@ and must not introduce a second black window inside it.
   0.96.
 - Bubbles and cards appear with a short rise-and-fade (about 0.24s). A status
   or task change may pop once.
-- Live loops are only the status pulse and the shimmer sweep (1.6s).
+- Live loops are the status pulse and the shimmer sweep (1.6s). The running
+  chat indicator may animate the current Bot with a gentle hop in a fixed 28pt
+  slot. Real activity starts and completions trigger alternating reach, tilt,
+  and bounce gestures with a brief echo of the current activity glyph.
+  Gestures ease back to rest without moving surrounding content.
 - Under Reduce Motion, every loop stops, disclosures are immediate, and
   geometry changes snap.
 
@@ -231,7 +235,7 @@ and `DockComponentStyles.swift`.
 | HUD panel | `.dockHUDPanel()` | Panels floating over the office scene |
 | List row | `.dockListRow(isHighlighted:)` | Dense divider-led operational rows |
 | Inspector group | `.dockCard(padding:)` | Grouped detail inside an inspector |
-| Buttons | `.dockPress`, `.dockSecondary`, `.dockPrimary`, `DockActionLabel` | Compact controls, the one primary action, pending state |
+| Buttons | `.dockCompact`, `.dockPress`, `.dockSecondary`, `.dockPrimary`, `.dockLink`, `DockActionLabel` | Compact actions, icon controls, standard actions, the local primary action, inline navigation, pending state |
 | Inputs | `.dockGlass`, `.dockSwitch`, `DockTabBar` / `DockTabButton` | Text fields, toggles, local scopes (never native `.segmented`) |
 
 **Signage card anatomy.** Row 1 has the status dot, a one-line 12pt semibold
@@ -300,9 +304,26 @@ will appear or what to do next.
 
 **Buttons and inputs.**
 
-- Use `.dockPress` for compact controls, `.dockSecondary` for outlined actions,
-  and `.dockPrimary` for the one primary action in a local section. Hosting roots
-  default to `.dockHover` for unstyled actions; native bordered styles are not used.
+- Every clickable text label must be distinguishable at rest. Use
+  `.dockCompact` for small outlined actions (26pt minimum visible height),
+  `.dockSecondary` for standard outlined actions, and `.dockPrimary` for the
+  one primary action in a local section. Hosting roots default to
+  `.dockCompact` so an unstyled action still looks interactive. Use
+  `.dockPress` for compact icon controls. Native bordered styles are not used.
+- Use `.dockLink` for inline navigation and Show more/Show less. Its persistent
+  underline remains recognizable when a theme's accent is monochrome. Ordinary
+  `Link` controls need the same treatment unless their label already has a
+  button surface or a navigation icon. Linked `DockMetadataPill` values include
+  an underline and `navigationIcon` (external arrow or internal chevron);
+  static metadata has neither.
+- `.dockHover` is only for labels that already communicate interaction: rows
+  with navigation cues, tabs, icon actions, and chevron disclosures. Never use
+  `.plain`, `.borderless`, or `.dockHover` for a standalone text action. A
+  tooltip, pointer change, or hover-only color/outline is not a resting cue.
+- Secondary and compact action outlines remain visible in every skin,
+  including Glass and open chrome. Keep disabled outlines and labels visible
+  with reduced emphasis. Text labels use at least 12pt; pending feedback stays
+  in the same control. Preserve keyboard activation and native focus indication.
 - Action labels use `DockTypography.control` (12pt medium) and themed text. Primary
   actions use `dockPrimaryText` over the canvas (neutral glass in Glass) with a 14% accent tint,
   increasing to 24% on hover and 30% while pressed, with an accent contour.
@@ -342,7 +363,7 @@ Informational tooltip windows never prevent normal notch/workspace dismissal.
 the same under every skin and follow the Clean reference: a native unified
 title row (52pt, traffic lights centered, sidebar header and centered chat
 title in that row), sentence-case section labels with counts as plain gray
-text, no pills or icons that only decorate, quiet gray "show more" links, no
+text, no pills or icons that only decorate, underlined "show more" links, no
 divider under title rows, and accent color reserved for links, focus, and live
 status. A skin may change color, shape, outline, shadow, texture, type design,
 and selection treatment through `DockThemeStyle` and the palette; it may not
@@ -894,7 +915,9 @@ reported board and phase, and begin only after both participants arrive.
 
 Bots persist. Hiding bots only hides them; the simulation keeps running and
 showing them resumes where each bot stands. Placements also survive closing and
-reopening the office. Working bots go to the computer their reported location
+reopening the office and app relaunch. New idle bots randomly choose among
+uncrowded activity spots. Coordinates are checkpointed every ten seconds and
+on leaving Office; no task content is persisted. Working bots go to the computer their reported location
 calls for. Idle bots spread across the whole office. Solo activities are ranked
 against crowding and repeat visits, so every room gets used. Activities include
 coffee, reading, strolling, arcade games, charging bays, workbenches and parts
@@ -1012,12 +1035,13 @@ a shadow. It has four parts:
   running time), task fields and the "Assign existing task…" menu. Main sessions
   get Open conversation and recent activity. The task board inspector lists
   lanes with count badges.
-- **Toolbar (bottom center):** the Workspace / Whole office segment, show bots,
-  show roster, the task board and camera reset.
+- **Toolbar (bottom center):** show bots, show roster, the task board and
+  camera reset, with 44pt targets and a selected state for the open board.
 
 The HUD shows only projected Kanban and session state. It has no
 fabricated stats, percentages or resource meters. Narrow containers hide the
-roster.
+roster. Status chips scroll horizontally when needed; opening an inspector
+hides the roster when both panels would crowd the scene.
 
 ### Navigation sidebar
 
@@ -1244,10 +1268,23 @@ provider, skills, toolsets, workdir, delivery), Identifiers, and the report
 action; Runs defaults to the selected job and can switch to the
 authoritative All runs scope. Empty, stale, loading, and unavailable states stay
 inside stable table or inspector regions. New automation uses a focused native
-sheet, and no pause/resume control is shown without an authoritative Hermes
-mutation path.
+sheet. Pause and Resume use Hermes' authoritative profile-scoped mutation path
+and appear in More and the row context menu. In-flight operations and recovery
+messages use a fixed slot in the selected job's header. Creation and editing
+include delivery, working directory, and model/provider overrides; editing first
+loads the complete Hermes job so a truncated request preview is never saved.
+Per-job history uses Hermes-returned session identities and script-output previews.
+A finished run without a reported outcome is labelled honestly and excluded from
+success percentages. Inventory failures appear in the stable content container,
+with cached schedules marked not current in the header subtitle.
 
 ### Session inspector
+
+Chat attachment **Open diff** reveals the session inspector's Source Control
+tab and shows that file's read-only staged and working-tree diffs from its own
+worktree. Label this “Current Git changes”; it is not a response-specific patch.
+Keep **Open preview** available for the file itself and offer **Back to source
+control** from the focused diff. Opening a diff does not rebind the session's project.
 
 The session inspector uses one compact text switcher for Explorer, Terminal,
 Activity, and Changes. All four share the canvas, 12pt typography, and 12pt
@@ -1350,6 +1387,14 @@ history automatically as the reader scrolls within one viewport of either edge;
 there are no show-more buttons, and the reader's position is held while a page
 mounts. Scrolling upward immediately suspends streaming follow until the reader
 returns to the bottom. Jump to latest animates only when Reduce Motion is off.
+
+Website links in native Markdown keep their underlined accent labels and a
+fixed-size inline site icon. GitHub uses the bundled theme-aware mark; other
+public websites load their HTTPS origin's `/favicon.ico` without cookies or
+redirects and retain a theme-aware globe when unavailable. Custom labels are
+preserved; bare GitHub PR and issue URLs may use `PR #123` and `Issue #123`.
+Icon loading changes neither the text layout nor the link destination.
+
 Assistant responses are open document content; user prompts use
 restrained right-aligned navy bubbles with a tighter sender-side corner, and a
 steering prompt's status sits in sentence case beside its timestamp. Fenced
@@ -1367,6 +1412,22 @@ errors. Attach is icon-only; model and reasoning context remain available at
 normal widths, while the send/steer action retains the strongest emphasis.
 Streaming, approvals, clarifications, voice state, and errors may use semantic
 surfaces when they represent an active decision or recovery path.
+The running indicator uses the responding Bot's stored avatar or generated
+face, falling back to the session profile and selected Bot for ordinary chats.
+Its gentle hop and activity-driven gestures stop under Reduce Motion and motion-free themes.
+Unavailable bot rosters use the ordinary activity glyph. An explicit disabled
+`hermes-bots` runtime plugin status prevents roster loading. Desktop-only plugin
+preferences require a gateway contract before Herm can mirror them. Custom avatar
+assets take precedence over generated-face recognition and are never overwritten
+by bulk avatar population.
+
+The task plan above the composer keeps a compact progress ring, resolved-step
+count, and current-step summary in a 44pt disclosure target. Expanded steps use
+12pt wrapping text, a quiet fill on the current step, and distinct completed
+and cancelled marks. Long plans scroll within a bounded area. Progress, count,
+status marks, and disclosure use short `dockEase` transitions; Reduce Motion and
+motion-free themes disable them. Only an active turn animates the current-step
+indicator. Plan updates preserve disclosure; changing sessions resets it.
 
 ### Explorer
 
@@ -1597,6 +1658,9 @@ Before considering a UI change complete, verify:
 - Expanded content is real, bounded, and safe to render.
 - Pending, error, unavailable, empty, and stale states are intentional.
 - Controls meet hit-target, contrast, and reduced-motion rules.
+- Clickable text is recognizable before hover in light, dark, Glass, and
+  monochrome skins; links are underlined, actions have a visible surface or
+  outline, and static metadata cannot be mistaken for linked metadata.
 - Every `TextField` uses `.textFieldStyle(.dockGlass)`; `grep -rn roundedBorder
   Sources` returns nothing.
 - Navigation, group headers, and icon actions use `DockNavRow`,
@@ -1604,3 +1668,46 @@ Before considering a UI change complete, verify:
 - Icons come from the Lucide catalog at their slot size, with no unmapped
   fallbacks.
 - The README is updated when user-visible behavior changes.
+
+
+### Pull requests and Issues metadata
+
+Both modules use the existing Dock canvas, cards, disclosures, modal editor,
+button styles, color tokens, and 12pt body typography. Metadata uses the same
+Labels, Projects, Milestone, Assignees, and Development presentation in each
+feature. An empty assignment, restricted access, loading, and a failed refresh
+must be distinguishable. Provider permission failures retain the edit draft.
+
+Readiness presents independent state/check/review/conflict facts. Successful
+checks never conceal a draft or conflict. Conflict-file analysis is explicit and
+labels the analyzed revisions. Landing controls confirm the item/head and show
+requested, waiting, queued, failed, and merged results honestly. Description,
+comment, review, and edit-preview Markdown use the chat's canonical native
+rendering pipeline and follow the active theme.
+
+Assigned GitHub metadata uses `DockMetadataPill` and the shared `DockChipFlow`
+layout. Pills wrap within the detail pane; empty, loading, and unavailable
+messages remain plain text. Linked pills preserve their navigation actions.
+
+The PR landing card lists known merge blockers beside the disabled action.
+Use provider review decisions and named check results; when GitHub only reports
+a generic blocked rule, say the exact requirement is unavailable and link to
+GitHub. Do not send users to another card to explain a disabled merge action.
+
+Pull request readiness, metadata, and count pills use regular-weight text.
+Conflict emphasis comes from its warning color and wording, with regular body
+weight. Keep the established emphasis for page, section, and PR titles.
+
+GitHub activity and discussion rows show a 24pt circular provider avatar beside
+the author when its URL is supplied. Reserve its size while loading, use the
+existing user-icon fallback on failure, and keep the author name visible.
+
+GitHub Details uses aligned label/value rows with a 104pt section-label column,
+wrapping values, and trailing edit actions. Recovery text stays beside the
+affected value. Landing method/actions wrap together; blockers follow a quiet
+divider with warning icons and regular-weight text. Header refresh uses the
+shared 24pt icon control with its pending state in place.
+
+Readiness follows the same aligned 104pt label column as Details. Freshness
+occupies the header action slot. Show conflicts once in the Merge fact with a
+warning icon and regular-weight text; recovery actions wrap below a divider.

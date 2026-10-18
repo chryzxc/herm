@@ -60,12 +60,18 @@ It is not intended to reproduce every page or feature in Hermes Agent Desktop. H
 | **Real-time spoken conversation** | Continuous Voice mode with streaming speech, spoken interruptions and steering, captions, and a native voice stage with live activity. |
 | **Inspect and give feedback** | Preview files in-app, annotate selected text, send revision notes back to the originating session, and inspect local Git diffs. |
 | **A view of your agent team** | Profile-based bots, real Hermes Kanban boards, a map of agent handoffs, and a 3D Office Preview driven by task status. |
-| **Review alongside the work** | Repository checks and coverage information, changed-file diffs, and a Verification Center for commands and results. These are aids for inspection, not a guarantee that the agent's work is correct. |
+| **Review alongside the work** | Repository checks and coverage information, changed-file diffs. These are aids for inspection, not a guarantee that the agent's work is correct. |
+| **Act without opening the app** | Approve, deny, or reply from notification banners (optionally behind Touch ID), send selected text from any app via the Services menu, and trigger Ask Herm from Shortcuts. |
 | **A native Mac companion** | Global keyboard access, system appearance and popover materials, Reduce Motion support, and an optional Hermes pet that can roam from the notch. |
 
 These are highlights of Herm's experience, not a list of features exclusive to Herm. Hermes Agent Desktop shares many underlying capabilities, including voice mode. The distinction is how Herm brings them together around ambient awareness, quick interaction, spoken conversation, and local inspection.
 
 The design priorities are **useful attention rather than constant activity**, **clear status rather than assumed success**, and **keeping quick actions tied to the right session**. Future improvements should strengthen those qualities rather than add features for parity alone.
+
+Actions use visible buttons, including compact buttons in dense panes. Inline
+navigation and Show more links stay underlined before hover, and linked GitHub
+metadata carries a navigation arrow so it is distinct from static metadata.
+Contributors should follow the shared treatments in [DESIGN.md](DESIGN.md).
 
 ## The notch
 
@@ -152,6 +158,7 @@ Global hover tooltips show one floating, fully opaque, theme-aware panel beside 
 | **Click** | Expands the notch into the full workspace in the same window. |
 | **Double-tap ⌘** | Opens or closes the workspace from anywhere. |
 | **Double-tap ⌥** | Opens or closes the hover preview from the keyboard. |
+| **⌥ Space** | Quick capture: opens a new message in the notch from any app. Change it to ⌃ Space or turn it off in Settings → Notifications → Keyboard shortcuts. If nothing happens, another app is using the chord. |
 | **Drag** | Moves the notch along either screen edge. Its position is saved. |
 | **Right-click** | Moves the notch to the left or right edge, or quits the app. |
 
@@ -179,11 +186,13 @@ crosshairs. Navigation and composers follow the selected skin while keeping
 the workspace layout and controls in place. E-Ink, Pixel, and Retro remain
 motion-free; other skins respect Reduce Motion.
 
-### 💬 Conversations
+### Conversations
 
 Discord sessions show a compact tinted pill with the Discord icon beside the preview. Other session sources omit the origin pill.
 
 - **Streaming chat** with Markdown (including tables with optional outer pipes), images, tool output, and inline clarification requests.
+- **Website links** show an inline favicon beside their underlined label. GitHub links use a bundled, theme-aware mark; bare PR and issue URLs display as `PR #123` or `Issue #123`. Other public sites load `/favicon.ico` over HTTPS with a globe fallback.
+- **Working bot**: the running indicator shows the current bot's avatar with gentle hops. Activity starts and completions trigger alternating reaches, tilts, and bounces with the current activity icon. Reduce Motion and motion-free themes keep it still.
 - **Transcript scrolling** yields immediately when you scroll upward during a reply and resumes following at the bottom. Jump to latest respects Reduce Motion.
 - **Steering during a turn**: guidance you type while Hermes is working is added to the running turn at the next tool boundary.
 - **Queued messages**: new submissions wait behind earlier messages, including a redirect still awaiting Hermes' reply. During a turn, text and attachments queue together. Submitting clears the composer immediately while preserving images, PDFs, context, and reply quotes with the message.
@@ -191,11 +200,11 @@ Discord sessions show a compact tinted pill with the Discord icon beside the pre
 - **Message actions**: branch from a message, copy it, have it read aloud, or refresh it from Hermes.
 - **Pinned conversations** use Hermes' own pin, so pins are shared with Hermes Agent Desktop and `hermes sessions pin`.
 - **Pinned messages**: pin or unpin saved user and assistant messages, then use the header's pin button to jump to them. Pins live in Hermes, survive compression, and stay separate for each profile and branch. Requires the message-pins backend patch in [docs/message-pins.md](docs/message-pins.md); stock runtimes show an unavailable notice.
-- **Model picker** grouped by provider, with search.
+- **Model picker** grouped by provider, with search. **Edit available models… → Unselect All** hides every model except the active one; selections are saved locally.
 - **Context guardrails**: the composer shows context progress without a session token total. Its percentage measures the full context window; Hermes can compact earlier based on its configured token limit or other runtime triggers. During compaction, the composer shows **Compacting**, including during streaming turns, and refreshes usage afterward. Context usage is labelled normal, warning (80%), or critical (90%), with actions to branch, compress, or hand off.
 - **Dangerous-command approvals**: *Deny*, *Allow once*, or *Always allow*. *Always allow* is saved to the Hermes allowlist.
 
-### 🎙️ Voice mode: continuous spoken conversation
+### Voice mode: continuous spoken conversation
 
 Voice mode is more than a microphone button for dictating a prompt. Speak with your agent, hear its replies, and continue the conversation without typing each turn.
 
@@ -223,36 +232,52 @@ repair uses Hermes' own installation, credential and OAuth paths. Targeted subag
 labels queued corrections honestly; fingerprinted memory entries can be inspected and corrected.
 Each operation remains unavailable when its installed-runtime contract cannot be verified.
 
-### 🔀 Pull requests
+### Pull requests
 
 - Open pull requests for the session's repository, with check status, review state, blockers, and deep links.
 - The session header shows Pull Requests only when the session is connected to a project or repository.
+- Summary, Code, and Reviews tabs keep their full clickable area when the detail header shares the window title row.
 - The Pull requests page loads its list first, then fetches branch, check, and review details as rows come into view.
 - Create draft pull requests and edit a pull request's title or body, with a confirmation step.
-- **Not supported:** merging, commenting, force-pushing, and dispatching workflows.
+- Shared metadata uses wrapping pills for assigned labels, assignees, projects, milestones, and Development links. Labels, Projects V2 membership/Status, Milestone, assignees, and Development editors prepare changes locally and confirm before saving. Restricted Projects do not hide other details.
+- Readiness aligns state, check, review, and merge facts, shows freshness in the header, and groups conflict-recovery actions in a compact wrapping row. It keeps checks, reviews, drafts, and conflicts separate. PR status and metadata pills use regular-weight text consistently. **Analyze conflict files** uses an isolated temporary repository; **Prepare resolution in Hermes** fills chat context without submitting it.
+- Activity and discussion entries show the author’s GitHub avatar when available.
+- Discussion, review bodies, inline threads, replies, thread resolution, approval, and request-changes use the common Markdown renderer. Changed lines have line numbers and a context-menu comment action; viewed-file progress is scoped to the PR revision.
+- GitHub recovery links in readiness and landing use compact themed buttons with an external-link icon.
+- GitHub detail metadata uses compact label/value rows, with wrapping pills and section-specific recovery actions. Merge method and landing actions share a wrapping control row.
+- Landing controls show merge blockers inline, including missing reviews, failing/pending checks, conflicts, permissions, and branch updates. They use repository-supported methods, current permissions, confirmation, and expected-head protection. Auto-merge and queue requests display waiting/queued states separately from merged.
+- **Not supported:** force-pushing, dispatching workflows, or a native conflict editor.
 
-### 🐛 GitHub issues
+### GitHub issues
 
-- A separate **Issues** destination in the navigation rail for browsing the repository's GitHub issues without leaving Herm. Authored and assigned issues load in parallel, and returning to the page retains the loaded list; Refresh fetches current data.
+- PRs and Issues use compact New, refresh, recovery, landing, and inline discussion actions.
+- PRs and Issues share a compact view-options menu with checked sort choices and separate save/restore actions.
+- A separate **Issues** module with My work and explicit repository scopes, open/closed/history views, metadata filters, sorting, and saved presentation preferences. Authored and assigned lists load in parallel; pagination reports incomplete coverage.
+- Create or edit issues, manage assignment and metadata, comment, close as completed/not planned, and reopen with confirmation. Descriptions, comments, and editor previews use the same native Markdown pipeline as chat.
+- Development links navigate between Issues and Pull requests. Descriptions and selected discussion entries can be attached to Hermes chats.
+- Lists and selected details refresh every 60 seconds while the page is active; errors pause automatic retry. Last successful content and per-item comment drafts are retained.
 
-### 🛠️ Developer tools
+See [GitHub workspace behavior and validation](docs/github-workspace.md).
 
-- **Explorer**: a repository browser with blame information.
+### Developer tools
+
+- **Task plan above the composer**: a compact progress ring and count expand into readable steps, with an emphasized current step and completion marks. Progress, step changes, and disclosure animate briefly; Reduce Motion and motion-free themes keep them still.
+- **Explorer**: a repository browser with blame information. Project chats use their assigned folder immediately, even before the project list refreshes.
+- **Source Control** stays available in the inspector and its + menu while Git state loads or refreshes.
 - **Source Control / Changes**: compact Staged Changes and Changes lists with per-file and group stage/unstage actions, read-only diffs, and a commit message field (⌘Return commits staged changes only). A collapsible Commits section shows the latest 50 commits on the selected worktree’s branch, with author, date, references, and copyable hashes. Local review also checks added lines for conflict markers, likely credentials, and debug statements; credential values are never shown.
 - **Terminal**: a native terminal in the session's project folder, with history, Tab completion, and optional repository checks.
 - **Repository review**: reviews the whole repository locally and tells you what it didn't cover. Optional repository watching never starts Hermes work on its own.
-- **Verification Center**: the project's manifests, package managers, verification commands, and the latest results from Hermes.
 - **⌘K command palette** for app actions and Inbox filters.
 
-### 📄 File previews and revision notes
+### File previews and revision notes
 
 - Preview **Markdown, text/code, and images** inside Herm. Unsupported file types open in their default app.
 - Select text in a document to add a quoted review note, or add a general note. Notes are saved locally and remain highlighted in the preview.
 - Send draft notes as one **revision request to the session the preview came from**, rather than manually copying excerpts into a different conversation.
 - Inspect changes against the file contents saved when notes were sent. A removed quote can be marked addressed; that is a matching heuristic, not proof that the requested revision is correct.
-- Use **Preview diff** on chat file attachments with local Git changes to inspect staged and working-tree changes separately, or the added contents of a new file.
+- Use **Open diff** on chat file attachments with local Git changes to open the third panel's **Source Control** tab at that file. It shows current staged and working-tree changes separately, or the added contents of a new file, from the attachment's own worktree. **Open preview** remains available for the file itself. These are current Git changes, which may include edits beyond the AI response.
 
-### 🌐 Built-in browser
+### Built-in browser
 
 The session inspector's **Browser** tab is a real Chromium browser that you and Hermes share, so you can watch it work.
 
@@ -260,11 +285,12 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - **Take over and hand back.** **Take over** pauses Hermes so you can handle a login or captcha yourself. **Hand back to Hermes** then tells it to continue from that page. While Hermes is working, your clicks and typing are ignored so they can't interfere with it.
 - **Page dialogs** (alerts, confirmations, prompts, "Leave this page?") appear as a card in the panel, so a page can't stay frozen waiting for an answer. If Hermes answers a dialog itself, the card closes.
 - **Annotate** (cursor icon): click any element, describe the change, and Herm sends the element's selector, styles, HTML and a screenshot to the chat. The popup uses your Herm theme.
-- **Links in chat** open in this tab instead of your default browser. The tab belongs to the session it was opened in.
+- **Session browsers stay open.** Switching sessions or closing the inspector keeps each session's live pages, history, and form state without reloading. Each session and bot profile has its own browser data; extra browser tabs share only that session's data.
+- **Links in chat** open their exact destination in that session's Browser tab, including while the browser is starting.
 - **Offline notice.** If the agent browser can't start or keeps closing, a notice says Hermes can't browse, and the tab falls back to a regular web view. Use **Retry**, reopen the tab, or reconnect Hermes to try again.
-- **Sharing the browser with other tools.** The agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. To make the Chrome DevTools MCP use it instead of opening its own Chrome, add `--browserUrl=http://127.0.0.1:9333` to that server's args in `~/.hermes/config.yaml`.
+- **Sharing the browser with other tools.** Each session's agent browser listens for remote debugging on `127.0.0.1:9333`, or on a random port if 9333 is busy. Hermes follows the selected session's endpoint. A Chrome DevTools MCP configured with `--browserUrl=http://127.0.0.1:9333` stays attached to the session that acquired that port.
 
-### 📁 Projects and session continuity
+### Projects and session continuity
 
 - Browse projects and their conversations within the selected bot's scope.
 - Create a project, set it active, archive it, or delete it when the installed Hermes runtime exposes the corresponding project methods.
@@ -272,7 +298,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 - Queued messages advance automatically when the active turn settles. Voice mode sends the next message after reply audio drains; an explicit Stop keeps the remaining queue for you to resume.
 - Share conversation pins with the Hermes CLI and Desktop rather than maintaining a separate pin list.
 
-### 🤖 Bots
+### Bots
 
 Leading bot mentions render an avatar-and-name pill inline with the text inside your message bubble. Mentions follow Hermes’ chat flow: the current agent receives the resolved profile identity and uses `message_agent` to contact its Bot Chat. If that tool is unavailable in the session, Hermes reports it.
 
@@ -281,20 +307,21 @@ Leading bot mentions render an avatar-and-name pill inline with the text inside 
 - **Routines** for each bot, backed by Hermes cron jobs.
 - Choosing a bot in the navigation header limits conversations, projects, and new chats to that bot.
 
-### 📋 Kanban
+### Kanban
 
 - Reads and edits the **real Hermes board**: create, complete, block or unblock, archive, comment on, schedule, assign, promote, and reclaim tasks.
 - Drag cards between Triage, Todo, and Ready, or use **Move to** in the always-visible three-dot menu. Done and Blocked drops require their supported action and confirmation; Running, Review, and Scheduled are managed by Hermes. Details remains available from the loaded card summary.
 - Filters for status, assignee, "mine", and session are passed to Hermes.
 - While open, the board refreshes every five seconds with live work and every fifteen seconds otherwise. Board and filter changes made during a refresh load the latest selection automatically.
 
-### 🏢 Office Preview
+### Office Preview
 
 - A 3D office where each bot has its own character. Bots with running work sit at computers, bots in review go to Mission Control, and bots that are planning use the Kanban room. Idle bots take coffee breaks and walk around the garden.
+- Idle bots start at randomly chosen, unoccupied activities around the office. Positions are saved locally every ten seconds and when leaving Office, and restored after app relaunch. Active work still determines working bots’ destinations.
 - Task ownership and status come live from Hermes. The movement and gestures are only visual.
 - Includes camera presets, keyboard camera navigation, and Reduce Motion support.
 
-### 🧭 Control center
+### Control center
 
 - **Today**: your current focus, approvals, failures, due Apple Reminders, active work, and scheduled jobs.
 - **Inbox**: approvals, clarifications, failures, and completed work. You can dismiss or snooze items.
@@ -312,9 +339,45 @@ Settings shows each configured MCP server once, with its connection details and 
 
 The SSH helper is bundled from Hermes Desktop's MIT-licensed, Electron-free lifecycle. To update it from an installed Hermes checkout, run `node Scripts/build-hermes-ssh-bridge.mjs /path/to/hermes-agent` with that checkout's existing build dependencies installed. Herm ships the generated helper and its license in its SwiftPM resource bundle.
 
-### ⏱️ Automations and quota
+### Native macOS integration
 
-- **Automations**: view, create, run, and remove Hermes cron jobs, and see their run history.
+- **Answer from the banner.** Approval notifications have **Approve once** and **Deny** buttons. Clarification notifications have an inline **Reply** field (single-question clarifications only). Stale requests are ignored. Clicking the banner body opens Herm.
+- **Touch ID for broad approvals** (Settings → Notifications, off by default). Requires Touch ID or your password before "always" or "session" approvals, from the banner or in the app. If authentication is unavailable, the approval is not sent.
+- **Explain approvals with Apple Intelligence** (Settings → Notifications, off by default). See [Apple Intelligence](#apple-intelligence).
+- **Send to Herm service.** Select text in any app, then choose **Services → Send to Herm**. The text is added to the composer as a draft and is never sent automatically.
+- **Shortcuts and Siri.** The **Ask Herm** App Intent (and an **Open Herm** phrase) stages text in the composer from Shortcuts or Spotlight. It never sends on its own.
+- **Summarize replies with Apple Intelligence** (Settings → Notifications, off by default). See [Apple Intelligence](#apple-intelligence).
+- **Name new sessions with Apple Intelligence** (Settings → Notifications, on by default). See [Apple Intelligence](#apple-intelligence).
+- **Translate a reply.** In the notch reply view, **More → Translate reply** opens Apple's Translation sheet. Translation runs on your Mac once a language is downloaded. Needs macOS 15 or later.
+- **Writing Tools.** A sparkle button in the composer opens Apple's Writing Tools to rewrite or proofread a draft. It inserts plain text only, and appears only when Apple Intelligence is available.
+- **Spotlight search of sessions** (Settings → Notifications, off by default). Session titles and short previews go into Spotlight's index on this Mac, and choosing a result opens that session. Turning it off removes them.
+- **Dock badge and ring.** While the workspace window is open, the Dock icon badges the number of requests waiting on you and shows a ring while an agent works.
+- **Text from images.** Right-click an attached image and choose **Add Text from Image to Message** to read its text into the draft. This uses Apple's Vision text recognition on your Mac, not Apple Intelligence. The image stays attached.
+- **Hide from screen sharing** (Settings → Notifications). Excludes the notch and Herm windows from screen sharing and screenshots.
+- **Keep Mac awake while working.** Prevents idle system sleep only while an agent session is running.
+
+App Intents metadata is generated by `Scripts/appintents.sh` during `package-app.sh` and `run-debug-app.sh`, so no Xcode project is needed. Shortcuts discovery depends on macOS indexing the bundle, so run the packaged or debug app bundle rather than `swift run`.
+
+### Apple Intelligence
+
+Herm uses Apple's on-device language model (the Foundation Models framework) for two optional, off-by-default features. Everything else in Herm, including the agent itself, works without it.
+
+| Feature | What the model receives | What you see |
+|---|---|---|
+| **Explain approvals** | The approval's title and its first 800 characters of detail, when an approval notification is posted. | The banner appears immediately with Hermes' original text, then is replaced in place with one extra line, "Apple Intelligence · …", saying what will happen and whether it changes or deletes anything. |
+| **Summarize replies** | The first 3,000 characters of a finished reply longer than 200 characters, for the notch's "Latest update". | A one-line summary, titled "Latest update · Apple Intelligence summary". The full reply is unchanged in the chat. |
+| **Name new sessions** | The first message and first reply of a session Hermes left untitled (about 600 characters each). | A title of up to 6 words, saved to Hermes through its session title, so other Hermes apps show it too. Hermes' own title is never replaced. |
+
+- **Requirements.** macOS 26 or later, a Mac that supports Apple Intelligence, and Apple Intelligence turned on in System Settings. Settings shows whether it is available on your Mac, and the toggles say so when it isn't.
+- **Privacy.** The model runs locally. Herm sends nothing to Apple or to Hermes for these features, and the generated text is not saved or fed back to the agent.
+- **Labeled.** Model-written text always carries the "Apple Intelligence" label, so you can tell it apart from the agent's own words.
+- **Safe fallback.** If the model is unavailable or takes too long (4 seconds for approvals, 6 for summaries), Herm shows the original text and nothing breaks.
+- **Treat it as a hint.** The model can be wrong. Read the original approval before allowing anything, and note that it is instructed to ignore any instructions inside the request.
+- **Not Apple Intelligence.** "Add Text from Image to Message" uses Apple's Vision text recognition, also on-device, and Touch ID uses the system authentication prompt.
+
+### Automations and quota
+
+- **Automations**: view, create, edit, pause, resume, run, and remove Hermes cron jobs. Creation and editing include delivery, working directory, and model/provider overrides. Run history uses Hermes-recorded session identities; agent reports and script-only output previews stay attached to their owning job and profile. Failed reads and rejected changes remain visible.
 - The Quota page, chat composer, quick-message advisory, and notch share one quota inventory, including provider names, readings, reset times, and the tightest remaining window. Session model responses do not supply a separate quota reading.
 - **Quota**: remaining allowance for Codex, OpenCode Go, GLM Coding Plan, Claude, and Antigravity. Its toolbar highlights Add account, groups automatic refresh and peak-hour sync, and keeps the last update time above the controls. Controls stack in narrow windows. The Add account dialog keeps provider names readable, shows readable sign-in instructions in a stable layout, and offers Done after Hermes confirms success.
 - **Hermes updates**: runs `hermes update` only after you confirm. Settings shows the current activity and elapsed time; expand Output to inspect the streamed log. It never updates automatically.
@@ -367,6 +430,7 @@ For more detail, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - The private Local gateway only accepts connections from your machine and requires authentication. Remote and Cloud modes send agent requests to the configured backend; SSH forwards them through the selected host.
 - Hermes owns agent configuration and memory. Herm keeps local UI state, including queued drafts and file-review notes.
+- Optional on-device approval explanations use Apple's system model locally; no extra network request is made.
 - **No telemetry.**
 - Provider keys for OpenCode Go and GLM are saved in a local config file that only your user account can read. Antigravity quota is read from its local language server without credentials.
 - **Local-first does not mean every request stays offline.** Hermes may send prompts, attachments, or audio to the model and voice providers you configure; supported quota checks also contact provider services. The local gateway connection is separate from those provider requests.
@@ -380,7 +444,7 @@ Herm doesn't yet support everything Hermes can do. Some features require additio
 - A provider-independent, full-duplex realtime audio transport (continuous Voice mode is available through Hermes' transcription and speech pipeline)
 - Calendar, email, and iMessage integrations
 - Deleting bot profiles and connecting to Hermes on another machine (group chats are already available when supported by Hermes)
-- Merging and commenting on pull requests, force-pushing, and dispatching workflows (left out on purpose for now)
+- Force-pushing and dispatching GitHub workflows; native conflict editing and arbitrary Projects custom-field editing
 
 Project management and bot **@mention autocomplete** are already implemented; runtime-dependent features remain unavailable on installations that do not expose their required methods. The remaining limitations are not a promise of future feature parity. The feature descriptions above reflect the current frontend.
 
@@ -406,6 +470,7 @@ for every chunk.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the code is structured |
 | [STANDARDS.md](STANDARDS.md) | Coding standards |
 | [AGENTS.md](AGENTS.md) | Guidance for AI-assisted contributions |
+| [Interactive controls](docs/interactive-controls.md) | Clickable-text audit, shared treatments, and verification scope |
 
 ## Contributing
 
@@ -446,3 +511,5 @@ Herm is an unofficial, community-built app. It is not affiliated with or endorse
 ## License
 
 [MIT](LICENSE) © 2026 Christian Rey Villablanca
+
+Bot availability follows the Hermes roster API and honors an explicit `hermes-bots` disabled status from `plugins.manage`. Missing bot APIs fall back to the ordinary chat activity indicator. Custom avatars remain uploaded images and are never replaced by Populate avatars. Hermes Desktop currently stores its own Bots toggle in local storage; that desktop-only preference is not exposed to Herm by the gateway.

@@ -24,7 +24,7 @@ updated: 2026-10-17 · head: 938aeb6 (+ folder restructure)
 - `Workspace/` — `WorkspaceStore`: persistent local state (preferences, filters, cached metadata). Never a second copy of Hermes-owned data.
 - `Quota/` — provider quota adapters (Codex/OpenCode Go/GLM/Claude/Antigravity) plus the quota/usage/provider-connect views.
 - `Voice/` — native voice gateway preference + labelled local fallback.
-- `Security/`, `Recovery/`, `Operations/`, `Automation/`, `Profiles/`, `Knowledge/`, `Appearance/`, `Extensions/`, `Agents/`, `Configuration/`, `RuntimeTools/`, `Plans/` — supporting subsystems for their named concerns.
+- `Operations/`, `Automation/`, `Profiles/`, `Knowledge/`, `Appearance/`, `Extensions/`, `Agents/`, `Configuration/`, `Plans/` — supporting subsystems for their named concerns.
 
 ## Data flow
 
@@ -58,3 +58,29 @@ No databases. `WorkspaceStore` persists preferences/display state; transcripts a
 - `DockModel` is still the largest presentation type (split across extension files, but one type); new behavior goes into extracted testable helpers, not view types. Members are internal (not `private`) so extensions can span files.
 - `ComposerQueueOrderingTests` is timing-sensitive: fails under parallel load, passes alone (pre-existing).
 - The Hermes engine install is upstream-managed and read-only; extend only via the user-state layer (see `~/.hermes/HARNESS.md`).
+
+
+## GitHub feature modules
+
+`PullRequests/` and `Issues/` are feature folders within the existing Herm target.
+Their center models own list selection, browsing preferences, detail loading, and
+in-memory drafts. Global and session centers keep separate list state and share `PullRequestDetailStore` for PR details, discussion data, and per-item drafts. Tests use isolated stores. App
+composition in `DockPopover+Context` handles navigation using `GitHubItemReference`;
+features do not reach into one another's models.
+
+`GitHub/` owns REST/GraphQL transport, pagination, errors, shared metadata editors,
+authoring, and discussion presentation. Provider dictionaries stay in services.
+Labels are changed with add/remove deltas. Projects use V2 item IDs and actual
+Status option IDs. Provider data remains authoritative; persistence is limited to
+references and presentation preferences.
+
+`Markdown/` owns `MarkdownRenderDocumentBuilder`, block parsing, attributed text,
+and native document hosting/caches. `MarkdownMessageView` is the shared facade for
+chat, GitHub descriptions/discussion, and previews. Hosts may adapt sizing or
+streaming without adding another parser or formatting policy.
+
+Conflict analysis creates and removes an isolated bare repository, fetches the
+base and PR ref, verifies both snapshot revisions, then runs `merge-tree` with NUL
+output. It never operates on the user's checkout/index/refs. Cancellation, a
+120-second deadline, and a 512 MiB repository budget bound the operation. Landing
+mutations refresh capabilities and supply the confirmed expected head to GitHub.
