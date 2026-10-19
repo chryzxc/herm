@@ -55,7 +55,7 @@ struct ComposerSlashCommand: Equatable {
 /// `/command` and inline `/skill` tokens, highlighted in the composer and in
 /// sent messages. Paths (`/usr/bin`, `/a.txt`) and `and/or` are not tokens.
 enum SlashCommandTokens {
-    private static let pattern = try! NSRegularExpression(pattern: #"(?<!\S)/[A-Za-z][\w-]*(?![\w/-]|\.\w)"#)
+    private static let pattern = try! NSRegularExpression(pattern: #"(?<!\S)/[A-Za-z][\w-]*(?::[\w-]+)*(?![\w/-]|:[\w-]|\.\w)"#)
 
     static func ranges(in text: String) -> [NSRange] {
         guard text.contains("/") else { return [] }

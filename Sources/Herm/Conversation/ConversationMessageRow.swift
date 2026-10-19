@@ -260,9 +260,13 @@ struct ConversationMessageRow: View, Equatable {
                             } else {
                                 BotFaceMark(id: botProfileID, size: 24, animated: true)
                             }
-                            Text(bot?.name ?? message.botDisplayName ?? botProfileID)
-                                .font(.system(size: 11, weight: .medium))
+                            let requester = message.isBotHandoffReply ? activeBotProfileID.flatMap { $0 == botProfileID ? nil : botsByID[$0] } : nil
+                            (Text(bot?.name ?? message.botDisplayName ?? botProfileID)
                                 .foregroundStyle(Color.dockSecondaryText)
+                                + Text(requester.map { " replied to \($0.name)" } ?? "")
+                                .fontWeight(.regular)
+                                .foregroundStyle(Color.dockMetadataText))
+                                .font(.system(size: 11, weight: .medium))
                                 .lineLimit(1)
                         }
                         .padding(.horizontal, 4)
@@ -296,6 +300,16 @@ struct ConversationMessageRow: View, Equatable {
                                     title: "Request could not be completed",
                                     message: message.text
                                 )
+                            } else if message.isBotHandoffReply {
+                                // A teammate's answer, quoted: it informs this
+                                // chat but is not the assistant speaking.
+                                assistantBody
+                                    .padding(.leading, 12)
+                                    .overlay(alignment: .leading) {
+                                        Capsule()
+                                            .fill(Color(hue: BotAvatarPresentation.hue(for: message.botProfileID ?? ""), saturation: 0.45, brightness: 0.8))
+                                            .frame(width: 2.5)
+                                    }
                             } else {
                                 assistantBody
                             }

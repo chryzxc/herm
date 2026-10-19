@@ -78,6 +78,49 @@ struct SessionBotActivityTests {
         #expect(DockModel.botDispatch(toolName: "terminal", args: ["command": "hermes chat -q hi"]) == nil)
     }
 
+    @Test @MainActor func foregroundBotChatCompletesFromItsOwnResult() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-dispatch-\(UUID().uuidString).json")
+        let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: SessionBotActivityRPCClient(relaySessionID: "unused"))
+        model.recordBotDispatch(toolCallID: "c1", toolName: "terminal", args: ["command": "hermes -p sentry chat -q 'check'"])
+        model.bindBotDispatch(toolCallID: "c1", result: #"{"output": "LGTM", "exit_code": 0, "error": null}"#)
+        #expect(model.botActivityBySessionID["origin"]?.first?.state == .completed)
+        #expect(model.botActivityBySessionID["origin"]?.first?.result == "LGTM")
+        #expect(model.workingBotDispatches.isEmpty)
+        model.shutdown()
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @Test @MainActor func kanbanAssignmentFollowsItsCard() async {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-dispatch-\(UUID().uuidString).json")
+        let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: SessionBotActivityRPCClient(relaySessionID: "unused"))
+        #expect(DockModel.botDispatch(toolName: "kanban_create", args: ["title": "x"]) == nil)
+        model.recordBotDispatch(toolCallID: "k1", toolName: "kanban_create", args: ["assignee": "@Sentry", "title": "Review PR"])
+        model.bindBotDispatch(toolCallID: "k1", result: #"{"ok": true, "task_id": "t_cd4daccd", "status": "ready"}"#)
+        #expect(model.workingBotDispatches.first?.linkedCardID == "t_cd4daccd")
+        #expect(model.workingBotDispatches.first?.botID == "sentry")
+        await model.reconcileKanbanAssignments { _ in ("running", nil) }
+        #expect(model.workingBotDispatches.first?.state == .working)
+        await model.reconcileKanbanAssignments { _ in ("done", "Approved") }
+        #expect(model.workingBotDispatches.isEmpty)
+        #expect(model.botActivityBySessionID["origin"]?.first?.result == "Approved")
+        model.shutdown()
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @Test @MainActor func batchedProcessNoticeCompletesEveryBot() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-dispatch-\(UUID().uuidString).json")
+        let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: SessionBotActivityRPCClient(relaySessionID: "unused"))
+        model.recordBotDispatch(toolCallID: "c1", toolName: "terminal", args: ["command": "hermes -p sentry chat -q 'a'"])
+        model.recordBotDispatch(toolCallID: "c2", toolName: "terminal", args: ["command": "hermes -p forge chat -q 'b'"])
+        model.bindBotDispatch(toolCallID: "c1", result: #"{"output": "Background process started", "session_id": "proc_aaa111"}"#)
+        model.bindBotDispatch(toolCallID: "c2", result: #"{"output": "Background process started", "session_id": "proc_bbb222"}"#)
+        model.completeBotDispatch(from: "[IMPORTANT: 2 background processes completed. Treat these results as one batch.]\n\n[IMPORTANT: Background process proc_aaa111 completed normally (exit code 0).\nCommand: x\nOutput:\nONE\n]\n\n[IMPORTANT: Background process proc_bbb222 completed normally (exit code 0).\nCommand: y\nOutput:\nTWO\n]")
+        #expect(model.workingBotDispatches.isEmpty)
+        #expect(model.botActivityBySessionID["origin"]?.map(\.result) == ["ONE", "TWO"])
+        model.shutdown()
+        try? FileManager.default.removeItem(at: url)
+    }
+
     @Test @MainActor func botDispatchCompletesFromItsProcessNotice() {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("bot-dispatch-\(UUID().uuidString).json")
         let model = DockModel(initialSessionID: "origin", botActivityFileURL: url, rpcClient: SessionBotActivityRPCClient(relaySessionID: "unused"))

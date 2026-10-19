@@ -74,4 +74,12 @@ struct ComposerCompletionTests {
         let ns = text as NSString
         #expect(SlashCommandTokens.ranges(in: text).map(ns.substring) == ["/work", "/clean", "/model"])
     }
+
+    @Test func slashTokensIncludeNamespacedSkillsAndCommands() {
+        let text = "🚀 merge it as well /cpipe:run, then /plugin-name:skill_name and /plugin:group:run.\n/help: see /usr/bin and /plugin:run/file.txt"
+        let ns = text as NSString
+        #expect(SlashCommandTokens.ranges(in: text).map(ns.substring) == [
+            "/cpipe:run", "/plugin-name:skill_name", "/plugin:group:run", "/help",
+        ])
+    }
 }

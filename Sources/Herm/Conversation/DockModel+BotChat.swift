@@ -157,7 +157,7 @@ extension DockModel {
                 // The request bubble belongs to this session even while the bot
                 // is still working, has no inline reply, or failed.
                 if result.isEmpty || record.state != .completed {
-                    if record.summary != "Bot response",
+                    if record.summary != "Bot response", !record.id.hasPrefix("bot-dispatch:"),
                        !messages.contains(where: { $0.role == .user && $0.botProfileID == record.botID && $0.text.hasSuffix(record.summary) }) {
                         messages.append(ChatMessage(role: .user, text: "@\(record.botName) \(record.summary)", timestamp: record.createdAt, botProfileID: record.botID, botDisplayName: record.botName))
                     }
@@ -172,6 +172,16 @@ extension DockModel {
                                                     botProfileID: record.botID, botDisplayName: record.botName,
                                                     kanbanNotice: KanbanNotice(text: notice.body)))
                     }
+                    continue
+                }
+                // A card's outcome already arrives as a Kanban notice.
+                if record.linkedCardID != nil { continue }
+                // Another Bot asked, not the user: no request bubble.
+                if record.id.hasPrefix("bot-dispatch:") {
+                    let reply = Self.botReply(from: result).reply
+                    guard !reply.isEmpty, !messages.contains(where: { $0.text == reply && $0.botProfileID == record.botID }) else { continue }
+                    messages.append(ChatMessage(role: .hermes, text: reply, timestamp: record.updatedAt, botProfileID: record.botID,
+                                                botDisplayName: record.botName, isBotHandoffReply: true))
                     continue
                 }
                 // "Bot response" marks a bot message nobody asked for (a
@@ -189,9 +199,16 @@ extension DockModel {
         }
     }
 
-    /// A Bot this turn hands work to: Hermes' `message_agent` tool, or the
-    /// `hermes -p <bot> chat` command Bots use to DM each other.
+    /// A Bot this turn hands work to: Hermes' `message_agent` tool, the
+    /// `hermes -p <bot> chat` command Bots use to DM each other, or a Kanban
+    /// card created for a Bot.
     static func botDispatch(toolName: String, args: [String: Any]) -> (profileID: String, summary: String)? {
+        if toolName == "kanban_create" {
+            let assignee = ((args["assignee"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingPrefix("@").lowercased()
+            guard !assignee.isEmpty else { return nil }
+            return (assignee, String(((args["title"] as? String) ?? "Kanban card").prefix(400)))
+        }
         if toolName == "message_agent" {
             let target = ((args["target"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingPrefix("@").lowercased()
@@ -225,7 +242,8 @@ extension DockModel {
             guard Self.botDispatch(toolName: call.name, args: call.args ?? [:]) != nil else { continue }
             let processID = call.result.flatMap(Self.dispatchProcessID)
             let finished = processID.map { id in notices.contains { $0.contains(id) } } ?? false
-            guard finished || Date().timeIntervalSince(call.startedAt) < 3 * 3600 else { continue }
+            // A card's status stays on the board, so any age can be resolved.
+            guard finished || call.name == "kanban_create" || Date().timeIntervalSince(call.startedAt) < 3 * 3600 else { continue }
             recordBotDispatch(toolCallID: call.id, toolName: call.name, args: call.args ?? [:], at: call.startedAt)
             if let result = call.result { bindBotDispatch(toolCallID: call.id, result: result) }
         }
@@ -241,17 +259,37 @@ extension DockModel {
     /// (`process_id` from message_agent, `session_id` from terminal).
     func bindBotDispatch(toolCallID: String, result: String) {
         let id = "bot-dispatch:\(toolCallID)"
-        guard let json = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any] else { return }
+        guard let json = (try? JSONSerialization.jsonObject(with: Data(result.utf8))) as? [String: Any] else {
+            // Compacted history keeps only `[terminal] ran `…` -> exit N`, and
+            // a long result arrives truncated: either way the call returned,
+            // and a background start always parses, so the Bot is done.
+            let exit = result.firstMatch(of: /-> exit (-?\d+)/).flatMap { Int($0.1) } ?? 0
+            updateBotActivity(id: id, state: exit == 0 ? .completed : .failed)
+            return
+        }
         let processID = Self.dispatchProcessID(result)
+        let cardID = (json["task_id"] as? String).flatMap { $0.hasPrefix("t_") ? $0 : nil }
         let error = (json["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         for originSessionID in botActivityBySessionID.keys {
             guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else { continue }
             if let error {
                 updateBotActivity(id: id, state: .failed, result: error)
+            } else if let cardID {
+                // The card runs on the board; `reconcileKanbanAssignments` follows it.
+                botActivityBySessionID[originSessionID]![index].linkedCardID = cardID
+                botActivityRevision &+= 1
+                enqueueBotActivityPersistence()
             } else if let processID {
                 botActivityBySessionID[originSessionID]![index].processID = processID
                 botActivityRevision &+= 1
                 enqueueBotActivityPersistence()
+            } else {
+                // A foreground `hermes -p <bot> chat` returns the reply itself:
+                // no process, so no completion notice will ever arrive.
+                let output = Self.botReply(from: (json["output"] as? String) ?? "")
+                let ok = ((json["exit_code"] as? Int) ?? 0) == 0
+                updateBotActivity(id: id, state: ok ? .completed : .failed,
+                                  result: output.reply.isEmpty ? nil : String(output.reply.prefix(600)), botChatSessionID: output.sessionID)
             }
             return
         }
@@ -260,21 +298,94 @@ extension DockModel {
     /// Hermes' notice when a Bot DM's process exits:
     /// `Background process proc_… completed normally (exit code 0). … Output: … session_id: <id>`.
     func completeBotDispatch(from text: String) {
-        guard let head = text.firstMatch(of: /Background process (proc_\w+) (\w+)/) else { return }
+        // Several Bots finishing together arrive as one batched notice.
+        let heads = text.matches(of: /Background process (proc_\w+) (\w+)/)
+        guard heads.count <= 1 else {
+            for (index, head) in heads.enumerated() {
+                let end = index + 1 < heads.count ? heads[index + 1].range.lowerBound : text.endIndex
+                completeBotDispatch(from: String(text[head.range.lowerBound..<end]).replacing(/\s*\[IMPORTANT:\s*$/, with: ""))
+            }
+            return
+        }
+        guard let head = heads.first else { return }
         let processID = String(head.1)
         guard let record = botActivityBySessionID.values.lazy.flatMap({ $0 }).first(where: { $0.processID == processID }) else { return }
         let output = text.range(of: "Output:\n").map { String(text[$0.upperBound...]) } ?? ""
-        let botSessionID = output.matches(of: /session_id: (\S+)/).last.map { String($0.1) }
-        let reply = output.replacing(/\n*session_id: \S+\s*\]?\s*$/, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let (reply, botSessionID) = Self.botReply(from: output)
         let ok = head.2 == "completed" && text.contains("exit code 0")
         updateBotActivity(id: record.id, state: ok ? .completed : .failed, result: reply.isEmpty ? nil : String(reply.prefix(600)), botChatSessionID: botSessionID)
+    }
+
+    /// `hermes chat -Q` ends its answer with `session_id: <id>`; that line is
+    /// plumbing, not part of the reply.
+    static func botReply(from output: String) -> (reply: String, sessionID: String?) {
+        let sessionID = output.matches(of: /session_id: (\S+)/).last.map { String($0.1) }
+        let reply = output.replacing(/(\n*session_id: \S+)?\s*\]?\s*$/, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return (reply, sessionID)
+    }
+
+    /// Hermes' completion notice is not reliable: it can be compacted away,
+    /// land while Herm is offline, or never be stored. Hermes' process
+    /// registry is the truth: a DM whose process is no longer running is done.
+    func reconcileBotDispatches() async {
+        let pending = botActivityBySessionID.values.joined().filter {
+            $0.id.hasPrefix("bot-dispatch:") && $0.processID != nil && ($0.state == .working || $0.state == .queued)
+        }
+        // `agents.list` lists every running and recently finished background
+        // process without needing a live session. Not a capability ID on
+        // purpose: a failed call just leaves the records as they were.
+        guard !pending.isEmpty,
+              let result = try? await sessionRPCClient.request("agents.list", params: [:]),
+              let rows = result["processes"] as? [[String: Any]] else { return }
+        let status = Dictionary(rows.compactMap { row in (row["session_id"] as? String).map { ($0, row["status"] as? String ?? "") } },
+                                uniquingKeysWith: { first, _ in first })
+        for record in pending {
+            switch status[record.processID!] {
+            case "running": continue
+            case "killed": updateBotActivity(id: record.id, state: .canceled)
+            default: updateBotActivity(id: record.id, state: .completed)
+            }
+        }
+    }
+
+    /// Kanban cards this session assigned to a Bot, followed on the board
+    /// until the Bot finishes, hands it back for review, or gets blocked.
+    func reconcileKanbanAssignments(status: (String) async -> (status: String, summary: String?)?) async {
+        let pending = botActivityBySessionID.values.joined().filter { $0.linkedCardID != nil && $0.isLive }
+        for record in pending {
+            guard let card = await status(record.linkedCardID!) else { continue }
+            let state: BotActivityState = switch card.status.lowercased() {
+            case "done", "archived", "completed", "review": .completed
+            case "blocked", "triage": .waiting
+            case "running": .working
+            default: .queued
+            }
+            if state != record.state {
+                updateBotActivity(id: record.id, state: state, result: card.summary)
+            }
+        }
     }
 
     /// Bot DMs this session sent that have not finished.
     var workingBotDispatches: [BotActivityRecord] {
         guard let id = sessionStorageID ?? sessionID else { return [] }
+        // ponytail: a completion notice Herm missed (offline, other client)
+        // would leave a DM working forever; past 3h it is treated as stale,
+        // matching `restoreBotDispatches`.
+        let cutoff = Date().addingTimeInterval(-3 * 3600)
         return botActivityBySessionID[id, default: []].filter {
-            $0.id.hasPrefix("bot-dispatch:") && ($0.state == .working || $0.state == .queued)
+            $0.id.hasPrefix("bot-dispatch:") && ($0.state == .working || $0.state == .queued) && $0.createdAt > cutoff
+        }
+    }
+
+    /// @mentions in this session that the Bot is still answering.
+    var pendingBotMentions: [BotActivityRecord] {
+        guard let id = sessionStorageID ?? sessionID else { return [] }
+        // ponytail: a relay Hermes accepted without naming the Bot's session
+        // can never be followed, so it stops reading as working after 10 min.
+        let cutoff = Date().addingTimeInterval(-600)
+        return botActivityBySessionID[id, default: []].filter {
+            inFlightBotActivities[$0.id] != nil && $0.isLive && ($0.state != .queued || $0.createdAt > cutoff)
         }
     }
 
@@ -297,7 +408,17 @@ extension DockModel {
         for originSessionID in botActivityBySessionID.keys {
             guard let index = botActivityBySessionID[originSessionID]?.firstIndex(where: { $0.id == id }) else { continue }
             var record = botActivityBySessionID[originSessionID]![index]
-            guard record.state != .completed, record.state != .failed, record.state != .canceled else { return }
+            if record.state == .completed || record.state == .failed || record.state == .canceled {
+                // The registry check can finish a DM before its notice lands;
+                // the late notice still brings the reply and Bot session.
+                guard record.result == nil || record.botChatSessionID == nil, result != nil || botChatSessionID != nil else { return }
+                record.result = record.result ?? result
+                record.botChatSessionID = record.botChatSessionID ?? botChatSessionID
+                botActivityBySessionID[originSessionID]![index] = record
+                botActivityRevision &+= 1
+                enqueueBotActivityPersistence()
+                return
+            }
             record.state = state
             record.updatedAt = Date()
             if result != nil { record.result = result }

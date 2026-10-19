@@ -437,8 +437,10 @@ struct ChatMessage: Identifiable, Equatable {
     /// Set for rows Hermes wrote itself (system rows, gateway notes, live
     /// status lines), which render as a compact system card.
     let systemEvent: SystemEvent?
+    /// A Bot's answer to a DM another Bot sent from this session.
+    let isBotHandoffReply: Bool
 
-    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil) {
+    init(id: UUID = UUID(), role: Role, text: String, image: NSImage? = nil, images: [NSImage] = [], timestamp: Date = Date(), modelName: String? = nil, responseDuration: TimeInterval? = nil, tokenCount: Int? = nil, isSteering: Bool = false, steeringStatus: String? = nil, isError: Bool = false, botProfileID: String? = nil, botDisplayName: String? = nil, contentRevision: Int? = nil, activity: [ActiveToolCall] = [], kanbanNotice: KanbanNotice? = nil, systemEvent: SystemEvent? = nil, isBotHandoffReply: Bool = false) {
         self.id = id
         self.role = role
         self.text = text
@@ -459,6 +461,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.activity = activity
         self.kanbanNotice = kanbanNotice
         self.systemEvent = systemEvent
+        self.isBotHandoffReply = isBotHandoffReply
     }
 
     var image: NSImage? { images.first }

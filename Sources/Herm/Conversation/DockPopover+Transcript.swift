@@ -65,6 +65,21 @@ extension DockPopover {
                                         .id("value-prompt")
                                 }
                                 botHandoffRow
+                                    .animation(.spring(response: 0.45, dampingFraction: 0.8), value: workingCrewIDs)
+                            }
+                            // ponytail: 15s check while any Bot shows as working; Hermes has no
+                            // reliable process-exit event for Bot DMs. A blocked card is not
+                            // re-checked until the session's Bot work changes.
+                            .task(id: [model.sessionID ?? ""] + model.workingBotDispatches.map(\.id)) {
+                                repeat {
+                                    await model.reconcileBotDispatches()
+                                    await model.reconcileKanbanAssignments { cardID in
+                                        await controlCenter.sessionKanbanTaskDetail(
+                                            KanbanTaskSummary(id: cardID, title: cardID, status: "", detail: nil, priority: nil, assignee: nil)
+                                        ).map { ($0.status, $0.latestSummary ?? $0.result) }
+                                    }
+                                    try? await Task.sleep(for: .seconds(15))
+                                } while !Task.isCancelled && !model.workingBotDispatches.isEmpty
                             }
                             .padding(.vertical, 12)
                             .padding(.horizontal, 0)
@@ -610,17 +625,40 @@ extension DockPopover {
         let fromID = model.activeBotProfileID ?? model.sessionProfileID ?? botMode.selectedProfileID
         let from = fromID.flatMap { botMode.botsByID[$0] } ?? botMode.visibleBots.first(where: \.isDefault)
         let partners = workingCrew.filter { $0.id != from?.id }
+        let mentions = model.pendingBotMentions
+        let replying = mentionedBots
         // While the turn runs the huddle is its loading row instead.
-        if let from, !partners.isEmpty, model.streamingMessageIDForPresentation == nil {
-            BotCrewRow(from: from, partners: partners,
-                       since: model.workingBotDispatches.map(\.createdAt).min() ?? .now,
-                       avatars: botMode.avatarImages)
-                .padding(.horizontal, conversationMetrics.contentInset + 4)
-                .padding(.top, 8)
-                .transition(.opacity.combined(with: .offset(y: 6)))
-                .id("bot-handoff")
+        if model.streamingMessageIDForPresentation == nil {
+            VStack(alignment: .leading, spacing: 4) {
+                if let lead = replying.first {
+                    BotCrewRow(from: lead, partners: Array(replying.dropFirst()),
+                               since: mentions.map(\.createdAt).min() ?? .now,
+                               avatars: botMode.avatarImages, repliesToUser: true)
+                        .transition(.asymmetric(insertion: .scale(scale: 0.9, anchor: .leading).combined(with: .opacity),
+                                                removal: .opacity.combined(with: .offset(y: -6))))
+                }
+                if let from, !partners.isEmpty {
+                    BotCrewRow(from: from, partners: partners,
+                               since: model.workingBotDispatches.map(\.createdAt).min() ?? .now,
+                               avatars: botMode.avatarImages)
+                        .transition(.opacity.combined(with: .offset(y: 6)))
+                }
+            }
+            .padding(.horizontal, conversationMetrics.contentInset + 4)
+            .padding(.top, replying.isEmpty && partners.isEmpty ? 0 : 8)
+            .id("bot-handoff")
         }
     }
+
+    /// Bots answering an @mention right now, one entry per Bot.
+    var mentionedBots: [BotSummary] {
+        var seen = Set<String>()
+        return model.pendingBotMentions.compactMap { record in
+            seen.insert(record.botID).inserted ? botMode.botsByID[record.botID] : nil
+        }
+    }
+
+    var workingCrewIDs: [String] { mentionedBots.map { "@" + $0.id } + workingCrew.map(\.id) }
 
     @ViewBuilder
     func messageRow(_ message: ChatMessage) -> some View {

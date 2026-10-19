@@ -352,9 +352,9 @@ struct BotSwirlRing: View {
     }
 }
 
-/// The Bots working together in one pill: they take turns, the one whose
+/// The Bots working together in one row: they take turns, the one whose
 /// turn it is bobs with a typing bubble, and a star arcs to the next. A
-/// finished lead stays in the pill, dimmed and out of the rotation.
+/// finished lead stays in the row, dimmed and out of the rotation.
 struct BotHuddle: View {
     private static let gold = Color(hue: 0.13, saturation: 0.55, brightness: 1)
     /// One member's turn, in seconds.
@@ -363,18 +363,25 @@ struct BotHuddle: View {
     let partners: [BotSummary]
     var avatars: [String: Data] = [:]
     var leadDone = false
-    var leadSize: CGFloat = 28
-    var size: CGFloat = 22
+    /// Matches `BotWorkingAvatarView`, so the lead keeps its size and spot
+    /// whether or not other Bots are working.
+    var leadSize: CGFloat = 40
+    var size: CGFloat = 26
+    /// Set while the lead is the one running the turn: it then reacts to
+    /// each new step exactly like the solo loading avatar.
+    var leadSignature: [String]? = nil
+    var leadIcon: Ph = .brain
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let gap: CGFloat = 8
-    private static let inset: CGFloat = 9
-    private static let height: CGFloat = 40
+    /// Centers the lead in the same 56pt slot `SignalTrace` uses.
+    private var inset: CGFloat { (SignalTrace.size - leadSize) / 2 }
+    private var height: CGFloat { SignalTrace.size }
 
     private var centers: [CGFloat] {
-        let first: CGFloat = Self.inset + leadSize + Self.gap + size / 2
+        let first: CGFloat = inset + leadSize + Self.gap + size / 2
         let stride: CGFloat = size + Self.gap
-        return [Self.inset + leadSize / 2] + partners.indices.map { first + CGFloat($0) * stride }
+        return [inset + leadSize / 2] + partners.indices.map { first + CGFloat($0) * stride }
     }
 
     var body: some View {
@@ -385,7 +392,8 @@ struct BotHuddle: View {
             let clock = context.date.timeIntervalSinceReferenceDate / Self.turn
             let step = Int(clock)
             let phase = clock - Double(step)
-            let active = moves ? rotation[step % rotation.count] : -1
+            // A lone lead has nobody to hand the turn to.
+            let active = moves && rotation.count > 1 ? rotation[step % rotation.count] : -1
             let next = rotation[(step + 1) % rotation.count]
             frame(active: active, next: next, phase: phase, rotation: rotation, moves: moves)
         }
@@ -398,23 +406,26 @@ struct BotHuddle: View {
             member(lead, index: 0, size: leadSize, active: active, phase: phase)
             ForEach(Array(partners.enumerated()), id: \.element.id) { index, bot in
                 member(bot, index: index + 1, size: size, active: active, phase: phase)
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.2, anchor: .bottom).combined(with: .opacity).combined(with: .offset(y: 8)),
+                        removal: .scale(scale: 0.1).combined(with: .opacity).combined(with: .offset(y: -10))))
             }
         }
-        .padding(.leading, Self.inset)
-        .padding(.trailing, Self.inset + 1)
-        .padding(.bottom, 5)
-        .frame(height: Self.height, alignment: .bottom)
-        .background(Capsule().fill(Color.dockPrimaryText.opacity(0.04)))
-        .overlay(Capsule().stroke(Color.dockBorderLight, lineWidth: 0.75))
+        .padding(.leading, inset)
+        .padding(.trailing, inset)
+        .padding(.bottom, inset)
+        .frame(height: height, alignment: .bottom)
+        // Bots pop in as they start and shrink away when they finish.
+        .animation(.spring(response: 0.45, dampingFraction: 0.7), value: partners.map(\.id))
         .overlay(alignment: .topLeading) {
             Canvas { ctx, _ in trail(ctx, active: active, next: next, phase: phase, rotation: rotation, moves: moves) }
-                .frame(height: Self.height)
+                .frame(height: height)
                 .allowsHitTesting(false)
         }
     }
 
     private func top(_ index: Int) -> CGFloat {
-        Self.height - 5 - (index == 0 ? leadSize : size) + 3
+        height - inset - (index == 0 ? leadSize : size) + 3
     }
 
     private func trail(_ ctx: GraphicsContext, active: Int, next: Int, phase: Double, rotation: [Int], moves: Bool) {
@@ -441,8 +452,15 @@ struct BotHuddle: View {
         let dimmed = index == 0 && leadDone
         // A quick hop at the start of the turn.
         let bob = talking && phase < 0.3 ? -3 * sin(.pi * phase / 0.3) : 0
-        return BotAvatarView(bot: bot, imageData: avatars[bot.id], size: size, animated: !dimmed,
-                             mood: dimmed ? .idle : talking ? .happy : .work, orbits: false)
+        return Group {
+            if index == 0, !leadDone, let leadSignature {
+                BotWorkingAvatarView(bot: bot, imageData: avatars[bot.id], size: size,
+                                     activitySignature: leadSignature, activityIcon: leadIcon)
+            } else {
+                BotAvatarView(bot: bot, imageData: avatars[bot.id], size: size, animated: !dimmed,
+                              mood: dimmed ? .idle : talking ? .happy : .work, orbits: false)
+            }
+        }
             .opacity(dimmed ? 0.45 : 1)
             .saturation(dimmed ? 0.5 : 1)
             .offset(y: bob)

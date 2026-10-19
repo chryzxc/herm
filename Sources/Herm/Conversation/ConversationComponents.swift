@@ -516,7 +516,7 @@ struct SignalTrace: View {
         .accessibilityHidden(true)
     }
 
-    private static func glyph(for step: ActiveToolCall?) -> Ph {
+    static func glyph(for step: ActiveToolCall?) -> Ph {
         switch step?.name {
         case ActiveToolCall.thinkingName?, nil: return .brain
         case ActiveToolCall.compactionName?: return .arrowsInSimple
@@ -586,13 +586,17 @@ struct BotCrewRow: View {
   let partners: [BotSummary]
   let since: Date
   var avatars: [String: Data] = [:]
+  /// The lead is answering the user's @mention rather than watching others.
+  var repliesToUser = false
 
   var body: some View {
     HStack(spacing: 12) {
-      BotHuddle(lead: from, partners: partners, avatars: avatars, leadDone: true)
+      BotHuddle(lead: from, partners: partners, avatars: avatars, leadDone: !repliesToUser,
+                leadSignature: repliesToUser ? [] : nil, leadIcon: .chatCircleDots)
       VStack(alignment: .leading, spacing: 2) {
-        (Text(partners.map(\.name).formatted(.list(type: .and))).foregroundStyle(Color.dockPrimaryText)
-          + Text(" messaged by \(from.name)").fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
+        let names = (repliesToUser ? [from] + partners : partners).map(\.name).formatted(.list(type: .and))
+        (Text(names).foregroundStyle(Color.dockPrimaryText)
+          + Text(repliesToUser ? " replying to you" : " messaged by \(from.name)").fontWeight(.regular).foregroundStyle(Color.dockMetadataText))
           .font(.system(size: 12, weight: .semibold))
           .lineLimit(1)
         TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -612,66 +616,72 @@ struct BotCrewRow: View {
 /// live status. A finished row expands to the start of the Bot's reply.
 struct BotDispatchCard: View {
   let records: [BotActivityRecord]
+  /// Records that are Kanban cards assigned to the Bot rather than DMs.
+  var assignedIDs: Set<String> = []
   var botsByID: [String: BotSummary] = [:]
   var avatars: [String: Data] = [:]
   @State private var openIDs: Set<String> = []
 
   var body: some View {
-    let working = records.filter(\.isLive).count
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 6) {
-        DockIcon(.envelopeSimple, size: 11, color: Color.dockMetadataText)
-        Text("Messaged \(records.count) Bot\(records.count == 1 ? "" : "s")" + (working > 0 && records.count > 1 ? " · \(working) working" : ""))
-      }
-      .font(.system(size: 11))
-      .foregroundStyle(Color.dockMetadataText)
-      .padding(.horizontal, 10).padding(.top, 6).padding(.bottom, 5)
-      ForEach(records) { record in
-        Divider().overlay(Color.dockBorderLight)
-        row(record)
-      }
+    VStack(alignment: .leading, spacing: 6) {
+      ForEach(records) { row($0) }
     }
-    .background(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).fill(Color.dockPrimaryText.opacity(0.03)))
-    .overlay(RoundedRectangle(cornerRadius: DockLayout.controlRadius, style: .continuous).stroke(Color.dockBorderLight, lineWidth: 0.75))
-    .padding(.leading, 24)
-    .padding(.vertical, 2)
   }
 
   @ViewBuilder
   private func row(_ record: BotActivityRecord) -> some View {
     let bot = botsByID[record.botID]
     let reply = record.result.flatMap { $0.isEmpty ? nil : $0 }
-    let isOpen = openIDs.contains(record.id)
-    Button {
-      guard reply != nil, !record.isLive else { return }
-      if isOpen { openIDs.remove(record.id) } else { openIDs.insert(record.id) }
-    } label: {
-      HStack(spacing: 8) {
-        if let bot {
-          BotAvatarView(bot: bot, imageData: avatars[bot.id], size: 18, orbits: record.isLive)
+    let canOpen = reply != nil && !record.isLive
+    let isOpen = canOpen && openIDs.contains(record.id)
+    VStack(alignment: .leading, spacing: 4) {
+      Button {
+        guard canOpen else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+          if isOpen { openIDs.remove(record.id) } else { openIDs.insert(record.id) }
         }
-        Text(bot?.name ?? record.botName).font(.system(size: 12, weight: .semibold)).foregroundStyle(Color.dockPrimaryText)
-        Text(record.summary).font(.system(size: 12)).foregroundStyle(Color.dockSecondaryText)
-          .lineLimit(1).truncationMode(.tail)
-        Spacer(minLength: 8)
-        status(record)
-        if reply != nil, !record.isLive {
-          DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+      } label: {
+        HStack(spacing: 8) {
+          Group {
+            if let bot {
+              BotAvatarView(bot: bot, imageData: avatars[bot.id], size: 16)
+            } else {
+              DockIcon(.envelopeSimple, size: 13, color: Color.dockSecondaryText)
+            }
+          }
+          .frame(width: 16, height: 16)
+          (Text(assignedIDs.contains(record.id) ? "Assigned " : "Messaged ").foregroundStyle(Color.dockSecondaryText)
+            + Text(bot?.name ?? record.botName).fontWeight(.semibold).foregroundStyle(Color.dockPrimaryText)
+            + Text(record.summary.isEmpty ? "" : "  \(record.summary)").foregroundStyle(Color.dockMetadataText))
+            .font(.system(size: 12))
+            .lineLimit(1).truncationMode(.tail)
+          Spacer(minLength: 8)
+          status(record)
+          if canOpen {
+            DockIcon(isOpen ? .caretDown : .caretRight, size: 9, color: Color.dockMetadataText)
+          }
         }
+        .contentShape(Rectangle())
       }
-      .padding(.horizontal, 10).padding(.vertical, 6)
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.dockHover)
-    .help(record.state == .failed ? (reply ?? "Failed") : "")
-    if isOpen, let reply {
-      Text(reply)
-        .font(.system(size: 12))
-        .foregroundStyle(Color.dockSecondaryText)
-        .lineLimit(8)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 36).padding(.trailing, 10).padding(.bottom, 8)
+      .buttonStyle(.dockHover)
+      .help(record.state == .failed ? (reply ?? "Failed") : record.linkedCardID.map { "Kanban \($0)" } ?? "")
+      .accessibilityLabel(canOpen ? (isOpen ? "Hide reply" : "Show reply") : "Messaged \(bot?.name ?? record.botName)")
+      if isOpen, let reply {
+        Text(DockModel.botReply(from: reply).reply)
+          .font(.system(size: 12))
+          .foregroundStyle(Color.dockSecondaryText)
+          .lineLimit(8)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.leading, 10)
+          .overlay(alignment: .leading) {
+            Capsule()
+              .fill(Color(hue: BotAvatarPresentation.hue(for: record.botID), saturation: 0.45, brightness: 0.8))
+              .frame(width: 2)
+          }
+          .padding(.leading, 24)
+          .transition(.opacity)
+      }
     }
   }
 
@@ -679,26 +689,39 @@ struct BotDispatchCard: View {
   private func status(_ record: BotActivityRecord) -> some View {
     Group {
       switch record.state {
-      case .working, .queued, .waiting:
+      case .working, .queued:
         TimelineView(.periodic(from: .now, by: 1)) { context in
-          HStack(spacing: 5) {
-            Circle().fill(Color.dockAccent).frame(width: 6, height: 6)
-            Text(Self.clock(context.date.timeIntervalSince(record.createdAt)))
-          }
+          Text("\(record.state == .queued && record.linkedCardID != nil ? "queued" : "working") · \(Self.clock(context.date.timeIntervalSince(record.createdAt)))")
+            .contentTransition(.numericText())
+            .modifier(RunningShimmer())
         }
+        .transition(.opacity)
+      case .waiting:
+        HStack(spacing: 4) {
+          DockIcon(.pauseCircle, size: 10, color: Color.dockWarning)
+          Text(record.linkedCardID != nil ? "blocked" : "waiting on you")
+        }
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
       case .failed:
-        HStack(spacing: 4) { Text("×").fontWeight(.bold).foregroundStyle(Color.dockDestructive); Text("failed") }
+        HStack(spacing: 4) {
+          DockIcon(.x, size: 10, color: Color.dockDestructive)
+          Text("failed")
+        }
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
       case .canceled:
-        Text("canceled")
+        Text("canceled").transition(.opacity)
       case .completed:
         HStack(spacing: 4) {
           DockIcon(.check, size: 10, color: Color.dockSuccess)
           Text(Self.clock(record.updatedAt.timeIntervalSince(record.createdAt)))
         }
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
       }
     }
     .font(.system(size: 11).monospacedDigit())
     .foregroundStyle(Color.dockMetadataText)
+    // The clock settles into a check (or ×) when the Bot finishes.
+    .animation(.spring(response: 0.35, dampingFraction: 0.65), value: record.state)
   }
 
   /// "45s", "2m 14s", "1h 5m".
@@ -742,9 +765,13 @@ struct TurnActivityView: View {
         steps
         let phase = SignalTrace.Phase(activity: activity)
         let crew = bot.map { lead in self.crew.filter { $0.id != lead.id } } ?? []
-        HStack(spacing: crew.isEmpty ? 10 : 12) {
-          if let bot, !crew.isEmpty {
-            BotHuddle(lead: bot, partners: crew, avatars: avatars.merging(botAvatar.map { [bot.id: $0] } ?? [:]) { a, _ in a })
+        HStack(spacing: 10) {
+          // One view for the lead with or without a crew, so Bots join and
+          // leave beside it without the lead jumping or resizing.
+          if let bot {
+            BotHuddle(lead: bot, partners: crew, avatars: avatars.merging(botAvatar.map { [bot.id: $0] } ?? [:]) { a, _ in a },
+                      leadSignature: activity.map { "\($0.id):\($0.isComplete)" },
+                      leadIcon: SignalTrace.glyph(for: activity.last))
           } else {
             SignalTrace(phase: phase, activity: activity, bot: bot, botAvatar: botAvatar)
           }
@@ -789,7 +816,7 @@ struct TurnActivityView: View {
         } else if segments.contains(where: { $0.records.contains(where: \.isLive) }) {
           // Bots still working outlive the collapse until they finish.
           VStack(alignment: .leading, spacing: 6) {
-            ForEach(segments.filter { $0.records.contains(where: \.isLive) }) { card($0.records) }
+            ForEach(segments.filter { $0.records.contains(where: \.isLive) }) { card($0) }
           }
         }
       }
@@ -839,8 +866,9 @@ struct TurnActivityView: View {
     return result
   }
 
-  private func card(_ records: [BotActivityRecord]) -> some View {
-    BotDispatchCard(records: records, botsByID: botsByID, avatars: avatars)
+  private func card(_ segment: Segment) -> some View {
+    let assigned = zip(segment.calls, segment.records).filter { $0.0.name == "kanban_create" }.map(\.1.id)
+    return BotDispatchCard(records: segment.records, assignedIDs: Set(assigned), botsByID: botsByID, avatars: avatars)
   }
 
   private var steps: some View {
@@ -848,7 +876,7 @@ struct TurnActivityView: View {
       ForEach(segments) { segment in
         let call = segment.calls[0]
         if !segment.records.isEmpty {
-          card(segment.records)
+          card(segment)
         } else if call.name == ActiveToolCall.thinkingName {
           thoughtRow(call)
         } else if call.name == ActiveToolCall.compactionName {
