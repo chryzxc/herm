@@ -171,6 +171,8 @@ struct ProviderConnectSheet: View {
     @State private var apiKeyInput = ""
     @State private var hasStoredKey = false
     @State private var testStartedAt: Date?
+    @State private var saveError: String?
+    @State private var isSaving = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -191,9 +193,13 @@ struct ProviderConnectSheet: View {
             case .apiKey:
                 if hasStoredKey {
                     Button("Remove Key", role: .destructive) {
-                        control.saveProviderAPIKey(nil, for: descriptor)
+                        if let row = hermesRow {
+                            saveHermesKey(nil, row)
+                        } else {
+                            control.saveProviderAPIKey(nil, for: descriptor)
+                            refreshStoredKeyState()
+                        }
                         apiKeyInput = ""
-                        refreshStoredKeyState()
                     }
                     .buttonStyle(.dockSecondary)
                 }
@@ -226,19 +232,50 @@ struct ProviderConnectSheet: View {
 
     private func saveAPIKey() {
         guard !apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        control.saveProviderAPIKey(apiKeyInput, for: descriptor)
-        apiKeyInput = ""
         testStartedAt = .now
-        refreshStoredKeyState()
+        if let row = hermesRow {
+            saveHermesKey(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines), row)
+        } else {
+            control.saveProviderAPIKey(apiKeyInput, for: descriptor)
+            refreshStoredKeyState()
+        }
+        apiKeyInput = ""
+    }
+
+    /// The Settings → Providers row this key belongs to: the key then lives in
+    /// Hermes' .env, the same place Settings writes it.
+    private var hermesRow: HermesProviderRow? {
+        control.hermesRow(for: descriptor).flatMap { $0.access == .apiKey ? $0 : nil }
+    }
+
+    private func saveHermesKey(_ key: String?, _ row: HermesProviderRow) {
+        saveError = nil
+        isSaving = true
+        Task {
+            defer { isSaving = false }
+            do {
+                try await control.saveHermesProviderKey(key, row: row)
+                refreshStoredKeyState()
+            } catch {
+                testStartedAt = nil
+                saveError = error.localizedDescription
+            }
+        }
     }
 
     private func refreshStoredKeyState() {
-        hasStoredKey = descriptor.storageKey.map { ProviderKeyStore().contains($0) } ?? false
+        if let row = hermesRow {
+            hasStoredKey = row.authenticated
+        } else {
+            hasStoredKey = descriptor.storageKey.map { ProviderKeyStore().contains($0) } ?? false
+        }
     }
 
     /// The quota read that follows Save & Test: nil while it is still running.
     private var testResult: (ok: Bool, text: String)? {
-        guard let started = testStartedAt?.addingTimeInterval(-1) else { return nil }
+        // The Hermes save runs before the quota read starts; judging now would
+        // report the previous read's "no key" error.
+        guard !isSaving, let started = testStartedAt?.addingTimeInterval(-1) else { return nil }
         if let snapshot = control.providerQuotas.first(where: { $0.provider == descriptor.id }), snapshot.updatedAt >= started {
             let first = snapshot.windows.first.map { " · \($0.label): \($0.remainingDisplay ?? $0.remainingPercent.map { "\(Int($0))% left" } ?? "reported")" }
             return (true, "Connected\(first ?? "")")
@@ -270,7 +307,12 @@ struct ProviderConnectSheet: View {
                 } else if hasStoredKey {
                     ModalNote(text: "A key is already stored for this provider.", icon: .checkCircle, tone: .dockSuccess)
                 }
-                ModalNote(text: "Stored in ~/.config/herm/providers.json with owner-only permissions. Never displayed or logged, and used only to read quota.", icon: .lockSimple)
+                if let saveError { ModalNote(text: saveError, icon: .warning, tone: .dockWarning) }
+                ModalNote(
+                    text: hermesRow.map { "Saved by Hermes in its own .env\($0.keyEnv.map { " as \($0)" } ?? ""), the same key as Settings → Providers." }
+                        ?? "Stored in ~/.config/herm/providers.json with owner-only permissions. Never displayed or logged, and used only to read quota.",
+                    icon: .lockSimple
+                )
             }
         }
     }

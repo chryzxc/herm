@@ -323,6 +323,7 @@ The session inspector's **Browser** tab is a real Chromium browser that you and 
 
 ### Projects and session continuity
 
+- Skill and command highlights include the full namespaced token, such as `/cpipe:run`, in the composer and sent message bubbles.
 - Browse projects and their conversations within the selected bot's scope.
 - Create a project, set it active, archive it, or delete it when the installed Hermes runtime exposes the corresponding project methods.
 - Keep queued messages, edits, and attachments with their session when switching conversations or starting a new chat. Reopening a session restores its queue, including when Hermes assigns a new runtime session ID.

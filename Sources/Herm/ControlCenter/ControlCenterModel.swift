@@ -80,6 +80,9 @@ final class ControlCenterModel: ObservableObject {
     var workCalendarRepoPaths: [String] = []
     var workCalendarGeneration = UUID()
     @Published var providerQuotas: [ProviderQuotaSnapshot] = []
+    /// Hermes' provider catalog (Settings → Providers); nil until first loaded.
+    /// It is the source of truth for which quota providers the Quota page offers.
+    @Published var hermesProviderRows: [HermesProviderRow]?
     /// Snapshots exactly as the providers reported them. `providerQuotas` is
     /// derived from these plus the user's nicknames and display order, so a
     /// rename or reorder never needs another provider read.

@@ -94,10 +94,70 @@ extension ControlCenterModel {
         return parseProviderQuota(raw).map { [$0] } ?? []
     }
 
+    /// Loads Hermes' provider catalog (configured and not) into
+    /// `hermesProviderRows`, shared by Settings and the Quota page.
+    func loadHermesProviderRows() async throws {
+        guard let client = dockModel?.quickWorkflowClient else { return }
+        let result = try await client.request(
+            HermesFeatureIDs.ID.modelOptions.rawValue,
+            params: ["include_unconfigured": true]
+        )
+        hermesProviderRows = HermesProviderRow.rows(from: result)
+    }
+
+    /// The Settings → Providers row that backs a quota entry, if any. Only
+    /// Codex and API-key entries are Hermes-backed; Claude CLI and Antigravity
+    /// sign in outside Hermes.
+    func hermesRow(for descriptor: QuotaProviderDescriptor) -> HermesProviderRow? {
+        let hermesBacked: Bool
+        if case .apiKey = descriptor.connect { hermesBacked = true } else { hermesBacked = descriptor.id == "codex-hermes" }
+        guard hermesBacked else { return nil }
+        let id = descriptor.id == "codex-hermes" ? "codex" : descriptor.id
+        return hermesProviderRows?.first { QuotaWorkspacePresentation.quotaProviderID(for: $0.slug) == id && $0.access != .external }
+    }
+
+    /// Quota catalog entries whose Hermes provider is listed in Settings.
+    func isRegisteredInSettings(_ descriptor: QuotaProviderDescriptor) -> Bool {
+        hermesProviderRows == nil || hermesRow(for: descriptor) != nil
+            || (descriptor.id != "codex-hermes" && descriptor.storageKey == nil)
+    }
+
+    /// A failed read keeps the last reading, so a removed key would leave its
+    /// card up forever. Drop the provider's snapshot now; the refresh that
+    /// follows restores it if a key is still found elsewhere.
+    func forgetQuota(for providerID: String) {
+        reportedProviderQuotas.removeAll { $0.provider == providerID }
+        applyProviderQuotaPresentation()
+    }
+
+    /// Herm's own stored key outranks Hermes' .env when reading quota, so a
+    /// disconnect must clear it as well or the provider keeps reporting.
+    func clearHermesStoredKey(slug: String) {
+        let id = QuotaWorkspacePresentation.quotaProviderID(for: slug)
+        if let id { forgetQuota(for: id) }
+        if let storageKey = QuotaProviderCatalog.all.first(where: { $0.id == id })?.storageKey {
+            ProviderKeyStore().save(nil, storageKey: storageKey)
+        }
+    }
+
+    /// Saves (nil removes) a provider key through Hermes, exactly as Settings →
+    /// Providers does, then re-reads the catalog and quota.
+    func saveHermesProviderKey(_ key: String?, row: HermesProviderRow) async throws {
+        if key == nil { clearHermesStoredKey(slug: row.slug) }
+        guard let client = dockModel?.quickWorkflowClient else { return }
+        _ = try await client.request(
+            (key == nil ? HermesFeatureIDs.ID.modelDisconnect : .modelSaveKey).rawValue,
+            params: key.map { ["slug": row.slug, "api_key": $0] } ?? ["slug": row.slug]
+        )
+        try? await loadHermesProviderRows()
+        refreshProviderQuota()
+    }
+
     /// Saves (or removes, when nil) a user-entered API key for an API-key
     /// provider and immediately re-reads quota with it.
     func saveProviderAPIKey(_ key: String?, for descriptor: QuotaProviderDescriptor) {
         guard let storageKey = descriptor.storageKey else { return }
+        if key == nil { forgetQuota(for: descriptor.id) }
         ProviderKeyStore().save(key, storageKey: storageKey)
         refreshProviderQuota()
     }
@@ -105,7 +165,16 @@ extension ControlCenterModel {
     /// Rebuilds `providerQuotas` from the last reported snapshots, applying
     /// nicknames and the saved display order without re-reading providers.
     func applyProviderQuotaPresentation() {
-        let named = reportedProviderQuotas.map { snapshot in
+        // A pooled key with no usage windows duplicates the provider's own
+        // balance card (same credential), so only the balance card shows.
+        let readerIDs = Set(reportedProviderQuotas.map(\.provider))
+        let named = reportedProviderQuotas.filter { snapshot in
+            guard let credential = snapshot.hermesCredential, snapshot.windows.isEmpty,
+                  let id = QuotaWorkspacePresentation.quotaProviderID(for: credential.provider),
+                  // Claude and Antigravity read other logins, not this pooled key.
+                  QuotaProviderCatalog.descriptor(for: id)?.storageKey != nil else { return true }
+            return !readerIDs.contains(id)
+        }.map { snapshot in
             ProviderQuotaSnapshot(
                 provider: snapshot.provider,
                 displayName: providerNicknameStore.nickname(for: snapshot.provider) ?? snapshot.displayName,

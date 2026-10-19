@@ -54,7 +54,7 @@ struct ProvidersSettingsView: View {
 
     private enum Filter: Hashable { case all, connected, available }
 
-    @State private var rows: [HermesProviderRow] = []
+    private var rows: [HermesProviderRow] { control.hermesProviderRows ?? [] }
     @State private var isLoading = false
     @State private var loadError: String?
     @State private var query = ""
@@ -291,7 +291,8 @@ struct ProvidersSettingsView: View {
                     HermesFeatureIDs.ID.modelOptions.rawValue,
                     params: ["include_unconfigured": true]
                 )
-                rows = HermesProviderRow.rows(from: result)
+                control.hermesProviderRows = HermesProviderRow.rows(from: result)
+                control.refreshProviderQuota(quiet: true)
                 loadError = nil
             } catch {
                 loadError = "Couldn't load providers from Hermes: \(error.localizedDescription)"
@@ -307,6 +308,7 @@ struct ProvidersSettingsView: View {
     }
 
     private func disconnect(_ row: HermesProviderRow) {
+        control.clearHermesStoredKey(slug: row.slug)
         run(row, HermesFeatureIDs.ID.modelDisconnect, params: ["slug": row.slug]) {}
     }
 

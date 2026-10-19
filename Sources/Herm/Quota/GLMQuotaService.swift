@@ -21,9 +21,9 @@ enum GLMQuotaService {
     }
 
     private static func loadAPIKey() -> String? {
-        if let stored = ProviderKeyStore().savedKey("glm") { return stored }
+        // Includes the key Settings → Providers saves into Hermes' .env.
+        if let key = BalanceQuota.apiKey(storageKey: "glm", envNames: ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"]) { return key }
         let environment = ProcessInfo.processInfo.environment
-        if let key = ["ZAI_API_KEY", "GLM_API_KEY", "ZHIPUAI_API_KEY"].compactMap({ environment[$0]?.trimmingCharacters(in: .whitespacesAndNewlines) }).first(where: { !$0.isEmpty }) { return key }
         let home = FileManager.default.homeDirectoryForCurrentUser
         let dataHome = environment["XDG_DATA_HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? home.appendingPathComponent(".local/share", isDirectory: true)
         let candidates = [dataHome.appendingPathComponent("opencode/auth.json"), home.appendingPathComponent(".config/opencode/auth.json"), home.appendingPathComponent(".config/openusage/zai.json"), home.appendingPathComponent(".config/zai/key.json")]

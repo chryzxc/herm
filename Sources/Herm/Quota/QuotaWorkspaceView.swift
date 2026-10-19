@@ -12,10 +12,13 @@ struct QuotaWorkspaceView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var connectTarget: QuotaProviderDescriptor?
     @State private var addingPoolAccount = false
+    @State private var signInSlug: String?
     @State private var renamingProviderID: String?
     @State private var renameDraft = ""
     @State private var draggingProviderID: String?
     @State private var removalCandidate: ProviderQuotaSnapshot?
+    @State private var disconnectCandidate: QuotaProviderDescriptor?
+    @State private var disconnectError: String?
     @FocusState private var renameFieldFocused: Bool
     @State private var isSyncingPeak = false
     @State private var peakSyncError: String?
@@ -31,7 +34,7 @@ struct QuotaWorkspaceView: View {
     private var availableDescriptors: [QuotaProviderDescriptor] {
         let connectedIDs = control.providerQuotas.map(\.provider)
         return QuotaProviderCatalog.all.filter { descriptor in
-            !connectedIDs.contains { $0 == descriptor.id || $0.hasPrefix(descriptor.id + "-") }
+            control.isRegisteredInSettings(descriptor) && !connectedIDs.contains { $0 == descriptor.id || $0.hasPrefix(descriptor.id + "-") }
         }
     }
 
@@ -79,8 +82,25 @@ struct QuotaWorkspaceView: View {
             ProviderConnectSheet(descriptor: descriptor, control: control)
         }
         .sheet(isPresented: $addingPoolAccount) { AddPoolAccountSheet(control: control) }
+        .sheet(item: Binding(get: { signInSlug.map(SlugItem.init) }, set: { signInSlug = $0?.id })) { item in
+            AddPoolAccountSheet(control: control, initialProvider: item.id, onAdded: { Task { try? await control.loadHermesProviderRows(); control.refreshProviderQuota() } })
+        }
         .task(id: autoRefreshMinutes) { await runAutoRefresh() }
+        .task { try? await control.loadHermesProviderRows() }
         .task { await control.configEditor.load() }  // rotation strategy for the credential menu
+        .confirmationDialog(
+            "Disconnect \(disconnectCandidate?.displayName ?? "provider")?",
+            isPresented: Binding(get: { disconnectCandidate != nil }, set: { if !$0 { disconnectCandidate = nil } }),
+            presenting: disconnectCandidate
+        ) { descriptor in
+            Button("Disconnect", role: .destructive) { disconnect(descriptor) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Removes this provider's saved key, as Settings → Providers does. Hermes stops using it for every agent.")
+        }
+        .alert("Couldn't disconnect", isPresented: Binding(get: { disconnectError != nil }, set: { if !$0 { disconnectError = nil } })) {
+            Button("OK") {}
+        } message: { Text(disconnectError ?? "") }
         .confirmationDialog(
             removalTitle,
             isPresented: Binding(get: { removalCandidate != nil }, set: { if !$0 { removalCandidate = nil } }),
@@ -95,6 +115,20 @@ struct QuotaWorkspaceView: View {
             if let credential = snapshot.hermesCredential {
                 Text("Runs `hermes auth remove \(credential.provider) \(credential.id)`. Hermes stops using “\(credential.label)” (#\(credential.position) in its \(credential.provider) pool) for every agent, not just this page. Sign in again with `hermes auth add` to restore it.")
             }
+        }
+    }
+
+    private func disconnect(_ descriptor: QuotaProviderDescriptor) {
+        // Herm's own stored key outranks Hermes' .env, so clear it too or the
+        // provider keeps reporting after a Hermes disconnect.
+        if let storageKey = descriptor.storageKey { ProviderKeyStore().save(nil, storageKey: storageKey) }
+        control.forgetQuota(for: descriptor.id)
+        guard let row = control.hermesRow(for: descriptor), row.authenticated else {
+            control.refreshProviderQuota()
+            return
+        }
+        Task {
+            do { try await control.saveHermesProviderKey(nil, row: row) } catch { disconnectError = error.localizedDescription }
         }
     }
 
@@ -547,6 +581,9 @@ struct QuotaWorkspaceView: View {
             Button("Remove from Hermes…", icon: .trash, role: .destructive) {
                 removalCandidate = snapshot
             }
+        } else if let descriptor = QuotaWorkspacePresentation.descriptor(forProvider: snapshot.provider), descriptor.storageKey != nil {
+            Divider()
+            Button("Disconnect…", icon: .trash, role: .destructive) { disconnectCandidate = descriptor }
         }
     }
 
@@ -710,6 +747,17 @@ struct QuotaWorkspaceView: View {
 
     // MARK: Available providers
 
+    private struct SlugItem: Identifiable { let id: String }
+
+    /// Hermes-backed entries use the same sign-in / key flows as Settings → Providers.
+    private func connect(_ descriptor: QuotaProviderDescriptor) {
+        if let row = control.hermesRow(for: descriptor), row.access == .browser {
+            signInSlug = row.slug
+        } else {
+            connectTarget = descriptor
+        }
+    }
+
     private func availableSection(_ descriptors: [QuotaProviderDescriptor]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             DockSectionLabel(title: "Available to connect", count: descriptors.count)
@@ -722,7 +770,10 @@ struct QuotaWorkspaceView: View {
     }
 
     private func availableRow(_ descriptor: QuotaProviderDescriptor) -> some View {
+        // Same state Settings → Providers shows for this provider.
+        let signedIn = control.hermesRow(for: descriptor)?.authenticated == true
         let diagnostic = control.providerQuotaDiagnostics[descriptor.id]
+            ?? (signedIn ? "Connected in Settings; no quota reported yet." : nil)
         return HStack(spacing: 10) {
             ProviderMarkBadge(mark: ProviderMark(providerID: descriptor.id, displayName: descriptor.displayName), size: 22)
                 .opacity(0.7)
@@ -737,8 +788,8 @@ struct QuotaWorkspaceView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            Button { connectTarget = descriptor } label: {
-                Text("Connect…")
+            Button { connect(descriptor) } label: {
+                Text(signedIn ? "Update…" : "Connect…")
                     .font(DockTypography.control)
                     .frame(minWidth: 76, minHeight: DockControlMetrics.compactHeight)
             }
